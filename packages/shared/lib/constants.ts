@@ -34,6 +34,8 @@ export const MEMBERSHIP_STATUS = {
   DECLINED: "declined",
 } as const;
 
+export type MembershipStatus = (typeof MEMBERSHIP_STATUS)[keyof typeof MEMBERSHIP_STATUS];
+
 export const TENANT_PLANS = {
   STARTUP: "startup",
   GROWTH: "growth",

@@ -1,31 +1,12 @@
-// ROLES
-export const ROLES = {
-  SUPER_ADMIN: "super_admin",
-  ADMIN: "admin",
-  EXECUTIVE: "executive",
-  MANAGER: "manager",
-  EMPLOYEE: "employee",
-  COACH: "coach",
-} as const;
-
-export type Role = (typeof ROLES)[keyof typeof ROLES];
-
-// ROLE HIERARCHY (higher = more permissions)
-export const ROLE_HIERARCHY = {
-  [ROLES.SUPER_ADMIN]: 6,
-  [ROLES.ADMIN]: 5,
-  [ROLES.EXECUTIVE]: 4,
-  [ROLES.MANAGER]: 3,
-  [ROLES.EMPLOYEE]: 2,
-  [ROLES.COACH]: 1,
-} as const;
-
-// MEMBERSHIPS STATUSES
-export const MEMBERSHIP_STATUS = {
-  ACTIVE: "active",
-  INVITED: "invited",
-  INACTIVE: "inactive",
-} as const;
+// Core constants imported from shared package (single source of truth)
+export {
+  ROLES,
+  type Role,
+  ROLE_HIERARCHY,
+  ROLE_LABELS,
+  MEMBERSHIP_STATUS,
+  TENANT_PLANS,
+} from "@quikit/shared";
 
 // KPI STATUSES
 export const KPI_STATUS = {
@@ -84,13 +65,6 @@ export const OPSP_SECTION_TYPES = {
   STAKEHOLDERS: "stakeholders",
 } as const;
 
-// TENANT PLANS
-export const TENANT_PLANS = {
-  STARTUP: "startup",
-  GROWTH: "growth",
-  ENTERPRISE: "enterprise",
-} as const;
-
 // NOTIFICATION TYPES
 export const NOTIFICATION_TYPES = {
   KPI_ALERT: "kpi_alert",
@@ -142,10 +116,10 @@ export const MEASUREMENT_UNITS = {
   RATIO: "Ratio",
 } as const;
 
-// PAGES & PATHS
+// PAGES & PATHS (app-specific)
 export const PATHS = {
   HOME: "/",
-  LOGIN: "/auth/login",
+  LOGIN: "/login",
   REGISTER: "/auth/register",
   DASHBOARD: "/dashboard",
   KPI: "/dashboard/kpi",

@@ -6,6 +6,7 @@
   "types": "./index.ts",
   "exports": {
     ".": "./index.ts",
+    "./types": "./types.ts",
     "./middleware": "./middleware.ts",
     "./session-guard": "./session-guard.tsx",
     "./require-admin": "./require-admin.ts",
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "@quikit/database": "*",
+    "@quikit/shared": "*",
     "bcryptjs": "^2.4.3",
     "next-auth": "^4.24.0"
   },
