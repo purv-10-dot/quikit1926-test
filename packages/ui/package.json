@@ -14,6 +14,7 @@
     "./modal": "./components/modal.tsx",
     "./utils": "./lib/utils.ts",
     "./styles": "./styles/globals.css",
+    "./theme-applier": "./components/theme-applier.tsx",
     "./tailwind-config": "./tailwind.config.ts"
   },
   "dependencies": {
