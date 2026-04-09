@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -8,8 +9,7 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
-    const user = await db.user.findUnique({ where: { id: session.user.id }, include: { memberships: true } });
-    const tenantId = user?.memberships[0]?.tenantId;
+    const tenantId = session.user.tenantId;
     if (!tenantId) return NextResponse.json({ success: false, error: "No tenant" }, { status: 400 });
 
     const reviews = await db.performanceReview.findMany({
@@ -22,21 +22,21 @@ export async function GET() {
     });
 
     return NextResponse.json({ success: true, data: reviews });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to fetch reviews";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
-    const user = await db.user.findUnique({ where: { id: session.user.id }, include: { memberships: true } });
-    const tenantId = user?.memberships[0]?.tenantId;
+    const tenantId = session.user.tenantId;
     if (!tenantId) return NextResponse.json({ success: false, error: "No tenant" }, { status: 400 });
 
-    const body = await req.json();
+    const body = await request.json();
     const { revieweeId, quarter, year, rating, strengths, improvements, notes, kpiScore, priorityScore, attendanceScore, overallScore, status } = body;
 
     const review = await db.performanceReview.create({
@@ -63,7 +63,8 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ success: true, data: review });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to create review";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

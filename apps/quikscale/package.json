@@ -1,12 +1,12 @@
 {
   "name": "quikscale",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3004",
     "build": "next build",
     "start": "next start -p 3004",
-    "lint": "next lint --fix"
+    "lint": "next lint"
   },
   "dependencies": {
     "@quikit/database": "*",
@@ -16,12 +16,10 @@
     "@hookform/resolvers": "^3.3.4",
     "@tanstack/react-query": "^5.28.0",
     "axios": "^1.6.2",
-    "bcryptjs": "^2.4.3",
     "canvas-confetti": "^1.9.4",
     "framer-motion": "^10.16.4",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
-    "lucide-react": "^0.294.0",
     "next": "14.0.4",
     "next-auth": "^4.24.0",
     "next-themes": "^0.2.1",
@@ -29,20 +27,18 @@
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.49.0",
     "recharts": "^2.10.3",
-    "tailwindcss-animate": "^1.0.7",
     "three": "^0.183.2",
     "zod": "^3.22.4",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
     "@types/canvas-confetti": "^1.9.0",
-    "@types/node": "^20.10.6",
-    "@types/react": "^18.2.45",
-    "@types/react-dom": "^18.2.18",
+    "@types/node": "^20.10.4",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
     "@types/three": "^0.183.1",
     "autoprefixer": "^10.4.16",
-    "eslint": "^8.56.0",
+    "eslint": "^8.55.0",
     "eslint-config-next": "14.0.4",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.1",

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Sidebar } from "@/components/Dashboard/Sidebar";
-import { Header } from "@/components/Dashboard/Header";
+import { Sidebar } from "@/components/dashboard/sidebar";
+import { Header } from "@/components/dashboard/header";
 import { FilterProvider } from "@/lib/context/FilterContext";
 import { SessionGuard } from "@/components/session-guard";
 
@@ -16,7 +16,7 @@ export default function DashboardLayout({
   return (
     <SessionGuard>
     <FilterProvider>
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-[var(--color-bg-secondary)]">
         {/* Sidebar - always visible on desktop, drawer on mobile */}
         <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 
@@ -26,7 +26,7 @@ export default function DashboardLayout({
           <Header onMenuClick={() => setMobileOpen(!mobileOpen)} />
 
           {/* Page Content */}
-          <main className="flex-1 overflow-y-auto bg-gray-50">
+          <main className="flex-1 overflow-y-auto bg-[var(--color-bg-secondary)]">
             <div className="h-full">
               {children}
             </div>

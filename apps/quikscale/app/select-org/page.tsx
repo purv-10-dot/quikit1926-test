@@ -16,6 +16,9 @@ import {
   Shield,
   ExternalLink,
 } from "lucide-react";
+
+const SUPER_ADMIN_URL = process.env.NEXT_PUBLIC_SUPER_ADMIN_URL || "http://localhost:3006";
+const SUPER_ADMIN_APP_SLUG = "super-admin-portal";
 import { cn } from "@/lib/utils";
 import ParticlesBg from "@/components/ui/particles-bg";
 
@@ -101,7 +104,10 @@ export default function SelectOrgPage() {
     try {
       const res = await fetch(`/api/apps?tenantId=${tenantId}`);
       const json = await res.json();
-      if (json.success) setOrgApps((prev) => ({ ...prev, [tenantId]: json.data }));
+      if (json.success) {
+        const filtered = (json.data as AppItem[]).filter((a) => a.slug !== SUPER_ADMIN_APP_SLUG);
+        setOrgApps((prev) => ({ ...prev, [tenantId]: filtered }));
+      }
     } catch (e) { console.error("Failed to fetch apps", e); }
     finally { setAppsLoading(null); }
   }, []);
@@ -205,18 +211,16 @@ export default function SelectOrgPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Super Admin — Admin Portal Access */}
+              {/* Super Admin — Platform Management */}
               {isSuperAdmin && (
                 <div className="mb-2">
                   <h2 className="text-[11px] font-semibold text-white/30 uppercase tracking-widest mb-3 flex items-center gap-2">
                     <Shield className="h-3.5 w-3.5 text-amber-400/60" />
-                    Super Admin
+                    Platform Management
                   </h2>
                   <button
                     onClick={() => {
-                      // Admin Portal is a separate app — for now navigate to /admin
-                      // In production this will be an external URL
-                      window.location.href = "/admin";
+                      window.location.href = `${SUPER_ADMIN_URL}/dashboard`;
                     }}
                     className="w-full group rounded-2xl border border-amber-500/20 bg-gradient-to-r from-amber-500/[0.06] to-orange-500/[0.04] backdrop-blur-sm p-5 hover:border-amber-500/40 hover:from-amber-500/[0.10] hover:to-orange-500/[0.07] transition-all duration-300 text-left"
                   >
@@ -226,10 +230,10 @@ export default function SelectOrgPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="text-base font-semibold text-white group-hover:text-amber-300 transition-colors">
-                          Admin Portal
+                          Super Admin Portal
                         </h3>
                         <p className="text-xs text-white/40 mt-0.5">
-                          Manage organisations, users, app access & permissions
+                          Manage organisations, platform users, apps & permissions
                         </p>
                       </div>
                       <ExternalLink className="h-5 w-5 text-white/20 group-hover:text-amber-400 transition-colors flex-shrink-0" />
