@@ -2,11 +2,8 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { db } from "@quikit/database";
 import { type NextAuthOptions } from "next-auth";
+import { ROLE_HIERARCHY } from "@quikit/shared";
 
-const ADMIN_ROLES = ["admin", "super_admin"];
-const ROLE_HIERARCHY: Record<string, number> = {
-  super_admin: 6, admin: 5, executive: 4, manager: 3, employee: 2, coach: 1,
-};
 const ADMIN_MIN_LEVEL = ROLE_HIERARCHY["admin"];
 
 export function createRequireAdmin(authOptions: NextAuthOptions) {

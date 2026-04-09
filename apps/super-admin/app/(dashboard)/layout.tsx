@@ -2,6 +2,7 @@
 
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
+import { SessionGuard } from "@/components/session-guard";
 
 export default function DashboardLayout({
   children,
@@ -9,12 +10,14 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[var(--color-bg-secondary)]">
-      <Sidebar />
-      <div className="ml-60">
-        <Header />
-        <main className="p-6">{children}</main>
+    <SessionGuard>
+      <div className="min-h-screen bg-[var(--color-bg-secondary)]">
+        <Sidebar />
+        <div className="ml-60">
+          <Header />
+          <main className="p-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </SessionGuard>
   );
 }

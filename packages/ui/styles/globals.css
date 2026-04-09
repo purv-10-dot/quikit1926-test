@@ -4,6 +4,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   CSS CUSTOM PROPERTIES - THEMING SYSTEM (Single source of truth)
+   ============================================================================ */
+
 :root {
   --color-primary: #0F172A;
   --color-primary-light: #F0F4FF;
@@ -100,6 +104,67 @@
   color-scheme: light;
 }
 
+/* ============================================================================
+   DARK MODE - SYSTEM PREFERENCE
+   ============================================================================ */
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --color-primary: #E2E8F0;
+    --color-primary-light: #0F172A;
+    --color-primary-dark: #F8FAFC;
+
+    --color-secondary: #818CF8;
+    --color-secondary-light: #1E1B4B;
+    --color-secondary-dark: #C7D2FE;
+
+    --color-success: #10B981;
+    --color-success-light: #064E3B;
+    --color-success-dark: #86EFAC;
+
+    --color-warning: #FBBF24;
+    --color-warning-light: #78350F;
+    --color-warning-dark: #FEF08A;
+
+    --color-danger: #F87171;
+    --color-danger-light: #7F1D1D;
+    --color-danger-dark: #FECACA;
+
+    --color-neutral-50: #0F172A;
+    --color-neutral-100: #1E293B;
+    --color-neutral-200: #334155;
+    --color-neutral-300: #475569;
+    --color-neutral-400: #64748B;
+    --color-neutral-500: #94A3B8;
+    --color-neutral-600: #CBD5E1;
+    --color-neutral-700: #E2E8F0;
+    --color-neutral-800: #F1F5F9;
+    --color-neutral-900: #F8FAFC;
+
+    --color-bg-primary: #0F172A;
+    --color-bg-secondary: #1E293B;
+    --color-bg-tertiary: #334155;
+
+    --color-text-primary: #F8FAFC;
+    --color-text-secondary: #94A3B8;
+    --color-text-tertiary: #64748B;
+
+    --color-border: #334155;
+
+    --color-status-on-track: #10B981;
+    --color-status-behind: #FBBF24;
+    --color-status-critical: #F87171;
+    --color-status-complete: #818CF8;
+    --color-status-not-started: #64748B;
+
+    color-scheme: dark;
+  }
+}
+
+/* ============================================================================
+   MANUAL DARK MODE TOGGLE (class-based via next-themes)
+   ============================================================================ */
+
 html.dark {
   color-scheme: dark;
   --color-primary: #E2E8F0;
@@ -150,6 +215,10 @@ html.dark {
   --color-status-not-started: #64748B;
 }
 
+/* ============================================================================
+   BASE STYLES
+   ============================================================================ */
+
 * {
   border-color: var(--color-border);
 }
@@ -162,6 +231,10 @@ body {
 html {
   scroll-behavior: smooth;
 }
+
+/* ============================================================================
+   SCROLLBAR — hidden globally, scrolling still works
+   ============================================================================ */
 
 * {
   scrollbar-width: none;
