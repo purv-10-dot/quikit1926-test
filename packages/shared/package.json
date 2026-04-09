@@ -8,7 +8,8 @@
     ".": "./index.ts",
     "./types": "./types/index.ts",
     "./constants": "./lib/constants.ts",
-    "./email": "./lib/email.ts"
+    "./email": "./lib/email.ts",
+    "./pagination": "./lib/pagination.ts"
   },
   "dependencies": {
     "resend": "^2.1.0",
