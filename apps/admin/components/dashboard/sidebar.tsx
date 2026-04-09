@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { PATHS } from "@/lib/constants";
 import {
@@ -12,7 +11,6 @@ import {
   AppWindow,
   Settings,
   ShieldCheck,
-  Building2,
 } from "lucide-react";
 
 const navItems = [
@@ -24,10 +22,6 @@ const navItems = [
   { label: "Settings", href: PATHS.SETTINGS, icon: Settings },
 ];
 
-const superAdminItems = [
-  { label: "Organisations", href: PATHS.ORGANISATIONS, icon: Building2 },
-];
-
 interface SidebarProps {
   orgName?: string | null;
   brandColor?: string | null;
@@ -35,8 +29,6 @@ interface SidebarProps {
 
 export function Sidebar({ orgName, brandColor }: SidebarProps) {
   const pathname = usePathname();
-  const { data: session } = useSession();
-  const isSuperAdmin = session?.user?.isSuperAdmin;
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-60 border-r border-[var(--color-border)] bg-[var(--color-bg-primary)] flex flex-col">
@@ -56,30 +48,6 @@ export function Sidebar({ orgName, brandColor }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {isSuperAdmin && (
-          <>
-            {superAdminItems.map((item) => {
-              const isActive = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-[var(--color-secondary-light)] text-[var(--color-secondary-dark)]"
-                      : "text-[var(--color-text-secondary)] hover:bg-[var(--color-neutral-100)] hover:text-[var(--color-text-primary)]"
-                  )}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-            <div className="border-b border-[var(--color-border)] my-2" />
-          </>
-        )}
-
         {navItems.map((item) => {
           const isActive =
             pathname === item.href ||
