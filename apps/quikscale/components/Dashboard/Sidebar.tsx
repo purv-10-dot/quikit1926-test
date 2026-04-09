@@ -68,11 +68,11 @@ function NavGroup({ item }: { item: NavItem }) {
       <Link href={item.href!}
         className={cn(
           "flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm font-medium transition-colors group min-w-0",
-          isActive ? "bg-blue-50 text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+          isActive ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white/90"
         )}>
         <span className={cn(
           "flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg",
-          isActive ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500 group-hover:bg-gray-200"
+          isActive ? "bg-white/20 text-white" : "bg-white/10 text-white/50 group-hover:bg-white/15"
         )}>
           <Icon className="h-4 w-4" />
         </span>
@@ -86,18 +86,18 @@ function NavGroup({ item }: { item: NavItem }) {
       <button onClick={() => setOpen(!open)}
         className={cn(
           "w-full flex items-center justify-between px-2 py-1.5 rounded-md text-sm font-medium transition-colors group min-w-0",
-          isActive ? "text-blue-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+          isActive ? "text-white" : "text-white/60 hover:bg-white/10 hover:text-white/90"
         )}>
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <span className={cn(
             "flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg",
-            isActive ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500 group-hover:bg-gray-200"
+            isActive ? "bg-white/20 text-white" : "bg-white/10 text-white/50 group-hover:bg-white/15"
           )}>
             <Icon className="h-4 w-4" />
           </span>
           <span className="truncate">{item.label}</span>
         </div>
-        <ChevronDown className={cn("flex-shrink-0 h-3.5 w-3.5 text-gray-400 transition-transform duration-200 ml-1", open && "rotate-180")} />
+        <ChevronDown className={cn("flex-shrink-0 h-3.5 w-3.5 text-white/40 transition-transform duration-200 ml-1", open && "rotate-180")} />
       </button>
 
       <AnimatePresence initial={false}>
@@ -105,7 +105,6 @@ function NavGroup({ item }: { item: NavItem }) {
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: "easeInOut" }}
             className="overflow-hidden">
-            {/* Tree — pl-[12px] shifts the whole sub-list right; each row has pl-[28px] for connector */}
             <div style={{ paddingLeft: 12 }} className="mt-0.5 pb-0.5">
               {item.children.map((child, idx) => {
                 const active = pathname === child.href || pathname?.startsWith(child.href + "/");
@@ -116,28 +115,28 @@ function NavGroup({ item }: { item: NavItem }) {
                     {/* Vertical rail */}
                     <span className="absolute" style={{
                       left: 10, top: 0, bottom: isLast ? "50%" : 0,
-                      width: 1.5, backgroundColor: "#d1d5db",
+                      width: 1.5, backgroundColor: "rgba(255,255,255,0.15)",
                     }} />
                     {/* Horizontal L-branch */}
                     <span className="absolute" style={{
                       left: 10, top: "50%", width: 16, height: 1.5,
-                      backgroundColor: "#d1d5db",
+                      backgroundColor: "rgba(255,255,255,0.15)",
                     }} />
 
                     <Link href={child.href}
                       className={cn(
                         "flex items-center gap-2 py-[5px] px-1 rounded-lg transition-colors min-w-0",
-                        active ? "text-blue-700" : "text-gray-500 hover:text-gray-800"
+                        active ? "text-white" : "text-white/50 hover:text-white/80"
                       )}>
                       <span className={cn(
                         "flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-colors",
-                        active ? "bg-blue-50 text-blue-600 ring-1 ring-blue-200" : "bg-gray-100 text-gray-400"
+                        active ? "bg-white/20 text-white ring-1 ring-white/20" : "bg-white/10 text-white/40"
                       )}>
                         <ChildIcon className="h-3 w-3" />
                       </span>
                       <span className={cn(
                         "truncate text-[12.5px] font-medium min-w-0",
-                        active ? "text-blue-700" : "text-gray-600"
+                        active ? "text-white" : "text-white/60"
                       )}>
                         {child.label}
                       </span>
@@ -165,7 +164,7 @@ function NavGroupCollapsed({ item }: { item: NavItem }) {
     <Link href={href} title={item.label}
       className={cn(
         "flex items-center justify-center w-9 h-9 rounded-lg mx-auto transition-colors",
-        isActive ? "bg-blue-100 text-blue-600" : "text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+        isActive ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10 hover:text-white/80"
       )}>
       <Icon className="h-4 w-4" />
     </Link>
@@ -181,37 +180,35 @@ interface SidebarContentProps {
 }
 function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarContentProps) {
   return (
-    <div className="h-full flex flex-col bg-white border-r border-gray-200 overflow-hidden">
+    <div className="h-full flex flex-col bg-accent-800 overflow-hidden">
       {/* Logo + collapse toggle */}
       <div className={cn(
-        "flex items-center border-b border-gray-200 flex-shrink-0",
+        "flex items-center border-b border-white/10 flex-shrink-0",
         collapsed ? "justify-center px-2 py-4" : "justify-between px-4 py-4"
       )}>
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded bg-gray-900 flex-shrink-0 flex items-center justify-center text-white font-bold text-sm">G</div>
+            <div className="w-8 h-8 rounded bg-white/20 flex-shrink-0 flex items-center justify-center text-white font-bold text-sm">G</div>
             <div className="leading-tight min-w-0">
-              <p className="text-xs font-bold text-gray-900 uppercase tracking-wide">GOAL</p>
-              <p className="text-xs font-bold text-gray-900 uppercase tracking-wide">GOAL</p>
+              <p className="text-xs font-bold text-white uppercase tracking-wide">GOAL</p>
+              <p className="text-[10px] text-white/50 uppercase tracking-wide">GOAL</p>
             </div>
           </Link>
         )}
         {collapsed && (
-          <div className="w-8 h-8 rounded bg-gray-900 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">G</div>
+          <div className="w-8 h-8 rounded bg-white/20 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">G</div>
         )}
 
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Collapse toggle — desktop only */}
           {!isMobile && (
             <button onClick={() => setCollapsed(!collapsed)}
-              className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+              className="p-1.5 rounded-md hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
               {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </button>
           )}
-          {/* Mobile close */}
           {isMobile && onClose && (
-            <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
+            <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/10 text-white/50">
               <X className="h-4 w-4" />
             </button>
           )}
@@ -241,7 +238,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
 
   return (
     <>
-      {/* Desktop sidebar — animates between expanded and collapsed */}
+      {/* Desktop sidebar */}
       <motion.aside
         animate={{ width: collapsed ? 56 : 220 }}
         transition={{ type: "spring", stiffness: 300, damping: 30 }}
