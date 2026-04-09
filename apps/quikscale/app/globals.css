@@ -1,0 +1,435 @@
+@import url("https://rsms.me/inter/inter.css");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   CSS CUSTOM PROPERTIES - THEMING SYSTEM
+   ============================================================================ */
+
+:root {
+  /* PRIMARY SEMANTIC COLORS - LIGHT MODE */
+  --color-primary: #0F172A;
+  --color-primary-light: #F0F4FF;
+  --color-primary-dark: #0C0E1A;
+
+  --color-secondary: #6366F1;
+  --color-secondary-light: #E0E8FF;
+  --color-secondary-dark: #4F46E5;
+
+  /* SUCCESS / HEALTHY */
+  --color-success: #10B981;
+  --color-success-light: #D1FAE5;
+  --color-success-dark: #047857;
+
+  /* WARNING / AT RISK */
+  --color-warning: #F59E0B;
+  --color-warning-light: #FEF3C7;
+  --color-warning-dark: #B45309;
+
+  /* DANGER / CRITICAL */
+  --color-danger: #EF4444;
+  --color-danger-light: #FEE2E2;
+  --color-danger-dark: #B91C1C;
+
+  /* NEUTRAL GRAYS - LIGHT MODE */
+  --color-neutral-50: #F8FAFC;
+  --color-neutral-100: #F1F5F9;
+  --color-neutral-200: #E2E8F0;
+  --color-neutral-300: #CBD5E1;
+  --color-neutral-400: #94A3B8;
+  --color-neutral-500: #64748B;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1E293B;
+  --color-neutral-900: #0F172A;
+
+  /* SEMANTIC ALIASES */
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #F8FAFC;
+  --color-bg-tertiary: #F1F5F9;
+
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #64748B;
+  --color-text-tertiary: #94A3B8;
+
+  --color-border: #E2E8F0;
+  --color-border-light: #F1F5F9;
+
+  /* STATUS SPECIFIC */
+  --color-status-on-track: #10B981;
+  --color-status-behind: #F59E0B;
+  --color-status-critical: #EF4444;
+  --color-status-complete: #6366F1;
+  --color-status-not-started: #94A3B8;
+
+  /* SHADOWS */
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.1);
+
+  /* SPACING SCALE */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+
+  /* TYPOGRAPHY */
+  --font-family-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-mono: "Roboto Mono", monospace;
+
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 1.875rem;
+  --font-size-4xl: 2.5rem;
+
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* LINE HEIGHT */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* BORDER RADIUS */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+
+  /* TRANSITIONS */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Z-INDEX SCALE */
+  --z-dropdown: 1000;
+  --z-sticky: 1100;
+  --z-fixed: 1200;
+  --z-modal-backdrop: 1300;
+  --z-modal: 1400;
+  --z-popover: 1500;
+  --z-toast: 1600;
+
+  color-scheme: light;
+}
+
+/* ============================================================================
+   DARK MODE - SYSTEM PREFERENCE
+   ============================================================================ */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* PRIMARY SEMANTIC COLORS - DARK MODE */
+    --color-primary: #E2E8F0;
+    --color-primary-light: #0F172A;
+    --color-primary-dark: #F8FAFC;
+
+    --color-secondary: #818CF8;
+    --color-secondary-light: #1E1B4B;
+    --color-secondary-dark: #C7D2FE;
+
+    /* SUCCESS / HEALTHY */
+    --color-success: #10B981;
+    --color-success-light: #064E3B;
+    --color-success-dark: #86EFAC;
+
+    /* WARNING / AT RISK */
+    --color-warning: #FBBF24;
+    --color-warning-light: #78350F;
+    --color-warning-dark: #FEF08A;
+
+    /* DANGER / CRITICAL */
+    --color-danger: #F87171;
+    --color-danger-light: #7F1D1D;
+    --color-danger-dark: #FECACA;
+
+    /* NEUTRAL GRAYS - DARK MODE */
+    --color-neutral-50: #0F172A;
+    --color-neutral-100: #1E293B;
+    --color-neutral-200: #334155;
+    --color-neutral-300: #475569;
+    --color-neutral-400: #64748B;
+    --color-neutral-500: #94A3B8;
+    --color-neutral-600: #CBD5E1;
+    --color-neutral-700: #E2E8F0;
+    --color-neutral-800: #F1F5F9;
+    --color-neutral-900: #F8FAFC;
+
+    --color-bg-primary: #0F172A;
+    --color-bg-secondary: #1E293B;
+    --color-bg-tertiary: #334155;
+
+    --color-text-primary: #F8FAFC;
+    --color-text-secondary: #94A3B8;
+    --color-text-tertiary: #64748B;
+
+    --color-border: #334155;
+
+    /* STATUS SPECIFIC */
+    --color-status-on-track: #10B981;
+    --color-status-behind: #FBBF24;
+    --color-status-critical: #F87171;
+    --color-status-complete: #818CF8;
+    --color-status-not-started: #64748B;
+
+    color-scheme: dark;
+  }
+}
+
+/* ============================================================================
+   MANUAL DARK MODE TOGGLE
+   ============================================================================ */
+
+html.dark {
+  color-scheme: dark;
+  /* PRIMARY SEMANTIC COLORS - DARK MODE */
+  --color-primary: #E2E8F0;
+  --color-primary-light: #0F172A;
+  --color-primary-dark: #F8FAFC;
+
+  --color-secondary: #818CF8;
+  --color-secondary-light: #1E1B4B;
+  --color-secondary-dark: #C7D2FE;
+
+  /* SUCCESS / HEALTHY */
+  --color-success: #10B981;
+  --color-success-light: #064E3B;
+  --color-success-dark: #86EFAC;
+
+  /* WARNING / AT RISK */
+  --color-warning: #FBBF24;
+  --color-warning-light: #78350F;
+  --color-warning-dark: #FEF08A;
+
+  /* DANGER / CRITICAL */
+  --color-danger: #F87171;
+  --color-danger-light: #7F1D1D;
+  --color-danger-dark: #FECACA;
+
+  /* NEUTRAL GRAYS - DARK MODE */
+  --color-neutral-50: #0F172A;
+  --color-neutral-100: #1E293B;
+  --color-neutral-200: #334155;
+  --color-neutral-300: #475569;
+  --color-neutral-400: #64748B;
+  --color-neutral-500: #94A3B8;
+  --color-neutral-600: #CBD5E1;
+  --color-neutral-700: #E2E8F0;
+  --color-neutral-800: #F1F5F9;
+  --color-neutral-900: #F8FAFC;
+
+  --color-bg-primary: #0F172A;
+  --color-bg-secondary: #1E293B;
+  --color-text-primary: #F8FAFC;
+  --color-text-secondary: #94A3B8;
+}
+
+html.light {
+  color-scheme: light;
+  /* PRIMARY SEMANTIC COLORS - LIGHT MODE */
+  --color-primary: #0F172A;
+  --color-primary-light: #F0F4FF;
+  --color-primary-dark: #0C0E1A;
+
+  --color-secondary: #6366F1;
+  --color-secondary-light: #E0E8FF;
+  --color-secondary-dark: #4F46E5;
+
+  /* SUCCESS / HEALTHY */
+  --color-success: #10B981;
+  --color-success-light: #D1FAE5;
+  --color-success-dark: #047857;
+
+  /* WARNING / AT RISK */
+  --color-warning: #F59E0B;
+  --color-warning-light: #FEF3C7;
+  --color-warning-dark: #B45309;
+
+  /* DANGER / CRITICAL */
+  --color-danger: #EF4444;
+  --color-danger-light: #FEE2E2;
+  --color-danger-dark: #B91C1C;
+
+  /* NEUTRAL GRAYS - LIGHT MODE */
+  --color-neutral-50: #F8FAFC;
+  --color-neutral-100: #F1F5F9;
+  --color-neutral-200: #E2E8F0;
+  --color-neutral-300: #CBD5E1;
+  --color-neutral-400: #94A3B8;
+  --color-neutral-500: #64748B;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1E293B;
+  --color-neutral-900: #0F172A;
+
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #F8FAFC;
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #64748B;
+}
+
+/* ============================================================================
+   BASE STYLES
+   ============================================================================ */
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* ============================================================================
+   FRAMER MOTION ANIMATIONS
+   ============================================================================ */
+
+@keyframes shimmer {
+  0% {
+    transform: translate(-100%, -100%);
+  }
+  100% {
+    transform: translate(100%, 100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 8s infinite;
+}
+
+/* Blob animation for decorative elements */
+@keyframes blob {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+.truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.truncate-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Glassmorphism effect - Light mode */
+.glass {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+/* Glassmorphism effect - Dark mode */
+html.dark .glass {
+  background: rgba(30, 41, 59, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(248, 250, 252, 0.1);
+}
+
+/* ============================================================================
+   SCROLLBAR — hidden globally, scrolling still works
+   ============================================================================ */
+
+/* Firefox */
+* {
+  scrollbar-width: none;
+}
+
+/* Chrome / Safari / Edge */
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* ============================================================================
+   RICH EDITOR — contentEditable prose styles
+   ============================================================================ */
+
+.rich-editor:focus { outline: none; }
+.rich-editor b, .rich-editor strong { font-weight: 700; }
+.rich-editor i, .rich-editor em { font-style: italic; }
+.rich-editor u { text-decoration: underline; }
+.rich-editor s, .rich-editor strike { text-decoration: line-through; }
+
+.rich-editor ul {
+  list-style-type: disc;
+  padding-left: 1.4em;
+  margin: 4px 0;
+}
+.rich-editor ol {
+  list-style-type: decimal;
+  padding-left: 1.4em;
+  margin: 4px 0;
+}
+.rich-editor li { margin: 2px 0; }
+
+.rich-editor blockquote {
+  border-left: 3px solid #d1d5db;
+  margin: 4px 0;
+  padding: 2px 12px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.rich-editor p { margin: 2px 0; }
+
+/* Hide scrollbar but keep scrollable */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* OPSP preview rich-text rendering */
+.prose-preview { font-size: 9px; line-height: 1.4; color: #374151; }
+.prose-preview p { margin: 1px 0; }
+.prose-preview ul { list-style-type: disc; padding-left: 1em; margin: 2px 0; }
+.prose-preview ol { list-style-type: decimal; padding-left: 1em; margin: 2px 0; }
+.prose-preview li { margin: 1px 0; }
+.prose-preview strong { font-weight: 700; }
+.prose-preview em { font-style: italic; }
+.prose-preview blockquote { border-left: 2px solid #d1d5db; padding-left: 6px; color: #6b7280; font-style: italic; }

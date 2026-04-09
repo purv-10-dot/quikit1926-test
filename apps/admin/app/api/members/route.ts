@@ -1,0 +1,151 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/api/requireAdmin";
+import { db } from "@/lib/db";
+import { sendInvitationEmail } from "@/lib/email";
+import { ROLE_LABELS } from "@/lib/constants";
+import crypto from "crypto";
+
+export async function GET() {
+  const auth = await requireAdmin();
+  if ("error" in auth && auth.error) return auth.error;
+
+  const { tenantId } = auth;
+
+  const memberships = await db.membership.findMany({
+    where: { tenantId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+          lastSignInAt: true,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  // Get team names for each member
+  const memberData = await Promise.all(
+    memberships.map(async (m) => {
+      const userTeams = await db.userTeam.findMany({
+        where: { tenantId, userId: m.userId },
+        include: { team: { select: { name: true } } },
+      });
+
+      return {
+        id: m.userId,
+        membershipId: m.id,
+        firstName: m.user.firstName,
+        lastName: m.user.lastName,
+        email: m.user.email,
+        avatar: m.user.avatar,
+        role: m.role,
+        status: m.status,
+        teamNames: userTeams.map((ut) => ut.team.name),
+        lastSignInAt: m.user.lastSignInAt?.toISOString() ?? null,
+        invitedAt: m.invitedAt?.toISOString() ?? null,
+        acceptedAt: m.acceptedAt?.toISOString() ?? null,
+      };
+    })
+  );
+
+  return NextResponse.json({ success: true, data: memberData });
+}
+
+export async function POST(request: NextRequest) {
+  const auth = await requireAdmin();
+  if ("error" in auth && auth.error) return auth.error;
+
+  const { tenantId, userId: inviterId } = auth;
+
+  const body = await request.json();
+  const { email, firstName, lastName, role } = body;
+
+  if (!email || !firstName || !lastName || !role) {
+    return NextResponse.json(
+      { success: false, error: "email, firstName, lastName, and role are required" },
+      { status: 400 }
+    );
+  }
+
+  // Check if user already has a membership for this tenant
+  let user = await db.user.findUnique({ where: { email } });
+
+  if (user) {
+    const existingMembership = await db.membership.findUnique({
+      where: { tenantId_userId: { tenantId, userId: user.id } },
+    });
+
+    if (existingMembership && existingMembership.status === "active") {
+      return NextResponse.json(
+        { success: false, error: "User is already an active member of this organisation" },
+        { status: 409 }
+      );
+    }
+
+    if (existingMembership && existingMembership.status === "invited") {
+      return NextResponse.json(
+        { success: false, error: "User already has a pending invitation" },
+        { status: 409 }
+      );
+    }
+  }
+
+  const invitationToken = crypto.randomUUID();
+
+  // Create user if they don't exist
+  if (!user) {
+    user = await db.user.create({
+      data: {
+        email,
+        firstName,
+        lastName,
+      },
+    });
+  }
+
+  // Create or upsert the membership
+  await db.membership.upsert({
+    where: { tenantId_userId: { tenantId, userId: user.id } },
+    create: {
+      tenantId,
+      userId: user.id,
+      role,
+      status: "invited",
+      invitationToken,
+      invitedAt: new Date(),
+      createdBy: inviterId,
+    },
+    update: {
+      role,
+      status: "invited",
+      invitationToken,
+      invitedAt: new Date(),
+      createdBy: inviterId,
+    },
+  });
+
+  // Get tenant info and inviter name for email
+  const [tenant, inviter] = await Promise.all([
+    db.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
+    db.user.findUnique({ where: { id: inviterId }, select: { firstName: true, lastName: true } }),
+  ]);
+
+  // Send invitation email
+  await sendInvitationEmail({
+    to: email,
+    orgName: tenant?.name || "Organisation",
+    inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}` : "An admin",
+    role: ROLE_LABELS[role] || role,
+    token: invitationToken,
+  });
+
+  return NextResponse.json({
+    success: true,
+    message: `Invitation sent to ${email}`,
+  });
+}

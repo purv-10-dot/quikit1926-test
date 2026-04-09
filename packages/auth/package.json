@@ -1,0 +1,30 @@
+{
+  "name": "@quikit/auth",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./middleware": "./middleware.ts",
+    "./session-guard": "./session-guard.tsx",
+    "./require-admin": "./require-admin.ts",
+    "./require-super-admin": "./require-super-admin.ts",
+    "./get-tenant-id": "./get-tenant-id.ts"
+  },
+  "dependencies": {
+    "@quikit/database": "*",
+    "bcryptjs": "^2.4.3",
+    "next-auth": "^4.24.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "next": "14.0.4",
+    "react": "^18.2.0",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "next": ">=14.0.0",
+    "react": ">=18.0.0"
+  }
+}

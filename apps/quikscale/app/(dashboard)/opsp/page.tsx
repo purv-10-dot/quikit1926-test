@@ -1,0 +1,1906 @@
+"use client";
+
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useUsers } from "@/lib/hooks/useUsers";
+import { CURRENCIES } from "@/lib/utils/currency";
+import { cn } from "@/lib/utils";
+import {
+  ChevronDown, Info, Maximize2, Eye, Check,
+  Copy, Undo2, Redo2, Bold, Italic, Underline,
+  Strikethrough, List, ListOrdered, Quote,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  Calendar, X, Loader2, Printer, Download,
+} from "lucide-react";
+
+/* ═══════════════════════════════════════════════
+   Types
+═══════════════════════════════════════════════ */
+interface TargetRow   { category: string; projected: string; y1: string; y2: string; y3: string; y4: string; y5: string; }
+interface GoalRow     { category: string; projected: string; q1: string; q2: string; q3: string; q4: string; }
+interface ThrustRow   { desc: string; owner: string; }
+interface ActionRow   { category: string; projected: string; }
+interface KPIAcctRow  { kpi: string; goal: string; }
+interface QPriorRow   { priority: string; dueDate: string; }
+interface CritCard    { title: string; bullets: string[] }
+
+interface FormData {
+  year: number; quarter: string; targetYears: number; status: string;
+  employees: string[]; customers: string[]; shareholders: string[];
+  coreValues: string; purpose: string; actions: string[];
+  profitPerX: string; bhag: string;
+  targetRows: TargetRow[]; sandbox: string; keyThrusts: ThrustRow[];
+  brandPromiseKPIs: string; brandPromise: string;
+  goalRows: GoalRow[]; keyInitiatives: string;
+  criticalNumGoals: CritCard; balancingCritNumGoals: CritCard;
+  processItems: string[]; weaknesses: string[];
+  makeBuy: string[]; sell: string[]; recordKeeping: string[];
+  actionsQtr: ActionRow[]; rocks: string;
+  criticalNumProcess: CritCard; balancingCritNumProcess: CritCard;
+  theme: string; scoreboardDesign: string; celebration: string; reward: string;
+  kpiAccountability: KPIAcctRow[]; quarterlyPriorities: QPriorRow[];
+  criticalNumAcct: CritCard; balancingCritNumAcct: CritCard;
+  trends: string[];
+}
+
+/* ── Defaults ── */
+const emptyArr3   = (): string[]        => ["", "", ""];
+const emptyArr5   = (): string[]        => ["", "", "", "", ""];
+const emptyCrit   = (): CritCard        => ({ title: "", bullets: ["", "", "", ""] });
+const emptyTarget = (): TargetRow[]     => Array.from({ length: 5 }, () => ({ category:"", projected:"", y1:"", y2:"", y3:"", y4:"", y5:"" }));
+const emptyGoal   = (): GoalRow[]       => Array.from({ length: 6 }, () => ({ category:"", projected:"", q1:"", q2:"", q3:"", q4:"" }));
+const emptyThrust = (): ThrustRow[]     => Array.from({ length: 5 }, () => ({ desc:"", owner:"" }));
+const emptyAction = (): ActionRow[]     => Array.from({ length: 5 }, () => ({ category:"", projected:"" }));
+const emptyKPI    = (): KPIAcctRow[]    => Array.from({ length: 5 }, () => ({ kpi:"", goal:"" }));
+const emptyQP     = (): QPriorRow[]     => Array.from({ length: 5 }, () => ({ priority:"", dueDate:"" }));
+
+const defaultForm = (): FormData => ({
+  year: new Date().getFullYear(), quarter: "Q1", targetYears: 5, status: "draft",
+  employees: emptyArr3(), customers: emptyArr3(), shareholders: emptyArr3(),
+  coreValues: "", purpose: "", actions: emptyArr5(), profitPerX: "", bhag: "",
+  targetRows: emptyTarget(), sandbox: "", keyThrusts: emptyThrust(),
+  brandPromiseKPIs: "", brandPromise: "",
+  goalRows: emptyGoal(), keyInitiatives: "",
+  criticalNumGoals: emptyCrit(), balancingCritNumGoals: emptyCrit(),
+  processItems: emptyArr3(), weaknesses: emptyArr3(),
+  makeBuy: emptyArr3(), sell: emptyArr3(), recordKeeping: emptyArr3(),
+  actionsQtr: emptyAction(), rocks: "",
+  criticalNumProcess: emptyCrit(), balancingCritNumProcess: emptyCrit(),
+  theme: "", scoreboardDesign: "", celebration: "", reward: "",
+  kpiAccountability: emptyKPI(), quarterlyPriorities: emptyQP(),
+  criticalNumAcct: emptyCrit(), balancingCritNumAcct: emptyCrit(),
+  trends: Array(6).fill(""),
+});
+
+/* ═══════════════════════════════════════════════
+   Shared UI Components
+═══════════════════════════════════════════════ */
+function FInput({
+  value, onChange, placeholder = "Input text", className,
+}: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
+  return (
+    <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+      className={cn("w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white", className)} />
+  );
+}
+
+function FTextarea({
+  value, onChange, placeholder = "Input text", rows = 4, className,
+}: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number; className?: string }) {
+  return (
+    <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={rows}
+      className={cn("w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none bg-white", className)} />
+  );
+}
+
+/* ── Toolbar button ── */
+function TBtn({
+  icon, onMouseDown, active = false, title,
+}: { icon: React.ReactNode; onMouseDown?: (e: React.MouseEvent) => void; active?: boolean; title?: string }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      className={cn(
+        "h-6 w-6 flex items-center justify-center rounded transition-colors",
+        active ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100",
+      )}
+      onMouseDown={onMouseDown}
+    >
+      {icon}
+    </button>
+  );
+}
+function Sep() { return <span className="w-px h-4 bg-gray-200 mx-0.5 flex-shrink-0" />; }
+
+const ALIGN_OPTIONS: { label: string; cmd: string; Icon: React.FC<{ className?: string }> }[] = [
+  { label: "Left",    cmd: "justifyLeft",   Icon: AlignLeft },
+  { label: "Center",  cmd: "justifyCenter", Icon: AlignCenter },
+  { label: "Right",   cmd: "justifyRight",  Icon: AlignRight },
+  { label: "Justify", cmd: "justifyFull",   Icon: AlignJustify },
+];
+
+/* ── Rich Toolbar ── */
+function RichToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElement> }) {
+  const [states, setStates] = useState({
+    bold: false, italic: false, underline: false, strikeThrough: false,
+    insertUnorderedList: false, insertOrderedList: false,
+    justifyLeft: true, justifyCenter: false, justifyRight: false, justifyFull: false,
+  });
+  const [alignOpen, setAlignOpen] = useState(false);
+
+  // Poll active formatting states whenever selection changes
+  const syncStates = useCallback(() => {
+    try {
+      setStates({
+        bold:                 document.queryCommandState("bold"),
+        italic:               document.queryCommandState("italic"),
+        underline:            document.queryCommandState("underline"),
+        strikeThrough:        document.queryCommandState("strikeThrough"),
+        insertUnorderedList:  document.queryCommandState("insertUnorderedList"),
+        insertOrderedList:    document.queryCommandState("insertOrderedList"),
+        justifyLeft:          document.queryCommandState("justifyLeft"),
+        justifyCenter:        document.queryCommandState("justifyCenter"),
+        justifyRight:         document.queryCommandState("justifyRight"),
+        justifyFull:          document.queryCommandState("justifyFull"),
+      });
+    } catch { /* ignore in SSR/unsupported */ }
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener("selectionchange", syncStates);
+    return () => document.removeEventListener("selectionchange", syncStates);
+  }, [syncStates]);
+
+  const exec = useCallback((cmd: string, val?: string) => {
+    // Keep focus in editor, run command, then re-sync toolbar state
+    if (editorRef.current) editorRef.current.focus();
+    document.execCommand(cmd, false, val ?? undefined);
+    // Use rAF so the browser updates queryCommandState before we read it
+    requestAnimationFrame(syncStates);
+  }, [editorRef, syncStates]);
+
+  const currentAlignIcon = ALIGN_OPTIONS.find(a => states[a.cmd as keyof typeof states])?.Icon ?? AlignLeft;
+  const CurrentAlignIcon = currentAlignIcon;
+
+  return (
+    <div className="flex items-center gap-0.5 border-b border-gray-200 pb-1.5 mb-2 overflow-x-auto flex-nowrap scrollbar-none">
+      {/* Undo */}
+      <TBtn title="Undo (Ctrl+Z)" icon={<Undo2 className="h-3.5 w-3.5" />}
+        onMouseDown={e => { e.preventDefault(); exec("undo"); }} />
+      {/* Redo */}
+      <TBtn title="Redo (Ctrl+Y)" icon={<Redo2 className="h-3.5 w-3.5" />}
+        onMouseDown={e => { e.preventDefault(); exec("redo"); }} />
+      <Sep />
+
+      {/* Alignment dropdown */}
+      <div className="relative">
+        <button
+          type="button"
+          title="Text alignment"
+          className="flex items-center gap-0.5 h-6 px-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded"
+          onMouseDown={e => { e.preventDefault(); setAlignOpen(o => !o); }}
+        >
+          <CurrentAlignIcon className="h-3 w-3" />
+          <ChevronDown className="h-3 w-3" />
+        </button>
+        {alignOpen && (
+          <>
+            <div className="fixed inset-0 z-30" onMouseDown={() => setAlignOpen(false)} />
+            <div className="absolute top-full left-0 z-40 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[110px]">
+              {ALIGN_OPTIONS.map(({ label, cmd, Icon }) => (
+                <button key={cmd} type="button"
+                  className={cn(
+                    "w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50",
+                    states[cmd as keyof typeof states] ? "text-blue-600 font-semibold" : "text-gray-700",
+                  )}
+                  onMouseDown={e => { e.preventDefault(); exec(cmd); setAlignOpen(false); }}>
+                  <Icon className="h-3.5 w-3.5" /> {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      <Sep />
+
+      {/* Inline formatting */}
+      <TBtn title="Bold (Ctrl+B)"        active={states.bold}          icon={<Bold         className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("bold"); }} />
+      <TBtn title="Italic (Ctrl+I)"      active={states.italic}        icon={<Italic       className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("italic"); }} />
+      <TBtn title="Underline (Ctrl+U)"   active={states.underline}     icon={<Underline    className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("underline"); }} />
+      <TBtn title="Strikethrough"        active={states.strikeThrough} icon={<Strikethrough className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("strikeThrough"); }} />
+      <Sep />
+
+      {/* Lists */}
+      <TBtn title="Bullet list"   active={states.insertUnorderedList} icon={<List        className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("insertUnorderedList"); }} />
+      <TBtn title="Numbered list" active={states.insertOrderedList}   icon={<ListOrdered className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("insertOrderedList"); }} />
+      <Sep />
+
+      {/* Blockquote */}
+      <TBtn title="Block quote" icon={<Quote className="h-3.5 w-3.5" />}
+        onMouseDown={e => {
+          e.preventDefault();
+          // Toggle: queryCommandValue returns current block tag
+          const current = document.queryCommandValue("formatBlock").toLowerCase();
+          exec("formatBlock", current === "blockquote" ? "p" : "blockquote");
+        }} />
+    </div>
+  );
+}
+
+/* ── Rich Editor (contentEditable) ── */
+function RichEditor({
+  value, onChange, placeholder = "Input text", className, resetKey,
+}: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string; resetKey?: string }) {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [isEmpty, setIsEmpty] = useState(!value || value === "" || value === "<br>");
+
+  // Sync innerHTML when resetKey changes (quarter/year switch) or first mount
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = value || "";
+      setIsEmpty(!value || value === "" || value === "<br>");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
+
+  const handleInput = () => {
+    if (!editorRef.current) return;
+    const html = editorRef.current.innerHTML;
+    onChange(html);
+    setIsEmpty(!html || html === "<br>" || html === "<div><br></div>");
+  };
+
+  return (
+    <div className={cn("flex flex-col min-h-0", className)}>
+      <RichToolbar editorRef={editorRef} />
+      <div className="relative flex-1 min-h-[80px]">
+        {isEmpty && (
+          <span className="absolute inset-0 px-3 py-2 text-sm text-gray-400 pointer-events-none select-none">
+            {placeholder}
+          </span>
+        )}
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleInput}
+          style={{ minHeight: "inherit" }}
+          className="rich-editor w-full h-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white overflow-y-auto"
+        />
+      </div>
+    </div>
+  );
+}
+
+function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn("border border-gray-200 rounded-lg p-4 bg-white", className)}>{children}</div>;
+}
+function CardH({ title, subtitle, expand, onExpand }: { title: string; subtitle?: string; expand?: boolean; onExpand?: () => void }) {
+  return (
+    <div className="flex items-start justify-between mb-3">
+      <div>
+        <p className="text-xs font-bold text-gray-800 uppercase tracking-wide">{title}</p>
+        {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+      </div>
+      {expand && (
+        <button onClick={onExpand} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded p-0.5">
+          <Maximize2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+const BULLET_COLORS = ["#1a5c2e","#4caf50","#f5c518","#e53935"];
+function CritBlock({ label, value, onChange }: { label: string; value: CritCard; onChange: (v: CritCard) => void }) {
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">{label}:</span>
+        <input value={value.title} onChange={e => onChange({ ...value, title: e.target.value })}
+          placeholder="Enter title here"
+          className="flex-1 min-w-0 text-xs border-0 border-b border-dashed border-gray-300 focus:outline-none text-gray-500 placeholder-gray-400 bg-transparent overflow-hidden" />
+      </div>
+      <div className="space-y-1.5">
+        {BULLET_COLORS.map((color, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
+            <FInput value={value.bullets[i] ?? ""} onChange={v => {
+              const bullets = [...value.bullets]; bullets[i] = v; onChange({ ...value, bullets });
+            }} />
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+const DATA_TYPES = ["Number", "Percentage", "Currency"] as const;
+
+/* ── Module-level cache: category name → { dataType, symbol } ── */
+interface CatMeta { dataType: string; symbol: string | null; }
+const catMetaCache = new Map<string, CatMeta>();
+
+function populateCatCache(data: { name: string; dataType: string; currency: string | null }[]) {
+  data.forEach(c => {
+    const symbol = c.dataType === "Currency"
+      ? (CURRENCIES.find(x => x.code === c.currency)?.symbol ?? null)
+      : null;
+    catMetaCache.set(c.name, { dataType: c.dataType, symbol });
+  });
+}
+
+/* ── CategorySelect ── */
+interface CatFull { name: string; dataType: string; currency: string | null; }
+
+function CategorySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [cats, setCats] = useState<CatFull[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState("Number");
+  const [newCurrency, setNewCurrency] = useState("NONE");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function fetchCats() {
+    fetch("/api/categories")
+      .then(r => r.json())
+      .then(j => {
+        if (j.success) {
+          const full = j.data as CatFull[];
+          setCats(full);
+          populateCatCache(full);
+        }
+      })
+      .catch(() => {});
+  }
+
+  useEffect(() => { if (open) fetchCats(); }, [open]);
+
+  const catNames = cats.map(c => c.name);
+  const allCats: CatFull[] = catNames.includes(value) || !value
+    ? cats
+    : [...cats, { name: value, dataType: "Number", currency: null }];
+
+  function resetForm() { setAdding(false); setNewName(""); setNewType("Number"); setNewCurrency("NONE"); setError(""); }
+
+  async function commitNew() {
+    const trimmed = newName.trim();
+    if (!trimmed) { setError("Name is required"); return; }
+    setSaving(true); setError("");
+    try {
+      const res = await fetch("/api/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+          dataType: newType,
+          currency: newType === "Currency" ? newCurrency : null,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) { fetchCats(); onChange(trimmed); setOpen(false); resetForm(); }
+      else setError(json.error || "Failed to save");
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="relative w-full min-w-0">
+      <button onClick={() => setOpen(!open)}
+        className="w-full flex items-start justify-between border border-gray-200 rounded px-2 py-1.5 bg-white hover:bg-gray-50 gap-1">
+        <span className={cn("flex-1 text-sm whitespace-normal break-words text-left leading-snug", value ? "text-gray-700" : "text-gray-400")}>
+          {value || "Select Category"}
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); resetForm(); }} />
+          <div className="absolute top-full mt-1 left-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg w-56 py-1">
+            {/* Existing categories list */}
+            <div className="max-h-40 overflow-y-auto">
+              {allCats.length === 0 && !adding && (
+                <p className="px-3 py-2 text-xs text-gray-400">No categories yet.</p>
+              )}
+              {allCats.map(c => (
+                <button key={c.name} onClick={() => { onChange(c.name); setOpen(false); }}
+                  className={cn("w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 whitespace-normal break-words leading-snug", value === c.name && "text-blue-600 font-medium")}>
+                  {c.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Add new form */}
+            <div className="border-t border-gray-100 mt-1 pt-1">
+              {adding ? (
+                <div className="px-3 py-2 space-y-2">
+                  {/* Name */}
+                  <input
+                    ref={inputRef}
+                    autoFocus
+                    value={newName}
+                    onChange={e => { setNewName(e.target.value); setError(""); }}
+                    onKeyDown={e => { if (e.key === "Escape") resetForm(); }}
+                    placeholder="Category name *"
+                    disabled={saving}
+                    className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
+                  />
+                  {/* Data Type */}
+                  <select
+                    value={newType}
+                    onChange={e => { setNewType(e.target.value); setNewCurrency("NONE"); }}
+                    disabled={saving}
+                    className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50">
+                    {DATA_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  {/* Currency — only if Currency type */}
+                  {newType === "Currency" && (
+                    <select
+                      value={newCurrency}
+                      onChange={e => setNewCurrency(e.target.value)}
+                      disabled={saving}
+                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50">
+                      <option value="NONE">None</option>
+                      {CURRENCIES.map(c => (
+                        <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {error && <p className="text-red-500 text-xs">{error}</p>}
+                  <div className="flex gap-2">
+                    <button onClick={resetForm} disabled={saving}
+                      className="flex-1 text-xs border border-gray-200 rounded py-1 text-gray-500 hover:bg-gray-50 disabled:opacity-50">
+                      Cancel
+                    </button>
+                    <button onClick={commitNew} disabled={saving || !newName.trim()}
+                      className="flex-1 text-xs bg-gray-900 text-white rounded py-1 font-medium hover:bg-gray-800 disabled:opacity-50">
+                      {saving ? "Saving…" : "Add"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={e => { e.stopPropagation(); setAdding(true); setTimeout(() => inputRef.current?.focus(), 0); }}
+                  className="w-full text-left px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 font-medium flex items-center gap-1.5">
+                  <span className="text-base leading-none">+</span> Add new category
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ── ProjectedInput — currency prefix · percentage postfix · right-aligned number ── */
+function ProjectedInput({
+  value, onChange, categoryName, placeholder, className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  categoryName: string;
+  placeholder?: string;
+  className?: string;
+}) {
+  const meta        = catMetaCache.get(categoryName);
+  const isCurrency  = meta?.dataType === "Currency";
+  const isPct       = meta?.dataType === "Percentage";
+  const symbol      = meta?.symbol ?? null;
+  const filled      = value.trim() !== "";
+
+  return (
+    <div className={cn(
+      "flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-blue-400 overflow-hidden",
+      className,
+    )}>
+      {/* Currency prefix */}
+      {isCurrency && symbol && (
+        <span className="pl-2 pr-0.5 text-gray-500 font-semibold text-sm flex-shrink-0 select-none">
+          {symbol}
+        </span>
+      )}
+
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder ?? (isPct ? "0" : isCurrency ? "0" : "Num")}
+        className={cn(
+          "flex-1 min-w-0 w-0 bg-transparent focus:outline-none placeholder-gray-400 text-right",
+          isCurrency && symbol ? "pl-0.5 pr-1 py-1.5" : isPct ? "pl-2 pr-1 py-1.5" : "px-2 py-1.5",
+          filled ? "text-base font-semibold text-gray-800" : "text-sm text-gray-700",
+        )}
+      />
+
+      {/* Percentage postfix */}
+      {isPct && (
+        <span className="pr-2 pl-0.5 text-gray-500 font-semibold text-sm flex-shrink-0 select-none">
+          %
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Tooltip wrapper — shows full text on hover
+═══════════════════════════════════════════════ */
+function WithTooltip({ content, children, className = "relative min-w-0" }: { content: string; children: React.ReactNode; className?: string }) {
+  const [show, setShow] = useState(false);
+  const hasContent = !!(content && content.trim());
+  return (
+    <div className={className} onMouseEnter={() => hasContent && setShow(true)} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && hasContent && (
+        <div className="absolute bottom-full left-0 mb-2 z-[9999] bg-gray-900 text-white text-xs rounded-lg px-3 py-2 max-w-sm whitespace-pre-wrap shadow-2xl pointer-events-none min-w-[120px]">
+          {content}
+          <span className="absolute top-full left-4 w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-gray-900" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Owner selector ── */
+function OwnerSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const { data: users = [] } = useUsers();
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return users.filter(u =>
+      `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q)
+    );
+  }, [users, search]);
+
+  const label = useMemo(() => {
+    if (!value) return null;
+    const u = users.find(u => u.id === value);
+    return u ? `${u.firstName} ${u.lastName}` : value;
+  }, [users, value]);
+
+  return (
+    <div className="relative w-full min-w-0">
+      <button onClick={() => { setOpen(o => !o); setSearch(""); }}
+        className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 text-sm bg-white hover:bg-gray-50">
+        <span className={cn("min-w-0 flex-1 truncate", label ? "text-gray-700" : "text-gray-400")}>
+          {label || "Owner"}
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute top-full mt-1 left-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg w-52 py-1">
+            <div className="px-2 pb-1 pt-1">
+              <input
+                autoFocus
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search…"
+                className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            </div>
+            <div className="max-h-44 overflow-y-auto">
+              {filtered.length === 0 && (
+                <p className="px-3 py-2 text-xs text-gray-400">No users found.</p>
+              )}
+              {filtered.map(u => {
+                const fullName = `${u.firstName} ${u.lastName}`;
+                return (
+                  <button key={u.id} onClick={() => { onChange(u.id); setOpen(false); }}
+                    className={cn("w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50", value === u.id && "text-blue-600 font-medium")}>
+                    <span className="block truncate">{fullName}</span>
+                    <span className="block text-[10px] text-gray-400 truncate">{u.email}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Quarter Dropdown
+═══════════════════════════════════════════════ */
+function QuarterDropdown({ value, onChange }: { value: string; onChange: (q: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const QUARTERS = ["Q1","Q2","Q3","Q4"];
+  const LABELS   = ["Quarter 01","Quarter 02","Quarter 03","Quarter 04"];
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-700 border-l border-gray-300 hover:bg-gray-50 min-w-[64px] justify-between">
+        {value} <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 w-52 p-3">
+            <div className="space-y-1">
+              {QUARTERS.map((q, i) => (
+                <button key={q} onClick={() => { onChange(q); setOpen(false); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className={cn("w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors",
+                    value === q ? "border-blue-600 bg-blue-600" : "border-gray-300")}>
+                    {value === q && <div className="w-2 h-2 rounded-full bg-white" />}
+                  </div>
+                  <span className={cn("text-sm", value === q ? "text-gray-900 font-medium" : "text-gray-600")}>{LABELS[i]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Targets Modal (expand)
+═══════════════════════════════════════════════ */
+function TargetsModal({ open, onClose, rows, onChange, targetYears }: {
+  open: boolean; onClose: () => void;
+  rows: TargetRow[]; onChange: (r: TargetRow[]) => void;
+  targetYears: number;
+}) {
+  if (!open) return null;
+  const yearCols = Array.from({ length: targetYears }, (_, i) => `Year ${i + 1}`);
+  const keys = ["y1","y2","y3","y4","y5"].slice(0, targetYears) as (keyof TargetRow)[];
+  const gridStyle = { display: "grid", gap: "12px", gridTemplateColumns: `2fr 1fr ${keys.map(()=>"1fr").join(" ")}` };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
+          <div>
+            <p className="text-base font-bold text-gray-900 uppercase tracking-wide">TARGETS (3–5 YRS.)</p>
+            <p className="text-xs text-gray-500">(Where)</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="px-6 pb-6 overflow-y-auto flex-1">
+          {/* Header */}
+          <div style={gridStyle} className="text-xs font-medium text-gray-500 pb-2 border-b border-gray-200 mb-2">
+            <span>Category</span><span>Projected</span>
+            {yearCols.map(y => <span key={y}>{y}</span>)}
+          </div>
+          {/* Rows */}
+          {rows.map((row, i) => (
+            <div key={i} style={gridStyle} className="items-start py-2 border-b border-gray-100">
+              <CategorySelect value={row.category} onChange={v => {
+                const next = [...rows]; next[i] = { ...next[i], category: v }; onChange(next);
+              }} />
+              <ProjectedInput categoryName={row.category} value={row.projected} onChange={v => {
+                const next = [...rows]; next[i] = { ...next[i], projected: v }; onChange(next);
+              }} />
+              {keys.map(k => (
+                <FInput key={k} value={String(row[k] ?? "")} onChange={v => {
+                  const next = [...rows]; (next[i] as any)[k] = v; onChange(next);
+                }} placeholder="Number" />
+              ))}
+            </div>
+          ))}
+          <div className="flex justify-end mt-5">
+            <button onClick={onClose}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+              Submit
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Goals Modal (expand)
+═══════════════════════════════════════════════ */
+function GoalsModal({ open, onClose, rows, onChange }: {
+  open: boolean; onClose: () => void;
+  rows: GoalRow[]; onChange: (r: GoalRow[]) => void;
+}) {
+  if (!open) return null;
+  const qCols: (keyof GoalRow)[] = ["q1","q2","q3","q4"];
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
+          <div>
+            <p className="text-base font-bold text-gray-900 uppercase tracking-wide">GOALS (1 YR.)</p>
+            <p className="text-xs text-gray-500">(What)</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="px-6 pb-6 overflow-y-auto flex-1">
+          <div style={{ display:"grid", gap:"12px", gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr" }} className="text-xs font-medium text-gray-500 pb-2 border-b border-gray-200 mb-2">
+            <span>Category</span><span>Projected</span>
+            {["Quarter 1","Quarter 2","Quarter 3","Quarter 4"].map(q => <span key={q}>{q}</span>)}
+          </div>
+          {rows.map((row, i) => (
+            <div key={i} style={{ display:"grid", gap:"12px", gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr" }} className="items-start py-2 border-b border-gray-100">
+              <CategorySelect value={row.category} onChange={v => {
+                const next = [...rows]; next[i] = { ...next[i], category: v }; onChange(next);
+              }} />
+              <ProjectedInput categoryName={row.category} value={row.projected} onChange={v => {
+                const next = [...rows]; next[i] = { ...next[i], projected: v }; onChange(next);
+              }} />
+              {qCols.map(k => (
+                <FInput key={k} value={row[k]} onChange={v => {
+                  const next = [...rows]; next[i] = { ...next[i], [k]: v }; onChange(next);
+                }} placeholder="Number" />
+              ))}
+            </div>
+          ))}
+          <div className="flex justify-end mt-5">
+            <button onClick={onClose}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+              Submit
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   OPSP Preview Modal  —  matches Scaling Up PDF layout
+═══════════════════════════════════════════════ */
+function OPSPPreview({ open, onClose, form, users = [] }: {
+  open: boolean; onClose: () => void; form: FormData;
+  users?: { id: string; firstName: string; lastName: string }[];
+}) {
+  const pagesRef = useRef<HTMLDivElement>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadPDF = useCallback(async () => {
+    if (!pagesRef.current || downloading) return;
+    setDownloading(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+
+      // A4 landscape: 297mm × 210mm
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const pdfW = pdf.internal.pageSize.getWidth();   // 297
+      const pdfH = pdf.internal.pageSize.getHeight();  // 210
+      const margin = 6; // mm margin on all sides
+
+      const pages = pagesRef.current.querySelectorAll<HTMLElement>("[data-opsp-page]");
+
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+
+        // Temporarily force a fixed width matching A4 landscape aspect ratio
+        // A4 landscape ratio ≈ 1.414 → for clean rendering use 1120px
+        const captureW = 1120;
+        const origWidth = page.style.width;
+        const origMaxWidth = page.style.maxWidth;
+        const origPadding = page.style.paddingBottom;
+        page.style.width = `${captureW}px`;
+        page.style.maxWidth = `${captureW}px`;
+        page.style.paddingBottom = "12px";
+
+        const canvas = await html2canvas(page, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+          logging: false,
+          windowWidth: captureW,
+        });
+
+        // Restore
+        page.style.width = origWidth;
+        page.style.maxWidth = origMaxWidth;
+        page.style.paddingBottom = origPadding;
+
+        const imgData = canvas.toDataURL("image/jpeg", 0.92);
+
+        if (i > 0) pdf.addPage();
+
+        // Fill the full page width (minus margins), let height scale proportionally
+        const drawW = pdfW - margin * 2;
+        const drawH = (canvas.height / canvas.width) * drawW;
+        const drawX = margin;
+        // If content is shorter than page, center vertically; if taller, top-align
+        const drawY = drawH < (pdfH - margin * 2)
+          ? margin + ((pdfH - margin * 2) - drawH) / 2
+          : margin;
+
+        pdf.addImage(imgData, "JPEG", drawX, drawY, drawW, Math.min(drawH, pdfH - margin * 2));
+      }
+
+      pdf.save(`OPSP_${form.year}_${form.quarter}.pdf`);
+    } catch (err) {
+      console.error("PDF download failed:", err);
+    } finally {
+      setDownloading(false);
+    }
+  }, [downloading, form.year, form.quarter]);
+
+  if (!open) return null;
+
+  /* ── helpers ── */
+  const ownerName = (id: string) => {
+    if (!id) return "";
+    const u = users.find(u => u.id === id);
+    return u ? `${u.firstName} ${u.lastName}` : id;
+  };
+  const fmtDue = (d: string) => {
+    if (!d) return "";
+    try {
+      const dt = new Date(d + "T00:00");
+      return `${String(dt.getMonth() + 1).padStart(2, "0")}/${String(dt.getDate()).padStart(2, "0")}/${dt.getFullYear()}`;
+    } catch { return d; }
+  };
+  const critColors = ["bg-green-600", "bg-yellow-500", "bg-orange-500", "bg-red-600"];
+  const html = (v: string) => ({ __html: v || "" });
+
+  /* ── shared cell classes ── */
+  const td = "border border-gray-400 px-1.5 py-1 align-top text-[9px] leading-snug text-gray-800";
+  const thBold = "text-center font-bold uppercase text-[9px] bg-gray-50";
+  const sub = "font-normal italic text-gray-500 text-[7px]";
+  const innerTd = "border border-gray-300 px-1.5 py-0.5 text-[9px] text-gray-800";
+
+  /* ── reusable sub-components ── */
+  function CritBlock({ crit, label }: { crit: CritCard; label: string }) {
+    return (
+      <div className="mb-1.5">
+        <div className="text-[8px] font-bold mb-0.5">
+          {label}{crit.title ? ` ${crit.title}` : ""}
+        </div>
+        <div className="flex flex-col gap-px">
+          {crit.bullets.map((b, i) => (
+            <div key={i} className="flex items-center gap-1 text-[9px]">
+              <span className={`w-2.5 h-2.5 flex-shrink-0 ${critColors[i] ?? "bg-gray-400"}`} />
+              <span className="text-gray-700">{b || "\u00a0"}</span>
+            </div>
+          ))}
+        </div>
+        <div className="text-[7px] italic text-gray-400 mt-0.5">Between green &amp; red</div>
+      </div>
+    );
+  }
+
+  function CatProjTable({ rows, showEmpty = false }: { rows: { category: string; projected: string }[]; showEmpty?: boolean }) {
+    const visible = showEmpty ? rows : rows.filter(r => r.category);
+    if (visible.length === 0) return null;
+    return (
+      <table className="w-full border-collapse mb-1">
+        <thead>
+          <tr>
+            <th className={cn(innerTd, "font-bold text-left")}>Category</th>
+            <th className={cn(innerTd, "font-bold text-right whitespace-nowrap")} style={{ width: "80px" }}>Projected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visible.map((r, i) => (
+            <tr key={i}>
+              <td className={innerTd}>{r.category}</td>
+              <td className={cn(innerTd, "text-right whitespace-nowrap")}>{r.projected}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
+  function NumberedOwnerRows({ rows, nameResolver }: { rows: { desc: string; owner: string }[]; nameResolver: (id: string) => string }) {
+    return (
+      <table className="w-full border-collapse">
+        {rows.filter(r => r.desc).map((r, i) => (
+          <tr key={i}>
+            <td className="pr-1 text-gray-800 align-top whitespace-nowrap text-[9px]" style={{ width: "1em" }}>{i + 1}</td>
+            <td className="text-[9px] text-gray-800 py-px">{r.desc}</td>
+            <td className="text-[9px] text-gray-500 text-right whitespace-nowrap pl-1 py-px">{nameResolver(r.owner)}</td>
+          </tr>
+        ))}
+      </table>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black/70 print:bg-white print:static">
+      {/* ── App toolbar (hidden on print) ── */}
+      <div className="flex items-center justify-between px-5 py-2.5 bg-gray-900 text-white flex-shrink-0 print:hidden">
+        <span className="text-sm font-medium tracking-wide">OPSP Preview — {form.year} {form.quarter}</span>
+        <div className="flex items-center gap-2">
+          <button onClick={handleDownloadPDF} disabled={downloading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-lg border border-white/20 transition-colors disabled:opacity-50">
+            {downloading
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Download className="h-3.5 w-3.5" />}
+            {downloading ? "Generating..." : "Download PDF"}
+          </button>
+          <button onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-lg border border-white/20 transition-colors">
+            <Printer className="h-3.5 w-3.5" /> Print
+          </button>
+          <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-lg transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Scrollable pages ── */}
+      <div className="flex-1 overflow-y-auto bg-gray-400 py-8 px-4 print:overflow-visible print:bg-white print:p-0">
+        <div ref={pagesRef} className="max-w-[1120px] mx-auto space-y-10 print:space-y-0" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
+
+          {/* ═══════════════ PAGE 1 : PEOPLE ═══════════════ */}
+          <div data-opsp-page="1" className="bg-white shadow-xl print:shadow-none">
+
+            {/* Blue header bar */}
+            <div className="flex bg-[#2563EB] text-white">
+              <div className="flex-1 px-3 py-1.5 flex items-center gap-1">
+                <span className="text-[11px] font-bold tracking-wide">Strategy:</span>
+                <span className="text-[10px]">One-Page Strategic Plan (OPSP)</span>
+              </div>
+              <div className="border-l border-blue-400 px-3 py-1.5 flex items-center gap-1 text-[10px]">
+                <span className="font-semibold">Organization:</span>
+              </div>
+            </div>
+
+            <div className="px-4 pb-5 pt-2">
+              {/* Section title */}
+              <div className="text-center mb-2">
+                <span className="text-[13px] font-bold text-blue-700">People</span>
+                <span className="text-[11px] font-normal text-gray-600"> (Reputation Drivers)</span>
+              </div>
+
+              {/* ── 3-col people names ── */}
+              <table className="w-full border-collapse mb-3 text-[10px]" style={{ tableLayout: "fixed" }}>
+                <colgroup><col style={{ width: "33.3%" }} /><col style={{ width: "33.4%" }} /><col style={{ width: "33.3%" }} /></colgroup>
+                <tbody>
+                  {[0, 1, 2].map(i => (
+                    <tr key={i}>
+                      {(["employees", "customers", "shareholders"] as const).map(key => (
+                        <td key={key} className="px-2 py-0.5">
+                          <div className="flex items-baseline gap-1 min-h-[16px] pb-0.5">
+                            <span className="text-gray-800">{i + 1}.</span>
+                            <span className="text-gray-800">{(form[key] as string[])[i]}</span>
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* ── Main 4-column table ── */}
+              <table className="w-full border-collapse mb-2" style={{ tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "24%" }} />
+                  <col style={{ width: "24%" }} />
+                  <col style={{ width: "26%" }} />
+                  <col style={{ width: "26%" }} />
+                </colgroup>
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className={cn(td, thBold)}>Core Values/Beliefs<br /><span className={sub}>(Should/Shouldn&apos;t)</span></th>
+                    <th className={cn(td, thBold)}>Purpose<br /><span className={sub}>(Why)</span></th>
+                    <th className={cn(td, thBold)}>Targets (3-5 Yrs.)<br /><span className={sub}>(Where)</span></th>
+                    <th className={cn(td, thBold)}>Goals (1 Yr.)<br /><span className={sub}>(What)</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {/* ── Col 1: Core Values ── */}
+                    <td className={td}>
+                      <div className="prose-preview text-[9px] leading-snug [&_p]:mb-1.5 [&_strong]:font-bold" dangerouslySetInnerHTML={html(form.coreValues)} />
+                    </td>
+
+                    {/* ── Col 2: Purpose + Actions + Profit per X + BHAG ── */}
+                    <td className={td}>
+                      <div className="prose-preview text-[9px] leading-snug [&_p]:mb-1 mb-1" dangerouslySetInnerHTML={html(form.purpose)} />
+
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <div className="font-bold uppercase text-[8px] text-center">Actions</div>
+                        <div className="italic text-gray-500 text-[7px] text-center mb-0.5">To Live Values, Purposes, BHAG</div>
+                        {form.actions.map((v, i) => (
+                          <div key={i} className="flex gap-1 min-h-[12px] py-px">
+                            <span className="text-gray-800 flex-shrink-0">{i + 1}</span>
+                            <span className="text-gray-800 break-words min-w-0">{v}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <div className="font-bold text-[8px]">Profit per X</div>
+                        <div className="prose-preview text-[9px] [&_p]:mb-1" dangerouslySetInnerHTML={html(form.profitPerX)} />
+                      </div>
+
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <div className="font-bold uppercase text-[8px]">BHAG&reg;</div>
+                        <div className="prose-preview text-[9px] [&_p]:mb-1" dangerouslySetInnerHTML={html(form.bhag)} />
+                      </div>
+                    </td>
+
+                    {/* ── Col 3: Targets + Sandbox + Key Thrusts + Brand Promise ── */}
+                    <td className={td}>
+                      <CatProjTable rows={form.targetRows} />
+
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <div className="font-bold italic text-[8px]">Sandbox</div>
+                        <div className="prose-preview text-[9px] [&_p]:mb-1 text-gray-700" dangerouslySetInnerHTML={html(form.sandbox)} />
+                      </div>
+
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <div className="font-bold uppercase text-[8px] text-center">Key Thrusts/Capabilities</div>
+                        <div className="italic text-gray-500 text-[7px] text-center mb-0.5">3-5 Year Priorities</div>
+                        <NumberedOwnerRows rows={form.keyThrusts} nameResolver={ownerName} />
+                      </div>
+
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <div className="font-bold text-[8px]">Brand Promise KPIs</div>
+                        <div className="prose-preview text-[9px] [&_p]:mb-1 text-gray-700" dangerouslySetInnerHTML={html(form.brandPromiseKPIs)} />
+                      </div>
+
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <div className="font-bold text-[8px]">Brand Promises</div>
+                        <div className="prose-preview text-[9px] [&_p]:mb-1 text-gray-700" dangerouslySetInnerHTML={html(form.brandPromise)} />
+                      </div>
+                    </td>
+
+                    {/* ── Col 4: Goals + Key Initiatives + Critical # ── */}
+                    <td className={td}>
+                      <CatProjTable rows={form.goalRows} />
+
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <div className="font-bold uppercase text-[8px] text-center">Key Initiatives</div>
+                        <div className="italic text-gray-500 text-[7px] text-center mb-0.5">1 Year Priorities</div>
+                        <div className="prose-preview text-[9px] [&_p]:mb-1 [&_ol]:list-decimal [&_ol]:pl-3 [&_li]:py-px" dangerouslySetInnerHTML={html(form.keyInitiatives)} />
+                      </div>
+
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <CritBlock crit={form.criticalNumGoals} label="Critical #: " />
+                      </div>
+                      <div className="border-t border-gray-300 pt-1 mt-1">
+                        <CritBlock crit={form.balancingCritNumGoals} label="Balancing Critical #: " />
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* ── Strengths / Weaknesses ── */}
+              <table className="w-full border-collapse border border-gray-400 text-[9px]">
+                <tbody>
+                  <tr>
+                    <td className="w-1/2 border border-gray-400 px-2 py-2 align-top">
+                      <div className="font-bold text-[9px] mb-1">Strengths/Core Competencies</div>
+                      {form.processItems.map((v, i) => (
+                        <div key={i} className="flex gap-1 min-h-[16px] py-0.5">
+                          <span className="text-gray-800">{i + 1}.</span><span className="text-gray-800">{v}</span>
+                        </div>
+                      ))}
+                    </td>
+                    <td className="w-1/2 border border-gray-400 px-2 py-2 align-top">
+                      <div className="font-bold text-[9px] mb-1">Weaknesses:</div>
+                      {form.weaknesses.map((v, i) => (
+                        <div key={i} className="flex gap-1 min-h-[16px] py-0.5">
+                          <span className="text-gray-800">{i + 1}.</span><span className="text-gray-800">{v}</span>
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ═══════════════ PAGE 2 : PROCESS ═══════════════ */}
+          <div data-opsp-page="2" className="bg-white shadow-xl print:shadow-none print:break-before-page">
+
+            {/* Blue header bar — Your Name / Date / SCALING UP */}
+            <div className="flex bg-[#2563EB] text-white">
+              <div className="flex-1 px-3 py-1.5 flex items-center gap-2 text-[10px]">
+                <span className="font-semibold">Your Name:</span>
+                <span className="border-b border-white/60 min-w-[120px] pb-px">{form.employees?.[0] ?? ""}</span>
+              </div>
+              <div className="border-l border-blue-400 px-3 py-1.5 flex items-center gap-1 text-[10px]">
+                <span className="font-semibold">Date:</span>
+                <span>{form.year} / {form.quarter}</span>
+              </div>
+              <div className="border-l border-blue-400 px-3 py-1.5 flex items-center text-[11px] font-bold tracking-wider">
+                SCALING UP
+              </div>
+            </div>
+
+            <div className="px-4 pb-5 pt-2">
+              {/* Section title */}
+              <div className="text-center mb-2">
+                <span className="text-[13px] font-bold text-blue-700">Process</span>
+                <span className="text-[11px] font-normal text-gray-600"> (Productivity Drivers)</span>
+              </div>
+
+              {/* ── 3-col people names ── */}
+              <table className="w-full border-collapse mb-3 text-[10px]" style={{ tableLayout: "fixed" }}>
+                <colgroup><col style={{ width: "33.3%" }} /><col style={{ width: "33.4%" }} /><col style={{ width: "33.3%" }} /></colgroup>
+                <tbody>
+                  {[0, 1, 2].map(i => (
+                    <tr key={i}>
+                      {(["makeBuy", "sell", "recordKeeping"] as const).map(key => (
+                        <td key={key} className="px-2 py-0.5">
+                          <div className="flex items-baseline gap-1 min-h-[16px] pb-0.5">
+                            <span className="text-gray-800">{i + 1}.</span>
+                            <span className="text-gray-800">{(form[key] as string[])[i]}</span>
+                          </div>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* ── Main 3-column table ── */}
+              <table className="w-full border-collapse mb-2" style={{ tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "33.3%" }} />
+                  <col style={{ width: "33.4%" }} />
+                  <col style={{ width: "33.3%" }} />
+                </colgroup>
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className={cn(td, thBold)}>Actions (QTR)<br /><span className={sub}>(How)</span></th>
+                    <th className={cn(td, thBold)}>Theme<br /><span className={sub}>(QTR/ANNUAL)</span></th>
+                    <th className={cn(td, thBold)}>Your Accountability<br /><span className={sub}>(Who/When)</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {/* ── Col 1: Actions QTR ── */}
+                    <td className={td}>
+                      <CatProjTable rows={form.actionsQtr} />
+                    </td>
+
+                    {/* ── Col 2: Theme text ── */}
+                    <td className={td}>
+                      <div className="prose-preview text-[9px] [&_p]:mb-1 text-gray-800" dangerouslySetInnerHTML={html(form.theme)} />
+                    </td>
+
+                    {/* ── Col 3: Your KPIs ── */}
+                    <td className={td}>
+                      <table className="w-full border-collapse mb-1">
+                        <thead>
+                          <tr>
+                            <th className={cn(innerTd, "font-bold text-left")}>Your KPI&apos;s</th>
+                            <th className={cn(innerTd, "font-bold text-right whitespace-nowrap")} style={{ width: "70px" }}>Goal</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {form.kpiAccountability.filter(r => r.kpi).map((r, i) => (
+                            <tr key={i}>
+                              <td className={innerTd}>{r.kpi}</td>
+                              <td className={cn(innerTd, "text-right whitespace-nowrap")}>{r.goal}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* ── Second 3-column table: Rocks / Scoreboard / Quarterly Priorities ── */}
+              <table className="w-full border-collapse mb-2" style={{ tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "33.3%" }} />
+                  <col style={{ width: "33.4%" }} />
+                  <col style={{ width: "33.3%" }} />
+                </colgroup>
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className={cn(td, thBold)}>Rocks<br /><span className={sub}>1 Quarterly Priorities</span></th>
+                    <th className={cn(td, thBold)}>Scoreboard Design<br /><span className={sub}>Describe and/or sketch your design in this space</span></th>
+                    <th className={cn(td, "text-right text-[8px]")}>
+                      <div className="flex justify-between font-bold text-[8px]">
+                        <span>Your Quarterly Priorities</span><span className="italic font-normal text-gray-500">Due</span>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {/* Rocks / rich text */}
+                    <td className={td}>
+                      <div className="prose-preview text-[9px] [&_p]:mb-1" dangerouslySetInnerHTML={html(form.rocks)} />
+                    </td>
+
+                    {/* Scoreboard Design */}
+                    <td className={td}>
+                      <div className="prose-preview text-[9px] [&_p]:mb-1 text-gray-800" dangerouslySetInnerHTML={html(form.scoreboardDesign)} />
+                    </td>
+
+                    {/* Your Quarterly Priorities with due dates */}
+                    <td className={td}>
+                      {form.quarterlyPriorities.map((row, i) => (
+                        <div key={i} className="flex gap-1 min-h-[14px] py-px text-[9px]">
+                          <span className="flex-1 text-gray-800">{row.priority}</span>
+                          <span className="text-gray-600 flex-shrink-0">{fmtDue(row.dueDate)}</span>
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* ── Bottom 3-column: Critical # / Celebration+Reward / Critical # ── */}
+              <table className="w-full border-collapse mb-2" style={{ tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "33.3%" }} />
+                  <col style={{ width: "33.4%" }} />
+                  <col style={{ width: "33.3%" }} />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    {/* Left critical blocks */}
+                    <td className={cn(td, "align-top")}>
+                      <CritBlock crit={form.criticalNumProcess} label="Critical #: " />
+                      <CritBlock crit={form.balancingCritNumProcess} label="Balancing Critical #: " />
+                    </td>
+
+                    {/* Celebration + Reward */}
+                    <td className={cn(td, "align-top")}>
+                      <div className="font-bold text-[8px] mb-0.5">Celebration</div>
+                      <div className="prose-preview text-[9px] [&_p]:mb-1 text-gray-800 mb-2" dangerouslySetInnerHTML={html(form.celebration)} />
+                      <div className="font-bold text-[8px] mb-0.5 border-t border-gray-300 pt-1">Reward</div>
+                      <div className="prose-preview text-[9px] [&_p]:mb-1 text-gray-800" dangerouslySetInnerHTML={html(form.reward)} />
+                    </td>
+
+                    {/* Right critical blocks */}
+                    <td className={cn(td, "align-top")}>
+                      <CritBlock crit={form.criticalNumAcct} label="Critical #: " />
+                      <CritBlock crit={form.balancingCritNumAcct} label="Balancing Critical #: " />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* ── Trends ── */}
+              <div className="border border-gray-400 px-2 py-1.5 text-[9px]">
+                <div className="font-bold text-[9px] mb-1">Trends</div>
+                <div className="grid grid-cols-2 gap-x-8">
+                  {[0, 1].map(col => (
+                    <div key={col}>
+                      {[0, 1, 2].map(row => {
+                        const idx = row * 2 + col;
+                        return (
+                          <div key={idx} className="flex gap-1 min-h-[14px] py-px">
+                            <span className="text-gray-800">{idx + 1}.</span>
+                            <span className="text-gray-800">{form.trends[idx] ?? ""}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex justify-between text-[7px] text-gray-400 mt-1">
+                <span>To get help implementing these tools, please go to www.ScalingUp.com</span>
+                <span>v2.0/2C &mdash; &copy; 2020 by Scaling Up Coaches S4</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Main Page
+═══════════════════════════════════════════════ */
+export default function OPSPPage() {
+  const [form, setForm] = useState<FormData>(defaultForm());
+  const [saveState, setSaveState] = useState<"idle"|"saving"|"saved"|"error">("idle");
+  const [loading, setLoading] = useState(true);
+  const [targetsOpen, setTargetsOpen] = useState(false);
+  const [goalsOpen, setGoalsOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const { data: allUsers = [] } = useUsers();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const isFirstLoad = useRef(true);
+  const skipNextSave = useRef(false);
+
+  /* ── Pre-load category meta cache on mount ── */
+  useEffect(() => {
+    fetch("/api/categories")
+      .then(r => r.json())
+      .then(j => { if (j.success) populateCatCache(j.data); })
+      .catch(() => {});
+  }, []);
+
+  /* ── Load on mount ── */
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/opsp?year=${form.year}&quarter=${form.quarter}`);
+        if (res.status === 401) {
+          // No session (preview mode) — try localStorage
+          const draft = localStorage.getItem(`opsp_draft_${form.year}_${form.quarter}`);
+          if (draft) {
+            try { skipNextSave.current = true; setForm(prev => ({ ...defaultForm(), ...JSON.parse(draft) })); } catch {}
+          }
+        } else {
+          const json = await res.json();
+          if (json.data) {
+            skipNextSave.current = true;
+            setForm(prev => ({ ...defaultForm(), ...json.data, year: json.data.year ?? prev.year, quarter: json.data.quarter ?? prev.quarter }));
+          }
+        }
+      } catch {}
+      setLoading(false);
+      isFirstLoad.current = false;
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ── Reload when year/quarter changes ── */
+  const loadForPeriod = useCallback(async (year: number, quarter: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/opsp?year=${year}&quarter=${quarter}`);
+      if (res.status === 401) {
+        const draft = localStorage.getItem(`opsp_draft_${year}_${quarter}`);
+        skipNextSave.current = true;
+        setForm(prev => {
+          if (draft) { try { return { ...defaultForm(), ...JSON.parse(draft), year, quarter }; } catch {} }
+          return { ...defaultForm(), year, quarter };
+        });
+      } else {
+        const json = await res.json();
+        skipNextSave.current = true;
+        setForm(prev => json.data
+          ? { ...defaultForm(), ...json.data, year, quarter }
+          : { ...defaultForm(), year, quarter });
+      }
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  /* ── Autosave with 1.5s debounce ── */
+  const save = useCallback(async (data: FormData) => {
+    setSaveState("saving");
+    try {
+      const res = await fetch("/api/opsp", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        setSaveState("saved");
+      } else if (res.status === 401) {
+        // No session (preview mode) — save to localStorage
+        localStorage.setItem(`opsp_draft_${data.year}_${data.quarter}`, JSON.stringify(data));
+        setSaveState("saved");
+      } else {
+        setSaveState("error");
+      }
+    } catch { setSaveState("error"); }
+    setTimeout(() => setSaveState("idle"), 2000);
+  }, []);
+
+  useEffect(() => {
+    if (isFirstLoad.current) return;
+    if (skipNextSave.current) { skipNextSave.current = false; return; }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => save(form), 1500);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [form, save]);
+
+  /* ── Field helpers ── */
+  const set = <K extends keyof FormData>(key: K, value: FormData[K]) =>
+    setForm(prev => ({ ...prev, [key]: value }));
+
+  const setArr = (key: keyof FormData, idx: number, value: string) =>
+    setForm(prev => {
+      const arr = [...(prev[key] as string[])];
+      arr[idx] = value;
+      return { ...prev, [key]: arr };
+    });
+
+  /* ── Finalize ── */
+  const handleFinalize = async () => {
+    await fetch("/api/opsp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ year: form.year, quarter: form.quarter }),
+    });
+    set("status", "finalized");
+  };
+
+  /* ── Header save indicator ── */
+  const SaveBadge = () => {
+    if (saveState === "saving") return <span className="flex items-center gap-1 text-xs text-gray-400"><Loader2 className="h-3 w-3 animate-spin" />Saving…</span>;
+    if (saveState === "saved")  return <span className="text-xs text-green-600">✓ Saved</span>;
+    if (saveState === "error")  return <span className="text-xs text-red-500">Save failed</span>;
+    return null;
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* ── Sticky Header ── */}
+      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-base font-semibold text-gray-900">Create OPSP Data</h1>
+          <SaveBadge />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center border border-gray-300 rounded-lg text-sm relative">
+            <span className="px-3 py-1.5 font-medium text-gray-700 border-r border-gray-300">{form.year}</span>
+            <QuarterDropdown value={form.quarter} onChange={q => {
+              setForm(prev => ({ ...prev, quarter: q }));
+              loadForPeriod(form.year, q);
+            }} />
+          </div>
+          <button className="p-1.5 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50"><Copy className="h-4 w-4" /></button>
+          <button onClick={handleFinalize}
+            className={cn("flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm font-medium",
+              form.status === "finalized"
+                ? "border-green-500 text-green-600 bg-green-50"
+                : "border-blue-500 text-blue-600 hover:bg-blue-50")}>
+            <Check className="h-4 w-4" />
+            {form.status === "finalized" ? "Finalized" : "Finalize"}
+          </button>
+          <button onClick={() => setPreviewOpen(true)} className="p-1.5 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50" title="Preview OPSP"><Eye className="h-4 w-4" /></button>
+          <button onClick={() => save(form)}
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+            <Maximize2 className="h-3.5 w-3.5" /> Update OPSP
+          </button>
+        </div>
+      </div>
+
+      {/* ── Preview ── */}
+      <OPSPPreview open={previewOpen} onClose={() => setPreviewOpen(false)} form={form} users={allUsers} />
+
+      {/* ── Modals ── */}
+      <TargetsModal open={targetsOpen} onClose={() => setTargetsOpen(false)}
+        rows={form.targetRows} onChange={r => set("targetRows", r)} targetYears={form.targetYears} />
+      <GoalsModal open={goalsOpen} onClose={() => setGoalsOpen(false)}
+        rows={form.goalRows} onChange={r => set("goalRows", r)} />
+
+      <div className="px-6 py-6 space-y-8">
+
+        {/* ══════════════════════════ PEOPLE ══════════════════════════ */}
+        <div>
+          <div className="mb-4">
+            <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">PEOPLE</p>
+            <p className="text-xs text-gray-500">(Reputation Drivers)</p>
+          </div>
+
+          {/* 3-col people */}
+          <div className="overflow-x-auto pb-1">
+            <div className="flex gap-4 mb-4" style={{ minWidth: 720 }}>
+              {(["employees","customers","shareholders"] as const).map((key, ci) => (
+                <div key={key} className="flex-1 min-w-[220px]">
+                  <p className="text-sm font-medium text-gray-700 mb-2 capitalize">{["Employees","Customers","Shareholders"][ci]}</p>
+                  <Card className="space-y-2">
+                    {[0,1,2].map(i => <FInput key={i} value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} />)}
+                  </Card>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 4-col grid */}
+          <div className="overflow-x-auto pb-2">
+          <div className="flex gap-4 items-stretch" style={{ minWidth: 1200 }}>
+
+            {/* Core Values */}
+            <Card className="flex flex-col gap-3 flex-1 min-w-[280px]">
+              <CardH title="CORE VALUES/BELIEFS" subtitle="(Should/Shouldn't)" />
+              <div className="flex-1 flex flex-col min-h-0">
+                <RichEditor value={form.coreValues} onChange={v => set("coreValues", v)} placeholder="Enter core values..." className="flex-1 min-h-0" resetKey={`${form.year}-${form.quarter}`} />
+              </div>
+            </Card>
+
+            {/* Purpose */}
+            <Card className="flex flex-col gap-3 flex-1 min-w-[280px]">
+              <div>
+                <CardH title="PURPOSE" subtitle="(Why)" />
+                <RichEditor value={form.purpose} onChange={v => set("purpose", v)} placeholder="Enter purpose..." resetKey={`${form.year}-${form.quarter}`} />
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <div className="mb-2">
+                  <p className="text-xs font-bold text-gray-800 uppercase">Actions</p>
+                  <p className="text-xs text-gray-500">To Live Values, Purposes, BHAG</p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {form.actions.map((v, i) => (
+                    <div key={i} className="flex items-center gap-3 py-1.5">
+                      <span className="text-xs text-gray-400 w-5 flex-shrink-0">{String(i+1).padStart(2,"0")}</span>
+                      <WithTooltip content={v} className="relative flex-1 min-w-0">
+                        <FInput value={v} onChange={nv => setArr("actions", i, nv)} />
+                      </WithTooltip>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-xs font-semibold text-gray-700 mb-2">Profit per X</p>
+                <FInput value={form.profitPerX} onChange={v => set("profitPerX", v)} />
+              </div>
+              {/* BHAG — fills remaining space */}
+              <div className="border-t border-gray-100 pt-3 flex-1 flex flex-col">
+                <p className="text-xs font-semibold text-gray-700 mb-2">BHAG®</p>
+                <FTextarea value={form.bhag} onChange={v => set("bhag", v)} rows={3} className="flex-1 min-h-[60px]" />
+              </div>
+            </Card>
+
+            {/* Targets */}
+            <Card className="flex flex-col gap-3 flex-1 min-w-[300px]">
+              <div>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1">
+                      TARGETS (3–5 YRS.) <Info className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                    </p>
+                    <p className="text-xs text-gray-500">(Where)</p>
+                  </div>
+                  <button onClick={() => setTargetsOpen(true)} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded p-0.5">
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
+                  <span className="w-[55%]">Category</span><span className="flex-1 text-right">Projected</span>
+                </div>
+                {form.targetRows.slice(0,3).map((row, i) => (
+                  <div key={i} className="flex items-start gap-1.5 py-0.5">
+                    <div className="w-[55%] min-w-0 flex-shrink-0">
+                      <CategorySelect value={row.category} onChange={v => {
+                        const next = [...form.targetRows]; next[i] = { ...next[i], category: v }; set("targetRows", next);
+                      }} />
+                    </div>
+                    <ProjectedInput
+                      className="flex-1 min-w-0"
+                      categoryName={row.category}
+                      value={row.projected}
+                      onChange={v => {
+                        const next = [...form.targetRows]; next[i] = { ...next[i], projected: v }; set("targetRows", next);
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-xs font-semibold text-gray-700 mb-2">Sandbox</p>
+                <FTextarea value={form.sandbox} onChange={v => set("sandbox", v)} rows={3} />
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <div className="mb-2">
+                  <p className="text-xs font-bold text-gray-800 uppercase">Key Thrusts/Capabilities</p>
+                  <p className="text-xs text-gray-500">3–5 Year Priorities</p>
+                </div>
+                {/* Side-by-side: number | description | owner */}
+                <div className="divide-y divide-gray-100">
+                  {form.keyThrusts.map((row, i) => (
+                    <div key={i} className="flex items-center gap-1.5 py-1.5">
+                      <span className="text-xs text-gray-400 w-5 flex-shrink-0">{String(i+1).padStart(2,"0")}</span>
+                      <WithTooltip content={row.desc} className="relative flex-1 min-w-0">
+                        <FInput value={row.desc} placeholder="Capability" onChange={v => {
+                          const next = [...form.keyThrusts]; next[i] = { ...next[i], desc: v }; set("keyThrusts", next);
+                        }} />
+                      </WithTooltip>
+                      <div className="relative w-28 flex-shrink-0">
+                        <OwnerSelect value={row.owner} onChange={v => {
+                          const next = [...form.keyThrusts]; next[i] = { ...next[i], owner: v }; set("keyThrusts", next);
+                        }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Brand Promise KPI + Brand Promise — equal split */}
+              <div className="border-t border-gray-100 pt-3 flex-1 flex flex-col gap-3">
+                <div className="flex-1 flex flex-col">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">Brand Promise KPIs</p>
+                  <FTextarea value={form.brandPromiseKPIs} onChange={v => set("brandPromiseKPIs", v)} rows={3} className="flex-1 min-h-[60px]" />
+                </div>
+                <div className="flex-1 flex flex-col">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">Brand Promise</p>
+                  <FTextarea value={form.brandPromise} onChange={v => set("brandPromise", v)} rows={3} className="flex-1 min-h-[60px]" />
+                </div>
+              </div>
+            </Card>
+
+            {/* Goals */}
+            <Card className="flex flex-col gap-3 flex-1 min-w-[300px]">
+              <div>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <p className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1">
+                      GOALS (1 YR.) <Info className="h-3 w-3 text-gray-400 flex-shrink-0" />
+                    </p>
+                    <p className="text-xs text-gray-500">(What)</p>
+                  </div>
+                  <button onClick={() => setGoalsOpen(true)} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded p-0.5">
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
+                  <span className="w-[55%]">Category</span><span className="flex-1 text-right">Projected</span>
+                </div>
+                {form.goalRows.slice(0,6).map((row, i) => (
+                  <div key={i} className="flex items-start gap-1.5 py-0.5">
+                    <div className="w-[55%] min-w-0 flex-shrink-0">
+                      <CategorySelect value={row.category} onChange={v => {
+                        const next = [...form.goalRows]; next[i] = { ...next[i], category: v }; set("goalRows", next);
+                      }} />
+                    </div>
+                    <ProjectedInput
+                      className="flex-1 min-w-0"
+                      categoryName={row.category}
+                      value={row.projected}
+                      onChange={v => {
+                        const next = [...form.goalRows]; next[i] = { ...next[i], projected: v }; set("goalRows", next);
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              {/* Key Initiatives — rich text editor */}
+              <div className="border-t border-gray-100 pt-3">
+                <div className="mb-2">
+                  <p className="text-xs font-bold text-gray-800 uppercase">Key Initiatives</p>
+                  <p className="text-xs text-gray-500">1 Year Priorities</p>
+                </div>
+                <RichEditor
+                  value={form.keyInitiatives}
+                  onChange={v => set("keyInitiatives", v)}
+                  placeholder="Enter key initiatives..."
+                  className="min-h-[120px]"
+                  resetKey={`${form.year}-${form.quarter}`}
+                />
+              </div>
+              <div className="border-t border-gray-100 pt-3 space-y-3">
+                <CritBlock label="Critical #" value={form.criticalNumGoals} onChange={v => set("criticalNumGoals", v)} />
+                <CritBlock label="Balancing Critical #" value={form.balancingCritNumGoals} onChange={v => set("balancingCritNumGoals", v)} />
+              </div>
+            </Card>
+          </div>
+          </div>{/* end overflow-x-auto */}
+
+          {/* Process + Weaknesses */}
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            {(["processItems","weaknesses"] as const).map((key, ci) => (
+              <div key={key}>
+                <p className="text-sm font-medium text-gray-700 mb-2">{["Process","Weaknesses:"][ci]}</p>
+                <Card className="space-y-2">
+                  {[0,1,2].map(i => <FInput key={i} value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} />)}
+                </Card>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ══════════════════════════ PROCESS ══════════════════════════ */}
+        <div>
+          <div className="mb-4">
+            <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">PROCESS</p>
+            <p className="text-xs text-gray-500">(Productivity Drivers)</p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            {(["makeBuy","sell","recordKeeping"] as const).map((key, ci) => (
+              <div key={key}>
+                <p className="text-sm font-medium text-gray-700 mb-2">{["Make/Buy","Sell","Record Keeping"][ci]}</p>
+                <Card className="space-y-2">
+                  {[0,1,2].map(i => <FInput key={i} value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} />)}
+                </Card>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+
+            {/* Actions QTR */}
+            <Card className="space-y-4">
+              <div>
+                <CardH title="ACTIONS (QTR)" subtitle="(How)" expand />
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
+                  <span className="w-[55%]">Category</span><span className="flex-1 text-right">Projected</span>
+                </div>
+                {form.actionsQtr.map((row, i) => (
+                  <div key={i} className="flex items-start gap-1.5 py-0.5">
+                    <div className="w-[55%] min-w-0 flex-shrink-0">
+                      <CategorySelect value={row.category} onChange={v => {
+                        const next = [...form.actionsQtr]; next[i] = { ...next[i], category: v }; set("actionsQtr", next);
+                      }} />
+                    </div>
+                    <ProjectedInput
+                      className="flex-1 min-w-0"
+                      categoryName={row.category}
+                      value={row.projected}
+                      onChange={v => {
+                        const next = [...form.actionsQtr]; next[i] = { ...next[i], projected: v }; set("actionsQtr", next);
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <CardH title="ROCKS" expand />
+                <RichEditor value={form.rocks} onChange={v => set("rocks", v)} placeholder="Enter rocks..." resetKey={`${form.year}-${form.quarter}`} />
+              </div>
+              <div className="border-t border-gray-100 pt-3 space-y-3">
+                <CritBlock label="Critical #" value={form.criticalNumProcess} onChange={v => set("criticalNumProcess", v)} />
+                <CritBlock label="Balancing Critical #" value={form.balancingCritNumProcess} onChange={v => set("balancingCritNumProcess", v)} />
+              </div>
+            </Card>
+
+            {/* Theme — equal split between all 4 sections */}
+            <Card className="flex flex-col gap-0 p-0 overflow-hidden">
+              <div className="flex-1 flex flex-col p-4">
+                <p className="text-xs font-bold text-gray-800 uppercase tracking-wide mb-1">THEME</p>
+                <p className="text-xs text-gray-500 mb-2">(QTR/ANNUAL)</p>
+                <FTextarea value={form.theme} onChange={v => set("theme", v)} rows={4} className="flex-1 min-h-[60px]" />
+              </div>
+              <div className="flex-1 flex flex-col p-4 border-t border-gray-100">
+                <p className="text-xs font-bold text-gray-800 uppercase mb-0.5">Scoreboard Design</p>
+                <p className="text-xs text-gray-500 mb-2">Describe and/or sketch your design in this space</p>
+                <FTextarea value={form.scoreboardDesign} onChange={v => set("scoreboardDesign", v)} rows={3} className="flex-1 min-h-[60px]" />
+              </div>
+              <div className="flex-1 flex flex-col p-4 border-t border-gray-100">
+                <p className="text-xs font-bold text-gray-800 uppercase mb-2">Celebration</p>
+                <FTextarea value={form.celebration} onChange={v => set("celebration", v)} rows={3} className="flex-1 min-h-[60px]" />
+              </div>
+              <div className="flex-1 flex flex-col p-4 border-t border-gray-100">
+                <p className="text-xs font-bold text-gray-800 uppercase mb-2">Reward</p>
+                <FTextarea value={form.reward} onChange={v => set("reward", v)} rows={3} className="flex-1 min-h-[60px]" />
+              </div>
+            </Card>
+
+            {/* Your Accountability */}
+            <Card className="flex flex-col gap-4">
+              <div className="flex flex-col gap-4">
+                <CardH title="YOUR ACCOUNTABILITY" subtitle="(Who/When)" expand />
+
+                {/* KPI Accountability table */}
+                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="border-b border-r border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left w-12">S.no.</th>
+                        <th className="border-b border-r border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left">KPIs</th>
+                        <th className="border-b border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left">Goal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {form.kpiAccountability.map((row, i) => (
+                        <tr key={i} className="border-b border-gray-200 last:border-b-0">
+                          <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">
+                            {String(i + 1).padStart(2, "0")}
+                          </td>
+                          <td className="border-r border-gray-200 px-3 py-1.5">
+                            <input
+                              value={row.kpi}
+                              onChange={e => {
+                                const next = [...form.kpiAccountability];
+                                next[i] = { ...next[i], kpi: e.target.value };
+                                set("kpiAccountability", next);
+                              }}
+                              placeholder="Input text"
+                              className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                            />
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <input
+                              value={row.goal}
+                              onChange={e => {
+                                const next = [...form.kpiAccountability];
+                                next[i] = { ...next[i], goal: e.target.value };
+                                set("kpiAccountability", next);
+                              }}
+                              placeholder="Input text"
+                              className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Quarterly Priorities table */}
+                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="border-b border-r border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left w-12">S.no.</th>
+                        <th className="border-b border-r border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left">Quarterly Priorities</th>
+                        <th className="border-b border-gray-200 px-3 py-2.5 text-xs font-semibold text-gray-600 text-left w-32">Due</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {form.quarterlyPriorities.map((row, i) => (
+                        <tr key={i} className="border-b border-gray-200 last:border-b-0">
+                          <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">
+                            {String(i + 1).padStart(2, "0")}
+                          </td>
+                          <td className="border-r border-gray-200 px-3 py-1.5">
+                            <input
+                              value={row.priority}
+                              onChange={e => {
+                                const next = [...form.quarterlyPriorities];
+                                next[i] = { ...next[i], priority: e.target.value };
+                                set("quarterlyPriorities", next);
+                              }}
+                              placeholder="Input text"
+                              className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 w-32">
+                            <div className="relative flex items-center gap-2 cursor-pointer">
+                              <span className={`flex-1 text-xs truncate ${row.dueDate ? "text-gray-700" : "text-gray-400"}`}>
+                                {row.dueDate
+                                  ? new Date(row.dueDate + "T00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                                  : "Due Date"}
+                              </span>
+                              <Calendar className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                              <input
+                                type="date"
+                                value={row.dueDate}
+                                onChange={e => {
+                                  const next = [...form.quarterlyPriorities];
+                                  next[i] = { ...next[i], dueDate: e.target.value };
+                                  set("quarterlyPriorities", next);
+                                }}
+                                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-100 pt-3 space-y-3 mt-auto">
+                <CritBlock label="Critical #" value={form.criticalNumAcct} onChange={v => set("criticalNumAcct", v)} />
+                <CritBlock label="Balancing Critical #" value={form.balancingCritNumAcct} onChange={v => set("balancingCritNumAcct", v)} />
+              </div>
+            </Card>
+          </div>
+
+          {/* Trends */}
+          <div className="mt-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">Trends</p>
+            <div className="grid grid-cols-2 gap-4">
+              {[0,1].map(col => (
+                <Card key={col} className="space-y-2">
+                  {[0,1,2].map(row => {
+                    const idx = col * 3 + row;
+                    return <FInput key={row} value={form.trends[idx] ?? ""} onChange={v => {
+                      const next = [...form.trends]; next[idx] = v; set("trends", next);
+                    }} />;
+                  })}
+                </Card>
+              ))}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}

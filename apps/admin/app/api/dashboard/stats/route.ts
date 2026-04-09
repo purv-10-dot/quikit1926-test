@@ -1,0 +1,35 @@
+import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/api/requireAdmin";
+import { db } from "@/lib/db";
+
+export async function GET() {
+  const auth = await requireAdmin();
+  if ("error" in auth && auth.error) return auth.error;
+
+  const { tenantId } = auth;
+
+  const [memberCount, teamCount, pendingInvites, appCount] = await Promise.all([
+    db.membership.count({
+      where: { tenantId, status: "active" },
+    }),
+    db.team.count({
+      where: { tenantId },
+    }),
+    db.membership.count({
+      where: { tenantId, status: "invited" },
+    }),
+    db.app.count({
+      where: { status: "active" },
+    }),
+  ]);
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      memberCount,
+      teamCount,
+      pendingInvites,
+      appCount,
+    },
+  });
+}

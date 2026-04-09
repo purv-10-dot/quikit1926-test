@@ -1,0 +1,22 @@
+{
+  "name": "quikit",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "dev:quikscale": "turbo dev --filter=quikscale",
+    "dev:admin": "turbo dev --filter=admin",
+    "dev:super-admin": "turbo dev --filter=super-admin",
+    "db:push": "cd packages/database && npx prisma db push",
+    "db:studio": "cd packages/database && npx prisma studio",
+    "db:generate": "cd packages/database && npx prisma generate"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  }
+}

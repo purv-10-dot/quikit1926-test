@@ -1,0 +1,1038 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// APP REGISTRY (Multi-App Platform)
+// ============================================================================
+
+model App {
+  id          String   @id @default(cuid())
+  name        String                         // "QuikScale"
+  slug        String   @unique               // "quikscale"
+  description String?
+  iconUrl     String?                        // URL or path to app icon
+  baseUrl     String                         // "https://quikscale.vercel.app" or "/" for self
+  status      String   @default("active")    // active | coming_soon | disabled
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userAccess  UserAppAccess[]
+
+  @@index([slug])
+  @@index([status])
+}
+
+model UserAppAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  appId     String
+  role      String   @default("member")      // viewer | member | admin
+
+  grantedBy String?
+  grantedAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId, appId])
+  @@index([userId])
+  @@index([tenantId])
+  @@index([appId])
+}
+
+// ============================================================================
+// CORE MULTI-TENANT TABLES
+// ============================================================================
+
+model Tenant {
+  id                  String   @id @default(cuid())
+  name                String
+  slug                String   @unique
+  description         String?
+  status              String   @default("active")
+
+  fiscalYearStart     Int      @default(1)
+  quarterStartMonth   Int      @default(1)
+  weekStartDay        Int      @default(1)
+
+  logoUrl             String?
+  brandColor          String?  @default("#0066cc")
+
+  plan                String   @default("startup")
+  billingEmail        String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String?
+
+  users               Membership[]
+  userAppAccess       UserAppAccess[]
+  teams               Team[]
+  userTeams           UserTeam[]
+  kpis                KPI[]
+  priorities          Priority[]
+  wwwItems            WWWItem[]
+  categoryMasters     CategoryMaster[]
+  meetings            Meeting[]
+  meetingTemplates    MeetingTemplate[]
+  dailyHuddles        DailyHuddle[]
+  quarterSettings     QuarterSetting[]
+  opspDocuments       OPSPDocument[]
+  opppPlans           OPSPPlan[]
+  opspData            OPSPData[]
+  accountabilityFunctions AccountabilityFunction[]
+  habits              HabitAssessment[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  featureFlags        FeatureFlag[]
+  performanceReviews  PerformanceReview[]
+  talentAssessments   TalentAssessment[]
+
+  @@index([slug])
+  @@index([status])
+}
+
+model User {
+  id                  String   @id @default(cuid())
+  email               String   @unique
+  emailVerified       DateTime?
+  password            String?
+  firstName           String
+  lastName            String
+  avatar              String?
+  isSuperAdmin        Boolean  @default(false)
+
+  accounts            Account[]
+  sessions            Session[]
+  memberships         Membership[]
+  appAccess           UserAppAccess[]
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  lastSignInAt        DateTime?
+
+  userTeams           UserTeam[]
+  kpisOwned           KPI[] @relation("KPIOwner")
+  prioritiesOwned     Priority[] @relation("PriorityOwner")
+  kpiNotes            KPINote[]
+  opppPlan            OPSPPlan?
+  opspData            OPSPData[]
+  accountabilityFunctions AccountabilityFunction[]
+  reviewsGiven        PerformanceReview[] @relation("ReviewsGiven")
+  reviewsReceived     PerformanceReview[] @relation("ReviewsReceived")
+  talentAssessed      TalentAssessment[]  @relation("TalentAssessed")
+  talentAssessor      TalentAssessment[]  @relation("TalentAssessor")
+
+  @@index([email])
+}
+
+model Account {
+  id                  String   @id @default(cuid())
+  userId              String
+  type                String
+  provider            String
+  providerAccountId   String
+  access_token        String?  @db.Text
+  token_type          String?
+  scope               String?
+  createdAt           DateTime @default(now())
+
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id                  String   @id @default(cuid())
+  userId              String
+  sessionToken        String   @unique
+  expires             DateTime
+  createdAt           DateTime @default(now())
+
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Membership {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  userId              String
+  role                String
+
+  teamId              String?
+  customPermissions   String[]
+
+  invitationToken     String?  @unique
+  invitedAt           DateTime?
+  acceptedAt          DateTime?
+  status              String   @default("active")
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String?
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team                Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([teamId])
+  @@index([role])
+}
+
+// ── User ↔ Team many-to-many (a user can belong to multiple teams) ──────────
+
+model UserTeam {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  teamId    String
+  createdAt DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team      Team     @relation(fields: [teamId],  references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, teamId])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([teamId])
+}
+
+// ============================================================================
+// ORGANIZATIONAL STRUCTURE
+// ============================================================================
+
+model Team {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  name                String
+  description         String?
+  slug                String
+
+  parentTeamId        String?
+  headId              String?
+
+  color               String?  @default("#0066cc")
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String?
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members             Membership[]
+  userTeams           UserTeam[]
+  kpis                KPI[]
+  priorities          Priority[]
+  parentTeam          Team?    @relation("TeamHierarchy", fields: [parentTeamId], references: [id], onDelete: SetNull)
+  childTeams          Team[]   @relation("TeamHierarchy")
+  accountabilityFunctions AccountabilityFunction[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([parentTeamId])
+}
+
+model AccountabilityFunction {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  name                String
+  description         String?
+
+  teamId              String?
+  parentFunctionId    String?
+  assignedToUserId    String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team                Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  assignedTo          User?    @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  childFunctions      AccountabilityFunction[] @relation("FunctionHierarchy")
+  parentFunction      AccountabilityFunction? @relation("FunctionHierarchy", fields: [parentFunctionId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([assignedToUserId])
+}
+
+// ============================================================================
+// KPI MODULE
+// ============================================================================
+
+model KPI {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  name                String
+  description         String?
+  owner               String
+  teamId              String?
+
+  parentKPIId         String?
+
+  quarter             String   @default("Q1")
+  year                Int
+
+  measurementUnit     String
+  target              Float?
+  quarterlyGoal       Float?
+  qtdGoal             Float?
+  qtdAchieved         Float?
+  currentWeekValue    Float?
+  progressPercent     Float?   @default(0)
+
+  status              String   @default("active")
+  healthStatus        String   @default("on-track")
+
+  divisionType        String   @default("Cumulative")
+  weeklyTargets       Json?
+  currency            String?
+  targetScale         String?
+
+  lastNotes           String?
+  lastNotesAt         DateTime?
+  lastNotedBy         String?
+
+  deletedAt           DateTime?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String
+  updatedBy           String?
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner_user          User?    @relation("KPIOwner", fields: [owner], references: [id])
+  team                Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  parentKPI           KPI?     @relation("KPICascade", fields: [parentKPIId], references: [id], onDelete: SetNull)
+  childKPIs           KPI[]    @relation("KPICascade")
+  weeklyValues        KPIWeeklyValue[]
+  notes               KPINote[]
+  logs                KPILog[]
+
+  @@index([tenantId])
+  @@index([owner])
+  @@index([teamId])
+  @@index([parentKPIId])
+  @@index([status])
+  @@index([healthStatus])
+  @@index([quarter, year])
+}
+
+model KPIWeeklyValue {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  kpiId               String
+
+  weekNumber          Int
+  value               Float?
+  notes               String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String
+  updatedBy           String?
+
+  kpi                 KPI      @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+
+  @@unique([kpiId, weekNumber])
+  @@index([tenantId])
+  @@index([kpiId])
+}
+
+model KPINote {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  kpiId               String
+
+  content             String   @db.Text
+  authorId            String
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  kpi                 KPI      @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  author              User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([kpiId])
+  @@index([authorId])
+}
+
+model KPILog {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  kpiId               String
+
+  action              String
+  oldValue            String?  @db.Text
+  newValue            String?  @db.Text
+  changedBy           String
+  reason              String?
+
+  createdAt           DateTime @default(now())
+
+  kpi                 KPI      @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([kpiId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// PRIORITY MODULE
+// ============================================================================
+
+model Priority {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  name                String
+  description         String?
+  owner               String
+  teamId              String?
+
+  quarter             String
+  year                Int
+  startWeek           Int?
+  endWeek             Int?
+
+  overallStatus       String   @default("not-started")
+
+  notes               String?  @db.Text
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String
+  updatedBy           String?
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner_user          User?    @relation("PriorityOwner", fields: [owner], references: [id])
+  team                Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  weeklyStatuses      PriorityWeeklyStatus[]
+
+  @@index([tenantId])
+  @@index([owner])
+  @@index([teamId])
+  @@index([quarter, year])
+}
+
+model PriorityWeeklyStatus {
+  id                  String   @id @default(cuid())
+  priorityId          String
+
+  weekNumber          Int
+  status              String
+  notes               String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  updatedBy           String?
+
+  priority            Priority @relation(fields: [priorityId], references: [id], onDelete: Cascade)
+
+  @@unique([priorityId, weekNumber])
+  @@index([priorityId])
+}
+
+// ============================================================================
+// WWW MODULE (Who, What, When)
+// ============================================================================
+
+model WWWItem {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  who                 String
+  what                String
+  when                DateTime
+
+  createdInMeetingId  String?
+  linkedPriorityId    String?
+  linkedKPIId         String?
+
+  status              String   @default("not-started")
+  notes               String?  @db.Text
+  category            String?
+
+  originalDueDate     DateTime?
+  revisedDates        String[]
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String
+  updatedBy           String?
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  meeting             Meeting? @relation(fields: [createdInMeetingId], references: [id], onDelete: SetNull)
+  revisionLogs        WWWRevisionLog[]
+
+  @@index([tenantId])
+  @@index([who])
+  @@index([when])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model WWWRevisionLog {
+  id                  String   @id @default(cuid())
+  wwwItemId           String
+
+  oldDueDate          DateTime
+  newDueDate          DateTime
+  reason              String?
+  changedBy           String
+
+  createdAt           DateTime @default(now())
+
+  wwwItem             WWWItem  @relation(fields: [wwwItemId], references: [id], onDelete: Cascade)
+
+  @@index([wwwItemId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// CATEGORY MASTER
+// ============================================================================
+
+model CategoryMaster {
+  id          String   @id @default(cuid())
+  tenantId    String
+
+  name        String
+  dataType    String   // "Number" | "Percentage" | "Currency"
+  currency    String?  // e.g. "INR", "USD" — only when dataType = "Currency"
+  description String?  @db.Text
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([dataType])
+}
+
+// ============================================================================
+// MEETING MODULE
+// ============================================================================
+
+model Meeting {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  templateId          String?
+  name                String
+  cadence             String
+
+  scheduledAt         DateTime
+  duration            Int
+
+  location            String?
+  meetingLink         String?
+
+  agenda              String?  @db.Text
+  decisions           String?  @db.Text
+  blockers            String?  @db.Text
+  highlights          String?  @db.Text
+
+  startedOnTime       Boolean  @default(false)
+  endedOnTime         Boolean  @default(false)
+  formatFollowed      Boolean  @default(false)
+  followUpRate        Float?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String
+  updatedBy           String?
+  completedAt         DateTime?
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template            MeetingTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  attendees           MeetingAttendee[]
+  generatedWWWItems   WWWItem[]
+  metrics             MeetingMetric[]
+
+  @@index([tenantId])
+  @@index([cadence])
+  @@index([scheduledAt])
+}
+
+model MeetingTemplate {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  name                String
+  cadence             String
+  description         String?
+
+  sections            String[]
+  defaultAttendees    String[]
+
+  duration            Int      @default(60)
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  meetings            Meeting[]
+
+  @@index([tenantId])
+}
+
+model MeetingAttendee {
+  id                  String   @id @default(cuid())
+  meetingId           String
+  userId              String
+
+  attended            Boolean  @default(false)
+  attendedAt          DateTime?
+  leftAt              DateTime?
+
+  createdAt           DateTime @default(now())
+
+  meeting             Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([meetingId])
+}
+
+model MeetingMetric {
+  id                  String   @id @default(cuid())
+  meetingId           String
+
+  metricName          String
+  value               Float
+
+  createdAt           DateTime @default(now())
+
+  meeting             Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([meetingId])
+}
+
+// ============================================================================
+// DAILY HUDDLE
+// ============================================================================
+
+model DailyHuddle {
+  id                      String   @id @default(cuid())
+  tenantId                String
+
+  meetingDate             DateTime
+  callStatus              String   // "Scheduled" | "Held" | "Cancelled" | "Rescheduled"
+  clientName              String?
+  absentMembers           String?
+  actualStartTime         String?  // "HH:MM" 24h
+  actualEndTime           String?  // "HH:MM" 24h
+  yesterdaysAchievements  Boolean  @default(false)
+  stuckIssues             Boolean  @default(false)
+  todaysPriority          Boolean  @default(false)
+  notesKPDashboard        String?  @db.Text
+  otherNotes              String?  @db.Text
+
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  createdBy               String
+
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([meetingDate])
+}
+
+// ============================================================================
+// OPSP MODULE (One-Page Strategic Plan)
+// ============================================================================
+
+// ============================================================================
+// OPSP DATA (Create OPSP Form — all fields)
+// ============================================================================
+
+model OPSPData {
+  id            String   @id @default(cuid())
+  tenantId      String
+  userId        String
+  year          Int
+  quarter       String   // Q1 | Q2 | Q3 | Q4
+  status        String   @default("draft") // draft | finalized
+  targetYears   Int      @default(5)       // 3 or 5
+
+  // PEOPLE
+  employees     Json?    // String[3]
+  customers     Json?    // String[3]
+  shareholders  Json?    // String[3]
+
+  // CORE VALUES / PURPOSE
+  coreValues    String?  @db.Text
+  purpose       String?  @db.Text
+  actions       Json?    // String[5]
+  profitPerX    String?
+  bhag          String?  @db.Text
+
+  // TARGETS (3-5 yrs)
+  targetRows    Json?    // [{category,projected,y1,y2,y3,y4,y5}]
+  sandbox       String?  @db.Text
+  keyThrusts    Json?    // [{desc,owner}] ×5
+  brandPromiseKPIs String? @db.Text
+  brandPromise  String?  @db.Text
+
+  // GOALS (1 yr)
+  goalRows      Json?    // [{category,projected,q1,q2,q3,q4}]
+  keyInitiatives String? @db.Text
+  criticalNumGoals      Json?  // {title,bullets:String[4]}
+  balancingCritNumGoals Json?
+
+  // People-section bottom
+  processItems  Json?    // String[3]
+  weaknesses    Json?    // String[3]
+
+  // PROCESS section
+  makeBuy       Json?    // String[3]
+  sell          Json?    // String[3]
+  recordKeeping Json?    // String[3]
+
+  // ACTIONS QTR
+  actionsQtr    Json?    // [{category,projected}] ×5
+  rocks         String?  @db.Text
+  criticalNumProcess    Json?
+  balancingCritNumProcess Json?
+
+  // THEME
+  theme         String?  @db.Text
+  scoreboardDesign String? @db.Text
+  celebration   String?  @db.Text
+  reward        String?  @db.Text
+
+  // YOUR ACCOUNTABILITY
+  kpiAccountability    Json?  // [{kpi,goal}] ×5
+  quarterlyPriorities  Json?  // [{priority,dueDate}] ×5
+  criticalNumAcct      Json?
+  balancingCritNumAcct Json?
+
+  // TRENDS
+  trends        Json?    // String[6]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdBy     String
+  updatedBy     String?
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, year, quarter])
+  @@index([tenantId])
+  @@index([userId])
+  @@index([year, quarter])
+}
+
+model OPSPDocument {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  year                Int
+  versionNumber       Int      @default(1)
+  status              String   @default("draft")
+
+  sections            OPSPSection[]
+
+  approvedBy          String?
+  approvedAt          DateTime?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String
+  updatedBy           String?
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, year, versionNumber])
+  @@index([tenantId])
+  @@index([status])
+}
+
+model OPSPSection {
+  id                  String   @id @default(cuid())
+  documentId          String
+
+  sectionType         String
+  content             String   @db.Text
+  notes               String?  @db.Text
+
+  stakeholderType     String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  updatedBy           String?
+
+  document            OPSPDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([sectionType])
+}
+
+// ============================================================================
+// OPSPPlan MODULE (Personal Planning - 4x3 Grid)
+// ============================================================================
+
+model OPSPPlan {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  userId              String   @unique
+
+  relationships_long  String?  @db.Text
+  relationships_1yr   String?  @db.Text
+  relationships_90d   String?  @db.Text
+
+  achievements_long   String?  @db.Text
+  achievements_1yr    String?  @db.Text
+  achievements_90d    String?  @db.Text
+
+  rituals_long        String?  @db.Text
+  rituals_1yr         String?  @db.Text
+  rituals_90d         String?  @db.Text
+
+  wealth_long         String?  @db.Text
+  wealth_1yr          String?  @db.Text
+  wealth_90d          String?  @db.Text
+
+  tags                String[]
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+}
+
+// ============================================================================
+// ROCKEFELLER HABITS MODULE
+// ============================================================================
+
+model HabitAssessment {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  assessmentDate      DateTime
+  quarter             String
+  year                Int
+
+  habit1_vision       Int
+  habit2_meetings     Int
+  habit3_scoreboards  Int
+  habit4_accountable  Int
+  habit5_rhythm       Int
+  habit6_sticking     Int
+  habit7_cascading    Int
+  habit8_recognition  Int
+  habit9_training     Int
+  habit10_innovation  Int
+
+  averageScore        Float?
+  maturityLevel       String?
+
+  notes               String?  @db.Text
+  assessedBy          String
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([quarter, year])
+  @@index([assessmentDate])
+}
+
+// ============================================================================
+// NOTIFICATIONS & AUDIT
+// ============================================================================
+
+model Notification {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  userId              String
+
+  title               String
+  message             String   @db.Text
+  type                String
+
+  relatedEntityId     String?
+  relatedEntityType   String?
+
+  read                Boolean  @default(false)
+  readAt              DateTime?
+
+  channel             String   @default("in_app")
+
+  createdAt           DateTime @default(now())
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([read])
+}
+
+model AuditLog {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  action              String
+  entityType          String
+  entityId            String
+
+  oldValues           String?  @db.Text
+  newValues           String?  @db.Text
+  changes             String[]
+
+  actorId             String
+  actorRole           String?
+
+  reason              String?
+  ipAddress           String?
+  userAgent           String?
+
+  createdAt           DateTime @default(now())
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model FeatureFlag {
+  id                  String   @id @default(cuid())
+  tenantId            String
+
+  name                String
+  description         String?
+  key                 String
+
+  enabled             Boolean  @default(false)
+  rolloutPercent      Int?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+// ============================================================================
+// QUARTER SETTINGS
+// ============================================================================
+
+model QuarterSetting {
+  id          String   @id @default(cuid())
+  tenantId    String
+  fiscalYear  Int
+  quarter     String   // Q1 | Q2 | Q3 | Q4
+  startDate   DateTime
+  endDate     DateTime
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, fiscalYear, quarter])
+  @@index([tenantId])
+  @@index([fiscalYear])
+}
+
+// ============================================================================
+// PERFORMANCE MODULE
+// ============================================================================
+
+model PerformanceReview {
+  id              String   @id @default(cuid())
+  tenantId        String
+  reviewerId      String
+  revieweeId      String
+  quarter         String
+  year            Int
+
+  kpiScore        Float?
+  priorityScore   Float?
+  attendanceScore Float?
+  overallScore    Float?
+
+  rating          Int?
+  strengths       String?  @db.Text
+  improvements    String?  @db.Text
+  notes           String?  @db.Text
+
+  status          String   @default("draft")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reviewer        User     @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  reviewee        User     @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+
+  @@index([tenantId])
+  @@index([revieweeId])
+}
+
+// ============================================================================
+// TALENT ASSESSMENT
+// ============================================================================
+
+model TalentAssessment {
+  id               String   @id @default(cuid())
+  tenantId         String
+  userId           String
+  assessorId       String
+
+  potential        String   @default("medium")    // low | medium | high
+  flightRisk       String   @default("low")       // low | medium | high
+  successionReady  String   @default("not-ready") // not-ready | developing | ready-now
+
+  skills           String[]
+  developmentNotes String?  @db.Text
+
+  quarter          String
+  year             Int
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user             User     @relation("TalentAssessed", fields: [userId], references: [id])
+  assessor         User     @relation("TalentAssessor", fields: [assessorId], references: [id])
+
+  @@unique([tenantId, userId, quarter, year])
+  @@index([tenantId])
+  @@index([userId])
+}

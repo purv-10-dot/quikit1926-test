@@ -1,0 +1,20 @@
+{
+  "name": "@quikit/shared",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./types": "./types/index.ts",
+    "./constants": "./lib/constants.ts",
+    "./email": "./lib/email.ts"
+  },
+  "dependencies": {
+    "resend": "^2.1.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
