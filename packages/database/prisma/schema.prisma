@@ -114,6 +114,12 @@ model User {
   avatar              String?
   isSuperAdmin        Boolean  @default(false)
 
+  country             String?
+  timezone            String?
+  bio                 String?
+  themeMode           String?  @default("light")
+  accentColor         String?  @default("#0066cc")
+
   accounts            Account[]
   sessions            Session[]
   memberships         Membership[]
@@ -937,6 +943,7 @@ model FeatureFlag {
 
   enabled             Boolean  @default(false)
   rolloutPercent      Int?
+  value               String?
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt

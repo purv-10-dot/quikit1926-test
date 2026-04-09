@@ -536,7 +536,7 @@ export default function QuarterSettingsPage() {
             {activeFilters > 0 && <span className="bg-blue-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{activeFilters}</span>}
           </button>
           {filterOpen && (
-            <div className="absolute right-0 top-full mt-2 z-20 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-44">
+            <div className="absolute right-0 top-full mt-2 z-40 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-44">
               <p className="text-xs font-semibold text-gray-700 mb-2">Quarter</p>
               <div className="space-y-1">
                 <button onClick={() => setFilterQ("")}
@@ -565,7 +565,7 @@ export default function QuarterSettingsPage() {
             <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
           </button>
           {yearOpen && (
-            <div className="absolute right-0 top-full mt-2 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-44">
+            <div className="absolute right-0 top-full mt-2 z-40 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-44">
               {allYears.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-gray-400">No years yet.</p>
               ) : allYears.map(y => (
@@ -585,7 +585,7 @@ export default function QuarterSettingsPage() {
             <MoreVertical className="h-4 w-4" />
           </button>
           {moreOpen && (
-            <div className="absolute right-0 top-full mt-2 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-48">
+            <div className="absolute right-0 top-full mt-2 z-40 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-48">
               <button
                 onClick={() => { setGenerateOpen(true); setMoreOpen(false); }}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"

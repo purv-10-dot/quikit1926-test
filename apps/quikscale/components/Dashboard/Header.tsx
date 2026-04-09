@@ -64,7 +64,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           className="flex items-center gap-2.5 hover:bg-gray-50 rounded-lg px-2 py-1.5 transition-colors"
         >
           {/* Avatar */}
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+          <div className="w-8 h-8 rounded-full bg-accent-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
             {initials}
           </div>
           <div className="hidden sm:block text-left">
@@ -90,7 +90,10 @@ export function Header({ onMenuClick }: HeaderProps) {
                 <Building2 className="h-4 w-4 text-gray-400" />
                 Switch Organisation
               </button>
-              <button className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+              <button
+                onClick={() => { setDropdownOpen(false); router.push("/settings"); }}
+                className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
                 <Settings className="h-4 w-4 text-gray-400" />
                 Settings
               </button>
