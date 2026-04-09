@@ -82,3 +82,27 @@ All apps use `/login` as the login route (not `/auth/login`).
 - App-specific styles go after the import
 - Tailwind configs extend from `@quikit/ui/tailwind-config`
 - Use CSS variables (e.g., `bg-[var(--color-bg-secondary)]`) — never hardcode colors like `bg-gray-50`
+
+## Accent Color System (Theming)
+
+Use `accent-*` Tailwind classes for interactive/branded elements. These are mapped to CSS variables set by `ThemeApplier` based on the user's chosen accent color.
+
+**Use `accent-*` for (themeable):**
+- Buttons: `bg-accent-600 hover:bg-accent-700 text-white`
+- Sidebar background: `bg-accent-800`
+- Sidebar active items: `bg-white/15 text-white`
+- Header avatar: `bg-accent-600`
+- Table headers: `bg-accent-50 text-accent-700`
+- Focus rings: `ring-accent-400`
+- Active tabs/badges: `bg-accent-100 text-accent-700`
+
+**Use hardcoded Tailwind colors for (semantic — NOT themeable):**
+- KPI status cells: `bg-green-500`, `bg-red-500`, `bg-blue-500` (these represent data states)
+- Quarter badges: `bg-blue-50`, `bg-purple-50`, `bg-amber-50` (fixed per Q1/Q2/Q3/Q4)
+- Warning/error/success alerts: `bg-amber-50`, `bg-red-50`, `bg-green-50`
+- Chart colors: fixed palette
+
+**To enable theming in a new app:**
+1. Add `<ThemeApplier />` to the dashboard layout: `import { ThemeApplier } from "@quikit/ui/theme-applier"`
+2. Create `/api/settings/company` GET endpoint that returns `{ accentColor }`
+3. Use `accent-*` classes instead of `bg-blue-*` for buttons/sidebar/headers
