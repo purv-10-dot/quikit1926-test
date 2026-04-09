@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
 import { FilterProvider } from "@/lib/context/FilterContext";
 import { SessionGuard } from "@/components/session-guard";
+import { ThemeApplier } from "@quikit/ui/theme-applier";
 
 export default function DashboardLayout({
   children,
@@ -15,6 +16,7 @@ export default function DashboardLayout({
 
   return (
     <SessionGuard>
+    <ThemeApplier />
     <FilterProvider>
       <div className="flex h-screen bg-[var(--color-bg-secondary)]">
         {/* Sidebar - always visible on desktop, drawer on mobile */}
