@@ -21,6 +21,8 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search") || undefined;
     const status = searchParams.get("status") || undefined;
+    const sortBy = searchParams.get("sortBy") || "createdAt";
+    const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
 
     const where: Record<string, unknown> = { tenantId };
     if (status) where.status = status;
@@ -31,9 +33,21 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    // Allowed sort fields
+    const sortMap: Record<string, Record<string, "asc" | "desc">> = {
+      who: { who: sortOrder },
+      when: { when: sortOrder },
+      what: { what: sortOrder },
+      revisedDate: { when: sortOrder }, // revisedDates is JSON array; fall back to when
+      status: { status: sortOrder },
+      notes: { notes: sortOrder },
+      createdAt: { createdAt: sortOrder },
+    };
+    const orderBy = sortMap[sortBy] || { createdAt: sortOrder };
+
     const items = await db.wWWItem.findMany({
       where,
-      orderBy: { createdAt: "asc" },
+      orderBy: orderBy as any,
     });
 
     // Build user map for who_user

@@ -8,16 +8,21 @@ import type { WWWItem } from "@/lib/types/www";
 const wwwKeys = {
   all: ["www"] as const,
   lists: () => [...wwwKeys.all, "list"] as const,
-  list: (filters: { search?: string; status?: string }) =>
+  list: (filters: { search?: string; status?: string; sort?: string | null }) =>
     [...wwwKeys.lists(), filters] as const,
 };
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
-async function fetchWWWItems(filters: { search?: string; status?: string }): Promise<WWWItem[]> {
+async function fetchWWWItems(filters: { search?: string; status?: string; sort?: string | null }): Promise<WWWItem[]> {
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);
   if (filters.status) params.set("status", filters.status);
+  if (filters.sort) {
+    const [sortBy, sortOrder] = filters.sort.split(":");
+    if (sortBy) params.set("sortBy", sortBy);
+    if (sortOrder) params.set("sortOrder", sortOrder);
+  }
   const qs = params.toString();
   const res = await fetch(`/api/www${qs ? `?${qs}` : ""}`);
   const data = await res.json();
@@ -49,7 +54,7 @@ async function updateWWWItem(id: string, body: Partial<WWWItem>): Promise<WWWIte
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 
-export function useWWWItems(filters: { search?: string; status?: string }) {
+export function useWWWItems(filters: { search?: string; status?: string; sort?: string | null }) {
   return useQuery({
     queryKey: wwwKeys.list(filters),
     queryFn: () => fetchWWWItems(filters),

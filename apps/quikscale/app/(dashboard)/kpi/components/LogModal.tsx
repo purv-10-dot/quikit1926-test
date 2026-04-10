@@ -1,13 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import { useUpdateKPI, useUpdateWeeklyValue, useNotes, useAddNote } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
 import type { KPIRow, WeeklyValue, User } from "@/lib/types/kpi";
 import { fiscalYearLabel, weekDateLabel, ALL_WEEKS, MEASUREMENT_UNITS, ALL_QUARTERS } from "@/lib/utils/fiscal";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
+import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserPicker } from "@/components/UserPicker";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
+import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
+import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 
 interface Props { kpi: KPIRow; onClose: () => void; onRefresh: () => void; initialTab?: Tab; }
 
@@ -24,6 +29,7 @@ type EditFormState = {
   weeklyBreakdown: Record<number, string>;
   currency: string;
   targetScale: string;
+  reverseColor: boolean;
 };
 
 // ── Edit Tab ──────────────────────────────────────────────────────────────────
@@ -73,6 +79,10 @@ function EditTab({
   errors: Record<string, string>;
   users: User[];
 }) {
+  // Past-week lock for target breakdown editing
+  const { canEditPastWeek } = usePastWeekFlags();
+  const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
+
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
   }
@@ -275,6 +285,30 @@ function EditTab({
         </div>
       </div>
 
+      {/* Color Coding Mode */}
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Color Coding</label>
+        <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
+          <button type="button" onClick={() => setForm(f => ({ ...f, reverseColor: false }))}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+              !form.reverseColor ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}>
+            Higher is Better
+          </button>
+          <button type="button" onClick={() => setForm(f => ({ ...f, reverseColor: true }))}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+              form.reverseColor ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}>
+            Lower is Better
+          </button>
+        </div>
+        <p className="text-[10px] text-gray-400 mt-1">
+          {form.reverseColor
+            ? "Reverse mode — for defects, delays, errors (lower = better)"
+            : "Forward mode — for sales, revenue, customers (higher = better)"}
+        </p>
+      </div>
+
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
         <textarea value={form.description ?? ""} onChange={e => set("description", e.target.value)}
@@ -289,32 +323,39 @@ function EditTab({
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50">
-                  {ALL_WEEKS.map(w => (
-                    <th key={w} className="px-2 py-1.5 text-center text-gray-500 font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap">
-                      <div>W{w}</div>
+                  {ALL_WEEKS.map(w => {
+                    const isPast = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                    return (
+                    <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${isPast ? "text-gray-300" : "text-gray-500"}`}>
+                      <div>{isPast ? "🔒 " : ""}W{w}</div>
                       <div className="text-[9px] font-normal text-gray-400">{weekDateLabel(parseInt(form.year), form.quarter, w)}</div>
                     </th>
-                  ))}
+                  );})}
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  {ALL_WEEKS.map(w => (
+                  {ALL_WEEKS.map(w => {
+                    const isPast = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                    const isStandalone = form.divisionType === "Standalone";
+                    const isLocked = isStandalone || isPast;
+                    return (
                     <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
                       <input
                         type="number"
                         min="0"
                         value={form.weeklyBreakdown[w] ?? ""}
                         onChange={e => setWeekBreakdown(w, e.target.value)}
-                        readOnly={form.divisionType === "Standalone"}
+                        readOnly={isLocked}
+                        title={isPast ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
                         className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
-                          form.divisionType === "Standalone"
+                          isLocked
                             ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                             : "border-gray-200 focus:ring-1 focus:ring-blue-400"
                         }`}
                       />
                     </td>
-                  ))}
+                  );})}
                 </tr>
               </tbody>
             </table>
@@ -332,7 +373,7 @@ function EditTab({
 
 // ── Week Row (controlled, no autosave) ───────────────────────────────────────
 
-function WeekRow({ weekNumber, value, notes, weeklyTarget, year, quarter, onValueChange, onNotesChange }: {
+function WeekRow({ weekNumber, value, notes, weeklyTarget, year, quarter, onValueChange, onNotesChange, locked, reverse }: {
   weekNumber: number;
   value: string;
   notes: string;
@@ -341,18 +382,32 @@ function WeekRow({ weekNumber, value, notes, weeklyTarget, year, quarter, onValu
   quarter: string;
   onValueChange: (v: string) => void;
   onNotesChange: (n: string) => void;
+  locked?: boolean;
+  reverse?: boolean;
 }) {
   const numVal = parseFloat(value);
   const hasValue = value !== "" && !isNaN(numVal);
-  const barColor = hasValue
-    ? numVal === 0 ? "bg-red-400" : weeklyTarget > 0 && numVal >= weeklyTarget ? "bg-blue-400" : "bg-green-400"
-    : "bg-gray-200";
+
+  // Use the new shared color logic
+  const colorResult = hasValue
+    ? getColorByPercentage(numVal, weeklyTarget, true, reverse ?? false)
+    : null;
+  const barColor = colorResult ? colorResult.bg.replace("bg-", "bg-").replace("-600", "-500") : "bg-gray-200";
+
+  const lockTitle = locked ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined;
 
   return (
-    <div className="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-b-0">
+    <div className={`flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-b-0 ${locked ? "opacity-60" : ""}`} title={lockTitle}>
       {/* Week label + date range + mini bar */}
       <div className="w-24 flex-shrink-0 pt-1">
-        <div className="text-xs font-semibold text-gray-600">Week {weekNumber}</div>
+        <div className="text-xs font-semibold text-gray-600 flex items-center gap-1">
+          {locked && (
+            <svg className="h-2.5 w-2.5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            </svg>
+          )}
+          Week {weekNumber}
+        </div>
         <div className="text-[9px] text-gray-400 mt-0.5 leading-none">{weekDateLabel(year, quarter, weekNumber)}</div>
         <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
           {hasValue && weeklyTarget > 0 && (
@@ -365,14 +420,16 @@ function WeekRow({ weekNumber, value, notes, weeklyTarget, year, quarter, onValu
       <div className="w-24 flex-shrink-0">
         <input type="number" min="0" value={value} onChange={e => onValueChange(e.target.value)}
           placeholder="—"
-          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400 text-center" />
+          readOnly={locked}
+          className={`w-full px-2 py-1.5 text-xs border rounded-md focus:outline-none text-center ${locked ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 focus:ring-1 focus:ring-blue-400"}`} />
       </div>
       {/* Notes */}
       <div className="flex-1">
         <textarea value={notes} onChange={e => onNotesChange(e.target.value)}
           placeholder="Add a note for this week…"
           rows={2}
-          className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400 resize-y min-h-[36px]" />
+          readOnly={locked}
+          className={`w-full px-2 py-1.5 text-xs border rounded-md focus:outline-none resize-y min-h-[36px] ${locked ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 focus:ring-1 focus:ring-blue-400"}`} />
       </div>
     </div>
   );
@@ -384,22 +441,47 @@ function UpdatesTab({
   kpi,
   weeklyState,
   setWeeklyState,
+  teamWeeklyState,
+  setTeamWeeklyState,
+  currentUserId,
+  canEditAnyOwner,
 }: {
   kpi: KPIRow;
   weeklyState: Record<number, { value: string; notes: string }>;
   setWeeklyState: React.Dispatch<React.SetStateAction<Record<number, { value: string; notes: string }>>>;
+  teamWeeklyState: Record<string, Record<number, { value: string; notes: string }>>;
+  setTeamWeeklyState: React.Dispatch<React.SetStateAction<Record<string, Record<number, { value: string; notes: string }>>>>;
+  currentUserId: string;
+  canEditAnyOwner: boolean;
 }) {
   const { data: notesData, refetch: refetchNotes } = useNotes(kpi.id);
   const addNote = useAddNote(kpi.id);
   const [noteInput, setNoteInput] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
+  // Past week lock
+  const { canEditPastWeek } = usePastWeekFlags();
+  const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+
   const weeklyTarget = (kpi.qtdGoal ?? kpi.target ?? 0) / 13;
+  const isTeamKPI = kpi.kpiLevel === "team";
+  const ownerList = (kpi.owners ?? []) as Array<{ id: string; firstName: string; lastName: string }>;
+  const contribs = (kpi.ownerContributions as Record<string, number> | null | undefined) ?? {};
 
   function handleWeekChange(weekNumber: number, field: "value" | "notes", val: string) {
     setWeeklyState(s => ({
       ...s,
       [weekNumber]: { ...s[weekNumber], [field]: val },
+    }));
+  }
+
+  function handleTeamWeekChange(ownerId: string, weekNumber: number, field: "value" | "notes", val: string) {
+    setTeamWeeklyState(s => ({
+      ...s,
+      [ownerId]: {
+        ...(s[ownerId] ?? {}),
+        [weekNumber]: { ...(s[ownerId]?.[weekNumber] ?? { value: "", notes: "" }), [field]: val },
+      },
     }));
   }
 
@@ -421,26 +503,122 @@ function UpdatesTab({
             <span className="text-[10px] text-gray-400">Weekly target: {fmt(weeklyTarget)}</span>
           )}
         </div>
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-24 text-[10px] text-gray-400 font-medium">Week</div>
-          <div className="w-24 text-[10px] text-gray-400 font-medium text-center">Value</div>
-          <div className="flex-1 text-[10px] text-gray-400 font-medium">Notes</div>
-        </div>
-        <div className="border border-gray-200 rounded-lg px-3 bg-white">
-          {ALL_WEEKS.map(w => (
-            <WeekRow
-              key={w}
-              weekNumber={w}
-              value={weeklyState[w]?.value ?? ""}
-              notes={weeklyState[w]?.notes ?? ""}
-              weeklyTarget={weeklyTarget}
-              year={kpi.year}
-              quarter={kpi.quarter}
-              onValueChange={v => handleWeekChange(w, "value", v)}
-              onNotesChange={n => handleWeekChange(w, "notes", n)}
-            />
-          ))}
-        </div>
+
+        {isTeamKPI ? (
+          // ── Team KPI: per-owner rows grouped by week ──
+          // Each week is a section; per-owner rows show value + notes inputs.
+          // Cells are editable only when the actor is admin/team head OR the row belongs to the actor.
+          <div>
+            <p className="text-[10px] text-gray-500 mb-2">
+              Each owner enters their own weekly value.
+              {canEditAnyOwner
+                ? " As admin/team head, you can edit any owner's row."
+                : " You can only edit your own row. Other owners' values are shown read-only."}
+            </p>
+            <div className="space-y-3">
+              {ALL_WEEKS.map(w => {
+                const locked = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                // Aggregate total for this week (display only)
+                const total = ownerList.reduce((s, o) => {
+                  const v = parseFloat(teamWeeklyState[o.id]?.[w]?.value ?? "") || 0;
+                  return s + v;
+                }, 0);
+                return (
+                  <div key={w} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
+                      <div>
+                        <span className="text-xs font-semibold text-gray-700">Week {w}</span>
+                        <span className="text-[10px] text-gray-400 ml-2">
+                          {weekDateLabel(kpi.year, kpi.quarter, w)}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-gray-500">
+                        Total: <span className="font-semibold text-gray-700">{fmt(total)}</span>
+                        {locked && <span className="ml-2 text-amber-600">· past-week locked</span>}
+                      </span>
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                      {ownerList.map(o => {
+                        const full = `${o.firstName} ${o.lastName}`;
+                        const pct = contribs[o.id] ?? 0;
+                        const canEditThisRow = (canEditAnyOwner || o.id === currentUserId) && !locked;
+                        const rowState = teamWeeklyState[o.id]?.[w] ?? { value: "", notes: "" };
+                        const isSelf = o.id === currentUserId;
+                        return (
+                          <div key={o.id} className="flex items-center gap-2 px-3 py-1.5">
+                            <div className="w-32 flex-shrink-0">
+                              <div className="text-[11px] text-gray-700 truncate">
+                                {full}
+                                {isSelf && <span className="ml-1 text-[9px] text-blue-500">(you)</span>}
+                              </div>
+                              <div className="text-[9px] text-gray-400">{pct}%</div>
+                            </div>
+                            <input
+                              type="number"
+                              min="0"
+                              value={rowState.value}
+                              onChange={e => handleTeamWeekChange(o.id, w, "value", e.target.value)}
+                              readOnly={!canEditThisRow}
+                              placeholder="—"
+                              className={`w-24 px-2 py-1 text-xs text-center border rounded focus:outline-none ${
+                                canEditThisRow
+                                  ? "border-gray-200 focus:ring-1 focus:ring-blue-400"
+                                  : "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                              }`}
+                              title={!canEditThisRow
+                                ? (locked ? "Past week locked" : "You can only edit your own row")
+                                : undefined}
+                            />
+                            <input
+                              type="text"
+                              value={rowState.notes}
+                              onChange={e => handleTeamWeekChange(o.id, w, "notes", e.target.value)}
+                              readOnly={!canEditThisRow}
+                              placeholder="Notes (optional)"
+                              className={`flex-1 px-2 py-1 text-xs border rounded focus:outline-none ${
+                                canEditThisRow
+                                  ? "border-gray-200 focus:ring-1 focus:ring-blue-400"
+                                  : "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                              }`}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          // ── Individual KPI: existing per-week rows (unchanged) ──
+          <>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-24 text-[10px] text-gray-400 font-medium">Week</div>
+              <div className="w-24 text-[10px] text-gray-400 font-medium text-center">Value</div>
+              <div className="flex-1 text-[10px] text-gray-400 font-medium">Notes</div>
+            </div>
+            <div className="border border-gray-200 rounded-lg px-3 bg-white">
+              {ALL_WEEKS.map(w => {
+                const locked = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                return (
+                <WeekRow
+                  key={w}
+                  weekNumber={w}
+                  value={weeklyState[w]?.value ?? ""}
+                  notes={weeklyState[w]?.notes ?? ""}
+                  weeklyTarget={weeklyTarget}
+                  year={kpi.year}
+                  quarter={kpi.quarter}
+                  onValueChange={v => handleWeekChange(w, "value", v)}
+                  onNotesChange={n => handleWeekChange(w, "notes", n)}
+                  locked={locked}
+                  reverse={kpi.reverseColor ?? false}
+                />
+              );})}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Add comment */}
@@ -562,9 +740,20 @@ function StatsTab({ kpi }: { kpi: KPIRow }) {
 
 export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Props) {
   const [tab, setTab] = useState<Tab>(initialTab);
+  const { data: session } = useSession();
   const { data: users = [] } = useUsers();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+
+  const isTeamKPI = kpi.kpiLevel === "team";
+  const currentUserId = session?.user?.id ?? "";
+  const sessionRole = (session?.user as { membershipRole?: string } | undefined)?.membershipRole;
+  const isAdminActor =
+    (sessionRole && (ROLE_HIERARCHY[sessionRole] ?? 0) >= ROLE_HIERARCHY[ROLES.ADMIN]) ||
+    !!(session?.user as { isSuperAdmin?: boolean } | undefined)?.isSuperAdmin;
+  const isTeamHeadActor = isTeamKPI && !!kpi.team?.headId && kpi.team.headId === currentUserId;
+  // Shortcut used throughout: can the actor edit ANY owner's row?
+  const canEditAnyOwner = isAdminActor || isTeamHeadActor;
 
   const updateKPI = useUpdateKPI(kpi.id);
   const updateWeekly = useUpdateWeeklyValue(kpi.id);
@@ -586,7 +775,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
     return {
       name: kpi.name,
       description: kpi.description ?? "",
-      owner: kpi.owner,
+      owner: kpi.owner ?? "",
       teamId: kpi.teamId ?? "",
       parentKPIId: kpi.parentKPIId ?? "",
       quarter: kpi.quarter,
@@ -600,11 +789,13 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
       weeklyBreakdown,
       currency,
       targetScale: savedScale,
+      reverseColor: kpi.reverseColor ?? false,
     };
   });
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
-  // Weekly values state (lifted up for unified save)
+  // Weekly values state for individual KPIs — one input per week.
+  // For team KPIs this is still used to SHOW the aggregate (sum of owners) but not submitted.
   const [weeklyState, setWeeklyState] = useState<Record<number, { value: string; notes: string }>>(() => {
     const map: Record<number, { value: string; notes: string }> = {};
     for (let w = 1; w <= 13; w++) {
@@ -612,6 +803,25 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
       map[w] = { value: wv?.value?.toString() ?? "", notes: wv?.notes ?? "" };
     }
     return map;
+  });
+
+  // Team KPI: per-owner per-week weekly state — { userId: { weekNumber: { value, notes } } }
+  // Initialized from the API's weeklyOwnerValues map.
+  const [teamWeeklyState, setTeamWeeklyState] = useState<Record<string, Record<number, { value: string; notes: string }>>>(() => {
+    if (!isTeamKPI) return {};
+    const out: Record<string, Record<number, { value: string; notes: string }>> = {};
+    const ownerIds = (kpi.ownerIds ?? []) as string[];
+    const byOwner = (kpi.weeklyOwnerValues ?? {}) as Record<string, WeeklyValue[]>;
+    for (const ownerId of ownerIds) {
+      const list = byOwner[ownerId] ?? [];
+      const map: Record<number, { value: string; notes: string }> = {};
+      for (let w = 1; w <= 13; w++) {
+        const wv = list.find(x => x.weekNumber === w);
+        map[w] = { value: wv?.value?.toString() ?? "", notes: wv?.notes ?? "" };
+      }
+      out[ownerId] = map;
+    }
+    return out;
   });
 
   async function handleSave() {
@@ -647,24 +857,47 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
         divisionType: editForm.divisionType,
         currency: editForm.measurementUnit === "Currency" ? editForm.currency : null,
         targetScale: editForm.measurementUnit === "Currency" ? editForm.targetScale : null,
+        reverseColor: editForm.reverseColor,
         weeklyTargets: Object.fromEntries(
           Object.entries(editForm.weeklyBreakdown)
             .map(([k, v]) => [k, parseFloat(v) || 0])
         ),
       };
 
-      // Save KPI metadata + all weekly values in parallel
-      await Promise.all([
-        updateKPI.mutateAsync(kpiPayload),
-        ...ALL_WEEKS.map(w => {
+      // Save KPI metadata + weekly values in parallel.
+      // For team KPIs, iterate (owner, week) pairs and include userId.
+      // For individual KPIs, keep the per-week loop with no userId (server infers from kpi.owner).
+      const weeklyPromises: Promise<any>[] = [];
+      if (isTeamKPI) {
+        for (const ownerId of Object.keys(teamWeeklyState)) {
+          // Skip owners the actor can't edit (to avoid 403 responses that would roll back the batch)
+          const canEditThisOwner = canEditAnyOwner || ownerId === currentUserId;
+          if (!canEditThisOwner) continue;
+          for (const w of ALL_WEEKS) {
+            const { value, notes } = teamWeeklyState[ownerId]?.[w] ?? { value: "", notes: "" };
+            weeklyPromises.push(
+              updateWeekly.mutateAsync({
+                weekNumber: w,
+                value: value !== "" ? parseFloat(value) : null,
+                notes: notes || null,
+                userId: ownerId,
+              })
+            );
+          }
+        }
+      } else {
+        for (const w of ALL_WEEKS) {
           const { value, notes } = weeklyState[w] ?? { value: "", notes: "" };
-          return updateWeekly.mutateAsync({
-            weekNumber: w,
-            value: value !== "" ? parseFloat(value) : null,
-            notes: notes || null,
-          });
-        }),
-      ]);
+          weeklyPromises.push(
+            updateWeekly.mutateAsync({
+              weekNumber: w,
+              value: value !== "" ? parseFloat(value) : null,
+              notes: notes || null,
+            })
+          );
+        }
+      }
+      await Promise.all([updateKPI.mutateAsync(kpiPayload), ...weeklyPromises]);
 
       onRefresh();
       onClose();
@@ -737,7 +970,15 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
             <EditTab form={editForm} setForm={setEditForm} errors={editErrors} users={users} />
           )}
           {tab === "updates" && (
-            <UpdatesTab kpi={kpi} weeklyState={weeklyState} setWeeklyState={setWeeklyState} />
+            <UpdatesTab
+              kpi={kpi}
+              weeklyState={weeklyState}
+              setWeeklyState={setWeeklyState}
+              teamWeeklyState={teamWeeklyState}
+              setTeamWeeklyState={setTeamWeeklyState}
+              currentUserId={currentUserId}
+              canEditAnyOwner={canEditAnyOwner}
+            />
           )}
           {tab === "stats" && <StatsTab kpi={kpi} />}
         </div>

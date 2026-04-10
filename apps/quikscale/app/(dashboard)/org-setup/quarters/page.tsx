@@ -78,33 +78,29 @@ function EditPanel({
 }: {
   open:    boolean;
   onClose: () => void;
-  onSaved: (r: QuarterRow) => void;
+  onSaved: (rows: QuarterRow[]) => void;
   row:     QuarterRow | null;
 }) {
   const [startDate, setStartDate] = useState("");
-  const [endDate,   setEndDate]   = useState("");
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState("");
 
   useEffect(() => {
     if (open && row) {
       setStartDate(toInputDate(row.startDate));
-      setEndDate(toInputDate(row.endDate));
       setError("");
     }
   }, [open, row]);
 
   async function handleSubmit() {
     if (!startDate) { setError("Start date is required."); return; }
-    if (!endDate)   { setError("End date is required.");   return; }
-    if (startDate >= endDate) { setError("End date must be after start date."); return; }
 
     setSaving(true); setError("");
     try {
       const res  = await fetch(`/api/org/quarters/${row!.id}`, {
         method:  "PUT",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ startDate, endDate }),
+        body:    JSON.stringify({ startDate }),
       });
       const json = await res.json();
       if (!json.success) { setError(json.error || "Failed to save"); return; }
@@ -115,6 +111,18 @@ function EditPanel({
 
   if (!open || !row) return null;
 
+  const isQ1 = row.quarter === "Q1";
+
+  // Live-calculate Q1 end date (91 days from start) and FY end
+  const parsedStart = startDate ? new Date(startDate) : null;
+  const q1EndPreview = parsedStart
+    ? new Date(new Date(startDate).setDate(parsedStart.getDate() + 90)) // 91 days = start + 90
+    : null;
+  const fyEndPreview = parsedStart
+    ? new Date(new Date(startDate).setFullYear(parsedStart.getFullYear() + 1, parsedStart.getMonth(), parsedStart.getDate() - 1))
+    : null;
+  const computedEnd = q1EndPreview ? fmtDate(q1EndPreview.toISOString()) : fmtDate(row.endDate);
+
   return (
     <div className="fixed inset-0 z-[200] flex">
       <div className="flex-1 bg-black/30" onClick={onClose} />
@@ -124,9 +132,9 @@ function EditPanel({
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <QuarterBadge quarter={row.quarter} />
-              <span className="text-xs text-gray-400">FY {row.fiscalYear}–{row.fiscalYear + 1}</span>
+              <span className="text-xs text-gray-400">FY {row.fiscalYear}-{String(row.fiscalYear + 1).slice(-2)}</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Edit start and end dates for this quarter</p>
+            <p className="text-xs text-gray-500 mt-1">Change Q1 start date — all quarters will recalculate automatically</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 mt-0.5">
             <X className="h-4 w-4" />
@@ -142,36 +150,58 @@ function EditPanel({
             <input
               type="date"
               value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1.5">
-              End Date <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
+              onChange={e => { setStartDate(e.target.value); setError(""); }}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
 
-          {/* Duration preview */}
-          {startDate && endDate && startDate < endDate && (
-            <div className="rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 flex items-center gap-3">
-              <CalendarDays className="h-4 w-4 text-blue-400 flex-shrink-0" />
-              <div>
-                <p className="text-xs font-semibold text-blue-700">
-                  {fmtDate(startDate)} → {fmtDate(endDate)}
-                </p>
-                <p className="text-[10px] text-blue-500 mt-0.5">
-                  {Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (7 * 24 * 60 * 60 * 1000))} weeks
+          {/* End date read-only — live calculated */}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1.5">End Date</label>
+            <div className="w-full border border-gray-100 rounded-lg px-3 py-2 text-sm text-gray-400 bg-gray-50">
+              {computedEnd}
+              <span className="text-[10px] ml-2 text-gray-300">(auto-calculated)</span>
+            </div>
+          </div>
+
+          {/* Live quarter preview */}
+          {parsedStart && fyEndPreview && (() => {
+            const days = [91, 91, 91];
+            const names = ["Q1", "Q2", "Q3", "Q4"];
+            const preview: { name: string; start: Date; end: Date; days: number }[] = [];
+            let cursor = new Date(parsedStart.getTime());
+            for (let i = 0; i < 4; i++) {
+              const qStart = new Date(cursor.getTime());
+              const qEnd = i === 3
+                ? fyEndPreview
+                : new Date(new Date(cursor.getTime()).setDate(cursor.getDate() + 90));
+              const qDays = Math.round((qEnd.getTime() - qStart.getTime()) / 86400000) + 1;
+              preview.push({ name: names[i], start: qStart, end: qEnd, days: qDays });
+              if (i < 3) cursor = new Date(new Date(qEnd.getTime()).setDate(qEnd.getDate() + 1));
+            }
+            return (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Quarter Preview</p>
+                {preview.map(q => {
+                  const c = QUARTER_COLORS[q.name] ?? QUARTER_COLORS.Q1;
+                  return (
+                    <div key={q.name} className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg ${c.bg}`}>
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${c.text}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />{q.name}
+                      </span>
+                      <span className="text-[11px] text-gray-600 flex-1">
+                        {fmtDate(q.start.toISOString())} → {fmtDate(q.end.toISOString())}
+                      </span>
+                      <span className="text-[10px] text-gray-500 font-medium">{q.days}d</span>
+                    </div>
+                  );
+                })}
+                <p className="text-[10px] text-gray-400 mt-1">
+                  FY ends: {fmtDate(fyEndPreview.toISOString())} &middot; {Math.round((fyEndPreview.getTime() - parsedStart.getTime()) / 86400000) + 1} total days
                 </p>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {error && (
             <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
@@ -186,9 +216,9 @@ function EditPanel({
           <button
             onClick={handleSubmit}
             disabled={saving}
-            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 px-4 py-2 rounded-lg disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save Changes"}
+            {saving ? "Saving…" : "Save & Recalculate"}
           </button>
         </div>
       </div>
@@ -219,28 +249,78 @@ function ConfirmDelete({
 
 /* ─── Generate Modal ─────────────────────────────────────────────────────────── */
 function GenerateModal({
-  open, onClose, onGenerated, existingYears,
+  open, onClose, onGenerated, existingYears, futureYearAvailable,
 }: {
   open:          boolean;
   onClose:       () => void;
   onGenerated:   (rows: QuarterRow[]) => void;
   existingYears: number[];
+  futureYearAvailable: number | null;
 }) {
-  const currentFY = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;
-  const [year, setYear]       = useState(currentFY);
-  const [saving, setSaving]   = useState(false);
-  const [error,  setError]    = useState("");
-  const options = Array.from({ length: 7 }, (_, i) => currentFY - 2 + i);
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState("");
+  const [startDate, setStartDate] = useState("");
 
-  useEffect(() => { if (open) { setYear(currentFY); setError(""); } }, [open, currentFY]);
+  // Calculate the next available FY
+  const currentFY = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;
+  let nextFY = currentFY;
+  while (existingYears.includes(nextFY)) nextFY++;
+
+  // If the next available FY is in the future and no futureYearAvailable, block creation
+  const isFutureFY = nextFY > currentFY;
+  const isBlocked = isFutureFY && futureYearAvailable === null;
+
+  // Default start date: day 1 of the next FY year (April 1 for typical Indian FY)
+  const defaultStart = `${nextFY}-04-01`;
+
+  useEffect(() => {
+    if (open) { setError(""); setStartDate(defaultStart); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Derive FY year from the picked start date
+  const parsedStart = startDate ? new Date(startDate) : null;
+  const derivedFY = parsedStart ? parsedStart.getFullYear() : nextFY;
+
+  // Calculate FY end and quarter date previews
+  const fyEndPreview = parsedStart
+    ? new Date(new Date(startDate).setFullYear(parsedStart.getFullYear() + 1, parsedStart.getMonth(), parsedStart.getDate() - 1))
+    : null;
+  const totalDaysPreview = parsedStart && fyEndPreview
+    ? Math.round((fyEndPreview.getTime() - parsedStart.getTime()) / 86400000) + 1
+    : 365;
+  const isLeapPreview = totalDaysPreview === 366;
+  const q4DaysPreview = isLeapPreview ? 93 : 92;
+
+  // Generate quarter date ranges for preview
+  const quarterPreviews = parsedStart ? (() => {
+    const days = [91, 91, 91, q4DaysPreview];
+    const names = ["Q1", "Q2", "Q3", "Q4"];
+    const result: { name: string; start: Date; end: Date; days: number }[] = [];
+    let cursor = new Date(parsedStart.getTime());
+    for (let i = 0; i < 4; i++) {
+      const qStart = new Date(cursor.getTime());
+      const qEnd = new Date(cursor.getTime());
+      qEnd.setDate(qEnd.getDate() + days[i] - 1);
+      result.push({ name: names[i], start: qStart, end: qEnd, days: days[i] });
+      cursor = new Date(qEnd.getTime());
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return result;
+  })() : [];
+
+  const fyLabel = `FY ${derivedFY}-${String(derivedFY + 1).slice(-2)}`;
 
   async function handleGenerate() {
+    if (!startDate) { setError("Please select a start date."); return; }
+    if (existingYears.includes(derivedFY)) { setError(`FY ${derivedFY}-${String(derivedFY + 1).slice(-2)} already exists.`); return; }
+
     setSaving(true); setError("");
     try {
-      const res  = await fetch("/api/org/quarters", {
+      const res = await fetch("/api/org/quarters", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ fiscalYear: year }),
+        body:    JSON.stringify({ fiscalYear: derivedFY, startDate }),
       });
       const json = await res.json();
       if (!json.success) { setError(json.error || "Failed to generate"); return; }
@@ -250,36 +330,94 @@ function GenerateModal({
   }
 
   if (!open) return null;
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 w-80">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-96">
         <h3 className="text-sm font-bold text-gray-900 mb-1">Initialize Quarters</h3>
-        <p className="text-xs text-gray-500 mb-4">Generate Q1–Q4 for a fiscal year based on your org settings.</p>
+
+        {isBlocked ? (
+          <>
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 my-4">
+              <p className="text-xs font-medium text-amber-800 mb-1">All quarters are up to date</p>
+              <p className="text-[11px] text-amber-600">
+                Current FY quarters already exist. To create next year&apos;s quarters, enable &quot;Future Quarters&quot; in Settings &gt; Configurations.
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={onClose} className="px-4 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Close</button>
+            </div>
+          </>
+        ) : (
+        <>
+        <p className="text-xs text-gray-500 mb-4">
+          Set the financial year start date. Quarters will be generated using day-count distribution.
+        </p>
+
+        {/* Date picker */}
         <div className="mb-4">
-          <label className="text-xs font-medium text-gray-600 block mb-1.5">Fiscal Year</label>
-          <select
-            value={year}
-            onChange={e => { setYear(Number(e.target.value)); setError(""); }}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-          >
-            {options.map(y => (
-              <option key={y} value={y}>
-                {y}–{y + 1}{existingYears.includes(y) ? " (already exists)" : ""}
-              </option>
-            ))}
-          </select>
+          <label className="text-xs font-medium text-gray-600 block mb-1.5">FY Start Date</label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={e => { setStartDate(e.target.value); setError(""); }}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
         </div>
+
+        {/* Preview */}
+        {startDate && quarterPreviews.length > 0 && (
+          <div className="mb-4 space-y-2">
+            {/* FY summary header */}
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 border border-gray-200">
+              <div>
+                <p className="text-xs font-bold text-gray-800">{fyLabel}</p>
+                <p className="text-[10px] text-gray-500 mt-0.5">
+                  {fmtDate(startDate)} → {fyEndPreview ? fmtDate(fyEndPreview.toISOString()) : "—"}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-semibold text-gray-700">{totalDaysPreview} days</p>
+                {isLeapPreview && <p className="text-[10px] text-amber-600 font-medium">Leap year</p>}
+              </div>
+            </div>
+
+            {/* Quarter breakdown */}
+            {quarterPreviews.map((q) => {
+              const colors = QUARTER_COLORS[q.name] ?? QUARTER_COLORS.Q1;
+              return (
+                <div key={q.name} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${colors.bg} border-opacity-50`} style={{ borderColor: "transparent" }}>
+                  <div className="flex-shrink-0">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${colors.bg} ${colors.text}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${colors.dot}`} />
+                      {q.name}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium text-gray-700">
+                      {fmtDate(q.start.toISOString())} → {fmtDate(q.end.toISOString())}
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-gray-500 font-medium flex-shrink-0">{q.days} days</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {error && <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{error}</p>}
         <div className="flex items-center justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
           <button
             onClick={handleGenerate}
-            disabled={saving || existingYears.includes(year)}
-            className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
+            disabled={saving || !startDate}
+            className="px-4 py-2 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg disabled:opacity-50"
           >
-            {saving ? "Generating…" : "Generate"}
+            {saving ? "Generating…" : "Generate Quarters"}
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
@@ -301,6 +439,7 @@ export default function QuarterSettingsPage() {
   const [panelOpen,     setPanelOpen]     = useState(false);
   const [deleteRow,     setDeleteRow]     = useState<QuarterRow | null>(null);
   const [generateOpen,  setGenerateOpen]  = useState(false);
+  const [futureYearAvailable, setFutureYearAvailable] = useState<number | null>(null);
 
   const filterRef = useRef<HTMLDivElement>(null);
   const yearRef   = useRef<HTMLDivElement>(null);
@@ -318,6 +457,7 @@ export default function QuarterSettingsPage() {
       if (json.success) {
         setRows(json.data);
         setAllYears(json.availableYears ?? []);
+        setFutureYearAvailable(json.futureYearAvailable ?? null);
       }
     } finally {
       setLoading(false);
@@ -332,6 +472,7 @@ export default function QuarterSettingsPage() {
       if (json.success) {
         const years: number[] = json.availableYears ?? [];
         setAllYears(years);
+        setFutureYearAvailable(json.futureYearAvailable ?? null);
         const fy = years.includes(defaultFY) ? defaultFY : (years[0] ?? defaultFY);
         setSelectedYear(fy);
         const filtered = (json.data as QuarterRow[]).filter(r => r.fiscalYear === fy);
@@ -376,8 +517,8 @@ export default function QuarterSettingsPage() {
     setSelectedIds(selectedIds.size === filtered.length && filtered.length > 0 ? new Set() : new Set(filtered.map(r => r.id)));
   }
 
-  function handleSaved(updated: QuarterRow) {
-    setRows(prev => prev.map(r => r.id === updated.id ? updated : r));
+  function handleSaved(updated: QuarterRow[]) {
+    setRows(updated);
   }
 
   function handleGenerated(newRows: QuarterRow[]) {
@@ -403,7 +544,7 @@ export default function QuarterSettingsPage() {
   }
 
   const currentQW  = getCurrentQuarterAndWeek(rows);
-  const fyLabel    = selectedYear ? `${selectedYear} - ${selectedYear + 1}` : "—";
+  const fyLabel    = selectedYear ? `FY ${selectedYear}-${String(selectedYear + 1).slice(-2)}` : "—";
   const activeFilters = (filterQ ? 1 : 0);
 
   /* ── Table view ── */
@@ -440,11 +581,13 @@ export default function QuarterSettingsPage() {
                 </div>
               </td>
             </tr>
-          ) : filtered.map((row, idx) => (
+          ) : filtered.map((row, idx) => {
+            const isQ1 = row.quarter === "Q1";
+            return (
             <tr
               key={row.id}
-              className={`group hover:bg-blue-50/30 transition-colors cursor-pointer ${selectedIds.has(row.id) ? "bg-blue-50/60" : ""}`}
-              onClick={() => { setEditRow(row); setPanelOpen(true); }}
+              className={`group transition-colors ${isQ1 ? "hover:bg-blue-50/30 cursor-pointer" : ""} ${selectedIds.has(row.id) ? "bg-blue-50/60" : ""}`}
+              onClick={() => { if (isQ1) { setEditRow(row); setPanelOpen(true); } }}
             >
               <td className="px-2 py-2 border-b border-r border-gray-100" onClick={e => e.stopPropagation()}>
                 <input
@@ -460,12 +603,14 @@ export default function QuarterSettingsPage() {
               <td className="px-3 py-2 border-b border-r border-gray-100 text-xs text-gray-700">{fmtDate(row.endDate)}</td>
               <td className="px-3 py-2 border-b border-r border-gray-100" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {isQ1 && (
                   <button
                     onClick={() => { setEditRow(row); setPanelOpen(true); }}
                     className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
+                  )}
                   <button
                     onClick={() => setDeleteRow(row)}
                     className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50"
@@ -475,7 +620,7 @@ export default function QuarterSettingsPage() {
                 </div>
               </td>
             </tr>
-          ))}
+          );})}
         </tbody>
       </table>
     </div>
@@ -571,7 +716,7 @@ export default function QuarterSettingsPage() {
               ) : allYears.map(y => (
                 <button key={y} onClick={() => handleYearChange(y)}
                   className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${selectedYear === y ? "text-blue-600 font-semibold bg-blue-50" : "text-gray-700"}`}>
-                  {y} – {y + 1}
+                  FY {y}-{String(y + 1).slice(-2)}
                 </button>
               ))}
             </div>
@@ -622,6 +767,7 @@ export default function QuarterSettingsPage() {
         onClose={() => setGenerateOpen(false)}
         onGenerated={handleGenerated}
         existingYears={allYears}
+        futureYearAvailable={futureYearAvailable}
       />
     </div>
   );

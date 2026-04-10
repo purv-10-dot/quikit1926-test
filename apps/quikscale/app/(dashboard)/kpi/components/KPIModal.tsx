@@ -1,17 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCreateKPI, useUpdateKPI } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
+import { useTeams } from "@/lib/hooks/useTeams";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
 import { UserPicker } from "@/components/UserPicker";
+import { UserMultiPicker } from "@/components/UserMultiPicker";
+import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
+import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { Lock } from "lucide-react";
 
 interface Props {
   mode: "create" | "edit";
   kpi?: KPI;
+  /** "individual" (default) shows the owner picker; "team" hides it and requires teamId. */
+  scope?: "individual" | "team";
+  /** Required when scope === "team" and mode === "create". */
+  teamId?: string;
   defaultYear?: number;
   defaultQuarter?: string;
   onClose: () => void;
@@ -60,7 +69,11 @@ function buildBreakdown(
 
 /* ── Component ─────────────────────────────────────────────────────────── */
 
-export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSuccess }: Props) {
+export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter, onClose, onSuccess }: Props) {
+  // Determine whether this modal instance operates in team-level scope.
+  // Priority: explicit `scope` prop > existing kpi.kpiLevel (in edit mode) > default "individual"
+  const isTeamScope = scope === "team" || kpi?.kpiLevel === "team";
+
   const [form, setForm] = useState(() => {
     const measurementUnit = kpi?.measurementUnit ?? "Number";
     const currency = kpi?.currency ?? "USD";
@@ -76,11 +89,32 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
       ? Object.fromEntries(ALL_WEEKS.map(w => [w, String(savedWeeklyTargets[String(w)] ?? "")]))
       : buildBreakdown(divisionType, storedTarget, measurementUnit);
 
+    // Restore saved per-owner weekly targets (team KPI only).
+    // Stored shape: { userId: { "1": value, "2": value, ... } }
+    const savedOwnerTargets = kpi?.weeklyOwnerTargets as Record<string, Record<string, number>> | null | undefined;
+    const weeklyOwnerBreakdown: Record<string, Record<number, string>> = {};
+    if (savedOwnerTargets) {
+      for (const [ownerId, weekMap] of Object.entries(savedOwnerTargets)) {
+        weeklyOwnerBreakdown[ownerId] = Object.fromEntries(
+          ALL_WEEKS.map(w => [w, String(weekMap[String(w)] ?? "")])
+        ) as Record<number, string>;
+      }
+    }
+
     return {
       name: kpi?.name ?? "",
       description: kpi?.description ?? "",
       owner: kpi?.owner ?? "",
-      teamId: kpi?.teamId ?? "",
+      // Team KPI multi-owner state
+      ownerIds: (kpi?.ownerIds ?? []) as string[],
+      // Contributions stored as string (for live editing) — parsed to number on save
+      ownerContributions: Object.fromEntries(
+        Object.entries((kpi?.ownerContributions ?? {}) as Record<string, number>).map(
+          ([id, pct]) => [id, String(pct)]
+        )
+      ) as Record<string, string>,
+      weeklyOwnerBreakdown,
+      teamId: kpi?.teamId ?? teamId ?? "",
       quarter: kpi?.quarter ?? defaultQuarter ?? "Q1",
       year: String(kpi?.year ?? defaultYear ?? CURRENT_YEAR),
       measurementUnit,
@@ -89,13 +123,303 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
       currency,
       targetScale: savedScale,
       divisionType,
+      reverseColor: kpi?.reverseColor ?? false,
       weeklyBreakdown,
     };
   });
 
-  const { data: users = [] } = useUsers();
+  // In team scope, filter users to members of the selected team
+  const { data: allUsers = [] } = useUsers();
+  const { data: teamMembers = [] } = useUsers(isTeamScope ? (form.teamId || undefined) : undefined);
+  const users = isTeamScope ? teamMembers : allUsers;
+  const { data: teams = [] } = useTeams();
+  const currentTeam = teams.find(t => t.id === form.teamId);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  // ── Owner contribution + per-owner breakdown helpers ──
+
+  /**
+   * Compute the default per-owner weekly breakdown for a single owner given
+   * the aggregate target, contribution %, division type, and measurement unit.
+   * Returns a map { weekNumber: stringValue }.
+   */
+  function buildOwnerBreakdown(
+    ownerContributionPct: number,
+    actualTargetNum: number,
+    division: "Cumulative" | "Standalone",
+    unit: string,
+  ): Record<number, string> {
+    const ownerSubTarget = actualTargetNum * (ownerContributionPct / 100);
+    if (ownerSubTarget <= 0) {
+      return Object.fromEntries(ALL_WEEKS.map(w => [w, ""])) as Record<number, string>;
+    }
+    if (division === "Standalone") {
+      const val = unit === "Number" ? String(Math.round(ownerSubTarget)) : ownerSubTarget.toFixed(2);
+      return Object.fromEntries(ALL_WEEKS.map(w => [w, val])) as Record<number, string>;
+    }
+    // Cumulative split
+    const map: Record<number, string> = {};
+    if (unit === "Number") {
+      const base = Math.floor(ownerSubTarget / 13);
+      const extra = Math.round(ownerSubTarget - base * 13);
+      ALL_WEEKS.forEach(w => {
+        map[w] = String(13 - w < extra ? base + 1 : base);
+      });
+    } else {
+      const base = parseFloat((ownerSubTarget / 13).toFixed(2));
+      ALL_WEEKS.forEach(w => { map[w] = base.toFixed(2); });
+      const diff = parseFloat((ownerSubTarget - base * 13).toFixed(2));
+      map[13] = (base + diff).toFixed(2);
+    }
+    return map;
+  }
+
+  function setOwnerIds(ids: string[]) {
+    setForm(f => {
+      // Auto-distribute contributions equally whenever the owner list changes.
+      // This gives the user a valid (sum=100) starting split — they can override individual
+      // percentages after via setContribution, which also re-seeds the breakdown.
+      // In edit mode the modal's initial state reads kpi.ownerContributions directly without
+      // calling this setter, so existing saved contributions are preserved on open.
+      let newContribs: Record<string, string>;
+      if (ids.length === 0) {
+        newContribs = {};
+      } else {
+        const base = Math.floor((100 / ids.length) * 100) / 100; // two-decimal precision
+        const last = parseFloat((100 - base * (ids.length - 1)).toFixed(2));
+        newContribs = {};
+        ids.forEach((id, i) => {
+          newContribs[id] = (i === ids.length - 1 ? last : base).toString();
+        });
+      }
+      // Re-seed the per-owner breakdown from formula with the new contribution split.
+      // When target > 0, cells auto-populate. When target is empty, cells stay empty until the user enters it.
+      const next = { ...f, ownerIds: ids, ownerContributions: newContribs };
+      next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
+    });
+    setErrors(e => { const n = { ...e }; delete n.ownerIds; delete n.ownerContributions; return n; });
+  }
+
+  /** Fill in per-owner cells for any owners who don't yet have a breakdown. */
+  function seedMissingOwnerBreakdowns() {
+    setForm(f => {
+      const newBreakdown = { ...f.weeklyOwnerBreakdown };
+      const tNum = (() => {
+        const n = parseFloat(f.target) || 0;
+        if (f.measurementUnit !== "Currency") return n;
+        return n * getMultiplier(f.currency, f.targetScale);
+      })();
+      for (const id of f.ownerIds) {
+        const existing = newBreakdown[id];
+        if (!existing || Object.keys(existing).length === 0) {
+          const pct = parseFloat(f.ownerContributions[id]) || 0;
+          newBreakdown[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit);
+        }
+      }
+      return { ...f, weeklyOwnerBreakdown: newBreakdown };
+    });
+  }
+
+  /** Recompute all per-owner cells from scratch (destructive — overrides manual edits). */
+  function resetOwnerBreakdownsFromFormula() {
+    setForm(f => {
+      const newBreakdown: Record<string, Record<number, string>> = {};
+      const tNum = (() => {
+        const n = parseFloat(f.target) || 0;
+        if (f.measurementUnit !== "Currency") return n;
+        return n * getMultiplier(f.currency, f.targetScale);
+      })();
+      for (const id of f.ownerIds) {
+        const pct = parseFloat(f.ownerContributions[id]) || 0;
+        newBreakdown[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit);
+      }
+      return { ...f, weeklyOwnerBreakdown: newBreakdown };
+    });
+  }
+
+  /** Update a single (ownerId, week) cell in the per-owner breakdown. */
+  /**
+   * Redistribute `remaining` evenly across weeks (fromWeek+1) .. 13 in the given owner row,
+   * preserving cells 1..fromWeek. Integer rounding for Number unit (base + extra piled on
+   * rightmost weeks); 2-decimal split with diff on W13 for other units.
+   *
+   * Identical math to Individual KPI's setWeekBreakdown redistribution — ensures each
+   * owner's row continues to sum to their sub-target after an edit.
+   */
+  function redistributeOwnerRemainder(
+    ownerRow: Record<number, string>,
+    fromWeek: number,
+    ownerSubTarget: number,
+    unit: string,
+  ): Record<number, string> {
+    const row = { ...ownerRow };
+    // Sum the left side (preserved cells 1..fromWeek including the edit)
+    let leftSum = 0;
+    for (let i = 1; i <= fromWeek; i++) leftSum += parseFloat(String(row[i])) || 0;
+
+    const remaining = ownerSubTarget - leftSum;
+    const rightCount = 13 - fromWeek;
+    if (rightCount <= 0) return row; // nothing to redistribute (editing W13)
+
+    if (unit === "Number") {
+      const base = Math.floor(remaining / rightCount);
+      const extra = Math.round(remaining - base * rightCount);
+      for (let i = fromWeek + 1; i <= 13; i++) {
+        row[i] = String(13 - i < extra ? base + 1 : base);
+      }
+    } else {
+      const base = parseFloat((remaining / rightCount).toFixed(2));
+      const diff = parseFloat((remaining - base * rightCount).toFixed(2));
+      for (let i = fromWeek + 1; i <= 13; i++) row[i] = base.toFixed(2);
+      row[13] = (base + diff).toFixed(2);
+    }
+    return row;
+  }
+
+  /**
+   * Edit a single (ownerId, week) cell. In Cumulative mode this redistributes the owner's
+   * remaining sub-target across their later weeks — only this owner's row is affected;
+   * other owners are untouched. In Standalone mode just updates that cell.
+   */
+  function setOwnerWeekCell(ownerId: string, weekNumber: number, val: string) {
+    setForm(f => {
+      let ownerRow = { ...(f.weeklyOwnerBreakdown[ownerId] ?? {}), [weekNumber]: val };
+
+      if (f.divisionType === "Cumulative") {
+        const totalTargetNum = actualNum(f);
+        const pct = parseFloat(f.ownerContributions[ownerId]) || 0;
+        const ownerSubTarget = totalTargetNum * (pct / 100);
+        ownerRow = redistributeOwnerRemainder(ownerRow, weekNumber, ownerSubTarget, f.measurementUnit);
+      }
+
+      return {
+        ...f,
+        weeklyOwnerBreakdown: { ...f.weeklyOwnerBreakdown, [ownerId]: ownerRow },
+      };
+    });
+  }
+
+  /**
+   * Edit the total row for a week. The new total is split across owners by their
+   * contribution %. Each owner then redistributes their remaining sub-target across
+   * their own later weeks (Cumulative). Per-owner sub-targets are preserved.
+   * In Standalone mode each owner's single cell is set and no redistribution happens.
+   */
+  function setTeamTotalWeekCell(weekNumber: number, val: string) {
+    setForm(f => {
+      const totalNum = parseFloat(val) || 0;
+      const totalTargetNum = actualNum(f);
+      const isWhole = f.measurementUnit === "Number";
+      const newOwnerBreakdown: Record<string, Record<number, string>> = { ...f.weeklyOwnerBreakdown };
+
+      for (const id of f.ownerIds) {
+        const pct = parseFloat(f.ownerContributions[id]) || 0;
+        const ownerCellVal = totalNum * (pct / 100);
+        const formattedVal = isWhole ? String(Math.round(ownerCellVal)) : ownerCellVal.toFixed(2);
+        let ownerRow = { ...(newOwnerBreakdown[id] ?? {}), [weekNumber]: formattedVal };
+
+        if (f.divisionType === "Cumulative") {
+          const ownerSubTarget = totalTargetNum * (pct / 100);
+          ownerRow = redistributeOwnerRemainder(ownerRow, weekNumber, ownerSubTarget, f.measurementUnit);
+        }
+
+        newOwnerBreakdown[id] = ownerRow;
+      }
+
+      return { ...f, weeklyOwnerBreakdown: newOwnerBreakdown };
+    });
+  }
+
+  /**
+   * Compute the full per-owner breakdown from a given form state. Used inline by
+   * setters that change target/contribution/division/unit/currency/scale so that
+   * the total row and per-owner rows auto-update like Individual KPI does.
+   */
+  function computeAllOwnerBreakdowns(f: {
+    ownerIds: string[];
+    ownerContributions: Record<string, string>;
+    target: string;
+    measurementUnit: string;
+    currency: string;
+    targetScale: string;
+    divisionType: "Cumulative" | "Standalone";
+  }): Record<string, Record<number, string>> {
+    const tNum = f.measurementUnit === "Currency"
+      ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
+      : parseFloat(f.target) || 0;
+    const out: Record<string, Record<number, string>> = {};
+    for (const id of f.ownerIds) {
+      const pct = parseFloat(f.ownerContributions[id]) || 0;
+      out[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit);
+    }
+    return out;
+  }
+
+  function setContribution(id: string, val: string) {
+    setForm(f => {
+      const newContribs = { ...f.ownerContributions, [id]: val };
+      // Re-seed per-owner breakdown with the new contribution mix (like setTarget does for individual)
+      const newOwnerBreakdown = computeAllOwnerBreakdowns({
+        ownerIds: f.ownerIds,
+        ownerContributions: newContribs,
+        target: f.target,
+        measurementUnit: f.measurementUnit,
+        currency: f.currency,
+        targetScale: f.targetScale,
+        divisionType: f.divisionType,
+      });
+      return { ...f, ownerContributions: newContribs, weeklyOwnerBreakdown: newOwnerBreakdown };
+    });
+    setErrors(e => { const n = { ...e }; delete n.ownerContributions; return n; });
+  }
+
+  function distributeContributionsEvenly() {
+    setForm(f => {
+      if (f.ownerIds.length === 0) return f;
+      const base = Math.floor((100 / f.ownerIds.length) * 100) / 100;
+      const last = parseFloat((100 - base * (f.ownerIds.length - 1)).toFixed(2));
+      const newContribs: Record<string, string> = {};
+      f.ownerIds.forEach((id, i) => {
+        newContribs[id] = (i === f.ownerIds.length - 1 ? last : base).toString();
+      });
+      const newOwnerBreakdown = computeAllOwnerBreakdowns({
+        ownerIds: f.ownerIds,
+        ownerContributions: newContribs,
+        target: f.target,
+        measurementUnit: f.measurementUnit,
+        currency: f.currency,
+        targetScale: f.targetScale,
+        divisionType: f.divisionType,
+      });
+      return { ...f, ownerContributions: newContribs, weeklyOwnerBreakdown: newOwnerBreakdown };
+    });
+  }
+
+  const contributionSum = Object.values(form.ownerContributions).reduce(
+    (s, v) => s + (parseFloat(v) || 0), 0
+  );
+  const contributionSumValid = Math.abs(contributionSum - 100) <= 0.5 && form.ownerIds.length > 0;
+
+  // On mount (edit mode with existing KPI), seed any owners that have empty breakdown rows.
+  // The setters (setTarget/setContribution/setOwnerIds/etc.) already re-seed on any relevant
+  // change, so this effect is only needed to catch the initial state where an edited KPI
+  // has owners but no weeklyOwnerTargets yet (legacy data).
+  useEffect(() => {
+    if (!isTeamScope || form.ownerIds.length === 0) return;
+    const needsSeed = form.ownerIds.some(
+      id => !form.weeklyOwnerBreakdown[id] || Object.keys(form.weeklyOwnerBreakdown[id]).length === 0
+    );
+    if (needsSeed) seedMissingOwnerBreakdowns();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Past-week feature flags
+  const { canAddPastWeek, canEditPastWeek } = usePastWeekFlags();
+  const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
+  // For create mode, use canAddPastWeek; for edit mode, use canEditPastWeek
+  const pastWeekAllowed = mode === "create" ? canAddPastWeek : canEditPastWeek;
 
   const createKPI = useCreateKPI();
   const updateKPI = useUpdateKPI(kpi?.id ?? "");
@@ -118,7 +442,9 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
       const n = val === "Currency"
         ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
         : parseFloat(f.target) || 0;
-      return { ...f, measurementUnit: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, val) };
+      const next = { ...f, measurementUnit: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, val) };
+      if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
     });
   }
 
@@ -126,19 +452,27 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
     setForm(f => {
       const validScale = getScales(val).find(s => s.label === f.targetScale) ? f.targetScale : "";
       const n = (parseFloat(f.target) || 0) * getMultiplier(val, validScale);
-      return { ...f, currency: val, targetScale: validScale, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit) };
+      const next = { ...f, currency: val, targetScale: validScale, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit) };
+      if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
     });
   }
 
   function setTargetScale(val: string) {
     setForm(f => {
       const n = (parseFloat(f.target) || 0) * getMultiplier(f.currency, val);
-      return { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit) };
+      const next = { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit) };
+      if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
     });
   }
 
   function setDivisionType(dt: "Cumulative" | "Standalone") {
-    setForm(f => ({ ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit) }));
+    setForm(f => {
+      const next = { ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit) };
+      if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
+    });
   }
 
   function setTarget(val: string) {
@@ -146,7 +480,9 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
       const n = f.measurementUnit === "Currency"
         ? (parseFloat(val) || 0) * getMultiplier(f.currency, f.targetScale)
         : parseFloat(val) || 0;
-      return { ...f, target: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit) };
+      const next = { ...f, target: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit) };
+      if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
+      return next;
     });
   }
 
@@ -183,7 +519,25 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
   function validate() {
     const errs: Record<string, string> = {};
     if (!form.name.trim()) errs.name = "KPI name is required";
-    if (!form.owner) errs.owner = "Owner is required";
+    if (isTeamScope) {
+      if (!form.teamId) errs.teamId = "Team is required";
+      if (form.ownerIds.length === 0) errs.ownerIds = "At least one owner is required";
+      if (form.ownerIds.length > 0) {
+        const sum = Object.values(form.ownerContributions).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+        if (Math.abs(sum - 100) > 0.5) {
+          errs.ownerContributions = `Contributions must sum to 100% (currently ${sum.toFixed(1)}%)`;
+        }
+        for (const id of form.ownerIds) {
+          const v = parseFloat(form.ownerContributions[id]);
+          if (isNaN(v) || v < 0) {
+            errs.ownerContributions = "Each owner must have a valid contribution %";
+            break;
+          }
+        }
+      }
+    } else {
+      if (!form.owner) errs.owner = "Owner is required";
+    }
     return errs;
   }
 
@@ -195,10 +549,21 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
       const isCurr = form.measurementUnit === "Currency";
       const multiplier = isCurr ? getMultiplier(form.currency, form.targetScale) : 1;
       const targetNum = form.target ? (parseFloat(form.target) || 0) * multiplier : undefined;
+      // Parse ownerContributions from string map to number map
+      const parsedContribs: Record<string, number> = {};
+      if (isTeamScope) {
+        for (const id of form.ownerIds) {
+          parsedContribs[id] = parseFloat(form.ownerContributions[id]) || 0;
+        }
+      }
+
       const payload = {
         name: form.name.trim(),
         description: form.description || undefined,
-        owner: form.owner,
+        kpiLevel: isTeamScope ? ("team" as const) : ("individual" as const),
+        owner: isTeamScope ? null : form.owner,
+        ownerIds: isTeamScope ? form.ownerIds : undefined,
+        ownerContributions: isTeamScope ? parsedContribs : undefined,
         teamId: form.teamId || undefined,
         quarter: form.quarter as "Q1" | "Q2" | "Q3" | "Q4",
         year: parseInt(form.year),
@@ -210,9 +575,33 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
         divisionType: form.divisionType,
         currency: isCurr ? form.currency : null,
         targetScale: isCurr ? form.targetScale : null,
-        weeklyTargets: Object.fromEntries(
-          ALL_WEEKS.map(w => [String(w), parseFloat(form.weeklyBreakdown[w]) || 0])
-        ),
+        reverseColor: form.reverseColor,
+        // In team scope: derive weeklyTargets (total per week) as the live sum of per-owner cells.
+        // In individual scope: use the editable weeklyBreakdown as-is.
+        weeklyTargets: isTeamScope && form.ownerIds.length > 0
+          ? Object.fromEntries(
+              ALL_WEEKS.map(w => {
+                const sum = form.ownerIds.reduce(
+                  (s, id) => s + (parseFloat(form.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0),
+                  0
+                );
+                return [String(w), sum];
+              })
+            )
+          : Object.fromEntries(
+              ALL_WEEKS.map(w => [String(w), parseFloat(form.weeklyBreakdown[w]) || 0])
+            ),
+        // Per-owner weekly targets — only for team scope
+        weeklyOwnerTargets: isTeamScope && form.ownerIds.length > 0
+          ? Object.fromEntries(
+              form.ownerIds.map(id => [
+                id,
+                Object.fromEntries(
+                  ALL_WEEKS.map(w => [String(w), parseFloat(form.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0])
+                ),
+              ])
+            )
+          : undefined,
       };
       if (mode === "create") {
         await createKPI.mutateAsync(payload);
@@ -238,12 +627,14 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
   return (
     <div className="fixed inset-0 z-[200] flex">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative ml-auto h-full w-[520px] bg-white shadow-2xl flex flex-col">
+      <div className={`relative ml-auto h-full bg-white shadow-2xl flex flex-col ${isTeamScope ? "w-[760px]" : "w-[520px]"}`}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <div>
             <h2 className="text-sm font-semibold text-gray-800">
-              {mode === "create" ? "Add New KPI" : "Edit KPI"}
+              {mode === "create"
+                ? (isTeamScope ? "Add Team KPI" : "Add New KPI")
+                : (isTeamScope ? "Edit Team KPI" : "Edit KPI")}
             </h2>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
@@ -264,15 +655,33 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
             </div>
           )}
 
-          {/* Owner + KPI Name */}
+          {/* Team/Owner + KPI Name */}
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Owner <span className="text-red-500">*</span>
-              </label>
-              <UserPicker value={form.owner} onChange={v => set("owner", v)} users={users} error={!!errors.owner} />
-              {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
-            </div>
+            {isTeamScope ? (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Team <span className="text-red-500">*</span>
+                </label>
+                <div className="flex items-center gap-2 px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50">
+                  {currentTeam?.color && (
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: currentTeam.color }} />
+                  )}
+                  <span className="text-gray-700 font-medium truncate">
+                    {currentTeam?.name ?? "Select a team"}
+                  </span>
+                  <span className="ml-auto text-[10px] uppercase tracking-wider text-gray-400 flex-shrink-0">Team KPI</span>
+                </div>
+                {errors.teamId && <p className="text-[10px] text-red-500 mt-0.5">{errors.teamId}</p>}
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Owner <span className="text-red-500">*</span>
+                </label>
+                <UserPicker value={form.owner} onChange={v => set("owner", v)} users={users} error={!!errors.owner} />
+                {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 KPI Name <span className="text-red-500">*</span>
@@ -283,6 +692,27 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
               {errors.name && <p className="text-[10px] text-red-500 mt-0.5">{errors.name}</p>}
             </div>
           </div>
+
+          {/* Team KPI: Select KPI Owners (multi-select).
+              The Contribution % per Owner block is rendered below, AFTER the Target Value field. */}
+          {isTeamScope && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Select KPI Owners <span className="text-red-500">*</span>
+              </label>
+              <UserMultiPicker
+                values={form.ownerIds}
+                onChange={setOwnerIds}
+                users={users}
+                placeholder={form.teamId ? "Select team members who own this KPI…" : "Select a team first"}
+                error={!!errors.ownerIds}
+              />
+              {errors.ownerIds && <p className="text-[10px] text-red-500 mt-0.5">{errors.ownerIds}</p>}
+              {!errors.ownerIds && form.ownerIds.length === 0 && (
+                <p className="text-[10px] text-gray-400 mt-0.5">Only active members of this team can be selected.</p>
+              )}
+            </div>
+          )}
 
           {/* Quarter (read-only) */}
           <div>
@@ -344,6 +774,71 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
             )}
           </div>
 
+          {/* Contribution % per Owner — only in team scope with owners selected.
+              Positioned right after Target Value so users can see the value being divided. */}
+          {isTeamScope && form.ownerIds.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-gray-600">
+                  Contribution % per Owner <span className="text-red-500">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={distributeContributionsEvenly}
+                  className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline font-medium"
+                >
+                  Distribute evenly
+                </button>
+              </div>
+              <div className={`border rounded-lg divide-y overflow-hidden ${errors.ownerContributions ? "border-red-300" : "border-gray-200"}`}>
+                {form.ownerIds.map(id => {
+                  const u = users.find(u => u.id === id);
+                  if (!u) return null;
+                  const pctStr = form.ownerContributions[id] ?? "";
+                  const pct = parseFloat(pctStr) || 0;
+                  const contributionValue = scaledTarget * (pct / 100);
+                  return (
+                    <div key={id} className="flex items-center gap-3 px-3 py-2 bg-white hover:bg-gray-50">
+                      <div className="text-xs text-gray-700 flex-1 truncate">
+                        {u.firstName} {u.lastName}
+                      </div>
+                      <div className="text-[10px] text-gray-400 whitespace-nowrap">
+                        Contribution value: <span className="text-gray-600 font-medium">
+                          {scaledTarget > 0
+                            ? (form.measurementUnit === "Number" ? Math.round(contributionValue) : contributionValue.toFixed(2))
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={pctStr}
+                          onChange={e => setContribution(id, e.target.value)}
+                          placeholder="0"
+                          className="w-16 px-2 py-1 text-xs text-right border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        />
+                        <span className="text-xs text-gray-500">%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Sum indicator */}
+                <div className={`flex items-center justify-between px-3 py-1.5 text-[10px] font-medium ${
+                  contributionSumValid ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
+                }`}>
+                  <span>Total</span>
+                  <span>
+                    {contributionSum.toFixed(1)}% {contributionSumValid ? "✓" : `(must equal 100%)`}
+                  </span>
+                </div>
+              </div>
+              {errors.ownerContributions && <p className="text-[10px] text-red-500 mt-0.5">{errors.ownerContributions}</p>}
+            </div>
+          )}
+
           {/* Division Type + Status */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -376,6 +871,30 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
             </div>
           </div>
 
+          {/* Color Coding Mode */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Color Coding</label>
+            <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
+              <button type="button" onClick={() => setForm(f => ({ ...f, reverseColor: false }))}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                  !form.reverseColor ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                }`}>
+                Higher is Better
+              </button>
+              <button type="button" onClick={() => setForm(f => ({ ...f, reverseColor: true }))}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                  form.reverseColor ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                }`}>
+                Lower is Better
+              </button>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              {form.reverseColor
+                ? "Reverse mode — use for defects, delays, errors (lower values = better performance)"
+                : "Forward mode — use for sales, revenue, customers (higher values = better performance)"}
+            </p>
+          </div>
+
           {/* Description */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
@@ -392,41 +911,156 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-gray-50">
-                      {ALL_WEEKS.map(w => (
-                        <th key={w} className="px-2 py-1.5 text-center text-gray-500 font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap">
-                          <div>W{w}</div>
+                      {/* Label column header for team scope — aligns with the sticky label TDs below */}
+                      {isTeamScope && form.ownerIds.length > 0 && (
+                        <th className="sticky left-0 z-20 bg-gray-50 px-3 py-1.5 border-r border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap text-left min-w-[140px]">
+                          &nbsp;
+                        </th>
+                      )}
+                      {ALL_WEEKS.map(w => {
+                        const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
+                        return (
+                        <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${isPast ? "text-gray-300" : "text-gray-500"}`}>
+                          <div className="flex items-center justify-center gap-1">
+                            {isPast && <Lock className="h-2.5 w-2.5 text-gray-300" />}
+                            Week {w}
+                          </div>
                           <div className="text-[9px] font-normal text-gray-400">{weekDateLabel(parseInt(form.year), form.quarter, w)}</div>
                         </th>
-                      ))}
+                      );})}
                     </tr>
                   </thead>
                   <tbody>
+                    {/* Total row.
+                        - Individual scope: editable (bound to form.weeklyBreakdown), redistribution logic applies.
+                        - Team scope: derived as sum of per-owner cells, read-only display. */}
                     <tr>
-                      {ALL_WEEKS.map(w => (
-                        <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
-                          <input
-                            type="number"
-                            min="0"
-                            value={form.weeklyBreakdown[w] ?? ""}
-                            onChange={e => setWeekBreakdown(w, e.target.value)}
-                            readOnly={form.divisionType === "Standalone"}
-                            className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
-                              form.divisionType === "Standalone"
-                                ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                : "border-gray-200 focus:ring-1 focus:ring-blue-400"
-                            }`}
-                          />
+                      {isTeamScope && form.ownerIds.length > 0 && (
+                        <td className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          Total
                         </td>
-                      ))}
+                      )}
+                      {ALL_WEEKS.map(w => {
+                        const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
+                        const isStandalone = form.divisionType === "Standalone";
+                        const isLocked = isStandalone || isPast;
+
+                        // Team scope: editable total cell. Displays the live sum of owner cells
+                        // for this week. When the user edits, the new total is distributed across
+                        // owners proportionally by contribution %.
+                        if (isTeamScope && form.ownerIds.length > 0) {
+                          const sum = form.ownerIds.reduce((s, id) => {
+                            const v = parseFloat(form.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0;
+                            return s + v;
+                          }, 0);
+                          const displaySum = form.measurementUnit === "Number"
+                            ? Math.round(sum).toString()
+                            : sum.toFixed(2);
+                          return (
+                            <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0 bg-gray-50">
+                              <input
+                                type="number"
+                                min="0"
+                                value={displaySum}
+                                onChange={e => setTeamTotalWeekCell(w, e.target.value)}
+                                readOnly={isLocked}
+                                title={isPast
+                                  ? "Past week data entry is disabled. Enable in Settings > Configurations."
+                                  : "Editing the total redistributes across owners by contribution %"}
+                                className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
+                                  isLocked
+                                    ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                    : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-blue-400"
+                                }`}
+                              />
+                            </td>
+                          );
+                        }
+
+                        // Individual scope: editable input as before
+                        return (
+                          <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
+                            <input
+                              type="number"
+                              min="0"
+                              value={form.weeklyBreakdown[w] ?? ""}
+                              onChange={e => setWeekBreakdown(w, e.target.value)}
+                              readOnly={isLocked}
+                              title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : undefined}
+                              className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
+                                isLocked
+                                  ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                  : "border-gray-200 focus:ring-1 focus:ring-blue-400"
+                              }`}
+                            />
+                          </td>
+                        );
+                      })}
                     </tr>
+
+                    {/* Per-owner rows — EDITABLE in team scope. Bound to form.weeklyOwnerBreakdown.
+                        Standalone division keeps cells locked because the per-week target is fixed
+                        to the owner's sub-target. Past-week lock still applies to each cell. */}
+                    {isTeamScope && form.ownerIds.map(id => {
+                      const u = users.find(u => u.id === id);
+                      if (!u) return null;
+                      const pct = parseFloat(form.ownerContributions[id]) || 0;
+                      const ownerRow = form.weeklyOwnerBreakdown[id] ?? {};
+                      return (
+                        <tr key={id} className="bg-gray-50/60">
+                          <td className="sticky left-0 z-10 bg-gray-50 px-3 py-1.5 border-r border-t border-gray-200 text-[10px] text-gray-600 whitespace-nowrap truncate max-w-[140px]">
+                            {u.firstName} {u.lastName}
+                            <span className="ml-1 text-gray-400">({pct.toFixed(0)}%)</span>
+                          </td>
+                          {ALL_WEEKS.map(w => {
+                            const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
+                            const isStandalone = form.divisionType === "Standalone";
+                            const isLocked = isStandalone || isPast;
+                            return (
+                              <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={ownerRow[w] ?? ""}
+                                  onChange={e => setOwnerWeekCell(id, w, e.target.value)}
+                                  readOnly={isLocked}
+                                  title={isPast ? "Past week data entry is disabled." : undefined}
+                                  className={`w-full px-1 py-1 text-center text-[11px] border rounded focus:outline-none min-w-[72px] ${
+                                    isLocked
+                                      ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                      : "border-gray-200 bg-white focus:ring-1 focus:ring-blue-400"
+                                  }`}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-              <p className="text-[10px] text-gray-400 mt-1">
-                {form.divisionType === "Cumulative"
-                  ? "Remainder distributed right-to-left — edit cells to override"
-                  : `Each week = full target${isCurrency ? ` (${currencyObj.symbol}${scaledTarget})` : ` (${scaledTarget})`}`}
-              </p>
+              <div className="flex items-center justify-between mt-1 gap-2">
+                <p className="text-[10px] text-gray-400">
+                  {isTeamScope && form.ownerIds.length > 0
+                    ? (form.divisionType === "Cumulative"
+                        ? "Edit any cell — total updates as sum of owners; editing total redistributes by contribution %"
+                        : `Standalone: each week = owner sub-target (fixed)`)
+                    : (form.divisionType === "Cumulative"
+                        ? "Remainder distributed right-to-left — edit cells to override"
+                        : `Each week = full target${isCurrency ? ` (${currencyObj.symbol}${scaledTarget})` : ` (${scaledTarget})`}`)
+                  }
+                </p>
+                {isTeamScope && form.ownerIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={resetOwnerBreakdownsFromFormula}
+                    className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline font-medium whitespace-nowrap"
+                  >
+                    Reset to formula
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -445,7 +1079,9 @@ export function KPIModal({ mode, kpi, defaultYear, defaultQuarter, onClose, onSu
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
             )}
-            {mode === "create" ? "Create KPI" : "Save Changes"}
+            {mode === "create"
+              ? (isTeamScope ? "Create Team KPI" : "Create KPI")
+              : "Save Changes"}
           </button>
         </div>
       </div>

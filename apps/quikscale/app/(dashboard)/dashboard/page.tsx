@@ -16,6 +16,9 @@ import {
   weekDateLabel, ALL_WEEKS, getCurrentFiscalWeek,
 } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
+import { KPITable } from "../kpi/components/KPITable";
+import { PriorityTable } from "../priority/components/PriorityTable";
+import { WWWTable } from "../www/components/WWWTable";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -175,7 +178,7 @@ function Spinner() {
   );
 }
 
-function Section({ badge, count, children }: { badge: string; count?: number; children: React.ReactNode }) {
+function Section({ badge, count, right, children }: { badge: string; count?: number; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm" style={{ overflow: "clip" }}>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
@@ -183,6 +186,7 @@ function Section({ badge, count, children }: { badge: string; count?: number; ch
         {count !== undefined && count > 0 && (
           <span className="text-xs text-gray-400">{count} item{count !== 1 ? "s" : ""}</span>
         )}
+        {right && <div className="ml-auto flex items-center gap-2">{right}</div>}
       </div>
       {children}
     </div>
@@ -469,7 +473,8 @@ function KPISection({ kpis, year, quarter }: { kpis: KPIRow[]; year: number; qua
                 const val = weekMap[w];
                 const note = weekNoteMap[w];
                 const wTarget = weeklyTargets ? (weeklyTargets[String(w)] ?? 0) : weeklyGoal;
-                const { bg, text } = weekCellColors(val, wTarget);
+                // weekCellColors expects qtdGoal (divides by 13 internally), so multiply back
+                const { bg, text } = weekCellColors(val, wTarget * 13, null, false);
                 const frozenBg = getFrozenBg(col.key, frozenUpTo, ALL_KPI_COLS, rowBg);
                 return (
                   <td key={col.key}
@@ -744,9 +749,10 @@ export default function DashboardPage() {
   // pageSize:1000 ensures all KPIs are fetched — needed for correct client-side team filtering
   const { data: kpiData, isLoading: kpiLoading } = useKPIs({ year, quarter, owner: ownerFilter, pageSize: 1000 });
   const allKpis: KPIRow[] = (kpiData?.data ?? []) as KPIRow[];
-  // When a team is selected but no specific owner, filter KPIs to team members
+  // When a team is selected but no specific owner, filter KPIs to team members.
+  // k.owner may be null (team-level KPIs); those are skipped by the owner-based filter.
   const kpis: KPIRow[] = (filterTeam && !filterOwner)
-    ? allKpis.filter(k => teamUserIds.has(k.owner))
+    ? allKpis.filter(k => !!k.owner && teamUserIds.has(k.owner))
     : allKpis;
 
   const { data: allPriorities = [], isLoading: priLoading } = usePriorities(year, quarter);
@@ -757,11 +763,32 @@ export default function DashboardPage() {
       : allPriorities;
 
   const { data: allWWW = [], isLoading: wwwLoading } = useWWWItems({});
-  const wwwItems = filterOwner
+  // WWW section-local status filter (not persisted)
+  const [wwwStatusFilter, setWwwStatusFilter] = useState<string>("");
+  const wwwItemsByOwner = filterOwner
     ? allWWW.filter(w => w.who === filterOwner)
     : filterTeam
       ? allWWW.filter(w => teamUserIds.has(w.who))
       : allWWW;
+  const wwwItems = wwwStatusFilter
+    ? wwwItemsByOwner.filter(w => w.status === wwwStatusFilter)
+    : wwwItemsByOwner;
+
+  // Dashboard-local pagination state (10 rows per page for each table)
+  const DASHBOARD_PAGE_SIZE = 10;
+  const [kpiPage, setKpiPage] = useState(1);
+  const [priPage, setPriPage] = useState(1);
+  const [wwwPage, setWwwPage] = useState(1);
+
+  // Reset to page 1 when filters, year, or quarter change
+  useEffect(() => { setKpiPage(1); }, [filterTeam, filterOwner, year, quarter, kpis.length]);
+  useEffect(() => { setPriPage(1); }, [filterTeam, filterOwner, year, quarter, priorities.length]);
+  useEffect(() => { setWwwPage(1); }, [filterTeam, filterOwner, wwwStatusFilter, wwwItems.length]);
+
+  // Slice each list to the current page's chunk
+  const pagedKpis = kpis.slice((kpiPage - 1) * DASHBOARD_PAGE_SIZE, kpiPage * DASHBOARD_PAGE_SIZE);
+  const pagedPriorities = priorities.slice((priPage - 1) * DASHBOARD_PAGE_SIZE, priPage * DASHBOARD_PAGE_SIZE);
+  const pagedWWW = wwwItems.slice((wwwPage - 1) * DASHBOARD_PAGE_SIZE, wwwPage * DASHBOARD_PAGE_SIZE);
 
   const currentWeek = getCurrentFiscalWeek(year, quarter);
 
@@ -867,15 +894,76 @@ export default function DashboardPage() {
         )}
 
         <Section badge="KPI" count={kpis.length}>
-          {kpiLoading ? <Spinner /> : <KPISection kpis={kpis} year={year} quarter={quarter} />}
+          {kpiLoading ? <Spinner /> : (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <KPITable
+                kpis={pagedKpis}
+                total={kpis.length}
+                page={kpiPage}
+                pageSize={DASHBOARD_PAGE_SIZE}
+                year={year}
+                quarter={quarter}
+                onPageChange={setKpiPage}
+                onSort={() => {}}
+                onRefresh={() => {}}
+                hideColumns={["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "teamHead", "kpiOwner"]}
+              />
+            </div>
+          )}
         </Section>
 
         <Section badge="Priority" count={priorities.length}>
-          {priLoading ? <Spinner /> : <PrioritySection priorities={priorities} year={year} quarter={quarter} />}
+          {priLoading ? <Spinner /> : (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <PriorityTable
+                priorities={pagedPriorities}
+                onRefresh={() => {}}
+                year={year}
+                quarter={quarter}
+                hideColumns={["_cb", "_log", "_id", "team", "owner"]}
+                readOnly
+                page={priPage}
+                pageSize={DASHBOARD_PAGE_SIZE}
+                total={priorities.length}
+                onPageChange={setPriPage}
+              />
+            </div>
+          )}
         </Section>
 
-        <Section badge="WWW" count={wwwItems.length}>
-          {wwwLoading ? <Spinner /> : <WWWSection items={wwwItems} />}
+        <Section
+          badge="WWW"
+          count={wwwItems.length}
+          right={
+            <select
+              value={wwwStatusFilter}
+              onChange={e => setWwwStatusFilter(e.target.value)}
+              className={selectCls}
+              aria-label="Filter WWW by status"
+            >
+              <option value="">All statuses</option>
+              <option value="on-track">On Track</option>
+              <option value="behind-schedule">Behind Schedule</option>
+              <option value="not-yet-started">Not Yet Started</option>
+              <option value="completed">Completed</option>
+              <option value="not-applicable">Not Applicable</option>
+            </select>
+          }
+        >
+          {wwwLoading ? <Spinner /> : (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <WWWTable
+                items={pagedWWW}
+                onRefresh={() => {}}
+                hideColumns={["_cb", "_log", "_id"]}
+                readOnly
+                page={wwwPage}
+                pageSize={DASHBOARD_PAGE_SIZE}
+                total={wwwItems.length}
+                onPageChange={setWwwPage}
+              />
+            </div>
+          )}
         </Section>
 
       </div>

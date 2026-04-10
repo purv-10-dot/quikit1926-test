@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { CURRENCIES } from "@/lib/utils/currency";
+import { CURRENCIES, getScales } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import {
   ChevronDown, Info, Maximize2, Eye, Check,
@@ -18,6 +18,8 @@ import {
 interface TargetRow   { category: string; projected: string; y1: string; y2: string; y3: string; y4: string; y5: string; }
 interface GoalRow     { category: string; projected: string; q1: string; q2: string; q3: string; q4: string; }
 interface ThrustRow   { desc: string; owner: string; }
+interface KeyInitiativeRow { desc: string; owner: string; }
+interface RockRow { desc: string; owner: string; }
 interface ActionRow   { category: string; projected: string; }
 interface KPIAcctRow  { kpi: string; goal: string; }
 interface QPriorRow   { priority: string; dueDate: string; }
@@ -30,11 +32,11 @@ interface FormData {
   profitPerX: string; bhag: string;
   targetRows: TargetRow[]; sandbox: string; keyThrusts: ThrustRow[];
   brandPromiseKPIs: string; brandPromise: string;
-  goalRows: GoalRow[]; keyInitiatives: string;
+  goalRows: GoalRow[]; keyInitiatives: KeyInitiativeRow[];
   criticalNumGoals: CritCard; balancingCritNumGoals: CritCard;
   processItems: string[]; weaknesses: string[];
   makeBuy: string[]; sell: string[]; recordKeeping: string[];
-  actionsQtr: ActionRow[]; rocks: string;
+  actionsQtr: ActionRow[]; rocks: RockRow[];
   criticalNumProcess: CritCard; balancingCritNumProcess: CritCard;
   theme: string; scoreboardDesign: string; celebration: string; reward: string;
   kpiAccountability: KPIAcctRow[]; quarterlyPriorities: QPriorRow[];
@@ -45,10 +47,48 @@ interface FormData {
 /* ── Defaults ── */
 const emptyArr3   = (): string[]        => ["", "", ""];
 const emptyArr5   = (): string[]        => ["", "", "", "", ""];
+
+/**
+ * Normalize a field that stores 5 rows of {desc, owner}. Handles legacy shapes:
+ *   1. HTML string (original RichEditor flow) → reset to 5 empty rows
+ *   2. string[] (previous numbered-rows flow) → wrap each as {desc, owner:""}
+ *   3. {desc, owner}[] (current Key Thrusts-style) → pad/truncate to 5
+ */
+function normalizeDescOwnerRows(val: unknown): { desc: string; owner: string }[] {
+  if (!Array.isArray(val)) {
+    return Array.from({ length: 5 }, () => ({ desc: "", owner: "" }));
+  }
+  const normalized = (val as unknown[]).map(item => {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      const obj = item as { desc?: unknown; owner?: unknown };
+      return {
+        desc: typeof obj.desc === "string" ? obj.desc : "",
+        owner: typeof obj.owner === "string" ? obj.owner : "",
+      };
+    }
+    return { desc: typeof item === "string" ? item : "", owner: "" };
+  });
+  while (normalized.length < 5) normalized.push({ desc: "", owner: "" });
+  return normalized.slice(0, 5);
+}
+
+/**
+ * Normalize a loaded OPSP payload so form state always matches the current FormData
+ * shape. Handles `keyInitiatives` and `rocks` legacy shapes (both were previously
+ * HTML strings in the RichEditor flow, now stored as {desc, owner}[] JSON arrays).
+ */
+function normalizeLoadedOPSP(raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...raw };
+  out.keyInitiatives = normalizeDescOwnerRows(out.keyInitiatives);
+  out.rocks = normalizeDescOwnerRows(out.rocks);
+  return out;
+}
 const emptyCrit   = (): CritCard        => ({ title: "", bullets: ["", "", "", ""] });
 const emptyTarget = (): TargetRow[]     => Array.from({ length: 5 }, () => ({ category:"", projected:"", y1:"", y2:"", y3:"", y4:"", y5:"" }));
 const emptyGoal   = (): GoalRow[]       => Array.from({ length: 6 }, () => ({ category:"", projected:"", q1:"", q2:"", q3:"", q4:"" }));
 const emptyThrust = (): ThrustRow[]     => Array.from({ length: 5 }, () => ({ desc:"", owner:"" }));
+const emptyKeyInitiatives = (): KeyInitiativeRow[] => Array.from({ length: 5 }, () => ({ desc:"", owner:"" }));
+const emptyRocks = (): RockRow[]         => Array.from({ length: 5 }, () => ({ desc:"", owner:"" }));
 const emptyAction = (): ActionRow[]     => Array.from({ length: 5 }, () => ({ category:"", projected:"" }));
 const emptyKPI    = (): KPIAcctRow[]    => Array.from({ length: 5 }, () => ({ kpi:"", goal:"" }));
 const emptyQP     = (): QPriorRow[]     => Array.from({ length: 5 }, () => ({ priority:"", dueDate:"" }));
@@ -59,11 +99,11 @@ const defaultForm = (): FormData => ({
   coreValues: "", purpose: "", actions: emptyArr5(), profitPerX: "", bhag: "",
   targetRows: emptyTarget(), sandbox: "", keyThrusts: emptyThrust(),
   brandPromiseKPIs: "", brandPromise: "",
-  goalRows: emptyGoal(), keyInitiatives: "",
+  goalRows: emptyGoal(), keyInitiatives: emptyKeyInitiatives(),
   criticalNumGoals: emptyCrit(), balancingCritNumGoals: emptyCrit(),
   processItems: emptyArr3(), weaknesses: emptyArr3(),
   makeBuy: emptyArr3(), sell: emptyArr3(), recordKeeping: emptyArr3(),
-  actionsQtr: emptyAction(), rocks: "",
+  actionsQtr: emptyAction(), rocks: emptyRocks(),
   criticalNumProcess: emptyCrit(), balancingCritNumProcess: emptyCrit(),
   theme: "", scoreboardDesign: "", celebration: "", reward: "",
   kpiAccountability: emptyKPI(), quarterlyPriorities: emptyQP(),
@@ -317,8 +357,8 @@ function CritBlock({ label, value, onChange }: { label: string; value: CritCard;
 
 const DATA_TYPES = ["Number", "Percentage", "Currency"] as const;
 
-/* ── Module-level cache: category name → { dataType, symbol } ── */
-interface CatMeta { dataType: string; symbol: string | null; }
+/* ── Module-level cache: category name → { dataType, symbol, currency } ── */
+interface CatMeta { dataType: string; symbol: string | null; currency: string | null; }
 const catMetaCache = new Map<string, CatMeta>();
 
 function populateCatCache(data: { name: string; dataType: string; currency: string | null }[]) {
@@ -326,8 +366,51 @@ function populateCatCache(data: { name: string; dataType: string; currency: stri
     const symbol = c.dataType === "Currency"
       ? (CURRENCIES.find(x => x.code === c.currency)?.symbol ?? null)
       : null;
-    catMetaCache.set(c.name, { dataType: c.dataType, symbol });
+    catMetaCache.set(c.name, { dataType: c.dataType, symbol, currency: c.currency });
   });
+}
+
+/* ── Scale abbreviation map for currency Projected values ──
+   Maps the full-label scales from lib/utils/currency.ts to short abbreviations
+   shown in the dropdown. Trillion and Hundred Crore are intentionally omitted. */
+const SCALE_ABBR: Record<string, string> = {
+  "":         "-",
+  "Thousand": "K",
+  "Million":  "M",
+  "Billion":  "B",
+  "Lakh":     "L",
+  "Crore":    "Cr",
+};
+
+/** List of scale abbreviations available for a given currency. "-" comes first (no scale). */
+function getScaleAbbrs(currency: string): string[] {
+  const scales = getScales(currency);
+  return scales
+    .map(s => SCALE_ABBR[s.label])
+    .filter((abbr): abbr is string => abbr !== undefined);
+}
+
+/** Parse a stored string like "250 K" or "1000.00 L" into { num, scale }.
+ *  If the trailing token is not a valid abbreviation for the given currency,
+ *  the whole string is treated as the number part. */
+function parseProjectedValue(raw: string, currency: string): { num: string; scale: string } {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return { num: "", scale: "" };
+  const abbrs = getScaleAbbrs(currency).filter(a => a && a !== "-");
+  // Match a trailing abbreviation preceded by whitespace
+  for (const abbr of abbrs) {
+    const re = new RegExp(`^(.+?)\\s+${abbr.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}$`);
+    const m = trimmed.match(re);
+    if (m) return { num: m[1].trim(), scale: abbr };
+  }
+  return { num: trimmed, scale: "" };
+}
+
+/** Combine a number string and scale abbreviation back into storage format. */
+function combineProjectedValue(num: string, scale: string): string {
+  const n = (num ?? "").trim();
+  if (!n) return "";
+  return scale && scale !== "-" ? `${n} ${scale}` : n;
 }
 
 /* ── CategorySelect ── */
@@ -388,13 +471,18 @@ function CategorySelect({ value, onChange }: { value: string; onChange: (v: stri
 
   return (
     <div className="relative w-full min-w-0">
-      <button onClick={() => setOpen(!open)}
-        className="w-full flex items-start justify-between border border-gray-200 rounded px-2 py-1.5 bg-white hover:bg-gray-50 gap-1">
-        <span className={cn("flex-1 text-sm whitespace-normal break-words text-left leading-snug", value ? "text-gray-700" : "text-gray-400")}>
-          {value || "Select Category"}
-        </span>
-        <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
-      </button>
+      {/* Downward tooltip on hover — suppressed while the dropdown is open to avoid overlap */}
+      <WithTooltip content={open ? "" : (value || "")} className="relative block w-full">
+        <button
+          onClick={() => setOpen(!open)}
+          className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 bg-white hover:bg-gray-50 gap-1"
+        >
+          <span className={cn("flex-1 min-w-0 text-sm whitespace-nowrap truncate text-left", value ? "text-gray-700" : "text-gray-400")}>
+            {value || "Select Category"}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+        </button>
+      </WithTooltip>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); resetForm(); }} />
@@ -489,35 +577,63 @@ function ProjectedInput({
   const isCurrency  = meta?.dataType === "Currency";
   const isPct       = meta?.dataType === "Percentage";
   const symbol      = meta?.symbol ?? null;
-  const filled      = value.trim() !== "";
+  const currency    = meta?.currency ?? "USD";
+
+  // For currency cells: split the stored value into a numeric part and a scale abbreviation
+  const { num: numPart, scale: scalePart } = isCurrency
+    ? parseProjectedValue(value, currency)
+    : { num: value, scale: "" };
+  const availScaleAbbrs = isCurrency ? getScaleAbbrs(currency) : [];
+
+  function handleNumChange(newNum: string) {
+    if (isCurrency) onChange(combineProjectedValue(newNum, scalePart));
+    else onChange(newNum);
+  }
+  function handleScaleChange(newScale: string) {
+    onChange(combineProjectedValue(numPart, newScale));
+  }
 
   return (
     <div className={cn(
       "flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-blue-400 overflow-hidden",
       className,
     )}>
-      {/* Currency prefix */}
+      {/* Currency prefix — 15px symbol column */}
       {isCurrency && symbol && (
-        <span className="pl-2 pr-0.5 text-gray-500 font-semibold text-sm flex-shrink-0 select-none">
+        <span className="w-[15px] flex-shrink-0 text-gray-500 text-xs text-center select-none">
           {symbol}
         </span>
       )}
 
+      {/* Numeric input (uses numPart for currency, raw value otherwise) */}
       <input
         type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
+        value={isCurrency ? numPart : value}
+        onChange={e => handleNumChange(e.target.value)}
         placeholder={placeholder ?? (isPct ? "0" : isCurrency ? "0" : "Num")}
         className={cn(
-          "flex-1 min-w-0 w-0 bg-transparent focus:outline-none placeholder-gray-400 text-right",
-          isCurrency && symbol ? "pl-0.5 pr-1 py-1.5" : isPct ? "pl-2 pr-1 py-1.5" : "px-2 py-1.5",
-          filled ? "text-base font-semibold text-gray-800" : "text-sm text-gray-700",
+          "flex-1 min-w-0 w-0 bg-transparent focus:outline-none placeholder-gray-400 text-left text-sm text-gray-700",
+          isCurrency ? "px-1 py-1.5" : isPct ? "pl-2 pr-1 py-1.5" : "px-2 py-1.5",
         )}
       />
 
+      {/* Currency postfix — 40px scale dropdown (K / M / B / L / Cr / - ) */}
+      {isCurrency && (
+        <select
+          value={scalePart || "-"}
+          onChange={e => handleScaleChange(e.target.value)}
+          className="w-[40px] flex-shrink-0 px-0.5 py-1.5 text-xs text-gray-600 bg-gray-50 border-l border-gray-200 focus:outline-none cursor-pointer"
+          title="Scale"
+        >
+          {availScaleAbbrs.map(abbr => (
+            <option key={abbr} value={abbr}>{abbr}</option>
+          ))}
+        </select>
+      )}
+
       {/* Percentage postfix */}
       {isPct && (
-        <span className="pr-2 pl-0.5 text-gray-500 font-semibold text-sm flex-shrink-0 select-none">
+        <span className="pr-2 pl-0.5 text-gray-500 text-sm flex-shrink-0 select-none">
           %
         </span>
       )}
@@ -527,6 +643,7 @@ function ProjectedInput({
 
 /* ═══════════════════════════════════════════════
    Tooltip wrapper — shows full text on hover
+   Positioned BELOW the child (downward) across the entire OPSP page.
 ═══════════════════════════════════════════════ */
 function WithTooltip({ content, children, className = "relative min-w-0" }: { content: string; children: React.ReactNode; className?: string }) {
   const [show, setShow] = useState(false);
@@ -535,9 +652,10 @@ function WithTooltip({ content, children, className = "relative min-w-0" }: { co
     <div className={className} onMouseEnter={() => hasContent && setShow(true)} onMouseLeave={() => setShow(false)}>
       {children}
       {show && hasContent && (
-        <div className="absolute bottom-full left-0 mb-2 z-[9999] bg-gray-900 text-white text-xs rounded-lg px-3 py-2 max-w-sm whitespace-pre-wrap shadow-2xl pointer-events-none min-w-[120px]">
+        <div className="absolute top-full left-0 mt-2 z-[9999] bg-gray-900 text-white text-xs rounded-lg px-3 py-2 max-w-sm whitespace-pre-wrap shadow-2xl pointer-events-none min-w-[120px]">
+          {/* Upward-pointing arrow at the TOP of the tooltip, pointing up to the element above */}
+          <span className="absolute bottom-full left-4 w-0 h-0 border-x-4 border-x-transparent border-b-4 border-b-gray-900" />
           {content}
-          <span className="absolute top-full left-4 w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-gray-900" />
         </div>
       )}
     </div>
@@ -558,21 +676,28 @@ function OwnerSelect({ value, onChange }: { value: string; onChange: (v: string)
     );
   }, [users, search]);
 
-  const label = useMemo(() => {
-    if (!value) return null;
+  // Full name used for the tooltip; initials used for the compact display in the button.
+  const { fullName, initials } = useMemo(() => {
+    if (!value) return { fullName: "", initials: "" };
     const u = users.find(u => u.id === value);
-    return u ? `${u.firstName} ${u.lastName}` : value;
+    if (!u) return { fullName: value, initials: value.slice(0, 2).toUpperCase() };
+    const full = `${u.firstName} ${u.lastName}`;
+    const init = `${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase();
+    return { fullName: full, initials: init };
   }, [users, value]);
 
   return (
     <div className="relative w-full min-w-0">
-      <button onClick={() => { setOpen(o => !o); setSearch(""); }}
-        className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 text-sm bg-white hover:bg-gray-50">
-        <span className={cn("min-w-0 flex-1 truncate", label ? "text-gray-700" : "text-gray-400")}>
-          {label || "Owner"}
-        </span>
-        <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-      </button>
+      {/* Downward tooltip shows the full name; suppressed while the dropdown is open */}
+      <WithTooltip content={open ? "" : fullName} className="relative block w-full">
+        <button onClick={() => { setOpen(o => !o); setSearch(""); }}
+          className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 text-sm bg-white hover:bg-gray-50">
+          <span className={cn("min-w-0 flex-1 truncate text-left", fullName ? "text-gray-700 font-medium" : "text-gray-400")}>
+            {initials || "Owner"}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+        </button>
+      </WithTooltip>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
@@ -647,13 +772,28 @@ function QuarterDropdown({ value, onChange }: { value: string; onChange: (q: str
 /* ═══════════════════════════════════════════════
    Targets Modal (expand)
 ═══════════════════════════════════════════════ */
-function TargetsModal({ open, onClose, rows, onChange, targetYears }: {
+function TargetsModal({ open, onClose, rows, onChange, targetYears, fiscalYear, fiscalYearStart }: {
   open: boolean; onClose: () => void;
   rows: TargetRow[]; onChange: (r: TargetRow[]) => void;
   targetYears: number;
+  fiscalYear: number;       // current FY (e.g. 2026) taken from form.year
+  fiscalYearStart: number;  // 1-12 (1 = January, 4 = April, etc.)
 }) {
   if (!open) return null;
-  const yearCols = Array.from({ length: targetYears }, (_, i) => `Year ${i + 1}`);
+
+  /**
+   * Build the fiscal year label for a given offset (0-indexed).
+   *   - If fiscalYearStart === 1 (January), FY aligns with the calendar year → "2026", "2027", ...
+   *   - Otherwise, FY spans two calendar years → "2026 - 27", "2027 - 28", ...
+   *   - Year 1 starts at `fiscalYear`; Year N starts at `fiscalYear + (N - 1)`.
+   */
+  function fiscalYearLabelFor(offset: number): string {
+    const startCal = fiscalYear + offset;
+    if (fiscalYearStart === 1) return String(startCal);
+    const endCalTwoDigit = String((startCal + 1) % 100).padStart(2, "0");
+    return `${startCal} - ${endCalTwoDigit}`;
+  }
+  const yearCols = Array.from({ length: targetYears }, (_, i) => fiscalYearLabelFor(i));
   const keys = ["y1","y2","y3","y4","y5"].slice(0, targetYears) as (keyof TargetRow)[];
   const gridStyle = { display: "grid", gap: "12px", gridTemplateColumns: `2fr 1fr ${keys.map(()=>"1fr").join(" ")}` };
 
@@ -739,6 +879,68 @@ function GoalsModal({ open, onClose, rows, onChange }: {
                   const next = [...rows]; next[i] = { ...next[i], [k]: v }; onChange(next);
                 }} placeholder="Number" />
               ))}
+            </div>
+          ))}
+          <div className="flex justify-end mt-5">
+            <button onClick={onClose}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+              Submit
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Rocks Modal (expand)
+═══════════════════════════════════════════════ */
+function RocksModal({ open, onClose, rows, onChange }: {
+  open: boolean; onClose: () => void;
+  rows: RockRow[]; onChange: (r: RockRow[]) => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
+          <div>
+            <p className="text-base font-bold text-gray-900 uppercase tracking-wide">ROCKS</p>
+            <p className="text-xs text-gray-500">Quarterly Priorities</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="px-6 pb-6 overflow-y-auto flex-1">
+          {/* Header */}
+          <div className="flex items-center gap-3 text-xs font-medium text-gray-500 pb-2 border-b border-gray-200 mb-2">
+            <span className="w-8 flex-shrink-0 text-center">#</span>
+            <span className="flex-1">Quarterly Priorities</span>
+            <span className="w-40 flex-shrink-0">Who</span>
+          </div>
+          {rows.map((row, i) => (
+            <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-100">
+              <span className="w-8 flex-shrink-0 text-center text-xs text-gray-400">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <WithTooltip content={row.desc} className="relative flex-1 min-w-0">
+                <FInput
+                  value={row.desc}
+                  placeholder="Quarterly Priority"
+                  onChange={v => {
+                    const next = [...rows]; next[i] = { ...next[i], desc: v }; onChange(next);
+                  }}
+                />
+              </WithTooltip>
+              <div className="relative w-40 flex-shrink-0">
+                <OwnerSelect
+                  value={row.owner}
+                  onChange={v => {
+                    const next = [...rows]; next[i] = { ...next[i], owner: v }; onChange(next);
+                  }}
+                />
+              </div>
             </div>
           ))}
           <div className="flex justify-end mt-5">
@@ -1058,7 +1260,24 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
                       <div className="border-t border-gray-300 pt-1 mt-1">
                         <div className="font-bold uppercase text-[8px] text-center">Key Initiatives</div>
                         <div className="italic text-gray-500 text-[7px] text-center mb-0.5">1 Year Priorities</div>
-                        <div className="prose-preview text-[9px] [&_p]:mb-1 [&_ol]:list-decimal [&_ol]:pl-3 [&_li]:py-px" dangerouslySetInnerHTML={html(form.keyInitiatives)} />
+                        {/* 3-column rank | description | owner table, same pattern as Key Thrusts preview */}
+                        <table className="w-full text-[9px] border-collapse">
+                          <tbody>
+                            {form.keyInitiatives
+                              .filter(r => (r.desc && r.desc.trim().length > 0) || (r.owner && r.owner.trim().length > 0))
+                              .map((r, i) => {
+                                const owner = users.find(u => u.id === r.owner);
+                                const ownerLabel = owner ? `${owner.firstName} ${owner.lastName}` : (r.owner || "");
+                                return (
+                                  <tr key={i} className="align-top">
+                                    <td className="pr-1 text-gray-500 w-[14px]">{String(i + 1).padStart(2, "0")}</td>
+                                    <td className="pr-1 leading-snug">{r.desc}</td>
+                                    <td className="text-gray-500 whitespace-nowrap">{ownerLabel}</td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
                       </div>
 
                       <div className="border-t border-gray-300 pt-1 mt-1">
@@ -1211,9 +1430,25 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
                 </thead>
                 <tbody>
                   <tr>
-                    {/* Rocks / rich text */}
+                    {/* Rocks — 3-column rank | description | owner (same format as Key Thrusts preview) */}
                     <td className={td}>
-                      <div className="prose-preview text-[9px] [&_p]:mb-1" dangerouslySetInnerHTML={html(form.rocks)} />
+                      <table className="w-full text-[9px] border-collapse">
+                        <tbody>
+                          {form.rocks
+                            .filter(r => (r.desc && r.desc.trim().length > 0) || (r.owner && r.owner.trim().length > 0))
+                            .map((r, i) => {
+                              const owner = users.find(u => u.id === r.owner);
+                              const ownerLabel = owner ? `${owner.firstName} ${owner.lastName}` : (r.owner || "");
+                              return (
+                                <tr key={i} className="align-top">
+                                  <td className="pr-1 text-gray-500 w-[14px]">{String(i + 1).padStart(2, "0")}</td>
+                                  <td className="pr-1 leading-snug">{r.desc}</td>
+                                  <td className="text-gray-500 whitespace-nowrap">{ownerLabel}</td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
                     </td>
 
                     {/* Scoreboard Design */}
@@ -1307,8 +1542,11 @@ export default function OPSPPage() {
   const [form, setForm] = useState<FormData>(defaultForm());
   const [saveState, setSaveState] = useState<"idle"|"saving"|"saved"|"error">("idle");
   const [loading, setLoading] = useState(true);
+  // Tenant's fiscal year start month (1 = Jan, 4 = Apr, etc.). Defaults to Jan until loaded.
+  const [fiscalYearStart, setFiscalYearStart] = useState<number>(1);
   const [targetsOpen, setTargetsOpen] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
+  const [rocksOpen, setRocksOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const { data: allUsers = [] } = useUsers();
   const debounceRef = useRef<ReturnType<typeof setTimeout>|null>(null);
@@ -1332,13 +1570,18 @@ export default function OPSPPage() {
           // No session (preview mode) — try localStorage
           const draft = localStorage.getItem(`opsp_draft_${form.year}_${form.quarter}`);
           if (draft) {
-            try { skipNextSave.current = true; setForm(prev => ({ ...defaultForm(), ...JSON.parse(draft) })); } catch {}
+            try {
+              skipNextSave.current = true;
+              setForm(prev => ({ ...defaultForm(), ...normalizeLoadedOPSP(JSON.parse(draft)) } as FormData));
+            } catch {}
           }
         } else {
           const json = await res.json();
+          if (typeof json.fiscalYearStart === "number") setFiscalYearStart(json.fiscalYearStart);
           if (json.data) {
             skipNextSave.current = true;
-            setForm(prev => ({ ...defaultForm(), ...json.data, year: json.data.year ?? prev.year, quarter: json.data.quarter ?? prev.quarter }));
+            const normalized = normalizeLoadedOPSP(json.data);
+            setForm(prev => ({ ...defaultForm(), ...normalized, year: json.data.year ?? prev.year, quarter: json.data.quarter ?? prev.quarter } as FormData));
           }
         }
       } catch {}
@@ -1356,15 +1599,18 @@ export default function OPSPPage() {
       if (res.status === 401) {
         const draft = localStorage.getItem(`opsp_draft_${year}_${quarter}`);
         skipNextSave.current = true;
-        setForm(prev => {
-          if (draft) { try { return { ...defaultForm(), ...JSON.parse(draft), year, quarter }; } catch {} }
+        setForm(() => {
+          if (draft) {
+            try { return { ...defaultForm(), ...normalizeLoadedOPSP(JSON.parse(draft)), year, quarter } as FormData; } catch {}
+          }
           return { ...defaultForm(), year, quarter };
         });
       } else {
         const json = await res.json();
+        if (typeof json.fiscalYearStart === "number") setFiscalYearStart(json.fiscalYearStart);
         skipNextSave.current = true;
-        setForm(prev => json.data
-          ? { ...defaultForm(), ...json.data, year, quarter }
+        setForm(() => json.data
+          ? ({ ...defaultForm(), ...normalizeLoadedOPSP(json.data), year, quarter } as FormData)
           : { ...defaultForm(), year, quarter });
       }
     } catch {}
@@ -1474,9 +1720,12 @@ export default function OPSPPage() {
 
       {/* ── Modals ── */}
       <TargetsModal open={targetsOpen} onClose={() => setTargetsOpen(false)}
-        rows={form.targetRows} onChange={r => set("targetRows", r)} targetYears={form.targetYears} />
+        rows={form.targetRows} onChange={r => set("targetRows", r)} targetYears={form.targetYears}
+        fiscalYear={form.year} fiscalYearStart={fiscalYearStart} />
       <GoalsModal open={goalsOpen} onClose={() => setGoalsOpen(false)}
         rows={form.goalRows} onChange={r => set("goalRows", r)} />
+      <RocksModal open={rocksOpen} onClose={() => setRocksOpen(false)}
+        rows={form.rocks} onChange={r => set("rocks", r)} />
 
       <div className="px-6 py-6 space-y-8">
 
@@ -1560,24 +1809,26 @@ export default function OPSPPage() {
                     <Maximize2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
-                  <span className="w-[55%]">Category</span><span className="flex-1 text-right">Projected</span>
+                <div className="grid grid-cols-5 gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
+                  <span className="col-span-3">Category</span>
+                  <span className="col-span-2 text-right">Projected</span>
                 </div>
                 {form.targetRows.slice(0,3).map((row, i) => (
-                  <div key={i} className="flex items-start gap-1.5 py-0.5">
-                    <div className="w-[55%] min-w-0 flex-shrink-0">
+                  <div key={i} className="grid grid-cols-5 gap-1.5 items-start py-0.5">
+                    <div className="col-span-3 min-w-0">
                       <CategorySelect value={row.category} onChange={v => {
                         const next = [...form.targetRows]; next[i] = { ...next[i], category: v }; set("targetRows", next);
                       }} />
                     </div>
-                    <ProjectedInput
-                      className="flex-1 min-w-0"
-                      categoryName={row.category}
-                      value={row.projected}
-                      onChange={v => {
-                        const next = [...form.targetRows]; next[i] = { ...next[i], projected: v }; set("targetRows", next);
-                      }}
-                    />
+                    <div className="col-span-2 min-w-0">
+                      <ProjectedInput
+                        categoryName={row.category}
+                        value={row.projected}
+                        onChange={v => {
+                          const next = [...form.targetRows]; next[i] = { ...next[i], projected: v }; set("targetRows", next);
+                        }}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1600,7 +1851,7 @@ export default function OPSPPage() {
                           const next = [...form.keyThrusts]; next[i] = { ...next[i], desc: v }; set("keyThrusts", next);
                         }} />
                       </WithTooltip>
-                      <div className="relative w-28 flex-shrink-0">
+                      <div className="relative w-[95px] flex-shrink-0">
                         <OwnerSelect value={row.owner} onChange={v => {
                           const next = [...form.keyThrusts]; next[i] = { ...next[i], owner: v }; set("keyThrusts", next);
                         }} />
@@ -1636,40 +1887,63 @@ export default function OPSPPage() {
                     <Maximize2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
-                  <span className="w-[55%]">Category</span><span className="flex-1 text-right">Projected</span>
+                <div className="grid grid-cols-5 gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
+                  <span className="col-span-3">Category</span>
+                  <span className="col-span-2 text-right">Projected</span>
                 </div>
                 {form.goalRows.slice(0,6).map((row, i) => (
-                  <div key={i} className="flex items-start gap-1.5 py-0.5">
-                    <div className="w-[55%] min-w-0 flex-shrink-0">
+                  <div key={i} className="grid grid-cols-5 gap-1.5 items-start py-0.5">
+                    <div className="col-span-3 min-w-0">
                       <CategorySelect value={row.category} onChange={v => {
                         const next = [...form.goalRows]; next[i] = { ...next[i], category: v }; set("goalRows", next);
                       }} />
                     </div>
-                    <ProjectedInput
-                      className="flex-1 min-w-0"
-                      categoryName={row.category}
-                      value={row.projected}
-                      onChange={v => {
-                        const next = [...form.goalRows]; next[i] = { ...next[i], projected: v }; set("goalRows", next);
-                      }}
-                    />
+                    <div className="col-span-2 min-w-0">
+                      <ProjectedInput
+                        categoryName={row.category}
+                        value={row.projected}
+                        onChange={v => {
+                          const next = [...form.goalRows]; next[i] = { ...next[i], projected: v }; set("goalRows", next);
+                        }}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
-              {/* Key Initiatives — rich text editor */}
+              {/* Key Initiatives — 3-column table (rank | description | owner), matches Key Thrusts/Capabilities */}
               <div className="border-t border-gray-100 pt-3">
                 <div className="mb-2">
                   <p className="text-xs font-bold text-gray-800 uppercase">Key Initiatives</p>
                   <p className="text-xs text-gray-500">1 Year Priorities</p>
                 </div>
-                <RichEditor
-                  value={form.keyInitiatives}
-                  onChange={v => set("keyInitiatives", v)}
-                  placeholder="Enter key initiatives..."
-                  className="min-h-[120px]"
-                  resetKey={`${form.year}-${form.quarter}`}
-                />
+                <div className="divide-y divide-gray-100">
+                  {form.keyInitiatives.map((row, i) => (
+                    <div key={i} className="flex items-center gap-1.5 py-1.5">
+                      <span className="text-xs text-gray-400 w-5 flex-shrink-0">{String(i + 1).padStart(2, "0")}</span>
+                      <WithTooltip content={row.desc} className="relative flex-1 min-w-0">
+                        <FInput
+                          value={row.desc}
+                          placeholder="Initiative"
+                          onChange={v => {
+                            const next = [...form.keyInitiatives];
+                            next[i] = { ...next[i], desc: v };
+                            set("keyInitiatives", next);
+                          }}
+                        />
+                      </WithTooltip>
+                      <div className="relative w-[95px] flex-shrink-0">
+                        <OwnerSelect
+                          value={row.owner}
+                          onChange={v => {
+                            const next = [...form.keyInitiatives];
+                            next[i] = { ...next[i], owner: v };
+                            set("keyInitiatives", next);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="border-t border-gray-100 pt-3 space-y-3">
                 <CritBlock label="Critical #" value={form.criticalNumGoals} onChange={v => set("criticalNumGoals", v)} />
@@ -1683,7 +1957,7 @@ export default function OPSPPage() {
           <div className="grid grid-cols-2 gap-4 mt-4">
             {(["processItems","weaknesses"] as const).map((key, ci) => (
               <div key={key}>
-                <p className="text-sm font-medium text-gray-700 mb-2">{["Process","Weaknesses:"][ci]}</p>
+                <p className="text-sm font-medium text-gray-700 mb-2">{["Strength","Weaknesses:"][ci]}</p>
                 <Card className="space-y-2">
                   {[0,1,2].map(i => <FInput key={i} value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} />)}
                 </Card>
@@ -1716,30 +1990,73 @@ export default function OPSPPage() {
             <Card className="space-y-4">
               <div>
                 <CardH title="ACTIONS (QTR)" subtitle="(How)" expand />
-                <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
-                  <span className="w-[55%]">Category</span><span className="flex-1 text-right">Projected</span>
+                <div className="grid grid-cols-5 gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
+                  <span className="col-span-3">Category</span>
+                  <span className="col-span-2 text-right">Projected</span>
                 </div>
                 {form.actionsQtr.map((row, i) => (
-                  <div key={i} className="flex items-start gap-1.5 py-0.5">
-                    <div className="w-[55%] min-w-0 flex-shrink-0">
+                  <div key={i} className="grid grid-cols-5 gap-1.5 items-start py-0.5">
+                    <div className="col-span-3 min-w-0">
                       <CategorySelect value={row.category} onChange={v => {
                         const next = [...form.actionsQtr]; next[i] = { ...next[i], category: v }; set("actionsQtr", next);
                       }} />
                     </div>
-                    <ProjectedInput
-                      className="flex-1 min-w-0"
-                      categoryName={row.category}
-                      value={row.projected}
-                      onChange={v => {
-                        const next = [...form.actionsQtr]; next[i] = { ...next[i], projected: v }; set("actionsQtr", next);
-                      }}
-                    />
+                    <div className="col-span-2 min-w-0">
+                      <ProjectedInput
+                        categoryName={row.category}
+                        value={row.projected}
+                        onChange={v => {
+                          const next = [...form.actionsQtr]; next[i] = { ...next[i], projected: v }; set("actionsQtr", next);
+                        }}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
+              {/* Rocks — 3-column table (rank | Quarterly Priority | Who/OwnerSelect). Matches Key Thrusts/Capabilities pattern. */}
               <div className="border-t border-gray-100 pt-3">
-                <CardH title="ROCKS" expand />
-                <RichEditor value={form.rocks} onChange={v => set("rocks", v)} placeholder="Enter rocks..." resetKey={`${form.year}-${form.quarter}`} />
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <p className="text-xs font-bold text-gray-800 uppercase">Rocks</p>
+                    <p className="text-xs text-gray-500">Quarterly Priorities</p>
+                  </div>
+                  <button onClick={() => setRocksOpen(true)} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded p-0.5">
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
+                  <span className="w-5 flex-shrink-0">#</span>
+                  <span className="flex-1">Quarterly Priorities</span>
+                  <span className="w-[95px] flex-shrink-0">Who</span>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {form.rocks.map((row, i) => (
+                    <div key={i} className="flex items-center gap-1.5 py-1.5">
+                      <span className="text-xs text-gray-400 w-5 flex-shrink-0">{String(i + 1).padStart(2, "0")}</span>
+                      <WithTooltip content={row.desc} className="relative flex-1 min-w-0">
+                        <FInput
+                          value={row.desc}
+                          placeholder="Quarterly Priority"
+                          onChange={v => {
+                            const next = [...form.rocks];
+                            next[i] = { ...next[i], desc: v };
+                            set("rocks", next);
+                          }}
+                        />
+                      </WithTooltip>
+                      <div className="relative w-[95px] flex-shrink-0">
+                        <OwnerSelect
+                          value={row.owner}
+                          onChange={v => {
+                            const next = [...form.rocks];
+                            next[i] = { ...next[i], owner: v };
+                            set("rocks", next);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="border-t border-gray-100 pt-3 space-y-3">
                 <CritBlock label="Critical #" value={form.criticalNumProcess} onChange={v => set("criticalNumProcess", v)} />
@@ -1837,16 +2154,18 @@ export default function OPSPPage() {
                             {String(i + 1).padStart(2, "0")}
                           </td>
                           <td className="border-r border-gray-200 px-3 py-1.5">
-                            <input
-                              value={row.priority}
-                              onChange={e => {
-                                const next = [...form.quarterlyPriorities];
-                                next[i] = { ...next[i], priority: e.target.value };
-                                set("quarterlyPriorities", next);
-                              }}
-                              placeholder="Input text"
-                              className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
-                            />
+                            <WithTooltip content={row.priority} className="relative block w-full">
+                              <input
+                                value={row.priority}
+                                onChange={e => {
+                                  const next = [...form.quarterlyPriorities];
+                                  next[i] = { ...next[i], priority: e.target.value };
+                                  set("quarterlyPriorities", next);
+                                }}
+                                placeholder="Input text"
+                                className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                              />
+                            </WithTooltip>
                           </td>
                           <td className="px-3 py-1.5 w-32">
                             <div className="relative flex items-center gap-2 cursor-pointer">

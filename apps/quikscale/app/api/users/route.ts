@@ -19,24 +19,12 @@ export async function GET(request: NextRequest) {
     const { tenantId } = membership;
     const teamId = request.nextUrl.searchParams.get("teamId");
 
-    let userIds: string[] | undefined;
-
-    if (teamId) {
-      // Get all users who are members of this team via UserTeam
-      const teamMembers = await db.userTeam.findMany({
-        where: { tenantId, teamId },
-        select: { userId: true },
-      });
-      userIds = teamMembers.map(m => m.userId);
-      if (userIds.length === 0)
-        return NextResponse.json({ success: true, data: [] });
-    }
-
+    // Membership has a direct teamId field — filter there
     const members = await db.membership.findMany({
       where: {
         tenantId,
         status: "active",
-        ...(userIds ? { userId: { in: userIds } } : {}),
+        ...(teamId ? { teamId } : {}),
       },
       select: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
       orderBy: { createdAt: "asc" },

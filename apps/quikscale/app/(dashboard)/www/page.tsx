@@ -8,6 +8,8 @@ import { WWWTable } from "./components/WWWTable";
 import { WWWPanel } from "./components/WWWPanel";
 import { FilterPicker, userToFilterOption } from "@/components/FilterPicker";
 import { useFilterContext } from "@/lib/context/FilterContext";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 
 export default function WWWPage() {
   const [search, setSearch] = useState("");
@@ -32,9 +34,17 @@ export default function WWWPage() {
 
   const handleSelectionChange = useCallback((ids: Set<string>) => setSelectedIds(new Set(ids)), []);
 
-  // Pass status filter to API; handle search client-side in API too
+  // Table preferences for WWW (sort, hidden cols)
+  const { sort: wwwSort, hiddenCols: wwwHidden, showCol: showWwwCol, showAllCols: showAllWwwCols } = useTablePrefs("www");
+
+  const WWW_COL_LABELS: Record<string, string> = {
+    who: "Who", when: "When", what: "What", revisedDate: "Revised Date", status: "Status", notes: "Notes",
+  };
+
+  // Pass status filter + sort to API
   const { data: items = [], isLoading, error, refetch } = useWWWItems({
     status: filterStatus || undefined,
+    sort: wwwSort,
   });
 
   const deleteWWW = useDeleteWWW();
@@ -101,6 +111,14 @@ export default function WWWPage() {
               Delete {selectedIds.size} selected
             </button>
           )}
+
+          {/* Hidden columns pill (before search) */}
+          <HiddenColsPill
+            hiddenCols={wwwHidden}
+            colLabels={WWW_COL_LABELS}
+            onRestore={showWwwCol}
+            onRestoreAll={showAllWwwCols}
+          />
 
           {/* Search */}
           <div className="relative">

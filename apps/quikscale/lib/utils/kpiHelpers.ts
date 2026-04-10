@@ -1,3 +1,5 @@
+import { getColorByPercentage, type ColorResult } from "./colorLogic";
+
 /**
  * Format a number for display: strips floating-point noise, max 2 decimal places,
  * and removes trailing zeros. e.g. 97.521999 → "97.52", 4.0 → "4", 1.5 → "1.5"
@@ -21,19 +23,42 @@ export function fmtCompact(val: number | null | undefined): string {
   return fmt(val);
 }
 
-/** Maps progress percentage to color classes for bar + text + label. */
-export function progressColor(pct: number) {
-  if (pct >= 100) return { bar: "bg-blue-500", text: "text-blue-600", label: "On Track" };
-  if (pct >= 80)  return { bar: "bg-green-500", text: "text-green-600", label: "Good" };
-  if (pct >= 50)  return { bar: "bg-yellow-400", text: "text-yellow-600", label: "Behind" };
-  return { bar: "bg-red-500", text: "text-red-600", label: "Critical" };
+/**
+ * Maps overall KPI progress percentage to color using the new forward logic.
+ * Thresholds: ≥120% blue, ≥100% green, ≥80% yellow, <80% red.
+ */
+export function progressColor(pct: number, reverse: boolean = false) {
+  // Overall progress uses the new color logic with isUpdated=true
+  // (if we're displaying a progress percent, the KPI has been tracked).
+  const color = getColorByPercentage(pct, 100, true, reverse);
+
+  // Map ColorResult to legacy bar/text/label shape for backward compat.
+  if (color.bg === "bg-blue-600") return { bar: "bg-blue-600", text: "text-blue-700", label: reverse ? "Much Better" : "Exceeded" };
+  if (color.bg === "bg-green-600") return { bar: "bg-green-600", text: "text-green-700", label: reverse ? "On Track" : "Achieved" };
+  if (color.bg === "bg-yellow-500") return { bar: "bg-yellow-500", text: "text-yellow-600", label: reverse ? "Slightly Worse" : "Near Target" };
+  if (color.bg === "bg-red-600") return { bar: "bg-red-600", text: "text-red-700", label: reverse ? "Poor" : "Below Target" };
+  return { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
 }
 
-/** Returns bg + text classes to fill a week cell with color based on value vs target. */
-export function weekCellColors(val: number | null | undefined, target: number | null | undefined) {
-  if (val === null || val === undefined) return { bg: "", text: "text-gray-300" };
-  const weeklyTarget = (target ?? 0) / 13;
-  if (val === 0) return { bg: "bg-red-500", text: "text-white" };
-  if (weeklyTarget > 0 && val >= weeklyTarget) return { bg: "bg-blue-500", text: "text-white" };
-  return { bg: "bg-green-500", text: "text-white" };
+/**
+ * Returns bg + text classes for a KPI week cell.
+ *
+ * Weekly target is always derived from qtdGoal (fallback to target) divided by 13.
+ *
+ * @param val The weekly value entered by the user
+ * @param qtdGoal The quarter-to-date goal (the primary target)
+ * @param fallbackTarget Legacy `target` field as fallback
+ * @param reverse True for reverse KPIs (lower is better)
+ */
+export function weekCellColors(
+  val: number | null | undefined,
+  qtdGoal: number | null | undefined,
+  fallbackTarget: number | null | undefined = null,
+  reverse: boolean = false,
+): { bg: string; text: string } {
+  const weeklyTarget = ((qtdGoal ?? fallbackTarget ?? 0)) / 13;
+  const isUpdated = val !== null && val !== undefined;
+  const numVal = isUpdated ? val : 0;
+  const color: ColorResult = getColorByPercentage(numVal, weeklyTarget, isUpdated, reverse);
+  return { bg: color.bg, text: color.text };
 }

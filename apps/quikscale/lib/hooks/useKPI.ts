@@ -25,6 +25,16 @@ export function useKPIs(params: Partial<KPIListParams> = {}) {
   });
 }
 
+// List Team KPIs — convenience wrapper that forces kpiLevel="team" and a larger pageSize
+// (team KPI sets are small; avoiding pagination gives a simpler UX for the Teams KPI page)
+export function useTeamKPIs(params: Partial<KPIListParams> = {}) {
+  return useKPIs({
+    ...params,
+    kpiLevel: "team",
+    pageSize: params.pageSize ?? 500,
+  });
+}
+
 // Get single KPI
 export function useKPI(id: string) {
   return useQuery({

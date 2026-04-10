@@ -36,10 +36,22 @@ export function getQuarterStart(year: number, quarter: string): Date {
   return new Date(quarter === "Q4" ? year + 1 : year, mo, dy);
 }
 
-/** Returns the current fiscal week (1–13) within the given quarter. */
+/** Returns the current fiscal week (1–13) within the given quarter (legacy, uses hardcoded months). */
 export function getCurrentFiscalWeek(year: number, quarter: string): number {
   const now = new Date();
   const start = getQuarterStart(year, quarter);
+  const elapsed = Math.floor((now.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return Math.min(13, Math.max(1, elapsed));
+}
+
+/**
+ * Returns current fiscal week given a quarter's actual start date (ISO string or Date).
+ * Use this when you have the real QuarterSetting.startDate from the DB.
+ */
+export function getCurrentFiscalWeekFromStart(startDate: string | Date): number {
+  const start = typeof startDate === "string" ? new Date(startDate) : startDate;
+  const now = new Date();
+  if (now < start) return 1;
   const elapsed = Math.floor((now.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
   return Math.min(13, Math.max(1, elapsed));
 }

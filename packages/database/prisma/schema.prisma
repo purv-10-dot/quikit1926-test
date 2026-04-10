@@ -120,6 +120,19 @@ model User {
   themeMode           String?  @default("light")
   accentColor         String?  @default("#0066cc")
 
+  kpiFrozenCol        String?
+  priorityFrozenCol   String?
+  wwwFrozenCol        String?
+  kpiHiddenCols       String?
+  priorityHiddenCols  String?
+  wwwHiddenCols       String?
+  kpiSort             String?
+  prioritySort        String?
+  wwwSort             String?
+  kpiColWidths        String?
+  priorityColWidths   String?
+  wwwColWidths        String?
+
   accounts            Account[]
   sessions            Session[]
   memberships         Membership[]
@@ -290,7 +303,12 @@ model KPI {
 
   name                String
   description         String?
-  owner               String
+  kpiLevel            String   @default("individual")  // "individual" | "team"
+  owner               String?
+  // Team KPI owners (multi-select). Each owner has a contribution % stored in ownerContributions.
+  ownerIds            String[] @default([])
+  // JSON map: { userId: contributionPercentage }  — sum must equal 100 for team KPIs
+  ownerContributions  Json?
   teamId              String?
 
   parentKPIId         String?
@@ -311,8 +329,12 @@ model KPI {
 
   divisionType        String   @default("Cumulative")
   weeklyTargets       Json?
+  // Team KPI per-owner weekly targets: { userId: { weekNumber: value } }
+  // Source of truth for team KPI breakdowns; weeklyTargets holds the aggregate sum.
+  weeklyOwnerTargets  Json?
   currency            String?
   targetScale         String?
+  reverseColor        Boolean  @default(false)
 
   lastNotes           String?
   lastNotesAt         DateTime?
@@ -337,6 +359,7 @@ model KPI {
   @@index([tenantId])
   @@index([owner])
   @@index([teamId])
+  @@index([kpiLevel])
   @@index([parentKPIId])
   @@index([status])
   @@index([healthStatus])
@@ -347,6 +370,11 @@ model KPIWeeklyValue {
   id                  String   @id @default(cuid())
   tenantId            String
   kpiId               String
+  // Phase 2: userId attributes this weekly value to a specific user.
+  //   - Individual KPI: always set to kpi.owner (enforced by API + backfilled for existing rows)
+  //   - Team KPI: set to one of kpi.ownerIds (each owner has their own row per week)
+  //   - Legacy rows may be null until migration completes
+  userId              String?
 
   weekNumber          Int
   value               Float?
@@ -359,9 +387,10 @@ model KPIWeeklyValue {
 
   kpi                 KPI      @relation(fields: [kpiId], references: [id], onDelete: Cascade)
 
-  @@unique([kpiId, weekNumber])
+  @@unique([kpiId, userId, weekNumber])
   @@index([tenantId])
   @@index([kpiId])
+  @@index([userId])
 }
 
 model KPINote {
@@ -705,7 +734,7 @@ model OPSPData {
 
   // GOALS (1 yr)
   goalRows      Json?    // [{category,projected,q1,q2,q3,q4}]
-  keyInitiatives String? @db.Text
+  keyInitiatives Json?   // [{desc, owner}] ×5 — 1 Year Priorities, matches keyThrusts shape
   criticalNumGoals      Json?  // {title,bullets:String[4]}
   balancingCritNumGoals Json?
 
@@ -720,7 +749,7 @@ model OPSPData {
 
   // ACTIONS QTR
   actionsQtr    Json?    // [{category,projected}] ×5
-  rocks         String?  @db.Text
+  rocks         Json?    // [{desc, owner}] ×5 — Quarterly Priorities (matches keyInitiatives shape)
   criticalNumProcess    Json?
   balancingCritNumProcess Json?
 

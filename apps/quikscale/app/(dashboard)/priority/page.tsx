@@ -12,6 +12,8 @@ import { PriorityTable } from "./components/PriorityTable";
 import { PriorityModal } from "./components/PriorityModal";
 import { FilterPicker, userToFilterOption } from "@/components/FilterPicker";
 import { useFilterContext } from "@/lib/context/FilterContext";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -48,8 +50,13 @@ export default function PriorityPage() {
 
   const { data: users = [] } = useUsers(filterTeam || undefined);
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
-  const { data: priorities = [], isLoading, error, refetch } = usePriorities(year, quarter);
+  // Table preferences (persisted per user in DB) — need sort for the API fetch here
+  const { sort: prioritySort, hiddenCols: priorityHidden, showCol: showPriorityCol, showAllCols: showAllPriorityCols } = useTablePrefs("priority");
+
+  const { data: priorities = [], isLoading, error, refetch } = usePriorities(year, quarter, prioritySort);
   const deletePriority = useDeletePriority();
+
+  const PRIORITY_COL_LABELS: Record<string, string> = { team: "Team", priorityName: "Priority Name", owner: "Owner" };
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -115,6 +122,14 @@ export default function PriorityPage() {
               Delete {selectedIds.size} selected
             </button>
           )}
+
+          {/* Hidden columns pill (before search) */}
+          <HiddenColsPill
+            hiddenCols={priorityHidden}
+            colLabels={PRIORITY_COL_LABELS}
+            onRestore={showPriorityCol}
+            onRestoreAll={showAllPriorityCols}
+          />
 
           {/* Search */}
           <div className="relative">
@@ -276,6 +291,7 @@ export default function PriorityPage() {
             defaultYear={year}
             defaultQuarter={quarter}
             onSelectionChange={handleSelectionChange}
+            hideColumns={["startWeek", "endWeek", "lastNote"]}
           />
         )}
       </div>

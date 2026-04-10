@@ -8,15 +8,22 @@ import type { PriorityRow } from "@/lib/types/priority";
 const priorityKeys = {
   all: ["priority"] as const,
   lists: () => [...priorityKeys.all, "list"] as const,
-  list: (year: number, quarter: string) => [...priorityKeys.lists(), { year, quarter }] as const,
+  list: (year: number, quarter: string, sort?: string | null) =>
+    [...priorityKeys.lists(), { year, quarter, sort }] as const,
   details: () => [...priorityKeys.all, "detail"] as const,
   detail: (id: string) => [...priorityKeys.details(), id] as const,
 };
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
-async function fetchPriorities(year: number, quarter: string): Promise<PriorityRow[]> {
-  const res = await fetch(`/api/priority?year=${year}&quarter=${encodeURIComponent(quarter)}`);
+async function fetchPriorities(year: number, quarter: string, sort?: string | null): Promise<PriorityRow[]> {
+  const params = new URLSearchParams({ year: String(year), quarter });
+  if (sort) {
+    const [sortBy, sortOrder] = sort.split(":");
+    if (sortBy) params.set("sortBy", sortBy);
+    if (sortOrder) params.set("sortOrder", sortOrder);
+  }
+  const res = await fetch(`/api/priority?${params.toString()}`);
   const data = await res.json();
   if (!data.success) throw new Error(data.error || "Failed to fetch priorities");
   return data.data;
@@ -60,10 +67,10 @@ async function updateWeeklyStatus(
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 
-export function usePriorities(year: number, quarter: string) {
+export function usePriorities(year: number, quarter: string, sort?: string | null) {
   return useQuery({
-    queryKey: priorityKeys.list(year, quarter),
-    queryFn: () => fetchPriorities(year, quarter),
+    queryKey: priorityKeys.list(year, quarter, sort),
+    queryFn: () => fetchPriorities(year, quarter, sort),
     staleTime: 1000 * 60 * 5,
   });
 }

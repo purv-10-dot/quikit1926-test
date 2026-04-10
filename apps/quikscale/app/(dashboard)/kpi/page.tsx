@@ -31,6 +31,7 @@ export default function IndividualKPIPage() {
     pageSize: 50,
     year: FISCAL_YEAR,
     quarter: FISCAL_QUARTER,
+    kpiLevel: "individual", // Isolation: keep team KPIs out of the Individual KPI page
     sortBy: "createdAt",
     sortOrder: "desc",
   });
@@ -342,6 +343,7 @@ export default function IndividualKPIPage() {
             clearSelectionTrigger={clearSelectionTrigger}
             onHiddenColsChange={handleHiddenColsChange}
             showColTrigger={showColTrigger}
+            hideColumns={["quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal", "teamHead", "kpiOwner"]}
           />
         )}
       </div>

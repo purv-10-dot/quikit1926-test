@@ -44,15 +44,26 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const year = searchParams.get("year") ? parseInt(searchParams.get("year")!) : undefined;
     const quarter = searchParams.get("quarter") || undefined;
+    const sortBy = searchParams.get("sortBy") || "createdAt";
+    const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
 
     const where: Record<string, unknown> = { tenantId };
     if (year) where.year = year;
     if (quarter) where.quarter = quarter;
 
+    // Allowed sort fields
+    const sortMap: Record<string, Record<string, "asc" | "desc">> = {
+      team: { team: { name: sortOrder } as any },
+      priorityName: { name: sortOrder },
+      owner: { owner_user: { firstName: sortOrder } as any },
+      createdAt: { createdAt: sortOrder },
+    };
+    const orderBy = sortMap[sortBy] || { createdAt: sortOrder };
+
     const priorities = await db.priority.findMany({
       where,
       select: PRIORITY_SELECT,
-      orderBy: { createdAt: "asc" },
+      orderBy: orderBy as any,
     });
 
     return NextResponse.json({ success: true, data: priorities });

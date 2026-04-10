@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "quikscale",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npx turbo dev --filter=quikscale"],
+      "port": 3004
+    },
+    {
+      "name": "admin",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npx turbo dev --filter=admin"],
+      "port": 3005
+    },
+    {
+      "name": "super-admin",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npx turbo dev --filter=super-admin"],
+      "port": 3006
+    },
+    {
+      "name": "all",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npm run dev"],
+      "port": 3004
+    }
+  ]
+}

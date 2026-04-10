@@ -14,10 +14,11 @@ export async function GET(req: NextRequest) {
   const year    = parseInt(searchParams.get("year")    ?? String(new Date().getFullYear()));
   const quarter = searchParams.get("quarter") ?? "Q1";
 
-  // Resolve tenantId from membership
+  // Resolve tenantId + fiscalYearStart from membership
   const membership = await db.membership.findFirst({
     where: { userId: session.user.id, status: "active" },
     orderBy: { createdAt: "asc" },
+    include: { tenant: { select: { fiscalYearStart: true } } },
   });
   if (!membership) {
     return NextResponse.json({ error: "No active membership" }, { status: 403 });
@@ -34,7 +35,10 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ data: data ?? null });
+  return NextResponse.json({
+    data: data ?? null,
+    fiscalYearStart: membership.tenant?.fiscalYearStart ?? 1,
+  });
 }
 
 /* ── PUT: upsert (autosave) ── */

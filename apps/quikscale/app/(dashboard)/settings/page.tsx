@@ -8,6 +8,7 @@ import {
   LayoutDashboard, BarChart3, ListChecks, Users,
 } from "lucide-react";
 import { applyAccentColor } from "@quikit/ui/theme-applier";
+import { invalidateFeatureFlagsCache } from "@/lib/hooks/useFeatureFlags";
 
 /* ─── Constants ─────────────────────────────────────────────────────────────── */
 const ACCENT_PRESETS = [
@@ -467,7 +468,9 @@ function ConfigurationsTab() {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [opspThreshold, setOpspThreshold] = useState("");
   const [opspReviewThreshold, setOpspReviewThreshold] = useState("");
+  const [futureDaysLimit, setFutureDaysLimit] = useState("");
   const [quarterDaysLeft, setQuarterDaysLeft] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const fetchFlags = useCallback(async () => {
     try {
@@ -479,6 +482,7 @@ function ConfigurationsTab() {
         setFlags(map);
         setOpspThreshold(map["opsp_threshold_days"]?.value || "");
         setOpspReviewThreshold(map["opsp_review_threshold_days"]?.value || "");
+        setFutureDaysLimit(map["future_days_limit"]?.value || "");
       }
     } finally { setLoading(false); }
   }, []);
@@ -507,16 +511,26 @@ function ConfigurationsTab() {
     })();
   }, []);
 
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  }
+
   async function toggleFlag(key: string, currentEnabled: boolean) {
     setSavingKey(key);
     const newEnabled = !currentEnabled;
     setFlags((prev) => ({ ...prev, [key]: { ...prev[key], key, enabled: newEnabled, value: prev[key]?.value || null } }));
     try {
-      await fetch("/api/settings/configurations", {
+      const res = await fetch("/api/settings/configurations", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ flags: [{ key, enabled: newEnabled }] }),
       });
+      const json = await res.json();
+      if (json.success) {
+        showToast("Setting updated successfully");
+        invalidateFeatureFlagsCache();
+      }
     } finally { setSavingKey(null); }
   }
 
@@ -531,6 +545,8 @@ function ConfigurationsTab() {
       const json = await res.json();
       if (json.success) {
         setFlags((prev) => ({ ...prev, [key]: json.data[0] }));
+        showToast("Settings saved successfully");
+        invalidateFeatureFlagsCache();
       }
     } finally { setSavingKey(null); }
   }
@@ -542,7 +558,17 @@ function ConfigurationsTab() {
   const futureQuarters = flags["enable_future_quarters"]?.enabled ?? false;
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="max-w-4xl space-y-6 relative">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[100] animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="flex items-center gap-2 bg-[var(--color-text-primary)] text-white px-4 py-3 rounded-xl shadow-lg text-sm font-medium">
+            <svg className="h-4 w-4 text-green-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            {toast}
+          </div>
+        </div>
+      )}
+
       {/* Toggle cards - top row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Add Past Week Data */}
@@ -580,8 +606,8 @@ function ConfigurationsTab() {
         {/* Enable Future Quarters */}
         <div className="border border-[var(--color-border)] rounded-xl p-5 bg-[var(--color-bg-primary)]">
           <h4 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">Enable Future Quarters</h4>
-          <p className="text-xs text-[var(--color-text-secondary)] mb-4">Do you want to enable future quarters?</p>
-          <div className="flex items-center justify-between">
+          <p className="text-xs text-[var(--color-text-secondary)] mb-3">Do you want to enable future quarters?</p>
+          <div className="flex items-center justify-between mb-3">
             <Toggle
               enabled={futureQuarters}
               onChange={() => toggleFlag("enable_future_quarters", futureQuarters)}
@@ -591,11 +617,26 @@ function ConfigurationsTab() {
               {futureQuarters ? "Yes" : "No"}
             </span>
           </div>
+          {futureQuarters && (
+            <>
+              <label className="text-xs text-[var(--color-text-secondary)] block mb-1">Days before quarter end (N)</label>
+              <input
+                type="number"
+                min={0}
+                max={90}
+                value={futureDaysLimit}
+                onChange={(e) => setFutureDaysLimit(e.target.value)}
+                placeholder="e.g. 30"
+                className="w-full border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] mb-3"
+              />
+            </>
+          )}
           <button
-            onClick={() => toggleFlag("enable_future_quarters", futureQuarters)}
-            className="w-full mt-3 text-xs text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded-lg px-3 py-2 hover:bg-[var(--color-neutral-50)] transition-colors"
+            onClick={() => saveThreshold("future_days_limit", futureDaysLimit)}
+            disabled={savingKey === "future_days_limit"}
+            className="w-full text-xs text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded-lg px-3 py-2 hover:bg-[var(--color-neutral-50)] transition-colors"
           >
-            Save Future Quarter Settings
+            {savingKey === "future_days_limit" ? "Saving..." : "Save Future Quarter Settings"}
           </button>
         </div>
       </div>
