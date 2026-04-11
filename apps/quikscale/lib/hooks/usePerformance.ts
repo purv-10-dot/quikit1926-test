@@ -49,3 +49,24 @@ export function useUpdateReview() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["performance", "reviews"] })
   });
 }
+
+export function useTalent() {
+  return useQuery({
+    queryKey: ["performance", "talent"],
+    queryFn: () => fetchJSON(`${BASE}/talent`),
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useUpsertTalent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) =>
+      fetch(`${BASE}/talent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }).then((r) => r.json()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["performance", "talent"] }),
+  });
+}

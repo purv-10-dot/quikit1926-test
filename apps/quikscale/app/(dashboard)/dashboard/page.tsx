@@ -36,7 +36,7 @@ const STATUS_META: Record<string, { label: string; bg: string }> = {
   "not-yet-started": { label: "Not Yet Started", bg: "bg-red-500"   },
   "behind-schedule": { label: "Behind Schedule", bg: "bg-amber-400" },
   "on-track":        { label: "On Track",        bg: "bg-green-500" },
-  "completed":       { label: "Completed",       bg: "bg-blue-500"  },
+  "completed":       { label: "Completed",       bg: "bg-accent-500"  },
 };
 
 function formatDate(iso?: string | null): string {
@@ -137,7 +137,7 @@ const TH_BASE = "group bg-gray-700 text-white text-[11px] font-semibold whitespa
 
 function CalendarIcon() {
   return (
-    <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg className="h-3 w-3 text-accent-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
         d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
     </svg>
@@ -148,7 +148,7 @@ function DateCell({ iso }: { iso?: string | null }) {
   return (
     <div className="flex items-center gap-1.5">
       <CalendarIcon />
-      <span className="text-xs text-blue-600">{formatDate(iso)}</span>
+      <span className="text-xs text-accent-600">{formatDate(iso)}</span>
     </div>
   );
 }
@@ -246,7 +246,7 @@ function ColMenu({ colKey, frozenUpTo, allColKeys, onFreeze }: {
   return (
     <div className="relative flex-shrink-0 inline-flex items-center gap-0.5" ref={ref}>
       {isBoundary && (
-        <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+        <svg className="h-3 w-3 text-accent-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
         </svg>
       )}
@@ -426,7 +426,7 @@ function KPISection({ kpis, year, quarter }: { kpis: KPIRow[]; year: number; qua
           const weeklyTargets = kpi.weeklyTargets as Record<string, number> | null | undefined;
 
           return (
-            <tr key={kpi.id} className={`${rowBg} hover:bg-blue-50 transition-colors`}>
+            <tr key={kpi.id} className={`${rowBg} hover:bg-accent-50 transition-colors`}>
               {KPI_COLS.map(col => {
                 const sticky = getStickyStyle(col.key, frozenUpTo, ALL_KPI_COLS);
                 const frozenBg = getFrozenBg(col.key, frozenUpTo, ALL_KPI_COLS, rowBg);
@@ -556,7 +556,7 @@ function PrioritySection({ priorities, year, quarter }: { priorities: PriorityRo
           const lastNote = p.weeklyStatuses.slice().reverse().find(ws => ws.notes)?.notes ?? null;
 
           return (
-            <tr key={p.id} className={`${rowBg} hover:bg-blue-50 transition-colors`}>
+            <tr key={p.id} className={`${rowBg} hover:bg-accent-50 transition-colors`}>
               {PRI_COLS.map(col => {
                 const sticky = getStickyStyle(col.key, frozenUpTo, ALL_PRI_COLS);
                 const frozenBg = getFrozenBg(col.key, frozenUpTo, ALL_PRI_COLS, rowBg);
@@ -677,7 +677,7 @@ function WWWSection({ items }: { items: WWWItem[] }) {
             const statusMeta = STATUS_META[item.status];
 
             return (
-              <tr key={item.id} className={`${rowBg} hover:bg-blue-50 transition-colors`}>
+              <tr key={item.id} className={`${rowBg} hover:bg-accent-50 transition-colors`}>
                 {WWW_COLS.map(col => {
                   const sticky = getStickyStyle(col.key, frozenUpTo, WWW_COLS);
                   const frozenBg = getFrozenBg(col.key, frozenUpTo, WWW_COLS, rowBg);
@@ -804,7 +804,7 @@ export default function DashboardPage() {
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
-  const selectCls = "px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white text-gray-700";
+  const selectCls = "px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white text-gray-700";
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -812,7 +812,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold text-gray-800">Dashboard</h1>
-          <span className="text-[11px] bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded-full font-medium">
+          <span className="text-[11px] bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium">
             Week {currentWeek}
           </span>
           {!kpiLoading && kpis.length > 0 && <AvgKPICard kpis={kpis} />}
@@ -822,7 +822,7 @@ export default function DashboardPage() {
           <div className="relative" ref={filterRef}>
             <button
               onClick={() => setShowFilter(o => !o)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 ? "border-blue-300 bg-blue-50 text-blue-600" : "border-gray-200 text-gray-600"}`}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />

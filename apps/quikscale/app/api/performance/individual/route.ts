@@ -1,20 +1,9 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { toErrorMessage } from "@/lib/api/errors";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
-export async function GET(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-
-    const user = await db.user.findUnique({ where: { id: session.user.id }, include: { memberships: true } });
-    const tenantId = user?.memberships[0]?.tenantId;
-    if (!tenantId) return NextResponse.json({ success: false, error: "No tenant" }, { status: 400 });
-
+export const GET = withTenantAuth(async ({ tenantId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
     const where = { tenantId };
 
@@ -99,7 +88,4 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json(paginatedResponse(people, total, page, limit));
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error) }, { status: 500 });
-  }
-}
+});

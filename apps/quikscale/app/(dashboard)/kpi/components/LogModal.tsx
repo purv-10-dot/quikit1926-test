@@ -13,6 +13,13 @@ import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
+import {
+  buildBreakdown,
+  redistributeOwnerRemainder,
+  type DivisionType,
+} from "./kpiModalHelpers";
+import { WeekRow } from "./WeekRow";
+import { StatsTab } from "./StatsTab";
 
 interface Props { kpi: KPIRow; onClose: () => void; onRefresh: () => void; initialTab?: Tab; }
 
@@ -33,43 +40,8 @@ type EditFormState = {
 };
 
 // ── Edit Tab ──────────────────────────────────────────────────────────────────
-
-/** Format a value based on measurement unit: whole number for Number, 2dp for others */
-function fmtBreakdown(val: number, measurementUnit: string): string {
-  if (measurementUnit === "Number") return String(Math.round(val));
-  return val.toFixed(2);
-}
-
-/** Build a full 13-week breakdown from scratch */
-function buildBreakdown(
-  divisionType: "Cumulative" | "Standalone",
-  targetNum: number,
-  measurementUnit: string,
-): Record<number, string> {
-  const map: Record<number, string> = {};
-  if (targetNum <= 0) { ALL_WEEKS.forEach(w => { map[w] = ""; }); return map; }
-
-  if (divisionType === "Standalone") {
-    const val = fmtBreakdown(targetNum, measurementUnit);
-    ALL_WEEKS.forEach(w => { map[w] = val; });
-    return map;
-  }
-
-  // Cumulative — floor-divide with remainder piled onto rightmost weeks
-  if (measurementUnit === "Number") {
-    const base = Math.floor(targetNum / 13);
-    const extra = Math.round(targetNum - base * 13);
-    ALL_WEEKS.forEach(w => {
-      map[w] = String(13 - w < extra ? base + 1 : base);
-    });
-  } else {
-    const base = parseFloat((targetNum / 13).toFixed(2));
-    const diff  = parseFloat((targetNum - base * 13).toFixed(2));
-    ALL_WEEKS.forEach(w => { map[w] = base.toFixed(2); });
-    map[13] = (base + diff).toFixed(2);
-  }
-  return map;
-}
+// Pure formulas (buildBreakdown, redistributeOwnerRemainder) live in
+// `./kpiModalHelpers`; this file owns only React glue code.
 
 function EditTab({
   form, setForm, errors, users,
@@ -135,30 +107,20 @@ function EditTab({
   function setWeekBreakdown(w: number, val: string) {
     setForm(f => {
       const newBreakdown = { ...f.weeklyBreakdown, [w]: val };
-      if (f.divisionType !== "Cumulative") return { ...f, weeklyBreakdown: newBreakdown };
-
-      const targetNum = actualNum(f);
-      const isWhole = f.measurementUnit === "Number";
-      let leftSum = 0;
-      for (let i = 1; i <= w; i++) leftSum += parseFloat(String(newBreakdown[i])) || 0;
-
-      const remaining = targetNum - leftSum;
-      const rightCount = 13 - w;
-      if (rightCount <= 0) return { ...f, weeklyBreakdown: newBreakdown };
-
-      if (isWhole) {
-        const base  = Math.floor(remaining / rightCount);
-        const extra = Math.round(remaining - base * rightCount);
-        for (let i = w + 1; i <= 13; i++) {
-          newBreakdown[i] = String(13 - i < extra ? base + 1 : base);
-        }
-      } else {
-        const base = parseFloat((remaining / rightCount).toFixed(2));
-        const diff = parseFloat((remaining - base * rightCount).toFixed(2));
-        for (let i = w + 1; i <= 13; i++) newBreakdown[i] = base.toFixed(2);
-        newBreakdown[13] = (base + diff).toFixed(2);
+      if (f.divisionType !== "Cumulative") {
+        return { ...f, weeklyBreakdown: newBreakdown };
       }
-      return { ...f, weeklyBreakdown: newBreakdown };
+      // `redistributeOwnerRemainder` preserves cells 1..w and re-splits
+      // the remainder across w+1..13. Identical formula to KPIModal.
+      return {
+        ...f,
+        weeklyBreakdown: redistributeOwnerRemainder(
+          newBreakdown,
+          w,
+          actualNum(f),
+          f.measurementUnit,
+        ),
+      };
     });
   }
 
@@ -185,7 +147,7 @@ function EditTab({
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">KPI Name <span className="text-red-500">*</span></label>
           <input value={form.name} onChange={e => set("name", e.target.value)}
-            className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
+            className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
           {errors.name && <p className="text-[10px] text-red-500 mt-0.5">{errors.name}</p>}
         </div>
       </div>
@@ -194,11 +156,11 @@ function EditTab({
         <label className="block text-xs font-medium text-gray-600 mb-1">Quarter <span className="text-red-500">*</span></label>
         <div className="flex gap-2">
           <select value={form.year} onChange={e => set("year", e.target.value)}
-            className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+            className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
             {FISCAL_YEARS.map(y => <option key={y} value={String(y)}>{fiscalYearLabel(y)}</option>)}
           </select>
           <select value={form.quarter} onChange={e => set("quarter", e.target.value)}
-            className="w-20 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+            className="w-20 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
             {ALL_QUARTERS.map(q => <option key={q} value={q}>{q}</option>)}
           </select>
         </div>
@@ -209,7 +171,7 @@ function EditTab({
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Measurement Unit</label>
           <select value={form.measurementUnit} onChange={e => setMeasurementUnit(e.target.value)}
-            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
             {MEASUREMENT_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
           </select>
         </div>
@@ -217,7 +179,7 @@ function EditTab({
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Currency</label>
             <select value={form.currency} onChange={e => setCurrency(e.target.value)}
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
               {CURRENCIES.map(c => (
                 <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
               ))}
@@ -229,7 +191,7 @@ function EditTab({
       {/* Target Value */}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Target Value</label>
-        <div className="flex rounded-lg border border-gray-200 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400">
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden focus-within:ring-1 focus-within:ring-accent-400 focus-within:border-accent-400">
           {isCurrency && (
             <span className="flex items-center px-2.5 bg-gray-50 border-r border-gray-200 text-xs text-gray-500 select-none whitespace-nowrap flex-shrink-0">
               {currencyObj.symbol}
@@ -277,7 +239,7 @@ function EditTab({
             {(["active", "paused", "completed"] as const).map(s => (
               <label key={s} className="flex items-center gap-1.5 cursor-pointer">
                 <input type="radio" name="editStatus" value={s} checked={form.status === s}
-                  onChange={() => set("status", s)} className="text-blue-600" />
+                  onChange={() => set("status", s)} className="text-accent-600" />
                 <span className="text-xs text-gray-600 capitalize">{s}</span>
               </label>
             ))}
@@ -313,7 +275,7 @@ function EditTab({
         <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
         <textarea value={form.description ?? ""} onChange={e => set("description", e.target.value)}
           rows={3} placeholder="Enter description…"
-          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none" />
+          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
       </div>
 
       {targetNum > 0 && (
@@ -351,7 +313,7 @@ function EditTab({
                         className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
                           isLocked
                             ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                            : "border-gray-200 focus:ring-1 focus:ring-blue-400"
+                            : "border-gray-200 focus:ring-1 focus:ring-accent-400"
                         }`}
                       />
                     </td>
@@ -371,69 +333,6 @@ function EditTab({
   );
 }
 
-// ── Week Row (controlled, no autosave) ───────────────────────────────────────
-
-function WeekRow({ weekNumber, value, notes, weeklyTarget, year, quarter, onValueChange, onNotesChange, locked, reverse }: {
-  weekNumber: number;
-  value: string;
-  notes: string;
-  weeklyTarget: number;
-  year: number;
-  quarter: string;
-  onValueChange: (v: string) => void;
-  onNotesChange: (n: string) => void;
-  locked?: boolean;
-  reverse?: boolean;
-}) {
-  const numVal = parseFloat(value);
-  const hasValue = value !== "" && !isNaN(numVal);
-
-  // Use the new shared color logic
-  const colorResult = hasValue
-    ? getColorByPercentage(numVal, weeklyTarget, true, reverse ?? false)
-    : null;
-  const barColor = colorResult ? colorResult.bg.replace("bg-", "bg-").replace("-600", "-500") : "bg-gray-200";
-
-  const lockTitle = locked ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined;
-
-  return (
-    <div className={`flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-b-0 ${locked ? "opacity-60" : ""}`} title={lockTitle}>
-      {/* Week label + date range + mini bar */}
-      <div className="w-24 flex-shrink-0 pt-1">
-        <div className="text-xs font-semibold text-gray-600 flex items-center gap-1">
-          {locked && (
-            <svg className="h-2.5 w-2.5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-            </svg>
-          )}
-          Week {weekNumber}
-        </div>
-        <div className="text-[9px] text-gray-400 mt-0.5 leading-none">{weekDateLabel(year, quarter, weekNumber)}</div>
-        <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
-          {hasValue && weeklyTarget > 0 && (
-            <div className={`h-1 rounded-full ${barColor}`}
-              style={{ width: `${Math.min((numVal / weeklyTarget) * 100, 100)}%` }} />
-          )}
-        </div>
-      </div>
-      {/* Value input */}
-      <div className="w-24 flex-shrink-0">
-        <input type="number" min="0" value={value} onChange={e => onValueChange(e.target.value)}
-          placeholder="—"
-          readOnly={locked}
-          className={`w-full px-2 py-1.5 text-xs border rounded-md focus:outline-none text-center ${locked ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 focus:ring-1 focus:ring-blue-400"}`} />
-      </div>
-      {/* Notes */}
-      <div className="flex-1">
-        <textarea value={notes} onChange={e => onNotesChange(e.target.value)}
-          placeholder="Add a note for this week…"
-          rows={2}
-          readOnly={locked}
-          className={`w-full px-2 py-1.5 text-xs border rounded-md focus:outline-none resize-y min-h-[36px] ${locked ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 focus:ring-1 focus:ring-blue-400"}`} />
-      </div>
-    </div>
-  );
-}
 
 // ── Updates Tab ───────────────────────────────────────────────────────────────
 
@@ -549,7 +448,7 @@ function UpdatesTab({
                             <div className="w-32 flex-shrink-0">
                               <div className="text-[11px] text-gray-700 truncate">
                                 {full}
-                                {isSelf && <span className="ml-1 text-[9px] text-blue-500">(you)</span>}
+                                {isSelf && <span className="ml-1 text-[9px] text-accent-500">(you)</span>}
                               </div>
                               <div className="text-[9px] text-gray-400">{pct}%</div>
                             </div>
@@ -562,7 +461,7 @@ function UpdatesTab({
                               placeholder="—"
                               className={`w-24 px-2 py-1 text-xs text-center border rounded focus:outline-none ${
                                 canEditThisRow
-                                  ? "border-gray-200 focus:ring-1 focus:ring-blue-400"
+                                  ? "border-gray-200 focus:ring-1 focus:ring-accent-400"
                                   : "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                               }`}
                               title={!canEditThisRow
@@ -577,7 +476,7 @@ function UpdatesTab({
                               placeholder="Notes (optional)"
                               className={`flex-1 px-2 py-1 text-xs border rounded focus:outline-none ${
                                 canEditThisRow
-                                  ? "border-gray-200 focus:ring-1 focus:ring-blue-400"
+                                  ? "border-gray-200 focus:ring-1 focus:ring-accent-400"
                                   : "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                               }`}
                             />
@@ -631,7 +530,7 @@ function UpdatesTab({
             onKeyDown={e => { if (e.key === "Enter" && e.metaKey) handleAddNote(); }}
             placeholder="Write a comment or update… (⌘↵ to submit)"
             rows={3}
-            className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-y"
+            className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-y"
           />
           <button onClick={handleAddNote} disabled={addingNote || !noteInput.trim()}
             className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-40 transition-colors whitespace-nowrap self-start">
@@ -665,76 +564,6 @@ function UpdatesTab({
   );
 }
 
-// ── Stats Tab ─────────────────────────────────────────────────────────────────
-
-function StatsTab({ kpi }: { kpi: KPIRow }) {
-  const colors = progressColor(kpi.progressPercent ?? 0);
-  const target = kpi.qtdGoal ?? kpi.target ?? 0;
-  const achieved = kpi.qtdAchieved ?? 0;
-  const weeklyTarget = target / 13;
-
-  const weekMap: Record<number, WeeklyValue> = {};
-  (kpi.weeklyValues ?? []).forEach(w => { weekMap[w.weekNumber] = w; });
-
-  const filledWeeks = ALL_WEEKS.filter(w => weekMap[w]?.value !== null && weekMap[w]?.value !== undefined);
-  const avgPerWeek = filledWeeks.length > 0
-    ? filledWeeks.reduce((s, w) => s + (weekMap[w]?.value ?? 0), 0) / filledWeeks.length
-    : 0;
-  const bestWeek = filledWeeks.reduce<number>((best, w) => {
-    const v = weekMap[w]?.value ?? 0;
-    return v > (weekMap[best]?.value ?? 0) ? w : best;
-  }, filledWeeks[0] ?? 0);
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <h3 className="text-xs font-semibold text-gray-700 mb-3">Overall Progress</h3>
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-          <div className="flex items-end justify-between mb-3">
-            <div>
-              <div className={`text-3xl font-bold ${colors.text}`}>{(kpi.progressPercent ?? 0).toFixed(0)}%</div>
-              <div className="text-xs text-gray-500 mt-0.5">{colors.label}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-xs text-gray-500">Achieved</div>
-              <div className="text-lg font-semibold text-gray-800">{fmt(achieved)}</div>
-              <div className="text-[10px] text-gray-400">of {fmt(target)} target</div>
-            </div>
-          </div>
-          <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-            <div className={`h-3 rounded-full transition-all ${colors.bar}`}
-              style={{ width: `${Math.min(kpi.progressPercent ?? 0, 100)}%` }} />
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "Weeks Reported", value: String(filledWeeks.length) },
-          { label: "Avg / Week", value: fmt(avgPerWeek) },
-          { label: "Best Week", value: bestWeek ? `W${bestWeek}` : "—" },
-        ].map(s => (
-          <div key={s.label} className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-center">
-            <div className="text-lg font-semibold text-gray-800">{s.value}</div>
-            <div className="text-[10px] text-gray-500 mt-0.5">{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { label: "Quarterly Goal", value: kpi.quarterlyGoal != null ? String(kpi.quarterlyGoal) : "—" },
-          { label: "QTD Goal", value: kpi.qtdGoal != null ? String(kpi.qtdGoal) : "—" },
-        ].map(s => (
-          <div key={s.label} className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-center">
-            <div className="text-lg font-semibold text-gray-800">{s.value}</div>
-            <div className="text-[10px] text-gray-500 mt-0.5">{s.label}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ── LogModal ──────────────────────────────────────────────────────────────────
 
@@ -929,7 +758,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-sm font-semibold text-gray-800 truncate">{kpi.name}</h2>
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                colors.text === "text-blue-600" ? "bg-blue-100 text-blue-600" :
+                colors.text === "text-accent-600" ? "bg-accent-100 text-accent-600" :
                 colors.text === "text-green-600" ? "bg-green-100 text-green-600" :
                 colors.text === "text-yellow-600" ? "bg-yellow-100 text-yellow-700" :
                 "bg-red-100 text-red-600"

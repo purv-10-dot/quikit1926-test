@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ChevronLeft, Target, CheckSquare, Users, Calendar } from "lucide-react";
+import { useUserPerformance } from "@/lib/hooks/usePerformance";
 
 function scoreColor(score: number | null) {
   if (score === null) return { text: "text-gray-400", bg: "bg-gray-100", label: "—" };
@@ -19,7 +19,7 @@ function statusBadge(s: string) {
     "critical": "bg-red-100 text-red-700",
     "completed": "bg-green-100 text-green-700",
     "not-started": "bg-gray-100 text-gray-500",
-    "in-progress": "bg-blue-100 text-blue-700",
+    "in-progress": "bg-accent-100 text-accent-700",
     "blocked": "bg-red-100 text-red-700",
   };
   return map[s] || "bg-gray-100 text-gray-500";
@@ -45,7 +45,7 @@ function SparkDots({ weeklyValues }: { weeklyValues: { weekNumber: number; value
       {weeks.map((v, i) => (
         <span
           key={i}
-          className={`w-1.5 h-1.5 rounded-full ${v !== null ? "bg-blue-500" : "bg-gray-200"}`}
+          className={`w-1.5 h-1.5 rounded-full ${v !== null ? "bg-accent-500" : "bg-gray-200"}`}
           title={v !== null ? `W${i + 1}: ${v}` : `W${i + 1}: —`}
         />
       ))}
@@ -57,24 +57,10 @@ export default function UserPerformancePage() {
   const params = useParams();
   const router = useRouter();
   const userId = params.userId as string;
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useUserPerformance(userId);
 
-  useEffect(() => {
-    if (!userId) return;
-    fetch(`/api/performance/individual/${userId}`)
-      .then(r => r.json())
-      .then(j => {
-        if (j.success) setData(j.data);
-        else setError(j.error);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [userId]);
-
-  if (loading) return <Skeleton />;
-  if (error) return <div className="p-6 text-xs text-red-600">Error: {error}</div>;
+  if (isLoading) return <Skeleton />;
+  if (error) return <div className="p-6 text-xs text-red-600">Error: {(error as Error).message}</div>;
   if (!data) return null;
 
   const u = data.user;
@@ -122,7 +108,7 @@ export default function UserPerformancePage() {
           <ChevronLeft className="h-3.5 w-3.5" />Back to Individual
         </button>
         <div className="flex items-center gap-3">
-          <span className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 text-sm font-bold flex items-center justify-center">{initials}</span>
+          <span className="w-10 h-10 rounded-full bg-accent-100 text-accent-700 text-sm font-bold flex items-center justify-center">{initials}</span>
           <div>
             <h1 className="text-sm font-semibold text-gray-900">{fullName}</h1>
             <p className="text-xs text-gray-500">{u.email} · {membership?.role || "—"} {membership?.team?.name ? `· ${membership.team.name}` : ""}</p>
@@ -152,7 +138,7 @@ export default function UserPerformancePage() {
         {/* KPI Table */}
         <div className="bg-white rounded-lg shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-1.5">
-            <Target className="h-3.5 w-3.5 text-blue-500" />
+            <Target className="h-3.5 w-3.5 text-accent-500" />
             <h2 className="text-xs font-semibold text-gray-700">KPIs ({kpis.length})</h2>
           </div>
           {kpis.length === 0 ? (
@@ -178,7 +164,7 @@ export default function UserPerformancePage() {
                       <div className="flex items-center gap-2">
                         <div className="flex-1 bg-gray-100 rounded-full h-1.5 w-20">
                           <div
-                            className="bg-blue-500 h-1.5 rounded-full"
+                            className="bg-accent-500 h-1.5 rounded-full"
                             style={{ width: `${Math.min(100, k.progressPercent || 0)}%` }}
                           />
                         </div>
@@ -226,7 +212,7 @@ export default function UserPerformancePage() {
                           const ws = p.weeklyStatuses?.find((w: any) => w.weekNumber === i + 1);
                           const dotColor = ws ? (
                             ws.status === "completed" || ws.status === "done" ? "bg-green-500" :
-                            ws.status === "in-progress" ? "bg-blue-500" :
+                            ws.status === "in-progress" ? "bg-accent-500" :
                             ws.status === "blocked" ? "bg-red-500" : "bg-amber-400"
                           ) : "bg-gray-200";
                           return <span key={i} className={`w-1.5 h-1.5 rounded-full ${dotColor}`} title={`W${i + 1}`} />;

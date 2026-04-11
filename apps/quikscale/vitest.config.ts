@@ -19,6 +19,21 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./__tests__/setup.ts"],
     clearMocks: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "html"],
+      include: [
+        "lib/**/*.{ts,tsx}",
+        "app/api/**/*.{ts,tsx}",
+        "components/**/*.{ts,tsx}",
+      ],
+      exclude: [
+        "**/*.test.{ts,tsx}",
+        "**/__tests__/**",
+        "**/.next/**",
+        "**/node_modules/**",
+      ],
+    },
   },
   resolve: {
     alias: {

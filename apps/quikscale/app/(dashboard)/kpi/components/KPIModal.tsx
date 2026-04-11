@@ -13,6 +13,13 @@ import { UserMultiPicker } from "@/components/UserMultiPicker";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import { Lock } from "lucide-react";
+import {
+  buildBreakdown,
+  buildOwnerBreakdown,
+  redistributeOwnerRemainder,
+  distributeContributionsEven,
+  type DivisionType,
+} from "./kpiModalHelpers";
 
 interface Props {
   mode: "create" | "edit";
@@ -29,43 +36,6 @@ interface Props {
 
 const CURRENT_YEAR = new Date().getFullYear();
 const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
-
-/* ── Helpers (same formulas as LogModal EditTab) ───────────────────────── */
-
-function fmtBreakdown(val: number, measurementUnit: string): string {
-  if (measurementUnit === "Number") return String(Math.round(val));
-  return val.toFixed(2);
-}
-
-function buildBreakdown(
-  divisionType: "Cumulative" | "Standalone",
-  targetNum: number,
-  measurementUnit: string,
-): Record<number, string> {
-  const map: Record<number, string> = {};
-  if (targetNum <= 0) { ALL_WEEKS.forEach(w => { map[w] = ""; }); return map; }
-
-  if (divisionType === "Standalone") {
-    const val = fmtBreakdown(targetNum, measurementUnit);
-    ALL_WEEKS.forEach(w => { map[w] = val; });
-    return map;
-  }
-
-  // Cumulative — floor-divide with remainder piled onto rightmost weeks
-  if (measurementUnit === "Number") {
-    const base = Math.floor(targetNum / 13);
-    const extra = Math.round(targetNum - base * 13);
-    ALL_WEEKS.forEach(w => {
-      map[w] = String(13 - w < extra ? base + 1 : base);
-    });
-  } else {
-    const base = parseFloat((targetNum / 13).toFixed(2));
-    const diff = parseFloat((targetNum - base * 13).toFixed(2));
-    ALL_WEEKS.forEach(w => { map[w] = base.toFixed(2); });
-    map[13] = (base + diff).toFixed(2);
-  }
-  return map;
-}
 
 /* ── Component ─────────────────────────────────────────────────────────── */
 
@@ -138,63 +108,15 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   const [saving, setSaving] = useState(false);
 
   // ── Owner contribution + per-owner breakdown helpers ──
-
-  /**
-   * Compute the default per-owner weekly breakdown for a single owner given
-   * the aggregate target, contribution %, division type, and measurement unit.
-   * Returns a map { weekNumber: stringValue }.
-   */
-  function buildOwnerBreakdown(
-    ownerContributionPct: number,
-    actualTargetNum: number,
-    division: "Cumulative" | "Standalone",
-    unit: string,
-  ): Record<number, string> {
-    const ownerSubTarget = actualTargetNum * (ownerContributionPct / 100);
-    if (ownerSubTarget <= 0) {
-      return Object.fromEntries(ALL_WEEKS.map(w => [w, ""])) as Record<number, string>;
-    }
-    if (division === "Standalone") {
-      const val = unit === "Number" ? String(Math.round(ownerSubTarget)) : ownerSubTarget.toFixed(2);
-      return Object.fromEntries(ALL_WEEKS.map(w => [w, val])) as Record<number, string>;
-    }
-    // Cumulative split
-    const map: Record<number, string> = {};
-    if (unit === "Number") {
-      const base = Math.floor(ownerSubTarget / 13);
-      const extra = Math.round(ownerSubTarget - base * 13);
-      ALL_WEEKS.forEach(w => {
-        map[w] = String(13 - w < extra ? base + 1 : base);
-      });
-    } else {
-      const base = parseFloat((ownerSubTarget / 13).toFixed(2));
-      ALL_WEEKS.forEach(w => { map[w] = base.toFixed(2); });
-      const diff = parseFloat((ownerSubTarget - base * 13).toFixed(2));
-      map[13] = (base + diff).toFixed(2);
-    }
-    return map;
-  }
+  // Pure formulas live in `./kpiModalHelpers`; this component owns only the
+  // state-mutating functions that call them.
 
   function setOwnerIds(ids: string[]) {
     setForm(f => {
       // Auto-distribute contributions equally whenever the owner list changes.
-      // This gives the user a valid (sum=100) starting split — they can override individual
-      // percentages after via setContribution, which also re-seeds the breakdown.
-      // In edit mode the modal's initial state reads kpi.ownerContributions directly without
-      // calling this setter, so existing saved contributions are preserved on open.
-      let newContribs: Record<string, string>;
-      if (ids.length === 0) {
-        newContribs = {};
-      } else {
-        const base = Math.floor((100 / ids.length) * 100) / 100; // two-decimal precision
-        const last = parseFloat((100 - base * (ids.length - 1)).toFixed(2));
-        newContribs = {};
-        ids.forEach((id, i) => {
-          newContribs[id] = (i === ids.length - 1 ? last : base).toString();
-        });
-      }
-      // Re-seed the per-owner breakdown from formula with the new contribution split.
-      // When target > 0, cells auto-populate. When target is empty, cells stay empty until the user enters it.
+      // In edit mode the modal's initial state reads kpi.ownerContributions directly
+      // without calling this setter, so existing saved contributions are preserved on open.
+      const newContribs = distributeContributionsEven(ids);
       const next = { ...f, ownerIds: ids, ownerContributions: newContribs };
       next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
       return next;
@@ -237,45 +159,6 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       }
       return { ...f, weeklyOwnerBreakdown: newBreakdown };
     });
-  }
-
-  /** Update a single (ownerId, week) cell in the per-owner breakdown. */
-  /**
-   * Redistribute `remaining` evenly across weeks (fromWeek+1) .. 13 in the given owner row,
-   * preserving cells 1..fromWeek. Integer rounding for Number unit (base + extra piled on
-   * rightmost weeks); 2-decimal split with diff on W13 for other units.
-   *
-   * Identical math to Individual KPI's setWeekBreakdown redistribution — ensures each
-   * owner's row continues to sum to their sub-target after an edit.
-   */
-  function redistributeOwnerRemainder(
-    ownerRow: Record<number, string>,
-    fromWeek: number,
-    ownerSubTarget: number,
-    unit: string,
-  ): Record<number, string> {
-    const row = { ...ownerRow };
-    // Sum the left side (preserved cells 1..fromWeek including the edit)
-    let leftSum = 0;
-    for (let i = 1; i <= fromWeek; i++) leftSum += parseFloat(String(row[i])) || 0;
-
-    const remaining = ownerSubTarget - leftSum;
-    const rightCount = 13 - fromWeek;
-    if (rightCount <= 0) return row; // nothing to redistribute (editing W13)
-
-    if (unit === "Number") {
-      const base = Math.floor(remaining / rightCount);
-      const extra = Math.round(remaining - base * rightCount);
-      for (let i = fromWeek + 1; i <= 13; i++) {
-        row[i] = String(13 - i < extra ? base + 1 : base);
-      }
-    } else {
-      const base = parseFloat((remaining / rightCount).toFixed(2));
-      const diff = parseFloat((remaining - base * rightCount).toFixed(2));
-      for (let i = fromWeek + 1; i <= 13; i++) row[i] = base.toFixed(2);
-      row[13] = (base + diff).toFixed(2);
-    }
-    return row;
   }
 
   /**
@@ -378,12 +261,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   function distributeContributionsEvenly() {
     setForm(f => {
       if (f.ownerIds.length === 0) return f;
-      const base = Math.floor((100 / f.ownerIds.length) * 100) / 100;
-      const last = parseFloat((100 - base * (f.ownerIds.length - 1)).toFixed(2));
-      const newContribs: Record<string, string> = {};
-      f.ownerIds.forEach((id, i) => {
-        newContribs[id] = (i === f.ownerIds.length - 1 ? last : base).toString();
-      });
+      const newContribs = distributeContributionsEven(f.ownerIds);
       const newOwnerBreakdown = computeAllOwnerBreakdowns({
         ownerIds: f.ownerIds,
         ownerContributions: newContribs,
@@ -688,7 +566,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
               </label>
               <input value={form.name} onChange={e => set("name", e.target.value)}
                 placeholder="Enter KPI name…"
-                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
+                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
               {errors.name && <p className="text-[10px] text-red-500 mt-0.5">{errors.name}</p>}
             </div>
           </div>
@@ -729,7 +607,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                 Measurement Unit <span className="text-red-500">*</span>
               </label>
               <select value={form.measurementUnit} onChange={e => setMeasurementUnit(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                 {MEASUREMENT_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
@@ -737,7 +615,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Currency</label>
                 <select value={form.currency} onChange={e => setCurrency(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                   {CURRENCIES.map(c => (
                     <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
                   ))}
@@ -749,7 +627,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
           {/* Target Value */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Target Value</label>
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden focus-within:ring-1 focus-within:ring-blue-400 focus-within:border-blue-400">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden focus-within:ring-1 focus-within:ring-accent-400 focus-within:border-accent-400">
               {isCurrency && (
                 <span className="flex items-center px-2.5 bg-gray-50 border-r border-gray-200 text-xs text-gray-500 select-none whitespace-nowrap flex-shrink-0">
                   {currencyObj.symbol}
@@ -785,7 +663,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                 <button
                   type="button"
                   onClick={distributeContributionsEvenly}
-                  className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline font-medium"
+                  className="text-[10px] text-accent-500 hover:text-accent-700 hover:underline font-medium"
                 >
                   Distribute evenly
                 </button>
@@ -818,7 +696,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           value={pctStr}
                           onChange={e => setContribution(id, e.target.value)}
                           placeholder="0"
-                          className="w-16 px-2 py-1 text-xs text-right border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          className="w-16 px-2 py-1 text-xs text-right border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400"
                         />
                         <span className="text-xs text-gray-500">%</span>
                       </div>
@@ -863,7 +741,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                 {(["active", "paused", "completed"] as const).map(s => (
                   <label key={s} className="flex items-center gap-1.5 cursor-pointer">
                     <input type="radio" name="status" value={s} checked={form.status === s}
-                      onChange={() => set("status", s)} className="text-blue-600" />
+                      onChange={() => set("status", s)} className="text-accent-600" />
                     <span className="text-xs text-gray-600 capitalize">{s}</span>
                   </label>
                 ))}
@@ -900,7 +778,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
             <textarea value={form.description ?? ""} onChange={e => set("description", e.target.value)}
               rows={3} placeholder="Enter description…"
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none" />
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
           </div>
 
           {/* Target Breakdown (editable weekly) */}
@@ -970,7 +848,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                 className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
                                   isLocked
                                     ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                    : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-blue-400"
+                                    : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-accent-400"
                                 }`}
                               />
                             </td>
@@ -990,7 +868,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                               className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
                                 isLocked
                                   ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                  : "border-gray-200 focus:ring-1 focus:ring-blue-400"
+                                  : "border-gray-200 focus:ring-1 focus:ring-accent-400"
                               }`}
                             />
                           </td>
@@ -1028,7 +906,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                   className={`w-full px-1 py-1 text-center text-[11px] border rounded focus:outline-none min-w-[72px] ${
                                     isLocked
                                       ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
-                                      : "border-gray-200 bg-white focus:ring-1 focus:ring-blue-400"
+                                      : "border-gray-200 bg-white focus:ring-1 focus:ring-accent-400"
                                   }`}
                                 />
                               </td>
@@ -1055,7 +933,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                   <button
                     type="button"
                     onClick={resetOwnerBreakdownsFromFormula}
-                    className="text-[10px] text-blue-500 hover:text-blue-700 hover:underline font-medium whitespace-nowrap"
+                    className="text-[10px] text-accent-500 hover:text-accent-700 hover:underline font-medium whitespace-nowrap"
                   >
                     Reset to formula
                   </button>

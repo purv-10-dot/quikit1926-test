@@ -12,6 +12,7 @@ import {
   validateParentKPI,
 } from "@/lib/api/kpiCreateValidation";
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
+import { rateLimit, LIMITS, getClientIp } from "@/lib/api/rateLimit";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
@@ -199,6 +200,20 @@ export async function POST(request: NextRequest) {
     const tenantId = await getTenantId(session.user.id);
     if (!tenantId) {
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+    }
+
+    // Rate limit: 30 KPI writes / minute per user (prevents bulk-insert abuse)
+    const rl = rateLimit({
+      routeKey: "kpi:create",
+      clientKey: `${tenantId}:${session.user.id}`,
+      limit: LIMITS.kpiWrite.limit,
+      windowMs: LIMITS.kpiWrite.windowMs,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Try again shortly." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+      );
     }
 
     const body = await request.json();

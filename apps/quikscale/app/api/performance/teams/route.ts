@@ -1,18 +1,8 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { toErrorMessage } from "@/lib/api/errors";
+import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
-export async function GET() {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-
-    const user = await db.user.findUnique({ where: { id: session.user.id }, include: { memberships: true } });
-    const tenantId = user?.memberships[0]?.tenantId;
-    if (!tenantId) return NextResponse.json({ success: false, error: "No tenant" }, { status: 400 });
-
+export const GET = withTenantAuth(async ({ tenantId }) => {
     const teams = await db.team.findMany({
       where: { tenantId },
       include: {
@@ -67,7 +57,4 @@ export async function GET() {
     teamData.sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0));
 
     return NextResponse.json({ success: true, data: teamData });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error) }, { status: 500 });
-  }
-}
+  });

@@ -409,7 +409,7 @@ function AppTile({ app, launching, onLaunch }: { app: AppItem; launching: boolea
     >
       {!isActive && (
         <div className="absolute top-2 right-2">
-          {isComingSoon ? <Clock className="h-3.5 w-3.5 text-blue-400/60" /> : <Lock className="h-3.5 w-3.5 text-white/20" />}
+          {isComingSoon ? <Clock className="h-3.5 w-3.5 text-accent-400/60" /> : <Lock className="h-3.5 w-3.5 text-white/20" />}
         </div>
       )}
 

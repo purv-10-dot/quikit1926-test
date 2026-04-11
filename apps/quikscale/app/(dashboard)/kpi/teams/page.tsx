@@ -83,7 +83,7 @@ export default function TeamsKPIPage() {
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
             {kpis.length} {kpis.length === 1 ? "item" : "items"}
           </span>
-          <span className="text-xs bg-blue-50 text-blue-600 border border-blue-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+          <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
             {quarter} · Week {fiscalWeek} · {getWeekDateRange(year, quarter, fiscalWeek)}
           </span>
         </div>
@@ -94,7 +94,7 @@ export default function TeamsKPIPage() {
             <button
               onClick={() => { setShowTeamPicker(o => !o); setTeamSearch(""); }}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${
-                showTeamPicker || filterTeamIds.length > 0 ? "border-blue-300 bg-blue-50 text-blue-600" : "border-gray-200 text-gray-600"
+                showTeamPicker || filterTeamIds.length > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"
               }`}
             >
               {/* Users/team icon */}
@@ -125,7 +125,7 @@ export default function TeamsKPIPage() {
                     value={teamSearch}
                     onChange={e => setTeamSearch(e.target.value)}
                     placeholder="Search teams…"
-                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-400"
                   />
                   {filterTeamIds.length > 0 && (
                     <button
@@ -154,11 +154,11 @@ export default function TeamsKPIPage() {
                           }
                         }}
                         className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-gray-50 transition-colors border-b border-gray-100 ${
-                          allSelected ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700"
+                          allSelected ? "bg-accent-50 text-accent-700 font-semibold" : "text-gray-700"
                         }`}
                       >
                         <span className={`h-4 w-4 rounded border flex items-center justify-center flex-shrink-0 ${
-                          allSelected ? "bg-blue-600 border-blue-600" : "border-gray-300 bg-white"
+                          allSelected ? "bg-accent-600 border-accent-600" : "border-gray-300 bg-white"
                         }`}>
                           {allSelected && (
                             <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -189,11 +189,11 @@ export default function TeamsKPIPage() {
                             );
                           }}
                           className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-gray-50 transition-colors ${
-                            selected ? "bg-blue-50 text-blue-700" : "text-gray-700"
+                            selected ? "bg-accent-50 text-accent-700" : "text-gray-700"
                           }`}
                         >
                           <span className={`h-4 w-4 rounded border flex items-center justify-center flex-shrink-0 ${
-                            selected ? "bg-blue-600 border-blue-600" : "border-gray-300 bg-white"
+                            selected ? "bg-accent-600 border-accent-600" : "border-gray-300 bg-white"
                           }`}>
                             {selected && (
                               <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -225,7 +225,7 @@ export default function TeamsKPIPage() {
             <button
               onClick={() => setShowYearPicker(o => !o)}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${
-                showYearPicker ? "border-blue-300 bg-blue-50 text-blue-600" : "border-gray-200 text-gray-600"
+                showYearPicker ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"
               }`}
             >
               <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

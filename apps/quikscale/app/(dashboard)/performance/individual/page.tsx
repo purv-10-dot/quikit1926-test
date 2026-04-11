@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Users } from "lucide-react";
+import { useIndividualPerformance } from "@/lib/hooks/usePerformance";
 
 function scoreColor(score: number | null) {
   if (score === null) return { text: "text-gray-400", bg: "bg-gray-100", label: "—" };
@@ -24,7 +25,7 @@ function Initials({ name }: { name: string }) {
   const parts = name.trim().split(" ");
   const init = parts.length >= 2 ? parts[0][0] + parts[parts.length - 1][0] : name.slice(0, 2);
   return (
-    <span className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold flex items-center justify-center uppercase flex-shrink-0">
+    <span className="w-7 h-7 rounded-full bg-accent-100 text-accent-700 text-xs font-semibold flex items-center justify-center uppercase flex-shrink-0">
       {init}
     </span>
   );
@@ -41,31 +42,21 @@ function Skeleton() {
 
 export default function IndividualPerformancePage() {
   const router = useRouter();
-  const [people, setPeople] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const { data, isLoading, error } = useIndividualPerformance();
 
-  useEffect(() => {
-    fetch("/api/performance/individual")
-      .then(r => r.json())
-      .then(j => {
-        if (j.success) {
-          const sorted = [...j.data].sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0));
-          setPeople(sorted);
-        } else setError(j.error);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+  const people = useMemo(() => {
+    const raw = (data as any[]) ?? [];
+    return [...raw].sort((a, b) => (b.overallScore || 0) - (a.overallScore || 0));
+  }, [data]);
 
-  const filtered = people.filter(p => {
+  const filtered = people.filter((p) => {
     const full = `${p.firstName} ${p.lastName}`.toLowerCase();
     return full.includes(search.toLowerCase());
   });
 
-  if (loading) return <Skeleton />;
-  if (error) return <div className="p-6 text-xs text-red-600">Error: {error}</div>;
+  if (isLoading) return <Skeleton />;
+  if (error) return <div className="p-6 text-xs text-red-600">Error: {(error as Error).message}</div>;
 
   return (
     <div className="flex flex-col h-full">
@@ -82,7 +73,7 @@ export default function IndividualPerformancePage() {
             placeholder="Search people..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
+            className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-500 w-48"
           />
         </div>
       </div>
@@ -108,7 +99,7 @@ export default function IndividualPerformancePage() {
               {filtered.map((p, idx) => (
                 <tr
                   key={p.userId}
-                  className="hover:bg-blue-50 cursor-pointer transition-colors"
+                  className="hover:bg-accent-50 cursor-pointer transition-colors"
                   onClick={() => router.push(`/performance/individual/${p.userId}`)}
                 >
                   <td className="px-3 py-2.5 border-b border-r border-gray-100 text-gray-400 font-mono">{idx + 1}</td>
