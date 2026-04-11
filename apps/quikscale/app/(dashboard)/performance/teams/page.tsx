@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Users, Trophy } from "lucide-react";
+import { useTeamPerformance } from "@/lib/hooks/usePerformance";
 
 function scoreColor(score: number | null) {
   if (score === null) return { text: "text-gray-400", bg: "bg-gray-100", label: "—" };
@@ -42,23 +42,11 @@ function Skeleton() {
 }
 
 export default function TeamsPerformancePage() {
-  const [teams, setTeams] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useTeamPerformance();
+  const teams = (data as any[]) ?? [];
 
-  useEffect(() => {
-    fetch("/api/performance/teams")
-      .then(r => r.json())
-      .then(j => {
-        if (j.success) setTeams(j.data);
-        else setError(j.error);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <Skeleton />;
-  if (error) return <div className="p-6 text-xs text-red-600">Error: {error}</div>;
+  if (isLoading) return <Skeleton />;
+  if (error) return <div className="p-6 text-xs text-red-600">Error: {(error as Error).message}</div>;
 
   return (
     <div className="flex flex-col h-full">
@@ -102,7 +90,7 @@ export default function TeamsPerformancePage() {
                     </td>
                     <td className="px-3 py-2.5 border-b border-r border-gray-100">
                       <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-md bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center uppercase flex-shrink-0">
+                        <span className="w-6 h-6 rounded-md bg-accent-100 text-accent-700 text-[10px] font-bold flex items-center justify-center uppercase flex-shrink-0">
                           {t.teamName.slice(0, 2)}
                         </span>
                         <span className={`font-medium ${isTop ? "text-amber-800" : "text-gray-800"}`}>{t.teamName}</span>

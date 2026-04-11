@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Plus, X, Search, Pencil, Trash2,
-  ChevronDown, Users, UsersRound,
+  ChevronDown, Users, UsersRound, UserPlus, Check,
 } from "lucide-react";
+import { AddButton } from "@/components/AddButton";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface TeamMember {
@@ -206,7 +207,7 @@ function TeamPanel({
               value={form.name}
               onChange={e => set("name", e.target.value)}
               placeholder="e.g. Engineering, Sales, Marketing"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder-gray-400"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400"
             />
           </div>
 
@@ -218,7 +219,7 @@ function TeamPanel({
               onChange={e => set("description", e.target.value)}
               placeholder="Brief description of this team's purpose"
               rows={3}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder-gray-400 resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400 resize-none"
             />
           </div>
 
@@ -264,7 +265,7 @@ function TeamPanel({
               <button
                 type="button"
                 onClick={() => { setHeadOpen(o => !o); setHeadSearch(""); }}
-                className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
+                className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-accent-400 text-sm"
               >
                 {selectedHead ? (
                   <div className="flex items-center gap-2">
@@ -286,7 +287,7 @@ function TeamPanel({
                       value={headSearch}
                       onChange={e => setHeadSearch(e.target.value)}
                       placeholder="Search…"
-                      className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-400"
                     />
                   </div>
                   <div className="max-h-48 overflow-y-auto pb-1">
@@ -308,13 +309,13 @@ function TeamPanel({
                           key={u.userId}
                           type="button"
                           onClick={() => { set("headId", u.userId); setHeadOpen(false); }}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 ${form.headId === u.userId ? "bg-blue-50" : ""}`}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 ${form.headId === u.userId ? "bg-accent-50" : ""}`}
                         >
                           <div className={`h-6 w-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 ${avatarBg(full)}`}>
                             {initials(u.firstName, u.lastName)}
                           </div>
                           <div>
-                            <span className={`block text-sm ${form.headId === u.userId ? "text-blue-600 font-medium" : "text-gray-700"}`}>{full}</span>
+                            <span className={`block text-sm ${form.headId === u.userId ? "text-accent-600 font-medium" : "text-gray-700"}`}>{full}</span>
                             <span className="block text-[10px] text-gray-400">{u.email}</span>
                           </div>
                         </button>
@@ -391,6 +392,177 @@ function ConfirmDialog({
   );
 }
 
+/* ─── Member Picker Panel ───────────────────────────────────────────────────── */
+function MemberPickerPanel({
+  open, onClose, team, allUsers, onSaved,
+}: {
+  open:     boolean;
+  onClose:  () => void;
+  team:     OrgTeam | null;
+  allUsers: OrgUser[];
+  onSaved:  (updatedTeam: OrgTeam) => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch]     = useState("");
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setSelected(new Set());
+      setSearch("");
+      setError("");
+    }
+  }, [open]);
+
+  // Users not already on this team
+  const existingUserIds = useMemo(
+    () => new Set((team?.members ?? []).map(m => m.userId)),
+    [team]
+  );
+  const available = useMemo(() => {
+    const q = search.toLowerCase();
+    return allUsers
+      .filter(u => !existingUserIds.has(u.userId))
+      .filter(u =>
+        !q ||
+        `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q)
+      );
+  }, [allUsers, existingUserIds, search]);
+
+  function toggle(userId: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(userId) ? next.delete(userId) : next.add(userId);
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    if (!team || selected.size === 0) return;
+    setSaving(true); setError("");
+    try {
+      const res = await fetch(`/api/org/teams/${team.id}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIds: Array.from(selected) }),
+      });
+      const json = await res.json();
+      if (!json.success) { setError(json.error || "Failed to add members"); return; }
+      if (json.data?.team) onSaved(json.data.team);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open || !team) return null;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex">
+      <div className="flex-1 bg-black/30" onClick={onClose} />
+      <div className="w-[460px] bg-white h-full shadow-2xl flex flex-col">
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
+          <div>
+            <p className="text-sm font-bold text-gray-900">Add members to {team.name}</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Select one or more users to add to this team
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 mt-0.5">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-6 py-4 border-b border-gray-100">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name or email…"
+              className="w-full pl-8 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
+            />
+          </div>
+          {selected.size > 0 && (
+            <p className="text-[11px] text-gray-500 mt-2">
+              {selected.size} user{selected.size !== 1 ? "s" : ""} selected
+            </p>
+          )}
+        </div>
+
+        {/* User list */}
+        <div className="flex-1 overflow-y-auto px-2 py-2">
+          {available.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-2">
+              <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
+                <Users className="h-4 w-4 text-gray-300" />
+              </div>
+              <p className="text-xs text-gray-400">
+                {search ? "No matching users" : "All users are already on this team"}
+              </p>
+            </div>
+          ) : (
+            available.map(u => {
+              const full = `${u.firstName} ${u.lastName}`;
+              const isSelected = selected.has(u.userId);
+              return (
+                <button
+                  key={u.userId}
+                  onClick={() => toggle(u.userId)}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors ${
+                    isSelected ? "bg-accent-50" : "hover:bg-gray-50"
+                  }`}
+                >
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${avatarBg(full)}`}>
+                    {initials(u.firstName, u.lastName)}
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <p className="text-xs font-medium text-gray-800 truncate">{full}</p>
+                    <p className="text-[11px] text-gray-400 truncate">{u.email}</p>
+                  </div>
+                  <div
+                    className={`h-5 w-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                      isSelected ? "bg-accent-600 border-accent-600" : "border-gray-300"
+                    }`}
+                  >
+                    {isSelected && <Check className="h-3 w-3 text-white" />}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        {error && (
+          <div className="px-6 py-3 bg-red-50 border-t border-red-100">
+            <p className="text-xs text-red-600">{error}</p>
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || selected.size === 0}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? "Adding…" : `Add ${selected.size || ""} member${selected.size !== 1 ? "s" : ""}`.trim()}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgTeamsPage() {
   const [teams, setTeams]         = useState<OrgTeam[]>([]);
@@ -401,6 +573,7 @@ export default function OrgTeamsPage() {
   const [deleteTeam, setDeleteTeam] = useState<OrgTeam | null>(null);
   const [search, setSearch]       = useState("");
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
+  const [pickerTeam, setPickerTeam] = useState<OrgTeam | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -447,6 +620,22 @@ export default function OrgTeamsPage() {
     setDeleteTeam(null);
   }
 
+  async function handleRemoveMember(team: OrgTeam, userId: string) {
+    const res  = await fetch(`/api/org/teams/${team.id}/members/${userId}`, { method: "DELETE" });
+    const json = await res.json();
+    if (!json.success) return;
+    // Optimistic local update — drop the member from the team row
+    setTeams(prev => prev.map(t =>
+      t.id === team.id
+        ? {
+            ...t,
+            members: t.members.filter(m => m.userId !== userId),
+            memberCount: Math.max(0, t.memberCount - 1),
+          }
+        : t
+    ));
+  }
+
   function toggleExpand(id: string) {
     setExpanded(prev => {
       const next = new Set(prev);
@@ -460,8 +649,8 @@ export default function OrgTeamsPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
-            <UsersRound className="h-4 w-4 text-blue-600" />
+          <div className="h-8 w-8 rounded-lg bg-accent-100 flex items-center justify-center">
+            <UsersRound className="h-4 w-4 text-accent-600" />
           </div>
           <div>
             <h1 className="text-sm font-bold text-gray-900">Teams</h1>
@@ -476,15 +665,12 @@ export default function OrgTeamsPage() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search teams…"
-              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 w-44"
+              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
-          <button
-            onClick={() => { setEditTeam(null); setPanelOpen(true); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg"
-          >
-            <Plus className="h-3.5 w-3.5" /> New Team
-          </button>
+          <AddButton onClick={() => { setEditTeam(null); setPanelOpen(true); }}>
+            New Team
+          </AddButton>
         </div>
       </div>
 
@@ -557,15 +743,22 @@ export default function OrgTeamsPage() {
                         <button
                           onClick={() => toggleExpand(team.id)}
                           title={isExpanded ? "Hide members" : "Show members"}
-                          className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50 transition-colors"
                         >
                           <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                         </button>
                       )}
                       <button
+                        onClick={() => setPickerTeam(team)}
+                        title="Add member"
+                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                      >
+                        <UserPlus className="h-3.5 w-3.5" />
+                      </button>
+                      <button
                         onClick={() => { setEditTeam(team); setPanelOpen(true); }}
                         title="Edit"
-                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50 transition-colors"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
@@ -582,19 +775,34 @@ export default function OrgTeamsPage() {
                   {/* Expanded members list */}
                   {isExpanded && team.members.length > 0 && (
                     <div className="border-t border-gray-100 px-5 py-3 bg-gray-50">
-                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team Members</p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Team Members</p>
+                        <button
+                          onClick={() => setPickerTeam(team)}
+                          className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-accent-700 bg-accent-50 hover:bg-accent-100 rounded-md transition-colors"
+                        >
+                          <UserPlus className="h-3 w-3" /> Add member
+                        </button>
+                      </div>
                       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
                         {team.members.map(m => {
                           const full = `${m.firstName} ${m.lastName}`;
                           return (
-                            <div key={m.userId} className="flex items-center gap-2 py-1">
+                            <div key={m.userId} className="group flex items-center gap-2 py-1 pr-1 rounded hover:bg-white transition-colors">
                               <div className={`h-6 w-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 ${avatarBg(full)}`}>
                                 {initials(m.firstName, m.lastName)}
                               </div>
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <p className="text-xs font-medium text-gray-700 truncate">{full}</p>
                                 <p className="text-[10px] text-gray-400 truncate">{m.email}</p>
                               </div>
+                              <button
+                                onClick={() => handleRemoveMember(team, m.userId)}
+                                title={`Remove ${full} from team`}
+                                className="h-5 w-5 flex items-center justify-center rounded text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 transition-all flex-shrink-0"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
                             </div>
                           );
                         })}
@@ -615,6 +823,19 @@ export default function OrgTeamsPage() {
         onSaved={handleSaved}
         editTeam={editTeam}
         users={users}
+      />
+
+      {/* ── Member Picker ── */}
+      <MemberPickerPanel
+        open={!!pickerTeam}
+        onClose={() => setPickerTeam(null)}
+        team={pickerTeam}
+        allUsers={users}
+        onSaved={(updated) => {
+          handleSaved(updated);
+          // Keep the row expanded so the user sees the newly added members
+          setExpanded(prev => new Set(prev).add(updated.id));
+        }}
       />
 
       {/* ── Confirm Delete ── */}

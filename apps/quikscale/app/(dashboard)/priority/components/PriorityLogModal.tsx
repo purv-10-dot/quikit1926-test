@@ -24,7 +24,7 @@ const STATUS_OPTIONS = [
   { value: "not-yet-started", label: "Not Yet Started", selectedClass: "bg-red-100 text-red-700 border-red-300 ring-2 ring-red-300",        baseClass: "bg-white text-gray-600 border-gray-200 hover:bg-red-50"    },
   { value: "behind-schedule", label: "Behind Schedule", selectedClass: "bg-amber-100 text-amber-700 border-amber-300 ring-2 ring-amber-300", baseClass: "bg-white text-gray-600 border-gray-200 hover:bg-amber-50"  },
   { value: "on-track",        label: "On Track",        selectedClass: "bg-green-100 text-green-700 border-green-300 ring-2 ring-green-300", baseClass: "bg-white text-gray-600 border-gray-200 hover:bg-green-50"  },
-  { value: "completed",       label: "Completed",       selectedClass: "bg-blue-100 text-blue-700 border-blue-300 ring-2 ring-blue-300",     baseClass: "bg-white text-gray-600 border-gray-200 hover:bg-blue-50"   },
+  { value: "completed",       label: "Completed",       selectedClass: "bg-accent-100 text-accent-700 border-accent-300 ring-2 ring-accent-300",     baseClass: "bg-white text-gray-600 border-gray-200 hover:bg-accent-50"   },
   { value: "",                label: "Clear",            selectedClass: "bg-gray-100 text-gray-500 border-gray-300 ring-2 ring-gray-200",    baseClass: "bg-white text-gray-300 border-gray-200 hover:bg-gray-50"   },
 ];
 
@@ -176,7 +176,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Team</label>
                   <select value={form.teamId} onChange={e => setField("teamId", e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                     <option value="">No team</option>
                     {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
@@ -186,7 +186,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                     Priority Name <span className="text-red-500">*</span>
                   </label>
                   <input value={form.name} onChange={e => setField("name", e.target.value)}
-                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
+                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
                   {errors.name && <p className="text-[10px] text-red-500 mt-0.5">{errors.name}</p>}
                 </div>
               </div>
@@ -196,7 +196,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Start Week</label>
                   <select value={form.startWeek} onChange={e => setField("startWeek", e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                     {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}</option>)}
                   </select>
                 </div>
@@ -215,11 +215,11 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                   <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
                   <div className="grid grid-cols-2 gap-2">
                     <select value={form.year} onChange={e => setField("year", e.target.value)}
-                      className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                      className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                       {FISCAL_YEARS.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
                     </select>
                     <select value={form.quarter} onChange={e => setField("quarter", e.target.value)}
-                      className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                      className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                       {ALL_QUARTERS.map(q => <option key={q} value={q}>{q}</option>)}
                     </select>
                   </div>
@@ -227,7 +227,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">End Week</label>
                   <select value={form.endWeek} onChange={e => setField("endWeek", e.target.value)}
-                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
+                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
                     {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}</option>)}
                   </select>
                   {errors.endWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.endWeek}</p>}
@@ -238,7 +238,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Overall Status</label>
                 <select value={form.overallStatus} onChange={e => setField("overallStatus", e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                   {OVERALL_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
@@ -248,7 +248,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                 <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
                 <textarea value={form.description} onChange={e => setField("description", e.target.value)}
                   rows={3} placeholder="Enter description…"
-                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none" />
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
               </div>
             </div>
           )}
@@ -285,7 +285,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                       onBlur={() => handleWeeklyNotesBlur(weekNum)}
                       placeholder="Notes for this week…"
                       rows={2}
-                      className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none text-gray-600 placeholder-gray-300"
+                      className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none text-gray-600 placeholder-gray-300"
                     />
                   </div>
                 );
@@ -299,7 +299,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
               <label className="block text-xs font-medium text-gray-600 mb-2">Overall Priority Notes</label>
               <textarea value={notes} onChange={e => setNotes(e.target.value)}
                 rows={10} placeholder="Enter notes about this priority…"
-                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none" />
+                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
             </div>
           )}
         </div>

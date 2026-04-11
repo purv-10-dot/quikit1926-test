@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/api/errors";
 import { generateQuartersSchema } from "@/lib/schemas/quarterSchema";
+import { diffDays, generateQuarterDates } from "@/lib/utils/quarterGen";
 
 async function getMembership(userId: string) {
   return db.membership.findFirst({
@@ -11,83 +12,6 @@ async function getMembership(userId: string) {
     orderBy: { createdAt: "asc" },
     include: { tenant: { select: { id: true, fiscalYearStart: true } } },
   });
-}
-
-/* ─── Day-Count Quarter Generation ──────────────────────────────────────────── */
-
-/** Check if a date range contains Feb 29 (leap day). */
-function fyContainsLeapDay(fyStart: Date, fyEnd: Date): boolean {
-  const startYear = fyStart.getUTCFullYear();
-  const endYear = fyEnd.getUTCFullYear();
-  for (let y = startYear; y <= endYear; y++) {
-    // Check if Feb 29 exists in year y and falls within the FY range
-    if (isLeapYear(y)) {
-      const feb29 = new Date(Date.UTC(y, 1, 29)); // Feb 29
-      if (feb29 >= fyStart && feb29 <= fyEnd) return true;
-    }
-  }
-  return false;
-}
-
-function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
-}
-
-function addDays(date: Date, days: number): Date {
-  const result = new Date(date.getTime());
-  result.setUTCDate(result.getUTCDate() + days);
-  return result;
-}
-
-function diffDays(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / (86400000));
-}
-
-/**
- * Generate all 4 quarters for a fiscal year using day-count splitting.
- * Q1 = 91 days, Q2 = 91 days, Q3 = 91 days, Q4 = 92 days (or 93 if leap).
- *
- * @param fyStartDate - The exact FY start date. If not provided, defaults to
- *                      day 1 of fiscalStartMonth in the given fiscalYear.
- */
-function generateQuarterDates(
-  fiscalYear: number,
-  fiscalStartMonth: number, // 1-12 (1=Jan, 4=Apr)
-  fyStartDate?: Date,
-): { quarter: string; startDate: Date; endDate: Date }[] {
-  // FY start = provided date OR 1st day of fiscal start month
-  const fyStart = fyStartDate
-    ? new Date(Date.UTC(fyStartDate.getUTCFullYear(), fyStartDate.getUTCMonth(), fyStartDate.getUTCDate()))
-    : new Date(Date.UTC(fiscalYear, fiscalStartMonth - 1, 1));
-
-  // FY end = start date + 1 year - 1 day
-  const fyEnd = addDays(
-    new Date(Date.UTC(fyStart.getUTCFullYear() + 1, fyStart.getUTCMonth(), fyStart.getUTCDate())),
-    -1
-  );
-
-  const totalDays = diffDays(fyStart, fyEnd) + 1; // 365 or 366
-  const hasLeap = totalDays === 366;
-
-  // Day distribution: Q1=91, Q2=91, Q3=91, Q4=92 (or 93 if leap)
-  const dayDistribution = [91, 91, 91, hasLeap ? 93 : 92];
-  const quarterNames = ["Q1", "Q2", "Q3", "Q4"];
-
-  const quarters: { quarter: string; startDate: Date; endDate: Date }[] = [];
-  let cursor = new Date(fyStart.getTime());
-
-  for (let i = 0; i < 4; i++) {
-    const qStart = new Date(cursor.getTime());
-    const qEnd = addDays(qStart, dayDistribution[i] - 1);
-    quarters.push({
-      quarter: quarterNames[i],
-      startDate: qStart,
-      endDate: qEnd,
-    });
-    cursor = addDays(qEnd, 1); // next quarter starts the day after
-  }
-
-  return quarters;
 }
 
 /* ─── Serialization ─────────────────────────────────────────────────────────── */

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Users, Star, AlertTriangle, TrendingUp, ChevronDown,
   X, Plus, Save, LayoutGrid, List,
 } from "lucide-react";
+import { useTalent, useUpsertTalent } from "@/lib/hooks/usePerformance";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ const BOX_LABELS: Record<string, { label: string; sub: string; bg: string; borde
   "high-high":   { label: "Star",             sub: "High performer, high potential", bg: "bg-purple-50",  border: "border-purple-300", text: "text-purple-800" },
   "high-medium": { label: "High Performer",   sub: "Delivers results, moderate potential", bg: "bg-green-50",   border: "border-green-300",  text: "text-green-800"  },
   "high-low":    { label: "Specialist",       sub: "Expert in role, limited growth", bg: "bg-teal-50",    border: "border-teal-300",   text: "text-teal-800"   },
-  "medium-high": { label: "High Potential",   sub: "Growth ahead, building performance", bg: "bg-blue-50",    border: "border-blue-300",   text: "text-blue-800"   },
+  "medium-high": { label: "High Potential",   sub: "Growth ahead, building performance", bg: "bg-accent-50",    border: "border-accent-300",   text: "text-accent-800"   },
   "medium-medium":{ label: "Core Player",     sub: "Solid contributor, steady growth", bg: "bg-sky-50",     border: "border-sky-300",    text: "text-sky-800"    },
   "medium-low":  { label: "Average Player",   sub: "Meets expectations, limited upside", bg: "bg-gray-50",    border: "border-gray-300",   text: "text-gray-600"   },
   "low-high":    { label: "Enigma",           sub: "High potential, underperforming", bg: "bg-amber-50",   border: "border-amber-300",  text: "text-amber-800"  },
@@ -76,7 +77,7 @@ function flightBadge(risk: FlightRisk | null) {
 
 function successionBadge(s: Succession | null) {
   if (!s) return null;
-  const styles = { "not-ready": "bg-gray-100 text-gray-600", developing: "bg-blue-100 text-blue-700", "ready-now": "bg-green-100 text-green-700" };
+  const styles = { "not-ready": "bg-gray-100 text-gray-600", developing: "bg-accent-100 text-accent-700", "ready-now": "bg-green-100 text-green-700" };
   return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${styles[s]}`}>{SUCCESSION_LABELS[s]}</span>;
 }
 
@@ -94,7 +95,8 @@ function AssessmentDrawer({
   const [notes,        setNotes]        = useState(person.developmentNotes || "");
   const [skillInput,   setSkillInput]   = useState("");
   const [skills,       setSkills]       = useState<string[]>(person.skills || []);
-  const [saving,       setSaving]       = useState(false);
+  const upsertTalent = useUpsertTalent();
+  const saving = upsertTalent.isPending;
 
   const addSkill = () => {
     const s = skillInput.trim();
@@ -102,23 +104,15 @@ function AssessmentDrawer({
   };
 
   const save = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/performance/talent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: person.userId, potential, flightRisk,
-          successionReady: succession, skills, developmentNotes: notes,
-          quarter: currentQuarter, year: currentYear,
-        }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        onSaved({ potential, flightRisk, successionReady: succession, skills, developmentNotes: notes });
-        onClose();
-      }
-    } finally { setSaving(false); }
+    const json = await upsertTalent.mutateAsync({
+      userId: person.userId, potential, flightRisk,
+      successionReady: succession, skills, developmentNotes: notes,
+      quarter: currentQuarter, year: currentYear,
+    });
+    if (json?.success) {
+      onSaved({ potential, flightRisk, successionReady: succession, skills, developmentNotes: notes });
+      onClose();
+    }
   };
 
   const box = BOX_LABELS[boxKey(person.perfBand, potential)];
@@ -164,7 +158,7 @@ function AssessmentDrawer({
             <div className="flex gap-2">
               {(["low","medium","high"] as PotentialBand[]).map(v => (
                 <OptionBtn key={v} value={v} current={potential} label={POTENTIAL_LABELS[v]} onChange={setPotential}
-                  colors={{ active: v === "high" ? "bg-purple-100 text-purple-700" : v === "medium" ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-700" }} />
+                  colors={{ active: v === "high" ? "bg-purple-100 text-purple-700" : v === "medium" ? "bg-accent-100 text-accent-700" : "bg-gray-200 text-gray-700" }} />
               ))}
             </div>
           </div>
@@ -186,7 +180,7 @@ function AssessmentDrawer({
             <div className="flex gap-2">
               {(["not-ready","developing","ready-now"] as Succession[]).map(v => (
                 <OptionBtn key={v} value={v} current={succession} label={SUCCESSION_LABELS[v]} onChange={setSuccession}
-                  colors={{ active: v === "ready-now" ? "bg-green-100 text-green-700" : v === "developing" ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-600" }} />
+                  colors={{ active: v === "ready-now" ? "bg-green-100 text-green-700" : v === "developing" ? "bg-accent-100 text-accent-700" : "bg-gray-200 text-gray-600" }} />
               ))}
             </div>
           </div>
@@ -200,15 +194,15 @@ function AssessmentDrawer({
                 onChange={e => setSkillInput(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && addSkill()}
                 placeholder="Add skill…"
-                className="flex-1 border border-gray-200 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-400"
+                className="flex-1 border border-gray-200 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-accent-400"
               />
-              <button onClick={addSkill} className="p-1.5 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200">
-                <Plus className="w-3.5 h-3.5 text-blue-600" />
+              <button onClick={addSkill} className="p-1.5 bg-accent-50 hover:bg-accent-100 rounded border border-accent-200">
+                <Plus className="w-3.5 h-3.5 text-accent-600" />
               </button>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {skills.map(s => (
-                <span key={s} className="flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 text-xs px-2 py-0.5 rounded-full">
+                <span key={s} className="flex items-center gap-1 bg-accent-50 text-accent-700 border border-accent-200 text-xs px-2 py-0.5 rounded-full">
                   {s}
                   <button onClick={() => setSkills(skills.filter(x => x !== s))}><X className="w-2.5 h-2.5" /></button>
                 </span>
@@ -225,7 +219,7 @@ function AssessmentDrawer({
               onChange={e => setNotes(e.target.value)}
               rows={4}
               placeholder="Growth areas, development plan, coaching notes…"
-              className="w-full border border-gray-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-400 resize-none"
+              className="w-full border border-gray-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-accent-400 resize-none"
             />
           </div>
         </div>
@@ -252,24 +246,15 @@ function AssessmentDrawer({
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function TalentAssessmentPage() {
-  const [people,       setPeople]       = useState<Person[]>([]);
-  const [loading,      setLoading]      = useState(true);
+  const { data, isLoading: loading } = useTalent();
+  const people = (data as Person[]) ?? [];
   const [view,         setView]         = useState<"grid" | "list">("grid");
   const [selected,     setSelected]     = useState<Person | null>(null);
   const [quarterFilter, setQuarterFilter] = useState("Q1");
   const [yearFilter,   setYearFilter]   = useState(new Date().getFullYear());
 
-  useEffect(() => {
-    fetch("/api/performance/talent")
-      .then(r => r.json())
-      .then(j => { if (j.success) setPeople(j.data); })
-      .finally(() => setLoading(false));
-  }, []);
-
-  const handleSaved = (updated: Partial<Person>) => {
-    if (!selected) return;
-    setPeople(prev => prev.map(p => p.userId === selected.userId ? { ...p, ...updated } : p));
-  };
+  // Invalidation is handled by useUpsertTalent onSuccess — no local state updates needed
+  const handleSaved = (_updated: Partial<Person>) => {};
 
   // Build 9-box data: group people by (perfBand, potential)
   const gridData: Record<string, Person[]> = {};
@@ -313,10 +298,10 @@ export default function TalentAssessmentPage() {
           </select>
           {/* View toggle */}
           <div className="flex border border-gray-200 rounded overflow-hidden">
-            <button onClick={() => setView("grid")} className={`p-1.5 ${view==="grid" ? "bg-blue-600 text-white" : "bg-white text-gray-400 hover:bg-gray-50"}`}>
+            <button onClick={() => setView("grid")} className={`p-1.5 ${view==="grid" ? "bg-accent-600 text-white" : "bg-white text-gray-400 hover:bg-gray-50"}`}>
               <LayoutGrid className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => setView("list")} className={`p-1.5 ${view==="list" ? "bg-blue-600 text-white" : "bg-white text-gray-400 hover:bg-gray-50"}`}>
+            <button onClick={() => setView("list")} className={`p-1.5 ${view==="list" ? "bg-accent-600 text-white" : "bg-white text-gray-400 hover:bg-gray-50"}`}>
               <List className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -326,7 +311,7 @@ export default function TalentAssessmentPage() {
       {/* Summary cards */}
       <div className="px-6 py-3 grid grid-cols-4 gap-3 flex-shrink-0">
         {[
-          { label: "Total People", value: people.length, icon: Users, color: "text-blue-600 bg-blue-50" },
+          { label: "Total People", value: people.length, icon: Users, color: "text-accent-600 bg-accent-50" },
           { label: "Assessed", value: `${assessed}/${people.length}`, icon: Star, color: "text-purple-600 bg-purple-50" },
           { label: "Stars ⭐", value: stars, icon: TrendingUp, color: "text-green-600 bg-green-50" },
           { label: "High Flight Risk", value: highFlight, icon: AlertTriangle, color: "text-red-600 bg-red-50" },
@@ -416,7 +401,7 @@ function NineBoxGrid({ gridData, onSelect }: { gridData: Record<string, Person[]
                           key={p.userId}
                           onClick={() => onSelect(p)}
                           title={`${p.firstName} ${p.lastName} — ${p.performanceScore ?? "—"}%`}
-                          className={`w-7 h-7 rounded-full ${avatarColor(p.firstName)} text-white text-xs font-bold hover:ring-2 hover:ring-offset-1 hover:ring-blue-400 transition-all flex items-center justify-center`}
+                          className={`w-7 h-7 rounded-full ${avatarColor(p.firstName)} text-white text-xs font-bold hover:ring-2 hover:ring-offset-1 hover:ring-accent-400 transition-all flex items-center justify-center`}
                         >
                           {initials(p)}
                         </button>
@@ -462,7 +447,7 @@ function ListView({ people, onSelect }: { people: Person[]; onSelect: (p: Person
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search people…"
-          className="border border-gray-200 rounded px-3 py-1.5 text-xs w-64 focus:outline-none focus:border-blue-400"
+          className="border border-gray-200 rounded px-3 py-1.5 text-xs w-64 focus:outline-none focus:border-accent-400"
         />
       </div>
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -484,7 +469,7 @@ function ListView({ people, onSelect }: { people: Person[]; onSelect: (p: Person
               const pot = p.potential || "medium";
               const box = BOX_LABELS[boxKey(p.perfBand, pot as PotentialBand)];
               return (
-                <tr key={p.userId} className="hover:bg-blue-50/30 transition-colors group">
+                <tr key={p.userId} className="hover:bg-accent-50/30 transition-colors group">
                   <td className="px-3 py-2 border-b border-r border-gray-100 text-gray-400">{i+1}</td>
                   <td className="px-3 py-2 border-b border-r border-gray-100">
                     <div className="flex items-center gap-2">
@@ -501,7 +486,7 @@ function ListView({ people, onSelect }: { people: Person[]; onSelect: (p: Person
                   <td className="px-3 py-2 border-b border-r border-gray-100">
                     <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
                       p.perfBand === "high" ? "bg-green-100 text-green-700" :
-                      p.perfBand === "medium" ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"
+                      p.perfBand === "medium" ? "bg-accent-100 text-accent-700" : "bg-red-100 text-red-700"
                     }`}>
                       {p.performanceScore !== null ? `${p.performanceScore}%` : "—"} ({p.perfBand})
                     </span>
@@ -510,7 +495,7 @@ function ListView({ people, onSelect }: { people: Person[]; onSelect: (p: Person
                     {p.potential ? (
                       <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
                         p.potential === "high" ? "bg-purple-100 text-purple-700" :
-                        p.potential === "medium" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"
+                        p.potential === "medium" ? "bg-accent-100 text-accent-700" : "bg-gray-100 text-gray-600"
                       }`}>{POTENTIAL_LABELS[p.potential]}</span>
                     ) : <span className="text-gray-300">Not set</span>}
                   </td>
@@ -524,7 +509,7 @@ function ListView({ people, onSelect }: { people: Person[]; onSelect: (p: Person
                   <td className="px-3 py-2 border-b border-r border-gray-100">
                     <div className="flex flex-wrap gap-1">
                       {p.skills.slice(0,3).map(s => (
-                        <span key={s} className="bg-blue-50 text-blue-600 border border-blue-100 text-xs px-1.5 py-0.5 rounded-full">{s}</span>
+                        <span key={s} className="bg-accent-50 text-accent-600 border border-accent-100 text-xs px-1.5 py-0.5 rounded-full">{s}</span>
                       ))}
                       {p.skills.length > 3 && <span className="text-gray-400 text-xs">+{p.skills.length-3}</span>}
                       {p.skills.length === 0 && <span className="text-gray-300">—</span>}
@@ -533,7 +518,7 @@ function ListView({ people, onSelect }: { people: Person[]; onSelect: (p: Person
                   <td className="px-3 py-2 border-b border-gray-100">
                     <button
                       onClick={() => onSelect(p)}
-                      className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-medium rounded border border-blue-200 transition-colors"
+                      className="px-2.5 py-1 bg-accent-50 hover:bg-accent-100 text-accent-600 text-xs font-medium rounded border border-accent-200 transition-colors"
                     >
                       Assess
                     </button>

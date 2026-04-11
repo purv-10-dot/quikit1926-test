@@ -78,7 +78,7 @@ function TeamSelect({ value, onChange, teams }: { value: string; onChange: (id: 
   return (
     <div className="relative" ref={ref}>
       <button type="button" onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center justify-between px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white text-left ${open ? "border-blue-400 ring-1 ring-blue-400" : "border-gray-200"}`}>
+        className={`w-full flex items-center justify-between px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white text-left ${open ? "border-accent-400 ring-1 ring-accent-400" : "border-gray-200"}`}>
         <span className={selectedTeam ? "text-gray-800" : "text-gray-400"}>
           {selectedTeam ? selectedTeam.name : "No team"}
         </span>
@@ -112,7 +112,7 @@ function TeamSelect({ value, onChange, teams }: { value: string; onChange: (id: 
           <div className="border-t border-gray-100 mt-1 pt-1">
             {!adding ? (
               <button type="button" onClick={() => setAdding(true)}
-                className="w-full text-left px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 transition-colors flex items-center gap-1.5 font-medium">
+                className="w-full text-left px-3 py-1.5 text-xs text-accent-600 hover:bg-accent-50 transition-colors flex items-center gap-1.5 font-medium">
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
@@ -123,7 +123,7 @@ function TeamSelect({ value, onChange, teams }: { value: string; onChange: (id: 
                 <input ref={inputRef} value={newName} onChange={e => { setNewName(e.target.value); setErr(""); }}
                   onKeyDown={e => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") { setAdding(false); setNewName(""); } }}
                   placeholder="Team name…"
-                  className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400" />
                 {err && <p className="text-[10px] text-red-500">{err}</p>}
                 <div className="flex gap-1.5">
                   <button type="button" onClick={() => { setAdding(false); setNewName(""); setErr(""); }}
@@ -244,7 +244,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               </label>
               <input value={form.name} onChange={e => set("name", e.target.value)}
                 placeholder="Enter priority name…"
-                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
+                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
               {errors.name && <p className="text-[10px] text-red-500 mt-0.5">{errors.name}</p>}
             </div>
           </div>
@@ -256,7 +256,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
                 Start Week <span className="text-red-500">*</span>
               </label>
               <select value={form.startWeek} onChange={e => set("startWeek", e.target.value)}
-                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white ${errors.startWeek ? "border-red-400" : "border-gray-200"}`}>
+                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.startWeek ? "border-red-400" : "border-gray-200"}`}>
                 {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}</option>)}
               </select>
               {errors.startWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.startWeek}</p>}
@@ -278,11 +278,11 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <select value={form.year} onChange={e => set("year", e.target.value)}
-                  className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+                  className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                   {FISCAL_YEARS.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
                 </select>
                 <select value={form.quarter} onChange={e => set("quarter", e.target.value)}
-                  className={`px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white ${errors.quarter ? "border-red-400" : "border-gray-200"}`}>
+                  className={`px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.quarter ? "border-red-400" : "border-gray-200"}`}>
                   {ALL_QUARTERS.map(q => <option key={q} value={q}>{q}</option>)}
                 </select>
               </div>
@@ -293,7 +293,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
                 End Week <span className="text-red-500">*</span>
               </label>
               <select value={form.endWeek} onChange={e => set("endWeek", e.target.value)}
-                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
+                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
                 {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}</option>)}
               </select>
               {errors.endWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.endWeek}</p>}
@@ -305,7 +305,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
             <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
             <textarea value={form.description} onChange={e => set("description", e.target.value)}
               rows={3} placeholder="Enter description…"
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none" />
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
           </div>
         </div>
 

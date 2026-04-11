@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { getTenantId } from "@/lib/api/getTenantId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { updateOrgUserSchema } from "@/lib/schemas/userSchema";
+import { writeAuditLog } from "@/lib/api/auditLog";
 
 
 // PUT /api/org/users/[id]
@@ -79,6 +80,20 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       },
     });
 
+    await writeAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      action: "UPDATE",
+      entityType: "User",
+      entityId: params.id,
+      changes: [
+        ...Object.keys(userUpdates).filter((k) => k !== "password"),
+        ...(Object.keys(userUpdates).includes("password") ? ["password-changed"] : []),
+        ...Object.keys(membershipUpdates),
+        ...(resolvedTeamIds !== undefined ? ["teams"] : []),
+      ],
+    });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -119,6 +134,15 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     await db.membership.update({
       where: { tenantId_userId: { tenantId, userId: params.id } },
       data:  { status: "inactive" },
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      action: "DELETE",
+      entityType: "User",
+      entityId: params.id,
+      reason: "Membership deactivated",
     });
 
     return NextResponse.json({ success: true });

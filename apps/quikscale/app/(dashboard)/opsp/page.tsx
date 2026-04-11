@@ -4,26 +4,42 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { CURRENCIES, getScales } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
+import { normalizeLoadedOPSP } from "@/lib/utils/opspNormalize";
+import { sanitizeHtml } from "@/lib/utils/sanitizeHtml";
 import {
-  ChevronDown, Info, Maximize2, Eye, Check,
-  Copy, Undo2, Redo2, Bold, Italic, Underline,
-  Strikethrough, List, ListOrdered, Quote,
-  AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  FInput,
+  FTextarea,
+  RichEditor,
+} from "./components/RichEditor";
+import { Card, CardH } from "./components/Card";
+import { CritBlock } from "./components/CritBlock";
+import {
+  CategorySelect,
+  ProjectedInput,
+  populateCatCache,
+} from "./components/category";
+import {
+  WithTooltip,
+  OwnerSelect,
+  QuarterDropdown,
+} from "./components/pickers";
+import { TargetsModal, GoalsModal, RocksModal } from "./components/modals";
+import type {
+  TargetRow,
+  GoalRow,
+  ThrustRow,
+  KeyInitiativeRow,
+  RockRow,
+  ActionRow,
+  KPIAcctRow,
+  QPriorRow,
+  CritCard,
+} from "./types";
+import {
+  Info, Maximize2, Eye, Check,
+  Copy,
   Calendar, X, Loader2, Printer, Download,
 } from "lucide-react";
-
-/* ═══════════════════════════════════════════════
-   Types
-═══════════════════════════════════════════════ */
-interface TargetRow   { category: string; projected: string; y1: string; y2: string; y3: string; y4: string; y5: string; }
-interface GoalRow     { category: string; projected: string; q1: string; q2: string; q3: string; q4: string; }
-interface ThrustRow   { desc: string; owner: string; }
-interface KeyInitiativeRow { desc: string; owner: string; }
-interface RockRow { desc: string; owner: string; }
-interface ActionRow   { category: string; projected: string; }
-interface KPIAcctRow  { kpi: string; goal: string; }
-interface QPriorRow   { priority: string; dueDate: string; }
-interface CritCard    { title: string; bullets: string[] }
 
 interface FormData {
   year: number; quarter: string; targetYears: number; status: string;
@@ -48,41 +64,6 @@ interface FormData {
 const emptyArr3   = (): string[]        => ["", "", ""];
 const emptyArr5   = (): string[]        => ["", "", "", "", ""];
 
-/**
- * Normalize a field that stores 5 rows of {desc, owner}. Handles legacy shapes:
- *   1. HTML string (original RichEditor flow) → reset to 5 empty rows
- *   2. string[] (previous numbered-rows flow) → wrap each as {desc, owner:""}
- *   3. {desc, owner}[] (current Key Thrusts-style) → pad/truncate to 5
- */
-function normalizeDescOwnerRows(val: unknown): { desc: string; owner: string }[] {
-  if (!Array.isArray(val)) {
-    return Array.from({ length: 5 }, () => ({ desc: "", owner: "" }));
-  }
-  const normalized = (val as unknown[]).map(item => {
-    if (item && typeof item === "object" && !Array.isArray(item)) {
-      const obj = item as { desc?: unknown; owner?: unknown };
-      return {
-        desc: typeof obj.desc === "string" ? obj.desc : "",
-        owner: typeof obj.owner === "string" ? obj.owner : "",
-      };
-    }
-    return { desc: typeof item === "string" ? item : "", owner: "" };
-  });
-  while (normalized.length < 5) normalized.push({ desc: "", owner: "" });
-  return normalized.slice(0, 5);
-}
-
-/**
- * Normalize a loaded OPSP payload so form state always matches the current FormData
- * shape. Handles `keyInitiatives` and `rocks` legacy shapes (both were previously
- * HTML strings in the RichEditor flow, now stored as {desc, owner}[] JSON arrays).
- */
-function normalizeLoadedOPSP(raw: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...raw };
-  out.keyInitiatives = normalizeDescOwnerRows(out.keyInitiatives);
-  out.rocks = normalizeDescOwnerRows(out.rocks);
-  return out;
-}
 const emptyCrit   = (): CritCard        => ({ title: "", bullets: ["", "", "", ""] });
 const emptyTarget = (): TargetRow[]     => Array.from({ length: 5 }, () => ({ category:"", projected:"", y1:"", y2:"", y3:"", y4:"", y5:"" }));
 const emptyGoal   = (): GoalRow[]       => Array.from({ length: 6 }, () => ({ category:"", projected:"", q1:"", q2:"", q3:"", q4:"" }));
@@ -111,849 +92,6 @@ const defaultForm = (): FormData => ({
   trends: Array(6).fill(""),
 });
 
-/* ═══════════════════════════════════════════════
-   Shared UI Components
-═══════════════════════════════════════════════ */
-function FInput({
-  value, onChange, placeholder = "Input text", className,
-}: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
-  return (
-    <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-      className={cn("w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white", className)} />
-  );
-}
-
-function FTextarea({
-  value, onChange, placeholder = "Input text", rows = 4, className,
-}: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number; className?: string }) {
-  return (
-    <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} rows={rows}
-      className={cn("w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none bg-white", className)} />
-  );
-}
-
-/* ── Toolbar button ── */
-function TBtn({
-  icon, onMouseDown, active = false, title,
-}: { icon: React.ReactNode; onMouseDown?: (e: React.MouseEvent) => void; active?: boolean; title?: string }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      className={cn(
-        "h-6 w-6 flex items-center justify-center rounded transition-colors",
-        active ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100",
-      )}
-      onMouseDown={onMouseDown}
-    >
-      {icon}
-    </button>
-  );
-}
-function Sep() { return <span className="w-px h-4 bg-gray-200 mx-0.5 flex-shrink-0" />; }
-
-const ALIGN_OPTIONS: { label: string; cmd: string; Icon: React.FC<{ className?: string }> }[] = [
-  { label: "Left",    cmd: "justifyLeft",   Icon: AlignLeft },
-  { label: "Center",  cmd: "justifyCenter", Icon: AlignCenter },
-  { label: "Right",   cmd: "justifyRight",  Icon: AlignRight },
-  { label: "Justify", cmd: "justifyFull",   Icon: AlignJustify },
-];
-
-/* ── Rich Toolbar ── */
-function RichToolbar({ editorRef }: { editorRef: React.RefObject<HTMLDivElement> }) {
-  const [states, setStates] = useState({
-    bold: false, italic: false, underline: false, strikeThrough: false,
-    insertUnorderedList: false, insertOrderedList: false,
-    justifyLeft: true, justifyCenter: false, justifyRight: false, justifyFull: false,
-  });
-  const [alignOpen, setAlignOpen] = useState(false);
-
-  // Poll active formatting states whenever selection changes
-  const syncStates = useCallback(() => {
-    try {
-      setStates({
-        bold:                 document.queryCommandState("bold"),
-        italic:               document.queryCommandState("italic"),
-        underline:            document.queryCommandState("underline"),
-        strikeThrough:        document.queryCommandState("strikeThrough"),
-        insertUnorderedList:  document.queryCommandState("insertUnorderedList"),
-        insertOrderedList:    document.queryCommandState("insertOrderedList"),
-        justifyLeft:          document.queryCommandState("justifyLeft"),
-        justifyCenter:        document.queryCommandState("justifyCenter"),
-        justifyRight:         document.queryCommandState("justifyRight"),
-        justifyFull:          document.queryCommandState("justifyFull"),
-      });
-    } catch { /* ignore in SSR/unsupported */ }
-  }, []);
-
-  useEffect(() => {
-    document.addEventListener("selectionchange", syncStates);
-    return () => document.removeEventListener("selectionchange", syncStates);
-  }, [syncStates]);
-
-  const exec = useCallback((cmd: string, val?: string) => {
-    // Keep focus in editor, run command, then re-sync toolbar state
-    if (editorRef.current) editorRef.current.focus();
-    document.execCommand(cmd, false, val ?? undefined);
-    // Use rAF so the browser updates queryCommandState before we read it
-    requestAnimationFrame(syncStates);
-  }, [editorRef, syncStates]);
-
-  const currentAlignIcon = ALIGN_OPTIONS.find(a => states[a.cmd as keyof typeof states])?.Icon ?? AlignLeft;
-  const CurrentAlignIcon = currentAlignIcon;
-
-  return (
-    <div className="flex items-center gap-0.5 border-b border-gray-200 pb-1.5 mb-2 overflow-x-auto flex-nowrap scrollbar-none">
-      {/* Undo */}
-      <TBtn title="Undo (Ctrl+Z)" icon={<Undo2 className="h-3.5 w-3.5" />}
-        onMouseDown={e => { e.preventDefault(); exec("undo"); }} />
-      {/* Redo */}
-      <TBtn title="Redo (Ctrl+Y)" icon={<Redo2 className="h-3.5 w-3.5" />}
-        onMouseDown={e => { e.preventDefault(); exec("redo"); }} />
-      <Sep />
-
-      {/* Alignment dropdown */}
-      <div className="relative">
-        <button
-          type="button"
-          title="Text alignment"
-          className="flex items-center gap-0.5 h-6 px-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded"
-          onMouseDown={e => { e.preventDefault(); setAlignOpen(o => !o); }}
-        >
-          <CurrentAlignIcon className="h-3 w-3" />
-          <ChevronDown className="h-3 w-3" />
-        </button>
-        {alignOpen && (
-          <>
-            <div className="fixed inset-0 z-30" onMouseDown={() => setAlignOpen(false)} />
-            <div className="absolute top-full left-0 z-40 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[110px]">
-              {ALIGN_OPTIONS.map(({ label, cmd, Icon }) => (
-                <button key={cmd} type="button"
-                  className={cn(
-                    "w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50",
-                    states[cmd as keyof typeof states] ? "text-blue-600 font-semibold" : "text-gray-700",
-                  )}
-                  onMouseDown={e => { e.preventDefault(); exec(cmd); setAlignOpen(false); }}>
-                  <Icon className="h-3.5 w-3.5" /> {label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-      <Sep />
-
-      {/* Inline formatting */}
-      <TBtn title="Bold (Ctrl+B)"        active={states.bold}          icon={<Bold         className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("bold"); }} />
-      <TBtn title="Italic (Ctrl+I)"      active={states.italic}        icon={<Italic       className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("italic"); }} />
-      <TBtn title="Underline (Ctrl+U)"   active={states.underline}     icon={<Underline    className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("underline"); }} />
-      <TBtn title="Strikethrough"        active={states.strikeThrough} icon={<Strikethrough className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("strikeThrough"); }} />
-      <Sep />
-
-      {/* Lists */}
-      <TBtn title="Bullet list"   active={states.insertUnorderedList} icon={<List        className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("insertUnorderedList"); }} />
-      <TBtn title="Numbered list" active={states.insertOrderedList}   icon={<ListOrdered className="h-3.5 w-3.5" />} onMouseDown={e => { e.preventDefault(); exec("insertOrderedList"); }} />
-      <Sep />
-
-      {/* Blockquote */}
-      <TBtn title="Block quote" icon={<Quote className="h-3.5 w-3.5" />}
-        onMouseDown={e => {
-          e.preventDefault();
-          // Toggle: queryCommandValue returns current block tag
-          const current = document.queryCommandValue("formatBlock").toLowerCase();
-          exec("formatBlock", current === "blockquote" ? "p" : "blockquote");
-        }} />
-    </div>
-  );
-}
-
-/* ── Rich Editor (contentEditable) ── */
-function RichEditor({
-  value, onChange, placeholder = "Input text", className, resetKey,
-}: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string; resetKey?: string }) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const [isEmpty, setIsEmpty] = useState(!value || value === "" || value === "<br>");
-
-  // Sync innerHTML when resetKey changes (quarter/year switch) or first mount
-  useEffect(() => {
-    if (editorRef.current) {
-      editorRef.current.innerHTML = value || "";
-      setIsEmpty(!value || value === "" || value === "<br>");
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetKey]);
-
-  const handleInput = () => {
-    if (!editorRef.current) return;
-    const html = editorRef.current.innerHTML;
-    onChange(html);
-    setIsEmpty(!html || html === "<br>" || html === "<div><br></div>");
-  };
-
-  return (
-    <div className={cn("flex flex-col min-h-0", className)}>
-      <RichToolbar editorRef={editorRef} />
-      <div className="relative flex-1 min-h-[80px]">
-        {isEmpty && (
-          <span className="absolute inset-0 px-3 py-2 text-sm text-gray-400 pointer-events-none select-none">
-            {placeholder}
-          </span>
-        )}
-        <div
-          ref={editorRef}
-          contentEditable
-          suppressContentEditableWarning
-          onInput={handleInput}
-          style={{ minHeight: "inherit" }}
-          className="rich-editor w-full h-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white overflow-y-auto"
-        />
-      </div>
-    </div>
-  );
-}
-
-function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("border border-gray-200 rounded-lg p-4 bg-white", className)}>{children}</div>;
-}
-function CardH({ title, subtitle, expand, onExpand }: { title: string; subtitle?: string; expand?: boolean; onExpand?: () => void }) {
-  return (
-    <div className="flex items-start justify-between mb-3">
-      <div>
-        <p className="text-xs font-bold text-gray-800 uppercase tracking-wide">{title}</p>
-        {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
-      </div>
-      {expand && (
-        <button onClick={onExpand} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded p-0.5">
-          <Maximize2 className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-const BULLET_COLORS = ["#1a5c2e","#4caf50","#f5c518","#e53935"];
-function CritBlock({ label, value, onChange }: { label: string; value: CritCard; onChange: (v: CritCard) => void }) {
-  return (
-    <Card>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">{label}:</span>
-        <input value={value.title} onChange={e => onChange({ ...value, title: e.target.value })}
-          placeholder="Enter title here"
-          className="flex-1 min-w-0 text-xs border-0 border-b border-dashed border-gray-300 focus:outline-none text-gray-500 placeholder-gray-400 bg-transparent overflow-hidden" />
-      </div>
-      <div className="space-y-1.5">
-        {BULLET_COLORS.map((color, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
-            <FInput value={value.bullets[i] ?? ""} onChange={v => {
-              const bullets = [...value.bullets]; bullets[i] = v; onChange({ ...value, bullets });
-            }} />
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-const DATA_TYPES = ["Number", "Percentage", "Currency"] as const;
-
-/* ── Module-level cache: category name → { dataType, symbol, currency } ── */
-interface CatMeta { dataType: string; symbol: string | null; currency: string | null; }
-const catMetaCache = new Map<string, CatMeta>();
-
-function populateCatCache(data: { name: string; dataType: string; currency: string | null }[]) {
-  data.forEach(c => {
-    const symbol = c.dataType === "Currency"
-      ? (CURRENCIES.find(x => x.code === c.currency)?.symbol ?? null)
-      : null;
-    catMetaCache.set(c.name, { dataType: c.dataType, symbol, currency: c.currency });
-  });
-}
-
-/* ── Scale abbreviation map for currency Projected values ──
-   Maps the full-label scales from lib/utils/currency.ts to short abbreviations
-   shown in the dropdown. Trillion and Hundred Crore are intentionally omitted. */
-const SCALE_ABBR: Record<string, string> = {
-  "":         "-",
-  "Thousand": "K",
-  "Million":  "M",
-  "Billion":  "B",
-  "Lakh":     "L",
-  "Crore":    "Cr",
-};
-
-/** List of scale abbreviations available for a given currency. "-" comes first (no scale). */
-function getScaleAbbrs(currency: string): string[] {
-  const scales = getScales(currency);
-  return scales
-    .map(s => SCALE_ABBR[s.label])
-    .filter((abbr): abbr is string => abbr !== undefined);
-}
-
-/** Parse a stored string like "250 K" or "1000.00 L" into { num, scale }.
- *  If the trailing token is not a valid abbreviation for the given currency,
- *  the whole string is treated as the number part. */
-function parseProjectedValue(raw: string, currency: string): { num: string; scale: string } {
-  const trimmed = (raw ?? "").trim();
-  if (!trimmed) return { num: "", scale: "" };
-  const abbrs = getScaleAbbrs(currency).filter(a => a && a !== "-");
-  // Match a trailing abbreviation preceded by whitespace
-  for (const abbr of abbrs) {
-    const re = new RegExp(`^(.+?)\\s+${abbr.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}$`);
-    const m = trimmed.match(re);
-    if (m) return { num: m[1].trim(), scale: abbr };
-  }
-  return { num: trimmed, scale: "" };
-}
-
-/** Combine a number string and scale abbreviation back into storage format. */
-function combineProjectedValue(num: string, scale: string): string {
-  const n = (num ?? "").trim();
-  if (!n) return "";
-  return scale && scale !== "-" ? `${n} ${scale}` : n;
-}
-
-/* ── CategorySelect ── */
-interface CatFull { name: string; dataType: string; currency: string | null; }
-
-function CategorySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [cats, setCats] = useState<CatFull[]>([]);
-  const [adding, setAdding] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newType, setNewType] = useState("Number");
-  const [newCurrency, setNewCurrency] = useState("NONE");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  function fetchCats() {
-    fetch("/api/categories")
-      .then(r => r.json())
-      .then(j => {
-        if (j.success) {
-          const full = j.data as CatFull[];
-          setCats(full);
-          populateCatCache(full);
-        }
-      })
-      .catch(() => {});
-  }
-
-  useEffect(() => { if (open) fetchCats(); }, [open]);
-
-  const catNames = cats.map(c => c.name);
-  const allCats: CatFull[] = catNames.includes(value) || !value
-    ? cats
-    : [...cats, { name: value, dataType: "Number", currency: null }];
-
-  function resetForm() { setAdding(false); setNewName(""); setNewType("Number"); setNewCurrency("NONE"); setError(""); }
-
-  async function commitNew() {
-    const trimmed = newName.trim();
-    if (!trimmed) { setError("Name is required"); return; }
-    setSaving(true); setError("");
-    try {
-      const res = await fetch("/api/categories", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: trimmed,
-          dataType: newType,
-          currency: newType === "Currency" ? newCurrency : null,
-        }),
-      });
-      const json = await res.json();
-      if (json.success) { fetchCats(); onChange(trimmed); setOpen(false); resetForm(); }
-      else setError(json.error || "Failed to save");
-    } finally { setSaving(false); }
-  }
-
-  return (
-    <div className="relative w-full min-w-0">
-      {/* Downward tooltip on hover — suppressed while the dropdown is open to avoid overlap */}
-      <WithTooltip content={open ? "" : (value || "")} className="relative block w-full">
-        <button
-          onClick={() => setOpen(!open)}
-          className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 bg-white hover:bg-gray-50 gap-1"
-        >
-          <span className={cn("flex-1 min-w-0 text-sm whitespace-nowrap truncate text-left", value ? "text-gray-700" : "text-gray-400")}>
-            {value || "Select Category"}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-        </button>
-      </WithTooltip>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); resetForm(); }} />
-          <div className="absolute top-full mt-1 left-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg w-56 py-1">
-            {/* Existing categories list */}
-            <div className="max-h-40 overflow-y-auto">
-              {allCats.length === 0 && !adding && (
-                <p className="px-3 py-2 text-xs text-gray-400">No categories yet.</p>
-              )}
-              {allCats.map(c => (
-                <button key={c.name} onClick={() => { onChange(c.name); setOpen(false); }}
-                  className={cn("w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 whitespace-normal break-words leading-snug", value === c.name && "text-blue-600 font-medium")}>
-                  {c.name}
-                </button>
-              ))}
-            </div>
-
-            {/* Add new form */}
-            <div className="border-t border-gray-100 mt-1 pt-1">
-              {adding ? (
-                <div className="px-3 py-2 space-y-2">
-                  {/* Name */}
-                  <input
-                    ref={inputRef}
-                    autoFocus
-                    value={newName}
-                    onChange={e => { setNewName(e.target.value); setError(""); }}
-                    onKeyDown={e => { if (e.key === "Escape") resetForm(); }}
-                    placeholder="Category name *"
-                    disabled={saving}
-                    className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
-                  />
-                  {/* Data Type */}
-                  <select
-                    value={newType}
-                    onChange={e => { setNewType(e.target.value); setNewCurrency("NONE"); }}
-                    disabled={saving}
-                    className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50">
-                    {DATA_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  {/* Currency — only if Currency type */}
-                  {newType === "Currency" && (
-                    <select
-                      value={newCurrency}
-                      onChange={e => setNewCurrency(e.target.value)}
-                      disabled={saving}
-                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50">
-                      <option value="NONE">None</option>
-                      {CURRENCIES.map(c => (
-                        <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
-                      ))}
-                    </select>
-                  )}
-                  {error && <p className="text-red-500 text-xs">{error}</p>}
-                  <div className="flex gap-2">
-                    <button onClick={resetForm} disabled={saving}
-                      className="flex-1 text-xs border border-gray-200 rounded py-1 text-gray-500 hover:bg-gray-50 disabled:opacity-50">
-                      Cancel
-                    </button>
-                    <button onClick={commitNew} disabled={saving || !newName.trim()}
-                      className="flex-1 text-xs bg-gray-900 text-white rounded py-1 font-medium hover:bg-gray-800 disabled:opacity-50">
-                      {saving ? "Saving…" : "Add"}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={e => { e.stopPropagation(); setAdding(true); setTimeout(() => inputRef.current?.focus(), 0); }}
-                  className="w-full text-left px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 font-medium flex items-center gap-1.5">
-                  <span className="text-base leading-none">+</span> Add new category
-                </button>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ── ProjectedInput — currency prefix · percentage postfix · right-aligned number ── */
-function ProjectedInput({
-  value, onChange, categoryName, placeholder, className,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  categoryName: string;
-  placeholder?: string;
-  className?: string;
-}) {
-  const meta        = catMetaCache.get(categoryName);
-  const isCurrency  = meta?.dataType === "Currency";
-  const isPct       = meta?.dataType === "Percentage";
-  const symbol      = meta?.symbol ?? null;
-  const currency    = meta?.currency ?? "USD";
-
-  // For currency cells: split the stored value into a numeric part and a scale abbreviation
-  const { num: numPart, scale: scalePart } = isCurrency
-    ? parseProjectedValue(value, currency)
-    : { num: value, scale: "" };
-  const availScaleAbbrs = isCurrency ? getScaleAbbrs(currency) : [];
-
-  function handleNumChange(newNum: string) {
-    if (isCurrency) onChange(combineProjectedValue(newNum, scalePart));
-    else onChange(newNum);
-  }
-  function handleScaleChange(newScale: string) {
-    onChange(combineProjectedValue(numPart, newScale));
-  }
-
-  return (
-    <div className={cn(
-      "flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-blue-400 overflow-hidden",
-      className,
-    )}>
-      {/* Currency prefix — 15px symbol column */}
-      {isCurrency && symbol && (
-        <span className="w-[15px] flex-shrink-0 text-gray-500 text-xs text-center select-none">
-          {symbol}
-        </span>
-      )}
-
-      {/* Numeric input (uses numPart for currency, raw value otherwise) */}
-      <input
-        type="text"
-        value={isCurrency ? numPart : value}
-        onChange={e => handleNumChange(e.target.value)}
-        placeholder={placeholder ?? (isPct ? "0" : isCurrency ? "0" : "Num")}
-        className={cn(
-          "flex-1 min-w-0 w-0 bg-transparent focus:outline-none placeholder-gray-400 text-left text-sm text-gray-700",
-          isCurrency ? "px-1 py-1.5" : isPct ? "pl-2 pr-1 py-1.5" : "px-2 py-1.5",
-        )}
-      />
-
-      {/* Currency postfix — 40px scale dropdown (K / M / B / L / Cr / - ) */}
-      {isCurrency && (
-        <select
-          value={scalePart || "-"}
-          onChange={e => handleScaleChange(e.target.value)}
-          className="w-[40px] flex-shrink-0 px-0.5 py-1.5 text-xs text-gray-600 bg-gray-50 border-l border-gray-200 focus:outline-none cursor-pointer"
-          title="Scale"
-        >
-          {availScaleAbbrs.map(abbr => (
-            <option key={abbr} value={abbr}>{abbr}</option>
-          ))}
-        </select>
-      )}
-
-      {/* Percentage postfix */}
-      {isPct && (
-        <span className="pr-2 pl-0.5 text-gray-500 text-sm flex-shrink-0 select-none">
-          %
-        </span>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
-   Tooltip wrapper — shows full text on hover
-   Positioned BELOW the child (downward) across the entire OPSP page.
-═══════════════════════════════════════════════ */
-function WithTooltip({ content, children, className = "relative min-w-0" }: { content: string; children: React.ReactNode; className?: string }) {
-  const [show, setShow] = useState(false);
-  const hasContent = !!(content && content.trim());
-  return (
-    <div className={className} onMouseEnter={() => hasContent && setShow(true)} onMouseLeave={() => setShow(false)}>
-      {children}
-      {show && hasContent && (
-        <div className="absolute top-full left-0 mt-2 z-[9999] bg-gray-900 text-white text-xs rounded-lg px-3 py-2 max-w-sm whitespace-pre-wrap shadow-2xl pointer-events-none min-w-[120px]">
-          {/* Upward-pointing arrow at the TOP of the tooltip, pointing up to the element above */}
-          <span className="absolute bottom-full left-4 w-0 h-0 border-x-4 border-x-transparent border-b-4 border-b-gray-900" />
-          {content}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Owner selector ── */
-function OwnerSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const { data: users = [] } = useUsers();
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return users.filter(u =>
-      `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q)
-    );
-  }, [users, search]);
-
-  // Full name used for the tooltip; initials used for the compact display in the button.
-  const { fullName, initials } = useMemo(() => {
-    if (!value) return { fullName: "", initials: "" };
-    const u = users.find(u => u.id === value);
-    if (!u) return { fullName: value, initials: value.slice(0, 2).toUpperCase() };
-    const full = `${u.firstName} ${u.lastName}`;
-    const init = `${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase();
-    return { fullName: full, initials: init };
-  }, [users, value]);
-
-  return (
-    <div className="relative w-full min-w-0">
-      {/* Downward tooltip shows the full name; suppressed while the dropdown is open */}
-      <WithTooltip content={open ? "" : fullName} className="relative block w-full">
-        <button onClick={() => { setOpen(o => !o); setSearch(""); }}
-          className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 text-sm bg-white hover:bg-gray-50">
-          <span className={cn("min-w-0 flex-1 truncate text-left", fullName ? "text-gray-700 font-medium" : "text-gray-400")}>
-            {initials || "Owner"}
-          </span>
-          <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-        </button>
-      </WithTooltip>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute top-full mt-1 left-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg w-52 py-1">
-            <div className="px-2 pb-1 pt-1">
-              <input
-                autoFocus
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search…"
-                className="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
-              />
-            </div>
-            <div className="max-h-44 overflow-y-auto">
-              {filtered.length === 0 && (
-                <p className="px-3 py-2 text-xs text-gray-400">No users found.</p>
-              )}
-              {filtered.map(u => {
-                const fullName = `${u.firstName} ${u.lastName}`;
-                return (
-                  <button key={u.id} onClick={() => { onChange(u.id); setOpen(false); }}
-                    className={cn("w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50", value === u.id && "text-blue-600 font-medium")}>
-                    <span className="block truncate">{fullName}</span>
-                    <span className="block text-[10px] text-gray-400 truncate">{u.email}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
-   Quarter Dropdown
-═══════════════════════════════════════════════ */
-function QuarterDropdown({ value, onChange }: { value: string; onChange: (q: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const QUARTERS = ["Q1","Q2","Q3","Q4"];
-  const LABELS   = ["Quarter 01","Quarter 02","Quarter 03","Quarter 04"];
-  return (
-    <div className="relative">
-      <button onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-700 border-l border-gray-300 hover:bg-gray-50 min-w-[64px] justify-between">
-        {value} <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 w-52 p-3">
-            <div className="space-y-1">
-              {QUARTERS.map((q, i) => (
-                <button key={q} onClick={() => { onChange(q); setOpen(false); }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
-                  <div className={cn("w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors",
-                    value === q ? "border-blue-600 bg-blue-600" : "border-gray-300")}>
-                    {value === q && <div className="w-2 h-2 rounded-full bg-white" />}
-                  </div>
-                  <span className={cn("text-sm", value === q ? "text-gray-900 font-medium" : "text-gray-600")}>{LABELS[i]}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
-   Targets Modal (expand)
-═══════════════════════════════════════════════ */
-function TargetsModal({ open, onClose, rows, onChange, targetYears, fiscalYear, fiscalYearStart }: {
-  open: boolean; onClose: () => void;
-  rows: TargetRow[]; onChange: (r: TargetRow[]) => void;
-  targetYears: number;
-  fiscalYear: number;       // current FY (e.g. 2026) taken from form.year
-  fiscalYearStart: number;  // 1-12 (1 = January, 4 = April, etc.)
-}) {
-  if (!open) return null;
-
-  /**
-   * Build the fiscal year label for a given offset (0-indexed).
-   *   - If fiscalYearStart === 1 (January), FY aligns with the calendar year → "2026", "2027", ...
-   *   - Otherwise, FY spans two calendar years → "2026 - 27", "2027 - 28", ...
-   *   - Year 1 starts at `fiscalYear`; Year N starts at `fiscalYear + (N - 1)`.
-   */
-  function fiscalYearLabelFor(offset: number): string {
-    const startCal = fiscalYear + offset;
-    if (fiscalYearStart === 1) return String(startCal);
-    const endCalTwoDigit = String((startCal + 1) % 100).padStart(2, "0");
-    return `${startCal} - ${endCalTwoDigit}`;
-  }
-  const yearCols = Array.from({ length: targetYears }, (_, i) => fiscalYearLabelFor(i));
-  const keys = ["y1","y2","y3","y4","y5"].slice(0, targetYears) as (keyof TargetRow)[];
-  const gridStyle = { display: "grid", gap: "12px", gridTemplateColumns: `2fr 1fr ${keys.map(()=>"1fr").join(" ")}` };
-
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
-          <div>
-            <p className="text-base font-bold text-gray-900 uppercase tracking-wide">TARGETS (3–5 YRS.)</p>
-            <p className="text-xs text-gray-500">(Where)</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500"><X className="h-5 w-5" /></button>
-        </div>
-        <div className="px-6 pb-6 overflow-y-auto flex-1">
-          {/* Header */}
-          <div style={gridStyle} className="text-xs font-medium text-gray-500 pb-2 border-b border-gray-200 mb-2">
-            <span>Category</span><span>Projected</span>
-            {yearCols.map(y => <span key={y}>{y}</span>)}
-          </div>
-          {/* Rows */}
-          {rows.map((row, i) => (
-            <div key={i} style={gridStyle} className="items-start py-2 border-b border-gray-100">
-              <CategorySelect value={row.category} onChange={v => {
-                const next = [...rows]; next[i] = { ...next[i], category: v }; onChange(next);
-              }} />
-              <ProjectedInput categoryName={row.category} value={row.projected} onChange={v => {
-                const next = [...rows]; next[i] = { ...next[i], projected: v }; onChange(next);
-              }} />
-              {keys.map(k => (
-                <FInput key={k} value={String(row[k] ?? "")} onChange={v => {
-                  const next = [...rows]; (next[i] as any)[k] = v; onChange(next);
-                }} placeholder="Number" />
-              ))}
-            </div>
-          ))}
-          <div className="flex justify-end mt-5">
-            <button onClick={onClose}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-              Submit
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
-   Goals Modal (expand)
-═══════════════════════════════════════════════ */
-function GoalsModal({ open, onClose, rows, onChange }: {
-  open: boolean; onClose: () => void;
-  rows: GoalRow[]; onChange: (r: GoalRow[]) => void;
-}) {
-  if (!open) return null;
-  const qCols: (keyof GoalRow)[] = ["q1","q2","q3","q4"];
-
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
-          <div>
-            <p className="text-base font-bold text-gray-900 uppercase tracking-wide">GOALS (1 YR.)</p>
-            <p className="text-xs text-gray-500">(What)</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500"><X className="h-5 w-5" /></button>
-        </div>
-        <div className="px-6 pb-6 overflow-y-auto flex-1">
-          <div style={{ display:"grid", gap:"12px", gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr" }} className="text-xs font-medium text-gray-500 pb-2 border-b border-gray-200 mb-2">
-            <span>Category</span><span>Projected</span>
-            {["Quarter 1","Quarter 2","Quarter 3","Quarter 4"].map(q => <span key={q}>{q}</span>)}
-          </div>
-          {rows.map((row, i) => (
-            <div key={i} style={{ display:"grid", gap:"12px", gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr" }} className="items-start py-2 border-b border-gray-100">
-              <CategorySelect value={row.category} onChange={v => {
-                const next = [...rows]; next[i] = { ...next[i], category: v }; onChange(next);
-              }} />
-              <ProjectedInput categoryName={row.category} value={row.projected} onChange={v => {
-                const next = [...rows]; next[i] = { ...next[i], projected: v }; onChange(next);
-              }} />
-              {qCols.map(k => (
-                <FInput key={k} value={row[k]} onChange={v => {
-                  const next = [...rows]; next[i] = { ...next[i], [k]: v }; onChange(next);
-                }} placeholder="Number" />
-              ))}
-            </div>
-          ))}
-          <div className="flex justify-end mt-5">
-            <button onClick={onClose}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-              Submit
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
-   Rocks Modal (expand)
-═══════════════════════════════════════════════ */
-function RocksModal({ open, onClose, rows, onChange }: {
-  open: boolean; onClose: () => void;
-  rows: RockRow[]; onChange: (r: RockRow[]) => void;
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 flex-shrink-0">
-          <div>
-            <p className="text-base font-bold text-gray-900 uppercase tracking-wide">ROCKS</p>
-            <p className="text-xs text-gray-500">Quarterly Priorities</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500"><X className="h-5 w-5" /></button>
-        </div>
-        <div className="px-6 pb-6 overflow-y-auto flex-1">
-          {/* Header */}
-          <div className="flex items-center gap-3 text-xs font-medium text-gray-500 pb-2 border-b border-gray-200 mb-2">
-            <span className="w-8 flex-shrink-0 text-center">#</span>
-            <span className="flex-1">Quarterly Priorities</span>
-            <span className="w-40 flex-shrink-0">Who</span>
-          </div>
-          {rows.map((row, i) => (
-            <div key={i} className="flex items-center gap-3 py-2 border-b border-gray-100">
-              <span className="w-8 flex-shrink-0 text-center text-xs text-gray-400">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <WithTooltip content={row.desc} className="relative flex-1 min-w-0">
-                <FInput
-                  value={row.desc}
-                  placeholder="Quarterly Priority"
-                  onChange={v => {
-                    const next = [...rows]; next[i] = { ...next[i], desc: v }; onChange(next);
-                  }}
-                />
-              </WithTooltip>
-              <div className="relative w-40 flex-shrink-0">
-                <OwnerSelect
-                  value={row.owner}
-                  onChange={v => {
-                    const next = [...rows]; next[i] = { ...next[i], owner: v }; onChange(next);
-                  }}
-                />
-              </div>
-            </div>
-          ))}
-          <div className="flex justify-end mt-5">
-            <button onClick={onClose}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
-              Submit
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ═══════════════════════════════════════════════
    OPSP Preview Modal  —  matches Scaling Up PDF layout
@@ -1046,7 +184,7 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
     } catch { return d; }
   };
   const critColors = ["bg-green-600", "bg-yellow-500", "bg-orange-500", "bg-red-600"];
-  const html = (v: string) => ({ __html: v || "" });
+  const html = (v: string) => ({ __html: sanitizeHtml(v) });
 
   /* ── shared cell classes ── */
   const td = "border border-gray-400 px-1.5 py-1 align-top text-[9px] leading-snug text-gray-800";
@@ -1147,7 +285,7 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
                 <span className="text-[11px] font-bold tracking-wide">Strategy:</span>
                 <span className="text-[10px]">One-Page Strategic Plan (OPSP)</span>
               </div>
-              <div className="border-l border-blue-400 px-3 py-1.5 flex items-center gap-1 text-[10px]">
+              <div className="border-l border-accent-400 px-3 py-1.5 flex items-center gap-1 text-[10px]">
                 <span className="font-semibold">Organization:</span>
               </div>
             </div>
@@ -1155,7 +293,7 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
             <div className="px-4 pb-5 pt-2">
               {/* Section title */}
               <div className="text-center mb-2">
-                <span className="text-[13px] font-bold text-blue-700">People</span>
+                <span className="text-[13px] font-bold text-accent-700">People</span>
                 <span className="text-[11px] font-normal text-gray-600"> (Reputation Drivers)</span>
               </div>
 
@@ -1326,11 +464,11 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
                 <span className="font-semibold">Your Name:</span>
                 <span className="border-b border-white/60 min-w-[120px] pb-px">{form.employees?.[0] ?? ""}</span>
               </div>
-              <div className="border-l border-blue-400 px-3 py-1.5 flex items-center gap-1 text-[10px]">
+              <div className="border-l border-accent-400 px-3 py-1.5 flex items-center gap-1 text-[10px]">
                 <span className="font-semibold">Date:</span>
                 <span>{form.year} / {form.quarter}</span>
               </div>
-              <div className="border-l border-blue-400 px-3 py-1.5 flex items-center text-[11px] font-bold tracking-wider">
+              <div className="border-l border-accent-400 px-3 py-1.5 flex items-center text-[11px] font-bold tracking-wider">
                 SCALING UP
               </div>
             </div>
@@ -1338,7 +476,7 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
             <div className="px-4 pb-5 pt-2">
               {/* Section title */}
               <div className="text-center mb-2">
-                <span className="text-[13px] font-bold text-blue-700">Process</span>
+                <span className="text-[13px] font-bold text-accent-700">Process</span>
                 <span className="text-[11px] font-normal text-gray-600"> (Productivity Drivers)</span>
               </div>
 
@@ -1678,7 +816,7 @@ export default function OPSPPage() {
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
-      <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+      <Loader2 className="h-6 w-6 animate-spin text-accent-600" />
     </div>
   );
 
@@ -1703,13 +841,13 @@ export default function OPSPPage() {
             className={cn("flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm font-medium",
               form.status === "finalized"
                 ? "border-green-500 text-green-600 bg-green-50"
-                : "border-blue-500 text-blue-600 hover:bg-blue-50")}>
+                : "border-accent-500 text-accent-600 hover:bg-accent-50")}>
             <Check className="h-4 w-4" />
             {form.status === "finalized" ? "Finalized" : "Finalize"}
           </button>
           <button onClick={() => setPreviewOpen(true)} className="p-1.5 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50" title="Preview OPSP"><Eye className="h-4 w-4" /></button>
           <button onClick={() => save(form)}
-            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-accent-600 text-white rounded-lg text-sm font-medium hover:bg-accent-700">
             <Maximize2 className="h-3.5 w-3.5" /> Update OPSP
           </button>
         </div>

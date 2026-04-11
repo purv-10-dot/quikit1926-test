@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { LineChart, TrendingUp } from "lucide-react";
+import { usePerformanceTrends } from "@/lib/hooks/usePerformance";
 
 function scoreColor(score: number | null) {
   if (score === null) return "bg-gray-200";
@@ -64,7 +64,7 @@ function CSSLineChart({ data }: { data: { week: number; avgValue: number | null 
         return (
           <div key={d.week} className="flex flex-col items-center gap-1 flex-1 min-w-0">
             <div
-              className={`w-full rounded-t transition-all ${d.avgValue != null ? "bg-blue-500" : "bg-gray-100"}`}
+              className={`w-full rounded-t transition-all ${d.avgValue != null ? "bg-accent-500" : "bg-gray-100"}`}
               style={{ height: h, maxWidth: 20, margin: "0 auto" }}
               title={`W${d.week}: ${d.avgValue != null ? d.avgValue : "—"}`}
             />
@@ -77,23 +77,10 @@ function CSSLineChart({ data }: { data: { week: number; avgValue: number | null 
 }
 
 export default function TrendsPage() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = usePerformanceTrends();
 
-  useEffect(() => {
-    fetch("/api/performance/trends")
-      .then(r => r.json())
-      .then(j => {
-        if (j.success) setData(j.data);
-        else setError(j.error);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <Skeleton />;
-  if (error) return <div className="p-6 text-xs text-red-600">Error: {error}</div>;
+  if (isLoading) return <Skeleton />;
+  if (error) return <div className="p-6 text-xs text-red-600">Error: {(error as Error).message}</div>;
   if (!data) return null;
 
   const quarterlyData: any[] = data.quarterlyData || [];
@@ -112,7 +99,7 @@ export default function TrendsPage() {
         <div className="bg-white rounded-lg shadow-sm p-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
-              <TrendingUp className="h-3.5 w-3.5 text-blue-500" />Quarterly Comparison
+              <TrendingUp className="h-3.5 w-3.5 text-accent-500" />Quarterly Comparison
             </h2>
             <div className="flex items-center gap-3 text-[11px] text-gray-500">
               <span className="flex items-center gap-1"><span className="w-3 h-2 bg-green-500 rounded-sm inline-block" />KPI Attainment</span>
@@ -161,7 +148,7 @@ export default function TrendsPage() {
         {/* Current quarter weekly */}
         <div className="bg-white rounded-lg shadow-sm p-4">
           <h2 className="text-xs font-semibold text-gray-700 mb-4 flex items-center gap-1.5">
-            <LineChart className="h-3.5 w-3.5 text-blue-500" />Current Quarter — Weekly KPI Average
+            <LineChart className="h-3.5 w-3.5 text-accent-500" />Current Quarter — Weekly KPI Average
           </h2>
           {weeklyTrend.every(w => w.avgValue === null) ? (
             <div className="py-8 text-center text-xs text-gray-400">No weekly data available for current quarter</div>

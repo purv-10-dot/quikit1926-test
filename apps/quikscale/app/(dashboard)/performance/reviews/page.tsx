@@ -1,7 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Plus, X, Star, ClipboardList } from "lucide-react";
+import {
+  usePerformanceReviews,
+  useIndividualPerformance,
+  useCreateReview,
+} from "@/lib/hooks/usePerformance";
 
 function scoreColor(score: number | null) {
   if (score === null) return { text: "text-gray-400", bg: "bg-gray-100", label: "—" };
@@ -79,74 +84,64 @@ const DEFAULT_FORM: ReviewForm = {
 };
 
 export default function ReviewsPage() {
-  const [reviews, setReviews] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: reviewsData, isLoading: reviewsLoading, error: reviewsError } =
+    usePerformanceReviews();
+  const { data: usersData } = useIndividualPerformance();
+  const createReview = useCreateReview();
+
+  const reviews = (reviewsData as any[]) ?? [];
+  const users = (usersData as any[]) ?? [];
+
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<ReviewForm>(DEFAULT_FORM);
-  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  const loadData = useCallback(() => {
-    setLoading(true);
-    Promise.all([
-      fetch("/api/performance/reviews").then(r => r.json()),
-      fetch("/api/performance/individual").then(r => r.json()),
-    ])
-      .then(([revJ, usersJ]) => {
-        if (revJ.success) setReviews(revJ.data);
-        else setError(revJ.error);
-        if (usersJ.success) setUsers(usersJ.data);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => { loadData(); }, [loadData]);
 
   // Auto-populate scores when reviewee + quarter + year are selected
   useEffect(() => {
     if (!form.revieweeId) return;
-    const person = users.find(u => u.userId === form.revieweeId);
+    const person = users.find((u) => u.userId === form.revieweeId);
     if (person) {
-      setForm(f => ({
+      setForm((f) => ({
         ...f,
         kpiScore: person.kpiScore != null ? String(person.kpiScore) : "",
-        priorityScore: person.priorityScore != null ? String(person.priorityScore) : "",
-        attendanceScore: person.attendanceScore != null ? String(person.attendanceScore) : "",
-        overallScore: person.overallScore != null ? String(person.overallScore) : "",
+        priorityScore:
+          person.priorityScore != null ? String(person.priorityScore) : "",
+        attendanceScore:
+          person.attendanceScore != null ? String(person.attendanceScore) : "",
+        overallScore:
+          person.overallScore != null ? String(person.overallScore) : "",
       }));
     }
   }, [form.revieweeId, users]);
 
   const handleSubmit = async (status: "draft" | "submitted") => {
-    if (!form.revieweeId) { setSaveError("Please select an employee"); return; }
-    setSaving(true);
+    if (!form.revieweeId) {
+      setSaveError("Please select an employee");
+      return;
+    }
     setSaveError(null);
     try {
-      const res = await fetch("/api/performance/reviews", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, status }),
-      });
-      const j = await res.json();
-      if (j.success) {
+      const result = await createReview.mutateAsync({ ...form, status });
+      if (result?.success) {
         setShowModal(false);
         setForm(DEFAULT_FORM);
-        loadData();
       } else {
-        setSaveError(j.error);
+        setSaveError(result?.error ?? "Failed to create review");
       }
-    } catch (e: any) {
-      setSaveError(e.message);
-    } finally {
-      setSaving(false);
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Failed to create review");
     }
   };
 
-  if (loading) return <Skeleton />;
-  if (error) return <div className="p-6 text-xs text-red-600">Error: {error}</div>;
+  const saving = createReview.isPending;
+
+  if (reviewsLoading) return <Skeleton />;
+  if (reviewsError)
+    return (
+      <div className="p-6 text-xs text-red-600">
+        Error: {(reviewsError as Error).message}
+      </div>
+    );
 
   return (
     <div className="flex flex-col h-full">
@@ -229,7 +224,7 @@ export default function ReviewsPage() {
                 <select
                   value={form.revieweeId}
                   onChange={e => setForm(f => ({ ...f, revieweeId: e.target.value }))}
-                  className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-500"
                 >
                   <option value="">Select employee…</option>
                   {users.map(u => (
@@ -245,7 +240,7 @@ export default function ReviewsPage() {
                   <select
                     value={form.quarter}
                     onChange={e => setForm(f => ({ ...f, quarter: e.target.value }))}
-                    className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-500"
                   >
                     {QUARTERS.map(q => <option key={q} value={q}>{q}</option>)}
                   </select>
@@ -255,7 +250,7 @@ export default function ReviewsPage() {
                   <select
                     value={form.year}
                     onChange={e => setForm(f => ({ ...f, year: Number(e.target.value) }))}
-                    className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-500"
                   >
                     {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
                   </select>
@@ -277,7 +272,7 @@ export default function ReviewsPage() {
                         max="100"
                         value={form[field]}
                         onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
-                        className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-500"
                         placeholder="0-100"
                       />
                     </div>
@@ -299,7 +294,7 @@ export default function ReviewsPage() {
                   onChange={e => setForm(f => ({ ...f, strengths: e.target.value }))}
                   rows={3}
                   placeholder="What did this person do well?"
-                  className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                  className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-500 resize-none"
                 />
               </div>
 
@@ -311,7 +306,7 @@ export default function ReviewsPage() {
                   onChange={e => setForm(f => ({ ...f, improvements: e.target.value }))}
                   rows={3}
                   placeholder="What could be improved?"
-                  className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                  className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-500 resize-none"
                 />
               </div>
 
@@ -323,7 +318,7 @@ export default function ReviewsPage() {
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   rows={2}
                   placeholder="Any other notes…"
-                  className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                  className="w-full text-xs border border-gray-200 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-500 resize-none"
                 />
               </div>
 

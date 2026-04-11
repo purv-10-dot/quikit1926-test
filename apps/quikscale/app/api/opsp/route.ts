@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { toErrorMessage } from "@/lib/api/errors";
 import { opspUpsertSchema, opspFinalizeSchema } from "@/lib/schemas/opspSchema";
+import { writeAuditLog } from "@/lib/api/auditLog";
 
 /* ── GET: load OPSP data for current user + year + quarter ── */
 export async function GET(req: NextRequest) {
@@ -101,6 +102,16 @@ export async function PUT(req: NextRequest) {
       },
     });
 
+    await writeAuditLog({
+      tenantId: membership.tenantId,
+      actorId: session.user.id,
+      action: "UPDATE",
+      entityType: "OPSPData",
+      entityId: data.id,
+      // OPSP form state is a large JSON blob; only record the changed top-level field names
+      changes: Object.keys(fields),
+    });
+
     // Envelope: { success, data, savedAt } — savedAt kept for back-compat.
     return NextResponse.json({ success: true, data, savedAt: new Date().toISOString() });
   } catch (error: unknown) {
@@ -142,6 +153,16 @@ export async function POST(req: NextRequest) {
         quarter,
       },
       data: { status: "finalized", updatedBy: session.user.id },
+    });
+
+    await writeAuditLog({
+      tenantId: membership.tenantId,
+      actorId: session.user.id,
+      action: "UPDATE",
+      entityType: "OPSPData",
+      entityId: `${membership.tenantId}:${session.user.id}:${yearNum}:${quarter}`,
+      changes: ["status:finalized"],
+      reason: "OPSP finalized",
     });
 
     return NextResponse.json({ success: true, data: { count: result.count } }, { status: 201 });

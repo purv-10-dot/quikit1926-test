@@ -6,6 +6,8 @@ import { getTenantId } from "@/lib/api/getTenantId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createWWWSchema } from "@/lib/schemas/wwwSchema";
+import { writeAuditLog } from "@/lib/api/auditLog";
+import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
 // GET /api/www — list all WWWItems for tenant
 export async function GET(request: NextRequest) {
@@ -97,6 +99,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
     }
 
+    const rl = rateLimit({
+      routeKey: "www:create",
+      clientKey: `${tenantId}:${session.user.id}`,
+      limit: LIMITS.mutation.limit,
+      windowMs: LIMITS.mutation.windowMs,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Try again shortly." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+      );
+    }
+
     const body = await request.json();
     const parsed = createWWWSchema.safeParse(body);
     if (!parsed.success) {
@@ -134,6 +149,15 @@ export async function POST(request: NextRequest) {
       updatedAt: item.updatedAt.toISOString(),
       who_user: whoUser ?? null,
     };
+
+    await writeAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      action: "CREATE",
+      entityType: "WWWItem",
+      entityId: item.id,
+      newValues: item,
+    });
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error: unknown) {

@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { updateTeamSchema } from "@/lib/schemas/teamSchema";
+import { writeAuditLog } from "@/lib/api/auditLog";
 
 
 // PUT /api/org/teams/[id] — update team
@@ -46,6 +47,16 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         color:       color               || undefined,
         headId:      headId !== undefined ? (headId || null) : undefined,
       },
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      action: "UPDATE",
+      entityType: "Team",
+      entityId: team.id,
+      oldValues: existing,
+      newValues: team,
     });
 
     // Resolve head name
@@ -102,6 +113,16 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       where: { id: params.id },
       data: { deletedAt: new Date() },
     });
+
+    await writeAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      action: "DELETE",
+      entityType: "Team",
+      entityId: params.id,
+      oldValues: existing,
+    });
+
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete team") }, { status: 500 });
