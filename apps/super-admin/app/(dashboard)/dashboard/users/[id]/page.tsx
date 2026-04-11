@@ -175,8 +175,8 @@ export default function UserDetailPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={m.role}>{m.role}</Badge>
-                    <Badge variant={m.status}>{m.status}</Badge>
+                    <Badge variant={m.role as React.ComponentProps<typeof Badge>["variant"]}>{m.role}</Badge>
+                    <Badge variant={m.status as React.ComponentProps<typeof Badge>["variant"]}>{m.status}</Badge>
                   </div>
                 </div>
               ))}

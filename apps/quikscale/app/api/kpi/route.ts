@@ -5,7 +5,12 @@ import { authOptions } from "@/lib/auth";
 import { createKPISchema, kpiListParamsSchema } from "@/lib/schemas/kpiSchema";
 import { ApiResponse } from "@/lib/services/kpiService";
 import { getTenantId } from "@/lib/api/getTenantId";
-import { canManageTeamKPI } from "@/lib/api/teamKPIPermissions";
+import { toErrorMessage } from "@/lib/api/errors";
+import {
+  validateTeamKPICreate,
+  validateIndividualKPICreate,
+  validateParentKPI,
+} from "@/lib/api/kpiCreateValidation";
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 
@@ -177,9 +182,9 @@ export async function GET(request: NextRequest) {
     };
 
     return NextResponse.json(response);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("GET /api/kpi error:", error);
-    return NextResponse.json({ success: false, error: error.message || "Failed to fetch KPIs" }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch KPIs") }, { status: 500 });
   }
 }
 
@@ -220,86 +225,27 @@ export async function POST(request: NextRequest) {
 
     const isTeamLevel = validated.kpiLevel === "team";
 
-    // Team KPI: verify team exists in tenant + permission check + owners must be team members
+    // Cross-row validation — extracted to @/lib/api/kpiCreateValidation
     if (isTeamLevel) {
-      if (!validated.teamId) {
-        return NextResponse.json({ success: false, error: "teamId is required for team KPIs" }, { status: 400 });
-      }
-      const team = await db.team.findUnique({ where: { id: validated.teamId } });
-      if (!team || team.tenantId !== tenantId) {
-        return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
-      }
-      const allowed = await canManageTeamKPI(session.user.id, tenantId, validated.teamId);
-      if (!allowed) {
-        return NextResponse.json(
-          { success: false, error: "You must be a team head or admin to create KPIs for this team." },
-          { status: 403 }
-        );
-      }
-
-      // Validate owners are members of this team via Membership.teamId
-      const ownerIds = validated.ownerIds ?? [];
-      if (ownerIds.length === 0) {
-        return NextResponse.json({ success: false, error: "At least one KPI owner is required for team KPIs" }, { status: 400 });
-      }
-      const memberships = await db.membership.findMany({
-        where: {
-          tenantId,
-          teamId: validated.teamId,
-          userId: { in: ownerIds },
-          status: "active",
-        },
-        select: { userId: true },
+      const err = await validateTeamKPICreate({
+        tenantId,
+        actorUserId: session.user.id,
+        teamId: validated.teamId,
+        ownerIds: validated.ownerIds,
+        ownerContributions: validated.ownerContributions as Record<string, number> | null | undefined,
       });
-      const validIds = new Set(memberships.map((m) => m.userId));
-      const invalid = ownerIds.filter((id) => !validIds.has(id));
-      if (invalid.length > 0) {
-        return NextResponse.json(
-          { success: false, error: `Some selected owners are not active members of this team: ${invalid.length} user(s)` },
-          { status: 400 }
-        );
-      }
-
-      // Validate ownerContributions sum to 100 and match ownerIds
-      const contributions = (validated.ownerContributions ?? {}) as Record<string, number>;
-      const contribKeys = Object.keys(contributions);
-      if (contribKeys.length !== ownerIds.length || ownerIds.some((id) => !(id in contributions))) {
-        return NextResponse.json(
-          { success: false, error: "Owner contributions must be provided for every owner" },
-          { status: 400 }
-        );
-      }
-      const sum = Object.values(contributions).reduce((s, v) => s + v, 0);
-      if (Math.abs(sum - 100) > 0.5) {
-        return NextResponse.json(
-          { success: false, error: `Owner contributions must sum to 100% (got ${sum.toFixed(1)}%)` },
-          { status: 400 }
-        );
-      }
+      if (err) return err;
     } else {
-      // Individual KPI: owner is required and must exist
-      if (!validated.owner) {
-        return NextResponse.json({ success: false, error: "Owner is required for individual KPIs" }, { status: 400 });
-      }
-      const owner = await db.user.findUnique({ where: { id: validated.owner } });
-      if (!owner) {
-        return NextResponse.json({ success: false, error: "Owner user not found" }, { status: 404 });
-      }
-
-      if (validated.teamId) {
-        const team = await db.team.findUnique({ where: { id: validated.teamId } });
-        if (!team || team.tenantId !== tenantId) {
-          return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
-        }
-      }
+      const err = await validateIndividualKPICreate({
+        tenantId,
+        owner: validated.owner,
+        teamId: validated.teamId,
+      });
+      if (err) return err;
     }
 
-    if (validated.parentKPIId) {
-      const parentKPI = await db.kPI.findUnique({ where: { id: validated.parentKPIId } });
-      if (!parentKPI || parentKPI.tenantId !== tenantId) {
-        return NextResponse.json({ success: false, error: "Parent KPI not found" }, { status: 404 });
-      }
-    }
+    const parentErr = await validateParentKPI(validated.parentKPIId, tenantId);
+    if (parentErr) return parentErr;
 
     const kpi = await db.kPI.create({
       data: {
@@ -363,8 +309,8 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ success: true, data: kpi, message: "KPI created successfully" }, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("POST /api/kpi error:", error);
-    return NextResponse.json({ success: false, error: error.message || "Failed to create KPI" }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create KPI") }, { status: 500 });
   }
 }

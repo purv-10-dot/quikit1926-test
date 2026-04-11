@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { ApiResponse } from "@/lib/services/kpiService";
+import { toErrorMessage } from "@/lib/api/errors";
 
 // GET /api/kpi/[id]/logs - Get audit logs for a KPI
 export async function GET(
@@ -61,12 +62,12 @@ export async function GET(
     };
 
     return NextResponse.json(response);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`GET /api/kpi/[id]/logs error:`, error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Failed to fetch audit logs",
+        error: toErrorMessage(error, "Failed to fetch audit logs"),
       },
       { status: 500 }
     );

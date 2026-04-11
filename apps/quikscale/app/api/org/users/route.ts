@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { getTenantId } from "@/lib/api/getTenantId";
+import { toErrorMessage } from "@/lib/api/errors";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { createOrgUserSchema } from "@/lib/schemas/userSchema";
 
 
 type MembershipWithTeams = {
@@ -59,23 +62,30 @@ export async function GET(request: NextRequest) {
     if (!tenantId)
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
 
-    const memberships = await db.membership.findMany({
-      where: { tenantId },
-      include: {
-        user: {
-          select: {
-            id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
-            userTeams: { where: { tenantId }, include: { team: { select: { id: true, name: true } } } },
+    const { page, limit, skip, take } = parsePagination(request);
+    const where = { tenantId };
+
+    const [memberships, total] = await Promise.all([
+      db.membership.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
+              userTeams: { where: { tenantId }, include: { team: { select: { id: true, name: true } } } },
+            },
           },
         },
-      },
-      orderBy: { createdAt: "asc" },
-    });
+        orderBy: { createdAt: "asc" },
+        skip,
+        take,
+      }),
+      db.membership.count({ where }),
+    ]);
 
-    return NextResponse.json({ success: true, data: memberships.map(buildUserResponse) });
+    return NextResponse.json(paginatedResponse(memberships.map(buildUserResponse), total, page, limit));
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to fetch users";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch users") }, { status: 500 });
   }
 }
 
@@ -90,14 +100,15 @@ export async function POST(request: NextRequest) {
     if (!tenantId)
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
 
-    const body = await request.json();
-    const { firstName, lastName, email, password, role = "member", teamIds = [] } = body;
-    const resolvedTeamIds: string[] = teamIds.length ? teamIds : body.teamId ? [body.teamId] : [];
-
-    if (!firstName?.trim()) return NextResponse.json({ success: false, error: "First name is required" }, { status: 400 });
-    if (!lastName?.trim())  return NextResponse.json({ success: false, error: "Last name is required" }, { status: 400 });
-    if (!email?.trim())     return NextResponse.json({ success: false, error: "Email is required" }, { status: 400 });
-    if (!password?.trim())  return NextResponse.json({ success: false, error: "Password is required" }, { status: 400 });
+    const parsed = createOrgUserSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+        { status: 400 }
+      );
+    }
+    const { firstName, lastName, email, password, role = "member", teamIds = [], teamId } = parsed.data;
+    const resolvedTeamIds: string[] = teamIds.length ? teamIds : teamId ? [teamId] : [];
 
     const existingUser = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } });
     let userId: string;
@@ -146,7 +157,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: buildUserResponse(membership!) }, { status: 201 });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to create user";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create user") }, { status: 500 });
   }
 }

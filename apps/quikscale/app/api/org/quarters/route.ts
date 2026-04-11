@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
+import { toErrorMessage } from "@/lib/api/errors";
+import { generateQuartersSchema } from "@/lib/schemas/quarterSchema";
 
 async function getMembership(userId: string) {
   return db.membership.findFirst({
@@ -194,8 +196,7 @@ export async function GET(request: NextRequest) {
       futureYearAvailable,
     });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to fetch quarters";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch quarters") }, { status: 500 });
   }
 }
 
@@ -214,10 +215,14 @@ export async function POST(request: NextRequest) {
     const { tenantId } = membership;
     const fiscalStartMonth = membership.tenant.fiscalYearStart ?? 4;
 
-    const body = await request.json();
-    const { fiscalYear, startDate: startDateStr } = body;
-    if (!fiscalYear || typeof fiscalYear !== "number")
-      return NextResponse.json({ success: false, error: "fiscalYear is required" }, { status: 400 });
+    const parsed = generateQuartersSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+        { status: 400 }
+      );
+    }
+    const { fiscalYear, startDate: startDateStr } = parsed.data;
 
     // Parse optional start date
     const fyStartDate = startDateStr ? new Date(startDateStr) : undefined;
@@ -304,7 +309,6 @@ export async function POST(request: NextRequest) {
       data: created.map(r => serializeRow(r, userMap)),
     }, { status: 201 });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to generate quarters";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to generate quarters") }, { status: 500 });
   }
 }

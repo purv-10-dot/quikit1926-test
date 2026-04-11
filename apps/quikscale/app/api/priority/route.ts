@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
+import { toErrorMessage } from "@/lib/api/errors";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createPrioritySchema } from "@/lib/schemas/prioritySchema";
 
 const PRIORITY_SELECT = {
@@ -46,8 +48,9 @@ export async function GET(request: NextRequest) {
     const quarter = searchParams.get("quarter") || undefined;
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
+    const { page, limit, skip, take } = parsePagination(request);
 
-    const where: Record<string, unknown> = { tenantId };
+    const where: Record<string, unknown> = { tenantId, deletedAt: null };
     if (year) where.year = year;
     if (quarter) where.quarter = quarter;
 
@@ -60,17 +63,21 @@ export async function GET(request: NextRequest) {
     };
     const orderBy = sortMap[sortBy] || { createdAt: sortOrder };
 
-    const priorities = await db.priority.findMany({
-      where,
-      select: PRIORITY_SELECT,
-      orderBy: orderBy as any,
-    });
+    const [priorities, total] = await Promise.all([
+      db.priority.findMany({
+        where,
+        select: PRIORITY_SELECT,
+        orderBy: orderBy as any,
+        skip,
+        take,
+      }),
+      db.priority.count({ where }),
+    ]);
 
-    return NextResponse.json({ success: true, data: priorities });
+    return NextResponse.json(paginatedResponse(priorities, total, page, limit));
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to fetch priorities";
     console.error("GET /api/priority error:", error);
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch priorities") }, { status: 500 });
   }
 }
 
@@ -114,8 +121,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: priority }, { status: 201 });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to create priority";
     console.error("POST /api/priority error:", error);
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create priority") }, { status: 500 });
   }
 }

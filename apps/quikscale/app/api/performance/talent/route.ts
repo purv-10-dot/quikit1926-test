@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { toErrorMessage } from "@/lib/api/errors";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id)
@@ -17,30 +20,42 @@ export async function GET() {
     if (!tenantId)
       return NextResponse.json({ success: false, error: "No tenant" }, { status: 400 });
 
-    // Fetch all members with performance data
-    const members = await db.membership.findMany({
-      where: { tenantId },
-      include: {
-        user: {
-          include: {
-            kpisOwned: { where: { tenantId } },
-            prioritiesOwned: { where: { tenantId } },
-            talentAssessed: {
-              where: { tenantId },
-              orderBy: { createdAt: "desc" },
-              take: 1,
-              include: { assessor: { select: { id: true, firstName: true, lastName: true } } },
+    const { page, limit, skip, take } = parsePagination(request);
+    const where = { tenantId };
+
+    // Fetch paginated members with performance data
+    const [members, total] = await Promise.all([
+      db.membership.findMany({
+        where,
+        include: {
+          user: {
+            include: {
+              kpisOwned: { where: { tenantId } },
+              prioritiesOwned: { where: { tenantId } },
+              talentAssessed: {
+                where: { tenantId },
+                orderBy: { createdAt: "desc" },
+                take: 1,
+                include: { assessor: { select: { id: true, firstName: true, lastName: true } } },
+              },
             },
           },
+          team: true,
         },
-        team: true,
-      },
-    });
+        skip,
+        take,
+      }),
+      db.membership.count({ where }),
+    ]);
 
-    const meetings = await db.meeting.findMany({
-      where: { tenantId },
-      include: { attendees: true },
-    });
+    // Scope meetings query to only the paginated user set
+    const paginatedUserIds = members.map(m => m.user.id);
+    const meetings = paginatedUserIds.length
+      ? await db.meeting.findMany({
+          where: { tenantId, attendees: { some: { userId: { in: paginatedUserIds } } } },
+          include: { attendees: { where: { userId: { in: paginatedUserIds } } } },
+        })
+      : [];
 
     const people = members.map((m) => {
       const u = m.user;
@@ -120,9 +135,9 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ success: true, data: people });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+    return NextResponse.json(paginatedResponse(people, total, page, limit));
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -182,7 +197,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ success: true, data: assessment });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error) }, { status: 500 });
   }
 }

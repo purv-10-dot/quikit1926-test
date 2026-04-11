@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { getTenantId } from "@/lib/api/getTenantId";
+import { toErrorMessage } from "@/lib/api/errors";
+import { updateOrgUserSchema } from "@/lib/schemas/userSchema";
 
 
 // PUT /api/org/users/[id]
@@ -23,11 +25,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     if (!membership)
       return NextResponse.json({ success: false, error: "User not found in this organisation" }, { status: 404 });
 
-    const body = await request.json();
-    const { firstName, lastName, email, password, role, status, teamIds } = body;
+    const parsed = updateOrgUserSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      const msg = parsed.error.errors[0]?.message ?? "Invalid input";
+      return NextResponse.json({ success: false, error: msg }, { status: 400 });
+    }
+    const { firstName, lastName, email, password, role, status, teamIds, teamId } = parsed.data;
     const resolvedTeamIds: string[] | undefined =
       teamIds !== undefined ? teamIds :
-      body.teamId !== undefined ? (body.teamId ? [body.teamId] : []) :
+      teamId !== undefined ? (teamId ? [teamId] : []) :
       undefined;
 
     // Update user record
@@ -92,8 +98,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       },
     });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to update user";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update user") }, { status: 500 });
   }
 }
 
@@ -118,7 +123,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to remove user";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to remove user") }, { status: 500 });
   }
 }

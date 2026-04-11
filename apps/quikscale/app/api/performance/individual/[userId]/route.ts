@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { toErrorMessage } from "@/lib/api/errors";
 
 export async function GET(_req: Request, { params }: { params: { userId: string } }) {
   try {
@@ -34,7 +35,7 @@ export async function GET(_req: Request, { params }: { params: { userId: string 
     });
 
     return NextResponse.json({ success: true, data: { user: target, meetings } });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error) }, { status: 500 });
   }
 }

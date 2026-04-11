@@ -106,3 +106,63 @@ Use `accent-*` Tailwind classes for interactive/branded elements. These are mapp
 1. Add `<ThemeApplier />` to the dashboard layout: `import { ThemeApplier } from "@quikit/ui/theme-applier"`
 2. Create `/api/settings/company` GET endpoint that returns `{ accentColor }`
 3. Use `accent-*` classes instead of `bg-blue-*` for buttons/sidebar/headers
+
+## Testing Standards
+
+The repo uses **Vitest** for unit/component/API tests and **Playwright** for E2E. All tests live under `__tests__/` in each workspace — never under `tests/` (that directory is reserved for legacy Python artifacts in quikscale).
+
+### When a test is required
+
+- **Every bug fix** ships with a regression test that fails before the fix and passes after. No exceptions.
+- **Every new API route** has at minimum: an unauthenticated → 401 test, a tenant-isolation test (cross-tenant request is rejected), and a happy-path test.
+- **Every new shared utility** in `lib/utils/` or `@quikit/shared` reaches ≥90% line coverage in its own test file.
+- **Every new permission helper** (`canXxx()` functions in `lib/api/`) has admin/team-head/self/other matrix coverage.
+
+### Test file conventions
+
+| Suffix / path | Environment | Purpose |
+|---|---|---|
+| `__tests__/unit/*.test.ts` | node | Pure functions, no mocks |
+| `__tests__/permissions/*.test.ts` | node + `vitest-mock-extended` | DB-touching permission logic |
+| `__tests__/api/*.test.ts` | node + mocked Prisma + mocked session | Route handlers imported directly |
+| `__tests__/components/*.dom.test.tsx` | jsdom (via `// @vitest-environment jsdom` directive) | React components |
+| `__tests__/e2e/*.spec.ts` | Playwright only (excluded from Vitest) | Full-stack flows |
+
+### Mocking rules
+
+- **Prisma**: mock via `__tests__/helpers/mockDb.ts` which `vi.mock`'s both `@quikit/database` and `@/lib/db`. Preserve `@prisma/client` enum re-exports via `vi.importActual`.
+- **Sessions**: `setSession(user)` from `__tests__/setup.ts` — it hooks `getServerSession` from both `next-auth` and `next-auth/next` once for the whole file.
+- **Factory auth helpers** (`createGetTenantId`, `createRequireAdmin`): instantiate the factory in the test file with a stub `authOptions`; the mocked `getServerSession` takes care of the rest.
+- **Never** mock the module under test. Never mock individual route handlers — import them and call them with a constructed `NextRequest`.
+
+### Running tests
+
+```bash
+npm run test           # All workspaces via turbo (cached)
+npm run typecheck      # Parallel tsc --noEmit across all workspaces
+npm run lint           # Turbo lint
+npm run e2e            # Playwright (requires e2e:install + db:seed:e2e first)
+npm run e2e:install    # One-time: install Chromium + deps
+npm run db:seed:e2e    # Reset the E2E tenant
+```
+
+Single-file / watch mode:
+```bash
+cd apps/quikscale && npm run test:watch       # Vitest UI watcher
+cd apps/quikscale && npm run test:ui          # Vitest web UI
+```
+
+### Coverage ratchet
+
+`scripts/coverage-ratchet.mjs` compares a fresh `coverage/coverage-summary.json` to the committed `coverage-baseline.json`. CI fails if any of lines/statements/functions/branches drops > 0.25 percentage points.
+
+To intentionally update the baseline after adding tests:
+```bash
+npm run test -- --coverage
+node scripts/coverage-ratchet.mjs apps/quikscale/coverage/coverage-summary.json --update
+git add coverage-baseline.json && git commit -m "chore: ratchet coverage baseline"
+```
+
+### Before large refactors
+
+Before starting a large refactor (e.g., the OPSP 2225-line decomposition in `.claude/code-analysis.md` §6.2), overall line coverage on the affected modules must reach ≥50%. The harness is your safety net — invest in tests *before* touching the code you're afraid to move.

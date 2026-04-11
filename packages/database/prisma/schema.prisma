@@ -213,6 +213,7 @@ model Membership {
   @@index([userId])
   @@index([teamId])
   @@index([role])
+  @@index([tenantId, role])
 }
 
 // ── User ↔ Team many-to-many (a user can belong to multiple teams) ──────────
@@ -253,6 +254,7 @@ model Team {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   createdBy           String?
+  deletedAt           DateTime?
 
   tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   members             Membership[]
@@ -266,6 +268,7 @@ model Team {
   @@unique([tenantId, slug])
   @@index([tenantId])
   @@index([parentTeamId])
+  @@index([deletedAt])
 }
 
 model AccountabilityFunction {
@@ -430,6 +433,7 @@ model KPILog {
   @@index([tenantId])
   @@index([kpiId])
   @@index([createdAt])
+  @@index([kpiId, createdAt])
 }
 
 // ============================================================================
@@ -458,6 +462,7 @@ model Priority {
   updatedAt           DateTime @updatedAt
   createdBy           String
   updatedBy           String?
+  deletedAt           DateTime?
 
   tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   owner_user          User?    @relation("PriorityOwner", fields: [owner], references: [id])
@@ -468,6 +473,8 @@ model Priority {
   @@index([owner])
   @@index([teamId])
   @@index([quarter, year])
+  @@index([tenantId, owner])
+  @@index([deletedAt])
 }
 
 model PriorityWeeklyStatus {
@@ -515,6 +522,7 @@ model WWWItem {
   updatedAt           DateTime @updatedAt
   createdBy           String
   updatedBy           String?
+  deletedAt           DateTime?
 
   tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   meeting             Meeting? @relation(fields: [createdInMeetingId], references: [id], onDelete: SetNull)
@@ -525,6 +533,8 @@ model WWWItem {
   @@index([when])
   @@index([status])
   @@index([createdAt])
+  @@index([tenantId, who])
+  @@index([deletedAt])
 }
 
 model WWWRevisionLog {
@@ -600,6 +610,7 @@ model Meeting {
   createdBy           String
   updatedBy           String?
   completedAt         DateTime?
+  deletedAt           DateTime?
 
   tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   template            MeetingTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
@@ -610,6 +621,8 @@ model Meeting {
   @@index([tenantId])
   @@index([cadence])
   @@index([scheduledAt])
+  @@index([tenantId, scheduledAt])
+  @@index([deletedAt])
 }
 
 model MeetingTemplate {
@@ -960,6 +973,7 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorId])
   @@index([createdAt])
+  @@index([tenantId, createdAt])
 }
 
 model FeatureFlag {

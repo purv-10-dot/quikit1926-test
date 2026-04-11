@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { weeklyValueSchema } from "@/lib/schemas/kpiSchema";
 import { getTenantId } from "@/lib/api/getTenantId";
 import { canEditKPIOwnerWeekly } from "@/lib/api/kpiWeeklyPermissions";
+import { toErrorMessage } from "@/lib/api/errors";
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 
@@ -43,8 +44,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     });
 
     return NextResponse.json({ success: true, data: weeklyValues });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to fetch weekly values" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch weekly values") }, { status: 500 });
   }
 }
 
@@ -189,7 +190,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     });
 
     return NextResponse.json({ success: true, data: weeklyValue });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to save weekly value" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to save weekly value") }, { status: 500 });
   }
 }

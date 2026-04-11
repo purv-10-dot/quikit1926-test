@@ -388,7 +388,7 @@ function UserPanel({
             <X className="h-3.5 w-3.5" /> Cancel
           </button>
           <button onClick={handleSubmit} disabled={saving}
-            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg disabled:opacity-50">
+            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 px-4 py-2 rounded-lg disabled:opacity-50">
             <Plus className="h-3.5 w-3.5" />
             {saving ? "Saving…" : editUser ? "Update User" : "Add User"}
           </button>
@@ -418,7 +418,7 @@ function ConfirmDialog({
         <div className="flex items-center justify-end gap-2">
           <button onClick={onCancel} className="px-4 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
           <button onClick={onConfirm}
-            className={`px-4 py-2 text-xs font-semibold text-white rounded-lg ${dangerous ? "bg-red-500 hover:bg-red-600" : "bg-blue-600 hover:bg-blue-700"}`}>
+            className={`px-4 py-2 text-xs font-semibold text-white rounded-lg ${dangerous ? "bg-red-500 hover:bg-red-600" : "bg-accent-600 hover:bg-accent-700"}`}>
             Confirm
           </button>
         </div>
@@ -562,7 +562,7 @@ export default function OrgUsersPage() {
 
           {/* Add User */}
           <button onClick={() => { setEditUser(null); setPanelOpen(true); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg">
             <Plus className="h-3.5 w-3.5" /> Add User
           </button>
         </div>

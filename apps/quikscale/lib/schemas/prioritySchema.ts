@@ -13,7 +13,19 @@ export const createPrioritySchema = z.object({
   notes:         z.string().max(5000).optional().nullable(),
 });
 
-export const updatePrioritySchema = createPrioritySchema.partial().required({ name: true });
+// Update — fully partial so PATCH-style updates work.
+export const updatePrioritySchema = z.object({
+  name:          z.string().min(1).max(300).optional(),
+  description:   z.string().max(2000).optional().nullable(),
+  owner:         z.string().min(1).optional(),
+  teamId:        z.string().optional().nullable(),
+  quarter:       z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
+  year:          z.number().int().min(2020).max(2099).optional(),
+  startWeek:     z.number().int().min(1).max(13).optional().nullable(),
+  endWeek:       z.number().int().min(1).max(13).optional().nullable(),
+  overallStatus: z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","not-started"]).optional(),
+  notes:         z.string().max(5000).optional().nullable(),
+});
 
 export const weeklyStatusSchema = z.object({
   weekNumber: z.number().int().min(1).max(13),

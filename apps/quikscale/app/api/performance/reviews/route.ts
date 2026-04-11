@@ -3,8 +3,11 @@ import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { toErrorMessage } from "@/lib/api/errors";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { createReviewSchema } from "@/lib/schemas/reviewSchema";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -12,19 +15,26 @@ export async function GET() {
     const tenantId = session.user.tenantId;
     if (!tenantId) return NextResponse.json({ success: false, error: "No tenant" }, { status: 400 });
 
-    const reviews = await db.performanceReview.findMany({
-      where: { tenantId },
-      include: {
-        reviewer: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-        reviewee: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-      },
-      orderBy: { createdAt: "desc" }
-    });
+    const { page, limit, skip, take } = parsePagination(request);
+    const where = { tenantId };
 
-    return NextResponse.json({ success: true, data: reviews });
+    const [reviews, total] = await Promise.all([
+      db.performanceReview.findMany({
+        where,
+        include: {
+          reviewer: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+          reviewee: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      db.performanceReview.count({ where }),
+    ]);
+
+    return NextResponse.json(paginatedResponse(reviews, total, page, limit));
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to fetch reviews";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch reviews") }, { status: 500 });
   }
 }
 
@@ -36,8 +46,14 @@ export async function POST(request: NextRequest) {
     const tenantId = session.user.tenantId;
     if (!tenantId) return NextResponse.json({ success: false, error: "No tenant" }, { status: 400 });
 
-    const body = await request.json();
-    const { revieweeId, quarter, year, rating, strengths, improvements, notes, kpiScore, priorityScore, attendanceScore, overallScore, status } = body;
+    const parsed = createReviewSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+        { status: 400 }
+      );
+    }
+    const { revieweeId, quarter, year, rating, strengths, improvements, notes, kpiScore, priorityScore, attendanceScore, overallScore, status } = parsed.data;
 
     const review = await db.performanceReview.create({
       data: {
@@ -46,7 +62,7 @@ export async function POST(request: NextRequest) {
         revieweeId,
         quarter,
         year: Number(year),
-        rating: rating ? Number(rating) : null,
+        rating: rating != null ? Number(rating) : null,
         strengths,
         improvements,
         notes,
@@ -64,7 +80,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: review });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to create review";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create review") }, { status: 500 });
   }
 }

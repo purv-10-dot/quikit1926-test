@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { toErrorMessage } from "@/lib/api/errors";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -12,23 +15,37 @@ export async function GET() {
     const tenantId = user?.memberships[0]?.tenantId;
     if (!tenantId) return NextResponse.json({ success: false, error: "No tenant" }, { status: 400 });
 
-    const members = await db.membership.findMany({
-      where: { tenantId },
-      include: {
-        user: {
-          include: {
-            kpisOwned: { where: { tenantId }, include: { weeklyValues: true } },
-            prioritiesOwned: { where: { tenantId }, include: { weeklyStatuses: true } },
-          }
-        },
-        team: true,
-      }
-    });
+    const { page, limit, skip, take } = parsePagination(request);
+    const where = { tenantId };
 
-    const meetings = await db.meeting.findMany({
-      where: { tenantId },
-      include: { attendees: true }
-    });
+    const [members, total] = await Promise.all([
+      db.membership.findMany({
+        where,
+        include: {
+          user: {
+            include: {
+              kpisOwned: { where: { tenantId }, include: { weeklyValues: true } },
+              prioritiesOwned: { where: { tenantId }, include: { weeklyStatuses: true } },
+            }
+          },
+          team: true,
+        },
+        skip,
+        take,
+      }),
+      db.membership.count({ where }),
+    ]);
+
+    // Only load meetings whose attendees include the paginated user set —
+    // avoids scanning all tenant meetings just to compute attendance for
+    // N users we're returning in this page.
+    const paginatedUserIds = members.map(m => m.user.id);
+    const meetings = paginatedUserIds.length
+      ? await db.meeting.findMany({
+          where: { tenantId, attendees: { some: { userId: { in: paginatedUserIds } } } },
+          include: { attendees: { where: { userId: { in: paginatedUserIds } } } },
+        })
+      : [];
 
     const people = members.map(m => {
       const u = m.user;
@@ -81,8 +98,8 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ success: true, data: people });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+    return NextResponse.json(paginatedResponse(people, total, page, limit));
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error) }, { status: 500 });
   }
 }

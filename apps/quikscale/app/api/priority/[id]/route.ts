@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
+import { toErrorMessage } from "@/lib/api/errors";
+import { updatePrioritySchema } from "@/lib/schemas/prioritySchema";
 
 
 const PRIORITY_SELECT = {
@@ -38,14 +40,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const tenantId = await getTenantId(session.user.id);
     if (!tenantId) return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
 
-    const priority = await db.priority.findUnique({ where: { id: params.id }, select: PRIORITY_SELECT });
+    const priority = await db.priority.findFirst({
+      where: { id: params.id, deletedAt: null },
+      select: PRIORITY_SELECT,
+    });
     if (!priority) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
     if (priority.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
     return NextResponse.json({ success: true, data: priority });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to fetch priority";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch priority") }, { status: 500 });
   }
 }
 
@@ -61,8 +65,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
     if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-    const body = await request.json();
-    const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, notes } = body;
+    const parsed = updatePrioritySchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+        { status: 400 }
+      );
+    }
+    const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, notes } = parsed.data;
 
     const updated = await db.priority.update({
       where: { id: params.id },
@@ -72,9 +82,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         owner: owner ?? undefined,
         teamId: teamId ?? null,
         quarter: quarter ?? undefined,
-        year: year ? parseInt(String(year)) : undefined,
-        startWeek: startWeek != null ? parseInt(String(startWeek)) : null,
-        endWeek: endWeek != null ? parseInt(String(endWeek)) : null,
+        year: year ?? undefined,
+        startWeek: startWeek ?? null,
+        endWeek: endWeek ?? null,
         overallStatus: overallStatus ?? undefined,
         notes: notes ?? null,
         updatedBy: session.user.id,
@@ -84,8 +94,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to update priority";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update priority") }, { status: 500 });
   }
 }
 
@@ -101,11 +110,14 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
     if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-    await db.priority.delete({ where: { id: params.id } });
+    // Soft delete
+    await db.priority.update({
+      where: { id: params.id },
+      data: { deletedAt: new Date(), updatedBy: session.user.id },
+    });
 
     return NextResponse.json({ success: true, message: "Priority deleted successfully" });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to delete priority";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete priority") }, { status: 500 });
   }
 }

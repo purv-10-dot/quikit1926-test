@@ -353,7 +353,7 @@ function TeamPanel({
           <button
             onClick={handleSubmit}
             disabled={saving}
-            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 px-4 py-2 rounded-lg disabled:opacity-50"
           >
             <Plus className="h-3.5 w-3.5" />
             {saving ? "Saving…" : editTeam ? "Update Team" : "Create Team"}
@@ -481,7 +481,7 @@ export default function OrgTeamsPage() {
           </div>
           <button
             onClick={() => { setEditTeam(null); setPanelOpen(true); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg"
           >
             <Plus className="h-3.5 w-3.5" /> New Team
           </button>

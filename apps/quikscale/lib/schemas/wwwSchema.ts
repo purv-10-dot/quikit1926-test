@@ -10,7 +10,18 @@ export const createWWWSchema = z.object({
   originalDueDate: z.string().optional().nullable(),
 });
 
-export const updateWWWSchema = createWWWSchema.partial().required({ what: true });
+// Update — fully partial so PATCH-style updates work. Length/enum rules
+// still enforced when the field is present.
+export const updateWWWSchema = z.object({
+  who:             z.string().min(1).optional(),
+  what:            z.string().min(1).max(500).optional(),
+  when:            z.string().min(1).optional(),
+  status:          z.enum(["not-yet-started","in-progress","completed","blocked","not-applicable"]).optional(),
+  notes:           z.string().max(2000).optional().nullable(),
+  category:        z.string().max(100).optional().nullable(),
+  originalDueDate: z.string().optional().nullable(),
+  revisedDates:    z.array(z.string()).optional(),
+});
 
 export type CreateWWWInput = z.infer<typeof createWWWSchema>;
 export type UpdateWWWInput = z.infer<typeof updateWWWSchema>;

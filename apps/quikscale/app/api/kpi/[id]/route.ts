@@ -6,6 +6,7 @@ import { updateKPISchema } from "@/lib/schemas/kpiSchema";
 import { ApiResponse } from "@/lib/services/kpiService";
 import { getTenantId } from "@/lib/api/getTenantId";
 import { canManageTeamKPI } from "@/lib/api/teamKPIPermissions";
+import { toErrorMessage } from "@/lib/api/errors";
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 
@@ -38,8 +39,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
     return NextResponse.json({ success: true, data: kpi });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to fetch KPI" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch KPI") }, { status: 500 });
   }
 }
 
@@ -191,8 +192,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     });
 
     return NextResponse.json({ success: true, data: updatedKPI, message: "KPI updated successfully" });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to update KPI" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update KPI") }, { status: 500 });
   }
 }
 
@@ -225,7 +226,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     await db.kPILog.create({ data: { tenantId, kpiId: params.id, action: "DELETE", oldValue, changedBy: session.user.id } });
 
     return NextResponse.json({ success: true, message: "KPI deleted successfully" });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message || "Failed to delete KPI" }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete KPI") }, { status: 500 });
   }
 }

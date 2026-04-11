@@ -426,8 +426,8 @@ export default function OrgDetailPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={admin.role}>{admin.role}</Badge>
-                      <Badge variant={admin.status}>{admin.status}</Badge>
+                      <Badge variant={admin.role as React.ComponentProps<typeof Badge>["variant"]}>{admin.role}</Badge>
+                      <Badge variant={admin.status as React.ComponentProps<typeof Badge>["variant"]}>{admin.status}</Badge>
                       {admin.status === "active" ? (
                         <button
                           onClick={() => handleDeactivateAdmin(admin.membershipId)}

@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
+import { toErrorMessage } from "@/lib/api/errors";
+import { updateQuarterSchema } from "@/lib/schemas/quarterSchema";
 
 const DAYS_PER_QUARTER = 91; // 13 weeks
 
@@ -45,8 +47,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     if (existing.quarter !== "Q1")
       return NextResponse.json({ success: false, error: "Only Q1 start date can be changed. All other quarters are auto-calculated." }, { status: 400 });
 
-    const body = await request.json();
-    const { startDate: startDateStr } = body;
+    const parsed = updateQuarterSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+        { status: 400 }
+      );
+    }
+    const startDateStr = parsed.data.startDate;
 
     if (!startDateStr)
       return NextResponse.json({ success: false, error: "Start date is required" }, { status: 400 });
@@ -118,8 +126,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       data: updatedAll.map(q => serializeQuarter(q, userMap[q.createdBy] || null)),
     });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to update quarter";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update quarter") }, { status: 500 });
   }
 }
 
@@ -141,7 +148,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     await db.quarterSetting.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to delete quarter";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete quarter") }, { status: 500 });
   }
 }

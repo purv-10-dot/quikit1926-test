@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
+import { toErrorMessage } from "@/lib/api/errors";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createWWWSchema } from "@/lib/schemas/wwwSchema";
 
 // GET /api/www — list all WWWItems for tenant
@@ -23,8 +25,9 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") || undefined;
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
+    const { page, limit, skip, take } = parsePagination(request);
 
-    const where: Record<string, unknown> = { tenantId };
+    const where: Record<string, unknown> = { tenantId, deletedAt: null };
     if (status) where.status = status;
     if (search) {
       where.OR = [
@@ -45,10 +48,15 @@ export async function GET(request: NextRequest) {
     };
     const orderBy = sortMap[sortBy] || { createdAt: sortOrder };
 
-    const items = await db.wWWItem.findMany({
-      where,
-      orderBy: orderBy as any,
-    });
+    const [items, total] = await Promise.all([
+      db.wWWItem.findMany({
+        where,
+        orderBy: orderBy as any,
+        skip,
+        take,
+      }),
+      db.wWWItem.count({ where }),
+    ]);
 
     // Build user map for who_user
     const whoIds = [...new Set(items.map(i => i.who).filter(Boolean))];
@@ -69,11 +77,10 @@ export async function GET(request: NextRequest) {
       who_user: userMap[item.who] ?? null,
     }));
 
-    return NextResponse.json({ success: true, data: result });
+    return NextResponse.json(paginatedResponse(result, total, page, limit));
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to fetch WWW items";
     console.error("GET /api/www error:", error);
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch WWW items") }, { status: 500 });
   }
 }
 
@@ -130,8 +137,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to create WWW item";
     console.error("POST /api/www error:", error);
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create WWW item") }, { status: 500 });
   }
 }

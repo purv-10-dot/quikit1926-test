@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { createPortal } from "react-dom";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 /**
  * Per-owner breakdown entry used for team KPI tooltips.
@@ -18,43 +17,34 @@ export interface WeekOwnerBreakdown {
   actual?: number | null;
 }
 
-export function WeekTooltip({ weekNumber, value, note, owners, children }: {
+export function WeekTooltip({
+  weekNumber,
+  value,
+  note,
+  owners,
+  children,
+}: {
   weekNumber: number;
   value?: number | null;
   note?: string | null;
   owners?: WeekOwnerBreakdown[];
   children: React.ReactNode;
 }) {
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
   const hasOwners = !!owners && owners.length > 0;
   const hasContent = (value !== undefined && value !== null) || !!note || hasOwners;
   if (!hasContent) return <>{children}</>;
-
-  function handleEnter() {
-    if (ref.current) {
-      const r = ref.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 6, left: r.left + r.width / 2 });
-    }
-  }
 
   // Wider tooltip when we have a per-owner breakdown
   const widthClass = hasOwners ? "w-72" : "w-52";
 
   return (
-    <div
-      ref={ref}
-      className="relative inline-flex justify-center w-full h-full"
-      onMouseEnter={handleEnter}
-      onMouseLeave={() => setPos(null)}
-    >
-      {children}
-      {pos && typeof document !== "undefined" && createPortal(
-        <div
-          style={{ position: "fixed", top: pos.top, left: pos.left, transform: "translateX(-50%)", zIndex: 9999 }}
-          className={`${widthClass} bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl pointer-events-none`}
-        >
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-gray-900" />
+    <Tooltip
+      arrow="center"
+      triggerClassName="inline-flex justify-center w-full h-full"
+      widthClass={widthClass}
+      contentClassName="p-3 shadow-xl"
+      content={
+        <>
           <p className="font-semibold text-gray-200 mb-1.5 text-[11px]">Week {weekNumber}</p>
           {value !== undefined && value !== null && (
             <p className="text-gray-300 text-[11px]">
@@ -97,9 +87,10 @@ export function WeekTooltip({ weekNumber, value, note, owners, children }: {
               {note}
             </p>
           )}
-        </div>,
-        document.body
-      )}
-    </div>
+        </>
+      }
+    >
+      {children}
+    </Tooltip>
   );
 }

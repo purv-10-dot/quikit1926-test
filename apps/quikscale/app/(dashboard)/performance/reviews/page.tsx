@@ -158,7 +158,7 @@ export default function ReviewsPage() {
         </div>
         <button
           onClick={() => { setForm(DEFAULT_FORM); setSaveError(null); setShowModal(true); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-600 hover:bg-accent-700 text-white text-xs font-medium rounded-md transition-colors"
         >
           <Plus className="h-3.5 w-3.5" />New Review
         </button>
@@ -348,7 +348,7 @@ export default function ReviewsPage() {
               <button
                 onClick={() => handleSubmit("submitted")}
                 disabled={saving}
-                className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 text-xs bg-accent-600 hover:bg-accent-700 text-white rounded-md transition-colors disabled:opacity-50"
               >
                 {saving ? "Saving…" : "Submit Review"}
               </button>

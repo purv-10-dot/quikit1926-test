@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
+import { toErrorMessage } from "@/lib/api/errors";
+import { weeklyStatusSchema } from "@/lib/schemas/prioritySchema";
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 
@@ -23,14 +25,15 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (!priority) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
     if (priority.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-    const body = await request.json();
-    const { weekNumber, status, notes } = body;
-
-    if (weekNumber == null || status === undefined) {
-      return NextResponse.json({ success: false, error: "weekNumber and status are required" }, { status: 400 });
+    const parsed = weeklyStatusSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+        { status: 400 }
+      );
     }
-
-    const parsedWeek = parseInt(String(weekNumber));
+    const { weekNumber, status, notes } = parsed.data;
+    const parsedWeek = weekNumber;
 
     // ── Past-week edit enforcement ──
     const { canEditPastWeek } = await getPastWeekFlags(tenantId);
@@ -66,7 +69,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     return NextResponse.json({ success: true, data: record });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to update weekly status";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update weekly status") }, { status: 500 });
   }
 }

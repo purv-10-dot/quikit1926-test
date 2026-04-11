@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
+import { toErrorMessage } from "@/lib/api/errors";
+import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 
 // GET /api/org/teams — all teams with member count and head info
@@ -16,19 +18,27 @@ export async function GET(request: NextRequest) {
     if (!tenantId)
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
 
-    const teams = await db.team.findMany({
-      where: { tenantId },
-      include: {
-        members: {
-          where: { status: "active" },
-          select: {
-            userId: true,
-            user:   { select: { id: true, firstName: true, lastName: true, email: true } },
+    const { page, limit, skip, take } = parsePagination(request);
+    const where = { tenantId, deletedAt: null };
+
+    const [teams, total] = await Promise.all([
+      db.team.findMany({
+        where,
+        include: {
+          members: {
+            where: { status: "active" },
+            select: {
+              userId: true,
+              user:   { select: { id: true, firstName: true, lastName: true, email: true } },
+            },
           },
         },
-      },
-      orderBy: { name: "asc" },
-    });
+        orderBy: { name: "asc" },
+        skip,
+        take,
+      }),
+      db.team.count({ where }),
+    ]);
 
     // Resolve head name
     const headIds = teams.map(t => t.headId).filter(Boolean) as string[];
@@ -57,10 +67,9 @@ export async function GET(request: NextRequest) {
       createdAt:   t.createdAt.toISOString(),
     }));
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json(paginatedResponse(data, total, page, limit));
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to fetch teams";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch teams") }, { status: 500 });
   }
 }
 
@@ -129,7 +138,6 @@ export async function POST(request: NextRequest) {
       },
     }, { status: 201 });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to create team";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create team") }, { status: 500 });
   }
 }

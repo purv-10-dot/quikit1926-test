@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
+import { toErrorMessage } from "@/lib/api/errors";
+import { updateTeamSchema } from "@/lib/schemas/teamSchema";
 
 
 // PUT /api/org/teams/[id] — update team
@@ -20,8 +22,12 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     if (!existing)
       return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
 
-    const body = await request.json();
-    const { name, description, color, headId } = body;
+    const parsed = updateTeamSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      const msg = parsed.error.errors[0]?.message ?? "Invalid input";
+      return NextResponse.json({ success: false, error: msg }, { status: 400 });
+    }
+    const { name, description, color, headId } = parsed.data;
 
     // Check name uniqueness if name is being changed
     if (name?.trim() && name.trim().toLowerCase() !== existing.name.toLowerCase()) {
@@ -71,8 +77,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       },
     });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to update team";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update team") }, { status: 500 });
   }
 }
 
@@ -91,10 +96,14 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     if (!existing)
       return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
 
-    await db.team.delete({ where: { id: params.id } });
+    // Soft delete — set deletedAt instead of removing the row so we keep
+    // historical KPI/priority references intact.
+    await db.team.update({
+      where: { id: params.id },
+      data: { deletedAt: new Date() },
+    });
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "Failed to delete team";
-    return NextResponse.json({ success: false, error: msg }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete team") }, { status: 500 });
   }
 }

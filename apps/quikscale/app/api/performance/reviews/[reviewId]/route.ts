@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { toErrorMessage } from "@/lib/api/errors";
+import { updateReviewSchema } from "@/lib/schemas/reviewSchema";
 
 export async function GET(_req: Request, { params }: { params: { reviewId: string } }) {
   try {
@@ -23,8 +25,8 @@ export async function GET(_req: Request, { params }: { params: { reviewId: strin
 
     if (!review) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     return NextResponse.json({ success: true, data: review });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error) }, { status: 500 });
   }
 }
 
@@ -33,11 +35,18 @@ export async function PUT(req: Request, { params }: { params: { reviewId: string
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
-    const body = await req.json();
+    const parsed = updateReviewSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+        { status: 400 }
+      );
+    }
+    const body = parsed.data;
     const review = await db.performanceReview.update({
       where: { id: params.reviewId },
       data: {
-        rating: body.rating ? Number(body.rating) : null,
+        rating: body.rating != null ? Number(body.rating) : null,
         strengths: body.strengths,
         improvements: body.improvements,
         notes: body.notes,
@@ -50,7 +59,7 @@ export async function PUT(req: Request, { params }: { params: { reviewId: string
     });
 
     return NextResponse.json({ success: true, data: review });
-  } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error) }, { status: 500 });
   }
 }

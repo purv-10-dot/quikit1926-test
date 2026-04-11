@@ -10,12 +10,17 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
     "dev:quikscale": "turbo dev --filter=quikscale",
     "dev:admin": "turbo dev --filter=admin",
     "dev:super-admin": "turbo dev --filter=super-admin",
     "db:push": "cd packages/database && npx prisma db push",
     "db:studio": "cd packages/database && npx prisma studio",
-    "db:generate": "cd packages/database && npx prisma generate"
+    "db:generate": "cd packages/database && npx prisma generate",
+    "db:seed:e2e": "cd packages/database && npm run db:seed:e2e",
+    "e2e": "cd apps/quikscale && npx playwright test",
+    "e2e:install": "cd apps/quikscale && npx playwright install --with-deps chromium"
   },
   "devDependencies": {
     "turbo": "^2.0.0"

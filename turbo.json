@@ -12,6 +12,27 @@
     },
     "lint": {
       "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "app/**",
+        "lib/**",
+        "components/**",
+        "pages/**",
+        "src/**",
+        "types/**",
+        "__tests__/**",
+        "vitest.config.ts",
+        "tsconfig.json",
+        "package.json",
+        "index.ts"
+      ],
+      "outputs": [],
+      "env": ["NODE_ENV"]
     }
   }
 }
