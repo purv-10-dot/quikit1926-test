@@ -1,74 +1,85 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { authOptions } from "@/lib/auth";
-import { getTenantId } from "@/lib/api/getTenantId";
-import { toErrorMessage } from "@/lib/api/errors";
 import { weeklyStatusSchema } from "@/lib/schemas/prioritySchema";
-import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
-
+import {
+  getPastWeekFlags,
+  getCurrentFiscalWeekFromDB,
+} from "@/lib/utils/featureFlags";
+import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 // POST /api/priority/[id]/weekly — upsert a weekly status
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
-
-    // Verify the priority belongs to this tenant
-    const priority = await db.priority.findUnique({
-      where: { id: params.id },
-      select: { tenantId: true, quarter: true, year: true },
+export const POST = withTenantAuth<{ id: string }>(
+  async ({ tenantId, userId }, request, { params }) => {
+    const priority = await db.priority.findFirst({
+      where: { id: params.id, tenantId },
+      select: { quarter: true, year: true },
     });
-    if (!priority) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
-    if (priority.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+    if (!priority) {
+      return NextResponse.json(
+        { success: false, error: "Priority not found" },
+        { status: 404 },
+      );
+    }
 
     const parsed = weeklyStatusSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-        { status: 400 }
+        {
+          success: false,
+          error: parsed.error.errors[0]?.message ?? "Invalid input",
+        },
+        { status: 400 },
       );
     }
     const { weekNumber, status, notes } = parsed.data;
-    const parsedWeek = weekNumber;
 
     // ── Past-week edit enforcement ──
     const { canEditPastWeek } = await getPastWeekFlags(tenantId);
     if (!canEditPastWeek && priority.quarter && priority.year) {
-      const currentWeek = await getCurrentFiscalWeekFromDB(tenantId, priority.year, priority.quarter);
-      if (parsedWeek < currentWeek) {
+      const currentWeek = await getCurrentFiscalWeekFromDB(
+        tenantId,
+        priority.year,
+        priority.quarter,
+      );
+      if (weekNumber < currentWeek) {
         return NextResponse.json(
           {
             success: false,
-            error: `Editing past weeks is disabled. Week ${parsedWeek} is before the current week (${currentWeek}). Enable it in Settings > Configurations.`,
+            error: `Editing past weeks is disabled. Week ${weekNumber} is before the current week (${currentWeek}). Enable it in Settings > Configurations.`,
           },
-          { status: 403 }
+          { status: 403 },
         );
       }
     }
 
     const record = await db.priorityWeeklyStatus.upsert({
-      where: { priorityId_weekNumber: { priorityId: params.id, weekNumber: parsedWeek } },
+      where: {
+        priorityId_weekNumber: { priorityId: params.id, weekNumber },
+      },
       update: {
         status: String(status),
         notes: notes ?? null,
-        updatedBy: session.user.id,
+        updatedBy: userId,
       },
       create: {
         priorityId: params.id,
-        weekNumber: parsedWeek,
+        weekNumber,
         status: String(status),
         notes: notes ?? null,
-        updatedBy: session.user.id,
+        updatedBy: userId,
       },
-      select: { id: true, priorityId: true, weekNumber: true, status: true, notes: true, createdAt: true, updatedAt: true },
+      select: {
+        id: true,
+        priorityId: true,
+        weekNumber: true,
+        status: true,
+        notes: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     return NextResponse.json({ success: true, data: record });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update weekly status") }, { status: 500 });
-  }
-}
+  },
+  { fallbackErrorMessage: "Failed to update weekly status" },
+);

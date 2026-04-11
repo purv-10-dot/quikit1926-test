@@ -42,7 +42,7 @@ export function HiddenColsPill({ hiddenCols, colLabels, onRestore, onRestoreAll 
           <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Hidden Columns</span>
             {onRestoreAll && hiddenCols.length > 1 && (
-              <button onClick={() => { onRestoreAll(); setOpen(false); }} className="text-[10px] text-blue-600 hover:underline">
+              <button onClick={() => { onRestoreAll(); setOpen(false); }} className="text-[10px] text-accent-600 hover:underline">
                 Show all
               </button>
             )}

@@ -7,6 +7,7 @@ import { useCanManageTeamKPI } from "@/lib/hooks/useCanManageTeamKPI";
 import { progressColor, fmtCompact } from "@/lib/utils/kpiHelpers";
 import { KPITable } from "../../components/KPITable";
 import { KPIModal } from "../../components/KPIModal";
+import { AddButton } from "@/components/AddButton";
 
 interface Props {
   team: Team;
@@ -90,18 +91,9 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
 
         {/* Add KPI button — pinned to the rightmost via ml-auto */}
         {canManage && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowAdd(true);
-            }}
-            className="ml-auto flex items-center gap-1 px-3 py-1.5 bg-gray-900 text-white text-[11px] font-medium rounded-md hover:bg-gray-700 transition-colors flex-shrink-0"
-          >
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-            </svg>
-            Add KPI
-          </button>
+          <div className="ml-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <AddButton onClick={() => setShowAdd(true)}>Add KPI</AddButton>
+          </div>
         )}
       </div>
 

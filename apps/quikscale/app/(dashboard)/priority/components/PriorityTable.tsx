@@ -489,7 +489,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                         boxShadow: lastFrozenKey === "_id" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
                       <button onClick={() => setEditPriority(priority)}
-                        className="text-blue-500 hover:text-blue-700 font-medium text-xs transition-colors">
+                        className="text-gray-900 hover:underline font-medium text-xs transition-colors">
                         {rowIdx + 1}
                       </button>
                     </td>

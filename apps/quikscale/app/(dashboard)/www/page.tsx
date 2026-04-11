@@ -10,6 +10,7 @@ import { FilterPicker, userToFilterOption } from "@/components/FilterPicker";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
+import { AddButton } from "@/components/AddButton";
 
 export default function WWWPage() {
   const [search, setSearch] = useState("");
@@ -130,7 +131,7 @@ export default function WWWPage() {
               placeholder="Search..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400 w-44"
+              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
 
@@ -138,7 +139,7 @@ export default function WWWPage() {
           <div className="relative" ref={filterRef}>
             <button
               onClick={() => setShowFilter(o => !o)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 ? "border-blue-300 bg-blue-50 text-blue-600" : "border-gray-200 text-gray-600"}`}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
@@ -171,7 +172,7 @@ export default function WWWPage() {
                   <select
                     value={filterStatus}
                     onChange={e => setFilterStatus(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
                   >
                     <option value="">All statuses</option>
                     <option value="not-applicable">Not Applicable</option>
@@ -193,16 +194,7 @@ export default function WWWPage() {
             )}
           </div>
 
-          {/* Add New */}
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-md hover:bg-gray-700 transition-colors"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add New
-          </button>
+          <AddButton onClick={() => setShowAddModal(true)}>Add WWW</AddButton>
         </div>
       </div>
 

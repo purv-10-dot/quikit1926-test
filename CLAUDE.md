@@ -92,9 +92,9 @@ Use `accent-*` Tailwind classes for interactive/branded elements. These are mapp
 - Sidebar background: `bg-accent-800`
 - Sidebar active items: `bg-white/15 text-white`
 - Header avatar: `bg-accent-600`
-- Table headers: `bg-accent-50 text-accent-700`
-- Focus rings: `ring-accent-400`
-- Active tabs/badges: `bg-accent-100 text-accent-700`
+- Focus rings (outside the 4 locked tables below): `ring-accent-400`
+- Active tabs/badges (sidebar, settings, etc.): `bg-accent-100 text-accent-700`
+- `AddButton` shared component (top-of-page Add/New buttons across modules)
 
 **Use hardcoded Tailwind colors for (semantic — NOT themeable):**
 - KPI status cells: `bg-green-500`, `bg-red-500`, `bg-blue-500` (these represent data states)
@@ -102,10 +102,51 @@ Use `accent-*` Tailwind classes for interactive/branded elements. These are mapp
 - Warning/error/success alerts: `bg-amber-50`, `bg-red-50`, `bg-green-50`
 - Chart colors: fixed palette
 
+### 🔒 LOCKED TABLES — Do NOT theme (critical, permanent rule)
+
+The following four tables are **fully color-locked**. Every visual element inside them — the row cells, column headers, row IDs, checkboxes, log icons, row hover, status badges, progress bars, action links, focus rings, weekly-value cells — uses **fixed `blue-*` / `gray-*` / semantic colors**. They must **never** be migrated to `accent-*`, and future refactors / bulk sweeps must **explicitly skip** these files:
+
+1. **Individual KPI table** — `apps/quikscale/app/(dashboard)/kpi/components/KPITable.tsx`
+2. **Team KPI table** — `apps/quikscale/app/(dashboard)/kpi/teams/components/TeamSection.tsx` + shared `KPITable.tsx`
+3. **Priority table** — `apps/quikscale/app/(dashboard)/priority/components/PriorityTable.tsx`
+4. **WWW table** — `apps/quikscale/app/(dashboard)/www/components/WWWTable.tsx`
+
+**Why locked:**
+- KPI weekly-value cells form a semantic traffic-light system (Blue=Exceeded, Green=Achieved, Yellow=Near, Red=Below). Theming would break that visual language.
+- "Completed" status (Priority + WWW) is intentionally blue so all 4 tables share the same `bg-blue-500` completed state across tenants.
+- Table IDs (#) are `text-gray-900 hover:underline` — they must stay black so tenants with purple/teal/orange themes still have a neutral readable row ID column.
+- Row hover (`hover:bg-blue-50`) and log-icon hover (`hover:text-blue-500`) are part of the table chrome, not brandable UI.
+
+**Color palette used in these 4 tables (reference):**
+
+| Surface | Class |
+|---|---|
+| Row ID button | `text-gray-900 hover:underline` |
+| Checkbox | `text-blue-600 border-gray-300` |
+| Log-icon hover | `text-gray-400 hover:text-blue-500 hover:bg-gray-100` |
+| Row hover | `hover:bg-blue-50` (or `hover:bg-blue-50/30` for KPI) |
+| Column-resize handle | `hover:bg-blue-400/50` |
+| Freeze-boundary icon | `text-blue-400` |
+| Comment input focus ring | `focus:ring-blue-400` |
+| Priority/WWW status — completed | `bg-blue-500 text-white` |
+| Priority/WWW status — on-track | `bg-green-500 text-white` |
+| Priority/WWW status — behind-schedule | `bg-amber-400 text-white` |
+| Priority/WWW status — not-yet-started | `bg-red-500 text-white` |
+| Priority/WWW status — not-applicable | `bg-gray-400 text-white` |
+| KPI weekly — exceeded (`pct ≥ 120`) | `bg-blue-600 text-white` |
+| KPI weekly — achieved (`pct ≥ 100`) | `bg-green-600 text-white` |
+| KPI weekly — near (`pct ≥ 80`) | `bg-yellow-500 text-white` |
+| KPI weekly — below (`pct < 80` + updated) | `bg-red-600 text-white` |
+| KPI weekly — neutral (not entered) | `text-gray-300` |
+
+**Before any future bulk CSS refactor** (tailwind class sweeps, blue→accent migrations, theme changes): add an explicit path exclusion for these 4 files AND for `apps/quikscale/lib/utils/colorLogic.ts` and `apps/quikscale/lib/utils/kpiHelpers.ts` (which compute the KPI traffic-light semantics).
+
+### Theming the rest of the app
+
 **To enable theming in a new app:**
 1. Add `<ThemeApplier />` to the dashboard layout: `import { ThemeApplier } from "@quikit/ui/theme-applier"`
 2. Create `/api/settings/company` GET endpoint that returns `{ accentColor }`
-3. Use `accent-*` classes instead of `bg-blue-*` for buttons/sidebar/headers
+3. Use `accent-*` classes instead of `bg-blue-*` for buttons/sidebar/headers (outside the 4 locked tables above)
 
 ## Testing Standards
 

@@ -1,18 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { authOptions } from "@/lib/auth";
-import { getTenantId } from "@/lib/api/getTenantId";
-import { toErrorMessage } from "@/lib/api/errors";
 import { updateQuarterSchema } from "@/lib/schemas/quarterSchema";
+import { addDays } from "@/lib/utils/quarterGen";
+import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 const DAYS_PER_QUARTER = 91; // 13 weeks
-
-function addDays(date: Date, days: number): Date {
-  const result = new Date(date.getTime());
-  result.setUTCDate(result.getUTCDate() + days);
-  return result;
-}
 
 function serializeQuarter(
   q: { id: string; fiscalYear: number; quarter: string; startDate: Date; endDate: Date; createdAt: Date; updatedAt: Date; createdBy: string },
@@ -29,16 +21,7 @@ function serializeQuarter(
 }
 
 // PUT /api/org/quarters/[id] — only Q1 start date can be changed, recalculates all quarters
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id)
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId)
-      return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
-
+export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId }, request, { params }) => {
     const existing = await db.quarterSetting.findFirst({ where: { id: params.id, tenantId } });
     if (!existing)
       return NextResponse.json({ success: false, error: "Quarter not found" }, { status: 404 });
@@ -125,29 +108,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       success: true,
       data: updatedAll.map(q => serializeQuarter(q, userMap[q.createdBy] || null)),
     });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update quarter") }, { status: 500 });
-  }
-}
+}, { fallbackErrorMessage: "Failed to update quarter" });
 
 // DELETE /api/org/quarters/[id]
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id)
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId)
-      return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
-
+export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
     const existing = await db.quarterSetting.findFirst({ where: { id: params.id, tenantId } });
     if (!existing)
       return NextResponse.json({ success: false, error: "Quarter not found" }, { status: 404 });
 
     await db.quarterSetting.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete quarter") }, { status: 500 });
-  }
-}
+}, { fallbackErrorMessage: "Failed to delete quarter" });

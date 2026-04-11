@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { updateTablePreferencesSchema } from "@/lib/schemas/tablePreferencesSchema";
+import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 function parseHidden(json: string | null): string[] {
   if (!json) return [];
@@ -33,15 +31,9 @@ function parseWidths(json: string | null): Record<string, number> {
 }
 
 // GET /api/settings/table-preferences — return all table prefs for the current user
-export async function GET() {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
-
+export const GET = withTenantAuth(async ({ userId }) => {
     const user = await db.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: userId },
       select: {
         kpiFrozenCol: true,
         priorityFrozenCol: true,
@@ -81,20 +73,10 @@ export async function GET() {
         },
       },
     });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to fetch preferences";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
-  }
-}
+}, { fallbackErrorMessage: "Failed to fetch preferences" });
 
 // PATCH /api/settings/table-preferences — update one or more fields for a table
-export async function PATCH(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
-
+export const PATCH = withTenantAuth(async ({ userId }, request) => {
     const body = await request.json();
     const parsed = updateTablePreferencesSchema.safeParse(body);
     if (!parsed.success) {
@@ -122,13 +104,9 @@ export async function PATCH(request: NextRequest) {
     if (colWidths !== undefined) data[widthsField] = colWidths ? JSON.stringify(colWidths) : null;
 
     await db.user.update({
-      where: { id: session.user.id },
+      where: { id: userId },
       data,
     });
 
     return NextResponse.json({ success: true, data: { table, frozenCol, hiddenCols, sort, colWidths } });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to update preferences";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
-  }
-}
+}, { fallbackErrorMessage: "Failed to update preferences" });

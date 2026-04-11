@@ -1,20 +1,22 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+/**
+ * WWW (Who/What/When) data hooks.
+ *
+ * Thin wrapper around `createCRUDHook` — all the transport + cache
+ * invalidation wiring lives in the factory. This file only declares the
+ * WWW-specific filter shape and list URL builder.
+ */
 import type { WWWItem } from "@/lib/types/www";
+import { createCRUDHook } from "./createCRUDHook";
 
-// ── Query Keys ────────────────────────────────────────────────────────────────
+export interface WWWFilters {
+  search?: string;
+  status?: string;
+  sort?: string | null;
+}
 
-const wwwKeys = {
-  all: ["www"] as const,
-  lists: () => [...wwwKeys.all, "list"] as const,
-  list: (filters: { search?: string; status?: string; sort?: string | null }) =>
-    [...wwwKeys.lists(), filters] as const,
-};
-
-// ── Fetch helpers ─────────────────────────────────────────────────────────────
-
-async function fetchWWWItems(filters: { search?: string; status?: string; sort?: string | null }): Promise<WWWItem[]> {
+function buildListUrl(filters: WWWFilters): string {
   const params = new URLSearchParams();
   if (filters.search) params.set("search", filters.search);
   if (filters.status) params.set("status", filters.status);
@@ -24,74 +26,16 @@ async function fetchWWWItems(filters: { search?: string; status?: string; sort?:
     if (sortOrder) params.set("sortOrder", sortOrder);
   }
   const qs = params.toString();
-  const res = await fetch(`/api/www${qs ? `?${qs}` : ""}`);
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || "Failed to fetch WWW items");
-  return data.data;
+  return `/api/www${qs ? `?${qs}` : ""}`;
 }
 
-async function createWWWItem(body: Partial<WWWItem>): Promise<WWWItem> {
-  const res = await fetch("/api/www", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || "Failed to create WWW item");
-  return data.data;
-}
+const www = createCRUDHook<WWWItem, WWWFilters>({
+  resource: "www",
+  listUrl: buildListUrl,
+});
 
-async function updateWWWItem(id: string, body: Partial<WWWItem>): Promise<WWWItem> {
-  const res = await fetch(`/api/www/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || "Failed to update WWW item");
-  return data.data;
-}
-
-// ── Hooks ─────────────────────────────────────────────────────────────────────
-
-export function useWWWItems(filters: { search?: string; status?: string; sort?: string | null }) {
-  return useQuery({
-    queryKey: wwwKeys.list(filters),
-    queryFn: () => fetchWWWItems(filters),
-    staleTime: 1000 * 60 * 5,
-  });
-}
-
-export function useCreateWWW() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: Partial<WWWItem>) => createWWWItem(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: wwwKeys.lists() });
-    },
-  });
-}
-
-export function useUpdateWWW(id: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: Partial<WWWItem>) => updateWWWItem(id, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: wwwKeys.lists() });
-    },
-  });
-}
-
-export function useDeleteWWW() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/www/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Failed to delete WWW item");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: wwwKeys.lists() });
-    },
-  });
-}
+// Public API — preserves the existing call-site names so no consumer breaks.
+export const useWWWItems  = www.useList;
+export const useCreateWWW = www.useCreate;
+export const useUpdateWWW = www.useUpdate;
+export const useDeleteWWW = www.useDelete;

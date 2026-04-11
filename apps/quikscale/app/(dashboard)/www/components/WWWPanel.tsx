@@ -160,7 +160,7 @@ export function WWWPanel({ mode, item, onClose, onSuccess }: Props) {
               <select
                 value={form.who}
                 onChange={e => set("who", e.target.value)}
-                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white ${errors.who ? "border-red-400" : "border-gray-200"}`}
+                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.who ? "border-red-400" : "border-gray-200"}`}
               >
                 <option value="">Select person…</option>
                 {users.map(u => (
@@ -179,7 +179,7 @@ export function WWWPanel({ mode, item, onClose, onSuccess }: Props) {
                 type="date"
                 value={form.when}
                 onChange={e => set("when", e.target.value)}
-                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 ${errors.when ? "border-red-400" : "border-gray-200"}`}
+                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${errors.when ? "border-red-400" : "border-gray-200"}`}
               />
               {errors.when && <p className="text-[10px] text-red-500 mt-0.5">{errors.when}</p>}
             </div>
@@ -195,7 +195,7 @@ export function WWWPanel({ mode, item, onClose, onSuccess }: Props) {
               onChange={e => set("what", e.target.value)}
               rows={4}
               placeholder="Describe what needs to be done…"
-              className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none ${errors.what ? "border-red-400" : "border-gray-200"}`}
+              className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none ${errors.what ? "border-red-400" : "border-gray-200"}`}
             />
             {errors.what && <p className="text-[10px] text-red-500 mt-0.5">{errors.what}</p>}
           </div>
@@ -209,7 +209,7 @@ export function WWWPanel({ mode, item, onClose, onSuccess }: Props) {
               <select
                 value={form.status}
                 onChange={e => set("status", e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
               >
                 {STATUS_OPTIONS.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
@@ -222,7 +222,7 @@ export function WWWPanel({ mode, item, onClose, onSuccess }: Props) {
                 type="date"
                 value={form.revisedDate}
                 onChange={e => set("revisedDate", e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
               />
             </div>
           </div>
@@ -235,7 +235,7 @@ export function WWWPanel({ mode, item, onClose, onSuccess }: Props) {
               onChange={e => set("notes", e.target.value)}
               rows={2}
               placeholder="Additional notes…"
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none"
             />
           </div>
         </div>

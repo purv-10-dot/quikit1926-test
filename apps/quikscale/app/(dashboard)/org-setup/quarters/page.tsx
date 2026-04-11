@@ -25,7 +25,7 @@ interface QuarterRow {
 const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
 
 const QUARTER_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  Q1: { bg: "bg-blue-50",   text: "text-blue-700",   dot: "bg-blue-500"   },
+  Q1: { bg: "bg-accent-50",   text: "text-accent-700",   dot: "bg-accent-500"   },
   Q2: { bg: "bg-purple-50", text: "text-purple-700", dot: "bg-purple-500" },
   Q3: { bg: "bg-amber-50",  text: "text-amber-700",  dot: "bg-amber-500"  },
   Q4: { bg: "bg-green-50",  text: "text-green-700",  dot: "bg-green-500"  },
@@ -151,7 +151,7 @@ function EditPanel({
               type="date"
               value={startDate}
               onChange={e => { setStartDate(e.target.value); setError(""); }}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
             />
           </div>
 
@@ -361,7 +361,7 @@ function GenerateModal({
             type="date"
             value={startDate}
             onChange={e => { setStartDate(e.target.value); setError(""); }}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
           />
         </div>
 
@@ -558,7 +558,7 @@ export default function QuarterSettingsPage() {
                 type="checkbox"
                 checked={filtered.length > 0 && selectedIds.size === filtered.length}
                 onChange={toggleAll}
-                className="rounded border-gray-300 text-blue-600 cursor-pointer"
+                className="rounded border-gray-300 text-accent-600 cursor-pointer"
               />
             </th>
             <th className="text-left text-xs font-semibold text-gray-500 bg-gray-50 border-b border-r border-gray-200 px-3 py-2 w-14">ID</th>
@@ -586,7 +586,7 @@ export default function QuarterSettingsPage() {
             return (
             <tr
               key={row.id}
-              className={`group transition-colors ${isQ1 ? "hover:bg-blue-50/30 cursor-pointer" : ""} ${selectedIds.has(row.id) ? "bg-blue-50/60" : ""}`}
+              className={`group transition-colors ${isQ1 ? "hover:bg-accent-50/30 cursor-pointer" : ""} ${selectedIds.has(row.id) ? "bg-accent-50/60" : ""}`}
               onClick={() => { if (isQ1) { setEditRow(row); setPanelOpen(true); } }}
             >
               <td className="px-2 py-2 border-b border-r border-gray-100" onClick={e => e.stopPropagation()}>
@@ -594,10 +594,10 @@ export default function QuarterSettingsPage() {
                   type="checkbox"
                   checked={selectedIds.has(row.id)}
                   onChange={() => toggleSelect(row.id)}
-                  className="rounded border-gray-300 text-blue-600 cursor-pointer"
+                  className="rounded border-gray-300 text-accent-600 cursor-pointer"
                 />
               </td>
-              <td className="px-3 py-2 border-b border-r border-gray-100 text-xs font-semibold text-blue-600">{idx + 1}</td>
+              <td className="px-3 py-2 border-b border-r border-gray-100 text-xs font-semibold text-accent-600">{idx + 1}</td>
               <td className="px-3 py-2 border-b border-r border-gray-100"><QuarterBadge quarter={row.quarter} /></td>
               <td className="px-3 py-2 border-b border-r border-gray-100 text-xs text-gray-700">{fmtDate(row.startDate)}</td>
               <td className="px-3 py-2 border-b border-r border-gray-100 text-xs text-gray-700">{fmtDate(row.endDate)}</td>
@@ -606,7 +606,7 @@ export default function QuarterSettingsPage() {
                   {isQ1 && (
                   <button
                     onClick={() => { setEditRow(row); setPanelOpen(true); }}
-                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -638,8 +638,8 @@ export default function QuarterSettingsPage() {
             {filtered.length} item{filtered.length !== 1 ? "s" : ""}
           </span>
           {currentQW && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium border border-blue-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 inline-block" />
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent-50 text-accent-600 text-xs font-medium border border-accent-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent-500 inline-block" />
               Quarter: {currentQW.quarter} • Week {currentQW.week}
             </span>
           )}
@@ -667,7 +667,7 @@ export default function QuarterSettingsPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search..."
-            className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 w-44"
+            className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
           />
         </div>
 
@@ -675,22 +675,22 @@ export default function QuarterSettingsPage() {
         <div ref={filterRef} className="relative">
           <button
             onClick={() => setFilterOpen(o => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg ${activeFilters > 0 ? "border-blue-300 bg-blue-50 text-blue-600" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg ${activeFilters > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
           >
             <Filter className="h-3.5 w-3.5" />
-            {activeFilters > 0 && <span className="bg-blue-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{activeFilters}</span>}
+            {activeFilters > 0 && <span className="bg-accent-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{activeFilters}</span>}
           </button>
           {filterOpen && (
             <div className="absolute right-0 top-full mt-2 z-40 bg-white border border-gray-200 rounded-xl shadow-lg p-3 w-44">
               <p className="text-xs font-semibold text-gray-700 mb-2">Quarter</p>
               <div className="space-y-1">
                 <button onClick={() => setFilterQ("")}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${!filterQ ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${!filterQ ? "bg-accent-50 text-accent-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
                   All
                 </button>
                 {QUARTERS.map(q => (
                   <button key={q} onClick={() => { setFilterQ(q); setFilterOpen(false); }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${filterQ === q ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${filterQ === q ? "bg-accent-50 text-accent-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
                     {q}
                   </button>
                 ))}
@@ -705,7 +705,7 @@ export default function QuarterSettingsPage() {
             onClick={() => setYearOpen(o => !o)}
             className="flex items-center gap-2 px-3 py-1.5 text-xs border border-gray-300 bg-white rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
           >
-            <Calendar className="h-3.5 w-3.5 text-blue-500" />
+            <Calendar className="h-3.5 w-3.5 text-accent-500" />
             {fyLabel}
             <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
           </button>
@@ -715,7 +715,7 @@ export default function QuarterSettingsPage() {
                 <p className="px-3 py-2 text-xs text-gray-400">No years yet.</p>
               ) : allYears.map(y => (
                 <button key={y} onClick={() => handleYearChange(y)}
-                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${selectedYear === y ? "text-blue-600 font-semibold bg-blue-50" : "text-gray-700"}`}>
+                  className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 ${selectedYear === y ? "text-accent-600 font-semibold bg-accent-50" : "text-gray-700"}`}>
                   FY {y}-{String(y + 1).slice(-2)}
                 </button>
               ))}
@@ -735,7 +735,7 @@ export default function QuarterSettingsPage() {
                 onClick={() => { setGenerateOpen(true); setMoreOpen(false); }}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
               >
-                <Plus className="h-3.5 w-3.5 text-blue-500" /> Initialize Quarters
+                <Plus className="h-3.5 w-3.5 text-accent-500" /> Initialize Quarters
               </button>
             </div>
           )}

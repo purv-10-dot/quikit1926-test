@@ -6,6 +6,8 @@ import { getTenantId } from "@/lib/api/getTenantId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createPrioritySchema } from "@/lib/schemas/prioritySchema";
+import { writeAuditLog } from "@/lib/api/auditLog";
+import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
 const PRIORITY_SELECT = {
   id: true,
@@ -94,6 +96,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
     }
 
+    const rl = rateLimit({
+      routeKey: "priority:create",
+      clientKey: `${tenantId}:${session.user.id}`,
+      limit: LIMITS.mutation.limit,
+      windowMs: LIMITS.mutation.windowMs,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Try again shortly." },
+        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+      );
+    }
+
     const body = await request.json();
     const parsed = createPrioritySchema.safeParse(body);
     if (!parsed.success) {
@@ -117,6 +132,15 @@ export async function POST(request: NextRequest) {
         createdBy: session.user.id,
       },
       select: PRIORITY_SELECT,
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      action: "CREATE",
+      entityType: "Priority",
+      entityId: priority.id,
+      newValues: priority,
     });
 
     return NextResponse.json({ success: true, data: priority }, { status: 201 });

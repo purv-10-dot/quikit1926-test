@@ -206,7 +206,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
               <tr>
                 <td colSpan={3 + visibleStaticCols.length + visibleWeekCols.length}
                   className="px-6 py-12 text-center text-gray-400">
-                  No KPIs found. Click <strong>+ Add New</strong> to create one.
+                  No KPIs found. Click <strong>Add KPI</strong> to create one.
                 </td>
               </tr>
             ) : kpis.map((kpi, idx) => {
@@ -244,7 +244,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     <td className="sticky z-[15] bg-white px-1 py-2 border-b border-r border-gray-100 text-center"
                       style={{ left: (hideCheckbox ? 0 : 40) + (hideLog ? 0 : 40), width: 40, minWidth: 40, maxWidth: 40 }}>
                       <button onClick={() => openEdit(kpi)} disabled={readOnly}
-                        className={`font-medium ${readOnly ? "text-gray-400 cursor-not-allowed" : "text-blue-500 hover:underline"}`}>
+                        className={`font-medium ${readOnly ? "text-gray-400 cursor-not-allowed" : "text-gray-900 hover:underline"}`}>
                         {idx + 1 + (page - 1) * pageSize}
                       </button>
                     </td>

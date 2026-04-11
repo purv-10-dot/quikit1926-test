@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { updatePrioritySchema } from "@/lib/schemas/prioritySchema";
+import { writeAuditLog } from "@/lib/api/auditLog";
 
 
 const PRIORITY_SELECT = {
@@ -92,6 +93,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       select: PRIORITY_SELECT,
     });
 
+    await writeAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      action: "UPDATE",
+      entityType: "Priority",
+      entityId: params.id,
+      newValues: updated,
+    });
+
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update priority") }, { status: 500 });
@@ -114,6 +124,15 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     await db.priority.update({
       where: { id: params.id },
       data: { deletedAt: new Date(), updatedBy: session.user.id },
+    });
+
+    await writeAuditLog({
+      tenantId,
+      actorId: session.user.id,
+      action: "DELETE",
+      entityType: "Priority",
+      entityId: params.id,
+      oldValues: existing,
     });
 
     return NextResponse.json({ success: true, message: "Priority deleted successfully" });

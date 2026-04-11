@@ -1,35 +1,42 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { authOptions } from "@/lib/auth";
-import { getTenantId } from "@/lib/api/getTenantId";
-import { toErrorMessage } from "@/lib/api/errors";
 import { updateWWWSchema } from "@/lib/schemas/wwwSchema";
+import { writeAuditLog } from "@/lib/api/auditLog";
+import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
-
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
-
+export const PUT = withTenantAuth<{ id: string }>(
+  async ({ tenantId, userId }, request, { params }) => {
     const existing = await db.wWWItem.findFirst({
-      where: { id: params.id, deletedAt: null },
-      select: { tenantId: true },
+      where: { id: params.id, tenantId, deletedAt: null },
+      select: { id: true },
     });
-    if (!existing) return NextResponse.json({ success: false, error: "WWW item not found" }, { status: 404 });
-    if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "WWW item not found" },
+        { status: 404 },
+      );
+    }
 
     const parsed = updateWWWSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-        { status: 400 }
+        {
+          success: false,
+          error: parsed.error.errors[0]?.message ?? "Invalid input",
+        },
+        { status: 400 },
       );
     }
-    const { who, what, when, status, notes, category, originalDueDate, revisedDates } = parsed.data;
+    const {
+      who,
+      what,
+      when,
+      status,
+      notes,
+      category,
+      originalDueDate,
+      revisedDates,
+    } = parsed.data;
 
     const updated = await db.wWWItem.update({
       where: { id: params.id },
@@ -40,13 +47,17 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         status: status ?? undefined,
         notes: notes !== undefined ? notes : undefined,
         category: category !== undefined ? category : undefined,
-        originalDueDate: originalDueDate !== undefined ? (originalDueDate ? new Date(originalDueDate) : null) : undefined,
+        originalDueDate:
+          originalDueDate !== undefined
+            ? originalDueDate
+              ? new Date(originalDueDate)
+              : null
+            : undefined,
         revisedDates: revisedDates ?? undefined,
-        updatedBy: session.user.id,
+        updatedBy: userId,
       },
     });
 
-    // Attach who_user
     const whoUser = await db.user.findUnique({
       where: { id: updated.who },
       select: { id: true, firstName: true, lastName: true },
@@ -61,32 +72,51 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       who_user: whoUser ?? null,
     };
 
+    await writeAuditLog({
+      tenantId,
+      actorId: userId,
+      action: "UPDATE",
+      entityType: "WWWItem",
+      entityId: params.id,
+      newValues: updated,
+    });
+
     return NextResponse.json({ success: true, data: result });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update WWW item") }, { status: 500 });
-  }
-}
+  },
+  { fallbackErrorMessage: "Failed to update WWW item" },
+);
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
-
-    const existing = await db.wWWItem.findUnique({ where: { id: params.id }, select: { tenantId: true } });
-    if (!existing) return NextResponse.json({ success: false, error: "WWW item not found" }, { status: 404 });
-    if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+export const DELETE = withTenantAuth<{ id: string }>(
+  async ({ tenantId, userId }, _request, { params }) => {
+    const existing = await db.wWWItem.findFirst({
+      where: { id: params.id, tenantId },
+      select: { id: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "WWW item not found" },
+        { status: 404 },
+      );
+    }
 
     // Soft delete
     await db.wWWItem.update({
       where: { id: params.id },
-      data: { deletedAt: new Date(), updatedBy: session.user.id },
+      data: { deletedAt: new Date(), updatedBy: userId },
     });
 
-    return NextResponse.json({ success: true, message: "WWW item deleted successfully" });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete WWW item") }, { status: 500 });
-  }
-}
+    await writeAuditLog({
+      tenantId,
+      actorId: userId,
+      action: "DELETE",
+      entityType: "WWWItem",
+      entityId: params.id,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "WWW item deleted successfully",
+    });
+  },
+  { fallbackErrorMessage: "Failed to delete WWW item" },
+);
