@@ -472,7 +472,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                       }}>
                       <button
                         onClick={() => setEditItem(item)}
-                        className="text-blue-500 hover:text-blue-700 font-medium text-xs transition-colors"
+                        className="text-gray-900 hover:underline font-medium text-xs transition-colors"
                       >
                         {rowIdx + 1}
                       </button>

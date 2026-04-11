@@ -47,7 +47,7 @@ function diffObjects(oldJson: string | null | undefined, newJson: string | null 
 
 const ACTION_STYLES: Record<string, string> = {
   CREATE: "bg-green-100 text-green-700",
-  UPDATE: "bg-blue-100 text-blue-700",
+  UPDATE: "bg-accent-100 text-accent-700",
   DELETE: "bg-red-100 text-red-600",
 };
 

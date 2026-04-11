@@ -1,55 +1,55 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+/**
+ * Priority data hooks.
+ *
+ * Built on `createCRUDHook` for the standard CRUD ops. The custom
+ * `useUpdateWeeklyStatus` hook stays inline because it hits a sub-path
+ * (`/api/priority/:id/weekly`) that doesn't fit the CRUD factory shape.
+ */
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
+import { createCRUDHook } from "./createCRUDHook";
 
-// ── Query Keys ────────────────────────────────────────────────────────────────
+export interface PriorityFilters {
+  year: number;
+  quarter: string;
+  sort?: string | null;
+}
 
-const priorityKeys = {
-  all: ["priority"] as const,
-  lists: () => [...priorityKeys.all, "list"] as const,
-  list: (year: number, quarter: string, sort?: string | null) =>
-    [...priorityKeys.lists(), { year, quarter, sort }] as const,
-  details: () => [...priorityKeys.all, "detail"] as const,
-  detail: (id: string) => [...priorityKeys.details(), id] as const,
-};
-
-// ── Fetch helpers ─────────────────────────────────────────────────────────────
-
-async function fetchPriorities(year: number, quarter: string, sort?: string | null): Promise<PriorityRow[]> {
-  const params = new URLSearchParams({ year: String(year), quarter });
-  if (sort) {
-    const [sortBy, sortOrder] = sort.split(":");
+function buildListUrl(filters: PriorityFilters): string {
+  const params = new URLSearchParams({
+    year: String(filters.year),
+    quarter: filters.quarter,
+  });
+  if (filters.sort) {
+    const [sortBy, sortOrder] = filters.sort.split(":");
     if (sortBy) params.set("sortBy", sortBy);
     if (sortOrder) params.set("sortOrder", sortOrder);
   }
-  const res = await fetch(`/api/priority?${params.toString()}`);
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || "Failed to fetch priorities");
-  return data.data;
+  return `/api/priority?${params.toString()}`;
 }
 
-async function createPriority(body: Partial<PriorityRow>): Promise<PriorityRow> {
-  const res = await fetch("/api/priority", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || "Failed to create priority");
-  return data.data;
+const priority = createCRUDHook<PriorityRow, PriorityFilters>({
+  resource: "priority",
+  listUrl: buildListUrl,
+});
+
+// Public API — preserves the existing positional-argument signature for
+// `usePriorities(year, quarter, sort?)` so call sites don't need to change.
+export function usePriorities(year: number, quarter: string, sort?: string | null) {
+  return priority.useList({ year, quarter, sort });
 }
 
-async function updatePriority(id: string, body: Partial<PriorityRow>): Promise<PriorityRow> {
-  const res = await fetch(`/api/priority/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error || "Failed to update priority");
-  return data.data;
-}
+export const useCreatePriority = priority.useCreate;
+export const useUpdatePriority = priority.useUpdate;
+export const useDeletePriority = priority.useDelete;
+
+// ── Custom sub-resource: weekly status ─────────────────────────────────────
+//
+// Updates /api/priority/:id/weekly — doesn't fit the CRUD factory shape
+// because it's a child resource under the priority, not a variant of the
+// main priority record.
 
 async function updateWeeklyStatus(
   priorityId: string,
@@ -65,59 +65,14 @@ async function updateWeeklyStatus(
   return data.data;
 }
 
-// ── Hooks ─────────────────────────────────────────────────────────────────────
-
-export function usePriorities(year: number, quarter: string, sort?: string | null) {
-  return useQuery({
-    queryKey: priorityKeys.list(year, quarter, sort),
-    queryFn: () => fetchPriorities(year, quarter, sort),
-    staleTime: 1000 * 60 * 5,
-  });
-}
-
-export function useCreatePriority() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: Partial<PriorityRow>) => createPriority(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: priorityKeys.lists() });
-    },
-  });
-}
-
-export function useUpdatePriority(id: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: Partial<PriorityRow>) => updatePriority(id, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: priorityKeys.detail(id) });
-      queryClient.invalidateQueries({ queryKey: priorityKeys.lists() });
-    },
-  });
-}
-
 export function useUpdateWeeklyStatus(priorityId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: { weekNumber: number; status: string; notes?: string }) =>
       updateWeeklyStatus(priorityId, body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: priorityKeys.detail(priorityId) });
-      queryClient.invalidateQueries({ queryKey: priorityKeys.lists() });
-    },
-  });
-}
-
-export function useDeletePriority() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/priority/${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Failed to delete priority");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: priorityKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: priority.keys.detail(priorityId) });
+      queryClient.invalidateQueries({ queryKey: priority.keys.lists() });
     },
   });
 }

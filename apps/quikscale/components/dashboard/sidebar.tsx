@@ -180,7 +180,7 @@ interface SidebarContentProps {
 }
 function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarContentProps) {
   return (
-    <div className="h-full flex flex-col bg-accent-800 overflow-hidden">
+    <div className="w-full h-full flex flex-col bg-accent-800 overflow-hidden">
       {/* Logo + collapse toggle */}
       <div className={cn(
         "flex items-center border-b border-white/10 flex-shrink-0",

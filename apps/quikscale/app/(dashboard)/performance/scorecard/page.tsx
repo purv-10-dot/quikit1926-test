@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { BarChart2, TrendingUp, CheckSquare, Users, AlertTriangle, Activity } from "lucide-react";
+import { useScorecard } from "@/lib/hooks/usePerformance";
 
 function scoreColor(score: number | null) {
   if (score === null) return { text: "text-gray-400", bg: "bg-gray-100", label: "—" };
@@ -32,23 +32,10 @@ function Skeleton() {
 }
 
 export default function ScorecardPage() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useScorecard();
 
-  useEffect(() => {
-    fetch("/api/performance/scorecard")
-      .then(r => r.json())
-      .then(j => {
-        if (j.success) setData(j.data);
-        else setError(j.error);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <Skeleton />;
-  if (error) return <div className="p-6 text-xs text-red-600">Error: {error}</div>;
+  if (isLoading) return <Skeleton />;
+  if (error) return <div className="p-6 text-xs text-red-600">Error: {(error as Error).message}</div>;
   if (!data) return null;
 
   const kpiTotal = data.kpi.total || 1;
@@ -68,7 +55,7 @@ export default function ScorecardPage() {
       label: "KPI Attainment",
       value: data.kpi.attainment,
       icon: TrendingUp,
-      border: "border-blue-400",
+      border: "border-accent-400",
       sub: `${data.kpi.onTrack} of ${data.kpi.total} on track`,
     },
     {

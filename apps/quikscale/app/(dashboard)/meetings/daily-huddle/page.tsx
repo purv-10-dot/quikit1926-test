@@ -107,7 +107,7 @@ function TimeBadge({ time }: { time: string | null }) {
 function CallStatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     Held:        "bg-green-100 text-green-700",
-    Scheduled:   "bg-blue-100 text-blue-700",
+    Scheduled:   "bg-accent-100 text-accent-700",
     Cancelled:   "bg-red-100 text-red-600",
     Rescheduled: "bg-amber-100 text-amber-700",
   };
@@ -163,7 +163,7 @@ function LogTooltip({ item }: { item: DailyHuddle }) {
         ref={ref}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={() => setShow(false)}
-        className="text-gray-400 hover:text-blue-500 transition-colors"
+        className="text-gray-400 hover:text-accent-500 transition-colors"
       >
         <History className="h-3.5 w-3.5" />
       </button>
@@ -290,7 +290,7 @@ function UserSelect({ value, onChange, placeholder = "Select member" }: {
       <button
         type="button"
         onClick={() => { setOpen(o => !o); setSearch(""); }}
-        className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-accent-400"
       >
         <span className={value ? "text-gray-700 truncate" : "text-gray-400"}>{value || placeholder}</span>
         <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0 ml-2" />
@@ -303,7 +303,7 @@ function UserSelect({ value, onChange, placeholder = "Select member" }: {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search…"
-              className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="w-full text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-400"
             />
           </div>
           <div className="max-h-48 overflow-y-auto pb-1">
@@ -326,9 +326,9 @@ function UserSelect({ value, onChange, placeholder = "Select member" }: {
                   key={u.id}
                   type="button"
                   onClick={() => { onChange(fullName); setOpen(false); }}
-                  className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${value === fullName ? "bg-blue-50" : ""}`}
+                  className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${value === fullName ? "bg-accent-50" : ""}`}
                 >
-                  <span className={`block text-sm ${value === fullName ? "text-blue-600 font-medium" : "text-gray-700"}`}>{fullName}</span>
+                  <span className={`block text-sm ${value === fullName ? "text-accent-600 font-medium" : "text-gray-700"}`}>{fullName}</span>
                   <span className="block text-[10px] text-gray-400">{u.email}</span>
                 </button>
               );
@@ -443,7 +443,7 @@ function HuddlePanel({
                 type="date"
                 value={form.meetingDate}
                 onChange={e => set("meetingDate", e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
               />
             </div>
             <div>
@@ -452,7 +452,7 @@ function HuddlePanel({
                 <select
                   value={form.callStatus}
                   onChange={e => set("callStatus", e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white appearance-none pr-8"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400 bg-white appearance-none pr-8"
                 >
                   <option value="">Select status</option>
                   {CALL_STATUS_OPTIONS.map(s => (
@@ -473,7 +473,7 @@ function HuddlePanel({
                 value={form.clientName}
                 onChange={e => set("clientName", e.target.value)}
                 placeholder="Enter client name"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder-gray-400"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400"
               />
             </div>
             <div>
@@ -494,7 +494,7 @@ function HuddlePanel({
                 type="time"
                 value={form.actualStartTime}
                 onChange={e => set("actualStartTime", e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
               />
             </div>
             <div>
@@ -503,7 +503,7 @@ function HuddlePanel({
                 type="time"
                 value={form.actualEndTime}
                 onChange={e => set("actualEndTime", e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
               />
             </div>
           </div>
@@ -688,7 +688,7 @@ export default function DailyHuddlePage() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search…"
-              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 w-44"
+              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
 
@@ -698,14 +698,14 @@ export default function DailyHuddlePage() {
               onClick={() => setShowFilter(o => !o)}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg ${
                 activeFilterCount > 0
-                  ? "border-blue-300 bg-blue-50 text-blue-600"
+                  ? "border-accent-300 bg-accent-50 text-accent-600"
                   : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
               }`}
             >
               <Filter className="h-3.5 w-3.5" />
               Filter
               {activeFilterCount > 0 && (
-                <span className="ml-1 bg-blue-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                <span className="ml-1 bg-accent-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
                   {activeFilterCount}
                 </span>
               )}
@@ -716,13 +716,13 @@ export default function DailyHuddlePage() {
                 <div className="space-y-1">
                   <button
                     onClick={() => { setFilterStatus(""); setShowFilter(false); }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${!filterStatus ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${!filterStatus ? "bg-accent-50 text-accent-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
                   >
                     All
                   </button>
                   {CALL_STATUS_OPTIONS.map(s => (
                     <button key={s} onClick={() => { setFilterStatus(s); setShowFilter(false); }}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${filterStatus === s ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${filterStatus === s ? "bg-accent-50 text-accent-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}
                     >
                       {s}
                     </button>
@@ -753,7 +753,7 @@ export default function DailyHuddlePage() {
                   type="checkbox"
                   checked={filtered.length > 0 && selectedIds.size === filtered.length}
                   onChange={toggleAll}
-                  className="rounded border-gray-300 text-blue-600 cursor-pointer"
+                  className="rounded border-gray-300 text-accent-600 cursor-pointer"
                 />
               </th>
               {/* Log */}
@@ -810,7 +810,7 @@ export default function DailyHuddlePage() {
                 <tr
                   key={item.id}
                   onClick={() => openEdit(item)}
-                  className={`cursor-pointer transition-colors hover:bg-blue-50/40 ${selectedIds.has(item.id) ? "bg-blue-50" : ""}`}
+                  className={`cursor-pointer transition-colors hover:bg-accent-50/40 ${selectedIds.has(item.id) ? "bg-accent-50" : ""}`}
                 >
                   {/* Checkbox */}
                   <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
@@ -818,7 +818,7 @@ export default function DailyHuddlePage() {
                       type="checkbox"
                       checked={selectedIds.has(item.id)}
                       onChange={() => toggleSelect(item.id)}
-                      className="rounded border-gray-300 text-blue-600 cursor-pointer"
+                      className="rounded border-gray-300 text-accent-600 cursor-pointer"
                     />
                   </td>
                   {/* Log */}
@@ -827,7 +827,7 @@ export default function DailyHuddlePage() {
                   </td>
                   {/* ID */}
                   <td className="px-3 py-2.5 border-r border-gray-100">
-                    <span className="text-xs font-semibold text-blue-600">#{idx + 1}</span>
+                    <span className="text-xs font-semibold text-accent-600">#{idx + 1}</span>
                   </td>
                   {/* Meeting Date */}
                   <td className="px-3 py-2.5 border-r border-gray-100">

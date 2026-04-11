@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Search, Plus, Trash2, X, ChevronDown, Check } from "lucide-react";
 import { CURRENCIES } from "@/lib/utils/currency";
+import { AddButton } from "@/components/AddButton";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ function CurrencyPicker({ value, onChange }: { value: string; onChange: (v: stri
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        className="w-full flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent"
       >
         <span className="text-gray-700">
           {selected?.symbol ? <span className="font-medium mr-1">{selected.symbol}</span> : null}
@@ -104,7 +105,7 @@ function CurrencyPicker({ value, onChange }: { value: string; onChange: (v: stri
                   <span className="w-6 text-center text-gray-500 font-medium text-xs">{c.symbol || ""}</span>
                   <span className="font-medium text-gray-800 w-10">{c.code}</span>
                   <span className="text-gray-500 flex-1">- {c.name}</span>
-                  {value === c.code && <Check className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />}
+                  {value === c.code && <Check className="h-3.5 w-3.5 text-accent-500 flex-shrink-0" />}
                 </button>
               ))}
               {filtered.length === 0 && (
@@ -198,7 +199,7 @@ function CategoryPanel({
             <input
               value={form.name}
               onChange={e => set("name", e.target.value)}
-              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${errors.name ? "border-red-400" : "border-gray-300"}`}
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent ${errors.name ? "border-red-400" : "border-gray-300"}`}
             />
             {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
           </div>
@@ -211,7 +212,7 @@ function CategoryPanel({
             <select
               value={form.dataType}
               onChange={e => set("dataType", e.target.value)}
-              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white ${errors.dataType ? "border-red-400" : "border-gray-300"}`}
+              className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent bg-white ${errors.dataType ? "border-red-400" : "border-gray-300"}`}
             >
               <option value="">Select type…</option>
               {DATA_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -234,7 +235,7 @@ function CategoryPanel({
               value={form.description}
               onChange={e => set("description", e.target.value)}
               rows={3}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent resize-none"
             />
           </div>
 
@@ -351,14 +352,7 @@ export default function CategoryMgmtPage() {
               </button>
             )}
 
-            {/* Add New */}
-            <button
-              onClick={openAdd}
-              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800"
-            >
-              <Plus className="h-4 w-4" />
-              Add New
-            </button>
+            <AddButton onClick={openAdd}>Add Category</AddButton>
           </div>
         </div>
       </div>
@@ -368,7 +362,7 @@ export default function CategoryMgmtPage() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-blue-50 border-b border-gray-200">
+              <tr className="bg-accent-50 border-b border-gray-200">
                 <th className="w-10 px-3 py-3">
                   <input
                     type="checkbox"
@@ -393,7 +387,7 @@ export default function CategoryMgmtPage() {
               {!isLoading && items.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">
-                    No categories yet. Click <strong>Add New</strong> to create one.
+                    No categories yet. Click <strong>Add Category</strong> to create one.
                   </td>
                 </tr>
               )}
@@ -403,7 +397,7 @@ export default function CategoryMgmtPage() {
                 return (
                   <tr
                     key={item.id}
-                    className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${isChecked ? "bg-blue-50" : ""}`}
+                    className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${isChecked ? "bg-accent-50" : ""}`}
                     onClick={() => openEdit(item)}
                   >
                     <td className="w-10 px-3 py-3" onClick={e => { e.stopPropagation(); toggleOne(item.id); }}>
@@ -414,7 +408,7 @@ export default function CategoryMgmtPage() {
                         className="w-4 h-4 rounded border-gray-300 accent-blue-600"
                       />
                     </td>
-                    <td className="px-4 py-3 text-blue-600 font-semibold">{idx + 1}</td>
+                    <td className="px-4 py-3 text-accent-600 font-semibold">{idx + 1}</td>
                     <td className="px-4 py-3 font-medium text-gray-800">{item.name}</td>
                     <td className="px-4 py-3 text-gray-600">{item.dataType}</td>
                     <td className="px-4 py-3">

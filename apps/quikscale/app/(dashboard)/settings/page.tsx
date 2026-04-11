@@ -671,8 +671,8 @@ function ConfigurationsTab() {
         </div>
 
         {/* OPSP Review Threshold */}
-        <div className="border-2 border-blue-200 rounded-xl p-5 bg-[var(--color-bg-primary)]">
-          <h4 className="text-sm font-semibold text-blue-600 mb-3">Threshold days for OPSP review</h4>
+        <div className="border-2 border-accent-200 rounded-xl p-5 bg-[var(--color-bg-primary)]">
+          <h4 className="text-sm font-semibold text-accent-600 mb-3">Threshold days for OPSP review</h4>
           <label className="text-xs text-[var(--color-text-secondary)] block mb-1.5">Enter Review Finalize Value</label>
           <input
             type="number"
@@ -684,7 +684,7 @@ function ConfigurationsTab() {
           <button
             onClick={() => saveThreshold("opsp_review_threshold_days", opspReviewThreshold)}
             disabled={savingKey === "opsp_review_threshold_days"}
-            className="w-full py-2.5 rounded-lg text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 disabled:opacity-50 transition-colors"
+            className="w-full py-2.5 rounded-lg text-xs font-semibold text-white bg-accent-800 hover:bg-accent-900 disabled:opacity-50 transition-colors"
           >
             {savingKey === "opsp_review_threshold_days" ? "Saving..." : "Finalize Review OPSP"}
           </button>
@@ -713,7 +713,7 @@ function Toggle({ enabled, onChange, loading }: { enabled: boolean; onChange: ()
       onClick={onChange}
       disabled={loading}
       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-        enabled ? "bg-blue-600" : "bg-[var(--color-neutral-300)]"
+        enabled ? "bg-accent-600" : "bg-[var(--color-neutral-300)]"
       }`}
     >
       <span

@@ -33,3 +33,12 @@ jobs:
         run: npx turbo run test
         env:
           NODE_ENV: test
+
+      - name: Coverage (quikscale)
+        run: npx vitest run --coverage
+        working-directory: apps/quikscale
+        env:
+          NODE_ENV: test
+
+      - name: Coverage ratchet
+        run: node scripts/coverage-ratchet.mjs apps/quikscale/coverage/coverage-summary.json

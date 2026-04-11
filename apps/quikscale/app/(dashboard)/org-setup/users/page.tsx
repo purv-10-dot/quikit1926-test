@@ -47,7 +47,7 @@ const EMPTY_FORM: FormState = {
 
 const ROLES = [
   { value: "admin",   label: "Admin",   color: "bg-purple-100 text-purple-700" },
-  { value: "manager", label: "Manager", color: "bg-blue-100 text-blue-700"     },
+  { value: "manager", label: "Manager", color: "bg-accent-100 text-accent-700"     },
   { value: "member",  label: "Member",  color: "bg-gray-100 text-gray-600"     },
 ];
 
@@ -133,7 +133,7 @@ function TeamPicker({ selectedIds, teams, onChange }: {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
+        className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-accent-400 text-sm"
       >
         <div className="flex items-center gap-1.5 flex-wrap min-h-[20px]">
           {selectedIds.length === 0 ? (
@@ -142,12 +142,12 @@ function TeamPicker({ selectedIds, teams, onChange }: {
             selectedIds.map(id => {
               const t = teams.find(x => x.id === id);
               return t ? (
-                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-[11px] font-semibold rounded-full">
+                <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-accent-100 text-accent-700 text-[11px] font-semibold rounded-full">
                   {t.name}
                   <span
                     role="button"
                     onMouseDown={e => { e.stopPropagation(); toggle(id); }}
-                    className="cursor-pointer text-blue-400 hover:text-blue-700 leading-none"
+                    className="cursor-pointer text-accent-400 hover:text-accent-700 leading-none"
                   >×</span>
                 </span>
               ) : null;
@@ -168,14 +168,14 @@ function TeamPicker({ selectedIds, teams, onChange }: {
                 key={t.id}
                 type="button"
                 onClick={() => toggle(t.id)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 ${checked ? "bg-blue-50" : ""}`}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 ${checked ? "bg-accent-50" : ""}`}
               >
                 <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
-                  checked ? "bg-blue-600 border-blue-600" : "border-gray-300"
+                  checked ? "bg-accent-600 border-accent-600" : "border-gray-300"
                 }`}>
                   {checked && <Check className="h-2.5 w-2.5 text-white" />}
                 </span>
-                <span className={`text-sm ${checked ? "text-blue-700 font-medium" : "text-gray-700"}`}>{t.name}</span>
+                <span className={`text-sm ${checked ? "text-accent-700 font-medium" : "text-gray-700"}`}>{t.name}</span>
               </button>
             );
           })}
@@ -290,13 +290,13 @@ function UserPanel({
               <label className="text-xs font-medium text-gray-600 block mb-1.5">First Name <span className="text-red-400">*</span></label>
               <input type="text" value={form.firstName} onChange={e => set("firstName", e.target.value)}
                 placeholder="Jane"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder-gray-400" />
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400" />
             </div>
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1.5">Last Name <span className="text-red-400">*</span></label>
               <input type="text" value={form.lastName} onChange={e => set("lastName", e.target.value)}
                 placeholder="Smith"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder-gray-400" />
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400" />
             </div>
           </div>
 
@@ -305,7 +305,7 @@ function UserPanel({
             <label className="text-xs font-medium text-gray-600 block mb-1.5">Email Address <span className="text-red-400">*</span></label>
             <input type="email" value={form.email} onChange={e => set("email", e.target.value)}
               placeholder="jane@company.com"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder-gray-400" />
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400" />
           </div>
 
           {/* Password */}
@@ -315,7 +315,7 @@ function UserPanel({
             </label>
             <input type="password" value={form.password} onChange={e => set("password", e.target.value)}
               placeholder={editUser ? "Enter new password to change" : "Set a password"}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder-gray-400" />
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400" />
           </div>
 
           {/* Role */}
@@ -323,7 +323,7 @@ function UserPanel({
             <label className="text-xs font-medium text-gray-600 block mb-1.5">Role <span className="text-red-400">*</span></label>
             <div ref={roleRef} className="relative">
               <button type="button" onClick={() => setRoleOpen(o => !o)}
-                className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-accent-400">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${selectedRole.color}`}>
                   {selectedRole.label}
                 </span>
@@ -334,7 +334,7 @@ function UserPanel({
                   {ROLES.map(r => (
                     <button key={r.value} type="button"
                       onClick={() => { set("role", r.value); setRoleOpen(false); }}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 ${form.role === r.value ? "bg-blue-50" : ""}`}>
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 ${form.role === r.value ? "bg-accent-50" : ""}`}>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${r.color}`}>{r.label}</span>
                       {r.value === "admin"   && <span className="text-xs text-gray-400">Full access</span>}
                       {r.value === "manager" && <span className="text-xs text-gray-400">Manage team data</span>}
@@ -500,8 +500,8 @@ export default function OrgUsersPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
-            <Users className="h-4 w-4 text-blue-600" />
+          <div className="h-8 w-8 rounded-lg bg-accent-100 flex items-center justify-center">
+            <Users className="h-4 w-4 text-accent-600" />
           </div>
           <div>
             <h1 className="text-sm font-bold text-gray-900">Users</h1>
@@ -514,18 +514,18 @@ export default function OrgUsersPage() {
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search users…"
-              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 w-48" />
+              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 w-48" />
           </div>
 
           {/* Filter */}
           <div ref={filterRef} className="relative">
             <button onClick={() => setFilterOpen(o => !o)}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg ${
-                filterCount > 0 ? "border-blue-300 bg-blue-50 text-blue-600" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                filterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
               }`}>
               Filter
               {filterCount > 0 && (
-                <span className="ml-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{filterCount}</span>
+                <span className="ml-0.5 bg-accent-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{filterCount}</span>
               )}
             </button>
             {filterOpen && (
@@ -535,7 +535,7 @@ export default function OrgUsersPage() {
                   <div className="space-y-1">
                     {[{ v: "", l: "All" }, { v: "active", l: "Active" }, { v: "inactive", l: "Inactive" }].map(({ v, l }) => (
                       <button key={v} onClick={() => setStatusFilter(v)}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${statusFilter === v ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${statusFilter === v ? "bg-accent-50 text-accent-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
                         {l}
                       </button>
                     ))}
@@ -545,12 +545,12 @@ export default function OrgUsersPage() {
                   <p className="text-xs font-semibold text-gray-700 mb-2">Role</p>
                   <div className="space-y-1">
                     <button onClick={() => setRoleFilter("")}
-                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${!roleFilter ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${!roleFilter ? "bg-accent-50 text-accent-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
                       All roles
                     </button>
                     {ROLES.map(r => (
                       <button key={r.value} onClick={() => setRoleFilter(r.value)}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${roleFilter === r.value ? "bg-blue-50 text-blue-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
+                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${roleFilter === r.value ? "bg-accent-50 text-accent-600 font-medium" : "text-gray-600 hover:bg-gray-50"}`}>
                         {r.label}
                       </button>
                     ))}
@@ -634,7 +634,7 @@ export default function OrgUsersPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => { setEditUser(u); setPanelOpen(true); }} title="Edit"
-                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50 transition-colors">
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       {u.status === "active" ? (
