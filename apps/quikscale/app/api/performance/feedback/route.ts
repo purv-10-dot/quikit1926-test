@@ -171,6 +171,30 @@ export const POST = withTenantAuth(
       },
     });
 
+    // Fire-and-forget: notify recipient via email (if Redis + Resend are configured)
+    try {
+      const { enqueue } = await import("@quikit/queue");
+      const recipient = await db.user.findUnique({
+        where: { id: input.toUserId },
+        select: { firstName: true, lastName: true, email: true },
+      });
+      const sender = await db.user.findUnique({
+        where: { id: userId },
+        select: { firstName: true, lastName: true },
+      });
+      if (recipient && sender) {
+        await enqueue("email:feedback-notification", {
+          tenantId,
+          recipientEmail: recipient.email,
+          recipientName: `${recipient.firstName} ${recipient.lastName}`,
+          senderName: `${sender.firstName} ${sender.lastName}`,
+          category: input.category,
+        });
+      }
+    } catch {
+      // Swallow — notification is best-effort, never blocks the response
+    }
+
     return NextResponse.json({ success: true, data: entry }, { status: 201 });
   },
   { fallbackErrorMessage: "Failed to create feedback" },
