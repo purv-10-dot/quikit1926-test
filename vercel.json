@@ -1,7 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm install",
-  "buildCommand": "npx prisma generate --schema=packages/database/prisma/schema.prisma && npx turbo run build --filter=quikscale",
-  "outputDirectory": "apps/quikscale/.next",
-  "framework": "nextjs"
-}
