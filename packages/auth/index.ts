@@ -133,3 +133,107 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
     },
   };
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OAuth Client Auth — for apps that authenticate via QuikIT as IdP
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Usage in apps/quikscale/lib/auth.ts:
+     import { createOAuthClientOptions } from "@quikit/auth";
+     export const authOptions = createOAuthClientOptions({
+       quikitUrl: process.env.QUIKIT_URL!,
+       clientId: process.env.QUIKIT_CLIENT_ID!,
+       clientSecret: process.env.QUIKIT_CLIENT_SECRET!,
+     });
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export interface OAuthClientConfig {
+  /** Base URL of the QuikIT gateway (e.g., "http://localhost:3000") */
+  quikitUrl: string;
+  /** OAuth client_id registered in QuikIT's OAuthClient table */
+  clientId: string;
+  /** OAuth client_secret (plain text — compared against bcrypt hash in QuikIT) */
+  clientSecret: string;
+  /** Page to redirect to if auth fails (defaults to quikitUrl + /login) */
+  errorPage?: string;
+}
+
+/**
+ * Creates NextAuth options for an app that authenticates via QuikIT's
+ * OAuth2/OIDC flow. The user never sees a login page on the app itself —
+ * they're redirected to QuikIT to authenticate, then redirected back
+ * with an authorization code that's exchanged for tokens.
+ */
+export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOptions {
+  const { quikitUrl, clientId, clientSecret } = config;
+
+  return {
+    providers: [
+      {
+        id: "quikit",
+        name: "QuikIT",
+        type: "oauth",
+        authorization: {
+          url: `${quikitUrl}/api/oauth/authorize`,
+          params: { scope: "openid profile email tenant" },
+        },
+        token: `${quikitUrl}/api/oauth/token`,
+        userinfo: `${quikitUrl}/api/oauth/userinfo`,
+        clientId,
+        clientSecret,
+        checks: ["state"],
+        profile(profile) {
+          return {
+            id: profile.sub,
+            email: profile.email,
+            name: profile.name,
+            tenantId: profile.tenant_id,
+            membershipRole: profile.role,
+          };
+        },
+      },
+    ],
+    pages: {
+      signIn: `${quikitUrl}/login`,
+      error: config.errorPage ?? `${quikitUrl}/login`,
+    },
+    session: {
+      strategy: "jwt",
+      maxAge: 7 * 24 * 60 * 60, // 7 days (shorter than IdP — refresh via OAuth)
+    },
+    jwt: {
+      secret: process.env.NEXTAUTH_SECRET,
+      maxAge: 7 * 24 * 60 * 60,
+    },
+    callbacks: {
+      async jwt({ token, user, account }) {
+        // On initial sign-in (after OAuth callback), populate token from user profile
+        if (user) {
+          token.id = user.id;
+          token.email = user.email;
+          token.tenantId = (user as any).tenantId;
+          token.membershipRole = (user as any).membershipRole;
+          token.isSuperAdmin = false; // Apps don't inherit super admin status
+        }
+        // Store the access_token + refresh_token from the OAuth exchange
+        if (account) {
+          token.accessToken = account.access_token;
+          token.refreshToken = account.refresh_token;
+          token.accessTokenExpires = Date.now() + (account.expires_in as number ?? 3600) * 1000;
+        }
+        return token;
+      },
+      async session({ session, token }) {
+        session.user = {
+          ...session.user,
+          id: token.id as string,
+          email: token.email as string,
+          tenantId: token.tenantId as string | undefined,
+          membershipRole: token.membershipRole as string | undefined,
+          isSuperAdmin: false,
+        };
+        return session;
+      },
+    },
+  };
+}
