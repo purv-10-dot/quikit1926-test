@@ -9,7 +9,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Pencil, Users, Layers, AppWindow, Plus, X } from "lucide-react";
+import { ArrowLeft, Building2, Pencil, Users, Layers, AppWindow, Plus } from "lucide-react";
+import { SlidePanel, EmptyState, Select } from "@quikit/ui";
 
 interface MemberInfo {
   id: string;
@@ -160,10 +161,7 @@ export default function OrgDetailPage() {
         <Link href="/organizations" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors mb-6">
           <ArrowLeft className="h-4 w-4" /> Organizations
         </Link>
-        <div className="text-center py-12">
-          <Building2 className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm text-gray-400">Organization not found.</p>
-        </div>
+        <EmptyState icon={Building2} message="Organization not found." />
       </div>
     );
   }
@@ -222,16 +220,16 @@ export default function OrgDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">Plan</label>
-                    <select
+                    <Select
+                      label="Plan"
                       value={editForm.plan}
                       onChange={(e) => setEditForm({ ...editForm, plan: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400"
-                    >
-                      {PLANS.map((p) => (
-                        <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-                      ))}
-                    </select>
+                      options={[
+                        { value: "startup", label: "Startup" },
+                        { value: "growth", label: "Growth" },
+                        { value: "enterprise", label: "Enterprise" },
+                      ]}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">Billing Email</label>
@@ -352,10 +350,7 @@ export default function OrgDetailPage() {
               </button>
             </div>
             {org.users.length === 0 ? (
-              <div className="text-center py-8">
-                <Users className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">No members yet.</p>
-              </div>
+              <EmptyState icon={Users} message="No members yet." />
             ) : (
               <table className="w-full text-sm">
                 <thead>
@@ -385,101 +380,93 @@ export default function OrgDetailPage() {
       </div>
 
       {/* Add Member slide-in panel */}
-      {addMemberOpen && (
-        <div className="fixed inset-0 z-[200] flex">
-          <div className="flex-1 bg-black/30" onClick={() => setAddMemberOpen(false)} />
-          <div className="w-[480px] bg-white h-full shadow-2xl flex flex-col">
-            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-              <div>
-                <h2 className="text-sm font-bold text-gray-900">Add Member</h2>
-                <p className="text-xs text-gray-500 mt-0.5">Invite a user to {org.name}</p>
-              </div>
-              <button onClick={() => setAddMemberOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="h-4 w-4" />
-              </button>
+      <SlidePanel
+        open={addMemberOpen}
+        onClose={() => setAddMemberOpen(false)}
+        title="Add Member"
+        subtitle={`Invite a user to ${org.name}`}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setAddMemberOpen(false)}
+              className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="add-member-form"
+              disabled={addingMember}
+              className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 transition-colors"
+            >
+              {addingMember ? "Adding..." : "Add Member"}
+            </button>
+          </div>
+        }
+      >
+        <form id="add-member-form" onSubmit={handleAddMember} className="space-y-5">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1.5">Email <span className="text-red-400">*</span></label>
+            <input
+              type="email"
+              required
+              placeholder="user@example.com"
+              value={memberForm.email}
+              onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">First Name <span className="text-red-400">*</span></label>
+              <input
+                required
+                placeholder="John"
+                value={memberForm.firstName}
+                onChange={(e) => setMemberForm({ ...memberForm, firstName: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
+              />
             </div>
-
-            <form onSubmit={handleAddMember} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-              <div>
-                <label className="text-xs font-medium text-gray-600 block mb-1.5">Email <span className="text-red-400">*</span></label>
-                <input
-                  type="email"
-                  required
-                  placeholder="user@example.com"
-                  value={memberForm.email}
-                  onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1.5">First Name <span className="text-red-400">*</span></label>
-                  <input
-                    required
-                    placeholder="John"
-                    value={memberForm.firstName}
-                    onChange={(e) => setMemberForm({ ...memberForm, firstName: e.target.value })}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-600 block mb-1.5">Last Name <span className="text-red-400">*</span></label>
-                  <input
-                    required
-                    placeholder="Doe"
-                    value={memberForm.lastName}
-                    onChange={(e) => setMemberForm({ ...memberForm, lastName: e.target.value })}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-600 block mb-1.5">Role <span className="text-red-400">*</span></label>
-                <select
-                  value={memberForm.role}
-                  onChange={(e) => setMemberForm({ ...memberForm, role: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
-                >
-                  <option value="owner">Owner</option>
-                  <option value="admin">Admin</option>
-                  <option value="member">Member</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-600 block mb-1.5">Password <span className="text-gray-400">(optional — auto-generated if empty)</span></label>
-                <input
-                  type="password"
-                  placeholder="Leave empty to auto-generate"
-                  value={memberForm.password}
-                  onChange={(e) => setMemberForm({ ...memberForm, password: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
-                />
-              </div>
-              {memberError && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{memberError}</p>
-              )}
-            </form>
-
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50">
-              <button
-                type="button"
-                onClick={() => setAddMemberOpen(false)}
-                className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={(e) => handleAddMember(e as unknown as React.FormEvent)}
-                disabled={addingMember}
-                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 transition-colors"
-              >
-                {addingMember ? "Adding..." : "Add Member"}
-              </button>
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Last Name <span className="text-red-400">*</span></label>
+              <input
+                required
+                placeholder="Doe"
+                value={memberForm.lastName}
+                onChange={(e) => setMemberForm({ ...memberForm, lastName: e.target.value })}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
+              />
             </div>
           </div>
-        </div>
-      )}
+          <div>
+            <Select
+              label="Role"
+              value={memberForm.role}
+              onChange={(e) => setMemberForm({ ...memberForm, role: e.target.value })}
+              options={[
+                { value: "owner", label: "Owner" },
+                { value: "admin", label: "Admin" },
+                { value: "member", label: "Member" },
+                { value: "viewer", label: "Viewer" },
+              ]}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1.5">Password <span className="text-gray-400">(optional — auto-generated if empty)</span></label>
+            <input
+              type="password"
+              placeholder="Leave empty to auto-generate"
+              value={memberForm.password}
+              onChange={(e) => setMemberForm({ ...memberForm, password: e.target.value })}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
+            />
+          </div>
+          {memberError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{memberError}</p>
+          )}
+        </form>
+      </SlidePanel>
     </div>
   );
 }

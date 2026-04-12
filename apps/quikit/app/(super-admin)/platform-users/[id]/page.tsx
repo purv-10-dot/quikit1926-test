@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Users, Shield, Building2, AppWindow } from "lucide-react";
+import { EmptyState } from "@quikit/ui";
 
 interface MembershipInfo {
   id: string;
@@ -111,10 +112,7 @@ export default function UserDetailPage() {
         <Link href="/platform-users" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors mb-6">
           <ArrowLeft className="h-4 w-4" /> Platform Users
         </Link>
-        <div className="text-center py-12">
-          <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm text-gray-400">User not found.</p>
-        </div>
+        <EmptyState icon={Users} message="User not found." />
       </div>
     );
   }
@@ -211,10 +209,7 @@ export default function UserDetailPage() {
               <span className="text-xs text-gray-400">{user.memberships.length} total</span>
             </div>
             {user.memberships.length === 0 ? (
-              <div className="text-center py-8">
-                <Building2 className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">No memberships.</p>
-              </div>
+              <EmptyState icon={Building2} message="No memberships." />
             ) : (
               <table className="w-full text-sm">
                 <thead>
@@ -259,10 +254,7 @@ export default function UserDetailPage() {
               <span className="text-xs text-gray-400">{user.appAccess.length} total</span>
             </div>
             {user.appAccess.length === 0 ? (
-              <div className="text-center py-8">
-                <AppWindow className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">No app access records.</p>
-              </div>
+              <EmptyState icon={AppWindow} message="No app access records." />
             ) : (
               <table className="w-full text-sm">
                 <thead>

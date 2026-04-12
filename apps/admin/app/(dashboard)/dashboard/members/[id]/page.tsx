@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, Select } from "@quikit/ui";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { ROLE_LABELS } from "@/lib/constants";
@@ -173,18 +173,20 @@ export default function MemberDetailPage() {
           <Card>
             <h3 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">Role</h3>
             <div className="flex items-center gap-3">
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="flex-1 h-10 px-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
-              >
-                <option value="employee">Employee</option>
-                <option value="coach">Coach</option>
-                <option value="manager">Manager</option>
-                <option value="executive">Executive</option>
-                <option value="admin">Admin</option>
-                <option value="super_admin">Super Admin</option>
-              </select>
+              <div className="flex-1">
+                <Select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  options={[
+                    { value: "employee", label: "Employee" },
+                    { value: "coach", label: "Coach" },
+                    { value: "manager", label: "Manager" },
+                    { value: "executive", label: "Executive" },
+                    { value: "admin", label: "Admin" },
+                    { value: "super_admin", label: "Super Admin" },
+                  ]}
+                />
+              </div>
               <Button
                 size="sm"
                 onClick={handleUpdateRole}

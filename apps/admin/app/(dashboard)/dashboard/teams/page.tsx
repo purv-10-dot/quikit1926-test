@@ -3,11 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, FilterPicker, Input, SlidePanel } from "@quikit/ui";
+import type { FilterOption } from "@quikit/ui";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { Modal } from "@/components/ui/modal";
-import { Input } from "@/components/ui/input";
 import {
   FolderTree,
   Plus,
@@ -172,74 +171,67 @@ export default function TeamsPage() {
         </div>
       )}
 
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Create Team">
-        <form onSubmit={handleCreate} className="space-y-4">
-          <Input
-            id="team-name"
-            label="Team Name"
-            placeholder="e.g. Engineering"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            required
-          />
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-[var(--color-text-primary)]">
-              Description
-            </label>
+      <SlidePanel
+        open={createOpen}
+        onClose={() => { setCreateOpen(false); setCreateError(""); }}
+        title="Create Team"
+        subtitle="Add a new team to the organization"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" onClick={() => setCreateOpen(false)} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100">Cancel</button>
+            <button type="submit" form="create-team-form" disabled={creating} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50">{creating ? "Creating..." : "Create Team"}</button>
+          </div>
+        }
+      >
+        <form id="create-team-form" onSubmit={handleCreate} className="space-y-5">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1.5">Team Name</label>
+            <input
+              id="team-name"
+              placeholder="e.g. Engineering"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              required
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1.5">Description</label>
             <textarea
               placeholder="What does this team do?"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
               rows={2}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)] resize-none"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400 resize-none"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-[var(--color-text-primary)]">
-                Color
-              </label>
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Color</label>
               <div className="flex items-center gap-2">
                 <input
                   type="color"
                   value={form.color}
                   onChange={(e) => setForm({ ...form, color: e.target.value })}
-                  className="h-10 w-10 rounded-lg border border-[var(--color-border)] cursor-pointer"
+                  className="h-10 w-10 rounded-lg border border-gray-200 cursor-pointer"
                 />
-                <span className="text-sm text-[var(--color-text-secondary)]">{form.color}</span>
+                <span className="text-sm text-gray-500">{form.color}</span>
               </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-[var(--color-text-primary)]">
-                Parent Team
-              </label>
-              <select
-                value={form.parentTeamId}
-                onChange={(e) => setForm({ ...form, parentTeamId: e.target.value })}
-                className="w-full h-10 px-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
-              >
-                <option value="">None (root team)</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Parent Team</label>
+              <FilterPicker
+                value={form.parentTeamId || ""}
+                onChange={(val) => setForm({ ...form, parentTeamId: val || "" })}
+                options={teams.map((t): FilterOption => ({ value: t.id, label: t.name }))}
+                allLabel="None (root team)"
+                placeholder="Select parent team"
+              />
             </div>
           </div>
-          {createError && (
-            <p className="text-sm text-[var(--color-danger)]">{createError}</p>
-          )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" type="button" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={creating}>
-              Create Team
-            </Button>
-          </div>
+          {createError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{createError}</p>}
         </form>
-      </Modal>
+      </SlidePanel>
     </div>
   );
 }
