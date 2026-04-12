@@ -132,3 +132,58 @@ export const LIMITS = {
 export function _resetDefaultStore(): void {
   (DEFAULT_STORE as MemoryRateLimitStore).reset();
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Phase 2: Redis-backed rate limiter (async)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   When REDIS_URL is set, `rateLimitAsync()` uses Redis INCR + EXPIRE for
+   true multi-instance rate limiting. Falls back to the synchronous in-memory
+   `rateLimit()` when Redis is unavailable.
+
+   Callers should prefer `rateLimitAsync()` — it auto-selects the best store.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+import { getRedis } from "@quikit/redis";
+
+/**
+ * Async rate limiter that uses Redis when available, in-memory when not.
+ *
+ * Drop-in replacement for `rateLimit()` — same options, same result shape,
+ * but returns a Promise. All existing route handlers already `await` their
+ * rate-limit checks, so switching is a one-line change per call site.
+ */
+export async function rateLimitAsync(
+  opts: Omit<RateLimitOptions, "store">,
+): Promise<RateLimitResult> {
+  const redis = getRedis();
+  if (!redis) {
+    // Fallback: synchronous in-memory (single-instance only)
+    return rateLimit(opts);
+  }
+
+  const { routeKey, clientKey, limit, windowMs } = opts;
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+  const resetAt = windowStart + windowMs;
+  const ttlSeconds = Math.ceil(windowMs / 1000);
+
+  const redisKey = `rl:${routeKey}|${clientKey}:${windowStart}`;
+
+  try {
+    const count = await redis.incr(redisKey);
+    if (count === 1) {
+      // First hit in this window — set TTL so the key auto-expires
+      await redis.expire(redisKey, ttlSeconds);
+    }
+
+    const remaining = Math.max(0, limit - count);
+    const ok = count <= limit;
+    const retryAfterSeconds = Math.max(0, Math.ceil((resetAt - now) / 1000));
+
+    return { ok, remaining, resetAt, retryAfterSeconds };
+  } catch {
+    // Redis error — fall back to in-memory so we don't block requests
+    return rateLimit(opts);
+  }
+}
