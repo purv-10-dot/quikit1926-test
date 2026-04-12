@@ -30,7 +30,7 @@ export async function GET() {
       select: { tenantId: true },
       orderBy: { createdAt: "asc" },
     });
-    tenantId = membership?.tenantId ?? null;
+    tenantId = membership?.tenantId ?? undefined;
   }
 
   // Get all active apps
