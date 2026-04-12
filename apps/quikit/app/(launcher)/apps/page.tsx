@@ -1,24 +1,20 @@
 "use client";
 
 /**
- * App Launcher — /apps
+ * App Launcher + Org Selector — /apps
  *
- * The central hub of QuikIT. Shows apps the user's org has access to
- * ("Installed") and apps available in the registry ("Available").
+ * Single combined page:
+ * 1. Top section: org selector (dropdown if multiple orgs, auto-selected if 1)
+ * 2. Bottom section: app grid (Installed / Available tabs)
  *
- * Each app card shows: icon, name, description, status, "Launch" button.
- * Clicking "Launch" initiates the OAuth flow → redirects to the app's
- * baseUrl with an auth code.
- *
- * Admin users see an "Enable" button on Available apps that creates
- * UserAppAccess records for their org.
+ * This replaces the separate /select-org page — everything in one view.
  */
 
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import {
   Rocket, Grid3X3, Search, ExternalLink, Plus,
-  CheckCircle2, Clock, Sparkles,
+  CheckCircle2, Clock, Sparkles, Building2, ChevronDown, Shield,
 } from "lucide-react";
 
 interface AppInfo {
@@ -33,6 +29,14 @@ interface AppInfo {
   role?: string;
 }
 
+interface OrgInfo {
+  tenantId: string;
+  name: string;
+  slug: string;
+  role: string;
+  plan: string;
+}
+
 type Tab = "installed" | "available";
 
 const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string }> = {
@@ -43,44 +47,80 @@ const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; co
 
 const ICON_FALLBACKS: Record<string, string> = {
   quikscale: "📊",
-  admin: "⚙️",
+  "admin-portal": "⚙️",
+  "super-admin-portal": "🛡️",
   quikhr: "👥",
   quikfinance: "💰",
   quiksales: "📈",
-  quikproject: "📋",
 };
 
 export default function AppLauncherPage() {
-  const { data: session } = useSession();
+  const { data: session, update } = useSession();
   const [tab, setTab] = useState<Tab>("installed");
   const [apps, setApps] = useState<AppInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [orgs, setOrgs] = useState<OrgInfo[]>([]);
+  const [selectedOrg, setSelectedOrg] = useState<OrgInfo | null>(null);
+  const [loadingApps, setLoadingApps] = useState(true);
+  const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [search, setSearch] = useState("");
+  const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
 
+  const isSuperAdmin = session?.user?.isSuperAdmin === true;
   const isAdmin =
     session?.user?.membershipRole === "admin" ||
-    session?.user?.membershipRole === "super_admin";
+    session?.user?.membershipRole === "super_admin" ||
+    selectedOrg?.role === "admin";
 
+  // Load orgs
   useEffect(() => {
-    fetch("/api/apps/launcher")
+    fetch("/api/org/memberships")
       .then((r) => r.json())
       .then((j) => {
-        if (j.success) setApps(j.data);
+        if (j.success) {
+          const active = j.data.filter((o: { status: string }) => o.status === "active");
+          setOrgs(active);
+          // Auto-select first org (or the one from session)
+          const sessionTenantId = session?.user?.tenantId;
+          const match = active.find((o: OrgInfo) => o.tenantId === sessionTenantId);
+          setSelectedOrg(match ?? active[0] ?? null);
+          // Update session if needed
+          if (active[0] && !sessionTenantId) {
+            selectOrgInSession(active[0].tenantId, active[0].role);
+          }
+        }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => setLoadingOrgs(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const installed = apps.filter((a) => a.installed);
-  const available = apps.filter((a) => !a.installed);
-  const displayed = tab === "installed" ? installed : available;
-  const filtered = search
-    ? displayed.filter(
-        (a) =>
-          a.name.toLowerCase().includes(search.toLowerCase()) ||
-          (a.description ?? "").toLowerCase().includes(search.toLowerCase()),
-      )
-    : displayed;
+  // Load apps whenever selectedOrg changes
+  useEffect(() => {
+    setLoadingApps(true);
+    fetch("/api/apps/launcher")
+      .then((r) => r.json())
+      .then((j) => { if (j.success) setApps(j.data); })
+      .catch(() => {})
+      .finally(() => setLoadingApps(false));
+  }, [selectedOrg?.tenantId]);
+
+  async function selectOrgInSession(tenantId: string, role: string) {
+    try {
+      await fetch("/api/org/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId }),
+      });
+      await update({ tenantId, membershipRole: role });
+    } catch {
+      // Session update is best-effort
+    }
+  }
+
+  async function switchOrg(org: OrgInfo) {
+    setSelectedOrg(org);
+    setOrgDropdownOpen(false);
+    await selectOrgInSession(org.tenantId, org.role);
+  }
 
   async function handleEnable(appId: string) {
     const res = await fetch("/api/apps/enable", {
@@ -97,32 +137,97 @@ export default function AppLauncherPage() {
   }
 
   function handleLaunch(app: AppInfo) {
-    // Initiate OAuth flow by redirecting to the app's baseUrl
-    // The app's middleware will detect no session and redirect to
-    // QuikIT's /api/oauth/authorize, which handles the code exchange
     window.location.href = app.baseUrl;
   }
+
+  const installed = apps.filter((a) => a.installed);
+  const available = apps.filter((a) => !a.installed);
+  const displayed = tab === "installed" ? installed : available;
+  const filtered = search
+    ? displayed.filter(
+        (a) =>
+          a.name.toLowerCase().includes(search.toLowerCase()) ||
+          (a.description ?? "").toLowerCase().includes(search.toLowerCase()),
+      )
+    : displayed;
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between mb-6">
+        <div className="max-w-7xl mx-auto px-6 py-5">
+          <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white">
-                <Grid3X3 className="h-5 w-5" />
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                Q
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">QuikIT Apps</h1>
-                <p className="text-sm text-gray-500">
+                <h1 className="text-lg font-bold text-gray-900">QuikIT</h1>
+                <p className="text-xs text-gray-500">
                   {session?.user?.name
-                    ? `Welcome back, ${session.user.name.split(" ")[0]}`
-                    : "Your app dashboard"}
+                    ? `Welcome, ${session.user.name.split(" ")[0]}`
+                    : "Your platform"}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
+              {/* Org Selector */}
+              {orgs.length > 0 && (
+                <div className="relative">
+                  <button
+                    onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white hover:bg-gray-50 transition-colors"
+                  >
+                    <Building2 className="h-4 w-4 text-gray-500" />
+                    <span className="font-medium text-gray-700">
+                      {selectedOrg?.name ?? "Select org"}
+                    </span>
+                    {selectedOrg && (
+                      <span className="text-[10px] text-gray-400 uppercase">
+                        {selectedOrg.role}
+                      </span>
+                    )}
+                    <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                  </button>
+                  {orgDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setOrgDropdownOpen(false)} />
+                      <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg w-64 py-1">
+                        {orgs.map((org) => (
+                          <button
+                            key={org.tenantId}
+                            onClick={() => switchOrg(org)}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors ${
+                              selectedOrg?.tenantId === org.tenantId ? "bg-indigo-50" : ""
+                            }`}
+                          >
+                            <Building2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-gray-900 truncate">{org.name}</p>
+                              <p className="text-[10px] text-gray-500 uppercase">{org.role} · {org.plan}</p>
+                            </div>
+                            {selectedOrg?.tenantId === org.tenantId && (
+                              <CheckCircle2 className="h-4 w-4 text-indigo-600 flex-shrink-0" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Super Admin link */}
+              {isSuperAdmin && (
+                <a
+                  href="/organizations"
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors"
+                >
+                  <Shield className="h-3.5 w-3.5" /> Super Admin
+                </a>
+              )}
+
+              {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
@@ -130,30 +235,30 @@ export default function AppLauncherPage() {
                   placeholder="Search apps..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 w-64"
+                  className="pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 w-56"
                 />
               </div>
             </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-gray-200 -mb-px">
+          <div className="flex gap-1">
             <button
               onClick={() => setTab("installed")}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 tab === "installed"
-                  ? "border-indigo-600 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
+                  ? "bg-indigo-600 text-white"
+                  : "text-gray-500 hover:bg-gray-100"
               }`}
             >
-              Installed ({installed.length})
+              My Apps ({installed.length})
             </button>
             <button
               onClick={() => setTab("available")}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 tab === "available"
-                  ? "border-indigo-600 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
+                  ? "bg-indigo-600 text-white"
+                  : "text-gray-500 hover:bg-gray-100"
               }`}
             >
               Available ({available.length})
@@ -164,12 +269,10 @@ export default function AppLauncherPage() {
 
       {/* App grid */}
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {loading && (
-          <div className="text-sm text-gray-400 text-center py-20">
-            Loading apps…
-          </div>
+        {(loadingApps || loadingOrgs) && (
+          <div className="text-sm text-gray-400 text-center py-20">Loading…</div>
         )}
-        {!loading && filtered.length === 0 && (
+        {!loadingApps && !loadingOrgs && filtered.length === 0 && (
           <div className="text-center py-20">
             <Rocket className="h-12 w-12 text-gray-300 mx-auto mb-3" />
             <p className="text-sm text-gray-500">
@@ -220,38 +323,26 @@ function AppCard({
               {icon}
             </div>
           ) : (
-            <img
-              src={icon}
-              alt={app.name}
-              className="h-12 w-12 rounded-xl object-cover"
-            />
+            <img src={icon} alt={app.name} className="h-12 w-12 rounded-xl object-cover" />
           )}
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900 truncate">
-              {app.name}
-            </h3>
-            <span
-              className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${statusCfg.color}`}
-            >
+            <h3 className="text-sm font-semibold text-gray-900 truncate">{app.name}</h3>
+            <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${statusCfg.color}`}>
               <StatusIcon className="h-2.5 w-2.5" />
               {statusCfg.label}
             </span>
           </div>
         </div>
       </div>
-
       {app.description && (
-        <p className="text-xs text-gray-600 mb-4 line-clamp-2">
-          {app.description}
-        </p>
+        <p className="text-xs text-gray-600 mb-4 line-clamp-2">{app.description}</p>
       )}
-
       <div className="flex items-center gap-2">
         {app.installed ? (
           <button
             onClick={onLaunch}
             disabled={app.status === "coming_soon"}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors disabled:opacity-50"
           >
             <ExternalLink className="h-3.5 w-3.5" />
             Launch
@@ -260,7 +351,7 @@ function AppCard({
           <button
             onClick={onEnable}
             disabled={app.status === "coming_soon"}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors disabled:opacity-50"
           >
             <Plus className="h-3.5 w-3.5" />
             Enable for org
