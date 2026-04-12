@@ -17,7 +17,7 @@ export async function GET() {
       plan: true,
       status: true,
       createdAt: true,
-      _count: { select: { memberships: true } },
+      _count: { select: { users: true } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -28,7 +28,7 @@ export async function GET() {
     slug: t.slug,
     plan: t.plan,
     status: t.status,
-    memberCount: t._count.memberships,
+    memberCount: t._count.users,
     createdAt: t.createdAt.toISOString(),
   }));
 
