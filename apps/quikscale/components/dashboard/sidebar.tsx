@@ -8,8 +8,8 @@ import { useState } from "react";
 import {
   LayoutDashboard, Target, CheckSquare, Activity,
   Calendar, FileText, TrendingUp, Building2,
-  Users, User, CalendarDays, Briefcase, Clock,
-  BookOpen, Star, List, UserCheck, Hash, BarChart,
+  Users, User, CalendarDays, Clock,
+  BookOpen, Star, List, UserCheck, MessageSquare,
   ChevronDown, ChevronLeft, ChevronRight, X,
   BarChart2, LineChart, ClipboardList, Layers,
 } from "lucide-react";
@@ -33,11 +33,14 @@ const navigation: NavItem[] = [
   ]},
   { label: "WWW",            href: "/www",        icon: Activity },
   { label: "Meeting Rhythm", icon: Calendar,      children: [
-    { label: "Daily Dashboard", href: "/meetings/daily",         icon: LayoutDashboard },
-    { label: "Client Master",   href: "/meetings/client-master", icon: Briefcase },
-    { label: "Client Members",  href: "/meetings/client-members",icon: Users },
-    { label: "Daily Huddle",    href: "/meetings/daily-huddle",  icon: Clock },
-    { label: "Weekly Meeting",  href: "/meetings/weekly",        icon: CalendarDays },
+    { label: "Dashboard",         href: "/meetings",            icon: LayoutDashboard },
+    { label: "Daily Huddle",      href: "/meetings/daily-huddle", icon: Clock },
+    { label: "Weekly Meeting",    href: "/meetings/weekly",     icon: CalendarDays },
+    { label: "Monthly Meeting",   href: "/meetings/monthly",    icon: CalendarDays },
+    { label: "Quarterly Offsite", href: "/meetings/quarterly",  icon: CalendarDays },
+    { label: "Annual Planning",   href: "/meetings/annual",     icon: CalendarDays },
+    { label: "Templates",         href: "/meetings/templates",  icon: List },
+    { label: "History",           href: "/meetings/history",    icon: BookOpen },
   ]},
   { label: "OPSP",           icon: FileText,      children: [
     { label: "Create OPSP",       href: "/opsp",            icon: FileText },
@@ -45,12 +48,23 @@ const navigation: NavItem[] = [
     { label: "OPSP Review",       href: "/opsp/review",     icon: Star },
     { label: "Category Mgmt",     href: "/opsp/categories", icon: List },
   ]},
-  { label: "Performance",    icon: TrendingUp,    children: [
+  // ── R10a-h: Performance split into two nav groups ──────────────────────
+  // URLs intentionally kept under `/performance/*` to avoid breaking
+  // bookmarks, tests, and existing audit logs. Sidebar presents two
+  // mental models: read-only Analytics vs write-heavy People workflows.
+  { label: "Analytics",      icon: TrendingUp,    children: [
     { label: "Scorecard",          href: "/performance/scorecard",    icon: BarChart2 },
     { label: "Individual",         href: "/performance/individual",   icon: User },
     { label: "Teams",              href: "/performance/teams",        icon: Users },
     { label: "Trends",             href: "/performance/trends",       icon: LineChart },
+  ]},
+  { label: "People",         icon: UserCheck,     children: [
+    { label: "Cycle",              href: "/performance/cycle",        icon: Activity },
+    { label: "Goals",              href: "/performance/goals",        icon: Target },
+    { label: "Self-Assessment",    href: "/performance/self",         icon: User },
     { label: "Reviews",            href: "/performance/reviews",      icon: ClipboardList },
+    { label: "1:1s",               href: "/performance/one-on-one",   icon: Users },
+    { label: "Feedback",           href: "/performance/feedback",     icon: MessageSquare },
     { label: "Talent",             href: "/performance/talent",       icon: Layers },
   ]},
 ];
