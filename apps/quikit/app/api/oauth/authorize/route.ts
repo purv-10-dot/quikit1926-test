@@ -68,14 +68,24 @@ export async function GET(request: NextRequest) {
   }
 
   const userId = session.user.id;
-  const tenantId = session.user.tenantId;
+  let tenantId = session.user.tenantId;
 
   if (!tenantId) {
-    // User hasn't selected an org yet → redirect to select-org
-    const currentUrl = request.nextUrl.toString();
-    return NextResponse.redirect(
-      new URL(`/select-org?callbackUrl=${encodeURIComponent(currentUrl)}`, request.nextUrl.origin),
-    );
+    // User hasn't selected an org yet — try to auto-select their first membership
+    const membership = await db.membership.findFirst({
+      where: { userId, status: "active" },
+      select: { tenantId: true, role: true },
+      orderBy: { createdAt: "asc" },
+    });
+    if (membership) {
+      tenantId = membership.tenantId;
+    } else {
+      // No membership at all → redirect to app launcher
+      const currentUrl = request.nextUrl.toString();
+      return NextResponse.redirect(
+        new URL(`/apps?callbackUrl=${encodeURIComponent(currentUrl)}`, request.nextUrl.origin),
+      );
+    }
   }
 
   // Verify user has access to this app

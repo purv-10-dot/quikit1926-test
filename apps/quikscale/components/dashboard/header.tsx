@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Menu, LogOut, Settings, ChevronDown, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AppSwitcher } from "@quikit/ui";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -57,7 +58,12 @@ export function Header({ onMenuClick }: HeaderProps) {
         </h1>
       </div>
 
-      {/* Right — user info */}
+      {/* Right — app switcher + user info */}
+      <div className="flex items-center gap-2">
+        <AppSwitcher
+          quikitUrl={process.env.NEXT_PUBLIC_QUIKIT_URL || "http://localhost:3000"}
+          currentAppSlug="quikscale"
+        />
       <div className="relative">
         <button
           onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -107,6 +113,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             </div>
           </>
         )}
+      </div>
       </div>
     </header>
   );
