@@ -17,10 +17,10 @@ import {
 } from "lucide-react";
 
 const NAV_ITEMS = [
-  { label: "Organizations", href: "/orgs", icon: Building2 },
-  { label: "App Registry", href: "/apps-admin", icon: LayoutGrid },
+  { label: "Organizations", href: "/organizations", icon: Building2 },
+  { label: "App Registry", href: "/app-registry", icon: LayoutGrid },
   { label: "Pricing & Plans", href: "/pricing", icon: CreditCard },
-  { label: "Users", href: "/users-admin", icon: Users },
+  { label: "Users", href: "/platform-users", icon: Users },
 ];
 
 export default function SuperAdminLayout({
