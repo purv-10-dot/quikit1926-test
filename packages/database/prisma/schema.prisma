@@ -99,6 +99,9 @@ model Tenant {
   featureFlags        FeatureFlag[]
   performanceReviews  PerformanceReview[]
   talentAssessments   TalentAssessment[]
+  goals               Goal[]
+  oneOnOnes           OneOnOne[]
+  feedbackEntries     FeedbackEntry[]
 
   @@index([slug])
   @@index([status])
@@ -153,6 +156,11 @@ model User {
   reviewsReceived     PerformanceReview[] @relation("ReviewsReceived")
   talentAssessed      TalentAssessment[]  @relation("TalentAssessed")
   talentAssessor      TalentAssessment[]  @relation("TalentAssessor")
+  goalsOwned          Goal[]              @relation("GoalOwner")
+  oneOnOnesAsManager  OneOnOne[]          @relation("OneOnOneManager")
+  oneOnOnesAsReport   OneOnOne[]          @relation("OneOnOneReport")
+  feedbackGiven       FeedbackEntry[]     @relation("FeedbackFrom")
+  feedbackReceived    FeedbackEntry[]     @relation("FeedbackTo")
 
   @@index([email])
 }
@@ -1085,4 +1093,113 @@ model TalentAssessment {
   @@unique([tenantId, userId, quarter, year])
   @@index([tenantId])
   @@index([userId])
+}
+
+// ============================================================================
+// GOALS / OKRs  (R10f — People workflow, quarterly/annual)
+// ============================================================================
+
+model Goal {
+  id              String   @id @default(cuid())
+  tenantId        String
+  ownerId         String   // the person the goal belongs to
+  parentGoalId    String?  // optional hierarchy (company → team → individual)
+
+  title           String
+  description     String?  @db.Text
+  category        String?  // "business" | "personal" | "team" | custom
+
+  // Measurement
+  targetValue     Float?
+  currentValue    Float?   @default(0)
+  unit            String?  // "%", "$", "users", etc.
+  progressPercent Float?   @default(0) // computed client-side or on update
+
+  // Timebox
+  quarter         String?  // Q1 | Q2 | Q3 | Q4 (null = annual)
+  year            Int
+
+  // State machine
+  status          String   @default("draft") // draft | active | on-track | at-risk | completed | abandoned
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String
+  completedAt     DateTime?
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner           User     @relation("GoalOwner", fields: [ownerId], references: [id])
+  parentGoal      Goal?    @relation("GoalHierarchy", fields: [parentGoalId], references: [id], onDelete: SetNull)
+  childGoals      Goal[]   @relation("GoalHierarchy")
+
+  @@index([tenantId])
+  @@index([ownerId])
+  @@index([tenantId, year, quarter])
+  @@index([parentGoalId])
+}
+
+// ============================================================================
+// 1:1 MEETINGS  (R10g — People workflow)
+// ============================================================================
+
+model OneOnOne {
+  id              String   @id @default(cuid())
+  tenantId        String
+
+  managerId       String
+  reportId        String
+
+  scheduledAt     DateTime
+  duration        Int      @default(30) // minutes
+
+  // Record-keeping fields (same pattern as Meeting model)
+  talkingPoints   String?  @db.Text  // what to discuss
+  actionItems     String?  @db.Text  // commitments made
+  notes           String?  @db.Text  // free-form manager or report notes
+  mood            String?           // "green" | "yellow" | "red" — optional emotional check-in
+
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  manager         User     @relation("OneOnOneManager", fields: [managerId], references: [id])
+  report          User     @relation("OneOnOneReport", fields: [reportId], references: [id])
+
+  @@index([tenantId])
+  @@index([managerId])
+  @@index([reportId])
+  @@index([scheduledAt])
+}
+
+// ============================================================================
+// CONTINUOUS FEEDBACK  (R10h — People workflow, Lattice-style)
+// ============================================================================
+
+model FeedbackEntry {
+  id              String   @id @default(cuid())
+  tenantId        String
+
+  fromUserId      String
+  toUserId        String
+
+  category        String   // "kudos" | "coaching" | "concern" | "general"
+  visibility      String   @default("private") // private (only to+from) | shared (visible to toUser's manager)
+  content         String   @db.Text
+
+  // Optional linkage — allows "feedback about this priority" or "about this meeting"
+  relatedType     String?  // "priority" | "meeting" | "kpi" | null
+  relatedId       String?
+
+  createdAt       DateTime @default(now())
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fromUser        User     @relation("FeedbackFrom", fields: [fromUserId], references: [id])
+  toUser          User     @relation("FeedbackTo", fields: [toUserId], references: [id])
+
+  @@index([tenantId])
+  @@index([toUserId])
+  @@index([fromUserId])
+  @@index([tenantId, toUserId, createdAt])
 }
