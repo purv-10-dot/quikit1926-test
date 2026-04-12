@@ -27,9 +27,66 @@ model App {
   updatedAt   DateTime @updatedAt
 
   userAccess  UserAppAccess[]
+  oauthClient OAuthClient?
 
   @@index([slug])
   @@index([status])
+}
+
+// ============================================================================
+// OAUTH2 / OIDC — QuikIT as Identity Provider
+// ============================================================================
+
+model OAuthClient {
+  id              String   @id @default(cuid())
+  appId           String   @unique
+  clientId        String   @unique               // "quikscale", "admin", etc.
+  clientSecret    String                          // bcrypt-hashed
+  redirectUris    String[]                        // ["http://localhost:3004/api/auth/callback/quikit"]
+  scopes          String[] @default(["openid", "profile", "email", "tenant"])
+  grantTypes      String[] @default(["authorization_code", "refresh_token"])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  app             App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+model OAuthCode {
+  id                  String   @id @default(cuid())
+  code                String   @unique
+  clientId            String
+  userId              String
+  tenantId            String
+  scopes              String[]
+  codeChallenge       String?                     // PKCE S256 challenge
+  codeChallengeMethod String?                     // "S256"
+  redirectUri         String
+  expiresAt           DateTime
+  used                Boolean  @default(false)
+
+  createdAt           DateTime @default(now())
+
+  @@index([code])
+  @@index([expiresAt])
+}
+
+model OAuthRefreshToken {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  clientId    String
+  userId      String
+  tenantId    String
+  scopes      String[]
+  expiresAt   DateTime
+  revoked     Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+
+  @@index([token])
+  @@index([userId, clientId])
 }
 
 model UserAppAccess {
