@@ -1,0 +1,164 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { db } from "@/lib/db";
+import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { updateOrgSchema } from "@/lib/schemas/superAdminSchemas";
+import { logAudit } from "@/lib/auditLog";
+import { sendOrgSuspendedEmail } from "@/lib/email";
+
+/**
+ * GET /api/super/orgs/[id] — org detail with counts and recent members (super admin only)
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  try {
+    const auth = await requireSuperAdmin();
+    if ("error" in auth) return auth.error;
+
+    const { id } = params;
+
+    const tenant = await db.tenant.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { users: true, teams: true, userAppAccess: true } },
+        users: {
+          take: 10,
+          include: {
+            user: {
+              select: { id: true, firstName: true, lastName: true, email: true },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    if (!tenant) {
+      return NextResponse.json(
+        { success: false, error: "Organization not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({ success: true, data: tenant });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Operation failed";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/super/orgs/[id] — update an organization (super admin only)
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  try {
+    const auth = await requireSuperAdmin();
+    if ("error" in auth) return auth.error;
+
+    const { id } = params;
+
+    const body = await request.json();
+    const parsed = updateOrgSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.errors[0].message },
+        { status: 400 },
+      );
+    }
+
+    const existing = await db.tenant.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "Organization not found" },
+        { status: 404 },
+      );
+    }
+
+    // Build updateData from parsed fields (only include defined fields)
+    const updateData: Record<string, unknown> = {};
+    const { name, plan, status, billingEmail, description } = parsed.data;
+    if (name !== undefined) updateData.name = name;
+    if (plan !== undefined) updateData.plan = plan;
+    if (status !== undefined) updateData.status = status;
+    if (billingEmail !== undefined) updateData.billingEmail = billingEmail;
+    if (description !== undefined) updateData.description = description;
+
+    const tenant = await db.tenant.update({
+      where: { id },
+      data: updateData,
+    });
+
+    logAudit({
+      action: "update",
+      entityType: "tenant",
+      entityId: id,
+      actorId: auth.userId,
+      tenantId: id,
+      oldValues: JSON.stringify({ name: existing.name, plan: existing.plan, status: existing.status }),
+      newValues: JSON.stringify(updateData),
+    });
+
+    return NextResponse.json({ success: true, data: tenant });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Operation failed";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+/**
+ * DELETE /api/super/orgs/[id] — suspend an organization (super admin only)
+ */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  try {
+    const auth = await requireSuperAdmin();
+    if ("error" in auth) return auth.error;
+
+    const { id } = params;
+
+    const existing = await db.tenant.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json(
+        { success: false, error: "Organization not found" },
+        { status: 404 },
+      );
+    }
+
+    await db.tenant.update({
+      where: { id },
+      data: { status: "suspended" },
+    });
+
+    logAudit({
+      action: "suspend",
+      entityType: "tenant",
+      entityId: id,
+      actorId: auth.userId,
+      tenantId: id,
+      oldValues: JSON.stringify({ status: existing.status }),
+      newValues: JSON.stringify({ status: "suspended" }),
+    });
+
+    // Fire-and-forget: notify org admins about suspension
+    db.membership.findMany({
+      where: { tenantId: id, role: { in: ["owner", "admin"] }, status: "active" },
+      include: { user: { select: { email: true } } },
+    }).then((members) => {
+      for (const m of members) {
+        sendOrgSuspendedEmail({ to: m.user.email, orgName: existing.name }).catch(() => {});
+      }
+    }).catch(() => {});
+
+    return NextResponse.json({ success: true, message: "Organization suspended" });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Operation failed";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}

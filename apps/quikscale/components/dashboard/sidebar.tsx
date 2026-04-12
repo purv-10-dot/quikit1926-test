@@ -240,6 +240,7 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
             : <NavGroup key={item.label} item={item} />
         )}
       </nav>
+
     </div>
   );
 }
