@@ -60,24 +60,22 @@ export default function SelectOrgPage() {
       });
       const j = await res.json();
       if (j.success) {
-        // Update the NextAuth session with the selected tenantId
-        try {
-          await update({
-            tenantId: j.data.tenantId,
-            membershipRole: j.data.membershipRole,
-          });
-        } catch (e) {
-          // Session update may fail on first load — proceed anyway
-          console.warn("[select-org] session update failed:", e);
-        }
-        // Always redirect — the JWT callback will re-validate on next request
+        // Update the NextAuth session JWT with the selected tenantId.
+        // Await fully — this writes the tenantId into the JWT cookie
+        // so downstream pages/apps can read it.
+        await update({
+          tenantId: j.data.tenantId,
+          membershipRole: j.data.membershipRole,
+        });
+        // Small delay to ensure cookie is flushed before navigation
+        await new Promise((r) => setTimeout(r, 300));
         window.location.href = callbackUrl;
       } else {
         console.error("[select-org] API error:", j.error);
         setSelecting(null);
       }
     } catch (e) {
-      console.error("[select-org] fetch error:", e);
+      console.error("[select-org] error:", e);
       setSelecting(null);
     }
   }
