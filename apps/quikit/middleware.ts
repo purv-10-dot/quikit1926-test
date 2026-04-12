@@ -1,8 +1,17 @@
 import { createMiddleware } from "@quikit/auth/middleware";
 
+/**
+ * QuikIT gateway middleware.
+ *
+ * ONLY enforces login (authenticated session required for non-public pages).
+ * Does NOT enforce tenantId — the gateway serves login, org selection, and
+ * the app launcher, all of which work without a selected org.
+ *
+ * Individual apps (QuikScale, Admin) enforce tenantId in their own middleware.
+ */
 export const middleware = createMiddleware({
   loginRoute: "/login",
-  selectOrgRoute: "/select-org",
+  // NO selectOrgRoute — don't redirect to /select-org for missing tenantId
   publicRoutes: [
     "/login",
     "/select-org",
