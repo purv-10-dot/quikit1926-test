@@ -70,3 +70,13 @@ export function useUpsertTalent() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["performance", "talent"] }),
   });
 }
+
+/* ── R10b: Cycle Hub ───────────────────────────────────────────────────── */
+
+export function useCycle() {
+  return useQuery({
+    queryKey: ["performance", "cycle"],
+    queryFn: () => fetchJSON(`${BASE}/cycle`),
+    staleTime: 1000 * 60 * 2,
+  });
+}
