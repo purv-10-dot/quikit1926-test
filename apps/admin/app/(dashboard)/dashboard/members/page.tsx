@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button, Input, Select, SlidePanel } from "@quikit/ui";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { Modal } from "@/components/ui/modal";
 import { ROLE_LABELS } from "@/lib/constants";
 import { formatRelativeDate } from "@/lib/utils";
 import { UserPlus, Search, Loader2 } from "lucide-react";
@@ -197,64 +195,70 @@ export default function MembersPage() {
         </table>
       </Card>
 
-      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite Member">
-        <form onSubmit={handleInvite} className="space-y-4">
-          <Input
-            id="invite-email"
-            label="Email"
-            type="email"
-            placeholder="colleague@company.com"
-            value={inviteForm.email}
-            onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
-            required
-          />
+      <SlidePanel
+        open={inviteOpen}
+        onClose={() => { setInviteOpen(false); setInviteError(""); }}
+        title="Invite Member"
+        subtitle="Send an invitation to join the organization"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" onClick={() => setInviteOpen(false)} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100">Cancel</button>
+            <button type="submit" form="invite-form" disabled={inviting} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50">{inviting ? "Sending..." : "Send Invitation"}</button>
+          </div>
+        }
+      >
+        <form id="invite-form" onSubmit={handleInvite} className="space-y-5">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1.5">Email</label>
+            <input
+              id="invite-email"
+              type="email"
+              placeholder="colleague@company.com"
+              value={inviteForm.email}
+              onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+              required
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-3">
-            <Input
-              id="invite-first"
-              label="First Name"
-              placeholder="Jane"
-              value={inviteForm.firstName}
-              onChange={(e) => setInviteForm({ ...inviteForm, firstName: e.target.value })}
-              required
-            />
-            <Input
-              id="invite-last"
-              label="Last Name"
-              placeholder="Smith"
-              value={inviteForm.lastName}
-              onChange={(e) => setInviteForm({ ...inviteForm, lastName: e.target.value })}
-              required
-            />
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">First Name</label>
+              <input
+                id="invite-first"
+                placeholder="Jane"
+                value={inviteForm.firstName}
+                onChange={(e) => setInviteForm({ ...inviteForm, firstName: e.target.value })}
+                required
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1.5">Last Name</label>
+              <input
+                id="invite-last"
+                placeholder="Smith"
+                value={inviteForm.lastName}
+                onChange={(e) => setInviteForm({ ...inviteForm, lastName: e.target.value })}
+                required
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
+              />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-[var(--color-text-primary)]">
-              Role
-            </label>
-            <select
-              value={inviteForm.role}
-              onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
-              className="w-full h-10 px-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
-            >
-              <option value="employee">Employee</option>
-              <option value="coach">Coach</option>
-              <option value="manager">Manager</option>
-              <option value="executive">Executive</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          {inviteError && (
-            <p className="text-sm text-[var(--color-danger)]">{inviteError}</p>
-          )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" type="button" onClick={() => setInviteOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={inviting}>
-              Send Invitation
-            </Button>
-          </div>
+          <Select
+            label="Role"
+            value={inviteForm.role}
+            onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
+            options={[
+              { value: "employee", label: "Employee" },
+              { value: "coach", label: "Coach" },
+              { value: "manager", label: "Manager" },
+              { value: "executive", label: "Executive" },
+              { value: "admin", label: "Admin" },
+            ]}
+          />
+          {inviteError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{inviteError}</p>}
         </form>
-      </Modal>
+      </SlidePanel>
     </div>
   );
 }

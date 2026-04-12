@@ -9,6 +9,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { FileText, Filter } from "lucide-react";
+import { Pagination, EmptyState, FilterPicker } from "@quikit/ui";
+import type { FilterOption } from "@quikit/ui";
 
 interface AuditEntry {
   id: string;
@@ -22,8 +24,7 @@ interface AuditEntry {
   createdAt: string;
 }
 
-const ACTION_OPTIONS = [
-  { value: "", label: "All Actions" },
+const actionOptions: FilterOption[] = [
   { value: "create", label: "Create" },
   { value: "update", label: "Update" },
   { value: "suspend", label: "Suspend" },
@@ -31,11 +32,11 @@ const ACTION_OPTIONS = [
   { value: "add_member", label: "Add Member" },
   { value: "toggle_super_admin", label: "Toggle Super Admin" },
   { value: "rotate_secret", label: "Rotate Secret" },
+  { value: "delete", label: "Delete" },
 ];
 
-const ENTITY_OPTIONS = [
-  { value: "", label: "All Entities" },
-  { value: "tenant", label: "Tenant" },
+const entityOptions: FilterOption[] = [
+  { value: "tenant", label: "Organization" },
   { value: "app", label: "App" },
   { value: "user", label: "User" },
   { value: "membership", label: "Membership" },
@@ -113,8 +114,6 @@ export default function AuditLogPage() {
     setPage(1);
   }, [actionFilter, entityFilter, dateFrom, dateTo]);
 
-  const selectCls =
-    "border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white";
   const dateCls =
     "border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 w-40";
 
@@ -131,28 +130,20 @@ export default function AuditLogPage() {
       {/* Filter bar */}
       <div className="px-6 py-3 border-b border-gray-200 flex flex-wrap items-center gap-3">
         <Filter className="h-4 w-4 text-gray-400" />
-        <select
+        <FilterPicker
           value={actionFilter}
-          onChange={(e) => setActionFilter(e.target.value)}
-          className={selectCls}
-        >
-          {ACTION_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-        <select
+          onChange={setActionFilter}
+          options={actionOptions}
+          allLabel="All Actions"
+          placeholder="Filter by action"
+        />
+        <FilterPicker
           value={entityFilter}
-          onChange={(e) => setEntityFilter(e.target.value)}
-          className={selectCls}
-        >
-          {ENTITY_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          onChange={setEntityFilter}
+          options={entityOptions}
+          allLabel="All Entities"
+          placeholder="Filter by entity"
+        />
         <div className="flex items-center gap-1.5 text-xs text-gray-500">
           <span>From</span>
           <input
@@ -178,10 +169,7 @@ export default function AuditLogPage() {
             Loading...
           </div>
         ) : logs.length === 0 ? (
-          <div className="text-center py-12">
-            <FileText className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">No audit entries found.</p>
-          </div>
+          <EmptyState icon={FileText} message="No audit entries found." />
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
@@ -236,30 +224,7 @@ export default function AuditLogPage() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50">
-                <p className="text-xs text-gray-500">
-                  Showing {((page - 1) * 25) + 1}–{Math.min(page * 25, total)} of {total}
-                </p>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-3 py-1.5 text-xs text-gray-600">
-                    Page {page} of {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                    className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              <Pagination page={page} totalPages={totalPages} total={total} limit={25} onPageChange={setPage} />
             )}
           </div>
         )}
