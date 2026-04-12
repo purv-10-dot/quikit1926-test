@@ -5,7 +5,8 @@
   "main": "./index.ts",
   "types": "./index.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./rls": "./rls.ts"
   },
   "scripts": {
     "generate": "prisma generate",
