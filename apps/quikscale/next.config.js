@@ -10,10 +10,22 @@ const nextConfig = {
     "@quikit/redis",
     "@quikit/logger",
   ],
+
+  // Phase 4: Image optimization
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "**.githubusercontent.com" },
+      { protocol: "https", hostname: "**.googleusercontent.com" },
+      { protocol: "https", hostname: "**.gravatar.com" },
+    ],
+  },
+
   experimental: {
     serverActions: {
       allowedOrigins: ["localhost:3004"],
     },
+    // Phase 4: Enable optimized package imports for heavy deps
+    optimizePackageImports: ["lucide-react", "@tanstack/react-query"],
   },
 
   /**
