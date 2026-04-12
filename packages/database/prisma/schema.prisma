@@ -630,6 +630,7 @@ model Meeting {
   @@index([cadence])
   @@index([scheduledAt])
   @@index([tenantId, scheduledAt])
+  @@index([tenantId, cadence, scheduledAt]) // Phase 4: covers the most-queried meeting list pattern
   @@index([deletedAt])
 }
 
