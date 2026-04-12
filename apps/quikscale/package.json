@@ -17,6 +17,7 @@
     "@quikit/database": "*",
     "@quikit/shared": "*",
     "@quikit/ui": "*",
+    "@sentry/nextjs": "^10.48.0",
     "@tanstack/react-query": "^5.28.0",
     "axios": "^1.6.2",
     "canvas-confetti": "^1.9.4",
