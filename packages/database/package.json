@@ -16,7 +16,8 @@
     "db:migrate:status": "prisma migrate status",
     "db:migrate:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
-    "db:seed:e2e": "tsx prisma/seed-e2e.ts"
+    "db:seed:e2e": "tsx prisma/seed-e2e.ts",
+    "db:seed:oauth": "tsx prisma/seed-oauth.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.7.0"
