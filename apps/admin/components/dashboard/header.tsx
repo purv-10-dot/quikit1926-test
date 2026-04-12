@@ -3,9 +3,8 @@
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import { LogOut, ArrowLeftRight } from "lucide-react";
-import { AppSwitcher } from "@quikit/ui";
+import { Button, AppSwitcher } from "@quikit/ui";
 
 export function Header() {
   const { data: session, update: updateSession } = useSession();

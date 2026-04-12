@@ -3,10 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button, Input, Select, SlidePanel } from "@quikit/ui";
 import { Avatar } from "@/components/ui/avatar";
-import { Modal } from "@/components/ui/modal";
 import {
   ArrowLeft,
   Loader2,
@@ -187,21 +185,18 @@ export default function TeamDetailPage() {
                   className="h-10 w-10 rounded-lg border border-[var(--color-border)] cursor-pointer"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-[var(--color-text-primary)]">Team Lead</label>
-                <select
-                  value={editForm.headId}
-                  onChange={(e) => setEditForm({ ...editForm, headId: e.target.value })}
-                  className="w-full h-10 px-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
-                >
-                  <option value="">No lead assigned</option>
-                  {team.members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.firstName} {m.lastName}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <Select
+                label="Team Lead"
+                value={editForm.headId}
+                onChange={(e) => setEditForm({ ...editForm, headId: e.target.value })}
+                options={[
+                  { value: "", label: "No lead assigned" },
+                  ...team.members.map((m) => ({
+                    value: m.id,
+                    label: `${m.firstName} ${m.lastName}`,
+                  })),
+                ]}
+              />
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleSave} loading={saving}>Save</Button>
                 <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
@@ -320,44 +315,49 @@ export default function TeamDetailPage() {
         </div>
       </div>
 
-      {/* Add member modal */}
-      <Modal open={addMemberOpen} onClose={() => setAddMemberOpen(false)} title="Add Member to Team">
+      {/* Add member panel */}
+      <SlidePanel
+        open={addMemberOpen}
+        onClose={() => { setAddMemberOpen(false); setMemberSearch(""); }}
+        title="Add Team Member"
+        subtitle="Search and add a member to this team"
+      >
         <div className="space-y-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-text-tertiary)]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search members..."
               value={memberSearch}
               onChange={(e) => setMemberSearch(e.target.value)}
-              className="w-full h-10 pl-9 pr-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
+              className="w-full pl-9 pr-3 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
             />
           </div>
-          <div className="max-h-64 overflow-y-auto space-y-1">
+          <div className="max-h-96 overflow-y-auto space-y-1">
             {availableMembers.length > 0 ? (
               availableMembers.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => addMember(m.id)}
-                  className="w-full flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-[var(--color-bg-secondary)] transition-colors text-left"
+                  className="w-full flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors text-left"
                 >
                   <Avatar src={m.avatar} firstName={m.firstName} lastName={m.lastName} size="sm" />
                   <div>
-                    <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                    <p className="text-sm font-medium text-gray-900">
                       {m.firstName} {m.lastName}
                     </p>
-                    <p className="text-xs text-[var(--color-text-tertiary)]">{m.email}</p>
+                    <p className="text-xs text-gray-500">{m.email}</p>
                   </div>
                 </button>
               ))
             ) : (
-              <p className="text-sm text-[var(--color-text-tertiary)] text-center py-4">
+              <p className="text-sm text-gray-400 text-center py-4">
                 No available members to add
               </p>
             )}
           </div>
         </div>
-      </Modal>
+      </SlidePanel>
     </div>
   );
 }

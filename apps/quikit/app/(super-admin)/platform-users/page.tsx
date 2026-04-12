@@ -15,9 +15,8 @@ import {
   Plus,
   Eye,
   ShieldAlert,
-  X,
 } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { SlidePanel, Pagination, EmptyState } from "@quikit/ui";
 
 interface UserInfo {
   id: string;
@@ -27,60 +26,6 @@ interface UserInfo {
   isSuperAdmin: boolean;
   lastSignInAt: string | null;
   membershipCount: number;
-}
-
-/* ── Slide-in Panel ─────────────────────────────────────────────── */
-function SlidePanel({
-  open,
-  onClose,
-  title,
-  children,
-  footer,
-}: {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-  footer: React.ReactNode;
-}) {
-  return (
-    <AnimatePresence>
-      {open && (
-        <div className="fixed inset-0 z-[200] flex">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 bg-black/30"
-            onClick={onClose}
-          />
-          <motion.div
-            initial={{ x: 480 }}
-            animate={{ x: 0 }}
-            exit={{ x: 480 }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
-            className="w-[480px] bg-white h-full shadow-2xl flex flex-col"
-          >
-            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-              <button
-                onClick={onClose}
-                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-              {children}
-            </div>
-            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50">
-              {footer}
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
 }
 
 export default function PlatformUsersPage() {
@@ -296,10 +241,7 @@ export default function PlatformUsersPage() {
             Loading...
           </div>
         ) : users.length === 0 ? (
-          <div className="text-center py-12">
-            <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">No users found.</p>
-          </div>
+          <EmptyState icon={Users} message="No users found." />
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
@@ -407,30 +349,7 @@ export default function PlatformUsersPage() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50">
-                <p className="text-xs text-gray-500">
-                  Showing {((page - 1) * 20) + 1}–{Math.min(page * 20, total)} of {total}
-                </p>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-3 py-1.5 text-xs text-gray-600">
-                    Page {page} of {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                    className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              <Pagination page={page} totalPages={totalPages} total={total} limit={20} onPageChange={setPage} />
             )}
           </div>
         )}

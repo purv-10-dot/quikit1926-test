@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button, Input, Select } from "@quikit/ui";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Save, Building2 } from "lucide-react";
 
@@ -194,38 +193,24 @@ export default function SettingsPage() {
             Calendar Preferences
           </h3>
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-[var(--color-text-primary)]">
-                Fiscal Year Starts
-              </label>
-              <select
-                value={form.fiscalYearStart}
-                onChange={(e) => setForm({ ...form, fiscalYearStart: parseInt(e.target.value) })}
-                className="w-full h-10 px-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
-              >
-                {MONTH_NAMES.map((name, i) => (
-                  <option key={i} value={i + 1}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-[var(--color-text-primary)]">
-                Week Starts On
-              </label>
-              <select
-                value={form.weekStartDay}
-                onChange={(e) => setForm({ ...form, weekStartDay: parseInt(e.target.value) })}
-                className="w-full h-10 px-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
-              >
-                {DAY_NAMES.map((name, i) => (
-                  <option key={i} value={i}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label="Fiscal Year Starts"
+              value={String(form.fiscalYearStart)}
+              onChange={(e) => setForm({ ...form, fiscalYearStart: parseInt(e.target.value) })}
+              options={MONTH_NAMES.map((name, i) => ({
+                value: String(i + 1),
+                label: name,
+              }))}
+            />
+            <Select
+              label="Week Starts On"
+              value={String(form.weekStartDay)}
+              onChange={(e) => setForm({ ...form, weekStartDay: parseInt(e.target.value) })}
+              options={DAY_NAMES.map((name, i) => ({
+                value: String(i),
+                label: name,
+              }))}
+            />
           </div>
         </Card>
 
