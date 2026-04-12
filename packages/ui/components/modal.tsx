@@ -1,118 +1,177 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import * as React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "../lib/utils";
 import { X } from "lucide-react";
 
 interface ModalProps {
   open: boolean;
-  onClose: () => void;
-  title?: string;
+  onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
   className?: string;
 }
 
-export function Modal({ open, onClose, title, children, className }: ModalProps) {
-  const modalRef = useRef<HTMLDivElement>(null);
-  const previousActiveElement = useRef<HTMLElement | null>(null);
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-
-      // Focus trap
-      if (e.key === "Tab" && modalRef.current) {
-        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        if (focusable.length === 0) return;
-
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault();
-            last.focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault();
-            first.focus();
-          }
-        }
-      }
-    },
-    [onClose]
-  );
-
-  useEffect(() => {
+const Modal = ({
+  open,
+  onOpenChange,
+  children,
+  className,
+}: ModalProps) => {
+  React.useEffect(() => {
     if (open) {
-      previousActiveElement.current = document.activeElement as HTMLElement;
       document.body.style.overflow = "hidden";
-      document.addEventListener("keydown", handleKeyDown);
-
-      // Focus the modal on open
-      requestAnimationFrame(() => {
-        modalRef.current?.focus();
-      });
     } else {
-      document.body.style.overflow = "";
-      document.removeEventListener("keydown", handleKeyDown);
-
-      // Restore focus to previous element
-      previousActiveElement.current?.focus();
+      document.body.style.overflow = "unset";
     }
     return () => {
-      document.body.style.overflow = "";
-      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = "unset";
     };
-  }, [open, handleKeyDown]);
-
-  if (!open) return null;
-
-  const titleId = title ? "modal-title" : undefined;
+  }, [open]);
 
   return (
-    <div className="fixed inset-0 z-modal flex items-center justify-center">
-      <div
-        className="fixed inset-0 bg-black/50 z-modal-backdrop"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <div
-        ref={modalRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className={cn(
-          "relative z-modal w-full max-w-lg rounded-xl bg-[var(--color-bg-primary)] p-6 shadow-xl outline-none",
-          className
-        )}
-      >
-        {title && (
-          <div className="flex items-center justify-between mb-4">
-            <h2
-              id={titleId}
-              className="text-lg font-semibold text-[var(--color-text-primary)]"
-            >
-              {title}
-            </h2>
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-lg p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-neutral-100)] hover:text-[var(--color-text-primary)] transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        )}
-        {children}
-      </div>
-    </div>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="fixed inset-0 z-modal-backdrop bg-black bg-opacity-50 dark:bg-opacity-60"
+          onClick={() => onOpenChange(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className={cn(
+              "fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2",
+              "z-modal w-full max-w-md mx-auto",
+              className
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {children}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
+};
+
+interface ModalContentProps extends React.HTMLAttributes<HTMLDivElement> {
+  children: React.ReactNode;
 }
+
+const ModalContent = React.forwardRef<HTMLDivElement, ModalContentProps>(
+  ({ className, children, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn(
+        "bg-white dark:bg-neutral-800 rounded-lg shadow-xl overflow-hidden",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </div>
+  )
+);
+
+ModalContent.displayName = "ModalContent";
+
+interface ModalHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
+  onClose?: () => void;
+}
+
+const ModalHeader = React.forwardRef<HTMLDivElement, ModalHeaderProps>(
+  ({ className, onClose, children, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn(
+        "flex items-center justify-between p-6 border-b border-border dark:border-neutral-700",
+        className
+      )}
+      {...props}
+    >
+      <div className="flex-1">{children}</div>
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="ml-4 p-1 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
+          aria-label="Close modal"
+        >
+          <X className="h-5 w-5 text-text-secondary" />
+        </button>
+      )}
+    </div>
+  )
+);
+
+ModalHeader.displayName = "ModalHeader";
+
+interface ModalTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {}
+
+const ModalTitle = React.forwardRef<HTMLHeadingElement, ModalTitleProps>(
+  ({ className, ...props }, ref) => (
+    <h2
+      ref={ref}
+      className={cn("text-xl font-bold text-text-primary", className)}
+      {...props}
+    />
+  )
+);
+
+ModalTitle.displayName = "ModalTitle";
+
+interface ModalDescriptionProps extends React.HTMLAttributes<HTMLParagraphElement> {}
+
+const ModalDescription = React.forwardRef<HTMLParagraphElement, ModalDescriptionProps>(
+  ({ className, ...props }, ref) => (
+    <p
+      ref={ref}
+      className={cn("text-sm text-text-secondary mt-1", className)}
+      {...props}
+    />
+  )
+);
+
+ModalDescription.displayName = "ModalDescription";
+
+interface ModalBodyProps extends React.HTMLAttributes<HTMLDivElement> {}
+
+const ModalBody = React.forwardRef<HTMLDivElement, ModalBodyProps>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} className={cn("p-6 space-y-4", className)} {...props} />
+  )
+);
+
+ModalBody.displayName = "ModalBody";
+
+interface ModalFooterProps extends React.HTMLAttributes<HTMLDivElement> {}
+
+const ModalFooter = React.forwardRef<HTMLDivElement, ModalFooterProps>(
+  ({ className, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={cn(
+        "flex gap-3 justify-end p-6 border-t border-border dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900",
+        className
+      )}
+      {...props}
+    />
+  )
+);
+
+ModalFooter.displayName = "ModalFooter";
+
+export {
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalTitle,
+  ModalDescription,
+  ModalBody,
+  ModalFooter,
+};

@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, LayoutGrid, Key, ExternalLink, Users, ShieldOff, Pencil, RotateCw, Trash2 } from "lucide-react";
+import { EmptyState } from "@quikit/ui";
 
 interface OAuthClient {
   clientId: string;
@@ -207,10 +208,7 @@ export default function AppDetailPage() {
         <Link href="/app-registry" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors mb-6">
           <ArrowLeft className="h-4 w-4" /> App Registry
         </Link>
-        <div className="text-center py-12">
-          <LayoutGrid className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-sm text-gray-400">App not found.</p>
-        </div>
+        <EmptyState icon={LayoutGrid} message="App not found." />
       </div>
     );
   }
@@ -420,20 +418,19 @@ export default function AppDetailPage() {
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-8">
-                  <Key className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                  <p className="text-sm text-gray-400 mb-4">No OAuth client configured for this app.</p>
-                  <button
-                    onClick={handleConfigureOAuth}
-                    disabled={creatingOAuth}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 transition-colors"
-                  >
-                    {creatingOAuth ? "Configuring..." : "Configure OAuth"}
-                  </button>
+                <div>
+                  <EmptyState
+                    icon={Key}
+                    message="No OAuth client configured for this app."
+                    action={{
+                      label: creatingOAuth ? "Configuring..." : "Configure OAuth",
+                      onClick: handleConfigureOAuth,
+                    }}
+                  />
 
                   {/* New secret display after creation */}
                   {newSecret && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4 text-left">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4 text-left mx-6">
                       <p className="text-xs font-semibold text-amber-800 mb-2">Client Secret (copy now — shown only once)</p>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 bg-white border border-amber-200 rounded px-3 py-2 text-sm font-mono text-gray-900 select-all">{newSecret}</code>
