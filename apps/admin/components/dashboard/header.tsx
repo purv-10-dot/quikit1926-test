@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { LogOut, ArrowLeftRight } from "lucide-react";
+import { AppSwitcher } from "@quikit/ui";
 
 export function Header() {
   const { data: session, update: updateSession } = useSession();
@@ -19,6 +20,10 @@ export function Header() {
     <header className="h-16 border-b border-[var(--color-border)] bg-[var(--color-bg-primary)] flex items-center justify-between px-6">
       <div />
       <div className="flex items-center gap-3">
+        <AppSwitcher
+          quikitUrl={process.env.NEXT_PUBLIC_QUIKIT_URL || "http://localhost:3000"}
+          currentAppSlug="admin"
+        />
         <Button variant="ghost" size="sm" onClick={handleSwitchOrg}>
           <ArrowLeftRight className="h-4 w-4" />
           Switch Org

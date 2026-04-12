@@ -157,10 +157,11 @@ async function handleAuthCodeExchange(
     clientId,
   );
 
-  // Store refresh token
+  // Store refresh token + access token for userinfo lookup
   await db.oAuthRefreshToken.create({
     data: {
       token: refreshToken,
+      accessToken,
       clientId,
       userId: authCode.userId,
       tenantId: authCode.tenantId,
@@ -242,6 +243,7 @@ async function handleRefreshToken(
   await db.oAuthRefreshToken.create({
     data: {
       token: newRefreshToken,
+      accessToken: newAccessToken,
       clientId,
       userId: stored.userId,
       tenantId: stored.tenantId,

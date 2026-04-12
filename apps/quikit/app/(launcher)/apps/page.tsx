@@ -14,7 +14,7 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import {
   Rocket, Grid3X3, Search, ExternalLink, Plus,
-  CheckCircle2, Clock, Sparkles, Building2, ChevronDown, Shield,
+  CheckCircle2, Clock, Sparkles, Building2, ChevronDown,
 } from "lucide-react";
 
 interface AppInfo {
@@ -141,15 +141,13 @@ export default function AppLauncherPage() {
   }
 
   const installed = apps.filter((a) => a.installed);
-  const available = apps.filter((a) => !a.installed);
-  const displayed = tab === "installed" ? installed : available;
   const filtered = search
-    ? displayed.filter(
+    ? installed.filter(
         (a) =>
           a.name.toLowerCase().includes(search.toLowerCase()) ||
           (a.description ?? "").toLowerCase().includes(search.toLowerCase()),
       )
-    : displayed;
+    : installed;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -217,16 +215,6 @@ export default function AppLauncherPage() {
                 </div>
               )}
 
-              {/* Super Admin link */}
-              {isSuperAdmin && (
-                <a
-                  href="/organizations"
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-colors"
-                >
-                  <Shield className="h-3.5 w-3.5" /> Super Admin
-                </a>
-              )}
-
               {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -241,29 +229,7 @@ export default function AppLauncherPage() {
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1">
-            <button
-              onClick={() => setTab("installed")}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                tab === "installed"
-                  ? "bg-indigo-600 text-white"
-                  : "text-gray-500 hover:bg-gray-100"
-              }`}
-            >
-              My Apps ({installed.length})
-            </button>
-            <button
-              onClick={() => setTab("available")}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                tab === "available"
-                  ? "bg-indigo-600 text-white"
-                  : "text-gray-500 hover:bg-gray-100"
-              }`}
-            >
-              Available ({available.length})
-            </button>
-          </div>
+          {/* removed tabs — only show installed apps */}
         </div>
       </header>
 
@@ -276,9 +242,7 @@ export default function AppLauncherPage() {
           <div className="text-center py-20">
             <Rocket className="h-12 w-12 text-gray-300 mx-auto mb-3" />
             <p className="text-sm text-gray-500">
-              {tab === "installed"
-                ? "No apps installed yet. Check the Available tab."
-                : "No more apps available."}
+              No apps available. Contact your administrator.
             </p>
           </div>
         )}
