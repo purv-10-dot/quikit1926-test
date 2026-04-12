@@ -74,18 +74,20 @@ model OAuthCode {
 }
 
 model OAuthRefreshToken {
-  id          String   @id @default(cuid())
-  token       String   @unique
-  clientId    String
-  userId      String
-  tenantId    String
-  scopes      String[]
-  expiresAt   DateTime
-  revoked     Boolean  @default(false)
+  id           String   @id @default(cuid())
+  token        String   @unique
+  accessToken  String?  @unique
+  clientId     String
+  userId       String
+  tenantId     String
+  scopes       String[]
+  expiresAt    DateTime
+  revoked      Boolean  @default(false)
 
-  createdAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
 
   @@index([token])
+  @@index([accessToken])
   @@index([userId, clientId])
 }
 
