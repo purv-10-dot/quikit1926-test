@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Plus, X, Search, Pencil, UserMinus, UserCheck,
   ChevronDown, Users, User as UserIcon, Check,
 } from "lucide-react";
+import { useTableCRUD } from "@/lib/hooks/useTableCRUD";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -429,12 +430,13 @@ function ConfirmDialog({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgUsersPage() {
-  const [users, setUsers]         = useState<OrgUser[]>([]);
-  const [teams, setTeams]         = useState<OrgTeam[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [editUser, setEditUser]   = useState<OrgUser | null>(null);
-  const [search, setSearch]       = useState("");
+  const crud = useTableCRUD<OrgUser>({
+    apiEndpoint: "/api/org/users",
+    idKey: "userId",
+    searchFields: ["firstName", "lastName", "email"],
+  });
+
+  const [teams, setTeams] = useState<OrgTeam[]>([]);
   const [roleFilter, setRoleFilter]     = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
   const [filterOpen, setFilterOpen]     = useState(false);
@@ -442,19 +444,12 @@ export default function OrgUsersPage() {
   const [confirmAction, setConfirmAction] = useState<"remove" | "reactivate">("remove");
   const filterRef = useRef<HTMLDivElement>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [uRes, tRes] = await Promise.all([fetch("/api/org/users"), fetch("/api/org/teams")]);
-      const [uJson, tJson] = await Promise.all([uRes.json(), tRes.json()]);
-      if (uJson.success) setUsers(uJson.data);
-      if (tJson.success) setTeams(tJson.data.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })));
-    } finally {
-      setLoading(false);
-    }
+  // Fetch teams alongside users
+  useEffect(() => {
+    fetch("/api/org/teams").then(r => r.json()).then(json => {
+      if (json.success) setTeams(json.data.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })));
+    });
   }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -464,18 +459,21 @@ export default function OrgUsersPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const filtered = useMemo(() => users.filter(u => {
-    if (statusFilter && u.status !== statusFilter) return false;
-    if (roleFilter   && u.role   !== roleFilter)   return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-    }
-    return true;
-  }), [users, search, roleFilter, statusFilter]);
+  // Apply role/status filters on top of hook's search-filtered results
+  const filtered = useMemo(() => {
+    let list = crud.search.trim()
+      ? crud.items.filter(u => {
+          const q = crud.search.toLowerCase();
+          return `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+        })
+      : crud.items;
+    if (statusFilter) list = list.filter(u => u.status === statusFilter);
+    if (roleFilter) list = list.filter(u => u.role === roleFilter);
+    return list;
+  }, [crud.items, crud.search, roleFilter, statusFilter]);
 
   function handleSaved(user: OrgUser) {
-    setUsers(prev => {
+    crud.setItems(prev => {
       const idx = prev.findIndex(u => u.userId === user.userId);
       if (idx >= 0) { const next = [...prev]; next[idx] = user; return next; }
       return [...prev, user];
@@ -492,7 +490,7 @@ export default function OrgUsersPage() {
     setConfirmUser(null);
   }
 
-  const activeCount = users.filter(u => u.status === "active").length;
+  const activeCount = crud.items.filter(u => u.status === "active").length;
   const filterCount = (roleFilter ? 1 : 0) + (statusFilter !== "active" ? 1 : 0);
 
   return (
@@ -513,7 +511,7 @@ export default function OrgUsersPage() {
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search users…"
+            <input value={crud.search} onChange={e => crud.setSearch(e.target.value)} placeholder="Search users…"
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 w-48" />
           </div>
 
@@ -561,7 +559,7 @@ export default function OrgUsersPage() {
           </div>
 
           {/* Add User */}
-          <button onClick={() => { setEditUser(null); setPanelOpen(true); }}
+          <button onClick={() => crud.openCreate()}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg">
             <Plus className="h-3.5 w-3.5" /> Add User
           </button>
@@ -581,7 +579,7 @@ export default function OrgUsersPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {loading ? (
+            {crud.loading ? (
               <tr><td colSpan={7} className="text-center py-16 text-sm text-gray-400">Loading…</td></tr>
             ) : filtered.length === 0 ? (
               <tr>
@@ -589,7 +587,7 @@ export default function OrgUsersPage() {
                   <div className="flex flex-col items-center gap-2">
                     <UserIcon className="h-8 w-8 text-gray-200" />
                     <p className="text-sm text-gray-400 font-medium">No users found</p>
-                    {!search && <p className="text-xs text-gray-400">Click <span className="font-semibold">Add User</span> to invite someone.</p>}
+                    {!crud.search && <p className="text-xs text-gray-400">Click <span className="font-semibold">Add User</span> to invite someone.</p>}
                   </div>
                 </td>
               </tr>
@@ -633,7 +631,7 @@ export default function OrgUsersPage() {
                   {/* Actions */}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditUser(u); setPanelOpen(true); }} title="Edit"
+                      <button onClick={() => crud.openEdit(u)} title="Edit"
                         className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50 transition-colors">
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
@@ -658,7 +656,7 @@ export default function OrgUsersPage() {
       </div>
 
       {/* ── Panel ── */}
-      <UserPanel open={panelOpen} onClose={() => setPanelOpen(false)} onSaved={handleSaved} editUser={editUser} teams={teams} />
+      <UserPanel open={crud.panelOpen} onClose={crud.closePanel} onSaved={handleSaved} editUser={crud.editItem} teams={teams} />
 
       {/* ── Confirm Dialog ── */}
       <ConfirmDialog

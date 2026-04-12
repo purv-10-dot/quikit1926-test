@@ -1,6 +1,6 @@
 "use client";
 
-import { SignInComponent } from "@/components/ui/sign-in";
+import { SignInComponent } from "@quikit/ui";
 import { useSearchParams } from "next/navigation";
 
 const LogoComponent = () => (

@@ -6,6 +6,7 @@ import {
   ChevronDown, Users, UsersRound, UserPlus, Check,
 } from "lucide-react";
 import { AddButton } from "@/components/AddButton";
+import { useTableCRUD } from "@/lib/hooks/useTableCRUD";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface TeamMember {
@@ -565,46 +566,36 @@ function MemberPickerPanel({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgTeamsPage() {
-  const [teams, setTeams]         = useState<OrgTeam[]>([]);
-  const [users, setUsers]         = useState<OrgUser[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [editTeam, setEditTeam]   = useState<OrgTeam | null>(null);
-  const [deleteTeam, setDeleteTeam] = useState<OrgTeam | null>(null);
-  const [search, setSearch]       = useState("");
-  const [expanded, setExpanded]   = useState<Set<string>>(new Set());
+  const crud = useTableCRUD<OrgTeam>({
+    apiEndpoint: "/api/org/teams",
+    searchFields: ["name"],
+  });
+
+  const [users, setUsers] = useState<OrgUser[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pickerTeam, setPickerTeam] = useState<OrgTeam | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [tRes, uRes] = await Promise.all([
-        fetch("/api/org/teams"),
-        fetch("/api/org/users"),
-      ]);
-      const [tJson, uJson] = await Promise.all([tRes.json(), uRes.json()]);
-      if (tJson.success) setTeams(tJson.data);
-      if (uJson.success) setUsers(uJson.data.map((u: { userId: string; firstName: string; lastName: string; email: string }) => ({
-        userId:    u.userId,
-        firstName: u.firstName,
-        lastName:  u.lastName,
-        email:     u.email,
+  // Fetch users alongside teams
+  useEffect(() => {
+    fetch("/api/org/users").then(r => r.json()).then(json => {
+      if (json.success) setUsers(json.data.map((u: OrgUser) => ({
+        userId: u.userId, firstName: u.firstName, lastName: u.lastName, email: u.email,
       })));
-    } finally {
-      setLoading(false);
-    }
+    });
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  const filtered = useMemo(() =>
-    teams.filter(t => !search || t.name.toLowerCase().includes(search.toLowerCase()) ||
-      (t.description ?? "").toLowerCase().includes(search.toLowerCase())),
-    [teams, search]
-  );
+  // Also match description in search
+  const filtered = useMemo(() => {
+    if (!crud.search.trim()) return crud.items;
+    const q = crud.search.toLowerCase();
+    return crud.items.filter(t =>
+      t.name.toLowerCase().includes(q) ||
+      (t.description ?? "").toLowerCase().includes(q)
+    );
+  }, [crud.items, crud.search]);
 
   function handleSaved(team: OrgTeam) {
-    setTeams(prev => {
+    crud.setItems(prev => {
       const idx = prev.findIndex(t => t.id === team.id);
       if (idx >= 0) {
         const next = [...prev]; next[idx] = { ...next[idx], ...team }; return next;
@@ -613,25 +604,13 @@ export default function OrgTeamsPage() {
     });
   }
 
-  async function handleDelete(team: OrgTeam) {
-    const res  = await fetch(`/api/org/teams/${team.id}`, { method: "DELETE" });
-    const json = await res.json();
-    if (json.success) setTeams(prev => prev.filter(t => t.id !== team.id));
-    setDeleteTeam(null);
-  }
-
   async function handleRemoveMember(team: OrgTeam, userId: string) {
     const res  = await fetch(`/api/org/teams/${team.id}/members/${userId}`, { method: "DELETE" });
     const json = await res.json();
     if (!json.success) return;
-    // Optimistic local update — drop the member from the team row
-    setTeams(prev => prev.map(t =>
+    crud.setItems(prev => prev.map(t =>
       t.id === team.id
-        ? {
-            ...t,
-            members: t.members.filter(m => m.userId !== userId),
-            memberCount: Math.max(0, t.memberCount - 1),
-          }
+        ? { ...t, members: t.members.filter(m => m.userId !== userId), memberCount: Math.max(0, t.memberCount - 1) }
         : t
     ));
   }
@@ -654,7 +633,7 @@ export default function OrgTeamsPage() {
           </div>
           <div>
             <h1 className="text-sm font-bold text-gray-900">Teams</h1>
-            <p className="text-xs text-gray-400">{teams.length} team{teams.length !== 1 ? "s" : ""} in this organisation</p>
+            <p className="text-xs text-gray-400">{crud.items.length} team{crud.items.length !== 1 ? "s" : ""} in this organisation</p>
           </div>
         </div>
 
@@ -662,13 +641,13 @@ export default function OrgTeamsPage() {
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
             <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+              value={crud.search}
+              onChange={e => crud.setSearch(e.target.value)}
               placeholder="Search teams…"
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
-          <AddButton onClick={() => { setEditTeam(null); setPanelOpen(true); }}>
+          <AddButton onClick={() => crud.openCreate()}>
             New Team
           </AddButton>
         </div>
@@ -676,7 +655,7 @@ export default function OrgTeamsPage() {
 
       {/* ── Content ── */}
       <div className="flex-1 overflow-auto p-6">
-        {loading ? (
+        {crud.loading ? (
           <div className="flex items-center justify-center py-20 text-sm text-gray-400">Loading…</div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
@@ -756,14 +735,14 @@ export default function OrgTeamsPage() {
                         <UserPlus className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => { setEditTeam(team); setPanelOpen(true); }}
+                        onClick={() => crud.openEdit(team)}
                         title="Edit"
                         className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50 transition-colors"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => setDeleteTeam(team)}
+                        onClick={() => crud.setDeleteTarget(team)}
                         title="Delete"
                         className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                       >
@@ -818,10 +797,10 @@ export default function OrgTeamsPage() {
 
       {/* ── Panel ── */}
       <TeamPanel
-        open={panelOpen}
-        onClose={() => setPanelOpen(false)}
+        open={crud.panelOpen}
+        onClose={crud.closePanel}
         onSaved={handleSaved}
-        editTeam={editTeam}
+        editTeam={crud.editItem}
         users={users}
       />
 
@@ -840,10 +819,10 @@ export default function OrgTeamsPage() {
 
       {/* ── Confirm Delete ── */}
       <ConfirmDialog
-        open={!!deleteTeam}
-        teamName={deleteTeam?.name ?? ""}
-        onConfirm={() => deleteTeam && handleDelete(deleteTeam)}
-        onCancel={() => setDeleteTeam(null)}
+        open={!!crud.deleteTarget}
+        teamName={crud.deleteTarget?.name ?? ""}
+        onConfirm={() => crud.confirmDelete()}
+        onCancel={() => crud.setDeleteTarget(null)}
       />
     </div>
   );
