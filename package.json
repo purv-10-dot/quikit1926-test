@@ -26,6 +26,7 @@
     "e2e:install": "cd apps/quikscale && npx playwright install --with-deps chromium"
   },
   "devDependencies": {
+    "autocannon": "^8.0.0",
     "turbo": "^2.0.0"
   }
 }

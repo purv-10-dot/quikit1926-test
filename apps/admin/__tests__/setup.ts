@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { vi, beforeEach } from "vitest";
+import { vi, beforeEach, afterEach } from "vitest";
+import { cleanup } from "@testing-library/react";
 
 export type TestUser = {
   id: string;
@@ -11,10 +12,17 @@ export type TestUser = {
 
 const _state: { user: TestUser | null } = { user: null };
 
+const mockedGetServerSession = vi.fn(async () =>
+  _state.user ? { user: _state.user } : null
+);
+
+vi.mock("next-auth", async () => {
+  const actual = await vi.importActual<typeof import("next-auth")>("next-auth");
+  return { ...actual, getServerSession: mockedGetServerSession };
+});
+
 vi.mock("next-auth/next", () => ({
-  getServerSession: vi.fn(async () =>
-    _state.user ? { user: _state.user } : null
-  ),
+  getServerSession: mockedGetServerSession,
 }));
 
 vi.mock("next-auth/react", () => ({
@@ -47,6 +55,12 @@ vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
 }));
 
+vi.spyOn(console, "error").mockImplementation(() => {});
+
 beforeEach(() => {
   _state.user = null;
+});
+
+afterEach(() => {
+  cleanup();
 });
