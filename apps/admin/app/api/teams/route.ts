@@ -4,27 +4,38 @@ import { db } from "@/lib/db";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { slugify } from "@/lib/utils";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const auth = await requireAdmin();
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
 
-  const teams = await db.team.findMany({
-    where: { tenantId },
-    include: {
-      userTeams: {
-        include: {
-          user: {
-            select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+  // Pagination
+  const { searchParams } = new URL(request.url);
+  const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50", 10) || 50));
+  const skip = (page - 1) * limit;
+
+  const [teams, total] = await Promise.all([
+    db.team.findMany({
+      where: { tenantId },
+      include: {
+        userTeams: {
+          include: {
+            user: {
+              select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+            },
           },
         },
+        parentTeam: { select: { id: true, name: true } },
+        childTeams: { select: { id: true, name: true, color: true } },
       },
-      parentTeam: { select: { id: true, name: true } },
-      childTeams: { select: { id: true, name: true, color: true } },
-    },
-    orderBy: { name: "asc" },
-  });
+      orderBy: { name: "asc" },
+      skip,
+      take: limit,
+    }),
+    db.team.count({ where: { tenantId } }),
+  ]);
 
   // Resolve head names
   const headIds = teams.map((t) => t.headId).filter(Boolean) as string[];
@@ -61,7 +72,11 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ success: true, data });
+  return NextResponse.json({
+    success: true,
+    data,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
 }
 
 export async function POST(request: NextRequest) {

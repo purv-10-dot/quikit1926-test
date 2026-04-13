@@ -23,6 +23,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (ids.length > 100) {
+      return NextResponse.json(
+        { success: false, error: "Maximum 100 items per bulk operation" },
+        { status: 400 },
+      );
+    }
+
     if (!["grant_super_admin", "revoke_super_admin"].includes(action)) {
       return NextResponse.json(
         { success: false, error: "action must be 'grant_super_admin' or 'revoke_super_admin'" },

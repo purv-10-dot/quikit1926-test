@@ -152,9 +152,11 @@ export async function DELETE(
       include: { user: { select: { email: true } } },
     }).then((members) => {
       for (const m of members) {
-        sendOrgSuspendedEmail({ to: m.user.email, orgName: existing.name }).catch(() => {});
+        sendOrgSuspendedEmail({ to: m.user.email, orgName: existing.name }).catch((err) =>
+          console.error("[email] Failed to send org suspended email:", m.user.email, err)
+        );
       }
-    }).catch(() => {});
+    }).catch((err) => console.error("[email] Failed to fetch org admins for suspension notice:", err));
 
     return NextResponse.json({ success: true, message: "Organization suspended" });
   } catch (error: unknown) {

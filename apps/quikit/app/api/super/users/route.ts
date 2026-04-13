@@ -108,7 +108,9 @@ export async function POST(request: NextRequest) {
     });
 
     // Fire-and-forget email notification
-    sendUserCreatedEmail({ to: email, firstName }).catch(() => {});
+    sendUserCreatedEmail({ to: email, firstName }).catch((err) =>
+      console.error("[email] Failed to send user created email:", email, err)
+    );
 
     return NextResponse.json(
       {

@@ -74,8 +74,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // If user needs a password and one was provided
-  if (!membership.user.password && password) {
+  // If user needs a password, validate and set it
+  if (!membership.user.password) {
+    if (!password || typeof password !== "string" || password.length < 8) {
+      return NextResponse.json(
+        { success: false, error: "Password is required and must be at least 8 characters" },
+        { status: 400 }
+      );
+    }
     const hashedPassword = await bcrypt.hash(password, 10);
     await db.user.update({
       where: { id: membership.user.id },

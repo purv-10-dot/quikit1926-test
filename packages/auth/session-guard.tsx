@@ -5,6 +5,10 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 const CHECK_INTERVAL = 60 * 1000;
+/** Add ±10s jitter to prevent thundering herd when many clients poll simultaneously */
+function jitteredInterval() {
+  return CHECK_INTERVAL + Math.floor(Math.random() * 20_000) - 10_000;
+}
 
 export interface SessionGuardConfig {
   validateEndpoint?: string;
@@ -14,8 +18,12 @@ export interface SessionGuardConfig {
 async function validateSession(endpoint: string): Promise<{ valid: boolean; reason?: string }> {
   try {
     const res = await fetch(endpoint);
+    if (!res.ok) return { valid: false, reason: "validation_error" };
     return await res.json();
   } catch {
+    // Network error — treat as valid to avoid false logouts on transient failures,
+    // but log for observability
+    console.warn("[session-guard] Validation fetch failed, assuming valid");
     return { valid: true };
   }
 }
@@ -52,7 +60,7 @@ export function createSessionGuard(config: SessionGuardConfig = {}) {
         if (updated?.user?.membershipInvalid) await handleInvalid("deactivated");
         else if (updated && !updated.user?.tenantId) router.push("/select-org");
       }
-      intervalRef.current = setInterval(poll, CHECK_INTERVAL);
+      intervalRef.current = setInterval(poll, jitteredInterval());
       return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
     }, [status]);
 

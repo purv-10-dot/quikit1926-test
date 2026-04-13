@@ -5,55 +5,64 @@ import { sendInvitationEmail } from "@/lib/email";
 import { ROLE_LABELS } from "@/lib/constants";
 import crypto from "crypto";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const auth = await requireAdmin();
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
 
-  const memberships = await db.membership.findMany({
-    where: { tenantId },
-    include: {
-      user: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          avatar: true,
-          lastSignInAt: true,
+  // Pagination
+  const { searchParams } = new URL(request.url);
+  const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50", 10) || 50));
+  const skip = (page - 1) * limit;
+
+  const [memberships, total] = await Promise.all([
+    db.membership.findMany({
+      where: { tenantId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            avatar: true,
+            lastSignInAt: true,
+            userTeams: {
+              where: { tenantId },
+              include: { team: { select: { name: true } } },
+            },
+          },
         },
       },
-    },
-    orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: limit,
+    }),
+    db.membership.count({ where: { tenantId } }),
+  ]);
+
+  const memberData = memberships.map((m) => ({
+    id: m.userId,
+    membershipId: m.id,
+    firstName: m.user.firstName,
+    lastName: m.user.lastName,
+    email: m.user.email,
+    avatar: m.user.avatar,
+    role: m.role,
+    status: m.status,
+    teamNames: m.user.userTeams.map((ut) => ut.team.name),
+    lastSignInAt: m.user.lastSignInAt?.toISOString() ?? null,
+    invitedAt: m.invitedAt?.toISOString() ?? null,
+    acceptedAt: m.acceptedAt?.toISOString() ?? null,
+  }));
+
+  return NextResponse.json({
+    success: true,
+    data: memberData,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
-
-  // Get team names for each member
-  const memberData = await Promise.all(
-    memberships.map(async (m) => {
-      const userTeams = await db.userTeam.findMany({
-        where: { tenantId, userId: m.userId },
-        include: { team: { select: { name: true } } },
-      });
-
-      return {
-        id: m.userId,
-        membershipId: m.id,
-        firstName: m.user.firstName,
-        lastName: m.user.lastName,
-        email: m.user.email,
-        avatar: m.user.avatar,
-        role: m.role,
-        status: m.status,
-        teamNames: userTeams.map((ut) => ut.team.name),
-        lastSignInAt: m.user.lastSignInAt?.toISOString() ?? null,
-        invitedAt: m.invitedAt?.toISOString() ?? null,
-        acceptedAt: m.acceptedAt?.toISOString() ?? null,
-      };
-    })
-  );
-
-  return NextResponse.json({ success: true, data: memberData });
 }
 
 export async function POST(request: NextRequest) {

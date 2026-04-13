@@ -109,7 +109,9 @@ export async function POST(
     });
 
     // Fire-and-forget email notification
-    sendMemberAddedEmail({ to: user.email, orgName: tenant.name, role }).catch(() => {});
+    sendMemberAddedEmail({ to: user.email, orgName: tenant.name, role }).catch((err) =>
+      console.error("[email] Failed to send member added email:", user.email, err)
+    );
 
     return NextResponse.json({ success: true, data: membership }, { status: 201 });
   } catch (error: unknown) {
