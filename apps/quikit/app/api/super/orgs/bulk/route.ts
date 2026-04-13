@@ -23,6 +23,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (ids.length > 100) {
+      return NextResponse.json(
+        { success: false, error: "Maximum 100 items per bulk operation" },
+        { status: 400 },
+      );
+    }
+
     if (!["suspend", "activate"].includes(action)) {
       return NextResponse.json(
         { success: false, error: "action must be 'suspend' or 'activate'" },

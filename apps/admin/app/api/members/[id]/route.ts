@@ -115,21 +115,39 @@ export async function PATCH(
 
   // Update team assignments if provided
   if (teamIds !== undefined) {
-    // Remove existing team assignments
-    await db.userTeam.deleteMany({
-      where: { tenantId, userId: membership.userId },
-    });
-
-    // Create new assignments
+    // Validate all teamIds belong to this tenant
     if (teamIds.length > 0) {
-      await db.userTeam.createMany({
-        data: teamIds.map((teamId: string) => ({
-          tenantId,
-          userId: membership.userId,
-          teamId,
-        })),
+      const validTeams = await db.team.findMany({
+        where: { id: { in: teamIds }, tenantId },
+        select: { id: true },
       });
+      const validTeamIds = new Set(validTeams.map((t) => t.id));
+      const invalidIds = teamIds.filter((id: string) => !validTeamIds.has(id));
+      if (invalidIds.length > 0) {
+        return NextResponse.json(
+          { success: false, error: "One or more team IDs are invalid" },
+          { status: 400 }
+        );
+      }
     }
+
+    // Atomic delete + create in a transaction
+    await db.$transaction([
+      db.userTeam.deleteMany({
+        where: { tenantId, userId: membership.userId },
+      }),
+      ...(teamIds.length > 0
+        ? [
+            db.userTeam.createMany({
+              data: teamIds.map((teamId: string) => ({
+                tenantId,
+                userId: membership.userId,
+                teamId,
+              })),
+            }),
+          ]
+        : []),
+    ]);
   }
 
   return NextResponse.json({
