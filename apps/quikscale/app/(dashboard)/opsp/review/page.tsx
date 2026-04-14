@@ -55,6 +55,8 @@ type ViewMode = "primary" | "secondary";
 interface PeriodData {
   target: number | null;
   achieved: number | null;
+  gap: number | null;
+  achievedPct: number | null;
   comment: string | null;
   autoPopulated?: boolean;
 }
@@ -191,11 +193,14 @@ function buildTableRows(rows: ReviewRow[], periodLabels: { key: string; label: s
     const groupSize = periodLabels.length + 1;
     let cumT = 0, cumA = 0, hasA = false;
     periodLabels.forEach((pl, idx) => {
-      const pd = row.periods[pl.key] ?? { target: null, achieved: null, comment: null };
-      const { gap, achievedPct } = computeMetrics(pd.target, pd.achieved);
+      const pd = row.periods[pl.key] ?? { target: null, achieved: null, gap: null, achievedPct: null, comment: null };
+      // For auto-populated periods, use the API-provided gap/achievedPct (from source cumulative)
+      const metrics = pd.autoPopulated && pd.gap != null && pd.achievedPct != null
+        ? { gap: pd.gap, achievedPct: pd.achievedPct }
+        : computeMetrics(pd.target, pd.achieved);
       if (pd.target != null) cumT += pd.target;
       if (pd.achieved != null) { cumA += pd.achieved; hasA = true; }
-      result.push({ rowIndex: row.rowIndex, category: row.category, periodKey: pl.key, periodLabel: pl.label, target: pd.target, achieved: pd.achieved, gap, achievedPct, comment: pd.comment, isCumulative: false, isFirstInGroup: idx === 0, groupSize, autoPopulated: pd.autoPopulated });
+      result.push({ rowIndex: row.rowIndex, category: row.category, periodKey: pl.key, periodLabel: pl.label, target: pd.target, achieved: pd.achieved, gap: metrics.gap, achievedPct: metrics.achievedPct, comment: pd.comment, isCumulative: false, isFirstInGroup: idx === 0, groupSize, autoPopulated: pd.autoPopulated });
     });
     const cum = computeMetrics(cumT, hasA ? cumA : null);
     // Cumulative row is auto-populated if ANY child period was auto-populated

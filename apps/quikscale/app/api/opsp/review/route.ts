@@ -74,6 +74,8 @@ export async function GET(req: NextRequest) {
       const periods: Record<string, {
         target: number | null;
         achieved: number | null;
+        gap: number | null;
+        achievedPct: number | null;
         comment: string | null;
         autoPopulated?: boolean;
       }> = {};
@@ -87,6 +89,8 @@ export async function GET(req: NextRequest) {
         periods[pKey] = {
           target: entry?.targetValue ? Number(entry.targetValue) : (planTarget ?? projected),
           achieved: entry?.achievedValue != null ? Number(entry.achievedValue) : null,
+          gap: null,
+          achievedPct: null,
           comment: entry?.comment ?? null,
         };
       }
@@ -307,12 +311,12 @@ async function getQuarterCumulativeForCategory(
   opspId: string,
   category: string,
   sourceRows: Record<string, unknown>[],
-): Promise<{ target: number; achieved: number; hasAchieved: boolean }> {
+): Promise<{ target: number; achieved: number; gap: number; achievedPct: number; hasAchieved: boolean }> {
   // Find the actionsQtr rowIndex matching this category
   const rowIdx = sourceRows.findIndex(
     (r) => (r.category as string)?.toLowerCase() === category.toLowerCase(),
   );
-  if (rowIdx < 0) return { target: 0, achieved: 0, hasAchieved: false };
+  if (rowIdx < 0) return { target: 0, achieved: 0, gap: 0, achievedPct: 0, hasAchieved: false };
 
   const entries = await db.oPSPReviewEntry.findMany({
     where: {
@@ -340,7 +344,12 @@ async function getQuarterCumulativeForCategory(
     }
   }
 
-  return { target: cumTarget, achieved: cumAchieved, hasAchieved };
+  // Compute gap and achievedPct from the cumulative's own target (not the parent's target)
+  const rawGap = cumTarget - cumAchieved;
+  const gap = rawGap < 0 ? 0 : parseFloat(rawGap.toFixed(4));
+  const achievedPct = cumTarget > 0 ? parseFloat(((cumAchieved / cumTarget) * 100).toFixed(1)) : 0;
+
+  return { target: cumTarget, achieved: cumAchieved, gap, achievedPct, hasAchieved };
 }
 
 /**
@@ -351,7 +360,7 @@ async function populateCascadeData(
   tenantId: string,
   userId: string,
   year: number,
-  rows: { rowIndex: number; category: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; comment: string | null; autoPopulated?: boolean }> }[],
+  rows: { rowIndex: number; category: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; gap: number | null; achievedPct: number | null; comment: string | null; autoPopulated?: boolean }> }[],
   horizon: string,
   targetYears: number,
 ) {
@@ -391,6 +400,8 @@ async function populateCascadeData(
           const period = row.periods[periodKeys[qi]];
           if (period) {
             period.achieved = cum.achieved;
+            period.gap = cum.gap;
+            period.achievedPct = cum.achievedPct;
             period.autoPopulated = true;
           }
         }
@@ -415,6 +426,7 @@ async function populateCascadeData(
           select: { id: true, quarter: true, actionsQtr: true },
         });
 
+        let yearTarget = 0;
         let yearAchieved = 0;
         let yearHasAchieved = false;
 
@@ -432,15 +444,22 @@ async function populateCascadeData(
           );
 
           if (cum.hasAchieved) {
+            yearTarget += cum.target;
             yearAchieved += cum.achieved;
             yearHasAchieved = true;
           }
         }
 
         if (yearHasAchieved) {
+          const rawGap = yearTarget - yearAchieved;
+          const yearGap = rawGap < 0 ? 0 : parseFloat(rawGap.toFixed(4));
+          const yearPct = yearTarget > 0 ? parseFloat(((yearAchieved / yearTarget) * 100).toFixed(1)) : 0;
+
           const period = row.periods[periodKeys[yi]];
           if (period) {
             period.achieved = yearAchieved;
+            period.gap = yearGap;
+            period.achievedPct = yearPct;
             period.autoPopulated = true;
           }
         }

@@ -285,6 +285,7 @@ export default function OPSPPage() {
     });
     set("status", "finalized");
     setFinalizeConfirmOpen(false);
+    window.dispatchEvent(new Event("opsp-finalized"));
   };
 
   /* ── Cascade: Targets → Goals → Actions (reactive, force-sync) ── */

@@ -30,6 +30,13 @@ export function OPSPDeadlineBanner() {
   const [data, setData] = useState<DeadlineData | null>(null);
   const [autoFinalized, setAutoFinalized] = useState<AutoFinalizedNotice | null>(null);
 
+  // Hide banner instantly when OPSP is finalized from the OPSP page
+  useEffect(() => {
+    const handler = () => setData(null);
+    window.addEventListener("opsp-finalized", handler);
+    return () => window.removeEventListener("opsp-finalized", handler);
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
