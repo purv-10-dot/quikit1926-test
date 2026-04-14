@@ -455,7 +455,7 @@ function ListView({ people, onSelect }: { people: Person[]; onSelect: (p: Person
           <thead className="sticky top-0 z-10">
             <tr>
               {["#","Name","Team","Performance","Potential","Box","Flight Risk","Succession","Skills","Action"].map(h => (
-                <th key={h} className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-500 whitespace-nowrap last:border-r-0">
+                <th key={h} className="bg-accent-50 border-b border-r border-gray-200 px-3 py-2 text-left text-xs font-semibold text-gray-500 whitespace-nowrap last:border-r-0">
                   {h}
                 </th>
               ))}

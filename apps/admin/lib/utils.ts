@@ -11,11 +11,6 @@ export function formatDate(date: Date | string): string {
   return format(dateObj, "MMM d, yyyy");
 }
 
-export function formatDateTime(date: Date | string): string {
-  const dateObj = typeof date === "string" ? parseISO(date) : date;
-  return format(dateObj, "MMM d, yyyy h:mm a");
-}
-
 export function formatRelativeDate(date: Date | string): string {
   const dateObj = typeof date === "string" ? parseISO(date) : date;
   const now = new Date();
@@ -39,14 +34,4 @@ export function slugify(text: string): string {
     .replace(/[^\w\s-]/g, "")
     .replace(/[\s_]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-export function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
-export function truncateText(text: string, length: number): string {
-  if (text.length <= length) return text;
-  return text.substring(0, length) + "...";
 }

@@ -18,7 +18,7 @@ export const DELETE = withTenantAuth<RouteParams>(
   async ({ tenantId }, _request, { params }) => {
     // Verify team belongs to this tenant
     const team = await db.team.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, tenantId },
     });
     if (!team) {
       return NextResponse.json(

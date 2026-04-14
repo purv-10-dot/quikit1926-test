@@ -18,9 +18,10 @@ export async function GET() {
     db.membership.count({
       where: { tenantId, status: "invited" },
     }),
-    db.app.count({
-      where: { status: "active" },
-    }),
+    db.userAppAccess.groupBy({
+      by: ["appId"],
+      where: { tenantId },
+    }).then((groups) => groups.length),
   ]);
 
   return NextResponse.json({

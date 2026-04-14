@@ -151,6 +151,7 @@ model Tenant {
   opspDocuments       OPSPDocument[]
   opppPlans           OPSPPlan[]
   opspData            OPSPData[]
+  opspReviewEntries   OPSPReviewEntry[]
   accountabilityFunctions AccountabilityFunction[]
   habits              HabitAssessment[]
   auditLogs           AuditLog[]
@@ -210,6 +211,7 @@ model User {
   kpiNotes            KPINote[]
   opppPlan            OPSPPlan?
   opspData            OPSPData[]
+  opspReviewEntries   OPSPReviewEntry[]
   accountabilityFunctions AccountabilityFunction[]
   reviewsGiven        PerformanceReview[] @relation("ReviewsGiven")
   reviewsReceived     PerformanceReview[] @relation("ReviewsReceived")
@@ -854,6 +856,8 @@ model OPSPData {
   createdBy     String
   updatedBy     String?
 
+  reviewEntries OPSPReviewEntry[]
+
   tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -861,6 +865,37 @@ model OPSPData {
   @@index([tenantId])
   @@index([userId])
   @@index([year, quarter])
+}
+
+// ============================================================================
+// OPSP REVIEW ENTRIES (Achieved actuals tracked per period per category)
+// ============================================================================
+
+model OPSPReviewEntry {
+  id            String   @id @default(cuid())
+  tenantId      String
+  opspId        String
+  userId        String   // who entered/last updated this value
+  horizon       String   // "quarter" | "yearly" | "3to5year"
+  rowIndex      Int      // index in source array (actionsQtr[0], goalRows[1], etc.)
+  category      String   // denormalized from OPSP for query convenience
+  period        String   // "m1"|"m2"|"m3" | "q1"|"q2"|"q3"|"q4" | "y1"|"y2"|"y3"|"y4"|"y5"
+  targetValue   Decimal? @db.Decimal(20, 4) // snapshot of OPSP target at review time
+  achievedValue Decimal? @db.Decimal(20, 4)
+  comment       String?  @db.Text
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  updatedBy     String?
+
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  opsp          OPSPData @relation(fields: [opspId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, opspId, horizon, rowIndex, period])
+  @@index([tenantId])
+  @@index([opspId])
+  @@index([userId])
 }
 
 model OPSPDocument {

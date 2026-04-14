@@ -18,3 +18,4 @@ export { SlidePanel } from "./components/slide-panel";
 export { EmptyState } from "./components/empty-state";
 export { Pagination } from "./components/pagination";
 export { Select, type SelectOption, type SelectProps } from "./components/select";
+export { DataTable, TH_BASE, TD_BASE, type DataTableColumn, type DataTableProps } from "./components/data-table";

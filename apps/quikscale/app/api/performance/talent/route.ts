@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { talentAssessmentSchema } from "@/lib/schemas/talentSchema";
 
 export const GET = withTenantAuth(async ({ tenantId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
@@ -124,39 +125,46 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 
 export const POST = withTenantAuth(async ({ tenantId, userId: actorId }, req) => {
     const body = await req.json();
+    const parsed = talentAssessmentSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" },
+        { status: 400 },
+      );
+    }
     const {
       userId, potential, flightRisk, successionReady,
       skills, developmentNotes, quarter, year,
-    } = body;
+    } = parsed.data;
 
     const assessment = await db.talentAssessment.upsert({
       where: {
         tenantId_userId_quarter_year: {
           tenantId,
           userId,
-          quarter: quarter || "Q1",
-          year: Number(year) || new Date().getFullYear(),
+          quarter,
+          year,
         },
       },
       create: {
         tenantId,
         userId,
         assessorId: actorId,
-        potential: potential || "medium",
-        flightRisk: flightRisk || "low",
-        successionReady: successionReady || "not-ready",
-        skills: skills || [],
-        developmentNotes: developmentNotes || null,
-        quarter: quarter || "Q1",
-        year: Number(year) || new Date().getFullYear(),
+        potential,
+        flightRisk,
+        successionReady,
+        skills,
+        developmentNotes: developmentNotes ?? null,
+        quarter,
+        year,
       },
       update: {
         assessorId: actorId,
-        potential: potential || "medium",
-        flightRisk: flightRisk || "low",
-        successionReady: successionReady || "not-ready",
-        skills: skills || [],
-        developmentNotes: developmentNotes || null,
+        potential,
+        flightRisk,
+        successionReady,
+        skills,
+        developmentNotes: developmentNotes ?? null,
       },
       include: {
         user: { select: { id: true, firstName: true, lastName: true } },

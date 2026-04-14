@@ -72,8 +72,26 @@ export function normalizeDescOwnerRows(val: unknown): DescOwnerRow[] {
 export function normalizeLoadedOPSP(
   raw: Record<string, unknown>
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...raw };
+  // Strip null/undefined values so callers can safely spread over defaultForm()
+  // without overwriting good defaults (e.g. employees: ["","",""] ) with null.
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v != null) out[k] = v;
+  }
   out.keyInitiatives = normalizeDescOwnerRows(out.keyInitiatives);
   out.rocks = normalizeDescOwnerRows(out.rocks);
+  // Backfill m1/m2/m3 on actionsQtr rows saved before monthly columns were added
+  if (Array.isArray(out.actionsQtr)) {
+    out.actionsQtr = (out.actionsQtr as Record<string, unknown>[]).map((r) => ({
+      category: typeof r.category === "string" ? r.category : "",
+      projected: typeof r.projected === "string" ? r.projected : "",
+      m1: typeof r.m1 === "string" ? r.m1 : "",
+      m2: typeof r.m2 === "string" ? r.m2 : "",
+      m3: typeof r.m3 === "string" ? r.m3 : "",
+    }));
+    // Pad to 6 rows
+    while ((out.actionsQtr as unknown[]).length < 6)
+      (out.actionsQtr as unknown[]).push({ category: "", projected: "", m1: "", m2: "", m3: "" });
+  }
   return out;
 }

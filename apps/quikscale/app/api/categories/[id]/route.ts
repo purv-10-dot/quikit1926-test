@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { validationError } from "@/lib/api/validationError";
 import { updateCategorySchema } from "@/lib/schemas/categorySchema";
 
 type RouteParams = { id: string };
@@ -11,12 +12,7 @@ export const PUT = withTenantAuth<RouteParams>(async ({ tenantId }, request, { p
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
   const parsed = updateCategorySchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json(
-      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-      { status: 400 }
-    );
-  }
+  if (!parsed.success) return validationError(parsed);
   const { name, dataType, currency, description } = parsed.data;
 
   const item = await db.categoryMaster.update({

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { createPortal } from "react-dom";
 import type { PriorityRow } from "@/lib/types/priority";
 import { ALL_WEEKS, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
 import { PriorityModal } from "./PriorityModal";
@@ -11,79 +10,46 @@ import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ColMenu } from "@/components/table/ColMenu";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
+import { BaseTooltip } from "@/components/ui/base-tooltip";
+import { useClickOutside } from "@/lib/hooks/useClickOutside";
 
-// ── Status helpers ────────────────────────────────────────────────────────────
-
-function statusBg(status: string | null | undefined): string {
-  if (status === "not-applicable") return "bg-gray-400";
-  if (status === "not-yet-started") return "bg-red-500";
-  if (status === "behind-schedule") return "bg-amber-400";
-  if (status === "on-track") return "bg-green-500";
-  if (status === "completed") return "bg-blue-500";
-  return "bg-gray-100";
-}
-
-const STATUS_PICKER_OPTIONS = [
-  { value: "not-applicable", label: "Not Applicable", color: "bg-gray-400" },
-  { value: "not-yet-started", label: "Not Yet Started", color: "bg-red-500" },
-  { value: "behind-schedule", label: "Behind Schedule", color: "bg-amber-400" },
-  { value: "on-track", label: "On Track", color: "bg-green-500" },
-  { value: "completed", label: "Completed", color: "bg-blue-500" },
-  { value: "", label: "Clear", color: "bg-white border border-gray-300" },
-];
+import { STATUS_PICKER_OPTIONS, statusDotColor } from "@/lib/constants/status";
 
 // ── Priority name tooltip ─────────────────────────────────────────────────────
 
 function NameTooltip({ name, description, children }: { name: string; description?: string | null; children: React.ReactNode }) {
-  const [show, setShow] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const ref = useRef<HTMLDivElement>(null);
-
-  function handleMouseEnter() {
-    const rect = ref.current?.getBoundingClientRect();
-    if (rect) setPos({ top: rect.bottom + 6, left: rect.left });
-    setShow(true);
-  }
-
   return (
-    <div ref={ref} onMouseEnter={handleMouseEnter} onMouseLeave={() => setShow(false)}>
-      {children}
-      {show && typeof document !== "undefined" && createPortal(
-        <div style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999 }}
-          className="w-72 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl pointer-events-none">
-          <div className="absolute bottom-full left-4 border-4 border-transparent border-b-gray-900" />
+    <BaseTooltip
+      width="w-72"
+      className="p-3"
+      content={
+        <>
           <p className="font-semibold text-white leading-snug mb-1">{name}</p>
           {description && (
             <p className="text-gray-300 leading-relaxed line-clamp-5">{description}</p>
           )}
-        </div>,
-        document.body
-      )}
-    </div>
+        </>
+      }
+    >
+      {children}
+    </BaseTooltip>
   );
 }
 
 // ── Week cell tooltip ─────────────────────────────────────────────────────────
 
 function WeekTooltip({ weekNumber, status, note, children }: { weekNumber: number; status: string; note: string; children: React.ReactNode }) {
-  const [show, setShow] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const ref = useRef<HTMLDivElement>(null);
   const label = STATUS_PICKER_OPTIONS.find(o => o.value === status)?.label ?? null;
 
-  function handleMouseEnter() {
-    const rect = ref.current?.getBoundingClientRect();
-    if (rect) setPos({ top: rect.bottom + 6, left: rect.left + rect.width / 2 - 88 });
-    setShow(true);
-  }
-
   return (
-    <div ref={ref} className="w-full h-full" onMouseEnter={handleMouseEnter} onMouseLeave={() => setShow(false)}>
-      {children}
-      {show && typeof document !== "undefined" && createPortal(
-        <div style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999 }}
-          className="w-44 bg-gray-900 text-white text-xs rounded-lg p-2.5 shadow-xl pointer-events-none">
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-gray-900" />
+    <BaseTooltip
+      width="w-44"
+      arrowPosition="center"
+      getLeft={(rect) => rect.left + rect.width / 2 - 88}
+      className="p-2.5"
+      wrapperClassName="w-full h-full"
+      content={
+        <>
           <p className="font-semibold text-gray-200 mb-1">Week {weekNumber}</p>
           {label ? (
             <p className="text-gray-300">{label}</p>
@@ -96,10 +62,11 @@ function WeekTooltip({ weekNumber, status, note, children }: { weekNumber: numbe
               <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">{note}</p>
             </div>
           )}
-        </div>,
-        document.body
-      )}
-    </div>
+        </>
+      }
+    >
+      {children}
+    </BaseTooltip>
   );
 }
 
@@ -118,14 +85,7 @@ function StatusPicker({ priorityId, weekNumber, currentStatus, currentNote, onSa
   const ref = useRef<HTMLDivElement>(null);
   const [selectedStatus, setSelectedStatus] = useState(currentStatus);
   const [note, setNote] = useState(currentNote);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
+  useClickOutside(ref, onClose);
 
   return (
     <div ref={ref}
@@ -368,7 +328,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
       <div className="flex-1 overflow-auto">
         <table className="border-collapse" style={{ minWidth: "max-content" }}>
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
+            <tr className="bg-accent-50 border-b border-gray-200">
               {/* Header cells — checkbox/log/id always sticky, others sticky if isColFrozen */}
               {COL_ORDER.map((colKey) => {
                 const frozen = isColFrozen(colKey);
@@ -385,7 +345,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
 
                 return (
                   <th key={colKey}
-                    className={`group top-0 z-30 bg-gray-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
+                    className={`group top-0 z-30 bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
                     style={{
                       left: frozen ? getLeftOffset(colKey) : undefined,
                       width,
@@ -431,9 +391,9 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
               {/* Week header cells */}
               {ALL_WEEKS.map(w => (
                 <th key={w}
-                  className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 border-r border-r-gray-100 text-center px-1 py-2 text-[10px] font-semibold text-gray-500 whitespace-nowrap select-none"
-                  style={{ minWidth: 64 }}>
-                  <div>W{w}</div>
+                  className="sticky top-0 z-20 bg-accent-50 border-b border-gray-200 border-r border-r-gray-100 text-center px-1 py-2 text-[10px] font-semibold text-gray-500 whitespace-nowrap select-none"
+                  style={{ minWidth: 76 }}>
+                  <div>Week {w}</div>
                   <div className="text-[9px] font-normal text-gray-400">{weekDateLabel(year, quarter, w)}</div>
                 </th>
               ))}
@@ -654,7 +614,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                             }}
                             disabled={isPastLocked || readOnly}
                             title={isPastLocked ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
-                            className={`w-full h-full flex items-center justify-center transition-opacity ${statusBg(status)} ${(isPastLocked || readOnly) ? "cursor-default" : "hover:opacity-80"} ${isPastLocked ? "opacity-50" : ""}`}
+                            className={`w-full h-full flex items-center justify-center transition-opacity ${statusDotColor(status)} ${(isPastLocked || readOnly) ? "cursor-default" : "hover:opacity-80"} ${isPastLocked ? "opacity-50" : ""}`}
                             style={{ minHeight: 34 }}>
                             {isPastLocked ? (
                               <svg className="h-2.5 w-2.5 text-white/60" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">

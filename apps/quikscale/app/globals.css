@@ -110,3 +110,22 @@ html.dark .glass {
 .prose-preview strong { font-weight: 700; }
 .prose-preview em { font-style: italic; }
 .prose-preview blockquote { border-left: 2px solid #d1d5db; padding-left: 6px; color: #6b7280; font-style: italic; }
+
+/* ============================================================================
+   OPSP FINALIZED — read-only mode for inline form
+   Inputs/selects/textareas/contentEditable become non-interactive.
+   Expand buttons remain clickable.
+   ============================================================================ */
+
+.opsp-finalized {
+  pointer-events: none;
+  opacity: 0.75;
+  user-select: none;
+}
+
+/* Re-enable expand (Maximize2) buttons inside finalized form */
+.opsp-finalized [data-expand="true"] {
+  pointer-events: auto !important;
+  opacity: 1;
+  cursor: pointer;
+}

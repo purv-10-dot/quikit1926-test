@@ -48,7 +48,7 @@ beforeEach(() => {
 
 describe("GET /api/org/teams — auth", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await GET(buildGET());
+    const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -57,7 +57,7 @@ describe("GET /api/org/teams — auth", () => {
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, tenantId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
-    const res = await GET(buildGET());
+    const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(403);
   });
 });
@@ -90,7 +90,7 @@ describe("GET /api/org/teams — happy path", () => {
       { id: USER, firstName: "Test", lastName: "User" },
     ] as any);
 
-    const res = await GET(buildGET());
+    const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -113,7 +113,7 @@ describe("GET /api/org/teams — happy path", () => {
 
 describe("POST /api/org/teams — auth", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await POST(buildPOST(validBody));
+    const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -122,7 +122,7 @@ describe("POST /api/org/teams — auth", () => {
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, tenantId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
-    const res = await POST(buildPOST(validBody));
+    const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(403);
   });
 });
@@ -135,14 +135,14 @@ describe("POST /api/org/teams — validation", () => {
   beforeEach(asAdmin);
 
   it("returns 400 when name is empty", async () => {
-    const res = await POST(buildPOST({ name: "" }));
+    const res = await POST(buildPOST({ name: "" }), { params: {} } as any);
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.success).toBe(false);
   });
 
   it("returns 400 when color hex is invalid", async () => {
-    const res = await POST(buildPOST({ name: "Eng", color: "not-a-hex" }));
+    const res = await POST(buildPOST({ name: "Eng", color: "not-a-hex" }), { params: {} } as any);
     expect(res.status).toBe(400);
   });
 });
@@ -161,7 +161,7 @@ describe("POST /api/org/teams — duplicate name", () => {
       tenantId: TENANT,
     } as any);
 
-    const res = await POST(buildPOST(validBody));
+    const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -193,7 +193,7 @@ describe("POST /api/org/teams — happy path", () => {
     mockDb.team.create.mockResolvedValue(createdTeam as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
-    const res = await POST(buildPOST(validBody));
+    const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -233,7 +233,7 @@ describe("POST /api/org/teams — happy path", () => {
       lastName: "User",
     } as any);
 
-    const res = await POST(buildPOST({ name: "Design", headId: USER }));
+    const res = await POST(buildPOST({ name: "Design", headId: USER }), { params: {} } as any);
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.data.headName).toBe("Test User");

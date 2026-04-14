@@ -17,9 +17,10 @@ interface Props {
   users: PickerUser[];
   placeholder?: string;
   error?: boolean;
+  disabled?: boolean;
 }
 
-export function UserPicker({ value, onChange, users, placeholder, error }: Props) {
+export function UserPicker({ value, onChange, users, placeholder, error, disabled }: Props) {
   return (
     <UserSelect
       mode="single"
@@ -28,6 +29,7 @@ export function UserPicker({ value, onChange, users, placeholder, error }: Props
       users={users}
       placeholder={placeholder}
       error={error}
+      disabled={disabled}
     />
   );
 }

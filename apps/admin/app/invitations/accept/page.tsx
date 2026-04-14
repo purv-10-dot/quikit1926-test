@@ -142,7 +142,7 @@ export default function AcceptInvitationPage() {
             Join {invitation?.orgName}
           </h2>
           <p className="text-sm text-[var(--color-text-secondary)] mt-1">
-            You've been invited as{" "}
+            You&apos;ve been invited as{" "}
             <Badge variant={invitation?.role}>
               {ROLE_LABELS[invitation?.role || ""] || invitation?.role}
             </Badge>

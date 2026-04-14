@@ -1,9 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { authOptions } from "@/lib/auth";
-import { getTenantId } from "@/lib/api/getTenantId";
-import { toErrorMessage } from "@/lib/api/errors";
+import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createPrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
@@ -33,119 +30,89 @@ const PRIORITY_SELECT = {
 };
 
 // GET /api/priority — list priorities filtered by year + quarter
-export async function GET(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
+export const GET = withTenantAuth(async ({ tenantId }, req) => {
+  const searchParams = req.nextUrl.searchParams;
+  const year = searchParams.get("year") ? parseInt(searchParams.get("year")!) : undefined;
+  const quarter = searchParams.get("quarter") || undefined;
+  const sortBy = searchParams.get("sortBy") || "createdAt";
+  const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
+  const { page, limit, skip, take } = parsePagination(req);
 
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) {
-      return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
-    }
+  const where: Record<string, unknown> = { tenantId };
+  if (year) where.year = year;
+  if (quarter) where.quarter = quarter;
 
-    const searchParams = request.nextUrl.searchParams;
-    const year = searchParams.get("year") ? parseInt(searchParams.get("year")!) : undefined;
-    const quarter = searchParams.get("quarter") || undefined;
-    const sortBy = searchParams.get("sortBy") || "createdAt";
-    const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
-    const { page, limit, skip, take } = parsePagination(request);
+  // Allowed sort fields
+  const sortMap: Record<string, Record<string, "asc" | "desc">> = {
+    team: { team: { name: sortOrder } as any },
+    priorityName: { name: sortOrder },
+    owner: { owner_user: { firstName: sortOrder } as any },
+    createdAt: { createdAt: sortOrder },
+  };
+  const orderBy = sortMap[sortBy] || { createdAt: sortOrder };
 
-    const where: Record<string, unknown> = { tenantId, deletedAt: null };
-    if (year) where.year = year;
-    if (quarter) where.quarter = quarter;
+  const [priorities, total] = await Promise.all([
+    db.priority.findMany({
+      where,
+      select: PRIORITY_SELECT,
+      orderBy: orderBy as any,
+      skip,
+      take,
+    }),
+    db.priority.count({ where }),
+  ]);
 
-    // Allowed sort fields
-    const sortMap: Record<string, Record<string, "asc" | "desc">> = {
-      team: { team: { name: sortOrder } as any },
-      priorityName: { name: sortOrder },
-      owner: { owner_user: { firstName: sortOrder } as any },
-      createdAt: { createdAt: sortOrder },
-    };
-    const orderBy = sortMap[sortBy] || { createdAt: sortOrder };
-
-    const [priorities, total] = await Promise.all([
-      db.priority.findMany({
-        where,
-        select: PRIORITY_SELECT,
-        orderBy: orderBy as any,
-        skip,
-        take,
-      }),
-      db.priority.count({ where }),
-    ]);
-
-    return NextResponse.json(paginatedResponse(priorities, total, page, limit));
-  } catch (error: unknown) {
-    console.error("GET /api/priority error:", error);
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch priorities") }, { status: 500 });
-  }
-}
+  return NextResponse.json(paginatedResponse(priorities, total, page, limit));
+});
 
 // POST /api/priority — create a priority
-export async function POST(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
-
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) {
-      return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
-    }
-
-    const rl = rateLimit({
-      routeKey: "priority:create",
-      clientKey: `${tenantId}:${session.user.id}`,
-      limit: LIMITS.mutation.limit,
-      windowMs: LIMITS.mutation.windowMs,
-    });
-    if (!rl.ok) {
-      return NextResponse.json(
-        { success: false, error: "Too many requests. Try again shortly." },
-        { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
-      );
-    }
-
-    const body = await request.json();
-    const parsed = createPrioritySchema.safeParse(body);
-    if (!parsed.success) {
-      const error = parsed.error.errors[0]?.message ?? "Invalid input";
-      return NextResponse.json({ success: false, error }, { status: 400 });
-    }
-    const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus } = parsed.data;
-
-    const priority = await db.priority.create({
-      data: {
-        tenantId,
-        name,
-        description: description ?? null,
-        owner,
-        teamId: teamId ?? null,
-        quarter,
-        year,
-        startWeek: startWeek ?? null,
-        endWeek: endWeek ?? null,
-        overallStatus: overallStatus ?? "not-yet-started",
-        createdBy: session.user.id,
-      },
-      select: PRIORITY_SELECT,
-    });
-
-    await writeAuditLog({
-      tenantId,
-      actorId: session.user.id,
-      action: "CREATE",
-      entityType: "Priority",
-      entityId: priority.id,
-      newValues: priority,
-    });
-
-    return NextResponse.json({ success: true, data: priority }, { status: 201 });
-  } catch (error: unknown) {
-    console.error("POST /api/priority error:", error);
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create priority") }, { status: 500 });
+export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+  const rl = rateLimit({
+    routeKey: "priority:create",
+    clientKey: `${tenantId}:${userId}`,
+    limit: LIMITS.mutation.limit,
+    windowMs: LIMITS.mutation.windowMs,
+  });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { success: false, error: "Too many requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    );
   }
-}
+
+  const body = await req.json();
+  const parsed = createPrioritySchema.safeParse(body);
+  if (!parsed.success) {
+    const error = parsed.error.errors[0]?.message ?? "Invalid input";
+    return NextResponse.json({ success: false, error }, { status: 400 });
+  }
+  const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus } = parsed.data;
+
+  const priority = await db.priority.create({
+    data: {
+      tenantId,
+      name,
+      description: description ?? null,
+      owner,
+      teamId: teamId ?? null,
+      quarter,
+      year,
+      startWeek: startWeek ?? null,
+      endWeek: endWeek ?? null,
+      overallStatus: overallStatus ?? "not-yet-started",
+      createdBy: userId,
+    },
+    select: PRIORITY_SELECT,
+  });
+
+  await writeAuditLog({
+    tenantId,
+    actorId: userId,
+    action: "CREATE",
+    entityType: "Priority",
+    entityId: priority.id,
+    newValues: priority,
+  });
+
+  return NextResponse.json({ success: true, data: priority }, { status: 201 });
+});

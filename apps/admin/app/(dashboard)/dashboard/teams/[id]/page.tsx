@@ -70,6 +70,7 @@ export default function TeamDetailPage() {
 
   useEffect(() => {
     fetchTeam();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id]);
 
   async function handleSave() {

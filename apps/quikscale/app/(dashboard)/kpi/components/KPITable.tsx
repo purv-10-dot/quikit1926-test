@@ -6,12 +6,15 @@ import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
 import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
 import { useStickyOffsets } from "../hooks/useStickyOffsets";
+import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { LogModal } from "./LogModal";
 import { KPILogsModal } from "./KPILogsModal";
 import { WeekTooltip } from "./WeekTooltip";
 import { DescTooltip } from "./DescTooltip";
 import { NameTooltip } from "./NameTooltip";
 import { ColMenu } from "@/components/table/ColMenu";
+import { X } from "lucide-react";
 export { HiddenColsMenu } from "./HiddenColsMenu";
 
 // ── Lock icon for freeze boundary ────────────────────────────────────────────
@@ -66,6 +69,10 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   const [logInitialTab, setLogInitialTab] = useState<"updates" | "edit" | "stats">("updates");
   const [auditKPI, setAuditKPI] = useState<KPIRow | null>(null);
 
+  // Blocked-week detection: past weeks with no value show a red ✕
+  const currentWeek = useCurrentWeek(year, quarter);
+  const { canAddPastWeek } = usePastWeekFlags();
+
   function openLog(kpi: KPIRow) { if (readOnly) return; setAuditKPI(kpi); }
   function openEdit(kpi: KPIRow) { if (readOnly) return; setLogKPI(kpi); setLogInitialTab("edit"); }
 
@@ -82,13 +89,13 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   useEffect(() => { onSelectionChange?.(selectedIds); }, [selectedIds, onSelectionChange]);
 
   // Clear selection when parent requests it
-  useEffect(() => { if (clearSelectionTrigger) clearSelection(); }, [clearSelectionTrigger]);
+  useEffect(() => { if (clearSelectionTrigger) clearSelection(); }, [clearSelectionTrigger, clearSelection]);
 
   // Notify parent when hidden cols change
   useEffect(() => { onHiddenColsChange?.(hiddenCols); }, [hiddenCols, onHiddenColsChange]);
 
   // Show col when parent requests it
-  useEffect(() => { if (showColTrigger) handleShowCol(showColTrigger.col); }, [showColTrigger]);
+  useEffect(() => { if (showColTrigger) handleShowCol(showColTrigger.col); }, [showColTrigger, handleShowCol]);
 
   // Local hide set = persisted hidden cols + this instance's hideColumns prop (not persisted)
   const localHideSet = useMemo(() => {
@@ -109,7 +116,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
     const sticky = isFrozen(col);
     const boundary = col === frozenUpTo;
     return [
-      "group text-left text-xs font-semibold text-gray-500 bg-gray-50",
+      "group text-left text-xs font-semibold text-gray-500 bg-accent-50",
       "border-b border-r border-gray-200 select-none",
       sticky ? `sticky z-[35]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.06)]" : ""}` : "",
     ].join(" ");
@@ -138,18 +145,18 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
             <tr ref={headerRowRef}>
               {/* Fixed columns: Checkbox, Log, ID (hidable via hideColumns prop) */}
               {!hideCheckbox && (
-                <th data-col-key="_checkbox" className="sticky z-[35] px-2 py-2 bg-gray-50 border-b border-r border-gray-200"
+                <th data-col-key="_checkbox" className="sticky z-[35] px-2 py-2 bg-accent-50 border-b border-r border-gray-200"
                   style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                   <input type="checkbox" checked={selectedIds.size === kpis.length && kpis.length > 0}
                     onChange={toggleAll} className="rounded border-gray-300 text-blue-600" />
                 </th>
               )}
               {!hideLog && (
-                <th data-col-key="_log" className="sticky z-[35] px-1 py-2 bg-gray-50 border-b border-r border-gray-200 text-xs font-semibold text-gray-500 text-center overflow-hidden"
+                <th data-col-key="_log" className="sticky z-[35] px-1 py-2 bg-accent-50 border-b border-r border-gray-200 text-xs font-semibold text-gray-500 text-center overflow-hidden"
                   style={{ left: hideCheckbox ? 0 : 40, width: 40, minWidth: 40, maxWidth: 40 }}>Log</th>
               )}
               {!hideId && (
-                <th data-col-key="_id" className="sticky z-[35] px-1 py-2 bg-gray-50 border-b border-r border-gray-200 text-xs font-semibold text-gray-500 text-center overflow-hidden"
+                <th data-col-key="_id" className="sticky z-[35] px-1 py-2 bg-accent-50 border-b border-r border-gray-200 text-xs font-semibold text-gray-500 text-center overflow-hidden"
                   style={{ left: (hideCheckbox ? 0 : 40) + (hideLog ? 0 : 40), width: 40, minWidth: 40, maxWidth: 40 }}>ID</th>
               )}
 
@@ -273,6 +280,16 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       </NameTooltip>
                     </td>
                   )}
+                  {/* Team Name */}
+                  {!localHideSet.has("team") && (
+                    <td className={tdClass("team", "whitespace-nowrap")} style={stickyStyle("team", getColWidth("team"))}>
+                      {kpi.team?.name ? (
+                        <span className="text-gray-700 truncate block">{kpi.team.name}</span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                  )}
                   {/* Team Head (team KPI only) */}
                   {!localHideSet.has("teamHead") && (
                     <td className={tdClass("teamHead", "whitespace-nowrap")} style={stickyStyle("teamHead", getColWidth("teamHead"))}>
@@ -356,7 +373,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     const wv = weekMap[w];
                     const val = wv?.value;
                     const note = wv?.notes;
-                    const { bg, text } = weekCellColors(val, kpi.qtdGoal, kpi.target, kpi.reverseColor ?? false);
+                    const { bg, text, label: cellLabel } = weekCellColors(val, kpi.qtdGoal, kpi.target, kpi.reverseColor ?? false);
                     const colW = getColWidth(col);
                     const boundary = col === frozenUpTo;
 
@@ -389,18 +406,27 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     }
 
                     const hasContent = (val !== undefined && val !== null) || !!note || (ownerBreakdown && ownerBreakdown.length > 0);
+                    const hasValue = val !== undefined && val !== null;
+                    const isBlocked = currentWeek !== null && w < currentWeek && !canAddPastWeek && !hasValue;
 
                     return (
                       <td key={w}
                         className={[
-                          "text-xs border-b border-r border-gray-100 text-center font-medium p-0", bg, text,
+                          "text-xs border-b border-r border-gray-100 text-center font-medium p-0",
+                          isBlocked ? "bg-gray-50" : bg,
+                          isBlocked ? "" : text,
                           isFrozen(col) ? `sticky z-[15]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.04)]" : ""}` : "",
                         ].join(" ")}
-                        style={stickyStyle(col, colW)}>
-                        {hasContent ? (
+                        style={stickyStyle(col, colW)}
+                        aria-label={`Week ${w}: ${isBlocked ? "blocked — no value logged" : hasValue ? val : "no data"} — ${cellLabel}`}>
+                        {isBlocked ? (
+                          <div className="flex items-center justify-center px-2 py-2">
+                            <X className="h-3.5 w-3.5 text-red-400" />
+                          </div>
+                        ) : hasContent ? (
                           <WeekTooltip weekNumber={w} value={val} note={note} owners={ownerBreakdown}>
                             <div className="flex items-center justify-center w-full h-full px-2 py-2 cursor-default">
-                              {val !== undefined && val !== null
+                              {hasValue
                                 ? fmtCompact(val)
                                 : <span className="text-gray-300 font-normal">—</span>}
                             </div>

@@ -44,12 +44,14 @@ type EditFormState = {
 // `./kpiModalHelpers`; this file owns only React glue code.
 
 function EditTab({
-  form, setForm, errors, users,
+  form, setForm, errors, users, isTeamKPI, kpiOwners,
 }: {
   form: EditFormState;
   setForm: React.Dispatch<React.SetStateAction<EditFormState>>;
   errors: Record<string, string>;
   users: User[];
+  isTeamKPI?: boolean;
+  kpiOwners?: Array<{ id: string; firstName: string; lastName: string }>;
 }) {
   // Past-week lock for target breakdown editing
   const { canEditPastWeek } = usePastWeekFlags();
@@ -140,50 +142,50 @@ function EditTab({
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Owner <span className="text-red-500">*</span></label>
-          <UserPicker value={form.owner} onChange={v => set("owner", v)} users={users} error={!!errors.owner} />
-          {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
-        </div>
-        <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">KPI Name <span className="text-red-500">*</span></label>
           <input value={form.name} onChange={e => set("name", e.target.value)}
             className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
           {errors.name && <p className="text-[10px] text-red-500 mt-0.5">{errors.name}</p>}
         </div>
-      </div>
-
-      <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">Quarter <span className="text-red-500">*</span></label>
-        <div className="flex gap-2">
-          <select value={form.year} onChange={e => set("year", e.target.value)}
-            className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-            {FISCAL_YEARS.map(y => <option key={y} value={String(y)}>{fiscalYearLabel(y)}</option>)}
-          </select>
-          <select value={form.quarter} onChange={e => set("quarter", e.target.value)}
-            className="w-20 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-            {ALL_QUARTERS.map(q => <option key={q} value={q}>{q}</option>)}
-          </select>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            {isTeamKPI ? "KPI Owner" : "Owner"} <span className="text-red-500">*</span>
+          </label>
+          {isTeamKPI && kpiOwners && kpiOwners.length > 0 ? (
+            <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
+              {kpiOwners.map(o => `${o.firstName} ${o.lastName}`).join(", ")}
+            </div>
+          ) : (
+            <>
+              <UserPicker value={form.owner} onChange={v => set("owner", v)} users={users} error={!!errors.owner} disabled />
+              {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
+            </>
+          )}
         </div>
       </div>
 
-      {/* Measurement Unit + Currency */}
+      {/* Quarter (read-only) */}
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
+        <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
+          {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
+        </div>
+      </div>
+
+      {/* Measurement Unit + Currency (read-only) */}
       <div className={`grid gap-3 ${isCurrency ? "grid-cols-2" : "grid-cols-1"}`}>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Measurement Unit</label>
-          <select value={form.measurementUnit} onChange={e => setMeasurementUnit(e.target.value)}
-            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-            {MEASUREMENT_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-          </select>
+          <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
+            {form.measurementUnit}
+          </div>
         </div>
         {isCurrency && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Currency</label>
-            <select value={form.currency} onChange={e => setCurrency(e.target.value)}
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-              {CURRENCIES.map(c => (
-                <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
-              ))}
-            </select>
+            <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
+              {CURRENCIES.find(c => c.code === form.currency)?.symbol} {form.currency}
+            </div>
           </div>
         )}
       </div>
@@ -657,7 +659,8 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
     // Validate edit form
     const errs: Record<string, string> = {};
     if (!editForm.name.trim()) errs.name = "Required";
-    if (!editForm.owner) errs.owner = "Required";
+    // Team KPIs use ownerIds (multi-select), not the single owner field
+    if (!isTeamKPI && !editForm.owner) errs.owner = "Required";
     if (Object.keys(errs).length) {
       setEditErrors(errs);
       setTab("edit");
@@ -668,15 +671,12 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
     setSaving(true);
     setSaveError("");
     try {
+      // Immutable fields (owner, quarter, year, measurementUnit, currency) are NOT sent on edit
       const kpiPayload = {
         name: editForm.name.trim(),
         description: editForm.description || undefined,
-        owner: editForm.owner,
         teamId: editForm.teamId || undefined,
         parentKPIId: editForm.parentKPIId || undefined,
-        quarter: editForm.quarter as "Q1" | "Q2" | "Q3" | "Q4",
-        year: parseInt(editForm.year),
-        measurementUnit: editForm.measurementUnit as "Number" | "Percentage" | "Currency" | "Ratio",
         target: editForm.target
           ? (parseFloat(editForm.target) || 0) * (editForm.measurementUnit === "Currency" ? getMultiplier(editForm.currency, editForm.targetScale) : 1)
           : undefined,
@@ -684,7 +684,6 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
         qtdGoal: editForm.qtdGoal ? parseFloat(editForm.qtdGoal) : undefined,
         status: editForm.status as "active" | "paused" | "completed",
         divisionType: editForm.divisionType,
-        currency: editForm.measurementUnit === "Currency" ? editForm.currency : null,
         targetScale: editForm.measurementUnit === "Currency" ? editForm.targetScale : null,
         reverseColor: editForm.reverseColor,
         weeklyTargets: Object.fromEntries(
@@ -796,7 +795,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {tab === "edit" && (
-            <EditTab form={editForm} setForm={setEditForm} errors={editErrors} users={users} />
+            <EditTab form={editForm} setForm={setEditForm} errors={editErrors} users={users} isTeamKPI={isTeamKPI} kpiOwners={kpi.owners as Array<{ id: string; firstName: string; lastName: string }> | undefined} />
           )}
           {tab === "updates" && (
             <UpdatesTab

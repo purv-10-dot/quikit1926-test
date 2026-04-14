@@ -63,7 +63,7 @@ export default function GoalsPage() {
   const createGoal = useCreateGoal();
   const deleteGoal = useDeleteGoal();
 
-  const goals = (data as GoalRow[] | undefined) ?? [];
+  const goals = useMemo(() => (data as GoalRow[] | undefined) ?? [], [data]);
 
   const [showModal, setShowModal] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);

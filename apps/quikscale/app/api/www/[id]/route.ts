@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateWWWSchema } from "@/lib/schemas/wwwSchema";
+import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 export const PUT = withTenantAuth<{ id: string }>(
   async ({ tenantId, userId }, request, { params }) => {
     const existing = await db.wWWItem.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, tenantId },
       select: { id: true },
     });
     if (!existing) {
@@ -18,15 +19,7 @@ export const PUT = withTenantAuth<{ id: string }>(
     }
 
     const parsed = updateWWWSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: parsed.error.errors[0]?.message ?? "Invalid input",
-        },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed);
     const {
       who,
       what,

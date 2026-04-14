@@ -39,7 +39,10 @@ export default function SelectOrgPage() {
           }
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error("[select-org] Failed to load memberships:", err);
+        setOrgs([]);
+      })
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

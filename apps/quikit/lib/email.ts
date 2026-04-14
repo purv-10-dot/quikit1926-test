@@ -2,7 +2,6 @@ let Resend: typeof import("resend").Resend | null = null;
 
 try {
   // Dynamic import to avoid hard dependency — resend is optional
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   Resend = require("resend").Resend;
 } catch {
   // resend package not installed — all sends will be no-ops
@@ -11,6 +10,16 @@ try {
 function getClient() {
   if (!Resend || !process.env.RESEND_API_KEY) return null;
   return new Resend(process.env.RESEND_API_KEY);
+}
+
+/** Escape HTML to prevent XSS in email templates */
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 const FROM = "QuikIT <noreply@quikit.app>";
@@ -30,7 +39,7 @@ export async function sendMemberAddedEmail(params: {
     from: FROM,
     to: params.to,
     subject: `You've been added to ${params.orgName}`,
-    html: `<p>You've been added as <strong>${params.role}</strong> to <strong>${params.orgName}</strong> on QuikIT.</p><p><a href="${BASE_URL}/login">Sign in to get started</a></p>`,
+    html: `<p>You've been added as <strong>${esc(params.role)}</strong> to <strong>${esc(params.orgName)}</strong> on QuikIT.</p><p><a href="${BASE_URL}/login">Sign in to get started</a></p>`,
   });
 }
 
@@ -47,7 +56,7 @@ export async function sendUserCreatedEmail(params: {
     from: FROM,
     to: params.to,
     subject: "Welcome to QuikIT",
-    html: `<p>Hi ${params.firstName},</p><p>Your QuikIT account has been created.</p><p><a href="${BASE_URL}/login">Sign in</a></p>`,
+    html: `<p>Hi ${esc(params.firstName)},</p><p>Your QuikIT account has been created.</p><p><a href="${BASE_URL}/login">Sign in</a></p>`,
   });
 }
 
@@ -64,6 +73,6 @@ export async function sendOrgSuspendedEmail(params: {
     from: FROM,
     to: params.to,
     subject: `${params.orgName} has been suspended`,
-    html: `<p>The organization <strong>${params.orgName}</strong> has been suspended on QuikIT. Contact support for more information.</p>`,
+    html: `<p>The organization <strong>${esc(params.orgName)}</strong> has been suspended on QuikIT. Contact support for more information.</p>`,
   });
 }

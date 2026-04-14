@@ -39,8 +39,12 @@ export async function POST(
       );
     }
 
-    // Verify the org exists
-    const tenant = await db.tenant.findUnique({ where: { id: tenantId } });
+    // Verify org and look up user in parallel
+    const [tenant, existingUser] = await Promise.all([
+      db.tenant.findUnique({ where: { id: tenantId }, select: { id: true, name: true } }),
+      db.user.findUnique({ where: { email } }),
+    ]);
+
     if (!tenant) {
       return NextResponse.json(
         { success: false, error: "Organization not found" },
@@ -48,8 +52,7 @@ export async function POST(
       );
     }
 
-    // Find or create user
-    let user = await db.user.findUnique({ where: { email } });
+    let user = existingUser;
 
     if (!user) {
       // Create new user — use provided password or generate a random one

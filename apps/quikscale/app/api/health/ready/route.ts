@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { isRedisAvailable } from "@quikit/redis";
 
@@ -10,12 +11,9 @@ import { isRedisAvailable } from "@quikit/redis";
  *   2. Redis (via PING, if configured)
  *
  * Returns 200 when all checks pass, 503 when any check fails.
- * Load balancers use this to decide whether to send new requests
- * to this instance.
- *
- * No auth — health probes must be accessible without credentials.
+ * Detailed check info only exposed with HEALTH_TOKEN auth header.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   const checks: Record<string, { ok: boolean; latencyMs?: number; error?: string }> = {};
 
   // 1. PostgreSQL check
@@ -51,11 +49,16 @@ export async function GET() {
 
   const allOk = Object.values(checks).every((c) => c.ok);
 
+  // Only expose detailed checks to internal callers (via shared token)
+  const token = process.env.HEALTH_TOKEN;
+  const auth = request.headers.get("authorization");
+  const showDetails = token && auth === `Bearer ${token}`;
+
   return NextResponse.json(
     {
       status: allOk ? "ready" : "degraded",
       timestamp: new Date().toISOString(),
-      checks,
+      ...(showDetails ? { checks } : {}),
     },
     { status: allOk ? 200 : 503 },
   );

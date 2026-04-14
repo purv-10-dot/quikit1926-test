@@ -6,6 +6,7 @@ import {
   listMeetingsParamsSchema,
 } from "@/lib/schemas/meetingSchema";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
 /**
@@ -26,15 +27,10 @@ export const GET = withTenantAuth(
       page: request.nextUrl.searchParams.get("page") ?? undefined,
       pageSize: request.nextUrl.searchParams.get("pageSize") ?? undefined,
     });
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid query" },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed, "Invalid query");
     const { cadence, from, to, page, pageSize } = parsed.data;
 
-    const where: Record<string, unknown> = { tenantId, deletedAt: null };
+    const where: Record<string, unknown> = { tenantId };
     if (cadence) where.cadence = cadence;
     if (from || to) {
       where.scheduledAt = {
@@ -102,12 +98,7 @@ export const POST = withTenantAuth(
     }
 
     const parsed = createMeetingSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed);
     const input = parsed.data;
 
     // Validate template belongs to tenant if provided

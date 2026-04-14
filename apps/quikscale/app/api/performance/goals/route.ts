@@ -5,6 +5,7 @@ import {
   createGoalSchema,
   listGoalsParamsSchema,
 } from "@/lib/schemas/goalSchema";
+import { validationError } from "@/lib/api/validationError";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
 /**
@@ -22,15 +23,7 @@ export const GET = withTenantAuth(
       page: request.nextUrl.searchParams.get("page") ?? undefined,
       pageSize: request.nextUrl.searchParams.get("pageSize") ?? undefined,
     });
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: parsed.error.errors[0]?.message ?? "Invalid query",
-        },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed, "Invalid query");
     const { ownerId, quarter, year, status, parentGoalId, page, pageSize } =
       parsed.data;
 
@@ -103,15 +96,7 @@ export const POST = withTenantAuth(
     }
 
     const parsed = createGoalSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: parsed.error.errors[0]?.message ?? "Invalid input",
-        },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed);
     const input = parsed.data;
 
     // Verify owner is a member of this tenant

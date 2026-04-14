@@ -63,7 +63,16 @@ const basePrisma =
   global.prisma ||
   new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
   });
+
+// Note: Connection pool size is configured via DATABASE_URL query parameters:
+// ?connection_limit=25&pool_timeout=10
+// Adjust these values based on deployment scale (default Prisma pool is 5).
 
 if (process.env.NODE_ENV !== "production") {
   global.prisma = basePrisma;

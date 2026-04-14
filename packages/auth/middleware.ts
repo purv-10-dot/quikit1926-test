@@ -17,6 +17,21 @@ export interface MiddlewareConfig {
 
 export function createMiddleware(config: MiddlewareConfig) {
   return async function middleware(request: NextRequest) {
+    // Redirect loop detection: if we've redirected 3+ times, break the loop
+    const redirectCount = parseInt(request.cookies.get("_redirect_count")?.value || "0", 10);
+    if (redirectCount >= 3) {
+      const response = NextResponse.next();
+      response.cookies.delete("_redirect_count");
+      return response;
+    }
+
+    /** Helper: redirect with loop counter */
+    function safeRedirect(url: string | URL): NextResponse {
+      const response = NextResponse.redirect(url);
+      response.cookies.set("_redirect_count", String(redirectCount + 1), { maxAge: 30 });
+      return response;
+    }
+
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     const { pathname } = request.nextUrl;
 
@@ -30,15 +45,15 @@ export function createMiddleware(config: MiddlewareConfig) {
     // Unauthenticated users → central login or local login
     if (!token && !isPublicRoute) {
       if (config.centralLoginUrl) {
-        return NextResponse.redirect(config.centralLoginUrl);
+        return safeRedirect(config.centralLoginUrl);
       }
-      return NextResponse.redirect(new URL(config.loginRoute, request.url));
+      return safeRedirect(new URL(config.loginRoute, request.url));
     }
 
     // Authenticated user on local login page → redirect to dashboard
     if (token && isLoginRoute) {
       const redirectTo = config.selectOrgRoute || "/dashboard";
-      return NextResponse.redirect(new URL(redirectTo, request.url));
+      return safeRedirect(new URL(redirectTo, request.url));
     }
 
     // Super-admin-only app: block non-super-admins
@@ -46,7 +61,17 @@ export function createMiddleware(config: MiddlewareConfig) {
       const loginTarget = config.centralLoginUrl
         ? `${config.centralLoginUrl}?reason=unauthorized`
         : new URL(`${config.loginRoute}?reason=unauthorized`, request.url).toString();
-      return NextResponse.redirect(loginTarget);
+      return safeRedirect(loginTarget);
+    }
+
+    // If the JWT callback detected that membership was revoked, force re-selection
+    if (token && token.membershipInvalid && !isSelectOrgRoute && !isPublicRoute && !isLoginRoute) {
+      if (config.centralSelectOrgUrl) {
+        return safeRedirect(config.centralSelectOrgUrl);
+      }
+      if (config.selectOrgRoute) {
+        return safeRedirect(new URL(config.selectOrgRoute, request.url));
+      }
     }
 
     // Org selection enforcement
@@ -56,13 +81,18 @@ export function createMiddleware(config: MiddlewareConfig) {
       }
       // Redirect to central select-org or local select-org
       if (config.centralSelectOrgUrl) {
-        return NextResponse.redirect(config.centralSelectOrgUrl);
+        return safeRedirect(config.centralSelectOrgUrl);
       }
       if (config.selectOrgRoute) {
-        return NextResponse.redirect(new URL(config.selectOrgRoute, request.url));
+        return safeRedirect(new URL(config.selectOrgRoute, request.url));
       }
     }
 
-    return NextResponse.next();
+    // Successful navigation — reset redirect counter
+    const response = NextResponse.next();
+    if (redirectCount > 0) {
+      response.cookies.delete("_redirect_count");
+    }
+    return response;
   };
 }

@@ -162,9 +162,18 @@ export const SignInComponent = ({ logo, brandName = "QuikIT" }: SignInComponentP
 
   const runSignIn = async (email?: string, password?: string) => {
     setModalStatus("loading");
-    // Use demo credentials for social sign-in (mock flow)
-    const signInEmail = email || "ceo@demo.com";
-    const signInPassword = password || "password123";
+    if (!email || !password) {
+      setModalErrorMessage("Email and password are required.");
+      setModalStatus("error");
+      return;
+    }
+    if (password.length < 8) {
+      setModalErrorMessage("Password must be at least 8 characters.");
+      setModalStatus("error");
+      return;
+    }
+    const signInEmail = email;
+    const signInPassword = password;
     try {
       const result = await nextAuthSignIn("credentials", {
         email: signInEmail,

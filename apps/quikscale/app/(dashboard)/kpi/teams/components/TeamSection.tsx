@@ -7,7 +7,6 @@ import { useCanManageTeamKPI } from "@/lib/hooks/useCanManageTeamKPI";
 import { progressColor, fmtCompact } from "@/lib/utils/kpiHelpers";
 import { KPITable } from "../../components/KPITable";
 import { KPIModal } from "../../components/KPIModal";
-import { AddButton } from "@/components/AddButton";
 
 interface Props {
   team: Team;
@@ -20,7 +19,6 @@ interface Props {
 
 export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpanded }: Props) {
   const [expanded, setExpanded] = useState<boolean>(defaultExpanded ?? kpis.length > 0);
-  const [showAdd, setShowAdd] = useState(false);
   const [editKPI, setEditKPI] = useState<KPIRow | null>(null);
 
   const canManage = useCanManageTeamKPI(team.id);
@@ -42,12 +40,7 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-      {/* Header (always visible)
-          Layout:
-            [left-cluster: chevron · dot · name · badge]   [progress cluster (fixed width)]   ──auto──   [Add KPI button pinned right]
-          The left cluster uses flex-1 min-w-0 so the team name truncates cleanly.
-          Add KPI uses ml-auto to pin to the rightmost edge with all leftover space to its left.
-      */}
+      {/* Header (always visible) — click to expand/collapse */}
       <div
         className="flex items-center gap-4 px-5 py-3 border-b border-gray-100 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors select-none"
         onClick={() => setExpanded(e => !e)}
@@ -89,12 +82,6 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
           </div>
         )}
 
-        {/* Add KPI button — pinned to the rightmost via ml-auto */}
-        {canManage && (
-          <div className="ml-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-            <AddButton onClick={() => setShowAdd(true)}>Add KPI</AddButton>
-          </div>
-        )}
       </div>
 
       {/* Body */}
@@ -103,17 +90,6 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
           {kpis.length === 0 ? (
             <div className="px-6 py-8 text-center text-xs text-gray-400">
               No team KPIs yet for this quarter.
-              {canManage && (
-                <>
-                  {" "}
-                  <button
-                    onClick={() => setShowAdd(true)}
-                    className="text-blue-500 hover:underline font-medium"
-                  >
-                    Add the first one
-                  </button>
-                </>
-              )}
             </div>
           ) : (
             <div className="overflow-hidden">
@@ -135,21 +111,7 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
         </div>
       )}
 
-      {/* Add / Edit modals */}
-      {showAdd && (
-        <KPIModal
-          mode="create"
-          scope="team"
-          teamId={team.id}
-          defaultYear={year}
-          defaultQuarter={quarter}
-          onClose={() => setShowAdd(false)}
-          onSuccess={() => {
-            setShowAdd(false);
-            onRefresh();
-          }}
-        />
-      )}
+      {/* Edit modal */}
       {editKPI && (
         <KPIModal
           mode="edit"

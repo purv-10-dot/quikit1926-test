@@ -3,7 +3,7 @@ import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   progress: 160, owner: 140, kpiName: 220,
-  teamHead: 140, kpiOwner: 180,
+  team: 140, teamHead: 140, kpiOwner: 180,
   measurementUnit: 120, targetValue: 90,
   quarterlyGoal: 110, qtdGoal: 100, qtdAchieved: 110, weeklyGoal: 100,
   description: 160,
@@ -12,7 +12,7 @@ const WEEK_WIDTH_DEFAULT = 110;
 
 export const ALL_STATIC_COLS = [
   "progress", "owner", "kpiName",
-  "teamHead", "kpiOwner",
+  "team", "teamHead", "kpiOwner",
   "measurementUnit", "targetValue",
   "quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal",
   "description",
@@ -20,7 +20,7 @@ export const ALL_STATIC_COLS = [
 
 export const COL_LABELS: Record<string, string> = {
   progress: "Progress", owner: "Owner", kpiName: "KPI Name",
-  teamHead: "Team Head", kpiOwner: "KPI Owner",
+  team: "Team", teamHead: "Team Head", kpiOwner: "KPI Owner",
   measurementUnit: "Measurement Unit", targetValue: "Target Value",
   quarterlyGoal: "Quarterly Goal", qtdGoal: "QTD Goal", qtdAchieved: "QTD Achieved", weeklyGoal: "Weekly Goal",
   description: "Description",

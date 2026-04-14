@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { updateMeetingSchema } from "@/lib/schemas/meetingSchema";
+import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
 type Params = { id: string };
@@ -10,7 +11,7 @@ type Params = { id: string };
 export const GET = withTenantAuth<Params>(
   async ({ tenantId }, _req, { params }) => {
     const meeting = await db.meeting.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, tenantId },
       include: {
         attendees: {
           select: {
@@ -62,7 +63,7 @@ export const GET = withTenantAuth<Params>(
 export const PUT = withTenantAuth<Params>(
   async ({ tenantId, userId }, request, { params }) => {
     const existing = await db.meeting.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, tenantId },
       select: { id: true },
     });
     if (!existing) {
@@ -73,12 +74,7 @@ export const PUT = withTenantAuth<Params>(
     }
 
     const parsed = updateMeetingSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed);
     const input = parsed.data;
     const { attendeeIds, ...meetingFields } = input;
 
@@ -163,7 +159,7 @@ export const PUT = withTenantAuth<Params>(
 export const DELETE = withTenantAuth<Params>(
   async ({ tenantId, userId }, _req, { params }) => {
     const existing = await db.meeting.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, tenantId },
       select: { id: true },
     });
     if (!existing) {

@@ -49,6 +49,7 @@ export function CardH({
       {expand && (
         <button
           onClick={onExpand}
+          data-expand="true"
           className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded p-0.5"
         >
           <Maximize2 className="h-3.5 w-3.5" />

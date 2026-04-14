@@ -56,9 +56,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const notUpdated = ids.length - result.count;
     return NextResponse.json({
       success: true,
       message: `${result.count} organization(s) updated`,
+      data: {
+        requested: ids.length,
+        updated: result.count,
+        ...(notUpdated > 0 ? { skipped: notUpdated } : {}),
+      },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";

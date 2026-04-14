@@ -47,9 +47,12 @@ export default function IndividualKPIPage() {
   // Teams list
   const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
   useEffect(() => {
-    fetch("/api/org/teams").then(r => r.json()).then(d => {
-      if (d.success) setTeams(d.data.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })));
-    });
+    fetch("/api/org/teams")
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) setTeams(d.data.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })));
+      })
+      .catch((err) => console.error("[kpi] Failed to load teams:", err));
   }, []);
 
   // Users for owner dropdown — filtered by team when one is selected
@@ -66,19 +69,16 @@ export default function IndividualKPIPage() {
       setFilterOwner(session.user.id);
       ownerInitialized.current = true;
     }
-  }, [session?.user?.id]);
+  }, [session?.user?.id, filterOwner, setFilterOwner]);
 
-  // Team member IDs for client-side filtering when team selected but no specific owner
-  const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
-
-  // Apply filter changes — when a team is selected with no specific owner,
-  // fetch all (pageSize:1000) and filter client-side by teamUserIds
+  // Apply filter changes — pass teamId to backend for server-side filtering
   useEffect(() => {
     setFilters(f => ({
       ...f,
       status: (filterStatus as any) || undefined,
       owner: filterOwner || undefined,
-      pageSize: filterTeam && !filterOwner ? 1000 : 50,
+      teamId: filterTeam && !filterOwner ? filterTeam : undefined,
+      pageSize: 50,
       page: 1,
     }));
   }, [filterStatus, filterOwner, filterTeam]);
@@ -93,7 +93,7 @@ export default function IndividualKPIPage() {
           setAvailableYears(merged);
         }
       })
-      .catch(() => {});
+      .catch((err) => console.error("[kpi] Failed to load available years:", err));
   }, []);
 
   // Close dropdowns on outside click
@@ -107,12 +107,8 @@ export default function IndividualKPIPage() {
   }, []);
 
   const { data, isLoading, error, refetch } = useKPIs(filters);
-  const allKpis = data?.data ?? [];
-  // When team selected + no specific owner, filter client-side to team members only
-  const kpis = (filterTeam && !filterOwner)
-    ? allKpis.filter(k => teamUserIds.has(k.owner))
-    : allKpis;
-  const total = kpis.length;
+  const kpis = data?.data ?? [];
+  const total = data?.total ?? kpis.length;
 
   // Bulk delete
   const deleteKPI = useDeleteKPI();

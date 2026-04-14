@@ -1,30 +1,24 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { createPortal } from "react-dom";
 import type { WWWItem } from "@/lib/types/www";
 import { WWWPanel } from "./WWWPanel";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ColMenu } from "@/components/table/ColMenu";
+import { BaseTooltip } from "@/components/ui/base-tooltip";
+import { useClickOutside } from "@/lib/hooks/useClickOutside";
+import { toDateInputValue } from "@/lib/utils/dateUtils";
+
+import {
+  STATUS_PICKER_OPTIONS,
+  statusCellBg,
+  statusLabel,
+} from "@/lib/constants/status";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const STATUS_OPTIONS = [
-  { value: "not-applicable", label: "Not Applicable", color: "bg-gray-400" },
-  { value: "not-yet-started", label: "Not Yet Started", color: "bg-red-500" },
-  { value: "behind-schedule", label: "Behind Schedule", color: "bg-amber-400" },
-  { value: "on-track", label: "On Track", color: "bg-green-500" },
-  { value: "completed", label: "Completed", color: "bg-blue-500" },
-];
-
 function statusBadgeColor(status: string): string {
-  const opt = STATUS_OPTIONS.find(o => o.value === status);
-  return opt ? `${opt.color} text-white` : "bg-gray-100 text-gray-400";
-}
-
-function statusLabel(status: string): string {
-  const opt = STATUS_OPTIONS.find(o => o.value === status);
-  return opt?.label ?? status;
+  return statusCellBg(status) || "bg-gray-100 text-gray-400";
 }
 
 function formatDate(iso?: string | null): string {
@@ -40,45 +34,13 @@ function formatDate(iso?: string | null): string {
   }
 }
 
-function toDateInputValue(iso?: string | null): string {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  } catch {
-    return "";
-  }
-}
-
 // ── Shared text tooltip ───────────────────────────────────────────────────────
 
 function TextTooltip({ text, children }: { text: string; children: React.ReactNode }) {
-  const [show, setShow] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  const ref = useRef<HTMLDivElement>(null);
-
-  function handleMouseEnter() {
-    const rect = ref.current?.getBoundingClientRect();
-    if (rect) setPos({ top: rect.bottom + 6, left: rect.left });
-    setShow(true);
-  }
-
-  if (!text) return <>{children}</>;
-
   return (
-    <div ref={ref} onMouseEnter={handleMouseEnter} onMouseLeave={() => setShow(false)}>
+    <BaseTooltip width="w-80" className="p-3" content={text ? <p className="leading-relaxed whitespace-pre-wrap">{text}</p> : null}>
       {children}
-      {show && typeof document !== "undefined" && createPortal(
-        <div
-          style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999 }}
-          className="w-80 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl pointer-events-none"
-        >
-          <div className="absolute bottom-full left-4 border-4 border-transparent border-b-gray-900" />
-          <p className="leading-relaxed whitespace-pre-wrap">{text}</p>
-        </div>,
-        document.body
-      )}
-    </div>
+    </BaseTooltip>
   );
 }
 
@@ -99,14 +61,7 @@ interface StatusPickerProps {
 
 function StatusPicker({ itemId, currentStatus, onSave, onClose }: StatusPickerProps) {
   const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
+  useClickOutside(ref, onClose);
 
   return (
     <div
@@ -117,7 +72,7 @@ function StatusPicker({ itemId, currentStatus, onSave, onClose }: StatusPickerPr
         <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Set Status</p>
       </div>
       <div className="py-1">
-        {STATUS_OPTIONS.map(opt => (
+        {STATUS_PICKER_OPTIONS.map(opt => (
           <button
             key={opt.value}
             onClick={() => { onSave(itemId, opt.value); onClose(); }}
@@ -159,14 +114,7 @@ interface DatePickerProps {
 function RevisedDatePicker({ itemId, currentDate, existingDates, onSave, onClose }: DatePickerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState(toDateInputValue(currentDate));
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
+  useClickOutside(ref, onClose);
 
   function handleSave() {
     if (!value) return;
@@ -256,6 +204,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil((total as number) / (pageSize as number))) : 1;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editItem, setEditItem] = useState<WWWItem | null>(null);
+  const [panelTab, setPanelTab] = useState<"edit" | "log">("edit");
   const [openStatusPicker, setOpenStatusPicker] = useState<string | null>(null);
   const [openDatePicker, setOpenDatePicker] = useState<string | null>(null);
 
@@ -341,14 +290,14 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
     }
   }
 
-  const thBase = "sticky top-0 z-20 bg-gray-50 border-b border-gray-200 border-r border-r-gray-100 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap";
+  const thBase = "sticky top-0 z-20 bg-accent-50 border-b border-gray-200 border-r border-r-gray-100 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap";
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-auto">
         <table className="border-collapse w-full">
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
+            <tr className="bg-accent-50 border-b border-gray-200">
               {WWW_COL_ORDER.map((colKey) => {
                 const frozen = isColFrozen(colKey);
                 const width = WWW_COL_WIDTHS[colKey];
@@ -365,7 +314,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
                 return (
                   <th key={colKey}
-                    className={`group top-0 z-30 bg-gray-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
+                    className={`group top-0 z-30 bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
                     style={{
                       left: frozen ? getLeftOffset(colKey) : undefined,
                       width,
@@ -450,7 +399,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                   {WWW_COL_ORDER.includes("_log") && (
                     <td className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit" style={{ left: getLeftOffset("_log"), width: 40, minWidth: 40 }}>
                       <button
-                        onClick={() => setEditItem(item)}
+                        onClick={() => { setPanelTab("log"); setEditItem(item); }}
                         className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
                         title="Open log"
                       >
@@ -471,7 +420,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                         boxShadow: lastFrozenKey === "_id" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
                       <button
-                        onClick={() => setEditItem(item)}
+                        onClick={() => { setPanelTab("edit"); setEditItem(item); }}
                         className="text-gray-900 hover:underline font-medium text-xs transition-colors"
                       >
                         {rowIdx + 1}
@@ -632,6 +581,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         <WWWPanel
           mode="edit"
           item={editItem}
+          initialTab={panelTab}
           onClose={() => setEditItem(null)}
           onSuccess={() => { setEditItem(null); onRefresh(); }}
         />

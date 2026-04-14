@@ -50,7 +50,7 @@ beforeEach(() => {
 
 describe("GET /api/www — auth", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await GET(buildGET());
+    const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -59,7 +59,7 @@ describe("GET /api/www — auth", () => {
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, tenantId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
-    const res = await GET(buildGET());
+    const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(403);
   });
 });
@@ -93,7 +93,7 @@ describe("GET /api/www — happy path", () => {
       { id: USER, firstName: "Test", lastName: "User" },
     ] as any);
 
-    const res = await GET(buildGET());
+    const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -114,7 +114,7 @@ describe("GET /api/www — happy path", () => {
 
 describe("POST /api/www — auth", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await POST(buildPOST(validBody));
+    const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -123,7 +123,7 @@ describe("POST /api/www — auth", () => {
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, tenantId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
-    const res = await POST(buildPOST(validBody));
+    const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(403);
   });
 });
@@ -136,19 +136,19 @@ describe("POST /api/www — validation", () => {
   beforeEach(asAdmin);
 
   it("returns 400 when who is empty", async () => {
-    const res = await POST(buildPOST({ ...validBody, who: "" }));
+    const res = await POST(buildPOST({ ...validBody, who: "" }), { params: {} } as any);
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.success).toBe(false);
   });
 
   it("returns 400 when what is empty", async () => {
-    const res = await POST(buildPOST({ ...validBody, what: "" }));
+    const res = await POST(buildPOST({ ...validBody, what: "" }), { params: {} } as any);
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when when is missing", async () => {
-    const res = await POST(buildPOST({ who: USER, what: "Do something" }));
+    const res = await POST(buildPOST({ who: USER, what: "Do something" }), { params: {} } as any);
     expect(res.status).toBe(400);
   });
 });
@@ -184,7 +184,7 @@ describe("POST /api/www — happy path", () => {
     } as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
-    const res = await POST(buildPOST(validBody));
+    const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -217,7 +217,7 @@ describe("POST /api/www — happy path", () => {
     mockDb.user.findUnique.mockResolvedValue(null);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
-    await POST(buildPOST(validBody));
+    await POST(buildPOST(validBody), { params: {} } as any);
 
     const createArg = (mockDb.wWWItem.create as any).mock.calls[0][0];
     expect(createArg.data.tenantId).toBe(TENANT);

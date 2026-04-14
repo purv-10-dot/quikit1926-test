@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { db } from "@/lib/db";
+import { updateMemberSchema } from "@/lib/schemas/memberSchema";
 
 export async function GET(
   request: NextRequest,
@@ -100,7 +101,14 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const { role, status, teamIds, customPermissions } = body;
+  const parsed = updateMemberSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" },
+      { status: 400 },
+    );
+  }
+  const { role, status, teamIds, customPermissions } = parsed.data;
 
   // Update membership fields
   const updateData: Record<string, any> = {};

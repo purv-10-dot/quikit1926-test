@@ -8,6 +8,7 @@ import { WWWTable } from "./components/WWWTable";
 import { WWWPanel } from "./components/WWWPanel";
 import { FilterPicker, userToFilterOption } from "@/components/FilterPicker";
 import { useFilterContext } from "@/lib/context/FilterContext";
+import { STATUS_FILTER_OPTIONS } from "@/lib/constants/status";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { AddButton } from "@/components/AddButton";
@@ -174,12 +175,9 @@ export default function WWWPage() {
                     onChange={e => setFilterStatus(e.target.value)}
                     className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
                   >
-                    <option value="">All statuses</option>
-                    <option value="not-applicable">Not Applicable</option>
-                    <option value="not-yet-started">Not Yet Started</option>
-                    <option value="behind-schedule">Behind Schedule</option>
-                    <option value="on-track">On Track</option>
-                    <option value="completed">Completed</option>
+                    {STATUS_FILTER_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
                   </select>
                 </div>
                 {(filterTeam || filterStatus || filterWho) && (

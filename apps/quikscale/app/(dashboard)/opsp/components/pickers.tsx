@@ -11,7 +11,7 @@
  *   - `QuarterDropdown` — Q1-Q4 selector with radio-button styling
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -54,6 +54,22 @@ export function OwnerSelect({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const { data: users = [] } = useUsers();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [dropPos, setDropPos] = useState<{ top?: number; bottom?: number; left: number; width: number }>({ left: 0, width: 208 });
+  const [flipUp, setFlipUp] = useState(false);
+
+  const computePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const flip = spaceBelow < 280;
+    setFlipUp(flip);
+    if (flip) {
+      setDropPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left, width: 208 });
+    } else {
+      setDropPos({ top: rect.bottom + 4, left: rect.left, width: 208 });
+    }
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -77,7 +93,9 @@ export function OwnerSelect({
     <div className="relative w-full min-w-0">
       <WithTooltip content={open ? "" : fullName} className="relative block w-full">
         <button
+          ref={triggerRef}
           onClick={() => {
+            if (!open) computePosition();
             setOpen((o) => !o);
             setSearch("");
           }}
@@ -96,8 +114,15 @@ export function OwnerSelect({
       </WithTooltip>
       {open && (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute top-full mt-1 left-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg w-52 py-1">
+          <div className="fixed inset-0 z-[209]" onClick={() => setOpen(false)} />
+          <div
+            className="fixed z-[210] bg-white border border-gray-200 rounded-lg shadow-lg py-1"
+            style={{
+              width: dropPos.width,
+              left: dropPos.left,
+              ...(flipUp ? { bottom: dropPos.bottom } : { top: dropPos.top }),
+            }}
+          >
             <div className="px-2 pb-1 pt-1">
               <input
                 autoFocus

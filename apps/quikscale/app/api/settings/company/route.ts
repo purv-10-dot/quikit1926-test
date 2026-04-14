@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateCompanySchema } from "@/lib/schemas/settingsSchema";
+import { validationError } from "@/lib/api/validationError";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 export const GET = withTenantAuth(
@@ -26,12 +27,7 @@ export const PATCH = withTenantAuth(
   async ({ userId }, request) => {
     const body = await request.json();
     const parsed = updateCompanySchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0].message },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed);
 
     const updated = await db.user.update({
       where: { id: userId },

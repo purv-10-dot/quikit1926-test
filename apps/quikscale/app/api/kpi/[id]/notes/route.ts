@@ -7,7 +7,7 @@ type RouteParams = { id: string };
 
 export const GET = withTenantAuth<RouteParams>(async ({ tenantId }, _req, { params }) => {
   const kpi = await db.kPI.findUnique({
-    where: { id: params.id, deletedAt: null },
+    where: { id: params.id },
     select: { tenantId: true },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
@@ -32,7 +32,7 @@ export const GET = withTenantAuth<RouteParams>(async ({ tenantId }, _req, { para
 
 export const POST = withTenantAuth<RouteParams>(async ({ tenantId, userId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({
-    where: { id: params.id, deletedAt: null },
+    where: { id: params.id },
     select: { tenantId: true },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });

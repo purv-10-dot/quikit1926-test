@@ -15,13 +15,14 @@ export const mockDb: DeepMockProxy<PrismaClient> = mockDeep<PrismaClient>();
 // a single control surface.
 
 vi.mock("@quikit/database", async () => {
-  // Preserve enum re-exports (Role, KPIStatus, Prisma namespace, etc.) that
-  // route handlers import. Without this, any `import { Role } from
-  // "@quikit/database"` would crash at test time.
-  const actual = await vi.importActual<typeof import("@quikit/database")>(
-    "@quikit/database"
+  // Re-export enums / Prisma namespace directly from @prisma/client so that
+  // `import { Role } from "@quikit/database"` works in tests.  We import from
+  // @prisma/client (NOT @quikit/database) to avoid triggering
+  // PrismaClient instantiation which requires DATABASE_URL.
+  const prismaClient = await vi.importActual<typeof import("@prisma/client")>(
+    "@prisma/client"
   );
-  return { ...actual, db: mockDb };
+  return { ...prismaClient, db: mockDb };
 });
 
 vi.mock("@/lib/db", () => ({

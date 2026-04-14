@@ -56,7 +56,7 @@ export default function MeetingHistoryPage() {
   const { data, isLoading, error } = useMeetings(
     cadenceFilter ? { cadence: cadenceFilter } : {},
   );
-  const meetings = (data as MeetingRow[] | undefined) ?? [];
+  const meetings = useMemo(() => (data as MeetingRow[] | undefined) ?? [], [data]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

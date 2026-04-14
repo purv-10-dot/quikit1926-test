@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useCreatePriority } from "@/lib/hooks/usePriority";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useQueryClient } from "@tanstack/react-query";
-import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useTeams, type Team } from "@/lib/hooks/useTeams";
 import { UserPicker } from "@/components/UserPicker";
+import { useClickOutside } from "@/lib/hooks/useClickOutside";
 
 interface Props {
   defaultYear?: number;
@@ -31,18 +32,13 @@ function TeamSelect({ value, onChange, teams }: { value: string; onChange: (id: 
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        setAdding(false);
-        setNewName("");
-        setErr("");
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+  const handleClose = useCallback(() => {
+    setOpen(false);
+    setAdding(false);
+    setNewName("");
+    setErr("");
   }, []);
+  useClickOutside(ref, handleClose);
 
   useEffect(() => {
     if (adding) setTimeout(() => inputRef.current?.focus(), 50);
@@ -257,7 +253,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               </label>
               <select value={form.startWeek} onChange={e => set("startWeek", e.target.value)}
                 className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.startWeek ? "border-red-400" : "border-gray-200"}`}>
-                {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}</option>)}
+                {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>)}
               </select>
               {errors.startWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.startWeek}</p>}
             </div>
@@ -294,7 +290,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               </label>
               <select value={form.endWeek} onChange={e => set("endWeek", e.target.value)}
                 className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
-                {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}</option>)}
+                {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>)}
               </select>
               {errors.endWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.endWeek}</p>}
             </div>
