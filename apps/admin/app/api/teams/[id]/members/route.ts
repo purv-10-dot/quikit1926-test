@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { db } from "@/lib/db";
+import { z } from "zod";
+
+const userIdSchema = z.object({
+  userId: z.string().uuid("userId must be a valid UUID"),
+});
 
 export async function POST(
   request: NextRequest,
@@ -17,10 +22,15 @@ export async function POST(
     return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
   }
 
-  const { userId } = await request.json();
-  if (!userId) {
-    return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
+  const body = await request.json();
+  const parsed = userIdSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0].message },
+      { status: 400 }
+    );
   }
+  const { userId } = parsed.data;
 
   // Verify user has membership in this tenant
   const membership = await db.membership.findFirst({
@@ -53,10 +63,15 @@ export async function DELETE(
   const { tenantId } = auth;
   const teamId = params.id;
 
-  const { userId } = await request.json();
-  if (!userId) {
-    return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
+  const delBody = await request.json();
+  const delParsed = userIdSchema.safeParse(delBody);
+  if (!delParsed.success) {
+    return NextResponse.json(
+      { success: false, error: delParsed.error.errors[0].message },
+      { status: 400 }
+    );
   }
+  const { userId } = delParsed.data;
 
   await db.userTeam.deleteMany({
     where: { tenantId, userId, teamId },

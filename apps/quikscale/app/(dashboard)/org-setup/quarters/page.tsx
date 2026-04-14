@@ -553,7 +553,7 @@ export default function QuarterSettingsPage() {
       <table className="border-separate border-spacing-0 text-xs" style={{ minWidth: 600, width: "100%" }}>
         <thead className="sticky top-0 z-30">
           <tr>
-            <th className="sticky z-[35] bg-gray-50 border-b border-r border-gray-200 px-2 py-2 w-10">
+            <th className="sticky z-[35] bg-accent-50 border-b border-r border-gray-200 px-2 py-2 w-10">
               <input
                 type="checkbox"
                 checked={filtered.length > 0 && selectedIds.size === filtered.length}
@@ -561,11 +561,11 @@ export default function QuarterSettingsPage() {
                 className="rounded border-gray-300 text-accent-600 cursor-pointer"
               />
             </th>
-            <th className="text-left text-xs font-semibold text-gray-500 bg-gray-50 border-b border-r border-gray-200 px-3 py-2 w-14">ID</th>
-            <th className="text-left text-xs font-semibold text-gray-500 bg-gray-50 border-b border-r border-gray-200 px-3 py-2">Quarter</th>
-            <th className="text-left text-xs font-semibold text-gray-500 bg-gray-50 border-b border-r border-gray-200 px-3 py-2">Start Date</th>
-            <th className="text-left text-xs font-semibold text-gray-500 bg-gray-50 border-b border-r border-gray-200 px-3 py-2">End Date</th>
-            <th className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2 w-20" />
+            <th className="text-left text-xs font-semibold text-gray-500 bg-accent-50 border-b border-r border-gray-200 px-3 py-2 w-14">ID</th>
+            <th className="text-left text-xs font-semibold text-gray-500 bg-accent-50 border-b border-r border-gray-200 px-3 py-2">Quarter</th>
+            <th className="text-left text-xs font-semibold text-gray-500 bg-accent-50 border-b border-r border-gray-200 px-3 py-2">Start Date</th>
+            <th className="text-left text-xs font-semibold text-gray-500 bg-accent-50 border-b border-r border-gray-200 px-3 py-2">End Date</th>
+            <th className="bg-accent-50 border-b border-r border-gray-200 px-3 py-2 w-20" />
           </tr>
         </thead>
         <tbody>

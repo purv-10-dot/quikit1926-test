@@ -43,6 +43,9 @@ export interface RockRow {
 export interface ActionRow {
   category: string;
   projected: string;
+  m1: string;
+  m2: string;
+  m3: string;
 }
 
 export interface KPIAcctRow {

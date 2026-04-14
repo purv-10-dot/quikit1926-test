@@ -37,7 +37,7 @@ describe("tenant isolation — GET /api/kpi", () => {
     mockDb.kPI.findMany.mockResolvedValue([]);
     mockDb.user.findMany.mockResolvedValue([]);
 
-    await GET(req("/api/kpi"));
+    await GET(req("/api/kpi"), { params: {} } as any);
 
     // Every Prisma call must filter by MY_TENANT only.
     for (const call of mockDb.kPI.findMany.mock.calls) {
@@ -54,7 +54,7 @@ describe("tenant isolation — GET /api/kpi", () => {
     setSession({ id: USER, tenantId: MY_TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
 
-    const res = await GET(req("/api/kpi"));
+    const res = await GET(req("/api/kpi"), { params: {} } as any);
     expect(res.status).toBe(403);
   });
 });
@@ -82,7 +82,7 @@ describe("tenant isolation — POST /api/kpi", () => {
     await POST(req("/api/kpi", {
       method: "POST",
       body: JSON.stringify(body),
-    }));
+    }), { params: {} } as any);
 
     // Verify the create call was scoped to MY_TENANT, not whatever the body
     // might have tried to inject (it shouldn't even be allowed to inject one).
@@ -108,7 +108,7 @@ describe("tenant isolation — POST /api/kpi", () => {
     await POST(req("/api/kpi", {
       method: "POST",
       body: JSON.stringify(body),
-    }));
+    }), { params: {} } as any);
 
     const logCall = mockDb.kPILog.create.mock.calls[0][0];
     expect((logCall as any).data.tenantId).toBe(MY_TENANT);

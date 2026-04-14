@@ -11,6 +11,16 @@ function getResend(): Resend {
 
 const APP_URL = process.env.APP_URL || "http://localhost:3001";
 
+/** Escape HTML to prevent XSS in email templates */
+function esc(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 interface InvitationEmailParams {
   to: string;
   orgName: string;
@@ -43,7 +53,7 @@ export async function sendInvitationEmail({
         <div style="padding:40px;">
           <h2 style="margin:0 0 8px;color:#0f172a;font-size:22px;font-weight:600;">You're invited!</h2>
           <p style="margin:0 0 24px;color:#64748b;font-size:15px;line-height:1.6;">
-            <strong>${inviterName}</strong> has invited you to join <strong>${orgName}</strong> as a <strong>${role}</strong>.
+            <strong>${esc(inviterName)}</strong> has invited you to join <strong>${esc(orgName)}</strong> as a <strong>${esc(role)}</strong>.
           </p>
           <a href="${acceptUrl}" style="display:inline-block;background:#6366f1;color:#ffffff;text-decoration:none;padding:12px 32px;border-radius:8px;font-size:15px;font-weight:500;">
             Accept Invitation

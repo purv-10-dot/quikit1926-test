@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { validationError } from "@/lib/api/validationError";
 import { createHuddleSchema } from "@/lib/schemas/huddleSchema";
 
 // GET /api/daily-huddle
@@ -32,12 +33,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 // POST /api/daily-huddle
 export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
   const parsed = createHuddleSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json(
-      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-      { status: 400 }
-    );
-  }
+  if (!parsed.success) return validationError(parsed);
   const {
     meetingDate, callStatus, clientName, absentMembers,
     actualStartTime, actualEndTime,

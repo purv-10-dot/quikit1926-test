@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { createTemplateSchema } from "@/lib/schemas/meetingSchema";
+import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
 /**
@@ -150,12 +151,7 @@ export const GET = withTenantAuth(
 export const POST = withTenantAuth(
   async ({ tenantId, userId }, request) => {
     const parsed = createTemplateSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed);
     const input = parsed.data;
 
     const template = await db.meetingTemplate.create({

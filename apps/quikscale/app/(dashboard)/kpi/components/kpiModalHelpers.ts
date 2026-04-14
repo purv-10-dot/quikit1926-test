@@ -13,6 +13,8 @@
  *   - `buildOwnerBreakdown(pct, target, div, unit)` returns 13 cells that
  *     sum to `target * (pct / 100)`
  *   - `redistributeOwnerRemainder` preserves cells 1..fromWeek exactly
+ *   - Blocked (past) weeks always receive "0" — target is distributed
+ *     only across editable weeks when `firstEditableWeek > 1`
  */
 
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
@@ -38,10 +40,14 @@ export function fmtBreakdown(
  * Compute a 13-week breakdown for a KPI target.
  *
  * - **Standalone**: every week = `target` (full target each week)
- * - **Cumulative + Number**: floor-divide, pile `remainder` onto the
- *   last `remainder` weeks so the sum matches exactly
- * - **Cumulative + other**: equal 2-decimal split with the last week
- *   absorbing the rounding residue
+ * - **Cumulative + Number**: floor-divide across editable weeks, pile
+ *   `remainder` onto the last `remainder` editable weeks so the sum matches
+ * - **Cumulative + other**: equal 2-decimal split across editable weeks with
+ *   the last editable week absorbing the rounding residue
+ *
+ * @param firstEditableWeek Weeks before this are blocked (past) and get "0".
+ *   Defaults to 1 (all weeks editable). Standalone mode ignores this — all
+ *   weeks get the full target since they're independent.
  *
  * Returns an empty-string map when `target <= 0` (so form fields stay
  * placeholder-visible).
@@ -50,6 +56,7 @@ export function buildBreakdown(
   divisionType: DivisionType,
   targetNum: number,
   measurementUnit: MeasurementUnit,
+  firstEditableWeek: number = 1,
 ): WeeklyBreakdown {
   const map: WeeklyBreakdown = {};
   if (targetNum <= 0) {
@@ -59,6 +66,7 @@ export function buildBreakdown(
     return map;
   }
 
+  // Standalone: every week = full target (independent of blocking)
   if (divisionType === "Standalone") {
     const val = fmtBreakdown(targetNum, measurementUnit);
     ALL_WEEKS.forEach((w) => {
@@ -67,20 +75,34 @@ export function buildBreakdown(
     return map;
   }
 
-  // Cumulative
+  // Cumulative: distribute only across editable weeks
+  const editableCount = Math.max(1, 14 - firstEditableWeek); // weeks from firstEditableWeek..13
+  const lastEditableWeek = 13;
+
   if (measurementUnit === "Number") {
-    const base = Math.floor(targetNum / 13);
-    const extra = Math.round(targetNum - base * 13);
+    const base = Math.floor(targetNum / editableCount);
+    const extra = Math.round(targetNum - base * editableCount);
     ALL_WEEKS.forEach((w) => {
-      map[w] = String(13 - w < extra ? base + 1 : base);
+      if (w < firstEditableWeek) {
+        map[w] = "0";
+      } else {
+        // Pile extra onto the last `extra` editable weeks
+        const posFromEnd = lastEditableWeek - w; // 0 for week 13, 1 for week 12, etc.
+        map[w] = String(posFromEnd < extra ? base + 1 : base);
+      }
     });
   } else {
-    const base = parseFloat((targetNum / 13).toFixed(2));
-    const diff = parseFloat((targetNum - base * 13).toFixed(2));
+    const base = parseFloat((targetNum / editableCount).toFixed(2));
+    const diff = parseFloat((targetNum - base * editableCount).toFixed(2));
     ALL_WEEKS.forEach((w) => {
-      map[w] = base.toFixed(2);
+      if (w < firstEditableWeek) {
+        map[w] = "0.00";
+      } else {
+        map[w] = base.toFixed(2);
+      }
     });
-    map[13] = (base + diff).toFixed(2);
+    // Last editable week absorbs rounding residue
+    map[lastEditableWeek] = (base + diff).toFixed(2);
   }
   return map;
 }
@@ -90,6 +112,9 @@ export function buildBreakdown(
  * contribution percentage. The owner's sub-target is
  * `totalTarget * (ownerContributionPct / 100)`.
  *
+ * @param firstEditableWeek Weeks before this are blocked and get "0".
+ *   Defaults to 1 (all weeks editable).
+ *
  * Returns an empty-string map when the owner sub-target is <= 0.
  */
 export function buildOwnerBreakdown(
@@ -97,11 +122,14 @@ export function buildOwnerBreakdown(
   totalTarget: number,
   division: DivisionType,
   unit: MeasurementUnit,
+  firstEditableWeek: number = 1,
 ): WeeklyBreakdown {
   const ownerSubTarget = totalTarget * (ownerContributionPct / 100);
   if (ownerSubTarget <= 0) {
     return Object.fromEntries(ALL_WEEKS.map((w) => [w, ""])) as WeeklyBreakdown;
   }
+
+  // Standalone: every week = full sub-target (independent of blocking)
   if (division === "Standalone") {
     const val =
       unit === "Number"
@@ -111,21 +139,34 @@ export function buildOwnerBreakdown(
       ALL_WEEKS.map((w) => [w, val]),
     ) as WeeklyBreakdown;
   }
-  // Cumulative
+
+  // Cumulative: distribute only across editable weeks
+  const editableCount = Math.max(1, 14 - firstEditableWeek);
+  const lastEditableWeek = 13;
   const map: WeeklyBreakdown = {};
+
   if (unit === "Number") {
-    const base = Math.floor(ownerSubTarget / 13);
-    const extra = Math.round(ownerSubTarget - base * 13);
+    const base = Math.floor(ownerSubTarget / editableCount);
+    const extra = Math.round(ownerSubTarget - base * editableCount);
     ALL_WEEKS.forEach((w) => {
-      map[w] = String(13 - w < extra ? base + 1 : base);
+      if (w < firstEditableWeek) {
+        map[w] = "0";
+      } else {
+        const posFromEnd = lastEditableWeek - w;
+        map[w] = String(posFromEnd < extra ? base + 1 : base);
+      }
     });
   } else {
-    const base = parseFloat((ownerSubTarget / 13).toFixed(2));
+    const base = parseFloat((ownerSubTarget / editableCount).toFixed(2));
+    const diff = parseFloat((ownerSubTarget - base * editableCount).toFixed(2));
     ALL_WEEKS.forEach((w) => {
-      map[w] = base.toFixed(2);
+      if (w < firstEditableWeek) {
+        map[w] = "0.00";
+      } else {
+        map[w] = base.toFixed(2);
+      }
     });
-    const diff = parseFloat((ownerSubTarget - base * 13).toFixed(2));
-    map[13] = (base + diff).toFixed(2);
+    map[lastEditableWeek] = (base + diff).toFixed(2);
   }
   return map;
 }
@@ -150,7 +191,7 @@ export function redistributeOwnerRemainder(
   let leftSum = 0;
   for (let i = 1; i <= fromWeek; i++) leftSum += parseFloat(String(row[i])) || 0;
 
-  const remaining = ownerSubTarget - leftSum;
+  const remaining = Math.max(0, ownerSubTarget - leftSum);
   const rightCount = 13 - fromWeek;
   if (rightCount <= 0) return row;
 

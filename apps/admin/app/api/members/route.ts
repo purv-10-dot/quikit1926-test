@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/api/requireAdmin";
 import { db } from "@/lib/db";
 import { sendInvitationEmail } from "@/lib/email";
 import { ROLE_LABELS } from "@/lib/constants";
+import { inviteMemberSchema } from "@/lib/schemas/memberSchema";
 import crypto from "crypto";
 
 export async function GET(request: NextRequest) {
@@ -72,14 +73,14 @@ export async function POST(request: NextRequest) {
   const { tenantId, userId: inviterId } = auth;
 
   const body = await request.json();
-  const { email, firstName, lastName, role } = body;
-
-  if (!email || !firstName || !lastName || !role) {
+  const parsed = inviteMemberSchema.safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json(
-      { success: false, error: "email, firstName, lastName, and role are required" },
+      { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" },
       { status: 400 }
     );
   }
+  const { email, firstName, lastName, role } = parsed.data;
 
   // Check if user already has a membership for this tenant
   let user = await db.user.findUnique({ where: { email } });

@@ -2,10 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "quikscale-admin",
+      "name": "admin",
       "runtimeExecutable": "/usr/local/bin/node",
       "runtimeArgs": ["node_modules/.bin/next", "dev", "-p", "3005"],
-      "port": 3005
+      "port": 3005,
+      "autoPort": false
     }
   ]
 }

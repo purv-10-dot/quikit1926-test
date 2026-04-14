@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
+import { validationError } from "@/lib/api/validationError";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 export const GET = withTenantAuth(
   async ({ tenantId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
-    const where = { tenantId, deletedAt: null };
+    const where = { tenantId };
 
     const [teams, total] = await Promise.all([
       db.team.findMany({
@@ -28,12 +29,7 @@ export const GET = withTenantAuth(
 export const POST = withTenantAuth(
   async ({ tenantId }, request) => {
     const parsed = createTeamSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed);
     const name = parsed.data.name.trim();
 
     const existing = await db.team.findFirst({

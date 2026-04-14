@@ -2,30 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { db } from "@/lib/db";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const auth = await requireAdmin();
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
 
-  // Get all members (active + invited) — so admins can pre-configure app access
-  const members = await db.membership.findMany({
-    where: { tenantId, status: { in: ["active", "invited"] } },
-    include: {
-      user: {
-        select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+  // Parallel fetch: members, apps, and access records
+  const [members, apps, accessRecords] = await Promise.all([
+    db.membership.findMany({
+      where: { tenantId, status: { in: ["active", "invited"] } },
+      select: {
+        status: true,
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+        },
       },
-    },
-    orderBy: { user: { firstName: "asc" } },
-  });
-
-  // Get all apps
-  const apps = await db.app.findMany({ orderBy: { name: "asc" } });
-
-  // Get all access records for this tenant
-  const accessRecords = await db.userAppAccess.findMany({
-    where: { tenantId },
-  });
+      orderBy: { user: { firstName: "asc" } },
+    }),
+    db.app.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, slug: true, status: true } }),
+    db.userAppAccess.findMany({
+      where: { tenantId },
+      select: { userId: true, appId: true, role: true },
+    }),
+  ]);
 
   const accessSet = new Set(accessRecords.map((a) => `${a.userId}:${a.appId}`));
   const accessRoleMap = new Map(accessRecords.map((a) => [`${a.userId}:${a.appId}`, a.role]));
@@ -48,7 +48,7 @@ export async function GET() {
   return NextResponse.json({
     success: true,
     data: {
-      apps: apps.map((a) => ({ id: a.id, name: a.name, slug: a.slug, status: a.status })),
+      apps,
       matrix,
     },
   });
@@ -64,6 +64,14 @@ export async function POST(request: NextRequest) {
   if (!userId || !appId) {
     return NextResponse.json(
       { success: false, error: "userId and appId are required" },
+      { status: 400 }
+    );
+  }
+
+  const validRoles = ["owner", "admin", "member", "viewer"];
+  if (!validRoles.includes(role)) {
+    return NextResponse.json(
+      { success: false, error: `role must be one of: ${validRoles.join(", ")}` },
       { status: 400 }
     );
   }

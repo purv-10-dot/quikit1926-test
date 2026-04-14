@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { useTeamKPIs } from "@/lib/hooks/useKPI";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { TableSkeleton } from "@/components/ui/Skeleton";
@@ -8,8 +9,11 @@ import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
   getCurrentFiscalWeek, getWeekDateRange,
 } from "@/lib/utils/fiscal";
+import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
+import { KPIModal } from "../components/KPIModal";
+import { AddButton } from "@/components/AddButton";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -28,9 +32,23 @@ export default function TeamsKPIPage() {
   const teamRef = useRef<HTMLDivElement>(null);
   const [teamSearch, setTeamSearch] = useState("");
 
+  const [showAddKPI, setShowAddKPI] = useState(false);
+
+  const { data: session } = useSession();
   const { data: teams = [], isLoading: teamsLoading } = useTeams();
   const { data: kpiData, isLoading: kpisLoading, refetch } = useTeamKPIs({ year, quarter });
-  const kpis = (kpiData?.data ?? []) as KPIRow[];
+  const kpis = useMemo(() => (kpiData?.data ?? []) as KPIRow[], [kpiData?.data]);
+
+  // Can the user add team KPIs? (admin-level role, super admin, or head of any team)
+  const canAddTeamKPI = useMemo(() => {
+    if (!session?.user?.id) return false;
+    const role = (session.user as { membershipRole?: string }).membershipRole;
+    const ADMIN_MIN = ROLE_HIERARCHY[ROLES.ADMIN];
+    if (role && (ROLE_HIERARCHY[role] ?? 0) >= ADMIN_MIN) return true;
+    if ((session.user as { isSuperAdmin?: boolean }).isSuperAdmin) return true;
+    // Head of at least one team
+    return teams.some(t => t.headId === session.user?.id);
+  }, [session, teams]);
 
   // Group KPIs by teamId client-side for rendering
   const kpisByTeam = useMemo(() => {
@@ -274,6 +292,11 @@ export default function TeamsKPIPage() {
               </div>
             )}
           </div>
+
+          {/* + Add KPI — single page-level button */}
+          {canAddTeamKPI && (
+            <AddButton onClick={() => setShowAddKPI(true)}>Add KPI</AddButton>
+          )}
         </div>
       </div>
 
@@ -301,6 +324,21 @@ export default function TeamsKPIPage() {
           ))
         )}
       </div>
+
+      {/* Add KPI modal — scope="team", no pre-selected teamId so user picks the team inside the modal */}
+      {showAddKPI && (
+        <KPIModal
+          mode="create"
+          scope="team"
+          defaultYear={year}
+          defaultQuarter={quarter}
+          onClose={() => setShowAddKPI(false)}
+          onSuccess={() => {
+            setShowAddKPI(false);
+            refetch();
+          }}
+        />
+      )}
     </div>
   );
 }

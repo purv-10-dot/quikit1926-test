@@ -8,7 +8,6 @@ const nextConfig = {
     "@quikit/shared",
     "@quikit/database",
     "@quikit/redis",
-    "@quikit/logger",
   ],
 
   // Phase 4: Image optimization
@@ -44,33 +43,7 @@ const nextConfig = {
    * once a nonce-based strategy is in place.
    */
   async headers() {
-    // Allowed origins for CORS — localhost in dev, production domain in prod
-    const allowedOrigins = [
-      "http://localhost:3004",
-      "http://localhost:3005",
-      "http://localhost:3006",
-      process.env.NEXT_PUBLIC_APP_URL,
-    ]
-      .filter(Boolean)
-      .join(", ");
-
     return [
-      // CORS headers for API routes
-      {
-        source: "/api/:path*",
-        headers: [
-          { key: "Access-Control-Allow-Origin", value: allowedOrigins },
-          {
-            key: "Access-Control-Allow-Methods",
-            value: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          },
-          {
-            key: "Access-Control-Allow-Headers",
-            value: "Content-Type, Authorization, X-Request-ID",
-          },
-          { key: "Access-Control-Max-Age", value: "86400" },
-        ],
-      },
       // Security headers for all routes
       {
         source: "/:path*",

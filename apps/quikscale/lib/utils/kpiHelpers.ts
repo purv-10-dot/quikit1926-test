@@ -55,10 +55,19 @@ export function weekCellColors(
   qtdGoal: number | null | undefined,
   fallbackTarget: number | null | undefined = null,
   reverse: boolean = false,
-): { bg: string; text: string } {
+): { bg: string; text: string; label: string } {
   const weeklyTarget = ((qtdGoal ?? fallbackTarget ?? 0)) / 13;
   const isUpdated = val !== null && val !== undefined;
   const numVal = isUpdated ? val : 0;
   const color: ColorResult = getColorByPercentage(numVal, weeklyTarget, isUpdated, reverse);
-  return { bg: color.bg, text: color.text };
+  // Derive accessible label from color
+  let label = "No data";
+  if (isUpdated) {
+    if (color.bg === "bg-blue-600") label = "Exceeded";
+    else if (color.bg === "bg-green-600") label = "Achieved";
+    else if (color.bg === "bg-yellow-500") label = "Near target";
+    else if (color.bg === "bg-red-600") label = "Below target";
+    else label = "Neutral";
+  }
+  return { bg: color.bg, text: color.text, label };
 }

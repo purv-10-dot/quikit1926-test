@@ -66,7 +66,7 @@ beforeEach(() => {
 describe("POST /api/kpi — auth", () => {
   it("returns 401 when unauthenticated", async () => {
     setSession(null);
-    const res = await POST(buildRequest(baseIndividual));
+    const res = await POST(buildRequest(baseIndividual), { params: {} } as any);
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -75,7 +75,7 @@ describe("POST /api/kpi — auth", () => {
   it("returns 403 when authenticated but no active membership", async () => {
     setSession({ id: USER, tenantId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
-    const res = await POST(buildRequest(baseIndividual));
+    const res = await POST(buildRequest(baseIndividual), { params: {} } as any);
     expect(res.status).toBe(403);
   });
 });
@@ -84,7 +84,7 @@ describe("POST /api/kpi — Zod validation", () => {
   beforeEach(asAdmin);
 
   it("returns 500 on invalid body (Zod throws)", async () => {
-    const res = await POST(buildRequest({ ...baseIndividual, name: "" }));
+    const res = await POST(buildRequest({ ...baseIndividual, name: "" }), { params: {} } as any);
     // The route catch-all wraps Zod errors as 500; accept 4xx or 500 until the
     // route is refactored to return 400 explicitly.
     expect([400, 500]).toContain(res.status);
@@ -97,7 +97,7 @@ describe("POST /api/kpi — Zod validation", () => {
       ...baseTeam,
       ownerContributions: { [USER]: 60, [OTHER]: 39 },
     };
-    const res = await POST(buildRequest(input));
+    const res = await POST(buildRequest(input), { params: {} } as any);
     expect([400, 500]).toContain(res.status);
   });
 });
@@ -115,7 +115,7 @@ describe("POST /api/kpi — individual happy path", () => {
     } as any);
     mockDb.kPILog.create.mockResolvedValue({} as any);
 
-    const res = await POST(buildRequest(baseIndividual));
+    const res = await POST(buildRequest(baseIndividual), { params: {} } as any);
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -125,7 +125,7 @@ describe("POST /api/kpi — individual happy path", () => {
 
   it("returns 404 when owner user does not exist", async () => {
     mockDb.user.findUnique.mockResolvedValue(null);
-    const res = await POST(buildRequest(baseIndividual));
+    const res = await POST(buildRequest(baseIndividual), { params: {} } as any);
     expect(res.status).toBe(404);
   });
 });
@@ -153,7 +153,7 @@ describe("POST /api/kpi — team KPI permission", () => {
   it("returns 403 when user is not team head and not admin", async () => {
     // canManageTeamKPI reads team.findFirst (not findUnique); simulate "not head"
     mockDb.team.findFirst.mockResolvedValue({ headId: "someone-else" } as any);
-    const res = await POST(buildRequest(baseTeam));
+    const res = await POST(buildRequest(baseTeam), { params: {} } as any);
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toMatch(/team head or admin/i);
@@ -161,7 +161,7 @@ describe("POST /api/kpi — team KPI permission", () => {
 
   it("returns 404 when team does not exist in tenant", async () => {
     mockDb.team.findUnique.mockResolvedValue(null);
-    const res = await POST(buildRequest(baseTeam));
+    const res = await POST(buildRequest(baseTeam), { params: {} } as any);
     expect(res.status).toBe(404);
   });
 });
@@ -190,7 +190,7 @@ describe("POST /api/kpi — team KPI happy path", () => {
     } as any);
     mockDb.kPILog.create.mockResolvedValue({} as any);
 
-    const res = await POST(buildRequest(baseTeam));
+    const res = await POST(buildRequest(baseTeam), { params: {} } as any);
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.data.kpiLevel).toBe("team");
@@ -205,7 +205,7 @@ describe("POST /api/kpi — team KPI happy path", () => {
     // Only USER is in the team — OTHER is missing
     mockDb.membership.findMany.mockResolvedValue([{ userId: USER } as any]);
 
-    const res = await POST(buildRequest(baseTeam));
+    const res = await POST(buildRequest(baseTeam), { params: {} } as any);
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/not active members/i);

@@ -1,11 +1,16 @@
-import { vi, beforeEach } from "vitest";
+import "@testing-library/jest-dom/vitest";
+import { vi, beforeEach, afterEach } from "vitest";
+import { cleanup } from "@testing-library/react";
+
+// ---------------------------------------------------------------------------
+// Session injection for tests
+// ---------------------------------------------------------------------------
 
 export type TestUser = {
   id: string;
-  tenantId: string;
-  role: "super_admin" | "admin" | "member";
   email?: string;
   name?: string;
+  isSuperAdmin?: boolean;
 };
 
 const _state: { user: TestUser | null } = { user: null };
@@ -15,7 +20,8 @@ const mockedGetServerSession = vi.fn(async () =>
 );
 
 vi.mock("next-auth", async () => {
-  const actual = await vi.importActual<typeof import("next-auth")>("next-auth");
+  const actual =
+    await vi.importActual<typeof import("next-auth")>("next-auth");
   return { ...actual, getServerSession: mockedGetServerSession };
 });
 
@@ -37,6 +43,9 @@ export function setSession(user: TestUser | null) {
   _state.user = user;
 }
 
+// ---------------------------------------------------------------------------
+// next/navigation stubs
+// ---------------------------------------------------------------------------
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: vi.fn(),
@@ -53,19 +62,19 @@ vi.mock("next/navigation", () => ({
   notFound: vi.fn(),
 }));
 
-// Mock email and audit log modules
-vi.mock("@/lib/email", () => ({
-  sendUserCreatedEmail: vi.fn().mockResolvedValue(undefined),
-  sendOrgSuspendedEmail: vi.fn().mockResolvedValue(undefined),
-  sendMemberAddedEmail: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock("@/lib/auditLog", () => ({
-  logAudit: vi.fn().mockResolvedValue(undefined),
-}));
-
+// ---------------------------------------------------------------------------
+// Silence expected route-handler error logs
+// ---------------------------------------------------------------------------
 vi.spyOn(console, "error").mockImplementation(() => {});
+vi.spyOn(console, "warn").mockImplementation(() => {});
 
+// ---------------------------------------------------------------------------
+// Reset between tests
+// ---------------------------------------------------------------------------
 beforeEach(() => {
   _state.user = null;
+});
+
+afterEach(() => {
+  cleanup();
 });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { updateTemplateSchema } from "@/lib/schemas/meetingSchema";
+import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
 type Params = { id: string };
@@ -56,12 +57,7 @@ export const PUT = withTenantAuth<Params>(
     }
 
     const parsed = updateTemplateSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed);
     const input = parsed.data;
 
     // Build update payload — skip undefined keys so partial updates work

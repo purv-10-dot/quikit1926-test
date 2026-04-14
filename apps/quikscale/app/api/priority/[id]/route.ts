@@ -1,9 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { authOptions } from "@/lib/auth";
-import { getTenantId } from "@/lib/api/getTenantId";
-import { toErrorMessage } from "@/lib/api/errors";
+import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { updatePrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
@@ -33,110 +30,80 @@ const PRIORITY_SELECT = {
   },
 };
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
+  const priority = await db.priority.findFirst({
+    where: { id: params.id },
+    select: PRIORITY_SELECT,
+  });
+  if (!priority) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
+  if (priority.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+  return NextResponse.json({ success: true, data: priority });
+});
 
-    const priority = await db.priority.findFirst({
-      where: { id: params.id, deletedAt: null },
-      select: PRIORITY_SELECT,
-    });
-    if (!priority) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
-    if (priority.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+  const existing = await db.priority.findUnique({ where: { id: params.id }, select: { tenantId: true } });
+  if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
+  if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-    return NextResponse.json({ success: true, data: priority });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch priority") }, { status: 500 });
+  const parsed = updatePrioritySchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 }
+    );
   }
-}
+  const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, notes } = parsed.data;
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  const updated = await db.priority.update({
+    where: { id: params.id },
+    data: {
+      name: name ?? undefined,
+      description: description ?? null,
+      owner: owner ?? undefined,
+      teamId: teamId ?? null,
+      quarter: quarter ?? undefined,
+      year: year ?? undefined,
+      startWeek: startWeek ?? null,
+      endWeek: endWeek ?? null,
+      overallStatus: overallStatus ?? undefined,
+      notes: notes ?? null,
+      updatedBy: userId,
+    },
+    select: PRIORITY_SELECT,
+  });
 
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+  await writeAuditLog({
+    tenantId,
+    actorId: userId,
+    action: "UPDATE",
+    entityType: "Priority",
+    entityId: params.id,
+    newValues: updated,
+  });
 
-    const existing = await db.priority.findUnique({ where: { id: params.id }, select: { tenantId: true } });
-    if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
-    if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+  return NextResponse.json({ success: true, data: updated });
+});
 
-    const parsed = updatePrioritySchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-        { status: 400 }
-      );
-    }
-    const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus, notes } = parsed.data;
+export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+  const existing = await db.priority.findUnique({ where: { id: params.id }, select: { tenantId: true } });
+  if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
+  if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-    const updated = await db.priority.update({
-      where: { id: params.id },
-      data: {
-        name: name ?? undefined,
-        description: description ?? null,
-        owner: owner ?? undefined,
-        teamId: teamId ?? null,
-        quarter: quarter ?? undefined,
-        year: year ?? undefined,
-        startWeek: startWeek ?? null,
-        endWeek: endWeek ?? null,
-        overallStatus: overallStatus ?? undefined,
-        notes: notes ?? null,
-        updatedBy: session.user.id,
-      },
-      select: PRIORITY_SELECT,
-    });
+  // Soft delete
+  await db.priority.update({
+    where: { id: params.id },
+    data: { deletedAt: new Date(), updatedBy: userId },
+  });
 
-    await writeAuditLog({
-      tenantId,
-      actorId: session.user.id,
-      action: "UPDATE",
-      entityType: "Priority",
-      entityId: params.id,
-      newValues: updated,
-    });
+  await writeAuditLog({
+    tenantId,
+    actorId: userId,
+    action: "DELETE",
+    entityType: "Priority",
+    entityId: params.id,
+    oldValues: existing,
+  });
 
-    return NextResponse.json({ success: true, data: updated });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update priority") }, { status: 500 });
-  }
-}
-
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
-
-    const existing = await db.priority.findUnique({ where: { id: params.id }, select: { tenantId: true } });
-    if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
-    if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
-
-    // Soft delete
-    await db.priority.update({
-      where: { id: params.id },
-      data: { deletedAt: new Date(), updatedBy: session.user.id },
-    });
-
-    await writeAuditLog({
-      tenantId,
-      actorId: session.user.id,
-      action: "DELETE",
-      entityType: "Priority",
-      entityId: params.id,
-      oldValues: existing,
-    });
-
-    return NextResponse.json({ success: true, message: "Priority deleted successfully" });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete priority") }, { status: 500 });
-  }
-}
+  return NextResponse.json({ success: true, message: "Priority deleted successfully" });
+});

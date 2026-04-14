@@ -14,8 +14,6 @@
   "dependencies": {
     "@quikit/auth": "*",
     "@quikit/database": "*",
-    "@quikit/logger": "*",
-    "@quikit/redis": "*",
     "@quikit/shared": "*",
     "@quikit/ui": "*",
     "bcryptjs": "^2.4.3",
@@ -27,8 +25,7 @@
     "next": "14.0.4",
     "next-auth": "^4.24.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "uuid": "^9.0.0"
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -36,7 +33,6 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/uuid": "^9.0.7",
     "autoprefixer": "^10",
     "postcss": "^8",
     "tailwindcss": "^3.3.6",

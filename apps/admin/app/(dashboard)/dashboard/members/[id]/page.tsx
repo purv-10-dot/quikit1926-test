@@ -48,6 +48,7 @@ export default function MemberDetailPage() {
 
   useEffect(() => {
     fetchMember();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id]);
 
   async function handleUpdateRole() {

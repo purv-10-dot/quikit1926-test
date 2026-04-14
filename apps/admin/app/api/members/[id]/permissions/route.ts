@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { db } from "@/lib/db";
+import { z } from "zod";
+
+const VALID_PERMISSIONS = [
+  "org.manage", "org.view", "members.manage", "members.invite",
+  "teams.manage", "apps.manage", "settings.manage", "billing.manage",
+] as const;
+
+const permissionsSchema = z.object({
+  customPermissions: z.array(z.enum(VALID_PERMISSIONS)),
+});
 
 export async function PATCH(
   request: NextRequest,
@@ -20,14 +30,16 @@ export async function PATCH(
     return NextResponse.json({ success: false, error: "Member not found" }, { status: 404 });
   }
 
-  const { customPermissions } = await request.json();
-
-  if (!Array.isArray(customPermissions)) {
+  const body = await request.json();
+  const parsed = permissionsSchema.safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json(
-      { success: false, error: "customPermissions must be an array" },
+      { success: false, error: parsed.error.errors[0].message },
       { status: 400 }
     );
   }
+
+  const { customPermissions } = parsed.data;
 
   const updated = await db.membership.update({
     where: { id: membershipId },

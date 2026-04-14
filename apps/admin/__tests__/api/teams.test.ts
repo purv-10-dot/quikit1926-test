@@ -2,21 +2,29 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { setSession } from "../setup";
 import { NextRequest } from "next/server";
-
-import { GET, POST } from "@/app/api/teams/route";
+import { GET as LIST, POST } from "@/app/api/teams/route";
+import {
+  GET as DETAIL,
+  PATCH,
+  DELETE,
+} from "@/app/api/teams/[id]/route";
 
 const USER = "user-admin-001";
-const TENANT = "tenant-admin-001";
+const TENANT = "tenant-001";
+const TEAM_ID = "team-001";
 
-function buildPOST(body: unknown): NextRequest {
-  return new NextRequest("http://localhost/api/teams", {
-    method: "POST",
-    body: JSON.stringify(body),
-    headers: { "content-type": "application/json" },
-  });
+function buildRequest(method: string, url: string, body?: object): NextRequest {
+  const init: RequestInit = { method };
+  if (body) {
+    init.body = JSON.stringify(body);
+    init.headers = { "Content-Type": "application/json" };
+  }
+  return new NextRequest(`http://localhost${url}`, init as never);
 }
 
-function asAdmin() {
+const routeContext = { params: { id: TEAM_ID } };
+
+function asAuthedAdmin() {
   setSession({ id: USER, tenantId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
@@ -32,143 +40,315 @@ beforeEach(() => {
   setSession(null);
 });
 
-// ═══════════════════════════════════════════════
-// GET /api/teams — auth
-// ═══════════════════════════════════════════════
-
-describe("GET /api/teams — auth", () => {
+// ---------------------------------------------------------------------------
+// GET /api/teams (list)
+// ---------------------------------------------------------------------------
+describe("GET /api/teams (list)", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await GET();
+    const res = await LIST(buildRequest("GET", "/api/teams"));
     expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.success).toBe(false);
   });
 
-  it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
-    const res = await GET();
-    expect(res.status).toBe(403);
-  });
-});
+  it("returns team list for admin (happy path)", async () => {
+    asAuthedAdmin();
 
-// ═══════════════════════════════════════════════
-// GET /api/teams — happy path
-// ═══════════════════════════════════════════════
-
-describe("GET /api/teams — happy path", () => {
-  beforeEach(asAdmin);
-
-  it("returns teams with member count and head name", async () => {
-    const mockTeam = {
-      id: "t1",
-      name: "Engineering",
-      description: "Dev team",
-      slug: "engineering",
-      color: "#0066cc",
-      headId: "h1",
-      parentTeamId: null,
-      parentTeam: null,
-      childTeams: [],
-      userTeams: [
-        { user: { id: "u1", firstName: "Jane", lastName: "Doe", email: "j@t.com", avatar: null } },
-        { user: { id: "u2", firstName: "John", lastName: "Smith", email: "js@t.com", avatar: null } },
-      ],
-      createdAt: new Date("2026-01-01"),
-    };
-
-    mockDb.team.findMany.mockResolvedValue([mockTeam] as any);
+    const now = new Date();
+    mockDb.team.findMany.mockResolvedValue([
+      {
+        id: TEAM_ID,
+        name: "Engineering",
+        description: "Dev team",
+        slug: "engineering-123",
+        color: "#0066cc",
+        headId: "u-head",
+        parentTeamId: null,
+        parentTeam: null,
+        childTeams: [],
+        createdAt: now,
+        userTeams: [
+          {
+            user: {
+              id: "u2",
+              firstName: "Jane",
+              lastName: "Doe",
+              email: "jane@test.com",
+              avatar: null,
+            },
+          },
+        ],
+      },
+    ] as any);
+    mockDb.team.count.mockResolvedValue(1);
     mockDb.user.findMany.mockResolvedValue([
-      { id: "h1", firstName: "Head", lastName: "Person" },
+      { id: "u-head", firstName: "Head", lastName: "Person" },
     ] as any);
 
-    const res = await GET();
+    const res = await LIST(buildRequest("GET", "/api/teams"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].memberCount).toBe(2);
+    expect(body.data[0].name).toBe("Engineering");
+    expect(body.data[0].memberCount).toBe(1);
     expect(body.data[0].headName).toBe("Head Person");
   });
 
-  it("returns empty array when no teams", async () => {
+  it("filters by tenantId (tenant isolation)", async () => {
+    asAuthedAdmin();
+
     mockDb.team.findMany.mockResolvedValue([]);
-    const res = await GET();
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data).toEqual([]);
+    mockDb.team.count.mockResolvedValue(0);
+    mockDb.user.findMany.mockResolvedValue([]);
+
+    await LIST(buildRequest("GET", "/api/teams"));
+
+    const findManyCall = mockDb.team.findMany.mock.calls[0]?.[0] as any;
+    expect(findManyCall.where.tenantId).toBe(TENANT);
   });
 });
 
-// ═══════════════════════════════════════════════
-// POST /api/teams — auth
-// ═══════════════════════════════════════════════
-
-describe("POST /api/teams — auth", () => {
+// ---------------------------------------------------------------------------
+// POST /api/teams
+// ---------------------------------------------------------------------------
+describe("POST /api/teams", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await POST(buildPOST({ name: "Test" }));
+    const res = await POST(
+      buildRequest("POST", "/api/teams", { name: "New Team" })
+    );
     expect(res.status).toBe(401);
   });
-});
 
-// ═══════════════════════════════════════════════
-// POST /api/teams — validation
-// ═══════════════════════════════════════════════
+  it("returns 400 for missing name", async () => {
+    asAuthedAdmin();
 
-describe("POST /api/teams — validation", () => {
-  beforeEach(asAdmin);
-
-  it("returns 400 when name is missing", async () => {
-    const res = await POST(buildPOST({}));
+    const res = await POST(
+      buildRequest("POST", "/api/teams", { description: "No name" })
+    );
     expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.success).toBe(false);
   });
-});
-
-// ═══════════════════════════════════════════════
-// POST /api/teams — duplicate detection
-// ═══════════════════════════════════════════════
-
-describe("POST /api/teams — duplicate name", () => {
-  beforeEach(asAdmin);
 
   it("returns 409 when team name already exists", async () => {
-    mockDb.team.findFirst.mockResolvedValue({ id: "existing", name: "Engineering" } as any);
+    asAuthedAdmin();
 
-    const res = await POST(buildPOST({ name: "Engineering" }));
+    mockDb.team.findFirst.mockResolvedValue({ id: "existing" } as any);
+
+    const res = await POST(
+      buildRequest("POST", "/api/teams", { name: "Engineering" })
+    );
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toContain("already exists");
   });
-});
 
-// ═══════════════════════════════════════════════
-// POST /api/teams — happy path
-// ═══════════════════════════════════════════════
+  it("creates team (happy path)", async () => {
+    asAuthedAdmin();
 
-describe("POST /api/teams — happy path", () => {
-  beforeEach(asAdmin);
+    // No existing team with this name
+    mockDb.team.findFirst.mockResolvedValue(null);
 
-  it("creates team and returns data", async () => {
-    mockDb.team.findFirst.mockResolvedValue(null); // no duplicate
+    const now = new Date();
     mockDb.team.create.mockResolvedValue({
       id: "t-new",
-      name: "New Team",
-      slug: "new-team-1234",
-      color: "#0066cc",
       tenantId: TENANT,
+      name: "New Team",
       description: null,
+      slug: "new-team-123",
+      color: "#0066cc",
       headId: null,
       parentTeamId: null,
-      createdAt: new Date(),
+      createdAt: now,
+      createdBy: USER,
     } as any);
 
-    const res = await POST(buildPOST({ name: "New Team" }));
+    const res = await POST(
+      buildRequest("POST", "/api/teams", { name: "New Team" })
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.data.name).toBe("New Team");
-    expect(body.data.memberCount).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/teams/[id] (detail)
+// ---------------------------------------------------------------------------
+describe("GET /api/teams/[id]", () => {
+  it("returns 401 when unauthenticated", async () => {
+    const res = await DETAIL(
+      buildRequest("GET", `/api/teams/${TEAM_ID}`),
+      routeContext as any
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 when team not in tenant", async () => {
+    asAuthedAdmin();
+    mockDb.team.findFirst.mockResolvedValue(null);
+
+    const res = await DETAIL(
+      buildRequest("GET", `/api/teams/${TEAM_ID}`),
+      routeContext as any
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns team detail (happy path)", async () => {
+    asAuthedAdmin();
+
+    const now = new Date();
+    mockDb.team.findFirst.mockResolvedValue({
+      id: TEAM_ID,
+      name: "Engineering",
+      description: "Dev team",
+      slug: "engineering-123",
+      color: "#0066cc",
+      headId: null,
+      parentTeamId: null,
+      parentTeam: null,
+      childTeams: [],
+      createdAt: now,
+      userTeams: [],
+    } as any);
+
+    const res = await DETAIL(
+      buildRequest("GET", `/api/teams/${TEAM_ID}`),
+      routeContext as any
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.name).toBe("Engineering");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/teams/[id]
+// ---------------------------------------------------------------------------
+describe("PATCH /api/teams/[id]", () => {
+  it("returns 401 when unauthenticated", async () => {
+    const res = await PATCH(
+      buildRequest("PATCH", `/api/teams/${TEAM_ID}`, { name: "Updated" }),
+      routeContext as any
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 when team not in tenant", async () => {
+    asAuthedAdmin();
+    mockDb.team.findFirst.mockResolvedValue(null);
+
+    const res = await PATCH(
+      buildRequest("PATCH", `/api/teams/${TEAM_ID}`, { name: "Updated" }),
+      routeContext as any
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 when team tries to be its own parent", async () => {
+    asAuthedAdmin();
+    mockDb.team.findFirst.mockResolvedValue({
+      id: TEAM_ID,
+      name: "Engineering",
+      tenantId: TENANT,
+    } as any);
+
+    const res = await PATCH(
+      buildRequest("PATCH", `/api/teams/${TEAM_ID}`, { parentTeamId: TEAM_ID }),
+      routeContext as any
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("own parent");
+  });
+
+  it("updates team (happy path)", async () => {
+    asAuthedAdmin();
+    // First findFirst: find the team being updated
+    // Second findFirst: uniqueness check (no other team with the new name)
+    mockDb.team.findFirst
+      .mockResolvedValueOnce({
+        id: TEAM_ID,
+        name: "Engineering",
+        tenantId: TENANT,
+      } as any)
+      .mockResolvedValueOnce(null); // no duplicate name
+
+    mockDb.team.update.mockResolvedValue({
+      id: TEAM_ID,
+      name: "Engineering v2",
+      tenantId: TENANT,
+    } as any);
+
+    const res = await PATCH(
+      buildRequest("PATCH", `/api/teams/${TEAM_ID}`, { name: "Engineering v2" }),
+      routeContext as any
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.name).toBe("Engineering v2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/teams/[id]
+// ---------------------------------------------------------------------------
+describe("DELETE /api/teams/[id]", () => {
+  it("returns 401 when unauthenticated", async () => {
+    const res = await DELETE(
+      buildRequest("DELETE", `/api/teams/${TEAM_ID}`),
+      routeContext as any
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 when team not in tenant", async () => {
+    asAuthedAdmin();
+    mockDb.team.findFirst.mockResolvedValue(null);
+
+    const res = await DELETE(
+      buildRequest("DELETE", `/api/teams/${TEAM_ID}`),
+      routeContext as any
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 when team has child teams", async () => {
+    asAuthedAdmin();
+    mockDb.team.findFirst.mockResolvedValue({
+      id: TEAM_ID,
+      tenantId: TENANT,
+      _count: { userTeams: 3, childTeams: 2 },
+    } as any);
+
+    const res = await DELETE(
+      buildRequest("DELETE", `/api/teams/${TEAM_ID}`),
+      routeContext as any
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("child teams");
+  });
+
+  it("deletes team (happy path)", async () => {
+    asAuthedAdmin();
+    mockDb.team.findFirst.mockResolvedValue({
+      id: TEAM_ID,
+      tenantId: TENANT,
+      _count: { userTeams: 1, childTeams: 0 },
+    } as any);
+    mockDb.userTeam.deleteMany.mockResolvedValue({ count: 1 } as any);
+    mockDb.membership.updateMany.mockResolvedValue({ count: 0 } as any);
+    mockDb.team.delete.mockResolvedValue({ id: TEAM_ID } as any);
+
+    const res = await DELETE(
+      buildRequest("DELETE", `/api/teams/${TEAM_ID}`),
+      routeContext as any
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.message).toBe("Team deleted");
   });
 });

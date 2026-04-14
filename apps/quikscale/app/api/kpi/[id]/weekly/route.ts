@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
-import { authOptions } from "@/lib/auth";
 import { weeklyValueSchema } from "@/lib/schemas/kpiSchema";
-import { getTenantId } from "@/lib/api/getTenantId";
 import { canEditKPIOwnerWeekly } from "@/lib/api/kpiWeeklyPermissions";
-import { toErrorMessage } from "@/lib/api/errors";
+import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 
@@ -25,29 +22,19 @@ function calcHealthStatus(progress: number, status: string): string {
  *
  * The GET /api/kpi (list) endpoint handles aggregation automatically for table display.
  */
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { params }) => {
+  const kpi = await db.kPI.findUnique({ where: { id: params.id }, select: { tenantId: true } });
+  if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
+  if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+  const weeklyValues = await db.kPIWeeklyValue.findMany({
+    where: { kpiId: params.id },
+    select: { id: true, userId: true, weekNumber: true, value: true, notes: true, createdAt: true, updatedAt: true },
+    orderBy: [{ weekNumber: "asc" }, { userId: "asc" }],
+  });
 
-    const kpi = await db.kPI.findUnique({ where: { id: params.id, deletedAt: null }, select: { tenantId: true } });
-    if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
-    if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
-
-    const weeklyValues = await db.kPIWeeklyValue.findMany({
-      where: { kpiId: params.id },
-      select: { id: true, userId: true, weekNumber: true, value: true, notes: true, createdAt: true, updatedAt: true },
-      orderBy: [{ weekNumber: "asc" }, { userId: "asc" }],
-    });
-
-    return NextResponse.json({ success: true, data: weeklyValues });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch weekly values") }, { status: 500 });
-  }
-}
+  return NextResponse.json({ success: true, data: weeklyValues });
+}, { fallbackErrorMessage: "Failed to fetch weekly values" });
 
 /**
  * POST /api/kpi/[id]/weekly
@@ -68,129 +55,119 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
  * On success, re-aggregates qtdAchieved as the SUM of all weekly values for the KPI
  * and recomputes progressPercent + healthStatus.
  */
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+  const kpi = await db.kPI.findUnique({
+    where: { id: params.id },
+    select: {
+      tenantId: true, qtdGoal: true, target: true, status: true,
+      quarter: true, year: true,
+      kpiLevel: true, owner: true, ownerIds: true,
+    },
+  });
+  if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
+  if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+  const body = await req.json();
+  const validated = weeklyValueSchema.parse(body);
 
-    const kpi = await db.kPI.findUnique({
-      where: { id: params.id },
-      select: {
-        tenantId: true, qtdGoal: true, target: true, status: true,
-        quarter: true, year: true,
-        kpiLevel: true, owner: true, ownerIds: true,
-      },
-    });
-    if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
-    if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
-
-    const body = await request.json();
-    const validated = weeklyValueSchema.parse(body);
-
-    // Resolve target userId: for individual KPIs, default to kpi.owner if omitted.
-    // For team KPIs, userId is required and must be one of ownerIds.
-    const targetUserId = validated.userId ?? (kpi.kpiLevel === "individual" ? kpi.owner : null);
-    if (!targetUserId) {
+  // Resolve target userId: for individual KPIs, default to kpi.owner if omitted.
+  // For team KPIs, userId is required and must be one of ownerIds.
+  const targetUserId = validated.userId ?? (kpi.kpiLevel === "individual" ? kpi.owner : null);
+  if (!targetUserId) {
+    return NextResponse.json(
+      { success: false, error: "userId is required for team KPI weekly values" },
+      { status: 400 }
+    );
+  }
+  if (kpi.kpiLevel === "team") {
+    const ownerIds = (kpi.ownerIds ?? []) as string[];
+    if (!ownerIds.includes(targetUserId)) {
       return NextResponse.json(
-        { success: false, error: "userId is required for team KPI weekly values" },
+        { success: false, error: "targetUserId is not an owner of this team KPI" },
         { status: 400 }
       );
     }
-    if (kpi.kpiLevel === "team") {
-      const ownerIds = (kpi.ownerIds ?? []) as string[];
-      if (!ownerIds.includes(targetUserId)) {
-        return NextResponse.json(
-          { success: false, error: "targetUserId is not an owner of this team KPI" },
-          { status: 400 }
-        );
-      }
-    }
+  }
 
-    // Permission check
-    const allowed = await canEditKPIOwnerWeekly(session.user.id, tenantId, params.id, targetUserId);
-    if (!allowed) {
+  // Permission check
+  const allowed = await canEditKPIOwnerWeekly(userId, tenantId, params.id, targetUserId);
+  if (!allowed) {
+    return NextResponse.json(
+      { success: false, error: "You do not have permission to edit this weekly value." },
+      { status: 403 }
+    );
+  }
+
+  // ── Past-week edit enforcement ──
+  const { canEditPastWeek } = await getPastWeekFlags(tenantId);
+  if (!canEditPastWeek && kpi.quarter && kpi.year) {
+    const currentWeek = await getCurrentFiscalWeekFromDB(tenantId, kpi.year, kpi.quarter);
+    if (validated.weekNumber < currentWeek) {
       return NextResponse.json(
-        { success: false, error: "You do not have permission to edit this weekly value." },
+        {
+          success: false,
+          error: `Editing past weeks is disabled. Week ${validated.weekNumber} is before the current week (${currentWeek}). Enable it in Settings > Configurations.`,
+        },
         { status: 403 }
       );
     }
-
-    // ── Past-week edit enforcement ──
-    const { canEditPastWeek } = await getPastWeekFlags(tenantId);
-    if (!canEditPastWeek && kpi.quarter && kpi.year) {
-      const currentWeek = await getCurrentFiscalWeekFromDB(tenantId, kpi.year, kpi.quarter);
-      if (validated.weekNumber < currentWeek) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Editing past weeks is disabled. Week ${validated.weekNumber} is before the current week (${currentWeek}). Enable it in Settings > Configurations.`,
-          },
-          { status: 403 }
-        );
-      }
-    }
-
-    // Upsert via findFirst + update/create because the compound unique key includes a nullable userId
-    const existing = await db.kPIWeeklyValue.findFirst({
-      where: { kpiId: params.id, userId: targetUserId, weekNumber: validated.weekNumber },
-      select: { id: true },
-    });
-    let weeklyValue;
-    if (existing) {
-      weeklyValue = await db.kPIWeeklyValue.update({
-        where: { id: existing.id },
-        data: { value: validated.value, notes: validated.notes, updatedBy: session.user.id },
-        select: { id: true, kpiId: true, userId: true, weekNumber: true, value: true, notes: true, createdAt: true, updatedAt: true },
-      });
-    } else {
-      weeklyValue = await db.kPIWeeklyValue.create({
-        data: {
-          kpiId: params.id,
-          tenantId,
-          userId: targetUserId,
-          weekNumber: validated.weekNumber,
-          value: validated.value,
-          notes: validated.notes,
-          createdBy: session.user.id,
-        },
-        select: { id: true, kpiId: true, userId: true, weekNumber: true, value: true, notes: true, createdAt: true, updatedAt: true },
-      });
-    }
-
-    // Recalculate aggregate progress (sum of ALL weekly rows across owners)
-    const allWeekly = await db.kPIWeeklyValue.findMany({
-      where: { kpiId: params.id },
-      select: { value: true },
-    });
-    const totalAchieved = allWeekly.reduce((s, w) => s + (w.value || 0), 0);
-    const goal = kpi.qtdGoal ?? kpi.target ?? 0;
-    const progressPercent = goal ? (totalAchieved / goal) * 100 : 0;
-
-    await db.kPI.update({
-      where: { id: params.id },
-      data: {
-        qtdAchieved: totalAchieved,
-        progressPercent,
-        healthStatus: calcHealthStatus(progressPercent, kpi.status),
-        currentWeekValue: validated.value,
-      },
-    });
-
-    await db.kPILog.create({
-      data: {
-        tenantId,
-        kpiId: params.id,
-        action: "UPDATE_WEEKLY",
-        newValue: JSON.stringify(weeklyValue),
-        changedBy: session.user.id,
-      },
-    });
-
-    return NextResponse.json({ success: true, data: weeklyValue });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to save weekly value") }, { status: 500 });
   }
-}
+
+  // Upsert via findFirst + update/create because the compound unique key includes a nullable userId
+  const existing = await db.kPIWeeklyValue.findFirst({
+    where: { kpiId: params.id, userId: targetUserId, weekNumber: validated.weekNumber },
+    select: { id: true },
+  });
+  let weeklyValue;
+  if (existing) {
+    weeklyValue = await db.kPIWeeklyValue.update({
+      where: { id: existing.id },
+      data: { value: validated.value, notes: validated.notes, updatedBy: userId },
+      select: { id: true, kpiId: true, userId: true, weekNumber: true, value: true, notes: true, createdAt: true, updatedAt: true },
+    });
+  } else {
+    weeklyValue = await db.kPIWeeklyValue.create({
+      data: {
+        kpiId: params.id,
+        tenantId,
+        userId: targetUserId,
+        weekNumber: validated.weekNumber,
+        value: validated.value,
+        notes: validated.notes,
+        createdBy: userId,
+      },
+      select: { id: true, kpiId: true, userId: true, weekNumber: true, value: true, notes: true, createdAt: true, updatedAt: true },
+    });
+  }
+
+  // Recalculate aggregate progress (sum of ALL weekly rows across owners)
+  const allWeekly = await db.kPIWeeklyValue.findMany({
+    where: { kpiId: params.id },
+    select: { value: true },
+  });
+  const totalAchieved = allWeekly.reduce((s, w) => s + (w.value || 0), 0);
+  const goal = kpi.qtdGoal ?? kpi.target ?? 0;
+  const progressPercent = goal ? (totalAchieved / goal) * 100 : 0;
+
+  await db.kPI.update({
+    where: { id: params.id },
+    data: {
+      qtdAchieved: totalAchieved,
+      progressPercent,
+      healthStatus: calcHealthStatus(progressPercent, kpi.status),
+      currentWeekValue: validated.value,
+    },
+  });
+
+  await db.kPILog.create({
+    data: {
+      tenantId,
+      kpiId: params.id,
+      action: "UPDATE_WEEKLY",
+      newValue: JSON.stringify(weeklyValue),
+      changedBy: userId,
+    },
+  });
+
+  return NextResponse.json({ success: true, data: weeklyValue });
+}, { fallbackErrorMessage: "Failed to save weekly value" });

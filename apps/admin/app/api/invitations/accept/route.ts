@@ -34,6 +34,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Check token expiry (7 days from invitedAt)
+  const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  if (membership.invitedAt && Date.now() - membership.invitedAt.getTime() > INVITATION_TTL_MS) {
+    return NextResponse.json(
+      { success: false, error: "This invitation has expired. Please ask the admin to resend it." },
+      { status: 410 }
+    );
+  }
+
   return NextResponse.json({
     success: true,
     data: {
@@ -71,6 +80,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { success: false, error: "Invalid or already accepted invitation" },
       { status: 400 }
+    );
+  }
+
+  // Check token expiry (7 days from invitedAt)
+  const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  if (membership.invitedAt && Date.now() - membership.invitedAt.getTime() > INVITATION_TTL_MS) {
+    return NextResponse.json(
+      { success: false, error: "This invitation has expired. Please ask the admin to resend it." },
+      { status: 410 }
     );
   }
 

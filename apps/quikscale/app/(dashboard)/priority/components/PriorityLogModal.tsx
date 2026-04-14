@@ -5,8 +5,8 @@ import { useUpdatePriority, useUpdateWeeklyStatus } from "@/lib/hooks/usePriorit
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import type { PriorityRow } from "@/lib/types/priority";
-import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel } from "@/lib/utils/fiscal";
-import { STATUS_META } from "@/lib/constants/status";
+import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
+import { STATUS_META, STATUS_PILL_OPTIONS, STATUS_SELECT_OPTIONS } from "@/lib/constants/status";
 import { UserPicker } from "@/components/UserPicker";
 
 interface Props {
@@ -19,16 +19,7 @@ const CURRENT_YEAR = getFiscalYear();
 const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 const WEEK_OPTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
 
-const STATUS_OPTIONS = [
-  { value: "not-applicable",  label: "Not Applicable",  selectedClass: "bg-gray-100 text-gray-600 border-gray-300 ring-2 ring-gray-300",   baseClass: "bg-white text-gray-400 border-gray-200 hover:bg-gray-50"   },
-  { value: "not-yet-started", label: "Not Yet Started", selectedClass: "bg-red-100 text-red-700 border-red-300 ring-2 ring-red-300",        baseClass: "bg-white text-gray-600 border-gray-200 hover:bg-red-50"    },
-  { value: "behind-schedule", label: "Behind Schedule", selectedClass: "bg-amber-100 text-amber-700 border-amber-300 ring-2 ring-amber-300", baseClass: "bg-white text-gray-600 border-gray-200 hover:bg-amber-50"  },
-  { value: "on-track",        label: "On Track",        selectedClass: "bg-green-100 text-green-700 border-green-300 ring-2 ring-green-300", baseClass: "bg-white text-gray-600 border-gray-200 hover:bg-green-50"  },
-  { value: "completed",       label: "Completed",       selectedClass: "bg-accent-100 text-accent-700 border-accent-300 ring-2 ring-accent-300",     baseClass: "bg-white text-gray-600 border-gray-200 hover:bg-accent-50"   },
-  { value: "",                label: "Clear",            selectedClass: "bg-gray-100 text-gray-500 border-gray-300 ring-2 ring-gray-200",    baseClass: "bg-white text-gray-300 border-gray-200 hover:bg-gray-50"   },
-];
-
-const OVERALL_STATUS_OPTIONS = Object.entries(STATUS_META).map(([value, m]) => ({ value, label: m.label }));
+const OVERALL_STATUS_OPTIONS = STATUS_SELECT_OPTIONS;
 
 export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
   const [tab, setTab] = useState<"edit" | "weekly" | "notes">("edit");
@@ -90,10 +81,6 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
       await updatePriority.mutateAsync({
         name: form.name.trim(),
         description: form.description || undefined,
-        owner: form.owner,
-        teamId: form.teamId || undefined,
-        quarter: form.quarter,
-        year: parseInt(form.year),
         startWeek: parseInt(form.startWeek),
         endWeek: parseInt(form.endWeek),
         overallStatus: form.overallStatus,
@@ -171,64 +158,67 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
           {/* ── Edit Tab ── */}
           {tab === "edit" && (
             <div className="space-y-4">
-              {/* Row 1: Team | Name */}
+              {/* Row 1: Priority Name (full width) */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Priority Name <span className="text-red-500">*</span>
+                </label>
+                <input value={form.name} onChange={e => setField("name", e.target.value)}
+                  className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
+                {errors.name && <p className="text-[10px] text-red-500 mt-0.5">{errors.name}</p>}
+              </div>
+
+              {/* Row 2: Team (read-only) | Owner (read-only) */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Team</label>
-                  <select value={form.teamId} onChange={e => setField("teamId", e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
+                  <select value={form.teamId} disabled
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed">
                     <option value="">No team</option>
                     {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Priority Name <span className="text-red-500">*</span>
+                    Owner <span className="text-red-500">*</span>
                   </label>
-                  <input value={form.name} onChange={e => setField("name", e.target.value)}
-                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${errors.name ? "border-red-400" : "border-gray-200"}`} />
-                  {errors.name && <p className="text-[10px] text-red-500 mt-0.5">{errors.name}</p>}
+                  <UserPicker value={form.owner} onChange={() => {}} users={users} error={false} disabled />
                 </div>
               </div>
 
-              {/* Row 2: Start Week | Owner */}
+              {/* Row 3: Quarter (read-only) */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
+                <div className="grid grid-cols-2 gap-2 max-w-[50%]">
+                  <select value={form.year} disabled
+                    className="px-3 py-2 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed">
+                    {FISCAL_YEARS.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
+                  </select>
+                  <select value={form.quarter} disabled
+                    className="px-3 py-2 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed">
+                    {ALL_QUARTERS.map(q => <option key={q} value={q}>{q}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Row 4: Start Week | End Week */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Start Week</label>
                   <select value={form.startWeek} onChange={e => setField("startWeek", e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                    {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}</option>)}
+                    {WEEK_OPTIONS.map(w => (
+                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>
+                    ))}
                   </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Owner <span className="text-red-500">*</span>
-                  </label>
-                  <UserPicker value={form.owner} onChange={v => setField("owner", v)} users={users} error={!!errors.owner} />
-                  {errors.owner && <p className="text-[10px] text-red-500 mt-0.5">{errors.owner}</p>}
-                </div>
-              </div>
-
-              {/* Row 3: Quarter + Year | End Week */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <select value={form.year} onChange={e => setField("year", e.target.value)}
-                      className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                      {FISCAL_YEARS.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
-                    </select>
-                    <select value={form.quarter} onChange={e => setField("quarter", e.target.value)}
-                      className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                      {ALL_QUARTERS.map(q => <option key={q} value={q}>{q}</option>)}
-                    </select>
-                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">End Week</label>
                   <select value={form.endWeek} onChange={e => setField("endWeek", e.target.value)}
                     className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
-                    {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}</option>)}
+                    {WEEK_OPTIONS.map(w => (
+                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>
+                    ))}
                   </select>
                   {errors.endWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.endWeek}</p>}
                 </div>
@@ -271,7 +261,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        {STATUS_OPTIONS.map(opt => (
+                        {STATUS_PILL_OPTIONS.map(opt => (
                           <button key={opt.value} onClick={() => handleWeeklyStatusChange(weekNum, opt.value)}
                             className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-all ${data.status === opt.value ? opt.selectedClass : opt.baseClass}`}>
                             {opt.label}

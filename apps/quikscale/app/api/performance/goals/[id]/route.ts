@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { validationError } from "@/lib/api/validationError";
 import { updateGoalSchema } from "@/lib/schemas/goalSchema";
 
 type Params = { id: string };
@@ -44,15 +45,7 @@ export const PUT = withTenantAuth<Params>(
     }
 
     const parsed = updateGoalSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: parsed.error.errors[0]?.message ?? "Invalid input",
-        },
-        { status: 400 },
-      );
-    }
+    if (!parsed.success) return validationError(parsed);
     const input = parsed.data;
 
     const data: Record<string, unknown> = {};

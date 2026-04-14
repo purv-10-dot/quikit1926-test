@@ -29,13 +29,18 @@ import { db } from "./index";
  * The RLS policies in rls-policies.sql will then automatically filter
  * all queries to only include rows matching this tenantId.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function setTenantContext(tenantId: string): Promise<void> {
   if (!tenantId) return;
+  // Defence-in-depth: reject anything that isn't a strict UUID before
+  // interpolating into the SQL string.
+  if (!UUID_RE.test(tenantId)) return;
   try {
     // Use $executeRawUnsafe because $executeRaw doesn't support SET commands
     // with parameterized values. The tenantId is already validated by
-    // withTenantAuth before this point, so injection risk is mitigated.
-    await db.$executeRawUnsafe(`SET app.tenant_id = '${tenantId.replace(/'/g, "''")}'`);
+    // withTenantAuth before this point AND the UUID regex above.
+    await db.$executeRawUnsafe(`SET app.tenant_id = '${tenantId}'`);
   } catch {
     // Swallow — RLS is an additional safety layer, not a blocker.
     // If SET fails (e.g., Postgres version doesn't support custom GUCs),

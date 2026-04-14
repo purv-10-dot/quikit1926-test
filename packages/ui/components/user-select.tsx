@@ -42,6 +42,7 @@ interface BaseProps {
   users: PickerUser[];
   placeholder?: string;
   error?: boolean;
+  disabled?: boolean;
 }
 
 interface SingleProps extends BaseProps {
@@ -73,7 +74,7 @@ export function UserSelect(props: UserSelectProps) {
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
-  const { users, placeholder, error, mode } = props;
+  const { users, placeholder, error, mode, disabled } = props;
 
   const filtered = search.trim()
     ? users.filter(u =>
@@ -145,8 +146,9 @@ export function UserSelect(props: UserSelectProps) {
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => { setOpen(o => !o); setSearch(""); }}
-        className={`w-full flex items-center justify-between gap-2 border rounded-lg px-3 py-2 bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-accent-400 text-xs ${error ? "border-red-400" : "border-gray-200"}`}
+        onClick={() => { if (!disabled) { setOpen(o => !o); setSearch(""); } }}
+        disabled={disabled}
+        className={`w-full flex items-center justify-between gap-2 border rounded-lg px-3 py-2 text-xs focus:outline-none ${disabled ? "bg-gray-50 text-gray-500 cursor-not-allowed border-gray-200" : `bg-white hover:bg-gray-50 focus:ring-1 focus:ring-accent-400 ${error ? "border-red-400" : "border-gray-200"}`}`}
       >
         {trigger}
         <ChevronDown className={`h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />

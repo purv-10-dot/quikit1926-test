@@ -17,7 +17,7 @@
  *   - `combineProjectedValue`    — inverse of `parseProjectedValue`
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CURRENCIES, getScales } from "@/lib/utils/currency";
@@ -30,7 +30,7 @@ interface CatMeta {
   symbol: string | null;
   currency: string | null;
 }
-const catMetaCache = new Map<string, CatMeta>();
+export const catMetaCache = new Map<string, CatMeta>();
 
 export function populateCatCache(
   data: { name: string; dataType: string; currency: string | null }[],
@@ -61,7 +61,7 @@ const SCALE_ABBR: Record<string, string> = {
 };
 
 /** List of scale abbreviations available for a given currency. "-" comes first (no scale). */
-function getScaleAbbrs(currency: string): string[] {
+export function getScaleAbbrs(currency: string): string[] {
   const scales = getScales(currency);
   return scales
     .map((s) => SCALE_ABBR[s.label])
@@ -99,6 +99,14 @@ interface CatFull {
   currency: string | null;
 }
 
+/** Display a category name with currency symbol suffix for Currency types. */
+export function displayCategory(name: string): string {
+  if (!name) return name;
+  const meta = catMetaCache.get(name);
+  if (meta?.dataType === "Currency" && meta.symbol) return `${name} (${meta.symbol})`;
+  return name;
+}
+
 export function CategorySelect({
   value,
   onChange,
@@ -115,6 +123,22 @@ export function CategorySelect({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [dropPos, setDropPos] = useState<{ top?: number; bottom?: number; left: number; width: number }>({ left: 0, width: 224 });
+  const [flipUp, setFlipUp] = useState(false);
+
+  const computePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const flip = spaceBelow < 300;
+    setFlipUp(flip);
+    if (flip) {
+      setDropPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left, width: 224 });
+    } else {
+      setDropPos({ top: rect.bottom + 4, left: rect.left, width: 224 });
+    }
+  }, []);
 
   function fetchCats() {
     fetch("/api/categories")
@@ -179,9 +203,10 @@ export function CategorySelect({
 
   return (
     <div className="relative w-full min-w-0">
-      <WithTooltip content={open ? "" : value || ""} className="relative block w-full">
+      <WithTooltip content={open ? "" : displayCategory(value) || ""} className="relative block w-full">
         <button
-          onClick={() => setOpen(!open)}
+          ref={triggerRef}
+          onClick={() => { if (!open) computePosition(); setOpen(!open); }}
           className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 bg-white hover:bg-gray-50 gap-1"
         >
           <span
@@ -190,7 +215,7 @@ export function CategorySelect({
               value ? "text-gray-700" : "text-gray-400",
             )}
           >
-            {value || "Select Category"}
+            {value ? displayCategory(value) : "Select Category"}
           </span>
           <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
         </button>
@@ -198,14 +223,32 @@ export function CategorySelect({
       {open && (
         <>
           <div
-            className="fixed inset-0 z-10"
+            className="fixed inset-0 z-[209]"
             onClick={() => {
               setOpen(false);
               resetForm();
             }}
           />
-          <div className="absolute top-full mt-1 left-0 z-20 bg-white border border-gray-200 rounded-lg shadow-lg w-56 py-1">
+          <div
+            className="fixed z-[210] bg-white border border-gray-200 rounded-lg shadow-lg py-1"
+            style={{
+              width: dropPos.width,
+              left: dropPos.left,
+              ...(flipUp ? { bottom: dropPos.bottom } : { top: dropPos.top }),
+            }}
+          >
             <div className="max-h-40 overflow-y-auto">
+              {value && (
+                <button
+                  onClick={() => {
+                    onChange("");
+                    setOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-sm text-gray-400 hover:bg-gray-50 border-b border-gray-100"
+                >
+                  Clear
+                </button>
+              )}
               {allCats.length === 0 && !adding && (
                 <p className="px-3 py-2 text-xs text-gray-400">No categories yet.</p>
               )}
@@ -221,7 +264,7 @@ export function CategorySelect({
                     value === c.name && "text-accent-600 font-medium",
                   )}
                 >
-                  {c.name}
+                  {displayCategory(c.name)}
                 </button>
               ))}
             </div>

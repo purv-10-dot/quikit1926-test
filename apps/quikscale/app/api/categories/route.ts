@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
+import { validationError } from "@/lib/api/validationError";
 import { createCategorySchema } from "@/lib/schemas/categorySchema";
 
 // GET /api/categories — list all categories for tenant
@@ -30,12 +31,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 // POST /api/categories — create a new category
 export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
   const parsed = createCategorySchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json(
-      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-      { status: 400 }
-    );
-  }
+  if (!parsed.success) return validationError(parsed);
   const { name, dataType, currency, description } = parsed.data;
 
   const item = await db.categoryMaster.create({

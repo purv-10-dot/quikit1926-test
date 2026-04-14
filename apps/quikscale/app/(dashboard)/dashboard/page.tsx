@@ -2,12 +2,15 @@
 
 import { useState, useRef, useEffect, useMemo, CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { useSession } from "next-auth/react";
 import { useKPIs } from "@/lib/hooks/useKPI";
 import { usePriorities } from "@/lib/hooks/usePriority";
 import { useWWWItems } from "@/lib/hooks/useWWW";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption } from "@/components/FilterPicker";
+import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
+import { STATUS_FILTER_OPTIONS, STATUS_DOT, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
@@ -20,6 +23,8 @@ import { KPITable } from "../kpi/components/KPITable";
 import { PriorityTable } from "../priority/components/PriorityTable";
 import { WWWTable } from "../www/components/WWWTable";
 
+const ADMIN_MIN_LEVEL = ROLE_HIERARCHY[ROLES.ADMIN];
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CURRENT_YEAR = getFiscalYear();
@@ -31,13 +36,12 @@ const WEEK_COLS: ColDef[] = ALL_WEEKS.map(w => ({ key: `w${w}`, label: `Week ${w
 
 // ── Status helpers ────────────────────────────────────────────────────────────
 
-const STATUS_META: Record<string, { label: string; bg: string }> = {
-  "not-applicable":  { label: "Not Applicable",  bg: "bg-gray-400"  },
-  "not-yet-started": { label: "Not Yet Started", bg: "bg-red-500"   },
-  "behind-schedule": { label: "Behind Schedule", bg: "bg-amber-400" },
-  "on-track":        { label: "On Track",        bg: "bg-green-500" },
-  "completed":       { label: "Completed",       bg: "bg-accent-500"  },
-};
+const DASH_STATUS_META: Record<string, { label: string; bg: string }> = Object.fromEntries(
+  (Object.entries(STATUS_DOT) as [ItemStatus, string][]).map(([k, bg]) => [
+    k,
+    { label: getStatusLabel(k), bg },
+  ]),
+);
 
 function formatDate(iso?: string | null): string {
   if (!iso) return "—";
@@ -584,7 +588,7 @@ function PrioritySection({ priorities, year, quarter }: { priorities: PriorityRo
                 const w = weekNum(col);
                 const inRange = w >= start && w <= end;
                 const status = statusMap[w] ?? "";
-                const meta = STATUS_META[status];
+                const meta = DASH_STATUS_META[status];
                 const bg = inRange ? (meta?.bg ?? "") : "";
                 const frozenBg = getFrozenBg(col.key, frozenUpTo, ALL_PRI_COLS, rowBg);
                 const sticky = getStickyStyle(col.key, frozenUpTo, ALL_PRI_COLS);
@@ -674,7 +678,7 @@ function WWWSection({ items }: { items: WWWItem[] }) {
             const rowBg = ri % 2 === 0 ? "bg-white" : "bg-gray-50";
             const whoName = item.who_user ? `${item.who_user.firstName} ${item.who_user.lastName}` : "—";
             const lastRevised = item.revisedDates?.length ? item.revisedDates[item.revisedDates.length - 1] : null;
-            const statusMeta = STATUS_META[item.status];
+            const statusMeta = DASH_STATUS_META[item.status];
 
             return (
               <tr key={item.id} className={`${rowBg} hover:bg-accent-50 transition-colors`}>
@@ -728,51 +732,98 @@ export default function DashboardPage() {
   const [year, setYear] = useState(CURRENT_YEAR);
   const [quarter, setQuarter] = useState<"Q1" | "Q2" | "Q3" | "Q4">(getFiscalQuarter() as "Q1" | "Q2" | "Q3" | "Q4");
   const { filterTeam, setFilterTeam, filterOwner, setFilterOwner } = useFilterContext();
+  const [activeTab, setActiveTab] = useState<"individual" | "team">("individual");
 
-  // Teams list (reuse the org/teams endpoint)
-  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  // Role-based dashboard: admins see all with filters; non-admins see only their own data
+  const { data: session } = useSession();
+  const userId = session?.user?.id ?? "";
+  const role = (session?.user as { membershipRole?: string } | undefined)?.membershipRole;
+  const isSuperAdmin = (session?.user as { isSuperAdmin?: boolean } | undefined)?.isSuperAdmin;
+  const roleLevel = role ? (ROLE_HIERARCHY[role] ?? 0) : 0;
+  const isAdmin = roleLevel >= ADMIN_MIN_LEVEL || !!isSuperAdmin;
+
+  // Teams list with members (needed for both tabs — admin filter + team tab team picker)
+  const [allTeams, setAllTeams] = useState<Array<{ id: string; name: string; members: Array<{ userId: string }> }>>([]);
   useEffect(() => {
     fetch("/api/org/teams").then(r => r.json()).then(d => {
-      if (d.success) setTeams(d.data.map((t: { id: string; name: string }) => ({ id: t.id, name: t.name })));
+      if (d.success) setAllTeams(d.data.map((t: { id: string; name: string; members?: Array<{ userId: string }> }) => ({
+        id: t.id,
+        name: t.name,
+        members: t.members ?? [],
+      })));
     });
   }, []);
 
+  // For non-admin: only show teams the user belongs to; for admin: show all teams
+  const teams = useMemo(() =>
+    isAdmin ? allTeams : allTeams.filter(t => t.members.some(m => m.userId === userId)),
+    [allTeams, isAdmin, userId],
+  );
+
+  // Team tab: selected team for filtering
+  const [teamTabTeamId, setTeamTabTeamId] = useState<string>("");
+  // Non-admin: auto-select first team (they must pick one); admin: default to "All teams"
+  useEffect(() => {
+    if (activeTab === "team" && !isAdmin && !teamTabTeamId && teams.length > 0) {
+      setTeamTabTeamId(teams[0].id);
+    }
+  }, [activeTab, isAdmin, teamTabTeamId, teams]);
+
   // Users filtered by selected team (hook refetches when teamId changes)
-  const { data: users = [] } = useUsers(filterTeam || undefined);
+  // Individual tab (admin): use global filterTeam; Team tab: use teamTabTeamId
+  const individualFilterTeam = isAdmin ? (filterTeam || undefined) : undefined;
+  const { data: users = [] } = useUsers(
+    activeTab === "individual" ? individualFilterTeam : (teamTabTeamId || undefined),
+  );
 
   // Set of user IDs belonging to the selected team (all org members when no team selected)
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
 
-  // Effective owner filter: specific owner > all team members > no filter
-  const ownerFilter = filterOwner || undefined;
-
-  // pageSize:1000 ensures all KPIs are fetched — needed for correct client-side team filtering
-  const { data: kpiData, isLoading: kpiLoading } = useKPIs({ year, quarter, owner: ownerFilter, pageSize: 1000 });
-  const allKpis: KPIRow[] = (kpiData?.data ?? []) as KPIRow[];
-  // When a team is selected but no specific owner, filter KPIs to team members.
-  // k.owner may be null (team-level KPIs); those are skipped by the owner-based filter.
-  const kpis: KPIRow[] = (filterTeam && !filterOwner)
-    ? allKpis.filter(k => !!k.owner && teamUserIds.has(k.owner))
-    : allKpis;
+  /* ── Individual tab data ─────────────────────────────────────────────── */
+  const indOwnerFilter = isAdmin ? (filterOwner || undefined) : (userId || undefined);
+  const { data: kpiData, isLoading: kpiLoading } = useKPIs({ year, quarter, owner: indOwnerFilter, pageSize: 1000 });
+  const allIndKpis: KPIRow[] = (kpiData?.data ?? []) as KPIRow[];
+  const indKpis: KPIRow[] = (isAdmin && filterTeam && !filterOwner)
+    ? allIndKpis.filter(k => !!k.owner && teamUserIds.has(k.owner))
+    : allIndKpis;
 
   const { data: allPriorities = [], isLoading: priLoading } = usePriorities(year, quarter);
-  const priorities = filterOwner
-    ? allPriorities.filter(p => p.owner === filterOwner)
-    : filterTeam
-      ? allPriorities.filter(p => teamUserIds.has(p.owner))
-      : allPriorities;
+  const indPriorities = !isAdmin
+    ? allPriorities.filter(p => p.owner === userId)
+    : filterOwner
+      ? allPriorities.filter(p => p.owner === filterOwner)
+      : filterTeam
+        ? allPriorities.filter(p => teamUserIds.has(p.owner))
+        : allPriorities;
 
   const { data: allWWW = [], isLoading: wwwLoading } = useWWWItems({});
-  // WWW section-local status filter (not persisted)
   const [wwwStatusFilter, setWwwStatusFilter] = useState<string>("");
-  const wwwItemsByOwner = filterOwner
-    ? allWWW.filter(w => w.who === filterOwner)
-    : filterTeam
-      ? allWWW.filter(w => teamUserIds.has(w.who))
-      : allWWW;
-  const wwwItems = wwwStatusFilter
-    ? wwwItemsByOwner.filter(w => w.status === wwwStatusFilter)
-    : wwwItemsByOwner;
+  const indWwwByOwner = !isAdmin
+    ? allWWW.filter(w => w.who === userId)
+    : filterOwner
+      ? allWWW.filter(w => w.who === filterOwner)
+      : filterTeam
+        ? allWWW.filter(w => teamUserIds.has(w.who))
+        : allWWW;
+  const indWwwItems = wwwStatusFilter
+    ? indWwwByOwner.filter(w => w.status === wwwStatusFilter)
+    : indWwwByOwner;
+
+  /* ── Team tab data ───────────────────────────────────────────────────── */
+  const { data: teamKpiData, isLoading: teamKpiLoading } = useKPIs({
+    year, quarter, kpiLevel: "team", teamId: teamTabTeamId || undefined, pageSize: 1000,
+  });
+  const teamKpis: KPIRow[] = (teamKpiData?.data ?? []) as KPIRow[];
+
+  // Team tab: priorities filtered by team members (all if no team selected for admin)
+  const teamPriorities = teamTabTeamId
+    ? allPriorities.filter(p => teamUserIds.has(p.owner))
+    : isAdmin ? allPriorities : [];
+  /* ── Active tab data selection ───────────────────────────────────────── */
+  const kpis = activeTab === "individual" ? indKpis : teamKpis;
+  const kpisLoading = activeTab === "individual" ? kpiLoading : teamKpiLoading;
+  const priorities = activeTab === "individual" ? indPriorities : teamPriorities;
+  const wwwItems = indWwwItems; // WWW only shown on Individual tab
 
   // Dashboard-local pagination state (10 rows per page for each table)
   const DASHBOARD_PAGE_SIZE = 10;
@@ -780,10 +831,10 @@ export default function DashboardPage() {
   const [priPage, setPriPage] = useState(1);
   const [wwwPage, setWwwPage] = useState(1);
 
-  // Reset to page 1 when filters, year, or quarter change
-  useEffect(() => { setKpiPage(1); }, [filterTeam, filterOwner, year, quarter, kpis.length]);
-  useEffect(() => { setPriPage(1); }, [filterTeam, filterOwner, year, quarter, priorities.length]);
-  useEffect(() => { setWwwPage(1); }, [filterTeam, filterOwner, wwwStatusFilter, wwwItems.length]);
+  // Reset to page 1 when filters, year, quarter, or tab change
+  useEffect(() => { setKpiPage(1); }, [activeTab, filterTeam, filterOwner, teamTabTeamId, year, quarter, kpis.length]);
+  useEffect(() => { setPriPage(1); }, [activeTab, filterTeam, filterOwner, teamTabTeamId, year, quarter, priorities.length]);
+  useEffect(() => { setWwwPage(1); }, [activeTab, filterTeam, filterOwner, teamTabTeamId, wwwStatusFilter, wwwItems.length]);
 
   // Slice each list to the current page's chunk
   const pagedKpis = kpis.slice((kpiPage - 1) * DASHBOARD_PAGE_SIZE, kpiPage * DASHBOARD_PAGE_SIZE);
@@ -796,15 +847,21 @@ export default function DashboardPage() {
   const filterRef = useRef<HTMLDivElement>(null);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner ? 1 : 0);
 
+  const [showYearPicker, setShowYearPicker] = useState(false);
+  const yearRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     function handle(e: MouseEvent) {
       if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false);
+      if (yearRef.current && !yearRef.current.contains(e.target as Node)) setShowYearPicker(false);
     }
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
   const selectCls = "px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white text-gray-700";
+  const tabCls = (active: boolean) =>
+    `px-4 py-2 text-xs font-medium border-b-2 transition-colors ${active ? "border-accent-600 text-accent-600" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -815,71 +872,148 @@ export default function DashboardPage() {
           <span className="text-[11px] bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium">
             Week {currentWeek}
           </span>
-          {!kpiLoading && kpis.length > 0 && <AvgKPICard kpis={kpis} />}
+          {!kpisLoading && kpis.length > 0 && <AvgKPICard kpis={kpis} />}
         </div>
         <div className="flex items-center gap-2">
-          {/* Filter button */}
-          <div className="relative" ref={filterRef}>
+          {/* Filter button — Individual tab: admin sees Team + Owner; Team tab: everyone sees Team picker */}
+          {(activeTab === "team" || (isAdmin && activeTab === "individual")) && (
+            <div className="relative" ref={filterRef}>
+              <button
+                onClick={() => setShowFilter(o => !o)}
+                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 || (activeTab === "team" && teamTabTeamId) ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+                </svg>
+                {activeTab === "individual"
+                  ? (activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}` : "Filter")
+                  : (teamTabTeamId ? "1 filter" : "Filter")
+                }
+              </button>
+
+              {showFilter && (
+                <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
+                  {activeTab === "individual" ? (
+                    <>
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
+                        <FilterPicker
+                          value={filterTeam}
+                          onChange={setFilterTeam}
+                          options={teams.map(t => ({ value: t.id, label: t.name }))}
+                          allLabel="All teams"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
+                        <FilterPicker
+                          value={filterOwner}
+                          onChange={setFilterOwner}
+                          options={users.map(userToFilterOption)}
+                          allLabel="All owners"
+                        />
+                      </div>
+                      {(filterTeam || filterOwner) && (
+                        <button
+                          onClick={() => { setFilterTeam(""); setFilterOwner(""); }}
+                          className="w-full text-xs text-gray-500 hover:text-gray-800 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          Clear filters
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
+                        <FilterPicker
+                          value={teamTabTeamId}
+                          onChange={setTeamTabTeamId}
+                          options={teams.map(t => ({ value: t.id, label: t.name }))}
+                          allLabel="All teams"
+                        />
+                      </div>
+                      {teamTabTeamId && (
+                        <button
+                          onClick={() => setTeamTabTeamId("")}
+                          className="w-full text-xs text-gray-500 hover:text-gray-800 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          Clear filters
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Year / Quarter picker */}
+          <div className="relative" ref={yearRef}>
             <button
-              onClick={() => setShowFilter(o => !o)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
+              onClick={() => setShowYearPicker(o => !o)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showYearPicker ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
             >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
+              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              {activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}` : "Filter"}
+              {fiscalYearLabel(year)} · {quarter}
+              <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
 
-            {showFilter && (
+            {showYearPicker && (
               <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
                 <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
-                  <FilterPicker
-                    value={filterTeam}
-                    onChange={setFilterTeam}
-                    options={teams.map(t => ({ value: t.id, label: t.name }))}
-                    allLabel="All teams"
-                  />
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Fiscal Year</p>
+                  <div className="grid grid-cols-1 gap-1">
+                    {FISCAL_YEARS.map(y => (
+                      <button key={y}
+                        onClick={() => setYear(y)}
+                        className={`text-xs px-3 py-1.5 rounded-lg text-left transition-colors ${year === y ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700"}`}>
+                        {fiscalYearLabel(y)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
-                  <FilterPicker
-                    value={filterOwner}
-                    onChange={setFilterOwner}
-                    options={users.map(userToFilterOption)}
-                    allLabel="All owners"
-                  />
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quarter</p>
+                  <div className="grid grid-cols-4 gap-1">
+                    {QUARTERS.map(q => (
+                      <button key={q}
+                        onClick={() => { setQuarter(q as "Q1" | "Q2" | "Q3" | "Q4"); setShowYearPicker(false); }}
+                        className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${quarter === q ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700 border border-gray-200"}`}>
+                        {q}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                {(filterTeam || filterOwner) && (
-                  <button
-                    onClick={() => { setFilterTeam(""); setFilterOwner(""); }}
-                    className="w-full text-xs text-gray-500 hover:text-gray-800 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Clear filters
-                  </button>
-                )}
               </div>
             )}
           </div>
-
-          <select value={year} onChange={e => setYear(Number(e.target.value))} className={selectCls}>
-            {FISCAL_YEARS.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
-          </select>
-          <select value={quarter} onChange={e => setQuarter(e.target.value as "Q1" | "Q2" | "Q3" | "Q4")} className={selectCls}>
-            {QUARTERS.map(q => <option key={q} value={q}>{q}</option>)}
-          </select>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-gray-200 bg-white px-6 flex-shrink-0">
+        <button className={tabCls(activeTab === "individual")} onClick={() => setActiveTab("individual")}>
+          {isAdmin ? "Individual" : "My Dashboard"}
+        </button>
+        <button className={tabCls(activeTab === "team")} onClick={() => setActiveTab("team")}>
+          Team
+        </button>
       </div>
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
 
         {/* KPI overview cards */}
-        {(kpiLoading || kpis.length > 0) && (
+        {(kpisLoading || kpis.length > 0) && (
           <div>
             <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">KPI Overview</p>
             <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
-              {kpiLoading
+              {kpisLoading
                 ? [1, 2, 3, 4].map(i => (
                     <div key={i} className="bg-white border border-gray-200 rounded-xl px-4 py-3 animate-pulse">
                       <div className="h-2 bg-gray-100 rounded w-3/4 mb-3" />
@@ -894,7 +1028,7 @@ export default function DashboardPage() {
         )}
 
         <Section badge="KPI" count={kpis.length}>
-          {kpiLoading ? <Spinner /> : (
+          {kpisLoading ? <Spinner /> : (
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <KPITable
                 kpis={pagedKpis}
@@ -906,7 +1040,10 @@ export default function DashboardPage() {
                 onPageChange={setKpiPage}
                 onSort={() => {}}
                 onRefresh={() => {}}
-                hideColumns={["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "teamHead", "kpiOwner"]}
+                hideColumns={activeTab === "team"
+                  ? ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "teamHead"]
+                  : ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "team", "teamHead", "kpiOwner"]
+                }
               />
             </div>
           )}
@@ -920,7 +1057,10 @@ export default function DashboardPage() {
                 onRefresh={() => {}}
                 year={year}
                 quarter={quarter}
-                hideColumns={["_cb", "_log", "_id", "team", "owner"]}
+                hideColumns={activeTab === "team"
+                  ? ["_cb", "_log", "_id", "owner"]
+                  : ["_cb", "_log", "_id", "team", "owner"]
+                }
                 readOnly
                 page={priPage}
                 pageSize={DASHBOARD_PAGE_SIZE}
@@ -931,40 +1071,40 @@ export default function DashboardPage() {
           )}
         </Section>
 
-        <Section
-          badge="WWW"
-          count={wwwItems.length}
-          right={
-            <select
-              value={wwwStatusFilter}
-              onChange={e => setWwwStatusFilter(e.target.value)}
-              className={selectCls}
-              aria-label="Filter WWW by status"
-            >
-              <option value="">All statuses</option>
-              <option value="on-track">On Track</option>
-              <option value="behind-schedule">Behind Schedule</option>
-              <option value="not-yet-started">Not Yet Started</option>
-              <option value="completed">Completed</option>
-              <option value="not-applicable">Not Applicable</option>
-            </select>
-          }
-        >
-          {wwwLoading ? <Spinner /> : (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <WWWTable
-                items={pagedWWW}
-                onRefresh={() => {}}
-                hideColumns={["_cb", "_log", "_id"]}
-                readOnly
-                page={wwwPage}
-                pageSize={DASHBOARD_PAGE_SIZE}
-                total={wwwItems.length}
-                onPageChange={setWwwPage}
-              />
-            </div>
-          )}
-        </Section>
+        {/* WWW section — Individual tab only */}
+        {activeTab === "individual" && (
+          <Section
+            badge="WWW"
+            count={wwwItems.length}
+            right={
+              <select
+                value={wwwStatusFilter}
+                onChange={e => setWwwStatusFilter(e.target.value)}
+                className={selectCls}
+                aria-label="Filter WWW by status"
+              >
+                {STATUS_FILTER_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            }
+          >
+            {wwwLoading ? <Spinner /> : (
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <WWWTable
+                  items={pagedWWW}
+                  onRefresh={() => {}}
+                  hideColumns={["_cb", "_log", "_id"]}
+                  readOnly
+                  page={wwwPage}
+                  pageSize={DASHBOARD_PAGE_SIZE}
+                  total={wwwItems.length}
+                  onPageChange={setWwwPage}
+                />
+              </div>
+            )}
+          </Section>
+        )}
 
       </div>
     </div>

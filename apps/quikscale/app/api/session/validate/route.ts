@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { rateLimitAsync, LIMITS, getClientIp } from "@/lib/api/rateLimit";
 
 const QUIKSCALE_APP_SLUG = "quikscale";
 
@@ -12,7 +14,21 @@ const QUIKSCALE_APP_SLUG = "quikscale";
  * 2. An active app access record for QuikScale
  * Returns { valid: false } if either check fails.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Rate limit: 100 checks/min per IP
+  const rl = await rateLimitAsync({
+    routeKey: "session:validate",
+    clientKey: getClientIp(request),
+    limit: 100,
+    windowMs: 60 * 1000,
+  });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { valid: true, rateLimited: true },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } }
+    );
+  }
+
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {

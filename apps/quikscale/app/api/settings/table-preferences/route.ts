@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateTablePreferencesSchema } from "@/lib/schemas/tablePreferencesSchema";
+import { validationError } from "@/lib/api/validationError";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 function parseHidden(json: string | null): string[] {
@@ -79,9 +80,7 @@ export const GET = withTenantAuth(async ({ userId }) => {
 export const PATCH = withTenantAuth(async ({ userId }, request) => {
     const body = await request.json();
     const parsed = updateTablePreferencesSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ success: false, error: parsed.error.errors[0].message }, { status: 400 });
-    }
+    if (!parsed.success) return validationError(parsed);
 
     const { table, frozenCol, hiddenCols, sort, colWidths } = parsed.data;
     const frozenField =

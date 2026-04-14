@@ -1,185 +1,168 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { mockDb, resetMockDb } from "../helpers/mockDb";
-import { setSession } from "../setup";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { setSession } from "../setup";
+import { mockDb, resetMockDb } from "../helpers/mockDb";
+
+// Mock fire-and-forget audit logging
+vi.mock("@/lib/auditLog", () => ({
+  logAudit: vi.fn(),
+}));
+
+vi.mock("@/lib/email", () => ({
+  sendUserCreatedEmail: vi.fn().mockResolvedValue(undefined),
+  sendOrgSuspendedEmail: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { GET, POST } from "@/app/api/super/orgs/route";
 
-const SUPER_ADMIN = "sa-001";
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildGET(params = ""): NextRequest {
-  return new NextRequest(`http://localhost/api/super/orgs${params ? "?" + params : ""}`);
+function makeRequest(url: string, init?: RequestInit) {
+  return new NextRequest(new URL(url, "http://localhost:3006"), init as never);
 }
 
-function buildPOST(body: unknown): NextRequest {
-  return new NextRequest("http://localhost/api/super/orgs", {
-    method: "POST",
-    body: JSON.stringify(body),
-    headers: { "content-type": "application/json" },
+async function bodyOf(res: Response) {
+  return res.json();
+}
+
+const SUPER_ADMIN = { id: "sa-1", email: "super@test.com", isSuperAdmin: true };
+const REGULAR_USER = { id: "user-1", email: "user@test.com", isSuperAdmin: false };
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("GET /api/super/orgs", () => {
+  beforeEach(() => {
+    resetMockDb();
   });
-}
 
-function asSuperAdmin() {
-  setSession({ id: SUPER_ADMIN, tenantId: "any", role: "super_admin" });
-  mockDb.user.findUnique.mockResolvedValue({
-    id: SUPER_ADMIN,
-    isSuperAdmin: true,
-  } as any);
-}
-
-function asRegularUser() {
-  setSession({ id: "regular-user", tenantId: "t1", role: "member" });
-  mockDb.user.findUnique.mockResolvedValue({
-    id: "regular-user",
-    isSuperAdmin: false,
-  } as any);
-}
-
-beforeEach(() => {
-  resetMockDb();
-  setSession(null);
-});
-
-// ═══════════════════════════════════════════════
-// GET /api/super/orgs — auth
-// ═══════════════════════════════════════════════
-
-describe("GET /api/super/orgs — auth", () => {
-  it("returns 401 when unauthenticated", async () => {
-    const res = await GET(buildGET());
+  it("returns 401 when there is no session", async () => {
+    setSession(null);
+    const res = await GET(makeRequest("http://localhost:3006/api/super/orgs"));
     expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.success).toBe(false);
+    const body = await bodyOf(res);
+    expect(body).toEqual({ success: false, error: "Unauthorized" });
   });
 
-  it("returns 403 when not a super admin", async () => {
-    asRegularUser();
-    const res = await GET(buildGET());
+  it("returns 403 when user is not a super admin", async () => {
+    setSession(REGULAR_USER);
+    const res = await GET(makeRequest("http://localhost:3006/api/super/orgs"));
     expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error).toContain("Super admin");
+    const body = await bodyOf(res);
+    expect(body).toEqual({ success: false, error: "Super admin access required" });
   });
-});
 
-// ═══════════════════════════════════════════════
-// GET /api/super/orgs — happy path
-// ═══════════════════════════════════════════════
+  it("returns org list on success", async () => {
+    setSession(SUPER_ADMIN);
 
-describe("GET /api/super/orgs — happy path", () => {
-  beforeEach(asSuperAdmin);
-
-  it("returns paginated tenants", async () => {
+    const now = new Date();
     const mockTenants = [
       {
-        id: "t1",
-        name: "Org One",
-        slug: "org-one",
-        plan: "pro",
+        id: "t-1",
+        name: "Acme",
+        slug: "acme",
+        plan: "startup",
         status: "active",
-        createdAt: new Date("2026-01-01"),
-        _count: { users: 25 },
+        createdAt: now,
+        _count: { users: 5 },
       },
     ];
 
-    mockDb.tenant.findMany.mockResolvedValue(mockTenants as any);
-    mockDb.tenant.count.mockResolvedValue(1);
+    mockDb.tenant.findMany.mockResolvedValue(mockTenants as never);
+    mockDb.tenant.count.mockResolvedValue(1 as never);
 
-    const res = await GET(buildGET());
+    const res = await GET(makeRequest("http://localhost:3006/api/super/orgs"));
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await bodyOf(res);
     expect(body.success).toBe(true);
     expect(body.data).toHaveLength(1);
-    expect(body.data[0].name).toBe("Org One");
-    expect(body.data[0].memberCount).toBe(25);
-  });
-
-  it("passes search param to query", async () => {
-    mockDb.tenant.findMany.mockResolvedValue([]);
-    mockDb.tenant.count.mockResolvedValue(0);
-
-    await GET(buildGET("search=test"));
-
-    expect(mockDb.tenant.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          OR: expect.arrayContaining([
-            expect.objectContaining({ name: expect.objectContaining({ contains: "test" }) }),
-          ]),
-        }),
-      })
-    );
-  });
-
-  it("returns empty when no tenants", async () => {
-    mockDb.tenant.findMany.mockResolvedValue([]);
-    mockDb.tenant.count.mockResolvedValue(0);
-
-    const res = await GET(buildGET());
-    const body = await res.json();
-    expect(body.data).toEqual([]);
+    expect(body.data[0]).toMatchObject({
+      id: "t-1",
+      name: "Acme",
+      slug: "acme",
+      memberCount: 5,
+    });
+    expect(body.pagination).toBeDefined();
   });
 });
 
-// ═══════════════════════════════════════════════
-// POST /api/super/orgs — auth
-// ═══════════════════════════════════════════════
+describe("POST /api/super/orgs", () => {
+  beforeEach(() => {
+    resetMockDb();
+  });
 
-describe("POST /api/super/orgs — auth", () => {
-  it("returns 401 when unauthenticated", async () => {
-    const res = await POST(buildPOST({ name: "Test", slug: "test" }));
+  it("returns 401 when there is no session", async () => {
+    setSession(null);
+    const res = await POST(
+      makeRequest("http://localhost:3006/api/super/orgs", {
+        method: "POST",
+        body: JSON.stringify({ name: "Test", slug: "test" }),
+      }),
+    );
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when not super admin", async () => {
-    asRegularUser();
-    const res = await POST(buildPOST({ name: "Test", slug: "test" }));
+  it("returns 403 when user is not a super admin", async () => {
+    setSession(REGULAR_USER);
+    const res = await POST(
+      makeRequest("http://localhost:3006/api/super/orgs", {
+        method: "POST",
+        body: JSON.stringify({ name: "Test", slug: "test" }),
+      }),
+    );
     expect(res.status).toBe(403);
   });
-});
 
-// ═══════════════════════════════════════════════
-// POST /api/super/orgs — validation
-// ═══════════════════════════════════════════════
-
-describe("POST /api/super/orgs — validation", () => {
-  beforeEach(asSuperAdmin);
-
-  it("returns 400 when name missing", async () => {
-    const res = await POST(buildPOST({ slug: "test" }));
+  it("returns 400 for invalid input (empty name)", async () => {
+    setSession(SUPER_ADMIN);
+    const res = await POST(
+      makeRequest("http://localhost:3006/api/super/orgs", {
+        method: "POST",
+        body: JSON.stringify({ name: "", slug: "test" }),
+      }),
+    );
     expect(res.status).toBe(400);
-    const body = await res.json();
+    const body = await bodyOf(res);
     expect(body.success).toBe(false);
   });
 
-  it("returns 400 when slug missing", async () => {
-    const res = await POST(buildPOST({ name: "Test" }));
-    expect(res.status).toBe(400);
+  it("returns 409 when slug already exists", async () => {
+    setSession(SUPER_ADMIN);
+    mockDb.tenant.findUnique.mockResolvedValue({ id: "existing" } as never);
+
+    const res = await POST(
+      makeRequest("http://localhost:3006/api/super/orgs", {
+        method: "POST",
+        body: JSON.stringify({ name: "Acme", slug: "acme" }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    const body = await bodyOf(res);
+    expect(body.error).toContain("slug already exists");
   });
-});
 
-// ═══════════════════════════════════════════════
-// POST /api/super/orgs — happy path
-// ═══════════════════════════════════════════════
+  it("creates org and returns 201 on success", async () => {
+    setSession(SUPER_ADMIN);
+    mockDb.tenant.findUnique.mockResolvedValue(null as never);
 
-describe("POST /api/super/orgs — happy path", () => {
-  beforeEach(asSuperAdmin);
-
-  it("creates a new tenant", async () => {
-    mockDb.tenant.findFirst.mockResolvedValue(null); // no duplicate slug
-    mockDb.tenant.create.mockResolvedValue({
+    const createdTenant = {
       id: "t-new",
-      name: "New Org",
+      name: "NewOrg",
       slug: "new-org",
-      plan: "free",
+      plan: "startup",
       status: "active",
       createdAt: new Date(),
-    } as any);
-    mockDb.auditLog.create.mockResolvedValue({} as any);
+    };
+    mockDb.tenant.create.mockResolvedValue(createdTenant as never);
 
-    const res = await POST(buildPOST({ name: "New Org", slug: "new-org" }));
+    const res = await POST(
+      makeRequest("http://localhost:3006/api/super/orgs", {
+        method: "POST",
+        body: JSON.stringify({ name: "NewOrg", slug: "new-org" }),
+      }),
+    );
     expect(res.status).toBe(201);
-    const body = await res.json();
+    const body = await bodyOf(res);
     expect(body.success).toBe(true);
-    expect(mockDb.tenant.create).toHaveBeenCalledOnce();
+    expect(body.data.id).toBe("t-new");
   });
 });

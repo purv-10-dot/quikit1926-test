@@ -8,6 +8,36 @@ export interface AuthConfig {
   errorPage: string;
 }
 
+interface AuthUser {
+  id: string;
+  email: string | null;
+  name?: string | null;
+  isSuperAdmin?: boolean;
+  tenantId?: string;
+  membershipRole?: string;
+}
+
+// Simple in-memory rate limiter for login attempts (per email)
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const LOGIN_RATE_LIMIT = 5; // max attempts
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minute window
+
+function checkLoginRateLimit(email: string): boolean {
+  const now = Date.now();
+  const key = email.toLowerCase();
+  const entry = loginAttempts.get(key);
+  if (!entry || now > entry.resetAt) {
+    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= LOGIN_RATE_LIMIT;
+}
+
+function resetLoginRateLimit(email: string): void {
+  loginAttempts.delete(email.toLowerCase());
+}
+
 export function createAuthOptions(config: AuthConfig): NextAuthOptions {
   return {
     providers: [
@@ -20,6 +50,11 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
         async authorize(credentials) {
           if (!credentials?.email || !credentials?.password) {
             throw new Error("Invalid credentials");
+          }
+
+          // Rate limit: 5 attempts per email per 15 minutes
+          if (!checkLoginRateLimit(credentials.email)) {
+            throw new Error("Too many login attempts. Please try again in 15 minutes.");
           }
 
           const user = await db.user.findUnique({
@@ -38,6 +73,9 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           if (!isPasswordValid) {
             throw new Error("Invalid credentials");
           }
+
+          // Successful login — reset rate limit counter
+          resetLoginRateLimit(credentials.email);
 
           return {
             id: user.id,
@@ -65,7 +103,7 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
         if (user) {
           token.id = user.id;
           token.email = user.email;
-          token.isSuperAdmin = (user as any).isSuperAdmin ?? false;
+          token.isSuperAdmin = (user as AuthUser).isSuperAdmin ?? false;
         }
 
         if (trigger === "update" && session) {
@@ -211,8 +249,8 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
         if (user) {
           token.id = user.id;
           token.email = user.email;
-          token.tenantId = (user as any).tenantId;
-          token.membershipRole = (user as any).membershipRole;
+          token.tenantId = (user as AuthUser).tenantId;
+          token.membershipRole = (user as AuthUser).membershipRole;
           token.isSuperAdmin = false; // Apps don't inherit super admin status
         }
         // Store the access_token + refresh_token from the OAuth exchange

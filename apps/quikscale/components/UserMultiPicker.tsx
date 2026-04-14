@@ -16,9 +16,10 @@ interface Props {
   placeholder?: string;
   error?: boolean;
   chipLimit?: number;
+  disabled?: boolean;
 }
 
-export function UserMultiPicker({ values, onChange, users, placeholder, error, chipLimit }: Props) {
+export function UserMultiPicker({ values, onChange, users, placeholder, error, chipLimit, disabled }: Props) {
   return (
     <UserSelect
       mode="multi"
@@ -28,6 +29,7 @@ export function UserMultiPicker({ values, onChange, users, placeholder, error, c
       placeholder={placeholder}
       error={error}
       chipLimit={chipLimit}
+      disabled={disabled}
     />
   );
 }

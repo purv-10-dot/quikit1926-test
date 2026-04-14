@@ -103,7 +103,7 @@ export default function AppsPage() {
         <Card className="text-center py-12">
           <AppWindow className="h-10 w-10 mx-auto text-[var(--color-text-tertiary)] mb-3" />
           <p className="text-sm text-[var(--color-text-secondary)]">
-            No apps registered yet. Apps will appear here once they're added to the platform.
+            No apps registered yet. Apps will appear here once they&apos;re added to the platform.
           </p>
         </Card>
       </div>

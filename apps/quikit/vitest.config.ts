@@ -5,16 +5,33 @@ import path from "path";
 export default defineConfig({
   plugins: [react()],
   test: {
+    root: path.resolve(__dirname),
     include: ["__tests__/**/*.test.ts", "__tests__/**/*.test.tsx"],
     exclude: [
       "**/node_modules/**",
       "**/.next/**",
+      "**/tests/**",
       "**/__tests__/e2e/**",
       "**/dist/**",
     ],
     environment: "node",
     setupFiles: ["./__tests__/setup.ts"],
     clearMocks: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "html"],
+      include: [
+        "lib/**/*.{ts,tsx}",
+        "app/api/**/*.{ts,tsx}",
+        "components/**/*.{ts,tsx}",
+      ],
+      exclude: [
+        "**/*.test.{ts,tsx}",
+        "**/__tests__/**",
+        "**/.next/**",
+        "**/node_modules/**",
+      ],
+    },
   },
   resolve: {
     alias: {
@@ -23,8 +40,6 @@ export default defineConfig({
       "@quikit/auth": path.resolve(__dirname, "../../packages/auth"),
       "@quikit/ui": path.resolve(__dirname, "../../packages/ui"),
       "@quikit/shared/pagination": path.resolve(__dirname, "../../packages/shared/lib/pagination"),
-      "@quikit/shared/constants": path.resolve(__dirname, "../../packages/shared/lib/constants"),
-      "@quikit/shared/types": path.resolve(__dirname, "../../packages/shared/types/index"),
       "@quikit/shared": path.resolve(__dirname, "../../packages/shared"),
     },
   },

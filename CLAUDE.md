@@ -95,6 +95,7 @@ Use `accent-*` Tailwind classes for interactive/branded elements. These are mapp
 - Focus rings (outside the 4 locked tables below): `ring-accent-400`
 - Active tabs/badges (sidebar, settings, etc.): `bg-accent-100 text-accent-700`
 - `AddButton` shared component (top-of-page Add/New buttons across modules)
+- Table header backgrounds: `bg-accent-50` on all `<th>` elements across all tables
 
 **Use hardcoded Tailwind colors for (semantic — NOT themeable):**
 - KPI status cells: `bg-green-500`, `bg-red-500`, `bg-blue-500` (these represent data states)
@@ -102,9 +103,11 @@ Use `accent-*` Tailwind classes for interactive/branded elements. These are mapp
 - Warning/error/success alerts: `bg-amber-50`, `bg-red-50`, `bg-green-50`
 - Chart colors: fixed palette
 
-### 🔒 LOCKED TABLES — Do NOT theme (critical, permanent rule)
+### 🔒 LOCKED TABLES — Do NOT theme cells (critical, permanent rule)
 
-The following four tables are **fully color-locked**. Every visual element inside them — the row cells, column headers, row IDs, checkboxes, log icons, row hover, status badges, progress bars, action links, focus rings, weekly-value cells — uses **fixed `blue-*` / `gray-*` / semantic colors**. They must **never** be migrated to `accent-*`, and future refactors / bulk sweeps must **explicitly skip** these files:
+The following four tables have **locked cell styling**. All `<td>` cells, row IDs, checkboxes, log icons, row hover, status badges, progress bars, action links, focus rings, and weekly-value cells use **fixed `blue-*` / `gray-*` / semantic colors** and must **never** be migrated to `accent-*`.
+
+**Exception — `<th>` header backgrounds**: Table header backgrounds (`<th>`) use `bg-accent-50` across ALL tables (including these 4) for consistent branded theming. This is the ONLY accent class allowed in these files.
 
 1. **Individual KPI table** — `apps/quikscale/app/(dashboard)/kpi/components/KPITable.tsx`
 2. **Team KPI table** — `apps/quikscale/app/(dashboard)/kpi/teams/components/TeamSection.tsx` + shared `KPITable.tsx`

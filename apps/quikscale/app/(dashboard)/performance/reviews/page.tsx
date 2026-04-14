@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Plus, X, Star, ClipboardList } from "lucide-react";
 import {
   usePerformanceReviews,
@@ -89,8 +89,8 @@ export default function ReviewsPage() {
   const { data: usersData } = useIndividualPerformance();
   const createReview = useCreateReview();
 
-  const reviews = (reviewsData as any[]) ?? [];
-  const users = (usersData as any[]) ?? [];
+  const reviews = useMemo(() => (reviewsData as any[]) ?? [], [reviewsData]);
+  const users = useMemo(() => (usersData as any[]) ?? [], [usersData]);
 
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState<ReviewForm>(DEFAULT_FORM);
@@ -167,10 +167,10 @@ export default function ReviewsPage() {
           </div>
         ) : (
           <table className="border-separate border-spacing-0 text-xs w-full">
-            <thead className="sticky top-0 z-30 bg-gray-50">
+            <thead className="sticky top-0 z-30 bg-accent-50">
               <tr>
                 {["Reviewee", "Quarter", "Year", "Reviewer", "KPI Score", "Priority Score", "Overall Score", "Rating", "Status"].map(h => (
-                  <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide border-b border-r border-gray-200 bg-gray-50 whitespace-nowrap">{h}</th>
+                  <th key={h} className="px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide border-b border-r border-gray-200 bg-accent-50 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
