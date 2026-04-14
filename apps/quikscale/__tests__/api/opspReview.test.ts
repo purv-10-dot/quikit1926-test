@@ -147,6 +147,7 @@ describe("GET /api/opsp/review — happy path", () => {
   it("returns yearly (goals) rows", async () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(mockOPSP() as any);
     mockDb.oPSPReviewEntry.findMany.mockResolvedValue([]);
+    mockDb.oPSPData.findMany.mockResolvedValue([]); // no quarter OPSPs for cascade
     mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=yearly"));
@@ -158,6 +159,7 @@ describe("GET /api/opsp/review — happy path", () => {
   it("returns 3to5year (targets) rows", async () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(mockOPSP() as any);
     mockDb.oPSPReviewEntry.findMany.mockResolvedValue([]);
+    mockDb.oPSPData.findMany.mockResolvedValue([]); // no quarter OPSPs for cascade
     mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=3to5year"));
