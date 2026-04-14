@@ -18,7 +18,6 @@ import type { SafeParseReturnType } from "zod";
  *   if (!parsed.success) return validationError(parsed);
  */
 export function validationError(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   result: SafeParseReturnType<any, any>,
   fallback = "Invalid input",
 ): NextResponse {

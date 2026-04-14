@@ -201,7 +201,6 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
         });
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sections: any[] = [];
 
       // Title

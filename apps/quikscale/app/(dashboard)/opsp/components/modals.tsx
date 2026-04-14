@@ -352,7 +352,7 @@ export function TargetsModal({
           })}
           <div className="flex items-center justify-end gap-3 mt-5">
             {!readOnly && hasAnyUnbalanced && (
-              <span className="text-xs text-red-500 font-medium">Projected breakdown doesn't match</span>
+              <span className="text-xs text-red-500 font-medium">Projected breakdown doesn&apos;t match</span>
             )}
             <button
               onClick={onClose}
@@ -597,7 +597,7 @@ export function GoalsModal({
           })}
           <div className="flex items-center justify-end gap-3 mt-5">
             {!readOnly && hasAnyUnbalanced && (
-              <span className="text-xs text-red-500 font-medium">Projected breakdown doesn't match</span>
+              <span className="text-xs text-red-500 font-medium">Projected breakdown doesn&apos;t match</span>
             )}
             <button
               onClick={onClose}
@@ -814,7 +814,7 @@ export function ActionsModal({
 
           <div className="flex items-center justify-end gap-3 mt-5">
             {!readOnly && hasAnyUnbalanced && (
-              <span className="text-xs text-red-500 font-medium">Projected breakdown doesn't match</span>
+              <span className="text-xs text-red-500 font-medium">Projected breakdown doesn&apos;t match</span>
             )}
             <button
               onClick={onClose}
