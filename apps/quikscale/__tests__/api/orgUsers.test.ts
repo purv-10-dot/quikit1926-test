@@ -8,6 +8,8 @@ import { GET, POST } from "@/app/api/org/users/route";
 const USER = "user-001";
 const TENANT = "tenant-001";
 
+const routeCtx = { params: {} } as any;
+
 function buildGET(): NextRequest {
   return new NextRequest("http://localhost/api/org/users");
 }
@@ -38,14 +40,14 @@ beforeEach(() => {
 
 describe("GET /api/org/users — auth", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await GET(buildGET());
+    const res = await GET(buildGET(), routeCtx);
     expect(res.status).toBe(401);
   });
 
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, tenantId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
-    const res = await GET(buildGET());
+    const res = await GET(buildGET(), routeCtx);
     expect(res.status).toBe(403);
   });
 });
@@ -60,7 +62,7 @@ describe("GET /api/org/users — authorized", () => {
   it("calls findMany with tenantId filter", async () => {
     mockDb.membership.findMany.mockResolvedValue([]);
 
-    const res = await GET(buildGET());
+    const res = await GET(buildGET(), routeCtx);
     // Even if the response transforms fail, the query should have been called
     expect(mockDb.membership.findMany).toHaveBeenCalled();
   });
@@ -74,7 +76,7 @@ describe("POST /api/org/users — auth", () => {
   it("returns 401 when unauthenticated", async () => {
     const res = await POST(buildPOST({
       email: "x@y.com", firstName: "A", lastName: "B", password: "pass1234", role: "member",
-    }));
+    }), routeCtx);
     expect(res.status).toBe(401);
   });
 });
@@ -87,12 +89,12 @@ describe("POST /api/org/users — validation", () => {
   beforeEach(asAdmin);
 
   it("returns 400 when email missing", async () => {
-    const res = await POST(buildPOST({ firstName: "A", lastName: "B", password: "pass1234" }));
+    const res = await POST(buildPOST({ firstName: "A", lastName: "B", password: "pass1234" }), routeCtx);
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when password missing", async () => {
-    const res = await POST(buildPOST({ email: "x@y.com", firstName: "A", lastName: "B" }));
+    const res = await POST(buildPOST({ email: "x@y.com", firstName: "A", lastName: "B" }), routeCtx);
     expect(res.status).toBe(400);
   });
 });
@@ -111,7 +113,7 @@ describe("POST /api/org/users — accepts valid auth", () => {
 
     const res = await POST(buildPOST({
       email: "x@y.com", firstName: "A", lastName: "B", password: "pass1234", role: "member",
-    }));
+    }), routeCtx);
     // Route should have tried to create user (we forced an error)
     expect(res.status).toBe(500);
   });
