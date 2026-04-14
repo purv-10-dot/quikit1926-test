@@ -11,6 +11,8 @@ export type TestUser = {
   email?: string;
   name?: string;
   isSuperAdmin?: boolean;
+  tenantId?: string;
+  role?: string;
 };
 
 const _state: { user: TestUser | null } = { user: null };
