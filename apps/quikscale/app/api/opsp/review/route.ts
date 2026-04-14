@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
         target: number | null;
         achieved: number | null;
         comment: string | null;
+        autoPopulated?: boolean;
       }> = {};
 
       for (const pKey of periodKeys) {
@@ -98,16 +99,21 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 6. Get tenant fiscal config
+    // 6. Auto-populate achieved/gap/achievedPct from child horizons
+    if (horizon === "yearly" || horizon === "3to5year") {
+      await populateCascadeData(tenantId, userId, year, rows, horizon, opsp.targetYears);
+    }
+
+    // 7. Get tenant fiscal config
     const tenant = await db.tenant.findUnique({
       where: { id: tenantId },
       select: { fiscalYearStart: true },
     });
 
-    // 7. Extract secondary rows (rocks / keyInitiatives / keyThrusts)
+    // 8. Extract secondary rows (rocks / keyInitiatives / keyThrusts)
     const rawSecondaryRows = extractSecondaryRows(opsp, horizon);
 
-    // 8. Resolve owner IDs to names for secondary rows
+    // 9. Resolve owner IDs to names for secondary rows
     const ownerIds = [...new Set(rawSecondaryRows.map((r) => r.owner).filter(Boolean))];
     const ownerUsers = ownerIds.length > 0
       ? await db.user.findMany({
@@ -117,7 +123,7 @@ export async function GET(req: NextRequest) {
       : [];
     const ownerMap = new Map(ownerUsers.map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
 
-    // 9. Load saved secondary review entries (status + comment)
+    // 10. Load saved secondary review entries (status + comment)
     const secondaryEntries = await db.oPSPReviewEntry.findMany({
       where: { tenantId, opspId: opsp.id, horizon, period: "secondary" },
       select: { rowIndex: true, comment: true },
@@ -288,6 +294,159 @@ function getPeriodKeys(horizon: string, targetYears: number = 5): string[] {
   if (horizon === "yearly") return ["q1", "q2", "q3", "q4"];
   // 3-5 year: return y1..yN based on targetYears
   return Array.from({ length: targetYears }, (_, i) => `y${i + 1}`);
+}
+
+/* ── Cascade: auto-populate achieved from child horizon ── */
+
+/**
+ * Compute quarterly cumulative achieved for a given category from a quarter's
+ * OPSP review entries. Returns { achieved, target } sums across m1/m2/m3.
+ */
+async function getQuarterCumulativeForCategory(
+  tenantId: string,
+  opspId: string,
+  category: string,
+  sourceRows: Record<string, unknown>[],
+): Promise<{ target: number; achieved: number; hasAchieved: boolean }> {
+  // Find the actionsQtr rowIndex matching this category
+  const rowIdx = sourceRows.findIndex(
+    (r) => (r.category as string)?.toLowerCase() === category.toLowerCase(),
+  );
+  if (rowIdx < 0) return { target: 0, achieved: 0, hasAchieved: false };
+
+  const entries = await db.oPSPReviewEntry.findMany({
+    where: {
+      tenantId,
+      opspId,
+      horizon: "quarter",
+      rowIndex: rowIdx,
+      period: { in: ["m1", "m2", "m3"] },
+    },
+    select: { period: true, targetValue: true, achievedValue: true },
+  });
+
+  let cumTarget = 0;
+  let cumAchieved = 0;
+  let hasAchieved = false;
+
+  // Sum targets from OPSP source (m1, m2, m3 fields)
+  for (const pKey of ["m1", "m2", "m3"]) {
+    const sourceTarget = parseFloat(sourceRows[rowIdx][pKey] as string) || 0;
+    const entry = entries.find((e) => e.period === pKey);
+    cumTarget += entry?.targetValue ? Number(entry.targetValue) : sourceTarget;
+    if (entry?.achievedValue != null) {
+      cumAchieved += Number(entry.achievedValue);
+      hasAchieved = true;
+    }
+  }
+
+  return { target: cumTarget, achieved: cumAchieved, hasAchieved };
+}
+
+/**
+ * Populate yearly rows with quarter cumulative data, or 3-5yr rows with
+ * yearly cumulative data. Mutates the `rows` array in-place.
+ */
+async function populateCascadeData(
+  tenantId: string,
+  userId: string,
+  year: number,
+  rows: { rowIndex: number; category: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; comment: string | null; autoPopulated?: boolean }> }[],
+  horizon: string,
+  targetYears: number,
+) {
+  if (horizon === "yearly") {
+    // For each quarter period (q1-q4), find the matching quarter OPSP and compute cumulative
+    const quarters = ["Q1", "Q2", "Q3", "Q4"];
+    const periodKeys = ["q1", "q2", "q3", "q4"];
+
+    // Load all 4 quarter OPSPs for this user+year
+    const quarterOpsps = await db.oPSPData.findMany({
+      where: { tenantId, userId, year, quarter: { in: quarters }, status: "finalized" },
+      select: { id: true, quarter: true, actionsQtr: true },
+    });
+
+    const opspByQuarter = new Map(quarterOpsps.map((o) => [o.quarter, o]));
+
+    for (const row of rows) {
+      if (!row.category.trim()) continue;
+
+      for (let qi = 0; qi < 4; qi++) {
+        const qOpsp = opspByQuarter.get(quarters[qi]);
+        if (!qOpsp) continue;
+
+        const sourceRows = extractSourceRows(
+          { actionsQtr: qOpsp.actionsQtr, goalRows: null, targetRows: null },
+          "quarter",
+        );
+
+        const cum = await getQuarterCumulativeForCategory(
+          tenantId,
+          qOpsp.id,
+          row.category,
+          sourceRows,
+        );
+
+        if (cum.hasAchieved) {
+          const period = row.periods[periodKeys[qi]];
+          if (period) {
+            period.achieved = cum.achieved;
+            period.autoPopulated = true;
+          }
+        }
+      }
+    }
+  } else if (horizon === "3to5year") {
+    // For each year period (y1..yN), compute the yearly cumulative
+    // Yearly cumulative = sum of Q1+Q2+Q3+Q4 cumulatives for that year
+    const years = Array.from({ length: targetYears }, (_, i) => year + i);
+    const periodKeys = Array.from({ length: targetYears }, (_, i) => `y${i + 1}`);
+
+    for (const row of rows) {
+      if (!row.category.trim()) continue;
+
+      for (let yi = 0; yi < years.length; yi++) {
+        const targetYear = years[yi];
+        const quarters = ["Q1", "Q2", "Q3", "Q4"];
+
+        // Load all quarter OPSPs for this year
+        const quarterOpsps = await db.oPSPData.findMany({
+          where: { tenantId, userId, year: targetYear, quarter: { in: quarters }, status: "finalized" },
+          select: { id: true, quarter: true, actionsQtr: true },
+        });
+
+        let yearAchieved = 0;
+        let yearHasAchieved = false;
+
+        for (const qOpsp of quarterOpsps) {
+          const sourceRows = extractSourceRows(
+            { actionsQtr: qOpsp.actionsQtr, goalRows: null, targetRows: null },
+            "quarter",
+          );
+
+          const cum = await getQuarterCumulativeForCategory(
+            tenantId,
+            qOpsp.id,
+            row.category,
+            sourceRows,
+          );
+
+          if (cum.hasAchieved) {
+            yearAchieved += cum.achieved;
+            yearHasAchieved = true;
+          }
+        }
+
+        if (yearHasAchieved) {
+          const period = row.periods[periodKeys[yi]];
+          if (period) {
+            period.achieved = yearAchieved;
+            period.autoPopulated = true;
+          }
+        }
+      }
+    }
+  }
 }
 
 /**

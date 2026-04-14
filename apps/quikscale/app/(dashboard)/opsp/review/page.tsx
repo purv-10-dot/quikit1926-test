@@ -56,6 +56,7 @@ interface PeriodData {
   target: number | null;
   achieved: number | null;
   comment: string | null;
+  autoPopulated?: boolean;
 }
 
 interface ReviewRow {
@@ -98,6 +99,7 @@ interface TableRow {
   isCumulative: boolean;
   isFirstInGroup: boolean;
   groupSize: number;
+  autoPopulated?: boolean;
 }
 
 interface SecondaryTableRow {
@@ -193,10 +195,12 @@ function buildTableRows(rows: ReviewRow[], periodLabels: { key: string; label: s
       const { gap, achievedPct } = computeMetrics(pd.target, pd.achieved);
       if (pd.target != null) cumT += pd.target;
       if (pd.achieved != null) { cumA += pd.achieved; hasA = true; }
-      result.push({ rowIndex: row.rowIndex, category: row.category, periodKey: pl.key, periodLabel: pl.label, target: pd.target, achieved: pd.achieved, gap, achievedPct, comment: pd.comment, isCumulative: false, isFirstInGroup: idx === 0, groupSize });
+      result.push({ rowIndex: row.rowIndex, category: row.category, periodKey: pl.key, periodLabel: pl.label, target: pd.target, achieved: pd.achieved, gap, achievedPct, comment: pd.comment, isCumulative: false, isFirstInGroup: idx === 0, groupSize, autoPopulated: pd.autoPopulated });
     });
     const cum = computeMetrics(cumT, hasA ? cumA : null);
-    result.push({ rowIndex: row.rowIndex, category: row.category, periodKey: "cumulative", periodLabel: "Cumulative", target: cumT || null, achieved: hasA ? cumA : null, gap: cum.gap, achievedPct: cum.achievedPct, isCumulative: true, comment: null, isFirstInGroup: false, groupSize });
+    // Cumulative row is auto-populated if ANY child period was auto-populated
+    const cumAutoPopulated = periodLabels.some((pl) => row.periods[pl.key]?.autoPopulated);
+    result.push({ rowIndex: row.rowIndex, category: row.category, periodKey: "cumulative", periodLabel: "Cumulative", target: cumT || null, achieved: hasA ? cumA : null, gap: cum.gap, achievedPct: cum.achievedPct, isCumulative: true, comment: null, isFirstInGroup: false, groupSize, autoPopulated: cumAutoPopulated });
   }
   return result;
 }
@@ -380,6 +384,14 @@ export default function OPSPReviewPage() {
     setPrimaryOpen(true);
   }
 
+  /** Check if a period tab's achieved value is auto-populated from child horizon */
+  const isTabAutoPopulated = useMemo(() => {
+    if (!data?.rows) return false;
+    const row = data.rows.find((r) => r.rowIndex === primaryIdx);
+    if (!row) return false;
+    return row.periods[primaryActiveTab]?.autoPopulated === true;
+  }, [data, primaryIdx, primaryActiveTab]);
+
   /* ── Open secondary modal ── */
   function openSecondaryModal(index: number) {
     const row = secondaryTableRows[index];
@@ -397,9 +409,15 @@ export default function OPSPReviewPage() {
     if (!data?.opspId) return;
     setSaving(true);
     try {
-      const entries = Object.entries(primaryEdits).map(([period, vals]) => ({
-        period, targetValue: vals.target, achievedValue: vals.achieved, comment: vals.comment || null,
-      }));
+      const row = data.rows.find((r) => r.rowIndex === primaryIdx);
+      const entries = Object.entries(primaryEdits)
+        .filter(([period]) => {
+          // Skip auto-populated periods — their achieved values are derived, not user-entered
+          return !row?.periods[period]?.autoPopulated;
+        })
+        .map(([period, vals]) => ({
+          period, targetValue: vals.target, achievedValue: vals.achieved, comment: vals.comment || null,
+        }));
       const res = await fetch("/api/opsp/review", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -945,17 +963,23 @@ export default function OPSPReviewPage() {
                 <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{tabData.target ?? "—"}</div>
               </div>
               <div>
-                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Achieved</label>
-                <input type="number" step="any" value={tabData.achieved ?? ""} onChange={(e) => updatePrimaryField("achieved", e.target.value)} placeholder="Enter value" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent" />
+                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Achieved{isTabAutoPopulated && <span className="ml-1 text-accent-500 normal-case font-normal">(auto-populated from quarterly review)</span>}
+                </label>
+                {isTabAutoPopulated ? (
+                  <div className="px-3 py-2 bg-accent-50 border border-accent-200 rounded-lg text-xs text-gray-700 font-medium">{tabData.achieved ?? "—"}</div>
+                ) : (
+                  <input type="number" step="any" value={tabData.achieved ?? ""} onChange={(e) => updatePrimaryField("achieved", e.target.value)} placeholder="Enter value" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent" />
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Gap</label>
-                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-500">{gap != null ? gap.toFixed(2) : "—"}</div>
+                  <div className={cn("px-3 py-2 border rounded-lg text-xs", isTabAutoPopulated ? "bg-accent-50 border-accent-200 text-gray-700 font-medium" : "bg-gray-50 border-gray-200 text-gray-500")}>{gap != null ? gap.toFixed(2) : "—"}</div>
                 </div>
                 <div>
                   <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Achieved %</label>
-                  <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-500">{achievedPct != null ? `${achievedPct}%` : "—"}</div>
+                  <div className={cn("px-3 py-2 border rounded-lg text-xs", isTabAutoPopulated ? "bg-accent-50 border-accent-200 text-gray-700 font-medium" : "bg-gray-50 border-gray-200 text-gray-500")}>{achievedPct != null ? `${achievedPct}%` : "—"}</div>
                 </div>
               </div>
               <div>
