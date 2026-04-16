@@ -141,14 +141,13 @@ export default function AppLauncherPage() {
     window.location.href = app.baseUrl;
   }
 
-  const installed = apps.filter((a) => a.installed);
-  const filtered = search
-    ? installed.filter(
-        (a) =>
-          a.name.toLowerCase().includes(search.toLowerCase()) ||
-          (a.description ?? "").toLowerCase().includes(search.toLowerCase()),
-      )
-    : installed;
+  const matchesSearch = (a: AppInfo) =>
+    !search ||
+    a.name.toLowerCase().includes(search.toLowerCase()) ||
+    (a.description ?? "").toLowerCase().includes(search.toLowerCase());
+
+  const installed = apps.filter((a) => a.installed && matchesSearch(a));
+  const available = apps.filter((a) => !a.installed && matchesSearch(a));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -247,11 +246,11 @@ export default function AppLauncherPage() {
       </header>
 
       {/* App grid */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 space-y-10">
         {(loadingApps || loadingOrgs) && (
           <div className="text-sm text-gray-400 text-center py-20">Loading…</div>
         )}
-        {!loadingApps && !loadingOrgs && filtered.length === 0 && (
+        {!loadingApps && !loadingOrgs && installed.length === 0 && available.length === 0 && (
           <div className="text-center py-20">
             <Rocket className="h-12 w-12 text-gray-300 mx-auto mb-3" />
             <p className="text-sm text-gray-500">
@@ -259,17 +258,46 @@ export default function AppLauncherPage() {
             </p>
           </div>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map((app) => (
-            <AppCard
-              key={app.id}
-              app={app}
-              isAdmin={isAdmin}
-              onLaunch={() => handleLaunch(app)}
-              onEnable={() => handleEnable(app.id)}
-            />
-          ))}
-        </div>
+
+        {/* Installed apps */}
+        {installed.length > 0 && (
+          <section>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+              Your apps
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {installed.map((app) => (
+                <AppCard
+                  key={app.id}
+                  app={app}
+                  isAdmin={isAdmin}
+                  onLaunch={() => handleLaunch(app)}
+                  onEnable={() => handleEnable(app.id)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Available apps — only admins can enable them */}
+        {isAdmin && available.length > 0 && (
+          <section>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+              Available to enable
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {available.map((app) => (
+                <AppCard
+                  key={app.id}
+                  app={app}
+                  isAdmin={isAdmin}
+                  onLaunch={() => handleLaunch(app)}
+                  onEnable={() => handleEnable(app.id)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );
