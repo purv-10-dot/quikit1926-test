@@ -54,7 +54,7 @@ export async function GET() {
         where: { userId, tenantId },
         select: { appId: true, role: true },
       })
-    : [];
+    : ([] as { appId: string; role: string }[]);
 
   const accessMap = new Map(accessRecords.map((a) => [a.appId, a.role]));
 

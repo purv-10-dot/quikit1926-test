@@ -23,7 +23,8 @@
     "db:generate": "cd packages/database && npx prisma generate",
     "db:seed:e2e": "cd packages/database && npm run db:seed:e2e",
     "e2e": "cd apps/quikscale && npx playwright test",
-    "e2e:install": "cd apps/quikscale && npx playwright install --with-deps chromium"
+    "e2e:install": "cd apps/quikscale && npx playwright install --with-deps chromium",
+    "postinstall": "prisma generate --schema=packages/database/prisma/schema.prisma"
   },
   "devDependencies": {
     "autocannon": "^8.0.0",
