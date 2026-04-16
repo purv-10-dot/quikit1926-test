@@ -278,8 +278,17 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
           }
           try { return JSON.stringify(e); } catch { return String(e); }
         }
-        // eslint-disable-next-line no-console
-        console.error(`[quikit-auth][${code}] ${describe(metadata)}`);
+        // Chunk the serialized message into short pieces so Vercel's truncated
+        // log table (which cuts off around 30 chars per Message column) still
+        // surfaces the full string across multiple rows.
+        const full = describe(metadata);
+        const CHUNK = 120;
+        const total = Math.ceil(full.length / CHUNK) || 1;
+        for (let i = 0; i < total; i++) {
+          const part = full.slice(i * CHUNK, (i + 1) * CHUNK);
+          // eslint-disable-next-line no-console
+          console.error(`[qka][${code}][${i + 1}/${total}] ${part}`);
+        }
       },
       warn(code) {
         // eslint-disable-next-line no-console
