@@ -13,6 +13,9 @@ export interface MiddlewareConfig {
   centralLoginUrl?: string;
   /** Absolute URL to central select-org page (e.g., "http://localhost:3004/select-org"). */
   centralSelectOrgUrl?: string;
+  /** Route to redirect authenticated users hitting /login when no callbackUrl is set.
+   *  Defaults to selectOrgRoute, then "/dashboard". */
+  postLoginRoute?: string;
 }
 
 export function createMiddleware(config: MiddlewareConfig) {
@@ -50,9 +53,21 @@ export function createMiddleware(config: MiddlewareConfig) {
       return safeRedirect(new URL(config.loginRoute, request.url));
     }
 
-    // Authenticated user on local login page → redirect to dashboard
+    // Authenticated user on local login page → honor callbackUrl, else go to dashboard
     if (token && isLoginRoute) {
-      const redirectTo = config.selectOrgRoute || "/dashboard";
+      const callbackUrl = request.nextUrl.searchParams.get("callbackUrl");
+      if (callbackUrl) {
+        // Only allow same-origin or absolute URLs that point back to this host
+        try {
+          const target = new URL(callbackUrl, request.url);
+          if (target.origin === request.nextUrl.origin) {
+            return safeRedirect(target);
+          }
+        } catch {
+          // fall through to default redirect
+        }
+      }
+      const redirectTo = config.postLoginRoute || config.selectOrgRoute || "/dashboard";
       return safeRedirect(new URL(redirectTo, request.url));
     }
 
