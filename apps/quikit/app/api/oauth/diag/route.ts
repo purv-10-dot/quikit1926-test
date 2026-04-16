@@ -3,7 +3,7 @@ import { jwtVerify, createLocalJWKSet } from "jose";
 import { generateIdToken, getJWKS } from "@/lib/oauth";
 
 /**
- * GET /api/oauth/_diag — TEMPORARY diagnostic endpoint
+ * GET /api/oauth/diag — TEMPORARY diagnostic endpoint
  *
  * Signs a token with our private key, then verifies it against our own
  * JWKS (the same JWK that is published to clients). If signing and
