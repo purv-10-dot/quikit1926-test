@@ -98,21 +98,30 @@ export interface IdTokenPayload {
 
 /**
  * Generate a signed JWT id_token.
+ *
+ * Per OIDC Core §2, the `nonce` claim MUST be included only when a nonce
+ * was sent in the authorize request. If the client did not send one, the
+ * id_token must omit it — otherwise openid-client (used by NextAuth) will
+ * reject the token with "unexpected id_token nonce claim value" during
+ * verification, even when the signature is valid.
  */
 export async function generateIdToken(
   payload: IdTokenPayload,
   clientId: string,
-  expiresInSeconds = 3600,
+  options: { nonce?: string; expiresInSeconds?: number } = {},
 ): Promise<string> {
   const { privateKey } = await getKeyPair();
+  const { nonce, expiresInSeconds = 3600 } = options;
 
-  return new SignJWT({
+  const claims: Record<string, unknown> = {
     ...payload,
     iss: ISSUER,
     aud: clientId,
     iat: Math.floor(Date.now() / 1000),
-    nonce: uuid(),
-  })
+  };
+  if (nonce) claims.nonce = nonce;
+
+  return new SignJWT(claims)
     .setProtectedHeader({ alg: "RS256", kid: "quikit-1" })
     .setExpirationTime(`${expiresInSeconds}s`)
     .setIssuedAt()
