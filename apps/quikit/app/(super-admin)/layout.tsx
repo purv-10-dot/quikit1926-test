@@ -235,13 +235,7 @@ export default function SuperAdminLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            <AppSwitcher
-              quikitUrl={
-                process.env.NEXT_PUBLIC_QUIKIT_URL || "http://localhost:3000"
-              }
-              currentAppSlug="super-admin-portal"
-              apiUrl="/api/apps/launcher"
-            />
+            <AppSwitcher apiUrl="/api/apps/launcher" />
 
             {/* Avatar dropdown */}
             <div className="relative" ref={avatarRef}>

@@ -57,5 +57,10 @@ export async function GET() {
   // Only return installed apps
   const data = allApps.filter((app) => accessSet.has(app.id));
 
-  return NextResponse.json({ success: true, data });
+  // The IdP base URL lives in QUIKIT_URL (server-side, required for OAuth).
+  // Include it in the response so the AppSwitcher's "View all apps" link
+  // does not depend on NEXT_PUBLIC_QUIKIT_URL being set at build time.
+  const quikitUrl = process.env.QUIKIT_URL ?? null;
+
+  return NextResponse.json({ success: true, data, quikitUrl });
 }

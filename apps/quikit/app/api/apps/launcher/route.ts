@@ -64,5 +64,12 @@ export async function GET() {
     role: accessMap.get(app.id) ?? undefined,
   }));
 
-  return NextResponse.json({ success: true, data });
+  // Authoritative IdP URL for the AppSwitcher's "View all apps" link —
+  // sourced server-side from QUIKIT_URL so clients don't have to rely on
+  // NEXT_PUBLIC_QUIKIT_URL being baked into their bundle at build time.
+  // On quikit itself, fall back to NEXTAUTH_URL (same host).
+  const quikitUrl =
+    process.env.QUIKIT_URL ?? process.env.NEXTAUTH_URL ?? null;
+
+  return NextResponse.json({ success: true, data, quikitUrl });
 }
