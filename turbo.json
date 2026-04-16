@@ -4,7 +4,20 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": [
+        "DATABASE_URL",
+        "NEXTAUTH_SECRET",
+        "NEXTAUTH_URL",
+        "NODE_ENV",
+        "JWT_SIGNING_KEY",
+        "JWT_SIGNING_KEY_PUBLIC",
+        "QUIKIT_URL",
+        "QUIKIT_CLIENT_ID",
+        "QUIKIT_CLIENT_SECRET",
+        "QUIKSCALE_URL",
+        "ADMIN_URL"
+      ]
     },
     "dev": {
       "cache": false,
