@@ -14,8 +14,9 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import {
   Rocket, Grid3X3, Search, ExternalLink, Plus,
-  CheckCircle2, Clock, Sparkles, Building2, ChevronDown,
+  CheckCircle2, Clock, Sparkles, Building2, ChevronDown, Shield,
 } from "lucide-react";
+import Link from "next/link";
 
 interface AppInfo {
   id: string;
@@ -213,6 +214,18 @@ export default function AppLauncherPage() {
                     </>
                   )}
                 </div>
+              )}
+
+              {/* Super Admin Portal link (super admins only) */}
+              {isSuperAdmin && (
+                <Link
+                  href="/organizations"
+                  className="flex items-center gap-2 px-3 py-2 text-sm border border-red-200 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 transition-colors font-medium"
+                  title="Open Super Admin Portal"
+                >
+                  <Shield className="h-4 w-4" />
+                  <span>Super Admin</span>
+                </Link>
               )}
 
               {/* Search */}
