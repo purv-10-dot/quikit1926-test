@@ -12,6 +12,7 @@ import { createMiddleware } from "@quikit/auth/middleware";
 export const middleware = createMiddleware({
   loginRoute: "/login",
   // NO selectOrgRoute — don't redirect to /select-org for missing tenantId
+  postLoginRoute: "/apps",
   publicRoutes: [
     "/login",
     "/select-org",
@@ -19,6 +20,7 @@ export const middleware = createMiddleware({
     "/api/oauth/token",
     "/api/oauth/userinfo",
     "/api/oauth/jwks",
+    "/.well-known/openid-configuration",
   ],
 });
 
