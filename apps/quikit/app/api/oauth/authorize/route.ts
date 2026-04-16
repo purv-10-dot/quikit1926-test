@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateAuthCode } from "@/lib/oauth";
 
+// Reads runtime session + env-backed OAuth keys — never prerender.
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/oauth/authorize — OAuth2 Authorization Endpoint
  *

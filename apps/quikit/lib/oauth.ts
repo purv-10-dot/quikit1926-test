@@ -20,8 +20,31 @@ function uuid(): string {
 let _privateKey: KeyLike | null = null;
 let _publicKey: KeyLike | null = null;
 
-const DEV_RSA_PRIVATE = process.env.JWT_SIGNING_KEY || "";
-const DEV_RSA_PUBLIC = process.env.JWT_SIGNING_KEY_PUBLIC || "";
+/**
+ * Normalize a PEM value supplied via an env var. Vercel's environment-variable
+ * UI often stores multi-line secrets with literal "\n" escapes instead of real
+ * newlines, and users may also base64-encode the full PEM to sidestep newline
+ * handling entirely. Accept either form.
+ */
+function normalizePem(raw: string): string {
+  if (!raw) return "";
+  let v = raw.trim();
+  // Literal "\n" → real newline (Vercel single-line env quirk)
+  if (v.includes("\\n")) v = v.replace(/\\n/g, "\n");
+  // If the value doesn't look like PEM, try base64 decode
+  if (!v.includes("-----BEGIN")) {
+    try {
+      const decoded = Buffer.from(v, "base64").toString("utf-8");
+      if (decoded.includes("-----BEGIN")) v = decoded;
+    } catch {
+      /* fall through — let importPKCS8 surface the error */
+    }
+  }
+  return v;
+}
+
+const DEV_RSA_PRIVATE = normalizePem(process.env.JWT_SIGNING_KEY || "");
+const DEV_RSA_PUBLIC = normalizePem(process.env.JWT_SIGNING_KEY_PUBLIC || "");
 
 async function getKeyPair(): Promise<{
   privateKey: KeyLike;
