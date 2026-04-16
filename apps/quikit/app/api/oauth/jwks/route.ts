@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getJWKS } from "@/lib/oauth";
 
+// Key material is only available at runtime (env vars), not at build time.
+export const dynamic = "force-dynamic";
+
 /**
  * GET /api/oauth/jwks — JSON Web Key Set endpoint
  *
