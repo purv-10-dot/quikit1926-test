@@ -262,7 +262,7 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
             for (const k of Object.keys(e)) {
               // serialize extra props openid-client sets (e.g., response, checks)
               try {
-                extras.push(`${k}=${JSON.stringify((e as Record<string, unknown>)[k])}`);
+                extras.push(`${k}=${JSON.stringify((e as unknown as Record<string, unknown>)[k])}`);
               } catch {
                 extras.push(`${k}=<unserializable>`);
               }
