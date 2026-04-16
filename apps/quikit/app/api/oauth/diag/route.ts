@@ -2,6 +2,31 @@ import { NextResponse } from "next/server";
 import { jwtVerify, createLocalJWKSet } from "jose";
 import { generateIdToken, getJWKS } from "@/lib/oauth";
 
+export const dynamic = "force-dynamic";
+
+/** Return a safe preview of an env var value so we can debug its shape
+ *  without leaking key material. Shows length, first-few/last-few chars,
+ *  and which newline styles are present. */
+function describeEnv(name: string) {
+  const raw = process.env[name];
+  if (!raw) return { name, present: false };
+  const length = raw.length;
+  const first20 = raw.slice(0, 20);
+  const last20 = raw.slice(-20);
+  return {
+    name,
+    present: true,
+    length,
+    first20,
+    last20,
+    hasLiteralBackslashN: raw.includes("\\n"),
+    hasRealNewline: raw.includes("\n"),
+    hasBeginMarker: raw.includes("-----BEGIN"),
+    hasEndMarker: raw.includes("-----END"),
+    startsWithDashes: raw.startsWith("-"),
+  };
+}
+
 /**
  * GET /api/oauth/diag — TEMPORARY diagnostic endpoint
  *
@@ -14,6 +39,13 @@ import { generateIdToken, getJWKS } from "@/lib/oauth";
  * Remove after the signing-key issue is diagnosed.
  */
 export async function GET() {
+  // Always report env-var shape first, even if key parsing later fails.
+  const envReport = {
+    JWT_SIGNING_KEY: describeEnv("JWT_SIGNING_KEY"),
+    JWT_SIGNING_KEY_PUBLIC: describeEnv("JWT_SIGNING_KEY_PUBLIC"),
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL ?? null,
+  };
+
   try {
     // 1. Generate an id_token the same way /api/oauth/token does
     const idToken = await generateIdToken(
@@ -53,7 +85,7 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        issuerEnv: process.env.NEXTAUTH_URL ?? null,
+        env: envReport,
         idTokenHeader: header,
         idTokenPayload: payload,
         idTokenLength: idToken.length,
@@ -64,8 +96,6 @@ export async function GET() {
           firstKty: jwks.keys[0]?.kty,
           firstNPrefix: typeof jwks.keys[0]?.n === "string" ? jwks.keys[0].n.slice(0, 40) : null,
         },
-        signingKeyEnvPresent: Boolean(process.env.JWT_SIGNING_KEY),
-        signingKeyPublicEnvPresent: Boolean(process.env.JWT_SIGNING_KEY_PUBLIC),
         verify: verifyResult,
       },
       { headers: { "Cache-Control": "no-store" } },
@@ -73,6 +103,7 @@ export async function GET() {
   } catch (err: unknown) {
     return NextResponse.json(
       {
+        env: envReport,
         error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
         stack: err instanceof Error ? err.stack?.split("\n").slice(0, 10) : null,
       },
