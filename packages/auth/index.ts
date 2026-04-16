@@ -247,6 +247,33 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
       secret: process.env.NEXTAUTH_SECRET,
       maxAge: 7 * 24 * 60 * 60,
     },
+    // Log the full OAuth error (NextAuth's default logger truncates multi-line
+     // messages in serverless output, hiding the actual cause of callback failures).
+    logger: {
+      error(code, metadata) {
+        // Serialize the metadata (often an Error) fully so it shows up in Vercel
+        // logs as a single searchable line.
+        let meta: string;
+        try {
+          if (metadata instanceof Error) {
+            meta = `${metadata.name}: ${metadata.message} | stack=${metadata.stack?.split("\n").slice(0, 4).join(" | ")}`;
+          } else {
+            meta = JSON.stringify(metadata, Object.getOwnPropertyNames(metadata as object));
+          }
+        } catch {
+          meta = String(metadata);
+        }
+        // eslint-disable-next-line no-console
+        console.error(`[quikit-auth][${code}] ${meta}`);
+      },
+      warn(code) {
+        // eslint-disable-next-line no-console
+        console.warn(`[quikit-auth][warn][${code}]`);
+      },
+      debug() {
+        // no-op in production
+      },
+    },
     callbacks: {
       async jwt({ token, user, account }) {
         // On initial sign-in (after OAuth callback), populate token from user profile
