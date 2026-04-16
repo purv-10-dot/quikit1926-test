@@ -211,12 +211,16 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
         id: "quikit",
         name: "QuikIT",
         type: "oauth",
+        // OIDC discovery — NextAuth fetches /.well-known/openid-configuration
+        // to locate jwks_uri and verify the id_token signature. Without this,
+        // the callback errors out with OAUTH_CALLBACK_ERROR before userinfo
+        // is ever called.
+        wellKnown: `${quikitUrl}/.well-known/openid-configuration`,
+        issuer: quikitUrl,
+        idToken: true,
         authorization: {
-          url: `${quikitUrl}/api/oauth/authorize`,
           params: { scope: "openid profile email tenant" },
         },
-        token: `${quikitUrl}/api/oauth/token`,
-        userinfo: `${quikitUrl}/api/oauth/userinfo`,
         clientId,
         clientSecret,
         checks: ["state"],

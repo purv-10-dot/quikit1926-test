@@ -20,6 +20,7 @@ export const middleware = createMiddleware({
     "/api/oauth/token",
     "/api/oauth/userinfo",
     "/api/oauth/jwks",
+    "/.well-known/openid-configuration",
   ],
 });
 
