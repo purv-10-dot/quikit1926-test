@@ -21,30 +21,44 @@ let _privateKey: KeyLike | null = null;
 let _publicKey: KeyLike | null = null;
 
 /**
- * Normalize a PEM value supplied via an env var. Vercel's environment-variable
- * UI often stores multi-line secrets with literal "\n" escapes instead of real
- * newlines, and users may also base64-encode the full PEM to sidestep newline
- * handling entirely. Accept either form.
+ * Normalize a PEM value supplied via an env var. Accepts any of:
+ *   1. Full PEM with real newlines (preferred)
+ *   2. Full PEM with literal "\n" escapes (Vercel single-line env quirk)
+ *   3. Whole PEM base64-encoded once (user pre-encoded to dodge newlines)
+ *   4. Just the base64 body with no BEGIN/END markers — we wrap it using
+ *      the supplied label ("PRIVATE KEY" or "PUBLIC KEY").
  */
-function normalizePem(raw: string): string {
+function normalizePem(raw: string, label: "PRIVATE KEY" | "PUBLIC KEY"): string {
   if (!raw) return "";
   let v = raw.trim();
-  // Literal "\n" → real newline (Vercel single-line env quirk)
+
+  // Case 2: literal "\n" → real newline
   if (v.includes("\\n")) v = v.replace(/\\n/g, "\n");
-  // If the value doesn't look like PEM, try base64 decode
+
+  // Case 3: whole PEM base64-encoded
   if (!v.includes("-----BEGIN")) {
     try {
       const decoded = Buffer.from(v, "base64").toString("utf-8");
-      if (decoded.includes("-----BEGIN")) v = decoded;
+      if (decoded.includes("-----BEGIN")) {
+        v = decoded;
+      }
     } catch {
-      /* fall through — let importPKCS8 surface the error */
+      /* not base64 — fall through to case 4 */
     }
   }
+
+  // Case 4: bare base64 body — wrap it into a valid PEM.
+  if (!v.includes("-----BEGIN")) {
+    const body = v.replace(/\s+/g, "");
+    const chunked = body.match(/.{1,64}/g)?.join("\n") ?? body;
+    v = `-----BEGIN ${label}-----\n${chunked}\n-----END ${label}-----\n`;
+  }
+
   return v;
 }
 
-const DEV_RSA_PRIVATE = normalizePem(process.env.JWT_SIGNING_KEY || "");
-const DEV_RSA_PUBLIC = normalizePem(process.env.JWT_SIGNING_KEY_PUBLIC || "");
+const DEV_RSA_PRIVATE = normalizePem(process.env.JWT_SIGNING_KEY || "", "PRIVATE KEY");
+const DEV_RSA_PUBLIC = normalizePem(process.env.JWT_SIGNING_KEY_PUBLIC || "", "PUBLIC KEY");
 
 async function getKeyPair(): Promise<{
   privateKey: KeyLike;
