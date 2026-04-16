@@ -251,20 +251,35 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
      // messages in serverless output, hiding the actual cause of callback failures).
     logger: {
       error(code, metadata) {
-        // Serialize the metadata (often an Error) fully so it shows up in Vercel
-        // logs as a single searchable line.
-        let meta: string;
-        try {
-          if (metadata instanceof Error) {
-            meta = `${metadata.name}: ${metadata.message} | stack=${metadata.stack?.split("\n").slice(0, 4).join(" | ")}`;
-          } else {
-            meta = JSON.stringify(metadata, Object.getOwnPropertyNames(metadata as object));
+        // NextAuth passes metadata as { error, providerId } on OAuth callback
+        // failures. Unwrap recursively so the underlying openid-client error
+        // message appears inline (Vercel truncates multi-line stacks).
+        function describe(e: unknown, depth = 0): string {
+          if (depth > 4 || e == null) return String(e);
+          if (e instanceof Error) {
+            const cause = (e as { cause?: unknown }).cause;
+            const extras: string[] = [];
+            for (const k of Object.keys(e)) {
+              // serialize extra props openid-client sets (e.g., response, checks)
+              try {
+                extras.push(`${k}=${JSON.stringify((e as Record<string, unknown>)[k])}`);
+              } catch {
+                extras.push(`${k}=<unserializable>`);
+              }
+            }
+            return `${e.name}:${e.message}${extras.length ? " {" + extras.join(",") + "}" : ""}${cause ? " <caused by> " + describe(cause, depth + 1) : ""}`;
           }
-        } catch {
-          meta = String(metadata);
+          if (typeof e === "object") {
+            const parts: string[] = [];
+            for (const [k, v] of Object.entries(e as Record<string, unknown>)) {
+              parts.push(`${k}=${describe(v, depth + 1)}`);
+            }
+            return `{${parts.join(",")}}`;
+          }
+          try { return JSON.stringify(e); } catch { return String(e); }
         }
         // eslint-disable-next-line no-console
-        console.error(`[quikit-auth][${code}] ${meta}`);
+        console.error(`[quikit-auth][${code}] ${describe(metadata)}`);
       },
       warn(code) {
         // eslint-disable-next-line no-console
