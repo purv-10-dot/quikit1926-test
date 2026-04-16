@@ -26,8 +26,25 @@ export async function POST(request: NextRequest) {
     : await request.json().catch(() => ({}));
 
   const grantType = String(params.grant_type ?? "");
-  const clientId = String(params.client_id ?? "");
-  const clientSecret = String(params.client_secret ?? "");
+
+  // OAuth2 clients may authenticate via Basic auth header (client_secret_basic,
+  // NextAuth default) OR via POST body (client_secret_post). RFC 6749 requires
+  // servers to support Basic; many clients prefer POST. Accept either.
+  let clientId = String(params.client_id ?? "");
+  let clientSecret = String(params.client_secret ?? "");
+  const authHeader = request.headers.get("authorization");
+  if (authHeader?.startsWith("Basic ")) {
+    try {
+      const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf-8");
+      const sep = decoded.indexOf(":");
+      if (sep > 0) {
+        clientId = clientId || decodeURIComponent(decoded.slice(0, sep));
+        clientSecret = clientSecret || decodeURIComponent(decoded.slice(sep + 1));
+      }
+    } catch {
+      // Fall through — malformed Basic header, let client auth fail below.
+    }
+  }
 
   // Authenticate the client
   const client = await db.oAuthClient.findUnique({
