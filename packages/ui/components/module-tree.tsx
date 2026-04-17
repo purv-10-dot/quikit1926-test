@@ -133,7 +133,6 @@ function ModuleRow({
         </div>
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <code className="font-mono">{m.key}</code>
-          {m.href && <span>· {m.href}</span>}
           {hiddenByParent && (
             <span className="text-amber-600">· Hidden: parent disabled</span>
           )}
