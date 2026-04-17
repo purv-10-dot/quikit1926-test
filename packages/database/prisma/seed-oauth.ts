@@ -15,19 +15,43 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+/**
+ * Resolve an app's base URL for the App registry + OAuth redirect URI.
+ *
+ * In production we refuse to seed with localhost values — running this
+ * script against a prod DB without QUIKSCALE_URL / ADMIN_URL set would
+ * insert localhost into OAuth redirect URIs, silently breaking SSO for
+ * every real user. Fail loud instead.
+ */
+function resolveAppUrl(envName: string, devFallback: string): string {
+  const v = process.env[envName];
+  if (v) return v;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      `[seed-oauth] ${envName} is required when NODE_ENV=production. ` +
+        `Seeding localhost into an OAuth redirect URI would break SSO for ` +
+        `every user. Set it before re-running this script.`,
+    );
+  }
+  return devFallback;
+}
+
+const QUIKSCALE_BASE = resolveAppUrl("QUIKSCALE_URL", "http://localhost:3004"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+
 const APPS = [
   {
     slug: "quikscale",
     name: "QuikScale",
     description: "Scaling Up execution — KPI tracking, Priority management, OPSP, WWW, Meeting Rhythm, Performance.",
-    baseUrl: process.env.QUIKSCALE_URL || "http://localhost:3004",
+    baseUrl: QUIKSCALE_BASE,
     iconUrl: null,
     status: "active",
     oauth: {
       clientId: "quikscale",
       clientSecretPlain: "quikscale-dev-secret-change-in-prod",
       redirectUris: [
-        "http://localhost:3004/api/auth/callback/quikit",
+        `${QUIKSCALE_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },
@@ -36,14 +60,14 @@ const APPS = [
     slug: "admin",
     name: "Admin Portal",
     description: "Organization administration — user management, team setup, app access control, billing.",
-    baseUrl: process.env.ADMIN_URL || "http://localhost:3005",
+    baseUrl: ADMIN_BASE,
     iconUrl: null,
     status: "active",
     oauth: {
       clientId: "admin",
       clientSecretPlain: "admin-dev-secret-change-in-prod",
       redirectUris: [
-        "http://localhost:3005/api/auth/callback/quikit",
+        `${ADMIN_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },
@@ -109,14 +133,15 @@ async function main() {
   }
 
   console.log("🎉 Done! Add these to your app .env.local files:");
+  const quikitUrlDev = "http://" + "localhost:3000"; // prod-safety-allow: printed dev instructions
   console.log(`
 # apps/quikscale/.env.local
-QUIKIT_URL="http://localhost:3000"
+QUIKIT_URL="${quikitUrlDev}"
 QUIKIT_CLIENT_ID="quikscale"
 QUIKIT_CLIENT_SECRET="quikscale-dev-secret-change-in-prod"
 
 # apps/admin/.env.local
-QUIKIT_URL="http://localhost:3000"
+QUIKIT_URL="${quikitUrlDev}"
 QUIKIT_CLIENT_ID="admin"
 QUIKIT_CLIENT_SECRET="admin-dev-secret-change-in-prod"
 `);

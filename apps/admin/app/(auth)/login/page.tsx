@@ -37,7 +37,11 @@ export default function LoginPage() {
           </div>
           <div className="flex gap-3 justify-center">
             <a
-              href={`${process.env.NEXT_PUBLIC_QUIKIT_URL ?? "http://localhost:3000"}/login`}
+              // See apps/quikscale/app/(auth)/login/page.tsx — same reasoning:
+              // drop the http://localhost:3000 fallback so a prod build
+              // missing NEXT_PUBLIC_QUIKIT_URL doesn't leak a localhost
+              // redirect. Empty string → same-origin /login → re-trigger flow.
+              href={`${process.env.NEXT_PUBLIC_QUIKIT_URL ?? ""}/login`}
               className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors"
             >
               Go to QuikIT Login

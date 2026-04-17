@@ -135,18 +135,28 @@ export default function AppDetailPage() {
     setCreatingOAuth(true);
     setNewSecret(null);
     try {
-      // Extract port from baseUrl for redirect URI
-      let port = "3000";
+      // Derive the redirect URI from the app's registered baseUrl so it
+      // matches the environment the app actually runs in (prod host in
+      // prod, localhost in local dev). Previous version hard-coded
+      // http://localhost:${port} which broke SSO for any app registered
+      // on a non-local origin.
+      let redirectUri: string;
       try {
-        const url = new URL(app.baseUrl);
-        if (url.port) port = url.port;
+        const u = new URL(app.baseUrl);
+        // Preserve scheme, host, and port from the registered baseUrl;
+        // append the NextAuth callback path.
+        redirectUri = `${u.origin}/api/auth/callback/quikit`;
       } catch {
-        // fallback to 3000
+        // baseUrl wasn't a valid URL — surface the error via the thrown
+        // response below rather than silently defaulting to something broken.
+        throw new Error(
+          "App baseUrl is not a valid URL; fix it before configuring OAuth.",
+        );
       }
       const res = await fetch(`/api/super/apps/${appId}/oauth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ redirectUris: [`http://localhost:${port}/api/auth/callback/quikit`] }),
+        body: JSON.stringify({ redirectUris: [redirectUri] }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Failed to configure OAuth");

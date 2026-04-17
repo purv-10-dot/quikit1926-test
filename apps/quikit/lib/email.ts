@@ -22,8 +22,18 @@ function esc(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
+import { requireProdEnv } from "@quikit/shared/env";
+
 const FROM = "QuikIT <noreply@quikit.app>";
-const BASE_URL = process.env.NEXTAUTH_URL || "http://localhost:3000";
+
+/**
+ * Resolved at call time. Prevents a module-import crash if NEXTAUTH_URL is
+ * momentarily unset in a preview env that doesn't send emails. In prod,
+ * the first send throws clearly; in dev, it falls back to the local port.
+ */
+function baseUrl(): string {
+  return requireProdEnv("NEXTAUTH_URL", "http://localhost:3000"); // prod-safety-allow: dev fallback, prod throws
+}
 
 export async function sendMemberAddedEmail(params: {
   to: string;
@@ -39,7 +49,7 @@ export async function sendMemberAddedEmail(params: {
     from: FROM,
     to: params.to,
     subject: `You've been added to ${params.orgName}`,
-    html: `<p>You've been added as <strong>${esc(params.role)}</strong> to <strong>${esc(params.orgName)}</strong> on QuikIT.</p><p><a href="${BASE_URL}/login">Sign in to get started</a></p>`,
+    html: `<p>You've been added as <strong>${esc(params.role)}</strong> to <strong>${esc(params.orgName)}</strong> on QuikIT.</p><p><a href="${baseUrl()}/login">Sign in to get started</a></p>`,
   });
 }
 
@@ -56,7 +66,7 @@ export async function sendUserCreatedEmail(params: {
     from: FROM,
     to: params.to,
     subject: "Welcome to QuikIT",
-    html: `<p>Hi ${esc(params.firstName)},</p><p>Your QuikIT account has been created.</p><p><a href="${BASE_URL}/login">Sign in</a></p>`,
+    html: `<p>Hi ${esc(params.firstName)},</p><p>Your QuikIT account has been created.</p><p><a href="${baseUrl()}/login">Sign in</a></p>`,
   });
 }
 

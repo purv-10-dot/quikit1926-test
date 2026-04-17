@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { requireProdEnv } from "./env";
 
 let _resend: Resend | null = null;
 
@@ -9,7 +10,15 @@ function getResend(): Resend {
   return _resend;
 }
 
-const APP_URL = process.env.APP_URL || "http://localhost:3001";
+/**
+ * Resolved at call time (not module-scope) so that apps which import this
+ * module but never send an email don't crash at boot when APP_URL is unset
+ * in a preview environment. In production, the first send attempt throws
+ * with a clear error; in dev, it falls back to the local app port.
+ */
+function appUrl(): string {
+  return requireProdEnv("APP_URL", "http://localhost:3001"); // prod-safety-allow: dev fallback, prod throws
+}
 
 /** Escape HTML to prevent XSS in email templates */
 function esc(str: string): string {
@@ -36,7 +45,7 @@ export async function sendInvitationEmail({
   role,
   token,
 }: InvitationEmailParams) {
-  const acceptUrl = `${APP_URL}/invitations/accept?token=${token}`;
+  const acceptUrl = `${appUrl()}/invitations/accept?token=${token}`;
 
   const html = `
     <!DOCTYPE html>

@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { requireProdEnv } from "@quikit/shared/env";
 
 let _resend: Resend | null = null;
 
@@ -9,7 +10,10 @@ function getResend(): Resend {
   return _resend;
 }
 
-const APP_URL = process.env.APP_URL || "http://localhost:3001";
+/** Resolved lazily so a preview env without APP_URL doesn't crash on import. */
+function appUrl(): string {
+  return requireProdEnv("APP_URL", "http://localhost:3001"); // prod-safety-allow: dev fallback, prod throws
+}
 
 interface InvitationEmailParams {
   to: string;
@@ -26,7 +30,7 @@ export async function sendInvitationEmail({
   role,
   token,
 }: InvitationEmailParams) {
-  const acceptUrl = `${APP_URL}/invitations/accept?token=${token}`;
+  const acceptUrl = `${appUrl()}/invitations/accept?token=${token}`;
 
   const html = `
     <!DOCTYPE html>

@@ -108,7 +108,7 @@ function resolveIssuer(): string {
         "the public IdP origin (e.g. https://quik-it-auth.vercel.app).",
     );
   }
-  return "http://localhost:3000";
+  return "http://localhost:3000"; // prod-safety-allow: guarded by NODE_ENV check above
 }
 
 const ISSUER = resolveIssuer();

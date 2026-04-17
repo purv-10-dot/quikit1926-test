@@ -38,7 +38,11 @@ export default function LoginPage() {
           </div>
           <div className="flex gap-3 justify-center">
             <a
-              href={`${process.env.NEXT_PUBLIC_QUIKIT_URL ?? "http://localhost:3000"}/login`}
+              // Falls back to same-origin /login when NEXT_PUBLIC_QUIKIT_URL is
+              // unset (which re-triggers this page's signIn("quikit") flow on
+              // mount). Removed the http://localhost:3000 fallback so prod
+              // builds missing the env var don't leak a localhost redirect.
+              href={`${process.env.NEXT_PUBLIC_QUIKIT_URL ?? ""}/login`}
               className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors"
             >
               Go to QuikIT Login
