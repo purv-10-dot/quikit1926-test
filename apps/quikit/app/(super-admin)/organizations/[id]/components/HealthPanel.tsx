@@ -4,7 +4,8 @@
  * SA-B.5 — Health panel on tenant detail page.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useOnceEffect } from "@/lib/hooks/useOnceEffect";
 import { Activity, CheckCircle2, AlertTriangle, AlertCircle, Users, Zap, Clock } from "lucide-react";
 
 interface HealthData {
@@ -42,7 +43,7 @@ export function HealthPanel({ tenantId }: { tenantId: string }) {
   const [data, setData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  useOnceEffect(() => {
     fetch(`/api/super/tenant-health/${tenantId}`)
       .then((r) => r.json())
       .then((j) => j.success && setData(j.data))

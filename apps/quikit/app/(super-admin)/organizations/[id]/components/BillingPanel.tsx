@@ -8,7 +8,8 @@
  * handling until real integration.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useOnceEffect } from "@/lib/hooks/useOnceEffect";
 import { CreditCard, CheckCircle2, XCircle, Plus } from "lucide-react";
 
 interface Invoice {
@@ -48,7 +49,7 @@ export function BillingPanel({ tenantId }: { tenantId: string }) {
     }
   }
 
-  useEffect(() => {
+  useOnceEffect(() => {
     load();
   }, [tenantId]);
 

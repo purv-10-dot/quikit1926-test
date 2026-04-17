@@ -4,7 +4,8 @@
  * SA-C.2 — Per-tenant analytics tab.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useOnceEffect } from "@/lib/hooks/useOnceEffect";
 import { BarChart3 } from "lucide-react";
 
 interface Data {
@@ -33,7 +34,7 @@ export function AnalyticsPanel({ tenantId }: { tenantId: string }) {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  useOnceEffect(() => {
     fetch(`/api/super/analytics/tenant/${tenantId}`)
       .then((r) => r.json())
       .then((j) => j.success && setData(j.data))

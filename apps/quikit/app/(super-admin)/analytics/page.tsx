@@ -8,7 +8,7 @@
  * from Phase A instrumentation — no fake data.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Activity, AlertTriangle, AlertCircle, Info, TrendingUp, TrendingDown, Minus, RefreshCw, Users, Building2, Zap, DollarSign, CheckCircle2 } from "lucide-react";
 
@@ -64,6 +64,9 @@ export default function AnalyticsPage() {
   const [openAlerts, setOpenAlerts] = useState<OpenAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // Ref guard against React 18 StrictMode's intentional double-invocation
+  // of effects in dev. Prevents duplicate /overview + /alerts fetches.
+  const didMount = useRef(false);
 
   async function load() {
     setRefreshing(true);
@@ -88,6 +91,8 @@ export default function AnalyticsPage() {
   }
 
   useEffect(() => {
+    if (didMount.current) return;
+    didMount.current = true;
     load();
   }, []);
 

@@ -8,7 +8,8 @@
  * return 403 via the SA-A.6 hard gate.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useOnceEffect } from "@/lib/hooks/useOnceEffect";
 import { AppWindow, Shield } from "lucide-react";
 import { ToggleSwitch } from "@quikit/ui";
 
@@ -41,7 +42,7 @@ export function AppAccessPanel({ tenantId }: { tenantId: string }) {
     }
   }
 
-  useEffect(() => {
+  useOnceEffect(() => {
     load();
   }, [tenantId]);
 
