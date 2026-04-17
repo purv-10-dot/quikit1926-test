@@ -3,6 +3,16 @@ export * from "./lib/constants";
 export { sendInvitationEmail } from "./lib/email";
 export { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "./lib/pagination";
 export { requireProdEnv, requireEnv } from "./lib/env";
+export {
+  MODULE_REGISTRY,
+  ancestorsOf,
+  isModuleEnabled,
+  getAppConfig,
+  visibleModules,
+  findModuleByPath,
+  type ModuleDef,
+  type AppModuleConfig,
+} from "./lib/moduleRegistry";
 
 // DO NOT re-export from "./lib/rateLimit" here.
 // Rate-limit code pulls in ioredis (a Node-only package that tries to

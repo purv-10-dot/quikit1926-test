@@ -13,61 +13,87 @@ import {
   ChevronDown, ChevronLeft, ChevronRight, X,
   BarChart2, LineChart, ClipboardList, Layers,
 } from "lucide-react";
+import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
+import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
 
 /* ─── Types ─── */
-interface NavSubItem { label: string; href: string; icon: React.ElementType; }
-interface NavItem { label: string; href?: string; icon: React.ElementType; children?: NavSubItem[]; }
+interface NavSubItem { label: string; href: string; icon: React.ElementType; moduleKey: string; }
+interface NavItem { label: string; href?: string; icon: React.ElementType; moduleKey: string; children?: NavSubItem[]; }
 
 /* ─── Navigation data ─── */
+/**
+ * `moduleKey` on each entry maps to the registry in packages/shared/lib/moduleRegistry.ts.
+ * Keep them in sync — if you add or reshape a nav item here, mirror the change there.
+ * The super admin "App Feature Flags" UI toggles flags by `moduleKey`.
+ */
 const navigation: NavItem[] = [
-  { label: "Dashboard",      href: "/dashboard",  icon: LayoutDashboard },
-  { label: "KPI",            icon: Target,        children: [
-    { label: "Individual KPI", href: "/kpi",           icon: User },
-    { label: "Teams KPI",      href: "/kpi/teams",     icon: Users },
+  { label: "Dashboard",      href: "/dashboard",  icon: LayoutDashboard, moduleKey: "dashboard" },
+  { label: "KPI",            icon: Target,        moduleKey: "kpi", children: [
+    { label: "Individual KPI", href: "/kpi",           icon: User, moduleKey: "kpi.individual" },
+    { label: "Teams KPI",      href: "/kpi/teams",     icon: Users, moduleKey: "kpi.teams" },
   ]},
-  { label: "Priority",       href: "/priority",   icon: CheckSquare },
-  { label: "Org Setup",      icon: Building2,     children: [
-    { label: "Teams",           href: "/org-setup/teams",    icon: Users },
-    { label: "Users",           href: "/org-setup/users",    icon: User },
-    { label: "Quarter Settings",href: "/org-setup/quarters", icon: CalendarDays },
+  { label: "Priority",       href: "/priority",   icon: CheckSquare, moduleKey: "priority" },
+  { label: "Org Setup",      icon: Building2,     moduleKey: "orgSetup", children: [
+    { label: "Teams",           href: "/org-setup/teams",    icon: Users, moduleKey: "orgSetup.teams" },
+    { label: "Users",           href: "/org-setup/users",    icon: User, moduleKey: "orgSetup.users" },
+    { label: "Quarter Settings",href: "/org-setup/quarters", icon: CalendarDays, moduleKey: "orgSetup.quarters" },
   ]},
-  { label: "WWW",            href: "/www",        icon: Activity },
-  { label: "Meeting Rhythm", icon: Calendar,      children: [
-    { label: "Dashboard",         href: "/meetings",            icon: LayoutDashboard },
-    { label: "Daily Huddle",      href: "/meetings/daily-huddle", icon: Clock },
-    { label: "Weekly Meeting",    href: "/meetings/weekly",     icon: CalendarDays },
-    { label: "Monthly Meeting",   href: "/meetings/monthly",    icon: CalendarDays },
-    { label: "Quarterly Offsite", href: "/meetings/quarterly",  icon: CalendarDays },
-    { label: "Annual Planning",   href: "/meetings/annual",     icon: CalendarDays },
-    { label: "Templates",         href: "/meetings/templates",  icon: List },
-    { label: "History",           href: "/meetings/history",    icon: BookOpen },
+  { label: "WWW",            href: "/www",        icon: Activity, moduleKey: "www" },
+  { label: "Meeting Rhythm", icon: Calendar,      moduleKey: "meetings", children: [
+    { label: "Dashboard",         href: "/meetings",            icon: LayoutDashboard, moduleKey: "meetings.dashboard" },
+    { label: "Daily Huddle",      href: "/meetings/daily-huddle", icon: Clock, moduleKey: "meetings.dailyHuddle" },
+    { label: "Weekly Meeting",    href: "/meetings/weekly",     icon: CalendarDays, moduleKey: "meetings.weekly" },
+    { label: "Monthly Meeting",   href: "/meetings/monthly",    icon: CalendarDays, moduleKey: "meetings.monthly" },
+    { label: "Quarterly Offsite", href: "/meetings/quarterly",  icon: CalendarDays, moduleKey: "meetings.quarterly" },
+    { label: "Annual Planning",   href: "/meetings/annual",     icon: CalendarDays, moduleKey: "meetings.annual" },
+    { label: "Templates",         href: "/meetings/templates",  icon: List, moduleKey: "meetings.templates" },
+    { label: "History",           href: "/meetings/history",    icon: BookOpen, moduleKey: "meetings.history" },
   ]},
-  { label: "OPSP",           icon: FileText,      children: [
-    { label: "Create OPSP",       href: "/opsp",            icon: FileText },
-    { label: "OPSP HISTORY",      href: "/opsp/history",    icon: BookOpen },
-    { label: "OPSP Review",       href: "/opsp/review",     icon: Star },
-    { label: "Category Mgmt",     href: "/opsp/categories", icon: List },
+  { label: "OPSP",           icon: FileText,      moduleKey: "opsp", children: [
+    { label: "Create OPSP",       href: "/opsp",            icon: FileText, moduleKey: "opsp.create" },
+    { label: "OPSP HISTORY",      href: "/opsp/history",    icon: BookOpen, moduleKey: "opsp.history" },
+    { label: "OPSP Review",       href: "/opsp/review",     icon: Star, moduleKey: "opsp.review" },
+    { label: "Category Mgmt",     href: "/opsp/categories", icon: List, moduleKey: "opsp.categories" },
   ]},
   // ── R10a-h: Performance split into two nav groups ──────────────────────
   // URLs intentionally kept under `/performance/*` to avoid breaking
   // bookmarks, tests, and existing audit logs. Sidebar presents two
   // mental models: read-only Analytics vs write-heavy People workflows.
-  { label: "Analytics",      icon: TrendingUp,    children: [
-    { label: "Scorecard",          href: "/performance/scorecard",    icon: BarChart2 },
-    { label: "Individual",         href: "/performance/individual",   icon: User },
-    { label: "Teams",              href: "/performance/teams",        icon: Users },
-    { label: "Trends",             href: "/performance/trends",       icon: LineChart },
+  { label: "Analytics",      icon: TrendingUp,    moduleKey: "analytics", children: [
+    { label: "Scorecard",          href: "/performance/scorecard",    icon: BarChart2, moduleKey: "analytics.scorecard" },
+    { label: "Individual",         href: "/performance/individual",   icon: User, moduleKey: "analytics.individual" },
+    { label: "Teams",              href: "/performance/teams",        icon: Users, moduleKey: "analytics.teams" },
+    { label: "Trends",             href: "/performance/trends",       icon: LineChart, moduleKey: "analytics.trends" },
   ]},
-  { label: "People",         icon: UserCheck,     children: [
-    { label: "Cycle",              href: "/performance/cycle",        icon: Activity },
-    { label: "Goals",              href: "/performance/goals",        icon: Target },
-    { label: "Self-Assessment",    href: "/performance/self",         icon: User },
-    { label: "Reviews",            href: "/performance/reviews",      icon: ClipboardList },
-    { label: "1:1s",               href: "/performance/one-on-one",   icon: Users },
-    { label: "Feedback",           href: "/performance/feedback",     icon: MessageSquare },
-    { label: "Talent",             href: "/performance/talent",       icon: Layers },
+  { label: "People",         icon: UserCheck,     moduleKey: "people", children: [
+    { label: "Cycle",              href: "/performance/cycle",        icon: Activity, moduleKey: "people.cycle" },
+    { label: "Goals",              href: "/performance/goals",        icon: Target, moduleKey: "people.goals" },
+    { label: "Self-Assessment",    href: "/performance/self",         icon: User, moduleKey: "people.self" },
+    { label: "Reviews",            href: "/performance/reviews",      icon: ClipboardList, moduleKey: "people.reviews" },
+    { label: "1:1s",               href: "/performance/one-on-one",   icon: Users, moduleKey: "people.oneOnOne" },
+    { label: "Feedback",           href: "/performance/feedback",     icon: MessageSquare, moduleKey: "people.feedback" },
+    { label: "Talent",             href: "/performance/talent",       icon: Layers, moduleKey: "people.talent" },
   ]},
 ];
+
+/** Apply the disabled set to the nav: hide disabled leaves, and hide parents
+ *  that have no remaining children (or that are themselves disabled). */
+function filterNavigation(items: NavItem[], disabled: Set<string>): NavItem[] {
+  return items
+    .map((item) => {
+      // Cascade via isModuleEnabled — checks item + ancestors
+      if (!isModuleEnabled(item.moduleKey, disabled)) return null;
+      if (item.children) {
+        const visibleChildren = item.children.filter((c) =>
+          isModuleEnabled(c.moduleKey, disabled),
+        );
+        if (visibleChildren.length === 0) return null;
+        return { ...item, children: visibleChildren };
+      }
+      return item;
+    })
+    .filter((x): x is NavItem => x !== null);
+}
 
 /* ─── NavGroup (expanded mode) ─── */
 function NavGroup({ item }: { item: NavItem }) {
@@ -193,6 +219,8 @@ interface SidebarContentProps {
   isMobile?: boolean;
 }
 function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarContentProps) {
+  const disabled = useDisabledModules();
+  const visibleNav = filterNavigation(navigation, disabled);
   return (
     <div className="w-full h-full flex flex-col bg-accent-800 overflow-hidden">
       {/* Logo + collapse toggle */}
@@ -234,7 +262,7 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
         "flex-1 py-3 overflow-y-auto overflow-x-hidden",
         collapsed ? "px-1 space-y-1" : "px-3 space-y-0.5"
       )}>
-        {navigation.map((item) =>
+        {visibleNav.map((item) =>
           collapsed
             ? <NavGroupCollapsed key={item.label} item={item} />
             : <NavGroup key={item.label} item={item} />

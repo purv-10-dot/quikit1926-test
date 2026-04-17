@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { sendInvitationEmail } from "@/lib/email";
 import { ROLE_LABELS } from "@/lib/constants";
@@ -11,6 +12,8 @@ export async function GET(request: NextRequest) {
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "members", tenantId);
+  if (blocked) return blocked;
 
   // Pagination
   const { searchParams } = new URL(request.url);
@@ -71,6 +74,8 @@ export async function POST(request: NextRequest) {
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId, userId: inviterId } = auth;
+  const blocked = await gateModuleApi("admin", "members", tenantId);
+  if (blocked) return blocked;
 
   const body = await request.json();
   const parsed = inviteMemberSchema.safeParse(body);

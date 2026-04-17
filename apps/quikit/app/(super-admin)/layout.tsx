@@ -25,6 +25,7 @@ import {
   LogOut,
   ChevronDown,
   FileText,
+  ToggleRight,
 } from "lucide-react";
 import { AppSwitcher } from "@quikit/ui";
 import { motion, AnimatePresence } from "framer-motion";
@@ -32,6 +33,7 @@ import { motion, AnimatePresence } from "framer-motion";
 const NAV_ITEMS = [
   { label: "Organizations", href: "/organizations", icon: Building2 },
   { label: "App Registry", href: "/app-registry", icon: LayoutGrid },
+  { label: "App Feature Flags", href: "/feature-flags", icon: ToggleRight },
   { label: "Pricing & Plans", href: "/pricing", icon: CreditCard },
   { label: "Users", href: "/platform-users", icon: Users },
   { label: "Audit Log", href: "/audit", icon: FileText },

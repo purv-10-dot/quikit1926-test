@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { z } from "zod";
 
@@ -15,6 +16,8 @@ export async function POST(
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "teams", tenantId);
+  if (blocked) return blocked;
   const teamId = params.id;
 
   const team = await db.team.findFirst({ where: { id: teamId, tenantId } });
@@ -61,6 +64,8 @@ export async function DELETE(
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "teams", tenantId);
+  if (blocked) return blocked;
   const teamId = params.id;
 
   const delBody = await request.json();
