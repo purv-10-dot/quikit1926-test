@@ -86,7 +86,32 @@ async function getKeyPair(): Promise<{
 
 /* ── Token generation ───────────────────────────────────────────────────── */
 
-const ISSUER = process.env.NEXTAUTH_URL || "http://localhost:3000";
+/**
+ * OIDC issuer for every id_token we sign. Appears in the `iss` claim and
+ * MUST match the `issuer` field of the /.well-known/openid-configuration
+ * document — otherwise openid-client clients reject the token.
+ *
+ * Required in production. A silent localhost fallback would be catastrophic:
+ * every id_token would claim `iss: http://localhost:3000`, and OAuth clients
+ * (including quikscale + admin) would reject the callback.
+ *
+ * Dev and test keep the localhost fallback so `npm run dev` still works
+ * without an explicit NEXTAUTH_URL.
+ */
+function resolveIssuer(): string {
+  const fromEnv = process.env.NEXTAUTH_URL;
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXTAUTH_URL is required in production — refusing to sign id_tokens " +
+        "with a localhost issuer. Set it on the quik-it Vercel project to " +
+        "the public IdP origin (e.g. https://quik-it-auth.vercel.app).",
+    );
+  }
+  return "http://localhost:3000";
+}
+
+const ISSUER = resolveIssuer();
 
 export interface IdTokenPayload {
   sub: string;         // user ID
