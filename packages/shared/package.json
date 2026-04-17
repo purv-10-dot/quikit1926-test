@@ -10,7 +10,8 @@
     "./constants": "./lib/constants.ts",
     "./email": "./lib/email.ts",
     "./pagination": "./lib/pagination.ts",
-    "./rateLimit": "./lib/rateLimit.ts"
+    "./rateLimit": "./lib/rateLimit.ts",
+    "./env": "./lib/env.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
