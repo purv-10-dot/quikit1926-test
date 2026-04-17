@@ -40,6 +40,7 @@ export default defineConfig({
       "@quikit/auth": path.resolve(__dirname, "../../packages/auth"),
       "@quikit/ui": path.resolve(__dirname, "../../packages/ui"),
       "@quikit/shared/pagination": path.resolve(__dirname, "../../packages/shared/lib/pagination"),
+      "@quikit/shared/rateLimit": path.resolve(__dirname, "../../packages/shared/lib/rateLimit"),
       "@quikit/shared": path.resolve(__dirname, "../../packages/shared"),
     },
   },

@@ -10,6 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@quikit/database": path.resolve(__dirname, "../database"),
+      "@quikit/shared/rateLimit": path.resolve(__dirname, "../shared/lib/rateLimit"),
+      "@quikit/shared/pagination": path.resolve(__dirname, "../shared/lib/pagination"),
       "@quikit/shared": path.resolve(__dirname, "../shared"),
     },
   },

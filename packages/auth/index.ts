@@ -1,6 +1,7 @@
 import { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { db } from "@quikit/database";
+import { rateLimitAsync } from "@quikit/shared/rateLimit";
 import bcrypt from "bcryptjs";
 
 export interface AuthConfig {
@@ -17,26 +18,34 @@ interface AuthUser {
   membershipRole?: string;
 }
 
-// Simple in-memory rate limiter for login attempts (per email)
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const LOGIN_RATE_LIMIT = 5; // max attempts
-const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minute window
-
-function checkLoginRateLimit(email: string): boolean {
-  const now = Date.now();
-  const key = email.toLowerCase();
-  const entry = loginAttempts.get(key);
-  if (!entry || now > entry.resetAt) {
-    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
-    return true;
-  }
-  entry.count++;
-  return entry.count <= LOGIN_RATE_LIMIT;
+/**
+ * NextAuth's `authorize(credentials, req)` hands us a plain Node request
+ * whose `headers` shape is `IncomingHttpHeaders` — a record of string |
+ * string[] | undefined. Extract the first plausible client IP so the
+ * rate limiter can bucket attackers.
+ *
+ * In production behind Caddy / Vercel edge, `x-forwarded-for` is trusted;
+ * the first IP in the list is the original client. Locally, both headers
+ * are absent → "anonymous" (still useful because it groups the unknown-IP
+ * population together).
+ */
+function nextAuthIp(
+  req: { headers?: Record<string, string | string[] | undefined> } | undefined,
+): string {
+  const h = req?.headers ?? {};
+  const xff = h["x-forwarded-for"];
+  const ipStr = Array.isArray(xff) ? xff[0] : xff;
+  if (ipStr) return String(ipStr).split(",")[0]!.trim();
+  const real = h["x-real-ip"];
+  if (real) return Array.isArray(real) ? real[0]! : String(real);
+  return "anonymous";
 }
 
-function resetLoginRateLimit(email: string): void {
-  loginAttempts.delete(email.toLowerCase());
-}
+/**
+ * Fail-closed (return {ok: false}) only in production. In dev / tests,
+ * the in-memory fallback works fine for a single process.
+ */
+const FAIL_CLOSED = process.env.NODE_ENV === "production";
 
 export function createAuthOptions(config: AuthConfig): NextAuthOptions {
   return {
@@ -47,14 +56,41 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           email: { label: "Email", type: "email" },
           password: { label: "Password", type: "password" },
         },
-        async authorize(credentials) {
+        async authorize(credentials, req) {
           if (!credentials?.email || !credentials?.password) {
             throw new Error("Invalid credentials");
           }
 
-          // Rate limit: 5 attempts per email per 15 minutes
-          if (!checkLoginRateLimit(credentials.email)) {
-            throw new Error("Too many login attempts. Please try again in 15 minutes.");
+          // Two-axis rate limit, both distributed via Redis when REDIS_URL is
+          // set. See docs/plans/P0-3-distributed-rate-limiter.md.
+          //
+          // Per-email: stops a targeted guessing attack on one account.
+          // Per-IP:    stops credential-stuffing spreading across many emails.
+          const emailKey = String(credentials.email).toLowerCase();
+          const emailRL = await rateLimitAsync({
+            routeKey: "auth:login:email",
+            clientKey: emailKey,
+            limit: 5,
+            windowMs: 15 * 60 * 1000,
+            failClosed: FAIL_CLOSED,
+          });
+          if (!emailRL.ok) {
+            throw new Error(
+              "Too many login attempts. Please try again in 15 minutes.",
+            );
+          }
+
+          const ipRL = await rateLimitAsync({
+            routeKey: "auth:login:ip",
+            clientKey: nextAuthIp(req),
+            limit: 20,
+            windowMs: 15 * 60 * 1000,
+            failClosed: FAIL_CLOSED,
+          });
+          if (!ipRL.ok) {
+            throw new Error(
+              "Too many login attempts from this IP. Try again later.",
+            );
           }
 
           const user = await db.user.findUnique({
@@ -74,8 +110,10 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
             throw new Error("Invalid credentials");
           }
 
-          // Successful login — reset rate limit counter
-          resetLoginRateLimit(credentials.email);
+          // Unlike the old in-memory limiter, we can't cheaply reset the
+          // counter on success — Redis TTL owns the bucket. Not resetting is
+          // fine: successful logins are within the allowed-count window and
+          // the bucket expires on its own.
 
           return {
             id: user.id,
