@@ -115,6 +115,15 @@ export async function gateModuleApi(
   moduleKey: string,
   tenantId: string,
 ): Promise<Response | null> {
+  // SA-A.6: hard gate check runs FIRST. If the tenant's app access is revoked,
+  // no module-level logic matters.
+  const appBlocked = await isTenantAppBlocked(tenantId, appSlug);
+  if (appBlocked) {
+    return NextResponse.json(
+      { success: false, error: "App access blocked for this tenant" },
+      { status: 403 },
+    );
+  }
   const disabled = await getDisabledModules(tenantId, appSlug);
   if (!isModuleEnabled(moduleKey, disabled)) {
     return NextResponse.json(
@@ -123,4 +132,75 @@ export async function gateModuleApi(
     );
   }
   return null;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * SA-A.6 — Tenant-App hard gate
+ *
+ * Super admins can revoke an entire app for a tenant via the TenantAppAccess
+ * table (e.g. "trial expired", "plan downgraded", "payment failed"). This
+ * gate is evaluated BEFORE the module-level FF-1 gates, so a revoked app
+ * returns a 403 / redirect even when some modules are nominally enabled.
+ *
+ * Sparse storage: a row exists in TenantAppAccess only when the super admin
+ * has explicitly toggled access off. Absence of a row = access granted.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+/**
+ * True if the (tenantId, appSlug) pair has been explicitly blocked by a super
+ * admin. Request-deduped via React.cache so a single render / handler pass
+ * hits the DB at most once.
+ */
+export const isTenantAppBlocked = cache(
+  async (tenantId: string, appSlug: string): Promise<boolean> => {
+    try {
+      const app = await db.app.findUnique({
+        where: { slug: appSlug },
+        select: { id: true },
+      });
+      if (!app) return false; // unknown app → not blocked (let upstream 404)
+      const access = await db.tenantAppAccess.findUnique({
+        where: { tenantId_appId: { tenantId, appId: app.id } },
+        select: { enabled: true },
+      });
+      if (!access) return false; // no row → default enabled
+      return access.enabled === false;
+    } catch {
+      // Fail-open: if the gate query errors, don't lock users out of the app.
+      // Security posture: we trust this is a platform-wide administrative
+      // gate, not a per-user authorization check — the cost of erring open
+      // is "user sees app they should have been blocked from for N minutes"
+      // which the super admin can fix; the cost of erring closed is
+      // "entire tenant is locked out of the app on a transient DB glitch".
+      return false;
+    }
+  },
+);
+
+/**
+ * Route-level hard gate. Call from a server layout at the top of an app's
+ * authenticated section. Redirects to the launcher with a reason query
+ * param when the tenant's app access is revoked.
+ *
+ * Usage:
+ *   // apps/quikscale/app/(dashboard)/layout.tsx
+ *   await gateTenantAppRoute("quikscale", authOptions);
+ */
+export async function gateTenantAppRoute(
+  appSlug: string,
+  authOptions: NextAuthOptions,
+): Promise<void> {
+  const session = await getServerSession(authOptions);
+  const tenantId = session?.user?.tenantId;
+  if (!tenantId) {
+    redirect("/select-org");
+  }
+  const blocked = await isTenantAppBlocked(tenantId, appSlug);
+  if (blocked) {
+    // Bounce back to the launcher's apps page with a flag so it can render
+    // a "you no longer have access" notice.
+    const launcher = process.env.QUIKIT_URL ?? "/";
+    const target = `${launcher.replace(/\/+$/, "")}/apps?blocked=${encodeURIComponent(appSlug)}`;
+    redirect(target);
+  }
 }
