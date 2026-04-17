@@ -323,7 +323,7 @@ Add a CI step on PRs that touch `schema.prisma` or `packages/database/index.ts`:
 | R2 | Prisma + PgBouncer prepared-statement bug surfaces on a specific query | Low | Medium | Prisma 5.7+ handles this. Load test surfaces it; rollback is fast. |
 | R3 | Migration fails because CI can't reach `DATABASE_URL_DIRECT` (firewall on primary) | Medium | High | Validate direct URL works from CI *before* touching runtime URL. Run `npx prisma migrate status` in CI first. |
 | R4 | Pooler-side connection limit is too low for our fleet (e.g., Neon Free = 10) | Medium | High | Pick a pool tier that supports ≥ 40 connections. Verify with chosen provider before merging. |
-| R5 | Developer workstations break because `.env.local` only has `DATABASE_URL` | High | Low | Update `.env.example` in the PR; ping #eng in Slack; `directUrl` falls back to `url` gracefully. |
+| R5 | Developer workstations break because `.env.local` only has `DATABASE_URL` | High | Medium | Update `.env.example` in the PR and ping #eng in Slack. Correction to earlier doc version: Prisma 5.22 does **NOT** fall back to `url` when `DATABASE_URL_DIRECT` is unset — it errors with P1012. Devs must set both env vars even if pointing at the same URL. |
 | R6 | Connection idle timeout (default: pooler kicks idle after 10-30 s) causes spurious errors on low-traffic endpoints | Low | Low | Prisma reconnects automatically; log samples will show the pattern; tune `idle_timeout` on pooler if we see it. |
 
 ---

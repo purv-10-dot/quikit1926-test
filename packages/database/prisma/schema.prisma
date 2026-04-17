@@ -11,8 +11,11 @@ datasource db {
   // Append ?pgbouncer=true&connection_limit=1&pool_timeout=10 when routed via PgBouncer.
   url       = env("DATABASE_URL")
   // Migrations URL — unpooled, so DDL and advisory locks work. Prisma uses this
-  // automatically for `prisma migrate` / `prisma db push`. Falls back to `url`
-  // when unset, so local dev without a pooler continues to work unchanged.
+  // automatically for `prisma migrate` / `prisma db push`.
+  // IMPORTANT: Prisma 5.22 does NOT fall back to `url` when this env var is
+  // unset — it errors with P1012. Local dev must set DATABASE_URL_DIRECT even
+  // when pointing at the same URL as DATABASE_URL (a pooler-less Postgres is
+  // its own direct URL).
   directUrl = env("DATABASE_URL_DIRECT")
 }
 

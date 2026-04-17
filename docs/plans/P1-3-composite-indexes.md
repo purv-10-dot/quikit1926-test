@@ -13,7 +13,9 @@ depends_on: [P0-1]
 
 # P1-3 — Composite indexes for hot multi-column queries
 
-> **TL;DR** — Three models have composite WHERE clauses that currently hit only single-column indexes, forcing Postgres into index-filter-then-scan. Adding three composite indexes turns those into index-only lookups. Low risk, measurable latency win. The migration must use `CREATE INDEX CONCURRENTLY` to avoid write locks on the affected tables; Prisma doesn't emit this automatically so we write the migration SQL by hand.
+> **TL;DR** — Three models have composite WHERE clauses that currently hit only single-column indexes, forcing Postgres into index-filter-then-scan. Adding three composite indexes turns those into index-only lookups. Low risk, measurable latency win. We use regular `CREATE INDEX` (not `CONCURRENTLY`) because Prisma wraps every migration file in an implicit transaction and `CONCURRENTLY` is incompatible with that. At current table sizes (<100K rows) the brief lock during build is imperceptible; revisit if any of these tables grow past ~1M rows.
+
+> **Applied to prod:** 2026-04-17 against Neon (commit TBD). `EXPLAIN ANALYZE` verification pending.
 
 ---
 
@@ -52,25 +54,31 @@ The audit (`docs/architecture/10k-users-iaas-rollout.md` §2) flagged four missi
 
 ## 3. Options considered
 
-### Option A — Prisma-generated migration with `CREATE INDEX` (non-concurrent)
-Run `npx prisma migrate dev --name add_hot_path_indexes` and let Prisma write the SQL.
+> **Post-mortem note.** This section originally recommended Option B
+> (`CREATE INDEX CONCURRENTLY`). That was based on an incorrect assumption
+> about Prisma's migration runner. It actually wraps every migration file
+> in an implicit transaction, and `CONCURRENTLY` is incompatible with that
+> (`ERROR: CREATE INDEX CONCURRENTLY cannot run inside a transaction block`).
+> Option A was what we shipped.
 
-- ✅ Zero hand-written SQL.
-- ❌ Takes an `ACCESS EXCLUSIVE` lock on the table for the duration of the index build. On Notification (growing rapidly), a lock is bad.
-- **Rejected** for prod; fine for dev-only migrations.
+### Option A — Hand-written migration with plain `CREATE INDEX` (SHIPPED)
+Add `@@index` lines to `schema.prisma` and write a hand-written migration
+with plain `CREATE INDEX IF NOT EXISTS`.
 
-### Option B — Hand-written migration with `CREATE INDEX CONCURRENTLY` (RECOMMENDED)
-Add the `@@index` lines to `schema.prisma` (for type-safety + future-generated migrations). Write the actual migration SQL manually with `CONCURRENTLY`. Mark the migration as already applied in dev to keep the history clean.
+- ✅ Works with Prisma's transaction wrapping.
+- ✅ At current table sizes (<100K rows) the `ACCESS EXCLUSIVE` lock is imperceptible (tens of milliseconds).
+- ⚠ Won't scale past ~1M rows on a hot write path — at that point we'd need to move the index creation out of Prisma's migration runner (raw `psql` + `prisma migrate resolve --applied`) so `CONCURRENTLY` can run outside a transaction.
 
-- ✅ No write lock; prod is unaffected during the build.
-- ⚠ Requires us to write the migration file ourselves and ensure Prisma's migration runner doesn't re-apply.
-- ⚠ `CREATE INDEX CONCURRENTLY` cannot run inside a transaction.
+### Option B — Hand-written migration with `CREATE INDEX CONCURRENTLY` (attempted, failed)
+Initial approach. Failed with P3018 / "CREATE INDEX CONCURRENTLY cannot run inside a transaction block" because Prisma 5.22 wraps every migration file in a transaction regardless of content.
+
+To retry this option in future: run the SQL directly via `psql` against the direct URL, then `npx prisma migrate resolve --applied <migration-name>` to record it as done without having Prisma execute it.
 
 ### Option C — Apply indexes via Prisma Studio or manual `psql`, skip migration file
 - ❌ Undocumented; breaks the "schema is the source of truth" invariant.
 - **Rejected.**
 
-**Chosen: Option B.**
+**Chosen: Option A (shipped 2026-04-17).** Revisit Option B workaround if any of these tables grow past ~1M rows.
 
 ---
 
@@ -107,36 +115,24 @@ model HabitAssessment {
 
 ### 4.2 Hand-written migration SQL
 
-**File:** `packages/database/prisma/migrations/YYYYMMDDHHMMSS_add_hot_path_indexes/migration.sql`
-
-The timestamp in the folder name follows Prisma's convention; we pick one at generation time.
+**File:** `packages/database/prisma/migrations/20260417084929_add_hot_path_indexes/migration.sql`
 
 ```sql
--- CONCURRENTLY avoids an ACCESS EXCLUSIVE lock on the table during the index
--- build. Required here because Notification is on the hot write path and
--- locking it even briefly causes customer-visible 5xx's. See
--- docs/plans/P1-3-composite-indexes.md.
---
--- NOTE: Prisma migrations run each statement in its own transaction per
--- migration file. CONCURRENTLY cannot run inside a transaction, so each
--- statement here MUST stand alone. We check `prisma migrate status`
--- post-run to confirm the migration was recorded.
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Notification_tenantId_userId_read_idx"
+CREATE INDEX IF NOT EXISTS "Notification_tenantId_userId_read_idx"
   ON "Notification" ("tenantId", "userId", "read");
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "PerformanceReview_tenantId_revieweeId_year_quarter_idx"
+CREATE INDEX IF NOT EXISTS "PerformanceReview_tenantId_revieweeId_year_quarter_idx"
   ON "PerformanceReview" ("tenantId", "revieweeId", "year", "quarter");
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "HabitAssessment_tenantId_quarter_year_idx"
+CREATE INDEX IF NOT EXISTS "HabitAssessment_tenantId_quarter_year_idx"
   ON "HabitAssessment" ("tenantId", "quarter", "year");
 ```
 
-### 4.3 Why `CONCURRENTLY` matters
+### 4.3 Lock behavior in practice
 
-A normal `CREATE INDEX` takes an `ACCESS EXCLUSIVE` lock — writes to the table block for the duration. For small tables that's < 1 second; for `Notification` at scale it could be minutes. `CONCURRENTLY` builds the index with only a shared lock, so writes continue.
+Regular `CREATE INDEX` takes an `ACCESS EXCLUSIVE` lock — writes to the table block for the duration. On our current Neon `neondb` with < 100K rows across the three target tables, this is tens of milliseconds per index. Imperceptible.
 
-**Trade-off:** a `CONCURRENTLY` build can fail (duplicates, deadlock) leaving an invalid index behind. We guard with `IF NOT EXISTS` so a retry is clean. If an invalid index appears, drop it with `DROP INDEX CONCURRENTLY IF EXISTS "…"` and re-run.
+At ~1M+ rows on a hot write path, the lock could become customer-visible. The migration comment flags the threshold at which we should switch to a `psql` + `prisma migrate resolve --applied` approach (bypassing Prisma's transaction wrapper).
 
 ### 4.4 Applying the migration
 
