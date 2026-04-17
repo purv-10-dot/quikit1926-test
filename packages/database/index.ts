@@ -70,9 +70,15 @@ const basePrisma =
     },
   });
 
-// Note: Connection pool size is configured via DATABASE_URL query parameters:
-// ?connection_limit=25&pool_timeout=10
-// Adjust these values based on deployment scale (default Prisma pool is 5).
+// Connection pool shape (see docs/plans/P0-1-db-connection-pooling.md):
+//   Runtime (DATABASE_URL)          → pooler in transaction mode.
+//                                     connection_limit=1 per lambda; the pooler
+//                                     multiplexes across a small backend pool
+//                                     (~20-40 slots shared across all lambdas).
+//   Migrations (DATABASE_URL_DIRECT, via schema.prisma's directUrl)
+//                                   → bypasses the pooler so DDL and advisory
+//                                     locks work. Prisma reads it automatically.
+// Local dev without a pooler: both env vars can point at the same URL.
 
 if (process.env.NODE_ENV !== "production") {
   global.prisma = basePrisma;

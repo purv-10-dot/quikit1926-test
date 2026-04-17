@@ -6,8 +6,14 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Runtime URL — points at the pooler (transaction mode) in prod/uat.
+  // Append ?pgbouncer=true&connection_limit=1&pool_timeout=10 when routed via PgBouncer.
+  url       = env("DATABASE_URL")
+  // Migrations URL — unpooled, so DDL and advisory locks work. Prisma uses this
+  // automatically for `prisma migrate` / `prisma db push`. Falls back to `url`
+  // when unset, so local dev without a pooler continues to work unchanged.
+  directUrl = env("DATABASE_URL_DIRECT")
 }
 
 // ============================================================================
