@@ -43,34 +43,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "App not found" }, { status: 404 });
   }
 
-  // Get all active members of this tenant
+  // Get all active members of this tenant (userId only — all we insert)
   const members = await db.membership.findMany({
     where: { tenantId, status: "active" },
     select: { userId: true },
   });
 
-  // Create UserAppAccess for each member (skip if already exists)
-  let created = 0;
-  for (const member of members) {
-    const existing = await db.userAppAccess.findUnique({
-      where: { userId_tenantId_appId: { userId: member.userId, tenantId, appId } },
-    });
-    if (!existing) {
-      await db.userAppAccess.create({
-        data: {
-          userId: member.userId,
-          tenantId,
-          appId,
-          role: "member",
-          grantedBy: session.user.id,
-        },
-      });
-      created++;
-    }
-  }
+  // Bulk-create access rows; ON CONFLICT DO NOTHING via skipDuplicates.
+  // `count` is the number of *new* rows inserted (i.e., members who didn't
+  // already have access). Relies on the @@unique([userId, tenantId, appId])
+  // constraint on UserAppAccess to detect duplicates.
+  //
+  // Replaces a loop that did N lookups + N creates per enable call (up to
+  // ~1000 sequential DB round-trips at N=500 members). See
+  // docs/plans/P0-2-apps-enable-n-plus-one.md.
+  const { count: granted } = await db.userAppAccess.createMany({
+    data: members.map((m) => ({
+      userId: m.userId,
+      tenantId,
+      appId,
+      role: "member",
+      grantedBy: session.user.id,
+    })),
+    skipDuplicates: true,
+  });
 
   return NextResponse.json({
     success: true,
-    data: { appId, membersGranted: created },
+    data: {
+      appId,
+      membersGranted: granted,
+      totalEligibleMembers: members.length,
+    },
   });
 }
