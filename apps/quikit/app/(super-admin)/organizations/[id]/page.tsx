@@ -15,6 +15,7 @@ import { HealthPanel } from "./components/HealthPanel";
 import { AppAccessPanel } from "./components/AppAccessPanel";
 import { BillingPanel } from "./components/BillingPanel";
 import { AnalyticsPanel } from "./components/AnalyticsPanel";
+import { ImpersonatePanel } from "./components/ImpersonatePanel";
 
 interface MemberInfo {
   id: string;
@@ -383,13 +384,14 @@ export default function OrgDetailPage() {
         </div>
       </div>
 
-      {/* SA Phase B/C panels */}
+      {/* SA Phase B/C/D panels */}
       <div className="mt-6 space-y-6">
         <HealthPanel tenantId={orgId} />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <AppAccessPanel tenantId={orgId} />
           <BillingPanel tenantId={orgId} />
         </div>
+        <ImpersonatePanel tenantId={orgId} members={org.users} />
         <AnalyticsPanel tenantId={orgId} />
       </div>
 

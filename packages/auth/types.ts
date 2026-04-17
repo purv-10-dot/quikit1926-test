@@ -9,6 +9,14 @@ declare module "next-auth" {
       membershipRole?: string;
       membershipInvalid?: boolean;
       isSuperAdmin?: boolean;
+      /** Phase D: true while a super admin is viewing as another user. */
+      impersonating?: boolean;
+      /** Phase D: the super admin whose shadow session this is. */
+      impersonatorUserId?: string;
+      /** Phase D: display name of the impersonator (for the banner). */
+      impersonatorEmail?: string;
+      /** Phase D: hard expiry of the impersonation. Session should reject past this. */
+      impersonationExpiresAt?: string;
     } & DefaultSession["user"];
   }
 
@@ -28,5 +36,9 @@ declare module "next-auth/jwt" {
     membershipCheckedAt?: number;
     membershipInvalid?: boolean;
     isSuperAdmin?: boolean;
+    impersonating?: boolean;
+    impersonatorUserId?: string;
+    impersonatorEmail?: string;
+    impersonationExpiresAt?: string;
   }
 }

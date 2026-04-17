@@ -1520,6 +1520,45 @@ model Plan {
   @@index([isActive])
 }
 
+/// SA-D — Impersonation session record.
+///
+/// A super admin clicks "View as" on a tenant, which creates one of these
+/// rows with a short-lived single-use token. The target app validates the
+/// token, signs the super admin in AS the target user (with the
+/// impersonation flag carried in the JWT), and deletes the token.
+///
+/// All actions during impersonation are tagged with impersonatingSuperAdminId
+/// in the audit log so customer-support activity is distinguishable from
+/// user activity.
+model Impersonation {
+  id                  String    @id @default(cuid())
+  /// User who initiated the impersonation (a platform super admin).
+  superAdminId        String
+  /// The tenant whose app is being accessed.
+  targetTenantId      String
+  /// The user whose identity will be assumed (usually an org admin).
+  targetUserId        String
+  /// Which app to land in after token exchange ("quikscale" | "admin").
+  targetAppSlug       String
+  /// Opaque single-use token — 32-byte base64url. Consumed on accept.
+  token               String    @unique
+  /// Absolute expiry — rejected after this regardless of usage.
+  expiresAt           DateTime
+  /// Populated when the token is redeemed; null means still pending.
+  acceptedAt          DateTime?
+  /// Populated when the super admin explicitly exits the session.
+  exitedAt            DateTime?
+  /// Free-form reason captured at start time for audit.
+  reason              String?
+  ipAddress           String?
+  createdAt           DateTime  @default(now())
+
+  @@index([superAdminId, createdAt])
+  @@index([targetTenantId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([expiresAt])
+}
+
 /// Platform alerts raised by the alerts engine cron. Super admins see these
 /// as a dismissable list on the Analytics dashboard. Sparse — rows only
 /// exist for currently-firing conditions. Resolved alerts are soft-deleted

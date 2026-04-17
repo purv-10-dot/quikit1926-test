@@ -13,7 +13,8 @@
     "./rateLimit": "./lib/rateLimit.ts",
     "./env": "./lib/env.ts",
     "./moduleRegistry": "./lib/moduleRegistry.ts",
-    "./apiLogging": "./lib/apiLogging.ts"
+    "./apiLogging": "./lib/apiLogging.ts",
+    "./withApiLogging": "./lib/withApiLogging.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

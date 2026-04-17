@@ -38,14 +38,13 @@ export async function GET(req: NextRequest) {
   const start = new Date(endExclusive.getTime() - LOOKBACK_HOURS * 60 * 60 * 1000);
 
   try {
-    // NOTE: null-tenantId rows (pre-auth / OAuth / anonymous) are currently
-    // excluded from the rollup because Prisma's compound @@unique on nullable
-    // columns cannot disambiguate NULL for upsert semantics (SQL treats NULLs
-    // as distinct). We'll introduce a `_global_` sentinel in a follow-up
-    // migration so platform-level metrics (login success rate, OAuth health)
-    // are also captured. Raw ApiCall rows still include anonymous calls.
+    // All rows including null-tenant (pre-auth / OAuth / anonymous). For null
+    // rows we use the sentinel "_global_" on the rollup side so the compound
+    // unique key can disambiguate (Postgres treats NULLs as distinct, which
+    // defeats uniqueness). This avoids a schema migration while still
+    // capturing platform-wide metrics like login success rate.
     const raws = await db.apiCall.findMany({
-      where: { createdAt: { gte: start, lt: endExclusive }, tenantId: { not: null } },
+      where: { createdAt: { gte: start, lt: endExclusive } },
       select: {
         tenantId: true,
         appSlug: true,
@@ -73,10 +72,13 @@ export async function GET(req: NextRequest) {
     }
     const buckets = new Map<BucketKey, Bucket>();
 
+    const GLOBAL_SENTINEL = "_global_";
     for (const r of raws) {
       const hourBucket = truncateToHour(r.createdAt);
       const statusClass = statusClassOf(r.statusCode);
-      const key = `${r.tenantId ?? "∅"}|${r.appSlug}|${hourBucket.toISOString()}|${r.method}|${r.pathPattern}|${statusClass}`;
+      // Map null tenantId to sentinel so the compound unique is well-defined.
+      const bucketTenantId = r.tenantId ?? GLOBAL_SENTINEL;
+      const key = `${bucketTenantId}|${r.appSlug}|${hourBucket.toISOString()}|${r.method}|${r.pathPattern}|${statusClass}`;
       const b = buckets.get(key);
       const isError = r.statusCode >= 400;
       if (b) {
@@ -86,7 +88,7 @@ export async function GET(req: NextRequest) {
         if (r.durationMs > b.maxDurationMs) b.maxDurationMs = r.durationMs;
       } else {
         buckets.set(key, {
-          tenantId: r.tenantId,
+          tenantId: bucketTenantId,
           appSlug: r.appSlug,
           hourBucket,
           method: r.method,
@@ -100,8 +102,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Upsert each bucket. tenantId is guaranteed non-null here because we
-    // filtered it out above; cast to string to satisfy the compound unique.
+    // Upsert each bucket. tenantId is guaranteed non-null here — rows with
+    // null source tenantId were mapped to the "_global_" sentinel above so
+    // the compound @@unique works correctly.
     let upserted = 0;
     for (const b of buckets.values()) {
       if (!b.tenantId) continue; // defensive

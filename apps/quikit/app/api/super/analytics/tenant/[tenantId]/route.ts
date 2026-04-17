@@ -34,8 +34,9 @@ export async function GET(
         where: { tenantId, event: "login", createdAt: { gte: thirtyDaysAgo } },
         select: { userId: true, createdAt: true },
       }),
+      // Exclude the _global_ sentinel from per-tenant views
       db.apiCallHourlyRollup.findMany({
-        where: { tenantId, hourBucket: { gte: thirtyDaysAgo } },
+        where: { tenantId, NOT: { tenantId: "_global_" }, hourBucket: { gte: thirtyDaysAgo } },
         select: {
           hourBucket: true,
           pathPattern: true,

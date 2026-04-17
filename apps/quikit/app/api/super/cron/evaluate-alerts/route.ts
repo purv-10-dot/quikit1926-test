@@ -22,6 +22,15 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireCron } from "@/lib/requireCron";
+import { sendPlatformAlertEmail } from "@/lib/email";
+
+const SEVERITY_RANK: Record<string, number> = { info: 0, warning: 1, critical: 2 };
+
+interface UpsertResult {
+  outcome: "created" | "refreshed";
+  /** True when we should email super admins — first fire or warning→critical escalation. */
+  shouldNotify: boolean;
+}
 
 async function upsertAlert(args: {
   rule: string;
@@ -31,12 +40,13 @@ async function upsertAlert(args: {
   message: string;
   link?: string;
   data?: Record<string, unknown>;
-}): Promise<"created" | "refreshed"> {
+}): Promise<UpsertResult> {
   const existing = await db.platformAlert.findFirst({
     where: { rule: args.rule, subjectKey: args.subjectKey, resolvedAt: null },
-    select: { id: true },
+    select: { id: true, severity: true },
   });
   if (existing) {
+    const escalated = SEVERITY_RANK[args.severity] > SEVERITY_RANK[existing.severity];
     await db.platformAlert.update({
       where: { id: existing.id },
       data: {
@@ -48,7 +58,7 @@ async function upsertAlert(args: {
         data: args.data ? (args.data as never) : undefined,
       },
     });
-    return "refreshed";
+    return { outcome: "refreshed", shouldNotify: escalated };
   }
   await db.platformAlert.create({
     data: {
@@ -61,7 +71,20 @@ async function upsertAlert(args: {
       data: args.data ? (args.data as never) : undefined,
     },
   });
-  return "created";
+  // Notify on every first-fire for warning/critical. Info-level stays silent.
+  return { outcome: "created", shouldNotify: args.severity !== "info" };
+}
+
+/** Cache the super-admin email recipient list per cron run. */
+let _superAdminEmailsCache: string[] | null = null;
+async function getSuperAdminEmails(): Promise<string[]> {
+  if (_superAdminEmailsCache) return _superAdminEmailsCache;
+  const users = await db.user.findMany({
+    where: { isSuperAdmin: true },
+    select: { email: true },
+  });
+  _superAdminEmailsCache = users.map((u) => u.email).filter(Boolean);
+  return _superAdminEmailsCache;
 }
 
 async function resolveStaleAlerts(rule: string, activeSubjectKeys: Set<string>): Promise<number> {
@@ -95,6 +118,28 @@ export async function GET(req: NextRequest) {
     payment_failed: { created: 0, refreshed: 0, resolved: 0 },
     tenant_inactive: { created: 0, refreshed: 0, resolved: 0 },
   };
+  let emailsSent = 0;
+  // Reset the per-run email cache so each invocation sees the latest super admins
+  _superAdminEmailsCache = null;
+
+  /** Upsert + notify super admins by email on first-fire / escalation. */
+  async function upsertAndNotify(args: Parameters<typeof upsertAlert>[0]): Promise<"created" | "refreshed"> {
+    const { outcome, shouldNotify } = await upsertAlert(args);
+    if (shouldNotify && args.severity !== "info") {
+      const recipients = await getSuperAdminEmails();
+      if (recipients.length > 0) {
+        await sendPlatformAlertEmail({
+          to: recipients,
+          severity: args.severity,
+          title: args.title,
+          message: args.message,
+          link: args.link ?? null,
+        });
+        emailsSent += 1;
+      }
+    }
+    return outcome;
+  }
 
   try {
     // ── Rule 1: app_down ────────────────────────────────────────────
@@ -112,7 +157,7 @@ export async function GET(req: NextRequest) {
       const active = new Set<string>();
       for (const p of down) {
         active.add(p.appId);
-        const outcome = await upsertAlert({
+        const outcome = await upsertAndNotify({
           rule: "app_down",
           subjectKey: p.appId,
           severity: "critical",
@@ -150,7 +195,7 @@ export async function GET(req: NextRequest) {
         const rate = (errors / total) * 100;
         if (rate > 5) {
           active.add(r.appSlug);
-          const outcome = await upsertAlert({
+          const outcome = await upsertAndNotify({
             rule: "api_error_spike",
             subjectKey: r.appSlug,
             severity: "warning",
@@ -174,7 +219,7 @@ export async function GET(req: NextRequest) {
       const active = new Set<string>();
       for (const inv of failed) {
         active.add(inv.tenantId);
-        const outcome = await upsertAlert({
+        const outcome = await upsertAndNotify({
           rule: "payment_failed",
           subjectKey: inv.tenantId,
           severity: "warning",
@@ -209,7 +254,7 @@ export async function GET(req: NextRequest) {
           const daysSince = lastLogin
             ? Math.floor((now.getTime() - lastLogin.createdAt.getTime()) / (24 * 60 * 60 * 1000))
             : Math.floor((now.getTime() - t.createdAt.getTime()) / (24 * 60 * 60 * 1000));
-          const outcome = await upsertAlert({
+          const outcome = await upsertAndNotify({
             rule: "tenant_inactive",
             subjectKey: t.id,
             severity: "info",
@@ -231,6 +276,7 @@ export async function GET(req: NextRequest) {
       data: {
         evaluatedAt: now.toISOString(),
         summary,
+        emailsSent,
       },
     });
   } catch (error: unknown) {
