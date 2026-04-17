@@ -11,14 +11,15 @@ interface AppInfo {
   iconUrl: string | null;
   baseUrl: string;
   status: string;
+  installed?: boolean;
 }
 
 interface AppSwitcherProps {
-  /** Base URL of the QuikIT gateway (e.g., "http://localhost:3000") — for "View all apps" link */
-  quikitUrl: string;
-  /** Currently active app slug (e.g., "quikscale") — highlighted in grid */
-  currentAppSlug?: string;
-  /** API endpoint to fetch apps from (defaults to "/api/apps/switcher") */
+  /**
+   * Optional override for the API endpoint. Defaults to "/api/apps/switcher",
+   * which every app in the platform is expected to expose. QuikIT's super
+   * admin layout uses "/api/apps/launcher" since it serves the full registry.
+   */
   apiUrl?: string;
 }
 
@@ -37,21 +38,32 @@ const DEFAULT_ICON = { emoji: "📦", bg: "bg-gray-100" };
 /**
  * Google-style app switcher grid.
  *
- * Renders a 3x3 grid icon button that, when clicked, shows a popover
- * with the user's installed apps as icon tiles. Clicking an app
- * navigates to it in the same tab (SSO handles auth).
+ * Renders a 3x3 grid icon button that, when clicked, shows a popover with
+ * the user's installed apps as icon tiles. Clicking an app navigates to it
+ * in the same tab (SSO handles auth).
+ *
+ * The component is zero-config: drop it in any app's header and it will:
+ *   1. Fetch the installed-apps list from /api/apps/switcher.
+ *   2. Read the authoritative IdP URL from the response (sourced server-side
+ *      from QUIKIT_URL), so "View all apps" works even when
+ *      NEXT_PUBLIC_QUIKIT_URL wasn't set at build time.
+ *   3. Auto-detect the "current" app by matching window.location.origin
+ *      against each app's baseUrl, so no per-app prop is needed.
  *
  * Usage:
- *   <AppSwitcher quikitUrl="http://localhost:3000" currentAppSlug="quikscale" />
+ *   <AppSwitcher />                                 // most apps
+ *   <AppSwitcher apiUrl="/api/apps/launcher" />     // quikit super admin
  */
-export function AppSwitcher({ quikitUrl, currentAppSlug, apiUrl = "/api/apps/switcher" }: AppSwitcherProps) {
+export function AppSwitcher({ apiUrl = "/api/apps/switcher" }: AppSwitcherProps = {}) {
   const [open, setOpen] = useState(false);
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
+  const [quikitUrl, setQuikitUrl] = useState<string | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Fetch apps from QuikIT launcher API
+  // Fetch apps from the app's own launcher API. The API is responsible for
+  // tenant filtering and returning the authoritative QuikIT gateway URL.
   const fetchApps = useCallback(async () => {
     if (fetched) return;
     setLoading(true);
@@ -59,11 +71,13 @@ export function AppSwitcher({ quikitUrl, currentAppSlug, apiUrl = "/api/apps/swi
       const res = await fetch(apiUrl);
       const json = await res.json();
       if (json.success) {
-        // Only show installed (accessible) apps, exclude "coming_soon"
-        const installed = (json.data as AppInfo[]).filter(
-          (a) => a.status !== "coming_soon"
+        const list = (json.data as AppInfo[]).filter(
+          (a) => a.status !== "coming_soon" && a.installed !== false,
         );
-        setApps(installed);
+        setApps(list);
+        if (typeof json.quikitUrl === "string" && json.quikitUrl) {
+          setQuikitUrl(json.quikitUrl);
+        }
       }
     } catch {
       // Silently fail — grid just won't show apps
@@ -71,7 +85,7 @@ export function AppSwitcher({ quikitUrl, currentAppSlug, apiUrl = "/api/apps/swi
       setLoading(false);
       setFetched(true);
     }
-  }, [quikitUrl, fetched]);
+  }, [apiUrl, fetched]);
 
   // Fetch on first open
   useEffect(() => {
@@ -101,6 +115,23 @@ export function AppSwitcher({ quikitUrl, currentAppSlug, apiUrl = "/api/apps/swi
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [open]);
+
+  // Auto-detect the active app by matching the current origin against each
+  // app's baseUrl. Apps may have multiple preview URLs per environment, so
+  // fall back to an origin-prefix match.
+  const currentOrigin =
+    typeof window !== "undefined" ? window.location.origin : "";
+  const currentApp = apps.find((app) => {
+    try {
+      return new URL(app.baseUrl).origin === currentOrigin;
+    } catch {
+      return false;
+    }
+  });
+
+  // "View all apps" destination — prefer API-provided URL, then fall back to
+  // the current app's registered baseUrl if everything else is unknown.
+  const viewAllHref = quikitUrl ? `${quikitUrl}/apps` : "/apps";
 
   return (
     <div className="relative" ref={popoverRef}>
@@ -140,7 +171,7 @@ export function AppSwitcher({ quikitUrl, currentAppSlug, apiUrl = "/api/apps/swi
               <div className="grid grid-cols-3 gap-1">
                 {apps.map((app) => {
                   const iconInfo = ICON_FALLBACKS[app.slug] || DEFAULT_ICON;
-                  const isCurrent = app.slug === currentAppSlug;
+                  const isCurrent = app.id === currentApp?.id;
 
                   return (
                     <button
@@ -180,7 +211,7 @@ export function AppSwitcher({ quikitUrl, currentAppSlug, apiUrl = "/api/apps/swi
           {/* Footer — link to full launcher */}
           <div className="border-t border-gray-100 px-4 py-2.5">
             <a
-              href={`${quikitUrl}/apps`}
+              href={viewAllHref}
               className="block text-center text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
             >
               View all apps

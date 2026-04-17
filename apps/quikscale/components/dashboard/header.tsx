@@ -60,10 +60,7 @@ export function Header({ onMenuClick }: HeaderProps) {
 
       {/* Right — app switcher + user info */}
       <div className="flex items-center gap-2">
-        <AppSwitcher
-          quikitUrl={process.env.NEXT_PUBLIC_QUIKIT_URL || "http://localhost:3000"}
-          currentAppSlug="quikscale"
-        />
+        <AppSwitcher />
       <div className="relative">
         <button
           onClick={() => setDropdownOpen(!dropdownOpen)}
