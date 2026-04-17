@@ -71,5 +71,13 @@ export async function GET() {
   const quikitUrl =
     process.env.QUIKIT_URL ?? process.env.NEXTAUTH_URL ?? null;
 
-  return NextResponse.json({ success: true, data, quikitUrl });
+  return NextResponse.json(
+    { success: true, data, quikitUrl },
+    {
+      // Per-user response — never share. Browser serves from cache for 30s,
+      // tolerates 60s of staleness while revalidating in background.
+      // See docs/plans/P1-2-cache-control-headers.md.
+      headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" },
+    },
+  );
 }

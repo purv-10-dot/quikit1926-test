@@ -36,5 +36,13 @@ export async function GET() {
     status: m.status,
   }));
 
-  return NextResponse.json({ success: true, data: orgs });
+  return NextResponse.json(
+    { success: true, data: orgs },
+    {
+      // Per-user membership list. Short browser cache keeps the select-org
+      // UI snappy without going stale on role / org changes.
+      // See docs/plans/P1-2-cache-control-headers.md.
+      headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" },
+    },
+  );
 }
