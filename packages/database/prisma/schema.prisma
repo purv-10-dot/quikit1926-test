@@ -35,9 +35,11 @@ model App {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userAccess  UserAppAccess[]
-  oauthClient OAuthClient?
-  moduleFlags AppModuleFlag[]
+  userAccess   UserAppAccess[]
+  oauthClient  OAuthClient?
+  moduleFlags  AppModuleFlag[]
+  healthChecks AppHealthCheck[]
+  tenantAccess TenantAppAccess[]
 
   @@index([slug])
   @@index([status])
@@ -173,6 +175,9 @@ model Tenant {
   goals                   Goal[]
   oneOnOnes               OneOnOne[]
   feedbackEntries         FeedbackEntry[]
+  sessionEvents           SessionEvent[]
+  tenantAppAccess         TenantAppAccess[]
+  invoices                Invoice[]
 
   @@index([slug])
   @@index([status])
@@ -233,6 +238,7 @@ model User {
   oneOnOnesAsReport       OneOnOne[]               @relation("OneOnOneReport")
   feedbackGiven           FeedbackEntry[]          @relation("FeedbackFrom")
   feedbackReceived        FeedbackEntry[]          @relation("FeedbackTo")
+  sessionEvents           SessionEvent[]
 
   @@index([email])
 }
@@ -1344,4 +1350,199 @@ model AppModuleFlag {
 
   @@unique([tenantId, appId, moduleKey])
   @@index([tenantId, appId])
+}
+
+// ============================================================================
+// SUPER ADMIN — PHASE A INSTRUMENTATION
+// Event capture layer that feeds analytics dashboards, health checks, alerts,
+// session tracking, broadcasts, tenant-app gating, and plan/invoice data.
+// See docs/plans/SA-A-instrumentation.md for the product plan.
+// ============================================================================
+
+/// Raw log of every API request across all apps. 30-day retention policy
+/// (cleanup cron at /api/super/cron/cleanup-api-calls). Aggregated hourly
+/// into ApiCallHourlyRollup for long-term trend analysis.
+model ApiCall {
+  id          String   @id @default(cuid())
+  tenantId    String?  // null for pre-auth calls (login, OAuth flow)
+  userId      String?
+  appSlug     String   // "quikit" | "quikscale" | "admin"
+  method      String   // GET | POST | PUT | PATCH | DELETE
+  path        String   // full request path, no query string
+  pathPattern String   // normalized: /api/kpi/[id] instead of /api/kpi/cl...
+  statusCode  Int
+  durationMs  Int
+  ipAddress   String?
+  userAgent   String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([appSlug, createdAt])
+  @@index([createdAt]) // retention cleanup
+  @@index([userId, createdAt])
+}
+
+/// Hourly aggregation of ApiCall rows. Source of truth for all per-tenant
+/// analytics older than a few hours. Populated by /api/super/cron/rollup-api-calls.
+model ApiCallHourlyRollup {
+  id              String   @id @default(cuid())
+  tenantId        String?
+  appSlug         String
+  hourBucket      DateTime // truncated to the hour (UTC)
+  method          String
+  pathPattern     String
+  statusClass     String   // "2xx" | "3xx" | "4xx" | "5xx"
+  callCount       Int      @default(0)
+  errorCount      Int      @default(0) // non-2xx
+  totalDurationMs BigInt   @default(0) // sum, for avg calc
+  maxDurationMs   Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, appSlug, hourBucket, method, pathPattern, statusClass])
+  @@index([tenantId, hourBucket])
+  @@index([appSlug, hourBucket])
+  @@index([hourBucket])
+}
+
+/// Uptime probe record. Written by /api/super/cron/health-check which pings
+/// each registered app's /api/health endpoint every 5 minutes.
+model AppHealthCheck {
+  id         String   @id @default(cuid())
+  appId      String
+  status     String   // "up" | "down" | "degraded"
+  statusCode Int?     // HTTP response code, null on network error
+  durationMs Int?
+  error      String?  @db.Text
+  checkedAt  DateTime @default(now())
+
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([appId, checkedAt])
+  @@index([checkedAt])
+}
+
+/// Auth lifecycle events — feeds DAU/MAU and "last login" on tenant health panel.
+/// Appended to on login, logout, and (future) impersonation start/end.
+model SessionEvent {
+  id        String   @id @default(cuid())
+  tenantId  String?  // null during pre-org-selection flow
+  userId    String
+  event     String   // "login" | "logout" | "impersonation_start" | "impersonation_end"
+  appSlug   String?  // which app the user signed into (for cross-app DAU)
+  ipAddress String?
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([event, createdAt])
+}
+
+/// Platform-wide announcement banner shown to tenants. Managed via super admin
+/// broadcast UI. Empty targetTenantIds = all tenants; empty targetAppSlugs = all apps.
+model BroadcastAnnouncement {
+  id              String    @id @default(cuid())
+  title           String
+  body            String    @db.Text
+  severity        String    @default("info") // "info" | "warning" | "critical"
+  targetTenantIds String[]
+  targetAppSlugs  String[]
+  startsAt        DateTime  @default(now())
+  endsAt          DateTime?
+  createdBy       String    // super admin user id
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  dismissals BroadcastDismissal[]
+
+  @@index([startsAt])
+  @@index([endsAt])
+}
+
+/// Per-user dismissal tracking — once dismissed, the banner doesn't resurface.
+model BroadcastDismissal {
+  id             String   @id @default(cuid())
+  announcementId String
+  userId         String
+  dismissedAt    DateTime @default(now())
+
+  announcement BroadcastAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([userId])
+}
+
+/// Hard gate: if enabled=false the tenant cannot access this app at all,
+/// regardless of AppModuleFlag state. Evaluated first in the auth/route flow.
+/// Sparse: row exists only when explicitly toggled off (default = enabled).
+model TenantAppAccess {
+  id        String   @id @default(cuid())
+  tenantId  String
+  appId     String
+  enabled   Boolean  @default(true)
+  reason    String?  // optional reason shown to tenant (e.g. "trial expired")
+  updatedBy String?  // super admin user id
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, appId])
+  @@index([tenantId])
+  @@index([appId])
+}
+
+/// Plan definitions as data (replaces the current hardcoded "startup|growth|enterprise"
+/// strings). Tenant.plan still stores the slug — no FK enforced yet so existing rows
+/// don't break when a plan is deleted. Migration path: add FK after backfill.
+model Plan {
+  id           String   @id @default(cuid())
+  slug         String   @unique // matches Tenant.plan
+  name         String
+  description  String?  @db.Text
+  priceMonthly Int      @default(0) // cents, avoids Decimal precision issues
+  priceYearly  Int      @default(0)
+  currency     String   @default("USD")
+  limits       Json?    // { "maxUsers": 10, "maxKPIs": 50, "maxApps": 3 }
+  features     String[] // free-form feature tags
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+/// Invoice records. Dummy payment flow in Phase B writes these via the
+/// super admin's "Mark paid" / "Mark failed" buttons. No real Stripe yet —
+/// externalId column is there for future integration.
+model Invoice {
+  id          String    @id @default(cuid())
+  tenantId    String
+  planSlug    String    // snapshot of plan at invoice time (history-safe)
+  amountCents Int
+  currency    String    @default("USD")
+  status      String    @default("pending") // "pending" | "paid" | "failed" | "refunded"
+  periodStart DateTime
+  periodEnd   DateTime
+  paidAt      DateTime?
+  failedAt    DateTime?
+  notes       String?   @db.Text
+  externalId  String? // stripe subscription/invoice id, future use
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@index([status])
+  @@index([periodEnd])
 }
