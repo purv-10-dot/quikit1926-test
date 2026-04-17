@@ -1,137 +1,328 @@
 "use client";
 
 /**
- * Super Admin: Pricing & Plans — /pricing
+ * SA-B.2 — Pricing & Plans.
  *
- * View and manage subscription plans, org limits, and pricing tiers.
- * Placeholder UI for now — will wire to a billing provider later.
+ * Replaces the "coming soon" placeholder with actual Plan CRUD. Plans are the
+ * data backing Tenant.plan (a slug string), invoice generation, and the
+ * tenant-health panel's "last invoice" display.
  */
 
-import { Check, Users, LayoutGrid, HardDrive, Info } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CreditCard, Plus, Pencil, Trash2 } from "lucide-react";
+import { SlidePanel, EmptyState } from "@quikit/ui";
 
-const PLANS = [
-  {
-    name: "Free",
-    price: "$0",
-    period: "/mo",
-    description: "For individuals and small teams getting started",
-    limits: { users: "5 users", apps: "2 apps", storage: "1 GB storage" },
-    highlighted: false,
-  },
-  {
-    name: "Growth",
-    price: "$29",
-    period: "/mo",
-    description: "For growing teams that need more power",
-    limits: { users: "25 users", apps: "10 apps", storage: "10 GB storage" },
-    highlighted: true,
-  },
-  {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "For large organizations with advanced needs",
-    limits: {
-      users: "Unlimited users",
-      apps: "Unlimited apps",
-      storage: "100 GB storage",
-    },
-    highlighted: false,
-  },
-];
-
-function PlanCard({
-  plan,
-}: {
-  plan: (typeof PLANS)[number];
-}) {
-  return (
-    <div
-      className={`bg-white rounded-xl border shadow-sm p-6 flex flex-col ${
-        plan.highlighted
-          ? "border-indigo-300 shadow-md ring-2 ring-indigo-100"
-          : "border-gray-200"
-      }`}
-    >
-      {plan.highlighted && (
-        <span className="self-start rounded-full px-2.5 py-0.5 text-[11px] font-semibold bg-indigo-50 text-indigo-700 mb-3">
-          Most Popular
-        </span>
-      )}
-      <h3 className="text-lg font-bold text-gray-900 mb-1">{plan.name}</h3>
-      <p className="text-sm text-gray-500 mb-4">{plan.description}</p>
-      <div className="mb-6">
-        <span className="text-3xl font-bold text-gray-900">{plan.price}</span>
-        {plan.period && (
-          <span className="text-sm text-gray-500">{plan.period}</span>
-        )}
-      </div>
-      <div className="space-y-3 flex-1">
-        <div className="flex items-center gap-2.5">
-          <div className="h-5 w-5 rounded-full bg-green-50 flex items-center justify-center flex-shrink-0">
-            <Check className="h-3 w-3 text-green-600" />
-          </div>
-          <span className="text-sm text-gray-600 flex items-center gap-1.5">
-            <Users className="h-3.5 w-3.5 text-gray-400" />
-            {plan.limits.users}
-          </span>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <div className="h-5 w-5 rounded-full bg-green-50 flex items-center justify-center flex-shrink-0">
-            <Check className="h-3 w-3 text-green-600" />
-          </div>
-          <span className="text-sm text-gray-600 flex items-center gap-1.5">
-            <LayoutGrid className="h-3.5 w-3.5 text-gray-400" />
-            {plan.limits.apps}
-          </span>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <div className="h-5 w-5 rounded-full bg-green-50 flex items-center justify-center flex-shrink-0">
-            <Check className="h-3 w-3 text-green-600" />
-          </div>
-          <span className="text-sm text-gray-600 flex items-center gap-1.5">
-            <HardDrive className="h-3.5 w-3.5 text-gray-400" />
-            {plan.limits.storage}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
+interface Plan {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  priceMonthly: number; // cents
+  priceYearly: number;
+  priceMonthlyDollars: string;
+  priceYearlyDollars: string;
+  currency: string;
+  features: string[];
+  limits: Record<string, unknown> | null;
+  isActive: boolean;
+  sortOrder: number;
+  tenantCount: number;
 }
 
+const emptyForm = {
+  slug: "",
+  name: "",
+  description: "",
+  priceMonthlyDollars: "0",
+  priceYearlyDollars: "0",
+  currency: "USD",
+  featuresCSV: "",
+  limitsJSON: "{}",
+  isActive: true,
+  sortOrder: 0,
+};
+
 export default function PricingPage() {
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [editing, setEditing] = useState<Plan | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/super/plans");
+      const j = await r.json();
+      if (j.success) setPlans(j.data);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, []);
+
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
+    setError(null);
+    setPanelOpen(true);
+  }
+
+  function openEdit(plan: Plan) {
+    setEditing(plan);
+    setForm({
+      slug: plan.slug,
+      name: plan.name,
+      description: plan.description ?? "",
+      priceMonthlyDollars: (plan.priceMonthly / 100).toFixed(2),
+      priceYearlyDollars: (plan.priceYearly / 100).toFixed(2),
+      currency: plan.currency,
+      featuresCSV: plan.features.join(", "),
+      limitsJSON: JSON.stringify(plan.limits ?? {}, null, 2),
+      isActive: plan.isActive,
+      sortOrder: plan.sortOrder,
+    });
+    setError(null);
+    setPanelOpen(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      let limits: Record<string, unknown> | null;
+      try {
+        const parsed = form.limitsJSON.trim() ? JSON.parse(form.limitsJSON) : null;
+        limits = parsed;
+      } catch {
+        setError("Limits must be valid JSON");
+        setSaving(false);
+        return;
+      }
+      const payload = {
+        slug: form.slug.trim().toLowerCase(),
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        priceMonthly: Math.round(parseFloat(form.priceMonthlyDollars || "0") * 100),
+        priceYearly: Math.round(parseFloat(form.priceYearlyDollars || "0") * 100),
+        currency: form.currency,
+        features: form.featuresCSV.split(",").map((s) => s.trim()).filter(Boolean),
+        limits,
+        isActive: form.isActive,
+        sortOrder: form.sortOrder,
+      };
+
+      const url = editing ? `/api/super/plans/${editing.id}` : "/api/super/plans";
+      const method = editing ? "PATCH" : "POST";
+      const r = await fetch(url, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json();
+      if (!j.success) {
+        setError(j.error ?? "Failed to save");
+        return;
+      }
+      setPanelOpen(false);
+      load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(plan: Plan) {
+    if (plan.tenantCount > 0) {
+      alert(`Cannot delete: ${plan.tenantCount} tenant(s) use this plan. Reassign them first.`);
+      return;
+    }
+    if (!confirm(`Delete "${plan.name}"?`)) return;
+    const r = await fetch(`/api/super/plans/${plan.id}`, { method: "DELETE" });
+    const j = await r.json();
+    if (j.success) load();
+    else alert(j.error);
+  }
+
   return (
-    <div>
-      {/* Page header */}
-      <div className="px-6 pt-6 pb-4">
-        <h1 className="text-xl font-bold text-gray-900">Pricing & Plans</h1>
-        <p className="text-sm text-gray-500">
-          Manage subscription tiers and organization limits
-        </p>
+    <div className="p-6 md:p-8">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Pricing & Plans</h1>
+          <p className="text-sm text-gray-500 mt-1">Plan definitions that back tenant billing and feature limits.</p>
+        </div>
+        <button
+          type="button"
+          onClick={openCreate}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+        >
+          <Plus className="h-4 w-4" />
+          New plan
+        </button>
       </div>
 
-      {/* Plan cards */}
-      <div className="px-6 py-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
-          {PLANS.map((plan) => (
-            <PlanCard key={plan.name} plan={plan} />
-          ))}
+      {loading ? (
+        <p className="text-gray-400">Loading...</p>
+      ) : plans.length === 0 ? (
+        <EmptyState
+          icon={CreditCard}
+          message="No plans defined. Create your first plan to enable invoice generation."
+          action={{ label: "New plan", onClick: openCreate }}
+        />
+      ) : (
+        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
+              <tr>
+                <th className="px-4 py-3">Plan</th>
+                <th className="px-4 py-3">Monthly</th>
+                <th className="px-4 py-3">Yearly</th>
+                <th className="px-4 py-3">Tenants</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 w-20">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {plans.map((p) => (
+                <tr key={p.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-gray-900">{p.name}</div>
+                    <div className="text-xs text-gray-500 font-mono">{p.slug}</div>
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">${p.priceMonthlyDollars}</td>
+                  <td className="px-4 py-3 tabular-nums">${p.priceYearlyDollars}</td>
+                  <td className="px-4 py-3 tabular-nums text-gray-600">{p.tenantCount}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded ${p.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                      {p.isActive ? "Active" : "Archived"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => openEdit(p)} className="text-gray-400 hover:text-indigo-600" aria-label="Edit">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button onClick={() => handleDelete(p)} className="text-gray-400 hover:text-red-600" aria-label="Delete" disabled={p.tenantCount > 0}>
+                        <Trash2 className={`h-4 w-4 ${p.tenantCount > 0 ? "opacity-30 cursor-not-allowed" : ""}`} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+      )}
 
-        {/* Coming soon banner */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-          <Info className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-medium text-amber-900">
-              Billing integration coming soon
-            </p>
-            <p className="text-sm text-amber-700 mt-0.5">
-              Plans are currently display-only. Wire to Stripe or LemonSqueezy
-              when ready.
-            </p>
+      <SlidePanel open={panelOpen} onClose={() => setPanelOpen(false)} title={editing ? "Edit plan" : "New plan"}>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <label className="block">
+            <span className="block text-xs font-semibold text-gray-700 mb-1">Slug (immutable)</span>
+            <input
+              type="text"
+              value={form.slug}
+              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
+              disabled={!!editing}
+              required
+              pattern="[a-z0-9_-]{2,40}"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono disabled:bg-gray-50"
+              placeholder="e.g. growth"
+            />
+            <span className="block text-xs text-gray-500 mt-1">2-40 chars, lowercase, [a-z0-9_-]. Cannot be changed after creation.</span>
+          </label>
+          <label className="block">
+            <span className="block text-xs font-semibold text-gray-700 mb-1">Name</span>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              required
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="block text-xs font-semibold text-gray-700 mb-1">Description</span>
+            <textarea
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              rows={2}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="block text-xs font-semibold text-gray-700 mb-1">Monthly price ($)</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.priceMonthlyDollars}
+                onChange={(e) => setForm((f) => ({ ...f, priceMonthlyDollars: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm tabular-nums"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-xs font-semibold text-gray-700 mb-1">Yearly price ($)</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.priceYearlyDollars}
+                onChange={(e) => setForm((f) => ({ ...f, priceYearlyDollars: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm tabular-nums"
+              />
+            </label>
           </div>
-        </div>
-      </div>
+          <label className="block">
+            <span className="block text-xs font-semibold text-gray-700 mb-1">Features (comma-separated)</span>
+            <input
+              type="text"
+              value={form.featuresCSV}
+              onChange={(e) => setForm((f) => ({ ...f, featuresCSV: e.target.value }))}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              placeholder="unlimited_kpis, priority_support"
+            />
+          </label>
+          <label className="block">
+            <span className="block text-xs font-semibold text-gray-700 mb-1">Limits (JSON)</span>
+            <textarea
+              value={form.limitsJSON}
+              onChange={(e) => setForm((f) => ({ ...f, limitsJSON: e.target.value }))}
+              rows={4}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono"
+              placeholder='{"maxUsers": 10, "maxKPIs": 50}'
+            />
+          </label>
+          <div className="flex items-center gap-4">
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} />
+              Active
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm">
+              Sort order:
+              <input
+                type="number"
+                value={form.sortOrder}
+                onChange={(e) => setForm((f) => ({ ...f, sortOrder: parseInt(e.target.value || "0", 10) }))}
+                className="w-16 rounded-lg border border-gray-200 px-2 py-1 text-sm tabular-nums"
+              />
+            </label>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div className="flex gap-2 justify-end pt-2">
+            <button type="button" onClick={() => setPanelOpen(false)} className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
+              {saving ? "Saving..." : editing ? "Save changes" : "Create plan"}
+            </button>
+          </div>
+        </form>
+      </SlidePanel>
     </div>
   );
 }

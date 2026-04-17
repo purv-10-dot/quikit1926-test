@@ -19,16 +19,24 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const pagination = parsePaginationParams(searchParams);
     const search = searchParams.get("search") || "";
+    const tenantId = searchParams.get("tenantId") || "";
 
-    const where = search
-      ? {
-          OR: [
-            { firstName: { contains: search, mode: "insensitive" as const } },
-            { lastName: { contains: search, mode: "insensitive" as const } },
-            { email: { contains: search, mode: "insensitive" as const } },
-          ],
-        }
-      : {};
+    // Build filter clauses
+    const clauses: Record<string, unknown>[] = [];
+    if (search) {
+      clauses.push({
+        OR: [
+          { firstName: { contains: search, mode: "insensitive" as const } },
+          { lastName: { contains: search, mode: "insensitive" as const } },
+          { email: { contains: search, mode: "insensitive" as const } },
+        ],
+      });
+    }
+    if (tenantId) {
+      // Only users that are members of this tenant
+      clauses.push({ memberships: { some: { tenantId, status: "active" } } });
+    }
+    const where = clauses.length === 0 ? {} : clauses.length === 1 ? clauses[0] : { AND: clauses };
 
     const [users, total] = await Promise.all([
       db.user.findMany({

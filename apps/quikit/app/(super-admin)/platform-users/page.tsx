@@ -16,7 +16,7 @@ import {
   Eye,
   ShieldAlert,
 } from "lucide-react";
-import { SlidePanel, Pagination, EmptyState } from "@quikit/ui";
+import { SlidePanel, Pagination, EmptyState, TenantPicker, type TenantOption } from "@quikit/ui";
 
 interface UserInfo {
   id: string;
@@ -33,6 +33,25 @@ export default function PlatformUsersPage() {
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [tenantId, setTenantId] = useState<string>("");
+  const [tenants, setTenants] = useState<TenantOption[]>([]);
+
+  // Load tenant list once for the picker
+  useEffect(() => {
+    fetch("/api/super/orgs?limit=1000")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) {
+          setTenants(j.data.map((t: { id: string; name: string; slug: string; plan: string }) => ({
+            id: t.id,
+            name: t.name,
+            slug: t.slug,
+            plan: t.plan,
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -57,7 +76,9 @@ export default function PlatformUsersPage() {
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
-    fetch(`/api/super/users?page=${page}&limit=20&search=${encodeURIComponent(search)}`)
+    const qs = new URLSearchParams({ page: String(page), limit: "20", search });
+    if (tenantId) qs.set("tenantId", tenantId);
+    fetch(`/api/super/users?${qs.toString()}`)
       .then((r) => r.json())
       .then((j) => {
         if (j.success) {
@@ -68,16 +89,16 @@ export default function PlatformUsersPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [page, search]);
+  }, [page, search, tenantId]);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
 
-  // Reset page to 1 when search changes
+  // Reset page to 1 when filters change
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [search, tenantId]);
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -221,7 +242,7 @@ export default function PlatformUsersPage() {
       </div>
 
       {/* Controls bar */}
-      <div className="px-6 py-3 border-b border-gray-200 flex items-center gap-3">
+      <div className="px-6 py-3 border-b border-gray-200 flex items-center gap-3 flex-wrap">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
@@ -232,6 +253,23 @@ export default function PlatformUsersPage() {
             className="pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
         </div>
+        <div className="w-64">
+          <TenantPicker
+            tenants={tenants}
+            value={tenantId || null}
+            onChange={(id) => setTenantId(id)}
+            placeholder="All tenants"
+          />
+        </div>
+        {tenantId && (
+          <button
+            type="button"
+            onClick={() => setTenantId("")}
+            className="text-xs text-gray-500 hover:text-gray-700 underline"
+          >
+            Show all tenants
+          </button>
+        )}
       </div>
 
       {/* Table */}

@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { FileText, Filter } from "lucide-react";
+import { FileText, Filter, ChevronDown, ChevronRight } from "lucide-react";
 import { Pagination, EmptyState, FilterPicker } from "@quikit/ui";
 import type { FilterOption } from "@quikit/ui";
 
@@ -194,30 +194,7 @@ export default function AuditLogPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {logs.map((entry) => (
-                  <tr
-                    key={entry.id}
-                    className="hover:bg-gray-50/60 transition-colors"
-                  >
-                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                      {new Date(entry.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <ActionBadge action={entry.action} />
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 capitalize">
-                      {entry.entityType.replace(/_/g, " ")}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-gray-500" title={entry.entityId}>
-                        {truncateId(entry.entityId)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-gray-500" title={entry.actorId}>
-                        {truncateId(entry.actorId)}
-                      </span>
-                    </td>
-                  </tr>
+                  <AuditRow key={entry.id} entry={entry} />
                 ))}
               </tbody>
             </table>
@@ -228,6 +205,109 @@ export default function AuditLogPage() {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Audit row with expandable diff viewer ────────────────────────────── */
+
+function AuditRow({ entry }: { entry: AuditEntry }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDiff = Boolean(entry.oldValues || entry.newValues);
+
+  return (
+    <>
+      <tr
+        className={`hover:bg-gray-50/60 transition-colors ${hasDiff ? "cursor-pointer" : ""}`}
+        onClick={() => hasDiff && setExpanded((v) => !v)}
+      >
+        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+          <div className="inline-flex items-center gap-1">
+            {hasDiff ? (
+              expanded ? <ChevronDown className="h-3 w-3 text-gray-400" /> : <ChevronRight className="h-3 w-3 text-gray-400" />
+            ) : (
+              <span className="w-3" />
+            )}
+            {new Date(entry.createdAt).toLocaleString()}
+          </div>
+        </td>
+        <td className="px-4 py-3">
+          <ActionBadge action={entry.action} />
+        </td>
+        <td className="px-4 py-3 text-gray-600 capitalize">
+          {entry.entityType.replace(/_/g, " ")}
+        </td>
+        <td className="px-4 py-3">
+          <span className="font-mono text-xs text-gray-500" title={entry.entityId}>
+            {truncateId(entry.entityId)}
+          </span>
+        </td>
+        <td className="px-4 py-3">
+          <span className="font-mono text-xs text-gray-500" title={entry.actorId}>
+            {truncateId(entry.actorId)}
+          </span>
+        </td>
+      </tr>
+      {expanded && hasDiff && (
+        <tr className="bg-gray-50/60">
+          <td colSpan={5} className="px-4 py-3">
+            <DiffView oldJson={entry.oldValues} newJson={entry.newValues} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function parseJson(s: string | null): unknown {
+  if (!s) return null;
+  try {
+    return JSON.parse(s);
+  } catch {
+    return s;
+  }
+}
+
+function DiffView({ oldJson, newJson }: { oldJson: string | null; newJson: string | null }) {
+  const oldVal = parseJson(oldJson);
+  const newVal = parseJson(newJson);
+
+  // Key-level diff: union of both objects' keys
+  if (oldVal && typeof oldVal === "object" && newVal && typeof newVal === "object") {
+    const keys = Array.from(new Set([...Object.keys(oldVal as object), ...Object.keys(newVal as object)])).sort();
+    return (
+      <div className="space-y-1 text-xs font-mono">
+        {keys.map((k) => {
+          const before = (oldVal as Record<string, unknown>)[k];
+          const after = (newVal as Record<string, unknown>)[k];
+          const changed = JSON.stringify(before) !== JSON.stringify(after);
+          return (
+            <div key={k} className="grid grid-cols-[150px_1fr_1fr] gap-2 items-start">
+              <span className="text-gray-500">{k}</span>
+              <span className={`px-2 py-1 rounded ${changed && before !== undefined ? "bg-red-100 text-red-900" : "text-gray-400"}`}>
+                {before === undefined ? "—" : JSON.stringify(before)}
+              </span>
+              <span className={`px-2 py-1 rounded ${changed ? "bg-green-100 text-green-900" : "text-gray-500"}`}>
+                {after === undefined ? "—" : JSON.stringify(after)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Fallback: side-by-side JSON blobs
+  return (
+    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+      <div>
+        <div className="text-gray-500 mb-1">Before</div>
+        <pre className="bg-red-50 text-red-900 p-2 rounded overflow-x-auto">{oldJson ?? "—"}</pre>
+      </div>
+      <div>
+        <div className="text-gray-500 mb-1">After</div>
+        <pre className="bg-green-50 text-green-900 p-2 rounded overflow-x-auto">{newJson ?? "—"}</pre>
       </div>
     </div>
   );

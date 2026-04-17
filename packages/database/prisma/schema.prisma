@@ -1520,6 +1520,35 @@ model Plan {
   @@index([isActive])
 }
 
+/// Platform alerts raised by the alerts engine cron. Super admins see these
+/// as a dismissable list on the Analytics dashboard. Sparse — rows only
+/// exist for currently-firing conditions. Resolved alerts are soft-deleted
+/// by setting resolvedAt.
+model PlatformAlert {
+  id         String    @id @default(cuid())
+  rule       String    // "app_down" | "api_error_spike" | "payment_failed" | "tenant_inactive"
+  severity   String    @default("warning") // "info" | "warning" | "critical"
+  title      String
+  message    String    @db.Text
+  /// Free-form identifier for the alert subject (appId, tenantId, etc) — used
+  /// for dedupe so the same condition doesn't fire twice.
+  subjectKey String
+  /// Optional link for click-through ("/organizations/<tenantId>")
+  link       String?
+  data       Json?     // raw metrics that triggered the alert
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  resolvedAt  DateTime?
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([resolvedAt])
+  @@index([severity, lastSeenAt])
+  @@index([rule, subjectKey, resolvedAt])
+}
+
 /// Invoice records. Dummy payment flow in Phase B writes these via the
 /// super admin's "Mark paid" / "Mark failed" buttons. No real Stripe yet —
 /// externalId column is there for future integration.

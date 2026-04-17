@@ -26,16 +26,20 @@ import {
   ChevronDown,
   FileText,
   ToggleRight,
+  BarChart3,
+  Megaphone,
 } from "lucide-react";
 import { AppSwitcher } from "@quikit/ui";
 import { motion, AnimatePresence } from "framer-motion";
 
 const NAV_ITEMS = [
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Organizations", href: "/organizations", icon: Building2 },
   { label: "App Registry", href: "/app-registry", icon: LayoutGrid },
   { label: "App Feature Flags", href: "/feature-flags", icon: ToggleRight },
   { label: "Pricing & Plans", href: "/pricing", icon: CreditCard },
   { label: "Users", href: "/platform-users", icon: Users },
+  { label: "Broadcasts", href: "/broadcasts", icon: Megaphone },
   { label: "Audit Log", href: "/audit", icon: FileText },
 ];
 

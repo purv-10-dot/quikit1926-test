@@ -11,6 +11,10 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Building2, Pencil, Users, Layers, AppWindow, Plus } from "lucide-react";
 import { SlidePanel, EmptyState, Select } from "@quikit/ui";
+import { HealthPanel } from "./components/HealthPanel";
+import { AppAccessPanel } from "./components/AppAccessPanel";
+import { BillingPanel } from "./components/BillingPanel";
+import { AnalyticsPanel } from "./components/AnalyticsPanel";
 
 interface MemberInfo {
   id: string;
@@ -377,6 +381,16 @@ export default function OrgDetailPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* SA Phase B/C panels */}
+      <div className="mt-6 space-y-6">
+        <HealthPanel tenantId={orgId} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AppAccessPanel tenantId={orgId} />
+          <BillingPanel tenantId={orgId} />
+        </div>
+        <AnalyticsPanel tenantId={orgId} />
       </div>
 
       {/* Add Member slide-in panel */}
