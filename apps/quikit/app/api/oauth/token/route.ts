@@ -1,12 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { LRUCache } from "lru-cache";
 import { db } from "@/lib/db";
+import { rateLimitAsync, getClientIp } from "@quikit/shared/rateLimit";
 import {
   generateIdToken,
   generateAccessToken,
   generateRefreshToken,
   verifyPKCE,
 } from "@/lib/oauth";
+
+/**
+ * Per-lambda LRU cache for OAuthClient lookups (P0-4).
+ *
+ * The row rarely changes (only on client_secret rotation, which is manual).
+ * Caching eliminates a DB round-trip on happy-path token requests.
+ *
+ * Size 100 ≫ our current client count (~3-5); 60 s TTL bounds staleness after
+ * a secret rotation. Null lookups are NOT cached — otherwise an attacker who
+ * guessed client_ids could pollute the cache. The rate limiter below stops
+ * that attack regardless.
+ */
+const CLIENT_CACHE = new LRUCache<string, { clientSecret: string; scopes: string[] }>({
+  max: 100,
+  ttl: 60_000,
+});
+
+async function getOAuthClient(clientId: string) {
+  const cached = CLIENT_CACHE.get(clientId);
+  if (cached) return cached;
+  const row = await db.oAuthClient.findUnique({
+    where: { clientId },
+    select: { clientSecret: true, scopes: true },
+  });
+  if (row) CLIENT_CACHE.set(clientId, row);
+  return row;
+}
+
+/**
+ * Bucket IPs to /24. One attacker can't trivially spray source IPs within
+ * their own /24 to dodge the limit; a shared-office /24 still shares one
+ * bucket of reasonable size.
+ */
+function ipSlash24(raw: string): string {
+  if (!raw || raw === "anonymous") return "anon";
+  const v4 = raw.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/);
+  if (v4) return v4[1]!;
+  const v6 = raw.split(":").slice(0, 3).join(":");
+  return v6 || raw;
+}
+
+const FAIL_CLOSED = process.env.NODE_ENV === "production";
+const RATE_LIMIT_ENABLED =
+  process.env.OAUTH_TOKEN_RATE_LIMIT_ENABLED !== "false";
 
 /**
  * POST /api/oauth/token — OAuth2 Token Endpoint
@@ -17,7 +63,7 @@ import {
  *   - refresh_token
  *
  * Supports grant_type: "authorization_code" and "refresh_token".
- * Authenticates the client via client_id + client_secret in the body.
+ * Authenticates the client via client_id + client_secret (Basic or body).
  */
 export async function POST(request: NextRequest) {
   const body = await request.formData().catch(() => null);
@@ -46,11 +92,28 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Authenticate the client
-  const client = await db.oAuthClient.findUnique({
-    where: { clientId },
-    select: { clientSecret: true, scopes: true },
-  });
+  // P0-4: rate limit BEFORE bcrypt + DB. Keyed on (clientId, /24 IP block) so
+  // one attacker on one /24 can't DoS by burning bcrypt cycles against wrong
+  // secrets. See docs/plans/P0-4-oauth-token-hardening.md.
+  if (RATE_LIMIT_ENABLED) {
+    const ipBlock = ipSlash24(getClientIp(request));
+    const { ok } = await rateLimitAsync({
+      routeKey: "oauth:token",
+      clientKey: `${clientId || "unknown"}:${ipBlock}`,
+      limit: 30,
+      windowMs: 60_000,
+      failClosed: FAIL_CLOSED,
+    });
+    if (!ok) {
+      return NextResponse.json(
+        { error: "too_many_requests", error_description: "Rate limit exceeded" },
+        { status: 429, headers: { "Retry-After": "60" } },
+      );
+    }
+  }
+
+  // Authenticate the client (through 60 s LRU cache).
+  const client = await getOAuthClient(clientId);
   if (!client) {
     return NextResponse.json(
       { error: "invalid_client", error_description: "Unknown client" },
