@@ -97,6 +97,29 @@ describe("resolveReversedColorByPercentage (reverse / lower is better)", () => {
     expect(resolveReversedColorByPercentage(121, 100, 121, false)).toEqual(NEUTRAL);
     expect(resolveReversedColorByPercentage(200, 100, 200, false)).toEqual(NEUTRAL);
   });
+
+  // Regression: previously the reverse resolver returned BLUE for any
+  // unentered cell because percentage=0 satisfied `pct <= 80`. isUpdated
+  // must gate ALL color branches in reverse mode, not just RED.
+  it("returns NEUTRAL when no value entered (isUpdated=false), regardless of bucket", () => {
+    expect(resolveReversedColorByPercentage(0, 100, 0, false)).toEqual(NEUTRAL);   // would-be BLUE
+    expect(resolveReversedColorByPercentage(50, 100, 50, false)).toEqual(NEUTRAL); // would-be BLUE
+    expect(resolveReversedColorByPercentage(90, 100, 90, false)).toEqual(NEUTRAL); // would-be GREEN
+    expect(resolveReversedColorByPercentage(110, 100, 110, false)).toEqual(NEUTRAL); // would-be YELLOW
+  });
+
+  // Regression: target=0 ("zero-tolerance") in reverse mode must return RED
+  // when the user logs any positive value — not BLUE via the percentage=0 fallback.
+  it("returns RED when target <= 0 and value > 0 (zero-tolerance violated)", () => {
+    expect(resolveReversedColorByPercentage(0, 0, 1, true)).toEqual(RED);
+    expect(resolveReversedColorByPercentage(0, 0, 100, true)).toEqual(RED);
+    expect(resolveReversedColorByPercentage(0, -5, 3, true)).toEqual(RED);
+  });
+
+  it("returns NEUTRAL when target <= 0 and no value entered", () => {
+    expect(resolveReversedColorByPercentage(0, 0, 0, false)).toEqual(NEUTRAL);
+    expect(resolveReversedColorByPercentage(0, -5, 0, false)).toEqual(NEUTRAL);
+  });
 });
 
 describe("getColorByPercentage (unified entry point)", () => {
@@ -164,6 +187,14 @@ describe("getColorByPercentage (unified entry point)", () => {
     it("handles target of 0 with value of 0 (reverse)", () => {
       // percentage = 0, target <= 0, value === 0 -> BLUE in reverse
       expect(getColorByPercentage(0, 0, true, true)).toEqual(BLUE);
+    });
+
+    // Matches the real-world Team KPI bug: creating a reverse KPI before
+    // any weekly values are logged used to paint every week cell BLUE.
+    it("reverse-mode unentered cells render NEUTRAL (bug regression)", () => {
+      // isUpdated=false, typical empty-cell inputs produced by weekCellColors
+      expect(getColorByPercentage(0, 10, false, true)).toEqual(NEUTRAL);
+      expect(getColorByPercentage(0, 100, false, true)).toEqual(NEUTRAL);
     });
   });
 
