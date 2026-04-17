@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { PATHS } from "@/lib/constants";
+import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
+import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import {
   LayoutDashboard,
   Users,
@@ -14,12 +16,12 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { label: "Overview", href: PATHS.DASHBOARD, icon: LayoutDashboard },
-  { label: "Members", href: PATHS.MEMBERS, icon: Users },
-  { label: "Teams", href: PATHS.TEAMS, icon: FolderTree },
-  { label: "Apps", href: PATHS.APPS, icon: AppWindow },
-  { label: "Roles", href: PATHS.ROLES, icon: ShieldCheck },
-  { label: "Settings", href: PATHS.SETTINGS, icon: Settings },
+  { key: "overview", label: "Overview", href: PATHS.DASHBOARD, icon: LayoutDashboard },
+  { key: "members", label: "Members", href: PATHS.MEMBERS, icon: Users },
+  { key: "teams", label: "Teams", href: PATHS.TEAMS, icon: FolderTree },
+  { key: "apps", label: "Apps", href: PATHS.APPS, icon: AppWindow },
+  { key: "roles", label: "Roles", href: PATHS.ROLES, icon: ShieldCheck },
+  { key: "settings", label: "Settings", href: PATHS.SETTINGS, icon: Settings },
 ];
 
 interface SidebarProps {
@@ -29,6 +31,8 @@ interface SidebarProps {
 
 export function Sidebar({ orgName, brandColor }: SidebarProps) {
   const pathname = usePathname();
+  const disabled = useDisabledModules();
+  const visibleNav = navItems.filter((item) => isModuleEnabled(item.key, disabled));
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-60 border-r border-[var(--color-border)] bg-[var(--color-bg-primary)] flex flex-col">
@@ -48,7 +52,7 @@ export function Sidebar({ orgName, brandColor }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {navItems.map((item) => {
+        {visibleNav.map((item) => {
           const isActive =
             pathname === item.href ||
             (item.href !== PATHS.DASHBOARD && pathname.startsWith(item.href));

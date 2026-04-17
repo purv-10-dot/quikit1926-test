@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { z } from "zod";
 
@@ -20,6 +21,8 @@ export async function PATCH(
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "members", tenantId);
+  if (blocked) return blocked;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({

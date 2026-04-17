@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/api/errors";
 import { generateQuartersSchema } from "@/lib/schemas/quarterSchema";
 import { diffDays, generateQuarterDates } from "@/lib/utils/quarterGen";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 
 async function getMembership(userId: string) {
   return db.membership.findFirst({
@@ -50,6 +51,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
 
     const tenantId = membership.tenantId;
+    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", tenantId);
+    if (blocked) return blocked;
+
     const yearParam = request.nextUrl.searchParams.get("year");
 
     // Get all available fiscal years
@@ -137,6 +141,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
 
     const { tenantId } = membership;
+    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", tenantId);
+    if (blocked) return blocked;
+
     const fiscalStartMonth = membership.tenant.fiscalYearStart ?? 4;
 
     const parsed = generateQuartersSchema.safeParse(await request.json());

@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { updateKPISchema } from "@/lib/schemas/kpiSchema";
 import { ApiResponse } from "@/lib/services/kpiService";
 import { canManageTeamKPI } from "@/lib/api/teamKPIPermissions";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateReviewSchema } from "@/lib/schemas/reviewSchema";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("people.reviews");
 
 export const GET = withTenantAuth<{ reviewId: string }>(
   async ({ tenantId }, _req, { params }) => {

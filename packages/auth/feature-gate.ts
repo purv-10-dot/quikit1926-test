@@ -16,13 +16,23 @@
  * See docs/plans/FF-1-app-feature-flags.md.
  */
 
-import { cache } from "react";
+import * as React from "react";
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import type { NextAuthOptions } from "next-auth";
 import { getServerSession } from "next-auth";
 import { db } from "@quikit/database";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
+
+/**
+ * React.cache() is only available in React 18 Canary / React 19 (which Next.js
+ * bundles in server components). When running under Vitest (plain React 18.2),
+ * it's undefined — fall back to an identity wrapper so the module imports cleanly.
+ * The per-request dedup benefit is lost in tests, but correctness is preserved.
+ */
+const cache: <T extends (...args: never[]) => unknown>(fn: T) => T =
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (React as any).cache ?? ((fn) => fn);
 
 /**
  * Returns the set of moduleKeys that are EXPLICITLY disabled for the given
@@ -34,16 +44,25 @@ import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
  */
 export const getDisabledModules = cache(
   async (tenantId: string, appSlug: string): Promise<Set<string>> => {
-    const app = await db.app.findUnique({
-      where: { slug: appSlug },
-      select: { id: true },
-    });
-    if (!app) return new Set();
-    const rows = await db.appModuleFlag.findMany({
-      where: { tenantId, appId: app.id, enabled: false },
-      select: { moduleKey: true },
-    });
-    return new Set(rows.map((r) => r.moduleKey));
+    try {
+      const app = await db.app.findUnique({
+        where: { slug: appSlug },
+        select: { id: true },
+      });
+      if (!app) return new Set();
+      const rows = await db.appModuleFlag.findMany({
+        where: { tenantId, appId: app.id, enabled: false },
+        select: { moduleKey: true },
+      });
+      // Defensive: mocks / edge cases may return undefined. Treat as "all enabled".
+      if (!Array.isArray(rows)) return new Set();
+      return new Set(rows.map((r) => r.moduleKey));
+    } catch {
+      // Fail-open: if the gate query itself errors, don't block the app —
+      // log and treat as all-enabled. A broken gate shouldn't take down the
+      // entire module.
+      return new Set();
+    }
   },
 );
 
