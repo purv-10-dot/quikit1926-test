@@ -15,13 +15,41 @@ import crypto from "crypto";
 import { db } from "@/lib/db";
 import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
 import { logAudit } from "@/lib/auditLog";
+import { rateLimitAsync } from "@quikit/shared/rateLimit";
 
 const TOKEN_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 const LANDING_PATH = "/dashboard"; // where the impersonated session starts
 
+// Rate limit: per super-admin account. 10 impersonations per hour is a
+// generous cap for legitimate support work; any more strongly suggests a
+// compromised account. Fail-closed so an attacker can't exhaust Redis.
+const IMPERSONATE_LIMIT = 10;
+const IMPERSONATE_WINDOW_MS = 60 * 60 * 1000;
+
 export async function POST(req: NextRequest) {
   const auth = await requireSuperAdmin();
   if ("error" in auth) return auth.error;
+
+  // Tech-debt #8 close — rate-limit per super-admin account.
+  const rl = await rateLimitAsync({
+    routeKey: "super:impersonate:start",
+    clientKey: auth.userId,
+    limit: IMPERSONATE_LIMIT,
+    windowMs: IMPERSONATE_WINDOW_MS,
+    failClosed: true,
+  });
+  if (!rl.ok) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Impersonation rate limit exceeded (${IMPERSONATE_LIMIT}/hour). Retry in ${rl.retryAfterSeconds}s.`,
+      },
+      {
+        status: 429,
+        headers: { "retry-after": String(rl.retryAfterSeconds) },
+      },
+    );
+  }
 
   try {
     const body = await req.json();

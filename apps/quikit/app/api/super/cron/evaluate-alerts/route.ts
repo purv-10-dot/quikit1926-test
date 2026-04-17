@@ -87,20 +87,20 @@ async function getSuperAdminEmails(): Promise<string[]> {
   return _superAdminEmailsCache;
 }
 
-async function resolveStaleAlerts(rule: string, activeSubjectKeys: Set<string>): Promise<number> {
+async function resolveStaleAlerts(rule: string, activeSubjectKeys: Set<string>): Promise<{ resolved: number; resolvedAlerts: Array<{ id: string; title: string; severity: string; subjectKey: string }> }> {
   // Any open alert for this rule whose subject is no longer in the active set
   // has self-resolved — mark it so.
   const openAlerts = await db.platformAlert.findMany({
     where: { rule, resolvedAt: null },
-    select: { id: true, subjectKey: true },
+    select: { id: true, subjectKey: true, title: true, severity: true },
   });
   const toResolve = openAlerts.filter((a) => !activeSubjectKeys.has(a.subjectKey));
-  if (toResolve.length === 0) return 0;
+  if (toResolve.length === 0) return { resolved: 0, resolvedAlerts: [] };
   await db.platformAlert.updateMany({
     where: { id: { in: toResolve.map((a) => a.id) } },
     data: { resolvedAt: new Date() },
   });
-  return toResolve.length;
+  return { resolved: toResolve.length, resolvedAlerts: toResolve };
 }
 
 export async function GET(req: NextRequest) {
@@ -141,6 +141,33 @@ export async function GET(req: NextRequest) {
     return outcome;
   }
 
+  /**
+   * Tech-debt #14 close — resolve stale alerts AND email the "all clear"
+   * for resolved critical/warning alerts. Only fires for non-info severities
+   * to match the first-fire email policy.
+   */
+  async function resolveAndNotify(rule: string, active: Set<string>): Promise<number> {
+    const { resolved, resolvedAlerts } = await resolveStaleAlerts(rule, active);
+    if (resolved === 0) return 0;
+    const notable = resolvedAlerts.filter((a) => a.severity !== "info");
+    if (notable.length > 0) {
+      const recipients = await getSuperAdminEmails();
+      if (recipients.length > 0) {
+        for (const a of notable) {
+          await sendPlatformAlertEmail({
+            to: recipients,
+            severity: "info", // "all clear" is info-level regardless of origin
+            title: `Resolved: ${a.title}`,
+            message: `The condition that triggered this ${a.severity} alert has cleared.`,
+            link: null,
+          });
+          emailsSent += 1;
+        }
+      }
+    }
+    return resolved;
+  }
+
   try {
     // ── Rule 1: app_down ────────────────────────────────────────────
     {
@@ -168,7 +195,7 @@ export async function GET(req: NextRequest) {
         });
         summary.app_down[outcome] += 1;
       }
-      summary.app_down.resolved += await resolveStaleAlerts("app_down", active);
+      summary.app_down.resolved += await resolveAndNotify("app_down", active);
     }
 
     // ── Rule 2: api_error_spike (per app over last hour) ────────────
@@ -207,7 +234,7 @@ export async function GET(req: NextRequest) {
           summary.api_error_spike[outcome] += 1;
         }
       }
-      summary.api_error_spike.resolved += await resolveStaleAlerts("api_error_spike", active);
+      summary.api_error_spike.resolved += await resolveAndNotify("api_error_spike", active);
     }
 
     // ── Rule 3: payment_failed ──────────────────────────────────────
@@ -230,7 +257,7 @@ export async function GET(req: NextRequest) {
         });
         summary.payment_failed[outcome] += 1;
       }
-      summary.payment_failed.resolved += await resolveStaleAlerts("payment_failed", active);
+      summary.payment_failed.resolved += await resolveAndNotify("payment_failed", active);
     }
 
     // ── Rule 4: tenant_inactive ─────────────────────────────────────
@@ -268,7 +295,7 @@ export async function GET(req: NextRequest) {
           summary.tenant_inactive[outcome] += 1;
         }
       }
-      summary.tenant_inactive.resolved += await resolveStaleAlerts("tenant_inactive", active);
+      summary.tenant_inactive.resolved += await resolveAndNotify("tenant_inactive", active);
     }
 
     return NextResponse.json({

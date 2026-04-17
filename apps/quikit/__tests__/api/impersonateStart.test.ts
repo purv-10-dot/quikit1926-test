@@ -7,6 +7,18 @@ vi.mock("@/lib/auditLog", () => ({
   logAudit: vi.fn(),
 }));
 
+// Rate limiter is fail-closed in prod; in tests, always allow so the other
+// assertions aren't masked by 429s.
+vi.mock("@quikit/shared/rateLimit", () => ({
+  rateLimitAsync: vi.fn().mockResolvedValue({
+    ok: true,
+    remaining: 9,
+    resetAt: Date.now() + 3600_000,
+    retryAfterSeconds: 0,
+    redisAvailable: false,
+  }),
+}));
+
 import { POST } from "@/app/api/super/impersonate/start/route";
 
 const SUPER_ADMIN = { id: "sa-1", email: "super@test.com", isSuperAdmin: true };

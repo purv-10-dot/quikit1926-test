@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/super/cron/rollup-api-calls",
+      "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/super/cron/health-check",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/super/cron/evaluate-alerts",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/super/cron/cleanup-api-calls",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/super/cron/generate-invoices",
+      "schedule": "0 1 1 * *"
+    }
+  ]
+}
