@@ -28,11 +28,11 @@ These must ship **before** any further scale-up work. They are written as full s
 
 | ID | Title | Status | Owner | Target |
 |---|---|---|---|---|
-| [P0-1](./P0-1-db-connection-pooling.md) | Postgres connection pooling + `directUrl` split (Neon) | 📝 Draft | _unassigned_ | Week 1 |
-| [P0-2](./P0-2-apps-enable-n-plus-one.md) | Eliminate N+1 in `POST /api/apps/enable` | 📝 Draft | _unassigned_ | Week 1 |
-| [P0-3](./P0-3-distributed-rate-limiter.md) | Distributed rate limiter (Upstash) + wire into IdP login | 📝 Draft | _unassigned_ | Week 1 |
-| [P0-4](./P0-4-oauth-token-hardening.md) | Rate-limit `/api/oauth/token` + cache client lookup | 📝 Draft | _unassigned_ | Week 1 |
-| [VERCEL-PROD-SETUP](./VERCEL-PROD-SETUP.md) | Vercel + Neon + Upstash env checklist (companion doc) | 📝 Draft | _unassigned_ | Week 1 |
+| [P0-1](./P0-1-db-connection-pooling.md) | Postgres connection pooling + `directUrl` split (Neon) | ✔ Done | — | 2026-04-17 |
+| [P0-2](./P0-2-apps-enable-n-plus-one.md) | Eliminate N+1 in `POST /api/apps/enable` | ✔ Done | — | 2026-04-17 |
+| [P0-3](./P0-3-distributed-rate-limiter.md) | Distributed rate limiter (Upstash) + wire into IdP login | ✔ Done | — | 2026-04-17 |
+| [P0-4](./P0-4-oauth-token-hardening.md) | Rate-limit `/api/oauth/token` + cache client lookup | ✔ Done | — | 2026-04-17 |
+| [VERCEL-PROD-SETUP](./VERCEL-PROD-SETUP.md) | Vercel + Neon + Upstash env checklist (companion doc) | ✔ Done | — | 2026-04-17 |
 
 **Wave 1 exit criteria (before unblocking Wave 2):**
 - All four plans approved, implemented, merged to `main`, deployed to prod.
@@ -43,14 +43,15 @@ These must ship **before** any further scale-up work. They are written as full s
 
 ## 2. Wave 2 — P1 (before 1000 CCU sustained)
 
-Plans will be written after Wave 1 lands. Items listed here for visibility only.
+Partially shipped with Wave 1. Remaining items will be planned in a later session.
 
-| ID | Title | Type |
-|---|---|---|
-| P1-1 | Pagination sweep on 7 unbounded `findMany` endpoints | Full spec |
-| P1-2 | `Cache-Control` headers on hot read endpoints (launcher, switcher, memberships) | Change note |
-| P1-3 | Four missing composite indexes (with `CREATE INDEX CONCURRENTLY`) | Full spec |
-| P1-4 | Dynamic-import heavy export deps (`jspdf`, `html2canvas`, `docx`) | Change note |
+| ID | Title | Type | Status |
+|---|---|---|---|
+| P1-1 | Pagination sweep on 7 unbounded `findMany` endpoints | Full spec | ⏳ Open — deferred (touches UI contracts) |
+| [P1-2](./P1-2-cache-control-headers.md) | `Cache-Control` headers on 4 hot read endpoints | Change note | ✔ Done (2026-04-17) |
+| [P1-3](./P1-3-composite-indexes.md) | Composite indexes (regular, not CONCURRENTLY — see doc) | Full spec | ✔ Done (2026-04-17) |
+| P1-4 | Dynamic-import heavy export deps (`jspdf`, `html2canvas`, `docx`) | Change note | ⏳ Open — deferred |
+| P1-5 | Remove 13 localhost fallbacks from runtime code | Full spec | ✔ Done (2026-04-17, shipped with prod-safety gate) |
 
 ---
 
