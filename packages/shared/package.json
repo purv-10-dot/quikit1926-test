@@ -11,7 +11,8 @@
     "./email": "./lib/email.ts",
     "./pagination": "./lib/pagination.ts",
     "./rateLimit": "./lib/rateLimit.ts",
-    "./env": "./lib/env.ts"
+    "./env": "./lib/env.ts",
+    "./moduleRegistry": "./lib/moduleRegistry.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

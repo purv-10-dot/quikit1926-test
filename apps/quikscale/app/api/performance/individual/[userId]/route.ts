@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("analytics.individual");
 
 export const GET = withTenantAuth<{ userId: string }>(async ({ tenantId }, _req, { params }) => {
   const target = await db.user.findUnique({

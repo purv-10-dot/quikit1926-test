@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { opspReviewSecondarySaveSchema } from "@/lib/schemas/opspReviewSchema";
@@ -18,6 +19,8 @@ export async function POST(req: NextRequest) {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
     const { tenantId, userId } = auth;
+    const blocked = await gateModuleApi("quikscale", "opsp.review", tenantId);
+    if (blocked) return blocked;
 
     const parsed = opspReviewSecondarySaveSchema.safeParse(await req.json());
     if (!parsed.success) return validationError(parsed, "Invalid secondary review data");

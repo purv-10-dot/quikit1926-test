@@ -11,7 +11,8 @@
     "./session-guard": "./session-guard.tsx",
     "./require-admin": "./require-admin.ts",
     "./require-super-admin": "./require-super-admin.ts",
-    "./get-tenant-id": "./get-tenant-id.ts"
+    "./get-tenant-id": "./get-tenant-id.ts",
+    "./feature-gate": "./feature-gate.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

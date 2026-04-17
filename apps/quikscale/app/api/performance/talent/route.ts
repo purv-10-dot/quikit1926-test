@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("people.talent");
 import { talentAssessmentSchema } from "@/lib/schemas/talentSchema";
 
 export const GET = withTenantAuth(async ({ tenantId }, request) => {
