@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { ROLES, ROLE_HIERARCHY, ROLE_LABELS } from "@/lib/constants";
 
@@ -56,6 +57,8 @@ export async function GET() {
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "roles", tenantId);
+  if (blocked) return blocked;
 
   // Get member counts per role for this tenant
   const roleCounts = await db.membership.groupBy({

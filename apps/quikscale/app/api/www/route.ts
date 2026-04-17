@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("www");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";

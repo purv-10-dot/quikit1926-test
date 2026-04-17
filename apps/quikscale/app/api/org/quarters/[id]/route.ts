@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateQuarterSchema } from "@/lib/schemas/quarterSchema";
 import { addDays } from "@/lib/utils/quarterGen";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("orgSetup.quarters");
 
 const DAYS_PER_QUARTER = 91; // 13 weeks
 

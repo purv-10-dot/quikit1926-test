@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { updateTeamSchema } from "@/lib/schemas/teamSchema";
 
@@ -11,6 +12,8 @@ export async function GET(
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "teams", tenantId);
+  if (blocked) return blocked;
 
   const team = await db.team.findFirst({
     where: { id: params.id, tenantId },
@@ -77,6 +80,8 @@ export async function PATCH(
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "teams", tenantId);
+  if (blocked) return blocked;
 
   const team = await db.team.findFirst({
     where: { id: params.id, tenantId },
@@ -145,6 +150,8 @@ export async function DELETE(
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "teams", tenantId);
+  if (blocked) return blocked;
 
   const team = await db.team.findFirst({
     where: { id: params.id, tenantId },

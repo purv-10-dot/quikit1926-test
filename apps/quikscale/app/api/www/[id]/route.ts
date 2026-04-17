@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { updateWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("www");
 
 export const PUT = withTenantAuth<{ id: string }>(
   async ({ tenantId, userId }, request, { params }) => {

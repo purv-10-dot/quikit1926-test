@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
@@ -7,6 +8,8 @@ export async function GET(request: NextRequest) {
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "apps", tenantId);
+  if (blocked) return blocked;
 
   // Parallel fetch: members, apps, and access records
   const [members, apps, accessRecords] = await Promise.all([
@@ -59,6 +62,8 @@ export async function POST(request: NextRequest) {
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId, userId: grantedBy } = auth;
+  const blocked = await gateModuleApi("admin", "apps", tenantId);
+  if (blocked) return blocked;
   const { userId, appId, role = "member" } = await request.json();
 
   if (!userId || !appId) {
@@ -90,6 +95,8 @@ export async function DELETE(request: NextRequest) {
   if ("error" in auth && auth.error) return auth.error;
 
   const { tenantId } = auth;
+  const blocked = await gateModuleApi("admin", "apps", tenantId);
+  if (blocked) return blocked;
   const { userId, appId } = await request.json();
 
   if (!userId || !appId) {

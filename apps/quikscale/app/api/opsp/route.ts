@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { opspUpsertSchema, opspFinalizeSchema } from "@/lib/schemas/opspSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("opsp");
 
 /* ── GET: load OPSP data for current user + year + quarter ── */
 export const GET = withTenantAuth(async ({ tenantId, userId }, req) => {

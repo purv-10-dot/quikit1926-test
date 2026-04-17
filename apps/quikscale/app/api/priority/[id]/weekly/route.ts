@@ -5,7 +5,8 @@ import {
   getPastWeekFlags,
   getCurrentFiscalWeekFromDB,
 } from "@/lib/utils/featureFlags";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("priority");
 
 // POST /api/priority/[id]/weekly — upsert a weekly status
 export const POST = withTenantAuth<{ id: string }>(

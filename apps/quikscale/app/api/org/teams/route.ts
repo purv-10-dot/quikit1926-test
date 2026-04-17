@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("orgSetup.teams");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";

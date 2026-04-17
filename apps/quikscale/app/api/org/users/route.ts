@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("orgSetup.users");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createOrgUserSchema } from "@/lib/schemas/userSchema";
 

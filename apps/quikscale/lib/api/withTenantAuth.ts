@@ -3,6 +3,7 @@ import { getServerSession, type Session } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
 import { toErrorMessage } from "@/lib/api/errors";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 
 /**
  * Context passed to a route handler after the auth + tenant guard succeeds.
@@ -33,13 +34,25 @@ export interface TenantAuthContext {
  *     async ({ tenantId }, req, { params }) => { ... }
  *   );
  */
+export interface WithTenantAuthOptions {
+  /** Error message used when the handler throws an unhandled exception. */
+  fallbackErrorMessage?: string;
+  /**
+   * FF-1 module gate. When set, the wrapper calls `gateModuleApi` after the
+   * auth check — if the tenant has this module (or any ancestor) disabled,
+   * the handler is skipped and a 404 is returned. Keeps L3 enforcement in
+   * a single place: flip this string on once per route group.
+   */
+  moduleKey?: string;
+}
+
 export function withTenantAuth<Params = Record<string, never>>(
   handler: (
     ctx: TenantAuthContext,
     req: NextRequest,
     routeCtx: { params: Params }
   ) => Promise<NextResponse> | NextResponse,
-  options: { fallbackErrorMessage?: string } = {}
+  options: WithTenantAuthOptions = {}
 ) {
   return async (req: NextRequest, routeCtx: { params: Params }): Promise<NextResponse> => {
     try {
@@ -51,6 +64,11 @@ export function withTenantAuth<Params = Record<string, never>>(
       const tenantId = await getTenantId(session.user.id);
       if (!tenantId) {
         return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+      }
+
+      if (options.moduleKey) {
+        const blocked = await gateModuleApi("quikscale", options.moduleKey, tenantId);
+        if (blocked) return blocked as NextResponse;
       }
 
       return await handler(
@@ -65,4 +83,24 @@ export function withTenantAuth<Params = Record<string, never>>(
       );
     }
   };
+}
+
+/**
+ * Curry factory for module-gated routes. Use at the top of any route file
+ * that belongs to a specific FF-1 module, so every handler in the file
+ * inherits the gate:
+ *
+ *   import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+ *   const withTenantAuth = withTenantAuthForModule("kpi");
+ *   export const GET = withTenantAuth(async ({ tenantId }, req) => { ... });
+ *   export const POST = withTenantAuth(async ({ tenantId }, req) => { ... });
+ *
+ * Any existing options (e.g. `fallbackErrorMessage`) still work — moduleKey
+ * is merged in as a default but can be overridden per-call.
+ */
+export function withTenantAuthForModule(moduleKey: string) {
+  return <Params = Record<string, never>>(
+    handler: Parameters<typeof withTenantAuth<Params>>[0],
+    options: WithTenantAuthOptions = {},
+  ) => withTenantAuth<Params>(handler, { moduleKey, ...options });
 }

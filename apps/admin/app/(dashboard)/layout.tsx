@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
 import { SessionGuard } from "@/components/session-guard";
+import { FeatureDisabledToast } from "@quikit/ui";
 
 export default function DashboardLayout({
   children,
@@ -20,6 +21,7 @@ export default function DashboardLayout({
           <Header />
           <main className="p-6">{children}</main>
         </div>
+        <FeatureDisabledToast />
       </div>
     </SessionGuard>
   );

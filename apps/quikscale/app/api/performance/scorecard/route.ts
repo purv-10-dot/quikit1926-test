@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+const withTenantAuth = withTenantAuthForModule("analytics.scorecard");
 
 export const GET = withTenantAuth(async ({ tenantId }) => {
     const [kpis, priorities, meetings, wwwItems, teams, members] = await Promise.all([

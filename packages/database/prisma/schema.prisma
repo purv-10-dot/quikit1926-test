@@ -37,6 +37,7 @@ model App {
 
   userAccess  UserAppAccess[]
   oauthClient OAuthClient?
+  moduleFlags AppModuleFlag[]
 
   @@index([slug])
   @@index([status])
@@ -166,6 +167,7 @@ model Tenant {
   auditLogs               AuditLog[]
   notifications           Notification[]
   featureFlags            FeatureFlag[]
+  appModuleFlags          AppModuleFlag[]
   performanceReviews      PerformanceReview[]
   talentAssessments       TalentAssessment[]
   goals                   Goal[]
@@ -1313,4 +1315,33 @@ model FeedbackEntry {
   @@index([toUserId])
   @@index([fromUserId])
   @@index([tenantId, toUserId, createdAt])
+}
+
+// ============================================================================
+// APP MODULE FLAGS (FF-1) — per-tenant module gating
+// ============================================================================
+//
+// Sparse storage: row exists iff a module is explicitly DISABLED for the
+// given tenant × app. Absence of a row = module is enabled (the default).
+//
+// The canonical list of moduleKeys lives in packages/shared/lib/moduleRegistry.ts.
+// Enforcement: sidebar filters by registry + disabled-set; layout.tsx gates
+// redirect; API handlers return 404 when a disabled moduleKey is targeted.
+// See docs/plans/FF-1-app-feature-flags.md for the full design.
+
+model AppModuleFlag {
+  id         String   @id @default(cuid())
+  tenantId   String
+  appId      String
+  moduleKey  String   // e.g. "kpi", "kpi.teams", "opsp.review"
+  enabled    Boolean  @default(false) // only stored when disabled; kept for future flexibility
+  updatedBy  String?                   // super admin user id
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, appId, moduleKey])
+  @@index([tenantId, appId])
 }

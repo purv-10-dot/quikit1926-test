@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
+import { gateModuleApi } from "@quikit/auth/feature-gate";
 
 /**
  * GET /api/opsp/review/logs?opspId=xxx&horizon=quarter&rowIndex=0
@@ -14,6 +15,8 @@ export async function GET(req: NextRequest) {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
     const { tenantId } = auth;
+    const blocked = await gateModuleApi("quikscale", "opsp.review", tenantId);
+    if (blocked) return blocked;
 
     const { searchParams } = req.nextUrl;
     const opspId = searchParams.get("opspId");
