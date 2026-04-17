@@ -120,9 +120,9 @@ export default function AuditLogPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="px-6 pt-6 pb-4">
-        <h1 className="text-xl font-bold text-gray-900">Audit Log</h1>
-        <p className="text-sm text-gray-500">
+      <div className="px-8 pt-8 pb-5 md:px-10 md:pt-10">
+        <h1 className="text-4xl font-bold tracking-tight text-slate-900">Audit Log</h1>
+        <p className="text-sm text-slate-500 mt-2">
           Track all platform-wide administrative actions
         </p>
       </div>

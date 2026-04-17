@@ -149,16 +149,16 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-8 md:p-10">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Pricing & Plans</h1>
-          <p className="text-sm text-gray-500 mt-1">Plan definitions that back tenant billing and feature limits.</p>
+          <h1 className="text-4xl font-bold tracking-tight text-slate-900">Pricing & Plans</h1>
+          <p className="text-sm text-slate-500 mt-2">Plan definitions that back tenant billing and feature limits.</p>
         </div>
         <button
           type="button"
           onClick={openCreate}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+          className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-sm transition-colors"
         >
           <Plus className="h-4 w-4" />
           New plan
@@ -174,39 +174,39 @@ export default function PricingPage() {
           action={{ label: "New plan", onClick: openCreate }}
         />
       ) : (
-        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 overflow-hidden shadow-sm">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
+            <thead className="bg-amber-50/60 text-left text-xs uppercase tracking-wider text-slate-600">
               <tr>
-                <th className="px-4 py-3">Plan</th>
-                <th className="px-4 py-3">Monthly</th>
-                <th className="px-4 py-3">Yearly</th>
-                <th className="px-4 py-3">Tenants</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 w-20">Actions</th>
+                <th className="px-5 py-3.5">Plan</th>
+                <th className="px-5 py-3.5">Monthly</th>
+                <th className="px-5 py-3.5">Yearly</th>
+                <th className="px-5 py-3.5">Tenants</th>
+                <th className="px-5 py-3.5">Status</th>
+                <th className="px-5 py-3.5 w-20">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-slate-100">
               {plans.map((p) => (
-                <tr key={p.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="font-semibold text-gray-900">{p.name}</div>
-                    <div className="text-xs text-gray-500 font-mono">{p.slug}</div>
+                <tr key={p.id} className="hover:bg-amber-50/30 transition-colors">
+                  <td className="px-5 py-4">
+                    <div className="font-semibold text-slate-900">{p.name}</div>
+                    <div className="text-xs text-slate-500 font-mono">{p.slug}</div>
                   </td>
-                  <td className="px-4 py-3 tabular-nums">${p.priceMonthlyDollars}</td>
-                  <td className="px-4 py-3 tabular-nums">${p.priceYearlyDollars}</td>
-                  <td className="px-4 py-3 tabular-nums text-gray-600">{p.tenantCount}</td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded ${p.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                  <td className="px-5 py-4 tabular-nums text-slate-700">${p.priceMonthlyDollars}</td>
+                  <td className="px-5 py-4 tabular-nums text-slate-700">${p.priceYearlyDollars}</td>
+                  <td className="px-5 py-4 tabular-nums text-slate-600">{p.tenantCount}</td>
+                  <td className="px-5 py-4">
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${p.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                       {p.isActive ? "Active" : "Archived"}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-5 py-4">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => openEdit(p)} className="text-gray-400 hover:text-indigo-600" aria-label="Edit">
+                      <button onClick={() => openEdit(p)} className="text-slate-400 hover:text-amber-700 p-1" aria-label="Edit">
                         <Pencil className="h-4 w-4" />
                       </button>
-                      <button onClick={() => handleDelete(p)} className="text-gray-400 hover:text-red-600" aria-label="Delete" disabled={p.tenantCount > 0}>
+                      <button onClick={() => handleDelete(p)} className="text-slate-400 hover:text-red-600 p-1" aria-label="Delete" disabled={p.tenantCount > 0}>
                         <Trash2 className={`h-4 w-4 ${p.tenantCount > 0 ? "opacity-30 cursor-not-allowed" : ""}`} />
                       </button>
                     </div>

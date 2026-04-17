@@ -104,16 +104,16 @@ export default function BroadcastsPage() {
   }
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-8 md:p-10">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Broadcasts</h1>
-          <p className="text-sm text-gray-500 mt-1">Platform-wide announcements shown as banners in every app.</p>
+          <h1 className="text-4xl font-bold tracking-tight text-slate-900">Broadcasts</h1>
+          <p className="text-sm text-slate-500 mt-2">Platform-wide announcements shown as banners in every app.</p>
         </div>
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+          className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-sm transition-colors"
         >
           <Plus className="h-4 w-4" />
           New broadcast
@@ -133,7 +133,7 @@ export default function BroadcastsPage() {
             const endsAt = b.endsAt ? new Date(b.endsAt).getTime() : null;
             const isActive = startsAt <= now && (endsAt === null || endsAt >= now);
             return (
-              <div key={b.id} className="rounded-xl border border-gray-200 bg-white p-4 flex items-start gap-4">
+              <div key={b.id} className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 p-5 flex items-start gap-4 shadow-sm">
                 <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${severityColor[b.severity]}`}>
                   <Icon className="h-5 w-5" />
                 </div>

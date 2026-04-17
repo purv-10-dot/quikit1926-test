@@ -92,10 +92,10 @@ export default function AnalyticsPage() {
   }, []);
 
   if (loading) {
-    return <div className="p-8 text-gray-400">Loading analytics...</div>;
+    return <div className="p-10 text-slate-400 text-sm">Loading analytics...</div>;
   }
   if (!data) {
-    return <div className="p-8 text-red-600">Failed to load analytics</div>;
+    return <div className="p-10 text-red-600 text-sm">Failed to load analytics</div>;
   }
 
   const upPct = data.appCount > 0 ? Math.round((data.uptime.up / data.appCount) * 100) : 0;
@@ -106,45 +106,50 @@ export default function AnalyticsPage() {
   const maxActive = Math.max(1, ...data.engagement.dailyTrend.map((d) => d.activeUsers));
 
   return (
-    <div className="p-6 md:p-8 space-y-6">
+    <div className="p-8 md:p-10 space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Analytics</h1>
-          <p className="text-sm text-gray-500 mt-1">Platform health and narrative summaries</p>
+          <h1 className="text-4xl font-bold tracking-tight text-slate-900">Analytics</h1>
+          <p className="text-sm text-slate-500 mt-2">Platform health and narrative summaries</p>
         </div>
         <button
           type="button"
           onClick={load}
           disabled={refreshing}
-          className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50"
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-xl bg-white/70 backdrop-blur-sm border border-white/60 hover:bg-white transition-colors shadow-sm"
         >
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
           Refresh
         </button>
       </div>
 
-      {/* Narrative banner */}
-      <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-indigo-50 to-white p-6">
-        <div className="flex items-start gap-4">
-          <div className="h-10 w-10 rounded-lg bg-indigo-600 text-white flex items-center justify-center flex-shrink-0">
-            <DollarSign className="h-5 w-5" />
+      {/* Narrative banner — dark focal card */}
+      <div className="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-8 shadow-lg relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative flex items-start gap-5">
+          <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center flex-shrink-0 shadow-lg">
+            <DollarSign className="h-6 w-6" />
           </div>
-          <div className="flex-1">
-            <p className="text-xs uppercase tracking-wider text-indigo-700 font-semibold">This month</p>
-            <p className="text-lg font-medium text-gray-900 mt-1">{data.revenue.narrative}</p>
-            <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
-              <span>MRR: <strong>${data.revenue.mrrDollars}</strong></span>
-              <span className="inline-flex items-center gap-1">
-                <DeltaIcon className={`h-4 w-4 ${data.revenue.mrrDeltaPct === null ? "text-gray-400" : data.revenue.mrrDeltaPct > 0 ? "text-green-600" : data.revenue.mrrDeltaPct < 0 ? "text-red-600" : "text-gray-400"}`} />
-                <span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs uppercase tracking-widest text-amber-400 font-semibold">This month</p>
+            <p className="text-2xl font-semibold mt-2 leading-snug">{data.revenue.narrative}</p>
+            <div className="flex items-center flex-wrap gap-5 mt-5 text-sm">
+              <span className="text-slate-300">
+                MRR: <strong className="text-white text-lg tabular-nums">${data.revenue.mrrDollars}</strong>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <DeltaIcon className={`h-4 w-4 ${data.revenue.mrrDeltaPct === null ? "text-slate-400" : data.revenue.mrrDeltaPct > 0 ? "text-emerald-400" : data.revenue.mrrDeltaPct < 0 ? "text-rose-400" : "text-slate-400"}`} />
+                <span className="text-slate-300">
                   {data.revenue.mrrDeltaPct === null
                     ? "N/A"
                     : `${data.revenue.mrrDeltaPct > 0 ? "+" : ""}${data.revenue.mrrDeltaPct.toFixed(1)}%`}{" "}
-                  vs last month (${data.revenue.prevMrrDollars})
+                  <span className="text-slate-400">vs last month (${data.revenue.prevMrrDollars})</span>
                 </span>
               </span>
               {data.revenue.failedCents > 0 && (
-                <span className="text-amber-700">${(data.revenue.failedCents / 100).toFixed(2)} failed</span>
+                <span className="text-amber-400">
+                  ${(data.revenue.failedCents / 100).toFixed(2)} failed
+                </span>
               )}
             </div>
           </div>
@@ -154,14 +159,14 @@ export default function AnalyticsPage() {
       {/* Live alerts from the alerts engine */}
       {openAlerts.length > 0 && (
         <section>
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold text-gray-900">Open alerts ({openAlerts.length})</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold text-slate-900">Open alerts ({openAlerts.length})</h2>
           </div>
           <div className="space-y-2">
             {openAlerts.map((a) => {
               const Icon = severityIcon[a.severity];
               return (
-                <div key={a.id} className={`flex items-start gap-3 border rounded-lg px-4 py-3 ${severityColor[a.severity]}`}>
+                <div key={a.id} className={`flex items-start gap-3 border rounded-2xl px-4 py-3.5 backdrop-blur-sm ${severityColor[a.severity]}`}>
                   <Icon className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -212,7 +217,7 @@ export default function AnalyticsPage() {
       )}
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
         <StatCard icon={Building2} label="Tenants" value={data.activeTenantCount} sub={`${data.tenantCount} total`} />
         <StatCard icon={Users} label="Users" value={data.userCount} />
         <StatCard icon={Zap} label="API calls (7d)" value={data.api.calls7d.toLocaleString()} sub={`${data.api.errorRatePct}% error rate`} />
@@ -220,18 +225,26 @@ export default function AnalyticsPage() {
       </div>
 
       {/* DAU sparkline */}
-      <section className="rounded-xl border border-gray-200 bg-white p-6">
-        <h2 className="text-sm font-semibold text-gray-900 mb-4">Active users — last 30 days</h2>
+      <section className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 p-8 shadow-sm">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Active users</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Last 30 days</p>
+          </div>
+        </div>
         {data.engagement.dailyTrend.length === 0 ? (
-          <p className="text-sm text-gray-400">No login activity yet.</p>
+          <p className="text-sm text-slate-400">No login activity yet.</p>
         ) : (
-          <div className="flex items-end gap-1 h-28">
+          <div className="flex items-end gap-1.5 h-32">
             {data.engagement.dailyTrend.map((d) => {
               const height = Math.round((d.activeUsers / maxActive) * 100);
               return (
                 <div key={d.date} className="flex-1 flex flex-col items-center gap-1 group relative">
-                  <div className="w-full rounded-t bg-indigo-500 hover:bg-indigo-600" style={{ height: `${height}%`, minHeight: d.activeUsers > 0 ? "2px" : "0" }} />
-                  <div className="absolute bottom-full mb-1 hidden group-hover:block bg-gray-900 text-white text-xs rounded px-2 py-1 whitespace-nowrap">
+                  <div
+                    className="w-full rounded-t-md bg-gradient-to-t from-amber-500 to-orange-400 hover:from-amber-600 hover:to-orange-500 transition-colors"
+                    style={{ height: `${height}%`, minHeight: d.activeUsers > 0 ? "3px" : "0" }}
+                  />
+                  <div className="absolute bottom-full mb-1 hidden group-hover:block bg-slate-900 text-white text-xs rounded-lg px-2 py-1 whitespace-nowrap shadow-lg">
                     {d.date}: {d.activeUsers}
                   </div>
                 </div>
@@ -242,37 +255,40 @@ export default function AnalyticsPage() {
       </section>
 
       {/* Two-col engagement */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <section className="rounded-xl border border-gray-200 bg-white p-6">
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">Most active tenants (30d)</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <section className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 p-6 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-900 mb-4">Most active tenants</h2>
           {data.engagement.mostActiveTenantIds.length === 0 ? (
-            <p className="text-sm text-gray-400">No tenant activity yet.</p>
+            <p className="text-sm text-slate-400">No tenant activity yet.</p>
           ) : (
-            <ul className="space-y-2">
-              {data.engagement.mostActiveTenantIds.map((t) => (
-                <li key={t.tenantId} className="flex items-center justify-between text-sm">
-                  <Link href={`/organizations/${t.tenantId}`} className="text-indigo-600 hover:underline truncate">
+            <ul className="space-y-3">
+              {data.engagement.mostActiveTenantIds.map((t, i) => (
+                <li key={t.tenantId} className="flex items-center gap-3 text-sm">
+                  <div className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold tabular-nums flex-shrink-0">
+                    {i + 1}
+                  </div>
+                  <Link href={`/organizations/${t.tenantId}`} className="text-slate-700 hover:text-amber-700 truncate flex-1">
                     {t.tenantId}
                   </Link>
-                  <span className="text-gray-600 tabular-nums">{t.sessionCount} sessions</span>
+                  <span className="text-slate-600 tabular-nums text-xs">{t.sessionCount} sessions</span>
                 </li>
               ))}
             </ul>
           )}
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-6">
-          <h2 className="text-sm font-semibold text-gray-900 mb-3">Tenants never logged in</h2>
+        <section className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 p-6 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-900 mb-4">Tenants never logged in</h2>
           {data.engagement.inactiveTenants.length === 0 ? (
-            <p className="text-sm text-gray-400">All tenants have active sessions — good sign.</p>
+            <p className="text-sm text-slate-400">All tenants have active sessions — good sign.</p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {data.engagement.inactiveTenants.map((t) => (
                 <li key={t.id} className="flex items-center justify-between text-sm">
-                  <Link href={`/organizations/${t.id}`} className="text-indigo-600 hover:underline truncate">
+                  <Link href={`/organizations/${t.id}`} className="text-slate-700 hover:text-amber-700 truncate">
                     {t.name}
                   </Link>
-                  <span className="text-gray-500 text-xs">Since {new Date(t.createdAt).toLocaleDateString()}</span>
+                  <span className="text-slate-400 text-xs">Since {new Date(t.createdAt).toLocaleDateString()}</span>
                 </li>
               ))}
             </ul>
@@ -285,17 +301,15 @@ export default function AnalyticsPage() {
 
 function StatCard({ icon: Icon, label, value, sub }: { icon: typeof Info; label: string; value: string | number; sub?: string }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <div className="flex items-center gap-3">
-        <div className="h-9 w-9 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center">
-          <Icon className="h-4 w-4" />
+    <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="h-10 w-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shadow-inner">
+          <Icon className="h-5 w-5" />
         </div>
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wider text-gray-500">{label}</p>
-          <p className="text-xl font-semibold text-gray-900 tabular-nums">{value}</p>
-        </div>
+        <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{label}</p>
       </div>
-      {sub && <p className="text-xs text-gray-500 mt-2">{sub}</p>}
+      <p className="text-3xl font-bold text-slate-900 tabular-nums tracking-tight">{value}</p>
+      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
     </div>
   );
 }
