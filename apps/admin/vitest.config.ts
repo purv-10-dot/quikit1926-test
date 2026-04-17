@@ -25,6 +25,7 @@ export default defineConfig({
       "@quikit/ui": path.resolve(__dirname, "../../packages/ui"),
       "@quikit/shared/rateLimit": path.resolve(__dirname, "../../packages/shared/lib/rateLimit"),
       "@quikit/shared/pagination": path.resolve(__dirname, "../../packages/shared/lib/pagination"),
+      "@quikit/shared/moduleRegistry": path.resolve(__dirname, "../../packages/shared/lib/moduleRegistry"),
       "@quikit/shared": path.resolve(__dirname, "../../packages/shared"),
     },
   },
