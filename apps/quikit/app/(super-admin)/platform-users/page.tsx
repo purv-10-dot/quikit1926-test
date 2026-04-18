@@ -35,9 +35,14 @@ export default function PlatformUsersPage() {
   const [search, setSearch] = useState("");
   const [tenantId, setTenantId] = useState<string>("");
   const [tenants, setTenants] = useState<TenantOption[]>([]);
+  const [tenantsLoaded, setTenantsLoaded] = useState(false);
 
-  // Load tenant list once for the picker
-  useEffect(() => {
+  // Lazy-load the tenant list: only fetch when the picker is first opened OR
+  // when a tenantId is set via URL / external means. Saves ~1 HTTP call per
+  // /platform-users visit for the common case (no tenant filter).
+  function ensureTenantsLoaded() {
+    if (tenantsLoaded) return;
+    setTenantsLoaded(true);
     fetch("/api/super/orgs?limit=1000")
       .then((r) => r.json())
       .then((j) => {
@@ -51,7 +56,7 @@ export default function PlatformUsersPage() {
         }
       })
       .catch(() => {});
-  }, []);
+  }
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -253,7 +258,7 @@ export default function PlatformUsersPage() {
             className="pl-9 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
         </div>
-        <div className="w-64">
+        <div className="w-64" onClick={ensureTenantsLoaded} onFocus={ensureTenantsLoaded}>
           <TenantPicker
             tenants={tenants}
             value={tenantId || null}

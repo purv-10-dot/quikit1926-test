@@ -40,10 +40,29 @@ export function ImpersonationBanner() {
 
   useEffect(() => {
     load();
-    // Re-check every 60s in case the impersonation expires while the page is open.
-    const interval = setInterval(load, 60_000);
-    return () => clearInterval(interval);
+    // Refresh when the tab regains focus OR becomes visible. This replaces a
+    // 60s polling interval with zero traffic on idle tabs — sessions API
+    // calls drop from 60/hr/tab to ~1-2/hr/tab on typical usage.
+    const onFocus = () => load();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load]);
+
+  // Local countdown without polling — decrement every 30s from the cached
+  // expiry. No network call needed.
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!session?.user?.impersonating) return;
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, [session?.user?.impersonating]);
 
   async function exit() {
     setExiting(true);
@@ -62,6 +81,9 @@ export function ImpersonationBanner() {
 
   if (!session?.user?.impersonating) return null;
 
+  // `tick` is read here purely so React re-renders when the countdown ticks.
+  // We don't use its value — the expiry calculation is based on Date.now().
+  void tick;
   const expiresAt = session.user.impersonationExpiresAt ? new Date(session.user.impersonationExpiresAt) : null;
   const msLeft = expiresAt ? Math.max(0, expiresAt.getTime() - Date.now()) : null;
   const mins = msLeft !== null ? Math.floor(msLeft / 60_000) : null;

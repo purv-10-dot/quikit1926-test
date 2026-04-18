@@ -16,10 +16,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
+import { cacheOrCompute } from "@quikit/shared/redisCache";
 
-export const GET = withSuperAdminAuth<{ tenantId: string }>(async (_auth, _req, { params }) => {
-  try {
-    const tenantId = params.tenantId;
+const CACHE_TTL_SECONDS = 60;
+
+async function computeTenantHealth(tenantId: string) {
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -31,7 +32,7 @@ export const GET = withSuperAdminAuth<{ tenantId: string }>(async (_auth, _req, 
       where: { id: tenantId },
       select: { id: true, name: true, slug: true, plan: true, status: true, createdAt: true },
     });
-    if (!tenant) return NextResponse.json({ success: false, error: "Tenant not found" }, { status: 404 });
+    if (!tenant) return null;
 
     const [
       memberCount,
@@ -83,36 +84,44 @@ export const GET = withSuperAdminAuth<{ tenantId: string }>(async (_auth, _req, 
     if (lastInvoice?.status === "paid") healthScore += 20;
     if (disabledModuleCount < 3) healthScore += 10;
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        tenant,
-        healthScore,
-        signals: {
-          memberCount,
-          activeUserCount7d: activeUserCount,
-          kpiCount,
-          kpisLoggedThisWeek,
-          disabledModuleCount,
-          blockedAppCount,
-          apiCallCount7d,
-          sessionsLast30d,
-          lastLoginAt: lastLoginEvent?.createdAt?.toISOString() ?? null,
-          lastLoginUserId: lastLoginEvent?.userId ?? null,
-          lastInvoice: lastInvoice
-            ? {
-                status: lastInvoice.status,
-                amountCents: lastInvoice.amountCents,
-                amountDollars: (lastInvoice.amountCents / 100).toFixed(2),
-                currency: lastInvoice.currency,
-                periodStart: lastInvoice.periodStart.toISOString(),
-                paidAt: lastInvoice.paidAt?.toISOString() ?? null,
-                failedAt: lastInvoice.failedAt?.toISOString() ?? null,
-              }
-            : null,
-        },
+    return {
+      tenant,
+      healthScore,
+      signals: {
+        memberCount,
+        activeUserCount7d: activeUserCount,
+        kpiCount,
+        kpisLoggedThisWeek,
+        disabledModuleCount,
+        blockedAppCount,
+        apiCallCount7d,
+        sessionsLast30d,
+        lastLoginAt: lastLoginEvent?.createdAt?.toISOString() ?? null,
+        lastLoginUserId: lastLoginEvent?.userId ?? null,
+        lastInvoice: lastInvoice
+          ? {
+              status: lastInvoice.status,
+              amountCents: lastInvoice.amountCents,
+              amountDollars: (lastInvoice.amountCents / 100).toFixed(2),
+              currency: lastInvoice.currency,
+              periodStart: lastInvoice.periodStart.toISOString(),
+              paidAt: lastInvoice.paidAt?.toISOString() ?? null,
+              failedAt: lastInvoice.failedAt?.toISOString() ?? null,
+            }
+          : null,
       },
-    });
+    };
+}
+
+export const GET = withSuperAdminAuth<{ tenantId: string }>(async (_auth, _req, { params }) => {
+  try {
+    const tenantId = params.tenantId;
+    const cacheKey = `super:tenant-health:${tenantId}`;
+    const data = await cacheOrCompute(cacheKey, CACHE_TTL_SECONDS, () => computeTenantHealth(tenantId));
+    if (!data) {
+      return NextResponse.json({ success: false, error: "Tenant not found" }, { status: 404 });
+    }
+    return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to load tenant health";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

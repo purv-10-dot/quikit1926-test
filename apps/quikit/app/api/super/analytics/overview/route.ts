@@ -9,10 +9,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
+import { cacheOrCompute } from "@quikit/shared/redisCache";
 
-export const GET = withSuperAdminAuth(async () => {
+const CACHE_KEY = "super:analytics:overview";
+const CACHE_TTL_SECONDS = 60;
 
-  try {
+async function computeOverview() {
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -133,41 +135,44 @@ export const GET = withSuperAdminAuth(async () => {
     const errorRate = apiCalls7d > 0 ? (apiErrors7d / apiCalls7d) * 100 : 0;
     if (errorRate > 5) alerts.push({ severity: "warning", message: `API error rate ${errorRate.toFixed(1)}% over last 7 days` });
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        tenantCount,
-        activeTenantCount,
-        userCount,
-        appCount,
-        uptime: {
-          up: appsUp,
-          down: appsDown,
-          degraded: appsDegraded,
-          unknown: appsUnknown,
-        },
-        api: {
-          calls7d: apiCalls7d,
-          errors7d: apiErrors7d,
-          errorRatePct: Number(errorRate.toFixed(2)),
-        },
-        engagement: {
-          dailyTrend, // [{date, activeUsers}]
-          mostActiveTenantIds: mostActiveTenants.map((t) => ({ tenantId: t.tenantId, sessionCount: t._count.userId })),
-          inactiveTenants: tenantsNeverLoggedIn.slice(0, 10).map((t) => ({ id: t.id, name: t.name, createdAt: t.createdAt.toISOString() })),
-        },
-        revenue: {
-          mrrCents,
-          mrrDollars: (mrrCents / 100).toFixed(2),
-          prevMrrDollars: (prevMrrCents / 100).toFixed(2),
-          mrrDeltaPct: mrrDeltaPct === null ? null : Number(mrrDeltaPct.toFixed(1)),
-          pendingCents: mrrPending,
-          failedCents: mrrFailedCents,
-          narrative,
-        },
-        alerts,
+    return {
+      tenantCount,
+      activeTenantCount,
+      userCount,
+      appCount,
+      uptime: {
+        up: appsUp,
+        down: appsDown,
+        degraded: appsDegraded,
+        unknown: appsUnknown,
       },
-    });
+      api: {
+        calls7d: apiCalls7d,
+        errors7d: apiErrors7d,
+        errorRatePct: Number(errorRate.toFixed(2)),
+      },
+      engagement: {
+        dailyTrend, // [{date, activeUsers}]
+        mostActiveTenantIds: mostActiveTenants.map((t) => ({ tenantId: t.tenantId, sessionCount: t._count.userId })),
+        inactiveTenants: tenantsNeverLoggedIn.slice(0, 10).map((t) => ({ id: t.id, name: t.name, createdAt: t.createdAt.toISOString() })),
+      },
+      revenue: {
+        mrrCents,
+        mrrDollars: (mrrCents / 100).toFixed(2),
+        prevMrrDollars: (prevMrrCents / 100).toFixed(2),
+        mrrDeltaPct: mrrDeltaPct === null ? null : Number(mrrDeltaPct.toFixed(1)),
+        pendingCents: mrrPending,
+        failedCents: mrrFailedCents,
+        narrative,
+      },
+      alerts,
+    };
+}
+
+export const GET = withSuperAdminAuth(async () => {
+  try {
+    const data = await cacheOrCompute(CACHE_KEY, CACHE_TTL_SECONDS, computeOverview);
+    return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to load overview";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
