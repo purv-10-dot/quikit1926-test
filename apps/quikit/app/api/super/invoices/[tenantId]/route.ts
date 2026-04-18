@@ -5,16 +5,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { tenantId: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const GET = withSuperAdminAuth<{ tenantId: string }>(async (auth, _req: NextRequest, { params }) => {
   try {
     const tenant = await db.tenant.findUnique({
       where: { id: params.tenantId },
@@ -66,16 +60,10 @@ export async function GET(
     const message = error instanceof Error ? error.message : "Failed to load invoices";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /** Manually generate an invoice for a tenant (e.g. to backfill a period). */
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { tenantId: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const POST = withSuperAdminAuth<{ tenantId: string }>(async (auth, req: NextRequest, { params }) => {
   try {
     const tenant = await db.tenant.findUnique({
       where: { id: params.tenantId },
@@ -122,4 +110,4 @@ export async function POST(
     const message = error instanceof Error ? error.message : "Failed to create invoice";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

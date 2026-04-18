@@ -26,7 +26,7 @@ type Handler<Params> = (
 ) => Promise<NextResponse> | NextResponse;
 
 export function withAdminAuth<Params = Record<string, never>>(handler: Handler<Params>) {
-  return async (req: NextRequest, ctx: { params: Params }): Promise<NextResponse> => {
+  return async (req: NextRequest, ctx?: { params: Params }): Promise<NextResponse> => {
     const startedAt = Date.now();
     let tenantIdForLog: string | null = null;
     let userIdForLog: string | null = null;
@@ -39,7 +39,11 @@ export function withAdminAuth<Params = Record<string, never>>(handler: Handler<P
       } else {
         tenantIdForLog = auth.tenantId;
         userIdForLog = auth.userId;
-        response = await handler({ userId: auth.userId, tenantId: auth.tenantId }, req, ctx);
+        response = await handler(
+          { userId: auth.userId, tenantId: auth.tenantId },
+          req,
+          ctx ?? ({ params: {} as Params }),
+        );
       }
     } catch (err) {
       response = NextResponse.json(

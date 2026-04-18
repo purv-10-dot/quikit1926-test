@@ -1,19 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { updateTeamSchema } from "@/lib/schemas/teamSchema";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const GET = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
   const blocked = await gateModuleApi("admin", "teams", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   const team = await db.team.findFirst({
     where: { id: params.id, tenantId },
@@ -70,18 +64,11 @@ export async function GET(
       createdAt: team.createdAt.toISOString(),
     },
   });
-}
+});
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request: NextRequest, { params }) => {
   const blocked = await gateModuleApi("admin", "teams", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   const team = await db.team.findFirst({
     where: { id: params.id, tenantId },
@@ -127,7 +114,7 @@ export async function PATCH(
     );
   }
 
-  const updateData: Record<string, any> = {};
+  const updateData: Record<string, unknown> = {};
   if (name !== undefined) updateData.name = name;
   if (description !== undefined) updateData.description = description;
   if (color !== undefined) updateData.color = color;
@@ -140,18 +127,11 @@ export async function PATCH(
   });
 
   return NextResponse.json({ success: true, data: updated });
-}
+});
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const DELETE = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
   const blocked = await gateModuleApi("admin", "teams", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   const team = await db.team.findFirst({
     where: { id: params.id, tenantId },
@@ -178,4 +158,4 @@ export async function DELETE(
   await db.team.delete({ where: { id: params.id } });
 
   return NextResponse.json({ success: true, message: "Team deleted" });
-}
+});

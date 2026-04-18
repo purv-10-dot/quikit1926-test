@@ -4,12 +4,9 @@
 
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 
-export async function GET() {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const GET = withSuperAdminAuth(async () => {
   try {
     const open = await db.platformAlert.findMany({
       where: { resolvedAt: null },
@@ -29,4 +26,4 @@ export async function GET() {
     const message = error instanceof Error ? error.message : "Failed to load alerts";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

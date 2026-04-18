@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "@quikit/shared/pagination";
 
 /**
  * GET /api/super/audit — list audit log entries with filters (super admin only)
  */
-export async function GET(request: NextRequest) {
+export const GET = withSuperAdminAuth(async (_auth, request: NextRequest) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { searchParams } = request.nextUrl;
     const pagination = parsePaginationParams(searchParams);
     const action = searchParams.get("action") || "";
@@ -43,4 +40,4 @@ export async function GET(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 import { getAppConfig } from "@quikit/shared/moduleRegistry";
 
@@ -25,13 +25,8 @@ const bodySchema = z.object({
   enabled: z.boolean(),
 });
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { appSlug: string } },
-) {
+export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request: NextRequest, { params }) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
     const actorId = auth.userId;
 
     const { appSlug } = params;
@@ -126,4 +121,4 @@ export async function POST(
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

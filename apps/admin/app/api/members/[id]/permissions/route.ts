@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { z } from "zod";
@@ -13,16 +14,9 @@ const permissionsSchema = z.object({
   customPermissions: z.array(z.enum(VALID_PERMISSIONS)),
 });
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request: NextRequest, { params }) => {
   const blocked = await gateModuleApi("admin", "members", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({
@@ -50,4 +44,4 @@ export async function PATCH(
   });
 
   return NextResponse.json({ success: true, data: updated });
-}
+});

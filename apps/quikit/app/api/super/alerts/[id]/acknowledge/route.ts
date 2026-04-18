@@ -3,22 +3,16 @@
  */
 
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
+export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId }, _req, { params }) => {
   try {
     const updated = await db.platformAlert.update({
       where: { id: params.id },
       data: {
         acknowledgedAt: new Date(),
-        acknowledgedBy: auth.userId,
+        acknowledgedBy: userId,
       },
     });
     return NextResponse.json({ success: true, data: updated });
@@ -26,4 +20,4 @@ export async function POST(
     const message = error instanceof Error ? error.message : "Failed to acknowledge";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

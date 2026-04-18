@@ -7,17 +7,10 @@
  */
 
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { tenantId: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const GET = withSuperAdminAuth<{ tenantId: string }>(async (_auth, _req, { params }) => {
   try {
     const tenantId = params.tenantId;
     const now = new Date();
@@ -139,4 +132,4 @@ export async function GET(
     const message = error instanceof Error ? error.message : "Failed to load tenant analytics";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

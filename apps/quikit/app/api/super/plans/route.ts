@@ -10,13 +10,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 
-export async function GET() {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const GET = withSuperAdminAuth(async () => {
   try {
     const plans = await db.plan.findMany({
       orderBy: [{ sortOrder: "asc" }, { priceMonthly: "asc" }],
@@ -41,12 +38,9 @@ export async function GET() {
     const message = error instanceof Error ? error.message : "Failed to load plans";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function POST(req: NextRequest) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
   try {
     const body = await req.json();
     const slug = typeof body.slug === "string" ? body.slug.trim().toLowerCase() : "";
@@ -89,4 +83,4 @@ export async function POST(req: NextRequest) {
     const message = error instanceof Error ? error.message : "Failed to create plan";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

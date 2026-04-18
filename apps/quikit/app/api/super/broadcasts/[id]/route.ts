@@ -5,27 +5,16 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
+export const GET = withSuperAdminAuth<{ id: string }>(async (auth, _req: NextRequest, { params }) => {
   const item = await db.broadcastAnnouncement.findUnique({ where: { id: params.id } });
   if (!item) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: item });
-}
+});
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const PATCH = withSuperAdminAuth<{ id: string }>(async (auth, req: NextRequest, { params }) => {
   try {
     const existing = await db.broadcastAnnouncement.findUnique({ where: { id: params.id } });
     if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -56,14 +45,9 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : "Failed to update broadcast";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
+export const DELETE = withSuperAdminAuth<{ id: string }>(async (auth, _req: NextRequest, { params }) => {
   try {
     const existing = await db.broadcastAnnouncement.findUnique({ where: { id: params.id } });
     if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -80,4 +64,4 @@ export async function DELETE(
     const message = error instanceof Error ? error.message : "Failed to delete broadcast";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

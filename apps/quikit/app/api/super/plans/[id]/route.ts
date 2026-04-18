@@ -5,16 +5,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const GET = withSuperAdminAuth<{ id: string }>(async (auth, _req: NextRequest, { params }) => {
   try {
     const plan = await db.plan.findUnique({ where: { id: params.id } });
     if (!plan) {
@@ -26,15 +20,9 @@ export async function GET(
     const message = error instanceof Error ? error.message : "Failed to load plan";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const PATCH = withSuperAdminAuth<{ id: string }>(async (auth, req: NextRequest, { params }) => {
   try {
     const plan = await db.plan.findUnique({ where: { id: params.id } });
     if (!plan) {
@@ -79,15 +67,9 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : "Failed to update plan";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const DELETE = withSuperAdminAuth<{ id: string }>(async (auth, _req: NextRequest, { params }) => {
   try {
     const plan = await db.plan.findUnique({ where: { id: params.id } });
     if (!plan) {
@@ -117,4 +99,4 @@ export async function DELETE(
     const message = error instanceof Error ? error.message : "Failed to delete plan";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

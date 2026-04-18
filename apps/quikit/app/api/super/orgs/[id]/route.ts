@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { updateOrgSchema } from "@/lib/schemas/superAdminSchemas";
 import { logAudit } from "@/lib/auditLog";
 import { sendOrgSuspendedEmail } from "@/lib/email";
@@ -9,14 +9,8 @@ import { sendOrgSuspendedEmail } from "@/lib/email";
 /**
  * GET /api/super/orgs/[id] — org detail with counts and recent members (super admin only)
  */
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _request, { params }) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { id } = params;
 
     const tenant = await db.tenant.findUnique({
@@ -47,19 +41,13 @@ export async function GET(
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /**
  * PATCH /api/super/orgs/[id] — update an organization (super admin only)
  */
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const PATCH = withSuperAdminAuth<{ id: string }>(async ({ userId }, request: NextRequest, { params }) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { id } = params;
 
     const body = await request.json();
@@ -97,7 +85,7 @@ export async function PATCH(
       action: "update",
       entityType: "tenant",
       entityId: id,
-      actorId: auth.userId,
+      actorId: userId,
       tenantId: id,
       oldValues: JSON.stringify({ name: existing.name, plan: existing.plan, status: existing.status }),
       newValues: JSON.stringify(updateData),
@@ -108,19 +96,13 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /**
  * DELETE /api/super/orgs/[id] — suspend an organization (super admin only)
  */
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const DELETE = withSuperAdminAuth<{ id: string }>(async ({ userId }, _request, { params }) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { id } = params;
 
     const existing = await db.tenant.findUnique({ where: { id } });
@@ -140,7 +122,7 @@ export async function DELETE(
       action: "suspend",
       entityType: "tenant",
       entityId: id,
-      actorId: auth.userId,
+      actorId: userId,
       tenantId: id,
       oldValues: JSON.stringify({ status: existing.status }),
       newValues: JSON.stringify({ status: "suspended" }),
@@ -163,4 +145,4 @@ export async function DELETE(
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

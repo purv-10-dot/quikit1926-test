@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { z } from "zod";
@@ -8,16 +9,9 @@ const userIdSchema = z.object({
   userId: z.string().uuid("userId must be a valid UUID"),
 });
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const POST = withAdminAuth<{ id: string }>(async ({ tenantId }, request: NextRequest, { params }) => {
   const blocked = await gateModuleApi("admin", "teams", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const teamId = params.id;
 
   const team = await db.team.findFirst({ where: { id: teamId, tenantId } });
@@ -54,18 +48,11 @@ export async function POST(
   });
 
   return NextResponse.json({ success: true, message: "Member added to team" });
-}
+});
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const DELETE = withAdminAuth<{ id: string }>(async ({ tenantId }, request: NextRequest, { params }) => {
   const blocked = await gateModuleApi("admin", "teams", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const teamId = params.id;
 
   const delBody = await request.json();
@@ -83,4 +70,4 @@ export async function DELETE(
   });
 
   return NextResponse.json({ success: true, message: "Member removed from team" });
-}
+});

@@ -13,7 +13,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import crypto from "crypto";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 import { rateLimitAsync } from "@quikit/shared/rateLimit";
 
@@ -26,10 +26,7 @@ const LANDING_PATH = "/dashboard"; // where the impersonated session starts
 const IMPERSONATE_LIMIT = 10;
 const IMPERSONATE_WINDOW_MS = 60 * 60 * 1000;
 
-export async function POST(req: NextRequest) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
   // Tech-debt #8 close — rate-limit per super-admin account.
   const rl = await rateLimitAsync({
     routeKey: "super:impersonate:start",
@@ -168,4 +165,4 @@ export async function POST(req: NextRequest) {
     const message = error instanceof Error ? error.message : "Failed to start impersonation";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

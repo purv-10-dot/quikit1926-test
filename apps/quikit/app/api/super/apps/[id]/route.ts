@@ -1,21 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { updateAppSchema } from "@/lib/schemas/superAdminSchemas";
 import { logAudit } from "@/lib/auditLog";
 
 /**
  * GET /api/super/apps/[id] — app detail with OAuth client info (super admin only)
  */
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const GET = withSuperAdminAuth<{ id: string }>(async (auth, _request: NextRequest, { params }) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { id } = params;
 
     const app = await db.app.findUnique({
@@ -47,19 +41,13 @@ export async function GET(
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /**
  * PATCH /api/super/apps/[id] — update an app (super admin only)
  */
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const PATCH = withSuperAdminAuth<{ id: string }>(async (auth, request: NextRequest, { params }) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { id } = params;
 
     const body = await request.json();
@@ -106,19 +94,13 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /**
  * DELETE /api/super/apps/[id] — disable an app (super admin only)
  */
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const DELETE = withSuperAdminAuth<{ id: string }>(async (auth, _request: NextRequest, { params }) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { id } = params;
 
     const existing = await db.app.findUnique({ where: { id } });
@@ -148,4 +130,4 @@ export async function DELETE(
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

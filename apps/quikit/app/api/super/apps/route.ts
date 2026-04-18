@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { createAppSchema } from "@/lib/schemas/superAdminSchemas";
 import { logAudit } from "@/lib/auditLog";
 import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "@quikit/shared/pagination";
@@ -9,11 +9,8 @@ import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } 
 /**
  * GET /api/super/apps — list all apps with pagination + search (super admin only)
  */
-export async function GET(request: NextRequest) {
+export const GET = withSuperAdminAuth(async (auth, request: NextRequest) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { searchParams } = request.nextUrl;
     const pagination = parsePaginationParams(searchParams);
     const search = searchParams.get("search") || "";
@@ -62,16 +59,13 @@ export async function GET(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /**
  * POST /api/super/apps — register a new app (super admin only)
  */
-export async function POST(request: NextRequest) {
+export const POST = withSuperAdminAuth(async (auth, request: NextRequest) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const body = await request.json();
     const parsed = createAppSchema.safeParse(body);
     if (!parsed.success) {
@@ -109,4 +103,4 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

@@ -1,16 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { updateSettingsSchema } from "@/lib/schemas/settingsSchema";
 
-export async function GET() {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const GET = withAdminAuth(async ({ tenantId }) => {
   const blocked = await gateModuleApi("admin", "settings", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   const tenant = await db.tenant.findUnique({
     where: { id: tenantId },
@@ -36,15 +33,11 @@ export async function GET() {
   }
 
   return NextResponse.json({ success: true, data: tenant });
-}
+});
 
-export async function PATCH(request: NextRequest) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const PATCH = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
   const blocked = await gateModuleApi("admin", "settings", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   const body = await request.json();
   const parsed = updateSettingsSchema.safeParse(body);
@@ -63,4 +56,4 @@ export async function PATCH(request: NextRequest) {
   });
 
   return NextResponse.json({ success: true, data: updated });
-}
+});

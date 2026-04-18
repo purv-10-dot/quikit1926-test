@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { getAppConfig } from "@quikit/shared/moduleRegistry";
 
 /**
@@ -14,14 +14,8 @@ import { getAppConfig } from "@quikit/shared/moduleRegistry";
  *
  * Response: { success: true, data: { app, disabledKeys: string[] } }
  */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { appSlug: string } },
-) {
+export const GET = withSuperAdminAuth<{ appSlug: string }>(async (auth, request: NextRequest, { params }) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { appSlug } = params;
     const config = getAppConfig(appSlug);
     if (!config) {
@@ -67,4 +61,4 @@ export async function GET(
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

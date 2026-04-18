@@ -11,16 +11,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { tenantId: string; invoiceId: string } },
-) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const POST = withSuperAdminAuth<{ tenantId: string; invoiceId: string }>(async ({ userId }, req: NextRequest, { params }) => {
   try {
     const invoice = await db.invoice.findFirst({
       where: { id: params.invoiceId, tenantId: params.tenantId },
@@ -50,7 +44,7 @@ export async function POST(
 
     logAudit({
       tenantId: params.tenantId,
-      actorId: auth.userId,
+      actorId: userId,
       action: "UPDATE",
       entityType: "Invoice",
       entityId: invoice.id,
@@ -63,4 +57,4 @@ export async function POST(
     const message = error instanceof Error ? error.message : "Failed to update invoice";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

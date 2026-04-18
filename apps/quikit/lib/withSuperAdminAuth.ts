@@ -21,7 +21,7 @@ type Handler<Params> = (
 ) => Promise<NextResponse> | NextResponse;
 
 export function withSuperAdminAuth<Params = Record<string, never>>(handler: Handler<Params>) {
-  return async (req: NextRequest, ctx: { params: Params }): Promise<NextResponse> => {
+  return async (req: NextRequest, ctx?: { params: Params }): Promise<NextResponse> => {
     const startedAt = Date.now();
     let userIdForLog: string | null = null;
     let response: NextResponse;
@@ -32,7 +32,7 @@ export function withSuperAdminAuth<Params = Record<string, never>>(handler: Hand
         response = auth.error;
       } else {
         userIdForLog = auth.userId;
-        response = await handler({ userId: auth.userId }, req, ctx);
+        response = await handler({ userId: auth.userId }, req, ctx ?? ({ params: {} as Params }));
       }
     } catch (err) {
       response = NextResponse.json(

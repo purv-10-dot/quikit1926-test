@@ -1,17 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { slugify } from "@/lib/utils";
 
-export async function GET(request: NextRequest) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
   const blocked = await gateModuleApi("admin", "teams", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   // Pagination
   const { searchParams } = new URL(request.url);
@@ -80,15 +77,11 @@ export async function GET(request: NextRequest) {
     data,
     meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
-}
+});
 
-export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId, userId } = auth;
+export const POST = withAdminAuth(async ({ tenantId, userId }, request: NextRequest) => {
   const blocked = await gateModuleApi("admin", "teams", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const body = await request.json();
 
   const parsed = createTeamSchema.safeParse(body);
@@ -136,4 +129,4 @@ export async function POST(request: NextRequest) {
     success: true,
     data: { ...team, memberCount: 0, members: [] },
   });
-}
+});

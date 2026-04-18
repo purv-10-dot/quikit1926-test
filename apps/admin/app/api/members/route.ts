@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { sendInvitationEmail } from "@/lib/email";
@@ -7,13 +8,9 @@ import { ROLE_LABELS } from "@/lib/constants";
 import { inviteMemberSchema } from "@/lib/schemas/memberSchema";
 import crypto from "crypto";
 
-export async function GET(request: NextRequest) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
   const blocked = await gateModuleApi("admin", "members", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   // Pagination
   const { searchParams } = new URL(request.url);
@@ -67,15 +64,11 @@ export async function GET(request: NextRequest) {
     data: memberData,
     meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
-}
+});
 
-export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId, userId: inviterId } = auth;
+export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, request: NextRequest) => {
   const blocked = await gateModuleApi("admin", "members", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   const body = await request.json();
   const parsed = inviteMemberSchema.safeParse(body);
@@ -163,4 +156,4 @@ export async function POST(request: NextRequest) {
     success: true,
     message: `Invitation sent to ${email}`,
   });
-}
+});

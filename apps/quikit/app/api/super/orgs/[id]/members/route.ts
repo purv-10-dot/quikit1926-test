@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 import { sendMemberAddedEmail } from "@/lib/email";
 import bcrypt from "bcryptjs";
@@ -12,14 +12,8 @@ import crypto from "crypto";
  *
  * Creates the user if they don't exist, then creates or reactivates a membership.
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUserId }, request: NextRequest, { params }) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const tenantId = params.id;
     const body = await request.json();
     const { email, firstName, lastName, role, password } = body;
@@ -89,7 +83,7 @@ export async function POST(
         userId: user.id,
         role,
         status: "active",
-        createdBy: auth.userId,
+        createdBy: adminUserId,
       },
       update: {
         role,
@@ -106,7 +100,7 @@ export async function POST(
       action: "add_member",
       entityType: "membership",
       entityId: membership.id,
-      actorId: auth.userId,
+      actorId: adminUserId,
       tenantId,
       newValues: JSON.stringify({ email, role, userId: user.id }),
     });
@@ -121,4 +115,4 @@ export async function POST(
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

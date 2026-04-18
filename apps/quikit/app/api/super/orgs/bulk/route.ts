@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 
 /**
  * POST /api/super/orgs/bulk — Bulk actions on organizations (super admin only)
  * Body: { action: "suspend" | "activate", ids: string[] }
  */
-export async function POST(request: NextRequest) {
+export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const body = await request.json();
     const { action, ids } = body;
 
@@ -50,7 +47,7 @@ export async function POST(request: NextRequest) {
         action,
         entityType: "tenant",
         entityId: id,
-        actorId: auth.userId,
+        actorId: userId,
         tenantId: id,
         newValues: JSON.stringify({ status: newStatus }),
       });
@@ -70,4 +67,4 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

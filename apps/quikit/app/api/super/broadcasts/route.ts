@@ -5,15 +5,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 
 const VALID_SEVERITY = new Set(["info", "warning", "critical"]);
 
-export async function GET() {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const GET = withSuperAdminAuth(async () => {
   try {
     const rows = await db.broadcastAnnouncement.findMany({
       orderBy: { startsAt: "desc" },
@@ -35,12 +32,9 @@ export async function GET() {
     const message = error instanceof Error ? error.message : "Failed to load broadcasts";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
-export async function POST(req: NextRequest) {
-  const auth = await requireSuperAdmin();
-  if ("error" in auth) return auth.error;
-
+export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
   try {
     const body = await req.json();
     const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -91,4 +85,4 @@ export async function POST(req: NextRequest) {
     const message = error instanceof Error ? error.message : "Failed to create broadcast";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

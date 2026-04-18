@@ -1,15 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 
-export async function GET(request: NextRequest) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const GET = withAdminAuth(async ({ tenantId }) => {
   const blocked = await gateModuleApi("admin", "apps", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   // Parallel fetch: members, apps, and access records
   const [members, apps, accessRecords] = await Promise.all([
@@ -55,15 +52,11 @@ export async function GET(request: NextRequest) {
       matrix,
     },
   });
-}
+});
 
-export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId, userId: grantedBy } = auth;
+export const POST = withAdminAuth(async ({ tenantId, userId: grantedBy }, request: NextRequest) => {
   const blocked = await gateModuleApi("admin", "apps", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const { userId, appId, role = "member" } = await request.json();
 
   if (!userId || !appId) {
@@ -88,15 +81,11 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({ success: true, message: "Access granted" });
-}
+});
 
-export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const DELETE = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
   const blocked = await gateModuleApi("admin", "apps", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const { userId, appId } = await request.json();
 
   if (!userId || !appId) {
@@ -111,4 +100,4 @@ export async function DELETE(request: NextRequest) {
   });
 
   return NextResponse.json({ success: true, message: "Access revoked" });
-}
+});

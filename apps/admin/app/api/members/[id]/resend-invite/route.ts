@@ -1,21 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { NextResponse } from "next/server";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { sendInvitationEmail } from "@/lib/email";
 import { ROLE_LABELS } from "@/lib/constants";
 import crypto from "crypto";
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId, userId: inviterId } = auth;
+export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inviterId }, _request, { params }) => {
   const blocked = await gateModuleApi("admin", "members", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({
@@ -57,4 +50,4 @@ export async function POST(
     success: true,
     message: `Invitation resent to ${membership.user.email}`,
   });
-}
+});

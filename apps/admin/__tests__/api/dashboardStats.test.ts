@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { NextRequest } from "next/server";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { setSession } from "../setup";
 import { GET } from "@/app/api/dashboard/stats/route";
+
+function req() {
+  return new NextRequest(new URL("/api/dashboard/stats", "http://localhost:3005"), {
+    method: "GET",
+  } as never);
+}
 
 const USER = "user-admin-001";
 const TENANT = "tenant-001";
@@ -24,7 +31,7 @@ beforeEach(() => {
 
 describe("GET /api/dashboard/stats", () => {
   it("returns 401 when unauthenticated", async () => {
-    const res = await GET();
+    const res = await GET(req());
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -40,7 +47,7 @@ describe("GET /api/dashboard/stats", () => {
       status: "active",
     } as any);
 
-    const res = await GET();
+    const res = await GET(req());
     expect(res.status).toBe(403);
   });
 
@@ -56,7 +63,7 @@ describe("GET /api/dashboard/stats", () => {
       { appId: "a2" },
     ] as any);
 
-    const res = await GET();
+    const res = await GET(req());
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -73,7 +80,7 @@ describe("GET /api/dashboard/stats", () => {
     mockDb.team.count.mockResolvedValue(0);
     (mockDb.userAppAccess.groupBy as any).mockResolvedValue([] as any);
 
-    await GET();
+    await GET(req());
 
     // Check membership.count calls include tenantId
     for (const call of mockDb.membership.count.mock.calls) {

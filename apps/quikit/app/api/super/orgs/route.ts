@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { createOrgSchema } from "@/lib/schemas/superAdminSchemas";
 import { logAudit } from "@/lib/auditLog";
 import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "@quikit/shared/pagination";
@@ -9,11 +9,8 @@ import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } 
 /**
  * GET /api/super/orgs — list all tenants with pagination + search (super admin only)
  */
-export async function GET(request: NextRequest) {
+export const GET = withSuperAdminAuth(async (_auth, request: NextRequest) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { searchParams } = request.nextUrl;
     const pagination = parsePaginationParams(searchParams);
     const search = searchParams.get("search") || "";
@@ -60,16 +57,13 @@ export async function GET(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /**
  * POST /api/super/orgs — create a new organization (super admin only)
  */
-export async function POST(request: NextRequest) {
+export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const body = await request.json();
     const parsed = createOrgSchema.safeParse(body);
     if (!parsed.success) {
@@ -91,14 +85,14 @@ export async function POST(request: NextRequest) {
     }
 
     const tenant = await db.tenant.create({
-      data: { name, slug, plan, billingEmail, description, createdBy: auth.userId },
+      data: { name, slug, plan, billingEmail, description, createdBy: userId },
     });
 
     logAudit({
       action: "create",
       entityType: "tenant",
       entityId: tenant.id,
-      actorId: auth.userId,
+      actorId: userId,
       tenantId: tenant.id,
       newValues: JSON.stringify({ name, slug, plan }),
     });
@@ -108,4 +102,4 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

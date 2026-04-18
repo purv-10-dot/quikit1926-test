@@ -1,19 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { updateMemberSchema } from "@/lib/schemas/memberSchema";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const GET = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
   const blocked = await gateModuleApi("admin", "members", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({
@@ -80,18 +74,11 @@ export async function GET(
       })),
     },
   });
-}
+});
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request: NextRequest, { params }) => {
   const blocked = await gateModuleApi("admin", "members", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({
@@ -116,7 +103,7 @@ export async function PATCH(
   const { role, status, teamIds, customPermissions } = parsed.data;
 
   // Update membership fields
-  const updateData: Record<string, any> = {};
+  const updateData: Record<string, unknown> = {};
   if (role) updateData.role = role;
   if (status) updateData.status = status;
   if (customPermissions !== undefined) updateData.customPermissions = customPermissions;
@@ -167,18 +154,11 @@ export async function PATCH(
     success: true,
     data: updated,
   });
-}
+});
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const DELETE = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
   const blocked = await gateModuleApi("admin", "members", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({
@@ -202,4 +182,4 @@ export async function DELETE(
     success: true,
     message: "Member deactivated",
   });
-}
+});

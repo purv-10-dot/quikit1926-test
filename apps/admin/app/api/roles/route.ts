@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { ROLES, ROLE_HIERARCHY, ROLE_LABELS } from "@/lib/constants";
@@ -52,13 +52,9 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   ],
 };
 
-export async function GET() {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const GET = withAdminAuth(async ({ tenantId }) => {
   const blocked = await gateModuleApi("admin", "roles", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   // Get member counts per role for this tenant
   const roleCounts = await db.membership.groupBy({
@@ -82,4 +78,4 @@ export async function GET() {
   roles.sort((a, b) => b.level - a.level);
 
   return NextResponse.json({ success: true, data: roles });
-}
+});

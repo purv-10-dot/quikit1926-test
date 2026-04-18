@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
+import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { createUserSchema } from "@/lib/schemas/superAdminSchemas";
 import { logAudit } from "@/lib/auditLog";
 import { sendUserCreatedEmail } from "@/lib/email";
@@ -11,11 +11,8 @@ import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } 
 /**
  * GET /api/super/users — list all users with pagination + search (super admin only)
  */
-export async function GET(request: NextRequest) {
+export const GET = withSuperAdminAuth(async (_auth, request: NextRequest) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const { searchParams } = request.nextUrl;
     const pagination = parsePaginationParams(searchParams);
     const search = searchParams.get("search") || "";
@@ -71,16 +68,13 @@ export async function GET(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /**
  * POST /api/super/users — create a new platform user (super admin only)
  */
-export async function POST(request: NextRequest) {
+export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) => {
   try {
-    const auth = await requireSuperAdmin();
-    if ("error" in auth) return auth.error;
-
     const body = await request.json();
     const parsed = createUserSchema.safeParse(body);
     if (!parsed.success) {
@@ -111,7 +105,7 @@ export async function POST(request: NextRequest) {
       action: "create",
       entityType: "user",
       entityId: user.id,
-      actorId: auth.userId,
+      actorId: userId,
       newValues: JSON.stringify({ email, firstName, lastName, isSuperAdmin }),
     });
 
@@ -138,4 +132,4 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
