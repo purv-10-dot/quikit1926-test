@@ -21,7 +21,7 @@ import {
   useDeleteFeedback,
 } from "@/lib/hooks/useFeedback";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 import {
   FEEDBACK_CATEGORIES,
   type FeedbackCategory,

@@ -6,12 +6,12 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { WWWTable } from "./components/WWWTable";
 import { WWWPanel } from "./components/WWWPanel";
-import { FilterPicker, userToFilterOption } from "@/components/FilterPicker";
+import { FilterPicker, userToFilterOption } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { STATUS_FILTER_OPTIONS } from "@/lib/constants/status";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 
 export default function WWWPage() {
   const [search, setSearch] = useState("");

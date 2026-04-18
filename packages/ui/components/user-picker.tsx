@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Back-compat shim — single-select user picker.
+ * Single-select user picker — thin wrapper around UserSelect.
  *
- * The real implementation moved to `components/UserSelect.tsx`. This file
- * keeps the `UserPicker` named export + `PickerUser` type alive so every
- * existing call site continues to work without edits.
+ * Exposes a simpler API (`value` + `onChange`) than UserSelect's discriminated
+ * union. Most call sites that pick one user prefer this shape.
  */
-import { UserSelect, type PickerUser } from "./UserSelect";
+
+import { UserSelect, type PickerUser } from "./user-select";
 
 export type { PickerUser };
 

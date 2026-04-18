@@ -6,7 +6,7 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { useQueryClient } from "@tanstack/react-query";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useTeams, type Team } from "@/lib/hooks/useTeams";
-import { UserPicker } from "@/components/UserPicker";
+import { UserPicker } from "@quikit/ui";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 
 interface Props {

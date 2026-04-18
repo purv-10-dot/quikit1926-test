@@ -5,7 +5,7 @@ import {
   Plus, X, Search, Pencil, Trash2,
   ChevronDown, Users, UsersRound, UserPlus, Check,
 } from "lucide-react";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 import { useTableCRUD } from "@/lib/hooks/useTableCRUD";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */

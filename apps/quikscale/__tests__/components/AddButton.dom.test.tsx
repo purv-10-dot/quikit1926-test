@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 
 describe("AddButton", () => {
   it("renders the label passed as children", () => {

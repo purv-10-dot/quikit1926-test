@@ -15,9 +15,9 @@ import { HiddenColsMenu } from "./components/HiddenColsMenu";
 import { KPIModal } from "./components/KPIModal";
 import { ALL_STATIC_COLS } from "./hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
-import { FilterPicker, userToFilterOption } from "@/components/FilterPicker";
+import { FilterPicker, userToFilterOption } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();

@@ -17,7 +17,7 @@ import {
   useCreateOneOnOne,
 } from "@/lib/hooks/useOneOnOne";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 
 interface SessionRow {
   id: string;

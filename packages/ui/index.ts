@@ -8,6 +8,8 @@ export { cn, formatDate, formatDateTime, formatRelativeDate, generateInitials, s
 export { ThemeApplier, applyAccentColor } from "./components/theme-applier";
 export { AppSwitcher } from "./components/app-switcher";
 export { UserSelect, type PickerUser, type UserSelectProps } from "./components/user-select";
+export { UserPicker } from "./components/user-picker";
+export { UserMultiPicker } from "./components/user-multi-picker";
 export { FilterPicker, userToFilterOption, type FilterOption } from "./components/filter-picker";
 export { AddButton } from "./components/add-button";
 export { Tooltip, type TooltipProps, type TooltipArrow } from "./components/tooltip";

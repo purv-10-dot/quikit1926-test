@@ -7,7 +7,7 @@ import { useTeams } from "@/lib/hooks/useTeams";
 import type { PriorityRow } from "@/lib/types/priority";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
 import { STATUS_META, STATUS_PILL_OPTIONS, STATUS_SELECT_OPTIONS } from "@/lib/constants/status";
-import { UserPicker } from "@/components/UserPicker";
+import { UserPicker } from "@quikit/ui";
 
 interface Props {
   priority: PriorityRow;

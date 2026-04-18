@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Back-compat shim — multi-select user picker.
+ * Multi-select user picker — thin wrapper around UserSelect.
  *
- * The real implementation moved to `components/UserSelect.tsx`. This file
- * keeps the `UserMultiPicker` named export alive so every existing call
- * site continues to work without edits.
+ * Exposes a simpler API (`values` + `onChange(ids[])`) than UserSelect's
+ * discriminated union. Used everywhere the call site picks multiple users.
  */
-import { UserSelect, type PickerUser } from "./UserSelect";
+
+import { UserSelect, type PickerUser } from "./user-select";
 
 interface Props {
   values: string[];

@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import { Calendar, MapPin, Users as UsersIcon, Clock } from "lucide-react";
 import { useMeetings, useCreateMeeting, useMeetingTemplates } from "@/lib/hooks/useMeetings";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 import type { Cadence } from "@/lib/schemas/meetingSchema";
 
 interface MeetingRow {

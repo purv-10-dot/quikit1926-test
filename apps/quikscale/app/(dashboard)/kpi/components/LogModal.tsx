@@ -8,7 +8,7 @@ import type { KPIRow, WeeklyValue, User } from "@/lib/types/kpi";
 import { fiscalYearLabel, weekDateLabel, ALL_WEEKS, MEASUREMENT_UNITS, ALL_QUARTERS } from "@/lib/utils/fiscal";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
-import { UserPicker } from "@/components/UserPicker";
+import { UserPicker } from "@quikit/ui";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";

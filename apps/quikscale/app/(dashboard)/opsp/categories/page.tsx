@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Search, Plus, Trash2, X, ChevronDown, Check } from "lucide-react";
 import { CURRENCIES } from "@/lib/utils/currency";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

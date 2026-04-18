@@ -10,11 +10,11 @@ import {
 } from "@/lib/utils/fiscal";
 import { PriorityTable } from "./components/PriorityTable";
 import { PriorityModal } from "./components/PriorityModal";
-import { FilterPicker, userToFilterOption } from "@/components/FilterPicker";
+import { FilterPicker, userToFilterOption } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();

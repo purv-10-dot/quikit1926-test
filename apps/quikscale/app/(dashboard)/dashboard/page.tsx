@@ -8,7 +8,7 @@ import { usePriorities } from "@/lib/hooks/usePriority";
 import { useWWWItems } from "@/lib/hooks/useWWW";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useFilterContext } from "@/lib/context/FilterContext";
-import { FilterPicker, userToFilterOption } from "@/components/FilterPicker";
+import { FilterPicker, userToFilterOption } from "@quikit/ui";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import { STATUS_FILTER_OPTIONS, STATUS_DOT, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";

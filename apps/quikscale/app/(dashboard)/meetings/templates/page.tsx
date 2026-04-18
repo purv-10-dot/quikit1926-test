@@ -25,7 +25,7 @@ import {
   useUpdateTemplate,
   useDeleteTemplate,
 } from "@/lib/hooks/useMeetings";
-import { AddButton } from "@/components/AddButton";
+import { AddButton } from "@quikit/ui";
 import { TemplateModal, type TemplateFormValues } from "./components/TemplateModal";
 import type { Cadence } from "@/lib/schemas/meetingSchema";
 
