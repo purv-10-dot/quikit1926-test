@@ -13,6 +13,13 @@ import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { rateLimitAsync, getClientIp } from "@quikit/shared/rateLimit";
+
+// Exit rate limit — permissive. We NEVER want to trap a user who is trying to
+// get out of an impersonation session. Fail-OPEN on Redis outage for that
+// reason. 30/min/IP is enough to stop abuse but never legitimate exits.
+const EXIT_LIMIT = 30;
+const EXIT_WINDOW_MS = 60 * 1000;
 
 function sessionCookieName(): string {
   const isSecure = process.env.NODE_ENV === "production";
@@ -21,6 +28,26 @@ function sessionCookieName(): string {
 
 export async function POST(req: NextRequest) {
   try {
+    const rl = await rateLimitAsync({
+      routeKey: "auth:impersonate:exit",
+      clientKey: getClientIp(req),
+      limit: EXIT_LIMIT,
+      windowMs: EXIT_WINDOW_MS,
+      failClosed: false, // NEVER fail-closed — users must always be able to exit.
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Too many exit attempts. Retry in ${rl.retryAfterSeconds}s.`,
+        },
+        {
+          status: 429,
+          headers: { "retry-after": String(rl.retryAfterSeconds) },
+        },
+      );
+    }
+
     const session = await getServerSession(authOptions);
     const isImp = session?.user?.impersonating === true;
     const tenantId = session?.user?.tenantId ?? null;

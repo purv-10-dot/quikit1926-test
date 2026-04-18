@@ -19,15 +19,49 @@
 import Redis from "ioredis";
 
 let _client: Redis | null = null;
+let _loggedMissingUrlInProd = false;
+let _loggedConnectionErrorInProd = false;
+
+/**
+ * Log once per process (in production only) that Redis is missing or broken.
+ * We deliberately do NOT spam every request — once is enough to notice in
+ * Vercel function logs. Dev/test stays quiet.
+ */
+function logLoudlyInProd(kind: "missing-url" | "connection-error", detail?: string): void {
+  if (process.env.NODE_ENV !== "production") return;
+
+  if (kind === "missing-url") {
+    if (_loggedMissingUrlInProd) return;
+    _loggedMissingUrlInProd = true;
+    console.error(
+      "[redis] CRITICAL: REDIS_URL is not set in production. " +
+        "Rate limiting, caching, and distributed session features will silently degrade to in-memory-per-instance. " +
+        "This WILL cause correctness issues under load. Set REDIS_URL in your Vercel environment variables.",
+    );
+  } else if (kind === "connection-error") {
+    if (_loggedConnectionErrorInProd) return;
+    _loggedConnectionErrorInProd = true;
+    console.error(
+      `[redis] CRITICAL: first connection error in production. Redis may be down, misconfigured, or firewalled. ` +
+        `Detail: ${detail ?? "unknown"}. Subsequent errors will be suppressed to avoid log spam.`,
+    );
+  }
+}
 
 /**
  * Get the singleton Redis client. Returns `null` if `REDIS_URL` is not set.
  * The client lazy-connects on the first command — no connection is opened
  * at import time.
+ *
+ * In production, missing `REDIS_URL` emits a loud one-time `console.error`
+ * banner so the issue is visible in Vercel function logs (previously silent).
  */
 export function getRedis(): Redis | null {
   const url = process.env.REDIS_URL;
-  if (!url) return null;
+  if (!url) {
+    logLoudlyInProd("missing-url");
+    return null;
+  }
 
   if (!_client) {
     _client = new Redis(url, {
@@ -45,12 +79,36 @@ export function getRedis(): Redis | null {
     });
 
     _client.on("error", (err) => {
-      // Log but don't crash — fallback paths handle null client
-      console.error("[redis] connection error:", err.message);
+      // Loud first-error banner in prod; silent subsequent errors so we don't
+      // spam logs on a long outage. Dev stays quiet.
+      logLoudlyInProd("connection-error", err.message);
+      // Keep the lower-severity log for non-prod visibility.
+      if (process.env.NODE_ENV !== "production") {
+        console.error("[redis] connection error:", err.message);
+      }
     });
   }
 
   return _client;
+}
+
+/**
+ * Require Redis to be available, or throw. Use ONLY in code paths where a
+ * silent fallback is worse than an error (e.g. distributed locking, auth
+ * rate-limiters where in-memory fallback would be trivially bypassable).
+ *
+ * In development (no REDIS_URL), this still throws — use the optional
+ * `getRedis()` plus in-memory fallback for non-critical paths instead.
+ */
+export function requireRedis(): Redis {
+  const client = getRedis();
+  if (!client) {
+    throw new Error(
+      "Redis is required for this operation but REDIS_URL is not set. " +
+        "Configure REDIS_URL in your environment.",
+    );
+  }
+  return client;
 }
 
 /**

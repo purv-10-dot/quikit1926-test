@@ -26,8 +26,15 @@ import type { NextRequest } from "next/server";
 import { encode } from "next-auth/jwt";
 import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { rateLimitAsync, getClientIp } from "@quikit/shared/rateLimit";
 
 const TTL_SECONDS = 2 * 60 * 60;
+
+// Token-redemption rate limit (per IP). Legit redemptions are 1-per-click;
+// sustained hits almost always mean token-scanning. Fail-closed so an attacker
+// who knocks Redis over can't flood the endpoint unthrottled.
+const ACCEPT_LIMIT = 20;
+const ACCEPT_WINDOW_MS = 15 * 60 * 1000;
 
 // NextAuth cookie name depends on HTTPS. In dev (http) it's the plain form.
 function sessionCookieName(): string {
@@ -40,6 +47,28 @@ export async function GET(
   { params }: { params: { token: string } },
 ) {
   try {
+    // Rate limit BEFORE any DB lookup so we don't leak token existence via
+    // timing, and so an attacker scanning tokens can't generate DB load.
+    const rl = await rateLimitAsync({
+      routeKey: "auth:impersonate:accept",
+      clientKey: getClientIp(req),
+      limit: ACCEPT_LIMIT,
+      windowMs: ACCEPT_WINDOW_MS,
+      failClosed: true,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Too many impersonation token attempts. Retry in ${rl.retryAfterSeconds}s.`,
+        },
+        {
+          status: 429,
+          headers: { "retry-after": String(rl.retryAfterSeconds) },
+        },
+      );
+    }
+
     const token = params.token;
     if (!token) {
       return NextResponse.json({ success: false, error: "Missing token" }, { status: 400 });
