@@ -25,7 +25,7 @@ import {
   useUpdateTemplate,
   useDeleteTemplate,
 } from "@/lib/hooks/useMeetings";
-import { AddButton } from "@quikit/ui";
+import { AddButton, useConfirm } from "@quikit/ui";
 import { TemplateModal, type TemplateFormValues } from "./components/TemplateModal";
 import type { Cadence } from "@/lib/schemas/meetingSchema";
 
@@ -56,6 +56,7 @@ type ModalState =
   | { mode: "edit"; template: Template };
 
 export default function TemplatesPage() {
+  const confirm = useConfirm();
   const { data, isLoading, error } = useMeetingTemplates();
   const createTemplate = useCreateTemplate();
   const updateTemplate = useUpdateTemplate();
@@ -97,9 +98,12 @@ export default function TemplatesPage() {
 
   async function handleDelete(t: Template) {
     if (
-      !confirm(
-        `Delete "${t.name}"? Past meetings that used this template will keep their data — only the template itself is removed.`,
-      )
+      !(await confirm({
+        title: `Delete "${t.name}"?`,
+        description: "Past meetings that used this template will keep their data — only the template itself is removed.",
+        confirmLabel: "Delete",
+        tone: "danger",
+      }))
     ) {
       return;
     }

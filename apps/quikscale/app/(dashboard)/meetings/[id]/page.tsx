@@ -28,6 +28,7 @@ import {
 import { useMeeting, useUpdateMeeting, useDeleteMeeting } from "@/lib/hooks/useMeetings";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useScorecard } from "@/lib/hooks/usePerformance";
+import { useConfirm } from "@quikit/ui";
 
 interface Attendee {
   userId: string;
@@ -77,6 +78,7 @@ export default function MeetingDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const confirm = useConfirm();
 
   const { data, isLoading, error } = useMeeting(id);
   const { data: scorecardData } = useScorecard();
@@ -142,7 +144,7 @@ export default function MeetingDetailPage() {
   }
 
   async function handleDelete() {
-    if (!confirm("Delete this meeting? This cannot be undone from the UI.")) return;
+    if (!(await confirm({ title: "Delete this meeting?", description: "This cannot be undone from the UI.", confirmLabel: "Delete", tone: "danger" }))) return;
     try {
       await deleteMeeting.mutateAsync(id);
       router.push(`/meetings/${meeting?.cadence ?? ""}`);

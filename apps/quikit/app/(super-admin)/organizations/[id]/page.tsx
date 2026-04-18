@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Building2, Pencil, Users, Layers, AppWindow, Plus } from "lucide-react";
-import { SlidePanel, EmptyState, Select } from "@quikit/ui";
+import { SlidePanel, EmptyState, Select, useConfirm } from "@quikit/ui";
 import { HealthPanel } from "./components/HealthPanel";
 import { AppAccessPanel } from "./components/AppAccessPanel";
 import { BillingPanel } from "./components/BillingPanel";
@@ -58,6 +58,7 @@ export default function OrgDetailPage() {
   const params = useParams();
   const router = useRouter();
   const orgId = params.id as string;
+  const confirm = useConfirm();
 
   const [org, setOrg] = useState<OrgDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,7 +120,7 @@ export default function OrgDetailPage() {
 
   async function handleSuspend() {
     if (!org) return;
-    if (!window.confirm(`Are you sure you want to suspend "${org.name}"?`)) return;
+    if (!(await confirm({ title: `Suspend "${org.name}"?`, description: "This will disable access for all members of the organization until it is restored.", confirmLabel: "Suspend", tone: "danger" }))) return;
     try {
       const res = await fetch(`/api/super/orgs/${orgId}`, { method: "DELETE" });
       const data = await res.json();

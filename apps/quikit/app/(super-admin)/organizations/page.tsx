@@ -19,7 +19,7 @@ import {
   Pencil,
   Ban,
 } from "lucide-react";
-import { SlidePanel, Pagination, EmptyState, Select } from "@quikit/ui";
+import { SlidePanel, Pagination, EmptyState, Select, useConfirm } from "@quikit/ui";
 
 interface TenantInfo {
   id: string;
@@ -83,6 +83,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function OrgsPage() {
   const router = useRouter();
+  const confirm = useConfirm();
   const [tenants, setTenants] = useState<TenantInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -163,7 +164,7 @@ export default function OrgsPage() {
   }
 
   async function handleBulkSuspend() {
-    if (!window.confirm(`Are you sure you want to suspend ${selected.size} organization(s)? This will disable access for all their members.`)) return;
+    if (!(await confirm({ title: `Suspend ${selected.size} organization(s)?`, description: "This will disable access for all their members until each organization is restored.", confirmLabel: "Suspend", tone: "danger" }))) return;
     setBulkLoading(true);
     try {
       const res = await fetch("/api/super/orgs/bulk", {
@@ -246,9 +247,12 @@ export default function OrgsPage() {
 
   async function handleSuspend(id: string, name: string) {
     if (
-      !window.confirm(
-        `Are you sure you want to suspend "${name}"? This will disable access for all members.`,
-      )
+      !(await confirm({
+        title: `Suspend "${name}"?`,
+        description: "This will disable access for all members of the organization until it is restored.",
+        confirmLabel: "Suspend",
+        tone: "danger",
+      }))
     )
       return;
     try {

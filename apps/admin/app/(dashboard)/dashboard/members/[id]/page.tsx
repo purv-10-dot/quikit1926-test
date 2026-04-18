@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
-import { Button, Select } from "@quikit/ui";
+import { Button, Select, useConfirm } from "@quikit/ui";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { ROLE_LABELS } from "@/lib/constants";
@@ -31,6 +31,7 @@ interface MemberDetail {
 export default function MemberDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const confirm = useConfirm();
   const [member, setMember] = useState<MemberDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -63,7 +64,7 @@ export default function MemberDetailPage() {
   }
 
   async function handleDeactivate() {
-    if (!confirm("Are you sure you want to deactivate this member?")) return;
+    if (!(await confirm({ title: "Deactivate this member?", description: "They will lose access to the organization immediately. You can reactivate them later.", confirmLabel: "Deactivate", tone: "danger" }))) return;
     setUpdating(true);
     await fetch(`/api/members/${params.id}`, { method: "DELETE" });
     router.push("/dashboard/members");

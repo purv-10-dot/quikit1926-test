@@ -19,7 +19,7 @@ import {
   Activity,
   RefreshCw,
 } from "lucide-react";
-import { SlidePanel, Pagination, EmptyState, Select } from "@quikit/ui";
+import { SlidePanel, Pagination, EmptyState, Select, useConfirm } from "@quikit/ui";
 
 interface AppInfo {
   id: string;
@@ -63,6 +63,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function AppRegistryPage() {
   const router = useRouter();
+  const confirm = useConfirm();
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -232,8 +233,7 @@ export default function AppRegistryPage() {
   }
 
   async function handleDisable(app: AppInfo) {
-    if (!window.confirm(`Are you sure you want to disable "${app.name}"?`))
-      return;
+    if (!(await confirm({ title: `Disable "${app.name}"?`, description: "This app will no longer be reachable to any tenant until re-enabled.", confirmLabel: "Disable", tone: "danger" }))) return;
     try {
       const res = await fetch(`/api/super/apps/${app.id}`, {
         method: "PATCH",

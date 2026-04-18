@@ -21,7 +21,7 @@ import {
   useDeleteFeedback,
 } from "@/lib/hooks/useFeedback";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { AddButton } from "@quikit/ui";
+import { AddButton, useConfirm } from "@quikit/ui";
 import {
   FEEDBACK_CATEGORIES,
   type FeedbackCategory,
@@ -71,6 +71,7 @@ type Tab = "received" | "given";
 export default function FeedbackPage() {
   const { data: session } = useSession();
   const userId = session?.user?.id as string | undefined;
+  const confirm = useConfirm();
 
   const [tab, setTab] = useState<Tab>("received");
   const { data, isLoading, error } = useFeedback(
@@ -126,7 +127,7 @@ export default function FeedbackPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this feedback? This cannot be undone.")) return;
+    if (!(await confirm({ title: "Delete this feedback?", description: "This cannot be undone.", confirmLabel: "Delete", tone: "danger" }))) return;
     await deleteFeedback.mutateAsync(id);
   }
 

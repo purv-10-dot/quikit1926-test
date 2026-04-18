@@ -29,3 +29,4 @@ export { TenantPicker, type TenantPickerProps, type TenantOption } from "./compo
 export { FeatureDisabledToast } from "./components/feature-disabled-toast";
 export { BroadcastBanner, type BroadcastBannerProps } from "./components/broadcast-banner";
 export { ImpersonationBanner } from "./components/impersonation-banner";
+export { ConfirmProvider, useConfirm, type ConfirmOptions, type ConfirmTone } from "./components/confirm-modal";

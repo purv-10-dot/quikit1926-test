@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Users, Shield, Building2, AppWindow } from "lucide-react";
-import { EmptyState } from "@quikit/ui";
+import { EmptyState, useConfirm } from "@quikit/ui";
 
 interface MembershipInfo {
   id: string;
@@ -61,6 +61,7 @@ const statusColor: Record<string, string> = {
 export default function UserDetailPage() {
   const params = useParams();
   const userId = params.id as string;
+  const confirm = useConfirm();
 
   const [user, setUser] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,8 +83,19 @@ export default function UserDetailPage() {
 
   async function handleToggleSuperAdmin() {
     if (!user) return;
-    const action = user.isSuperAdmin ? "remove super admin from" : "grant super admin to";
-    if (!window.confirm(`Are you sure you want to ${action} ${user.firstName} ${user.lastName}?`)) return;
+    const isRevoke = user.isSuperAdmin;
+    const fullName = `${user.firstName} ${user.lastName}`;
+    if (
+      !(await confirm({
+        title: isRevoke ? `Revoke super admin from ${fullName}?` : `Grant super admin to ${fullName}?`,
+        description: isRevoke
+          ? "They will lose platform-wide administrative access immediately."
+          : "They will gain full platform-wide administrative access across every tenant.",
+        confirmLabel: isRevoke ? "Revoke" : "Grant",
+        tone: "danger",
+      }))
+    )
+      return;
     try {
       const res = await fetch(`/api/super/users/${userId}`, {
         method: "PATCH",
