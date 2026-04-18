@@ -10,7 +10,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Activity, AlertTriangle, AlertCircle, Info, TrendingUp, TrendingDown, Minus, RefreshCw, Users, Building2, Zap, DollarSign, CheckCircle2 } from "lucide-react";
+import { Activity, TrendingUp, TrendingDown, Minus, RefreshCw, Users, Building2, Zap, DollarSign, CheckCircle2 } from "lucide-react";
+import type { ElementType } from "react";
+import { severityClass, severityIcon } from "@quikit/ui";
 
 interface OpenAlert {
   id: string;
@@ -48,16 +50,8 @@ interface Overview {
   alerts: { severity: "info" | "warning" | "critical"; message: string }[];
 }
 
-const severityColor: Record<string, string> = {
-  info: "bg-blue-50 border-blue-200 text-blue-900",
-  warning: "bg-amber-50 border-amber-200 text-amber-900",
-  critical: "bg-red-50 border-red-300 text-red-900",
-};
-const severityIcon: Record<string, typeof Info> = {
-  info: Info,
-  warning: AlertCircle,
-  critical: AlertTriangle,
-};
+// severityClass / severityIcon imported from @quikit/ui — single source of
+// truth for severity theming across super-admin surfaces.
 
 interface LastRun {
   rollup: string | null;
@@ -232,9 +226,9 @@ export default function AnalyticsPage() {
           </div>
           <div className="space-y-2">
             {openAlerts.map((a) => {
-              const Icon = severityIcon[a.severity];
+              const Icon = severityIcon(a.severity);
               return (
-                <div key={a.id} className={`flex items-start gap-3 border rounded-2xl px-4 py-3.5 backdrop-blur-sm ${severityColor[a.severity]}`}>
+                <div key={a.id} className={`flex items-start gap-3 border rounded-2xl px-4 py-3.5 backdrop-blur-sm ${severityClass(a.severity, "card")}`}>
                   <Icon className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -273,9 +267,9 @@ export default function AnalyticsPage() {
       {data.alerts.length > 0 && openAlerts.length === 0 && (
         <div className="space-y-2">
           {data.alerts.map((a, i) => {
-            const Icon = severityIcon[a.severity];
+            const Icon = severityIcon(a.severity);
             return (
-              <div key={i} className={`flex items-center gap-3 border rounded-lg px-4 py-2 ${severityColor[a.severity]}`}>
+              <div key={i} className={`flex items-center gap-3 border rounded-lg px-4 py-2 ${severityClass(a.severity, "card")}`}>
                 <Icon className="h-4 w-4 flex-shrink-0" />
                 <span className="text-sm font-medium">{a.message}</span>
               </div>
@@ -367,7 +361,7 @@ export default function AnalyticsPage() {
   );
 }
 
-function StatCard({ icon: Icon, label, value, sub }: { icon: typeof Info; label: string; value: string | number; sub?: string }) {
+function StatCard({ icon: Icon, label, value, sub }: { icon: ElementType; label: string; value: string | number; sub?: string }) {
   return (
     <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 p-5 shadow-sm">
       <div className="flex items-center gap-3 mb-3">

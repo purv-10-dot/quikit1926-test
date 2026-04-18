@@ -8,8 +8,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { Megaphone, Plus, Trash2, AlertTriangle, AlertCircle, Info } from "lucide-react";
-import { SlidePanel, EmptyState } from "@quikit/ui";
+import { Megaphone, Plus, Trash2 } from "lucide-react";
+import { SlidePanel, EmptyState, severityClass, severityIcon } from "@quikit/ui";
 
 interface Broadcast {
   id: string;
@@ -24,13 +24,6 @@ interface Broadcast {
   createdAt: string;
   dismissalCount: number;
 }
-
-const severityIcon = { info: Info, warning: AlertCircle, critical: AlertTriangle };
-const severityColor = {
-  info: "bg-blue-50 text-blue-700",
-  warning: "bg-amber-50 text-amber-700",
-  critical: "bg-red-50 text-red-700",
-};
 
 const defaultForm = {
   title: "",
@@ -127,14 +120,14 @@ export default function BroadcastsPage() {
       ) : (
         <div className="space-y-3">
           {items.map((b) => {
-            const Icon = severityIcon[b.severity];
+            const Icon = severityIcon(b.severity);
             const now = Date.now();
             const startsAt = new Date(b.startsAt).getTime();
             const endsAt = b.endsAt ? new Date(b.endsAt).getTime() : null;
             const isActive = startsAt <= now && (endsAt === null || endsAt >= now);
             return (
               <div key={b.id} className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 p-5 flex items-start gap-4 shadow-sm">
-                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${severityColor[b.severity]}`}>
+                <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${severityClass(b.severity, "badge")}`}>
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -143,7 +136,7 @@ export default function BroadcastsPage() {
                     <span className={`text-xs px-2 py-0.5 rounded ${isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
                       {isActive ? "Active" : "Inactive"}
                     </span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${severityColor[b.severity]}`}>{b.severity}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${severityClass(b.severity, "badge")}`}>{b.severity}</span>
                   </div>
                   <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{b.body}</p>
                   <div className="flex gap-4 mt-2 text-xs text-gray-500">
