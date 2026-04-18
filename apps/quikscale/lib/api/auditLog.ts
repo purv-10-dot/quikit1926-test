@@ -37,7 +37,8 @@ export type AuditEntityType =
   | "Quarter"
   | "Category"
   | "DailyHuddle"
-  | "Review";
+  | "Review"
+  | "Impersonation";
 
 export interface AuditLogInput {
   tenantId: string;

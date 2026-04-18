@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 
-export async function GET() {
-  const auth = await requireAdmin();
-  if ("error" in auth && auth.error) return auth.error;
-
-  const { tenantId } = auth;
+export const GET = withAdminAuth(async ({ tenantId }) => {
   const blocked = await gateModuleApi("admin", "apps", tenantId);
-  if (blocked) return blocked;
+  if (blocked) return blocked as NextResponse;
 
   const apps = await db.app.findMany({
     orderBy: { name: "asc" },
@@ -36,4 +32,4 @@ export async function GET() {
   }));
 
   return NextResponse.json({ success: true, data });
-}
+});

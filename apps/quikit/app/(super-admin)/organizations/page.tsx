@@ -270,10 +270,10 @@ export default function OrgsPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="px-6 pt-6 pb-4 flex items-center justify-between">
+      <div className="px-8 pt-8 pb-5 md:px-10 md:pt-10 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Organizations</h1>
-          <p className="text-sm text-gray-500">
+          <h1 className="text-4xl font-bold tracking-tight text-slate-900">Organizations</h1>
+          <p className="text-sm text-slate-500 mt-2">
             {total} total organizations on the platform
           </p>
         </div>
@@ -282,7 +282,7 @@ export default function OrgsPage() {
             setCreateError("");
             setCreateOpen(true);
           }}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+          className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-sm transition-colors"
         >
           <Plus className="h-4 w-4" /> New Organization
         </button>
