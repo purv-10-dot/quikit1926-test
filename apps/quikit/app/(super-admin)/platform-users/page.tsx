@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Users,
   Search,
@@ -30,17 +30,32 @@ interface UserInfo {
 
 export default function PlatformUsersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [tenantId, setTenantId] = useState<string>("");
+  // UX-8: persist filters to URL query so deep links and browser back/forward
+  // preserve the filter state. Read initial values from the URL once.
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const [tenantId, setTenantId] = useState<string>(() => searchParams.get("tenantId") ?? "");
   const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [tenantsLoaded, setTenantsLoaded] = useState(false);
+
+  // Sync filter state back to the URL whenever it changes. We use
+  // `replace` (not push) so each keystroke in the search box doesn't
+  // pollute browser history. Filters still participate in back/forward
+  // because each set is one entry relative to other pages.
+  useEffect(() => {
+    const qs = new URLSearchParams();
+    if (search) qs.set("q", search);
+    if (tenantId) qs.set("tenantId", tenantId);
+    const qsStr = qs.toString();
+    router.replace(qsStr ? `/platform-users?${qsStr}` : "/platform-users");
+  }, [search, tenantId, router]);
 
   // Lazy-load the tenant list: only fetch when the picker is first opened OR
   // when a tenantId is set via URL / external means. Saves ~1 HTTP call per
   // /platform-users visit for the common case (no tenant filter).
-  function ensureTenantsLoaded() {
+  const ensureTenantsLoaded = useCallback(() => {
     if (tenantsLoaded) return;
     setTenantsLoaded(true);
     fetch("/api/super/orgs?limit=1000")
@@ -56,7 +71,14 @@ export default function PlatformUsersPage() {
         }
       })
       .catch(() => {});
-  }
+  }, [tenantsLoaded]);
+
+  // If the page was deep-linked with ?tenantId=<id>, eagerly load the tenant
+  // list so the picker can render the tenant's display name instead of an
+  // opaque ID. Without this, the lazy-load path only triggers on picker click.
+  useEffect(() => {
+    if (tenantId && !tenantsLoaded) ensureTenantsLoaded();
+  }, [tenantId, tenantsLoaded, ensureTenantsLoaded]);
 
   // Pagination
   const [page, setPage] = useState(1);

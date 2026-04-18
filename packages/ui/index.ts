@@ -29,3 +29,4 @@ export { TenantPicker, type TenantPickerProps, type TenantOption } from "./compo
 export { FeatureDisabledToast } from "./components/feature-disabled-toast";
 export { BroadcastBanner, type BroadcastBannerProps } from "./components/broadcast-banner";
 export { ImpersonationBanner } from "./components/impersonation-banner";
+export { severityClass, severityIcon, type SeverityLevel, type SeverityVariant } from "./lib/severity";

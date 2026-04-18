@@ -55,14 +55,33 @@ export function ImpersonationBanner() {
     };
   }, [load]);
 
-  // Local countdown without polling — decrement every 30s from the cached
-  // expiry. No network call needed.
+  // Local countdown without polling — decrement every 30s normally, every
+  // 10s when we're in the final 15m escalation window, so the "5m left"
+  // -> "4m left" flip is visible within 10s and we don't show stale text
+  // when the session has just expired. No network call either way.
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!session?.user?.impersonating) return;
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+
+    const expiresAtStr = session.user.impersonationExpiresAt;
+    const computeIntervalMs = () => {
+      if (!expiresAtStr) return 30_000;
+      const msLeft = new Date(expiresAtStr).getTime() - Date.now();
+      return msLeft < 15 * 60_000 ? 10_000 : 30_000;
+    };
+
+    let id = setInterval(() => {
+      setTick((t) => t + 1);
+      // Rearm with a tighter interval once we enter the warning window. We
+      // rearm on the trailing edge so the first render after the user enters
+      // the danger zone still happens within 30s, then every 10s after.
+      const nextMs = computeIntervalMs();
+      clearInterval(id);
+      id = setInterval(() => setTick((t) => t + 1), nextMs);
+    }, computeIntervalMs());
+
     return () => clearInterval(id);
-  }, [session?.user?.impersonating]);
+  }, [session?.user?.impersonating, session?.user?.impersonationExpiresAt]);
 
   async function exit() {
     setExiting(true);
@@ -94,20 +113,57 @@ export function ImpersonationBanner() {
         ? `${Math.floor(mins / 60)}h ${mins % 60}m left`
         : `${mins}m left`;
 
+  // UX-3: expiry escalation — the banner intensifies in the final 15m, then
+  // visibly pulses in the final 5m. Past zero, show "session expired" copy
+  // without the normal "time left" chip. Raises the odds a distracted super
+  // admin notices before their session dies mid-click.
+  const escalation: "normal" | "warning" | "critical" | "expired" =
+    mins === null
+      ? "normal"
+      : mins <= 0
+        ? "expired"
+        : mins <= 5
+          ? "critical"
+          : mins <= 15
+            ? "warning"
+            : "normal";
+
+  const bannerBg =
+    escalation === "expired"
+      ? "bg-red-700"
+      : escalation === "critical"
+        ? "bg-red-600 animate-pulse"
+        : escalation === "warning"
+          ? "bg-orange-500"
+          : "bg-amber-500";
+
   return (
     <div
       role="banner"
-      className="sticky top-0 z-50 bg-amber-500 text-white text-sm px-4 py-2 flex items-center gap-3 shadow"
+      className={`sticky top-0 z-50 ${bannerBg} text-white text-sm px-4 py-2 flex items-center gap-3 shadow`}
     >
       <Eye className="h-4 w-4 flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <span className="font-semibold">Viewing as</span>{" "}
-        <span className="font-mono">{session.user.email}</span>
-        {session.user.impersonatorEmail && (
-          <span className="opacity-80"> · Super admin: {session.user.impersonatorEmail}</span>
+        {escalation === "expired" ? (
+          <>
+            <span className="font-semibold">Impersonation expired</span>
+            {" \u00b7 "}
+            <span className="opacity-90">click Exit to return to your own session</span>
+          </>
+        ) : (
+          <>
+            <span className="font-semibold">Viewing as</span>{" "}
+            <span className="font-mono">{session.user.email}</span>
+            {session.user.impersonatorEmail && (
+              <span className="opacity-80"> &middot; Super admin: {session.user.impersonatorEmail}</span>
+            )}
+            {escalation === "critical" && (
+              <span className="ml-2 font-semibold opacity-100">&middot; Expiring soon!</span>
+            )}
+          </>
         )}
       </div>
-      {expiresAt && (
+      {expiresAt && escalation !== "expired" && (
         <span className="inline-flex items-center gap-1 text-xs opacity-90 whitespace-nowrap">
           <Clock className="h-3 w-3" />
           {timeText}

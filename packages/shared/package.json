@@ -15,7 +15,8 @@
     "./moduleRegistry": "./lib/moduleRegistry.ts",
     "./apiLogging": "./lib/apiLogging.ts",
     "./withApiLogging": "./lib/withApiLogging.ts",
-    "./redisCache": "./lib/redisCache.ts"
+    "./redisCache": "./lib/redisCache.ts",
+    "./dateFormat": "./lib/dateFormat.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
