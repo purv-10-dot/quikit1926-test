@@ -18,8 +18,36 @@ import { useRouter } from "next/navigation";
 import { Calendar, MapPin, Users as UsersIcon, Clock } from "lucide-react";
 import { useMeetings, useCreateMeeting, useMeetingTemplates } from "@/lib/hooks/useMeetings";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { AddButton } from "@quikit/ui";
+import { AddButton, EmptyState } from "@quikit/ui";
 import type { Cadence } from "@/lib/schemas/meetingSchema";
+
+const CADENCE_COPY: Record<Cadence, { title: string; message: string; cta: string }> = {
+  daily: {
+    title: "Schedule your first daily huddle",
+    message: "A 5-15 minute daily stand-up keeps your team in sync. Share blockers, commitments, and focus for the day.",
+    cta: "Schedule first huddle",
+  },
+  weekly: {
+    title: "Schedule your first weekly meeting",
+    message: "A 60-90 minute weekly cadence to review KPIs, check priorities, surface stuck issues, and generate WWW commitments.",
+    cta: "Schedule first weekly",
+  },
+  monthly: {
+    title: "Schedule your first monthly meeting",
+    message: "A half-day each month for deeper learning, coaching, and cross-team alignment — away from the weekly grind.",
+    cta: "Schedule first monthly",
+  },
+  quarterly: {
+    title: "Schedule your first quarterly offsite",
+    message: "1-2 days to review the quarter, reset priorities, and plan the next 90 days as a leadership team.",
+    cta: "Schedule first quarterly",
+  },
+  annual: {
+    title: "Schedule your first annual planning session",
+    message: "1-3 days to revisit vision, set BHAGs, and align on the year ahead. The foundation of the Scaling Up rhythm.",
+    cta: "Schedule first annual",
+  },
+};
 
 interface MeetingRow {
   id: string;
@@ -184,12 +212,13 @@ export function MeetingCadenceList({ cadence, title, subtitle }: Props) {
           </div>
         )}
         {!isLoading && !error && meetings.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 gap-3 bg-white border border-gray-200 rounded-xl">
-            <Calendar className="h-10 w-10 text-gray-300" />
-            <p className="text-sm text-gray-500">No {title.toLowerCase()} yet.</p>
-            <p className="text-xs text-gray-400">
-              Click <span className="font-semibold">Schedule Meeting</span> to create your first.
-            </p>
+          <div className="bg-white border border-gray-200 rounded-xl">
+            <EmptyState
+              icon={Calendar}
+              title={CADENCE_COPY[cadence].title}
+              message={CADENCE_COPY[cadence].message}
+              action={{ label: CADENCE_COPY[cadence].cta, onClick: openModal }}
+            />
           </div>
         )}
 
