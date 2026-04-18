@@ -62,3 +62,50 @@ export interface CritCard {
   title: string;
   bullets: string[];
 }
+
+/**
+ * OPSP full form data shape — mirror of the inline `FormData` interface in
+ * `page.tsx`. Exported so extracted helpers (preview/export, etc.) can
+ * receive it without duplicating the type.
+ */
+export interface OPSPFormData {
+  year: number;
+  quarter: string;
+  targetYears: number;
+  status: string;
+  employees: string[];
+  customers: string[];
+  shareholders: string[];
+  coreValues: string;
+  purpose: string;
+  actions: string[];
+  profitPerX: string;
+  bhag: string;
+  targetRows: TargetRow[];
+  sandbox: string;
+  keyThrusts: ThrustRow[];
+  brandPromiseKPIs: string;
+  brandPromise: string;
+  goalRows: GoalRow[];
+  keyInitiatives: KeyInitiativeRow[];
+  criticalNumGoals: CritCard;
+  balancingCritNumGoals: CritCard;
+  processItems: string[];
+  weaknesses: string[];
+  makeBuy: string[];
+  sell: string[];
+  recordKeeping: string[];
+  actionsQtr: ActionRow[];
+  rocks: RockRow[];
+  criticalNumProcess: CritCard;
+  balancingCritNumProcess: CritCard;
+  theme: string;
+  scoreboardDesign: string;
+  celebration: string;
+  reward: string;
+  kpiAccountability: KPIAcctRow[];
+  quarterlyPriorities: QPriorRow[];
+  criticalNumAcct: CritCard;
+  balancingCritNumAcct: CritCard;
+  trends: string[];
+}
