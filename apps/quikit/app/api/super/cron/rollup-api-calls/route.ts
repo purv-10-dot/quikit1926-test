@@ -15,7 +15,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireCron } from "@/lib/requireCron";
+import { requireCronOrSuperAdmin } from "@/lib/requireCronOrSuperAdmin";
 import { statusClassOf } from "@quikit/shared/apiLogging";
 
 const LOOKBACK_HOURS = 24;
@@ -27,8 +27,9 @@ function truncateToHour(d: Date): Date {
 }
 
 export async function GET(req: NextRequest) {
-  const blocked = requireCron(req);
+  const { blocked, triggeredBy } = await requireCronOrSuperAdmin(req);
   if (blocked) return blocked;
+  void triggeredBy; // available if we want to audit manual runs
 
   // Compute the window: last LOOKBACK_HOURS full hours, ending at the start
   // of the current hour. The current hour is skipped because it's still

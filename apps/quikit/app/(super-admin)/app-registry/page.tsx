@@ -16,6 +16,8 @@ import {
   Key,
   Settings,
   Search,
+  Activity,
+  RefreshCw,
 } from "lucide-react";
 import { SlidePanel, Pagination, EmptyState, Select } from "@quikit/ui";
 
@@ -82,6 +84,11 @@ export default function AppRegistryPage() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
 
+  // Health probe (manual trigger of the health-check cron)
+  const [probing, setProbing] = useState(false);
+  const [lastProbeAt, setLastProbeAt] = useState<string | null>(null);
+  const [probeSummary, setProbeSummary] = useState<{ up: number; down: number; degraded: number } | null>(null);
+
   // Edit panel
   const [editOpen, setEditOpen] = useState(false);
   const [editApp, setEditApp] = useState<AppInfo | null>(null);
@@ -117,6 +124,43 @@ export default function AppRegistryPage() {
   useEffect(() => {
     setPage(1);
   }, [search]);
+
+  // Fetch last probe timestamp on mount
+  useEffect(() => {
+    fetch("/api/super/cron/last-run")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) setLastProbeAt(j.data.healthCheck);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Run health-check NOW + refresh the "last probe at" timestamp
+  async function probeAllApps() {
+    setProbing(true);
+    setProbeSummary(null);
+    try {
+      const r = await fetch("/api/super/cron/health-check", { credentials: "include" });
+      const j = await r.json();
+      if (j.success) {
+        setLastProbeAt(new Date().toISOString());
+        setProbeSummary({ up: j.data.up ?? 0, down: j.data.down ?? 0, degraded: j.data.degraded ?? 0 });
+      }
+    } finally {
+      setProbing(false);
+    }
+  }
+
+  function formatRelative(iso: string | null): string {
+    if (!iso) return "never probed";
+    const diffMs = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  }
 
   function openEdit(app: AppInfo) {
     setEditApp(app);
@@ -212,22 +256,43 @@ export default function AppRegistryPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="px-8 pt-8 pb-5 md:px-10 md:pt-10 flex items-center justify-between">
+      <div className="px-8 pt-8 pb-5 md:px-10 md:pt-10 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-slate-900">App Registry</h1>
           <p className="text-sm text-slate-500 mt-2">
             {total} apps registered on the platform
           </p>
+          <p className="text-xs text-slate-400 mt-1.5">
+            Last probe: <span className="text-slate-600">{formatRelative(lastProbeAt)}</span>
+            {probeSummary && (
+              <span className="ml-2">
+                <span className="text-emerald-600">{probeSummary.up} up</span>
+                {probeSummary.degraded > 0 && <span className="text-amber-600 ml-2">{probeSummary.degraded} degraded</span>}
+                {probeSummary.down > 0 && <span className="text-red-600 ml-2">{probeSummary.down} down</span>}
+              </span>
+            )}
+          </p>
         </div>
-        <button
-          onClick={() => {
-            setCreateError("");
-            setCreateOpen(true);
-          }}
-          className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-sm transition-colors"
-        >
-          <Plus className="h-4 w-4" /> Register App
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={probeAllApps}
+            disabled={probing}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl bg-white/70 backdrop-blur-sm border border-white/60 hover:bg-white transition-colors shadow-sm disabled:opacity-50"
+            title="Probe every app's /api/health now and record the result"
+          >
+            {probing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
+            {probing ? "Probing..." : "Probe all"}
+          </button>
+          <button
+            onClick={() => {
+              setCreateError("");
+              setCreateOpen(true);
+            }}
+            className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 shadow-sm transition-colors"
+          >
+            <Plus className="h-4 w-4" /> Register App
+          </button>
+        </div>
       </div>
 
       {/* Controls bar */}

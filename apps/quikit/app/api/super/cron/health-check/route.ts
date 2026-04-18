@@ -17,7 +17,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireCron } from "@/lib/requireCron";
+import { requireCronOrSuperAdmin } from "@/lib/requireCronOrSuperAdmin";
 
 const TIMEOUT_MS = 8_000;
 
@@ -67,7 +67,7 @@ async function probeApp(app: { id: string; slug: string; baseUrl: string }): Pro
 }
 
 export async function GET(req: NextRequest) {
-  const blocked = requireCron(req);
+  const { blocked } = await requireCronOrSuperAdmin(req);
   if (blocked) return blocked;
 
   try {

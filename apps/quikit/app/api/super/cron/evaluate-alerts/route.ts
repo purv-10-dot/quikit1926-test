@@ -21,7 +21,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireCron } from "@/lib/requireCron";
+import { requireCronOrSuperAdmin } from "@/lib/requireCronOrSuperAdmin";
 import { sendPlatformAlertEmail } from "@/lib/email";
 
 const SEVERITY_RANK: Record<string, number> = { info: 0, warning: 1, critical: 2 };
@@ -104,7 +104,7 @@ async function resolveStaleAlerts(rule: string, activeSubjectKeys: Set<string>):
 }
 
 export async function GET(req: NextRequest) {
-  const blocked = requireCron(req);
+  const { blocked } = await requireCronOrSuperAdmin(req);
   if (blocked) return blocked;
 
   const now = new Date();
