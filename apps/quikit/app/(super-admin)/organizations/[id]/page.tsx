@@ -172,16 +172,16 @@ export default function OrgDetailPage() {
   }
 
   return (
-    <div className="p-8 md:p-10">
+    <div className="p-4 md:p-10">
       {/* Back link */}
       <Link href="/organizations" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors mb-6">
         <ArrowLeft className="h-4 w-4" /> Organizations
       </Link>
 
       {/* Title area */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">{org.name}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 md:mb-8">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">{org.name}</h1>
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize ${planBadge[org.plan] || "bg-gray-100 text-gray-600"}`}>
             {org.plan}
           </span>
@@ -357,7 +357,8 @@ export default function OrgDetailPage() {
             {org.users.length === 0 ? (
               <EmptyState icon={Users} message="No members yet." />
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[500px]">
                 <thead>
                   <tr className="border-b border-gray-100">
                     <th className="text-left px-5 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Name</th>
@@ -379,6 +380,7 @@ export default function OrgDetailPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </div>

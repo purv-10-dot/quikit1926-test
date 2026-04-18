@@ -79,7 +79,7 @@ export function AnalyticsPanel({ tenantId }: { tenantId: string }) {
       </div>
 
       {/* API summary */}
-      <div className="grid grid-cols-3 gap-4 p-5 border-b border-gray-100">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5 border-b border-gray-100">
         <Stat label="Total calls" value={data.api.totalCalls.toLocaleString()} />
         <Stat label="Errors" value={data.api.totalErrors.toLocaleString()} color={data.api.totalErrors > 0 ? "text-red-700" : undefined} />
         <Stat label="Error rate" value={`${data.api.errorRatePct}%`} color={data.api.errorRatePct > 5 ? "text-amber-700" : undefined} />
@@ -123,7 +123,7 @@ export function AnalyticsPanel({ tenantId }: { tenantId: string }) {
       )}
 
       {/* Billing summary */}
-      <div className="grid grid-cols-3 gap-4 p-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-5">
         <Stat label="Paid (L12)" value={`$${data.billing.invoicesPaidDollars}`} color="text-green-700" />
         <Stat label="Pending (L12)" value={`$${data.billing.invoicesPendingDollars}`} color="text-amber-700" />
         <Stat label="Failed (L12)" value={`$${data.billing.invoicesFailedDollars}`} color="text-red-700" />

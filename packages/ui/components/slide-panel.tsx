@@ -35,15 +35,15 @@ export function SlidePanel({
 
   return (
     <div className="fixed inset-0 z-[200] flex">
-      {/* Backdrop */}
+      {/* Backdrop (mobile: absolute behind; sm+: flex sibling that pushes panel right) */}
       <div
-        className="flex-1 bg-black/30"
+        className="absolute inset-0 bg-black/30 sm:static sm:flex-1"
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Panel */}
-      <div className="w-[480px] bg-white shadow-2xl flex flex-col">
+      <div className="relative z-10 ml-auto w-full sm:w-[480px] sm:max-w-[90vw] bg-white shadow-2xl flex flex-col">
         {/* Header */}
         <div className="px-6 py-5 border-b border-gray-200 flex items-start justify-between">
           <div>

@@ -31,9 +31,9 @@ function moduleStats(appSlug: string): { parents: number; sub: number } {
 
 export default function FeatureFlagsIndexPage() {
   return (
-    <div className="p-8 md:p-10">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold tracking-tight text-slate-900">App Feature Flags</h1>
+    <div className="p-4 md:p-10">
+      <div className="mb-6 md:mb-8">
+        <h1 className="text-2xl md:text-4xl font-bold tracking-tight text-slate-900">App Feature Flags</h1>
         <p className="text-sm text-slate-500 mt-2">
           Pick an app to enable or disable modules per tenant. New modules ship enabled by default.
         </p>

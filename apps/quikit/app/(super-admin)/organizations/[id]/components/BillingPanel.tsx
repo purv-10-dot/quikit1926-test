@@ -111,7 +111,7 @@ export function BillingPanel({ tenantId }: { tenantId: string }) {
         <div className="p-5 text-gray-400 text-sm">No invoices yet. Click &quot;Generate invoice&quot; or wait for the monthly cron.</div>
       ) : (
         <>
-          <div className="grid grid-cols-4 gap-2 p-5 bg-gray-50/50 border-b border-gray-100">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-5 bg-gray-50/50 border-b border-gray-100">
             <Total label="Paid" value={`$${data.totals.paidDollars}`} color="text-green-700" />
             <Total label="Pending" value={`$${data.totals.pendingDollars}`} color="text-amber-700" />
             <Total label="Failed" value={`$${data.totals.failedDollars}`} color="text-red-700" />
