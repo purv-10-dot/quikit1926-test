@@ -120,7 +120,10 @@ export const kpiNoteSchema = z.object({
 // List Query Params
 export const kpiListParamsSchema = z.object({
   page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(1000).default(20),
+  // Capped at 100 — consistent with other list endpoints and the shared
+  // parsePaginationParams MAX_LIMIT. Bulk-export use cases should hit a
+  // dedicated export route, not inflate pageSize.
+  pageSize: z.number().int().min(1).max(100).default(20),
   status: z.enum(["active", "paused", "completed"]).optional(),
   kpiLevel: z.enum(["individual", "team"]).optional(),
   owner: z.string().cuid().optional(),
