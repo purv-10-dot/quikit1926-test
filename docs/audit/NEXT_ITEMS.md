@@ -54,9 +54,10 @@
 | 37 | **Remove overkill**: dead `@quikit/shared/withApiLogging` (unused) | Cleanup | 🟢 | ⏱️ | AUDIT §6 item 1 | — |
 | 38 | **Consider removing**: `BroadcastDismissal` table → localStorage | Cleanup | 🟢 | ⏱️⏱️ | AUDIT §6 item 3 | — |
 | 39 | **Consider removing**: `ApiCallHourlyRollup` + cron (premature at <10 tenants) | Cleanup | 🟢 | ⏱️⏱️ | AUDIT §6 item 5 | — |
-| 40 | Pick one: `SlidePanel` vs `Modal` and retire the other | Cleanup | 🟢 | ⏱️⏱️⏱️ | AUDIT §6 item 6 | — |
+| 40 | ~~Pick one: `SlidePanel` vs `Modal` and retire the other~~ **DEPRIORITIZED (2026-04-18)** — brainstorm concluded they serve genuinely different JTBD. SlidePanel = list-context-preserving drawer; Modal = focused blocking overlay. No consolidation needed. Replace with governance doc (`docs/engineering/UI_OVERLAY_GUIDE.md`) if confusion arises. | Docs | 🟢 | ⏱️ | Brainstorm 2026-04-18 | — |
 | 41 | Seed a design-partner customer (business task, not code) | Business | 🔴 | multi-week | ROADMAP R2-2 | Revenue |
 | 42 | Real Stripe integration (when customer #1 needs to pay) | Business | 🟡 | ⏱️⏱️⏱️⏱️⏱️ | ROADMAP R2-5 | Customer pull |
+| 43 | **Unified toast/notification system across all 3 apps** — currently error/success/save feedback is inconsistent (silent fails in some flows, `setError` text in others, `alert()` in a few legacy spots). Build a shared `ToastProvider` + `useToast()` in `@quikit/ui` (variants: success, error, info, warning), wire `ToastProvider` into each app's providers, then migrate every `setError`/`alert()`/silent-fail site to emit a toast. Also show toasts on save (auto-dismiss 3s) and error (manual-dismiss). Expected surfaces: form saves, mutation success/fail in super-admin lists, impersonation start/exit, feature-flag toggles, OPSP autosave status. | UX | 🟠 | ⏱️⏱️⏱️ | User request 2026-04-18 | — |
 
 ---
 
