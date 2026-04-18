@@ -9,6 +9,7 @@
     "./rls": "./rls.ts"
   },
   "scripts": {
+    "postinstall": "prisma generate",
     "generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
