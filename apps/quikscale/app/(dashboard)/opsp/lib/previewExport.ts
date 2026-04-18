@@ -16,6 +16,7 @@
  */
 
 import type { OPSPFormData } from "../types";
+import type { FileChild } from "docx";
 
 export interface OPSPWordUser {
   id: string;
@@ -133,8 +134,9 @@ export async function buildOPSPWordBlob(
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sections: any[] = [];
+  // docx runtime values are dynamically imported above, but the FileChild
+  // type is a pure type import so TypeScript can give us a proper element type.
+  const sections: FileChild[] = [];
 
   // Title
   sections.push(
