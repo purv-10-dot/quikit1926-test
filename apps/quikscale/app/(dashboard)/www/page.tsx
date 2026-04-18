@@ -6,12 +6,13 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { WWWTable } from "./components/WWWTable";
 import { WWWPanel } from "./components/WWWPanel";
-import { FilterPicker, userToFilterOption } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { STATUS_FILTER_OPTIONS } from "@/lib/constants/status";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { AddButton } from "@quikit/ui";
+import { Trophy } from "lucide-react";
 
 export default function WWWPage() {
   const [search, setSearch] = useState("");
@@ -205,20 +206,13 @@ export default function WWWPage() {
             Failed to load WWW items
           </div>
         ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
-            <svg className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            <p className="text-sm">No WWW items yet</p>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-md hover:bg-gray-700 transition-colors"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add First Item
-            </button>
+          <div className="flex items-center justify-center h-full">
+            <EmptyState
+              icon={Trophy}
+              title="Log your first win"
+              message="WWW (Who Will do What by When) captures commitments made in meetings. Track who owns what, when it's due, and whether it landed."
+              action={{ label: "Add your first WWW", onClick: () => setShowAddModal(true) }}
+            />
           </div>
         ) : (
           <WWWTable

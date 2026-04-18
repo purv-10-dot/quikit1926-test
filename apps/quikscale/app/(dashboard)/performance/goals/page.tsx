@@ -17,7 +17,7 @@ import {
 import Link from "next/link";
 import { useGoals, useCreateGoal, useUpdateGoal, useDeleteGoal } from "@/lib/hooks/useGoals";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { AddButton } from "@quikit/ui";
+import { AddButton, EmptyState } from "@quikit/ui";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { GOAL_STATUSES, type GoalStatus } from "@/lib/schemas/goalSchema";
 
@@ -222,12 +222,13 @@ export default function GoalsPage() {
             </div>
           )}
           {!isLoading && goals.length === 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-10 text-center">
-              <Target className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-500">No goals yet for {quarter} {year}.</p>
-              <p className="text-xs text-gray-400 mt-1">
-                Click <span className="font-semibold">Add Goal</span> to get started.
-              </p>
+            <div className="bg-white border border-gray-200 rounded-xl">
+              <EmptyState
+                icon={Target}
+                title="Set your first goal"
+                message={`Goals are your quarterly and annual objectives — the outcomes you're working toward in ${quarter} ${year}. Unlike Priorities (short-term execution), Goals set direction.`}
+                action={{ label: "Add your first goal", onClick: openCreate }}
+              />
             </div>
           )}
           <div className="space-y-2">

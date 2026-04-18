@@ -798,10 +798,20 @@ export default function DailyHuddlePage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={12} className="text-center py-16">
-                  <div className="flex flex-col items-center gap-2">
-                    <Clock className="h-8 w-8 text-gray-200" />
-                    <p className="text-sm text-gray-400 font-medium">No records yet</p>
-                    <p className="text-xs text-gray-400">Click <span className="font-semibold">Add New</span> to create the first huddle record.</p>
+                  <div className="flex flex-col items-center gap-3 px-4">
+                    <Clock className="h-10 w-10 text-gray-300" />
+                    <h3 className="text-sm font-semibold text-gray-800">Log your first daily huddle</h3>
+                    <p className="text-sm text-gray-500 max-w-md">
+                      A 5-15 minute daily stand-up keeps your team in sync. Track achievements,
+                      stuck issues, and the day&apos;s priorities — one record per meeting.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={openAdd}
+                      className="mt-1 px-4 py-2 text-xs font-medium text-white bg-accent-600 hover:bg-accent-700 rounded-lg transition-colors"
+                    >
+                      Add your first huddle
+                    </button>
                   </div>
                 </td>
               </tr>

@@ -10,11 +10,12 @@ import {
 } from "@/lib/utils/fiscal";
 import { PriorityTable } from "./components/PriorityTable";
 import { PriorityModal } from "./components/PriorityModal";
-import { FilterPicker, userToFilterOption } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { AddButton } from "@quikit/ui";
+import { Flag } from "lucide-react";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -261,18 +262,13 @@ export default function PriorityPage() {
             Failed to load priorities
           </div>
         ) : priorities.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
-            <svg className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            <p className="text-sm">No priorities for {fiscalYearLabel(year)} · {quarter}</p>
-            <button onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-md hover:bg-gray-700 transition-colors">
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add First Priority
-            </button>
+          <div className="flex items-center justify-center h-full">
+            <EmptyState
+              icon={Flag}
+              title="Define your first priority"
+              message={`Priorities are the 3-5 most important things your team will accomplish in ${fiscalYearLabel(year)} · ${quarter}. They turn strategy into focused execution.`}
+              action={{ label: "Add your first priority", onClick: () => setShowAddModal(true) }}
+            />
           </div>
         ) : (
           <PriorityTable

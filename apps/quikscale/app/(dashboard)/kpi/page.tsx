@@ -15,9 +15,10 @@ import { HiddenColsMenu } from "./components/HiddenColsMenu";
 import { KPIModal } from "./components/KPIModal";
 import { ALL_STATIC_COLS } from "./hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
-import { FilterPicker, userToFilterOption } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { AddButton } from "@quikit/ui";
+import { Target } from "lucide-react";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -301,20 +302,13 @@ export default function IndividualKPIPage() {
         ) : error ? (
           <div className="flex items-center justify-center h-full text-sm text-red-500">Failed to load KPIs</div>
         ) : kpis.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
-            <svg className="h-10 w-10 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <p className="text-sm">No KPIs yet for this period</p>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-md hover:bg-gray-700 transition-colors"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add First KPI
-            </button>
+          <div className="flex items-center justify-center h-full">
+            <EmptyState
+              icon={Target}
+              title="Track your first KPI"
+              message="KPIs are measurable goals your team tracks weekly. They keep everyone aligned on what matters and surface trends before they become problems."
+              action={{ label: "Add your first KPI", onClick: () => setShowAddModal(true) }}
+            />
           </div>
         ) : (
           <KPITable
