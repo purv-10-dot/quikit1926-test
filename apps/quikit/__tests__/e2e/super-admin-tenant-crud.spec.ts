@@ -55,7 +55,7 @@ test("tenant CRUD full flow: create → appears in list → detail page loads �
   if ((await planSelect.count()) > 0) {
     const tagName = await planSelect.evaluate((el) => el.tagName.toLowerCase()).catch(() => "");
     if (tagName === "select") {
-      await planSelect.selectOption({ label: /trial/i }).catch(() => {});
+      await planSelect.selectOption({ label: "Trial" }).catch(() => {});
     }
   }
 
