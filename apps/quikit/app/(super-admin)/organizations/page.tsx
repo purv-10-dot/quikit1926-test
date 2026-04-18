@@ -312,7 +312,58 @@ export default function OrgsPage() {
           <EmptyState icon={Building2} message="No organizations found." />
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
+            {/* Mobile card view (<md) */}
+            <div className="md:hidden p-3 space-y-2">
+              {tenants.map((t) => (
+                <div
+                  key={t.id}
+                  className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm"
+                >
+                  <div className="flex items-start gap-2 flex-wrap">
+                    <Link
+                      href={`/organizations/${t.id}`}
+                      className="font-medium text-gray-900 hover:underline flex-1 min-w-0 truncate"
+                    >
+                      {t.name}
+                    </Link>
+                    <PlanBadge plan={t.plan} />
+                    <StatusBadge status={t.status} />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{t.slug}</p>
+                  <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                    <span>
+                      {t.memberCount} member{t.memberCount === 1 ? "" : "s"}
+                    </span>
+                    <span>
+                      Created {new Date(t.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={() => router.push(`/organizations/${t.id}`)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                    >
+                      <Eye className="h-3.5 w-3.5" /> View
+                    </button>
+                    <button
+                      onClick={() => openEdit(t)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-gray-600 bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </button>
+                    <button
+                      onClick={() => handleSuspend(t.id, t.name)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-red-600 bg-red-50 hover:bg-red-100 transition-colors ml-auto"
+                    >
+                      <Ban className="h-3.5 w-3.5" /> Suspend
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop table (md+) — wrapped in overflow-x-auto for narrow tablets */}
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm min-w-[720px]">
               <thead>
                 <tr className="bg-gray-50">
