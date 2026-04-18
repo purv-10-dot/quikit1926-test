@@ -108,7 +108,7 @@ export function BillingPanel({ tenantId }: { tenantId: string }) {
       {loading ? (
         <div className="p-5 text-gray-400 text-sm">Loading...</div>
       ) : !data || data.invoices.length === 0 ? (
-        <div className="p-5 text-gray-400 text-sm">No invoices yet. Click "Generate invoice" or wait for the monthly cron.</div>
+        <div className="p-5 text-gray-400 text-sm">No invoices yet. Click &quot;Generate invoice&quot; or wait for the monthly cron.</div>
       ) : (
         <>
           <div className="grid grid-cols-4 gap-2 p-5 bg-gray-50/50 border-b border-gray-100">

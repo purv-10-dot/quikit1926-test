@@ -18,6 +18,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireCronOrSuperAdmin } from "@/lib/requireCronOrSuperAdmin";
+import { requireProdEnv } from "@quikit/shared/env";
 
 const TIMEOUT_MS = 8_000;
 
@@ -35,7 +36,8 @@ async function probeApp(app: { id: string; slug: string; baseUrl: string }): Pro
   // For registered external apps baseUrl is absolute.
   let url: URL;
   try {
-    url = new URL("/api/health", app.baseUrl === "/" ? process.env.QUIKIT_URL ?? "http://localhost:3000" : app.baseUrl);
+    const launcherBase = requireProdEnv("QUIKIT_URL", "http://localhost:3000"); // prod-safety-allow: dev fallback, prod throws
+    url = new URL("/api/health", app.baseUrl === "/" ? launcherBase : app.baseUrl);
   } catch {
     return { appId: app.id, status: "down", statusCode: null, durationMs: null, error: `Invalid baseUrl: ${app.baseUrl}` };
   }
