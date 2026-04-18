@@ -25,6 +25,9 @@ const E2E_PASSWORD = "E2ETest123!";
 const E2E_ADMIN_EMAIL = "e2e-admin@test.com";
 const E2E_HEAD_EMAIL = "e2e-head@test.com";
 const E2E_MEMBER_EMAIL = "e2e-member@test.com";
+// Super admin — used by quikit Playwright specs for super-admin surface area
+// (tenant list, feature flags, impersonation, etc.). NOT a member of any tenant.
+const E2E_SUPER_ADMIN_EMAIL = "e2e-super@test.com";
 
 async function wipeExistingE2ETenant() {
   const existing = await prisma.tenant.findUnique({
@@ -54,6 +57,12 @@ async function wipeExistingE2ETenant() {
     if (otherMemberships === 0) {
       await prisma.user.delete({ where: { id: user.id } });
     }
+  }
+
+  // Super admin has no memberships — always safe to delete on re-seed.
+  const superAdmin = await prisma.user.findUnique({ where: { email: E2E_SUPER_ADMIN_EMAIL } });
+  if (superAdmin) {
+    await prisma.user.delete({ where: { id: superAdmin.id } });
   }
 }
 
@@ -144,12 +153,28 @@ async function main() {
     },
   });
 
+  // Super admin user — used by quikit super-admin Playwright specs. Lives
+  // outside any tenant. `isSuperAdmin: true` grants access to the super-admin
+  // surface area.
+  const superAdmin = await prisma.user.upsert({
+    where: { email: E2E_SUPER_ADMIN_EMAIL },
+    update: { password: hashed, isSuperAdmin: true },
+    create: {
+      email: E2E_SUPER_ADMIN_EMAIL,
+      firstName: "E2E",
+      lastName: "SuperAdmin",
+      password: hashed,
+      isSuperAdmin: true,
+    },
+  });
+
   console.log("✅ E2E seed complete");
-  console.log(`   Tenant: ${tenant.slug} (${tenant.id})`);
-  console.log(`   Admin:  ${admin.email}`);
-  console.log(`   Head:   ${head.email}`);
-  console.log(`   Member: ${member.email}`);
-  console.log(`   Password: ${E2E_PASSWORD}`);
+  console.log(`   Tenant:      ${tenant.slug} (${tenant.id})`);
+  console.log(`   Admin:       ${admin.email}`);
+  console.log(`   Head:        ${head.email}`);
+  console.log(`   Member:      ${member.email}`);
+  console.log(`   SuperAdmin:  ${superAdmin.email}`);
+  console.log(`   Password:    ${E2E_PASSWORD}`);
 }
 
 main()
