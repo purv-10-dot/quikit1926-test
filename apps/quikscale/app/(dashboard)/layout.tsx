@@ -7,7 +7,7 @@ import { OPSPDeadlineBanner } from "@/components/dashboard/opsp-deadline-banner"
 import { FilterProvider } from "@/lib/context/FilterContext";
 import { SessionGuard } from "@/components/session-guard";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
-import { FeatureDisabledToast } from "@quikit/ui";
+import { FeatureDisabledToast, ImpersonationBanner } from "@quikit/ui";
 
 export default function DashboardLayout({
   children,
@@ -19,6 +19,7 @@ export default function DashboardLayout({
   return (
     <SessionGuard>
     <ThemeApplier />
+    <ImpersonationBanner />
     <FeatureDisabledToast />
     <FilterProvider>
       <div className="flex h-screen bg-[var(--color-bg-secondary)]">

@@ -26,16 +26,20 @@ import {
   ChevronDown,
   FileText,
   ToggleRight,
+  BarChart3,
+  Megaphone,
 } from "lucide-react";
 import { AppSwitcher } from "@quikit/ui";
 import { motion, AnimatePresence } from "framer-motion";
 
 const NAV_ITEMS = [
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Organizations", href: "/organizations", icon: Building2 },
   { label: "App Registry", href: "/app-registry", icon: LayoutGrid },
   { label: "App Feature Flags", href: "/feature-flags", icon: ToggleRight },
   { label: "Pricing & Plans", href: "/pricing", icon: CreditCard },
   { label: "Users", href: "/platform-users", icon: Users },
+  { label: "Broadcasts", href: "/broadcasts", icon: Megaphone },
   { label: "Audit Log", href: "/audit", icon: FileText },
 ];
 
@@ -95,9 +99,9 @@ export default function SuperAdminLayout({
   const sidebarContent = (
     <>
       {/* Logo area */}
-      <div className="px-4 py-5 border-b border-white/10">
+      <div className="px-4 py-5 border-b border-slate-200/60">
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-red-600 flex items-center justify-center flex-shrink-0">
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-sm">
             <Shield className="h-4 w-4 text-white" />
           </div>
           <AnimatePresence>
@@ -109,10 +113,10 @@ export default function SuperAdminLayout({
                 transition={{ duration: 0.2 }}
                 className="overflow-hidden whitespace-nowrap"
               >
-                <p className="text-xs font-bold uppercase tracking-wider text-white">
+                <p className="text-sm font-bold tracking-tight text-slate-900">
                   QuikIT
                 </p>
-                <p className="text-[10px] text-gray-400">Super Admin</p>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider">Super Admin</p>
               </motion.div>
             )}
           </AnimatePresence>
@@ -121,6 +125,11 @@ export default function SuperAdminLayout({
 
       {/* Nav items */}
       <nav className="flex-1 px-2 py-4 space-y-1">
+        {!collapsed && (
+          <p className="px-3 pb-2 text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            Main Menu
+          </p>
+        )}
         {NAV_ITEMS.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
@@ -132,11 +141,11 @@ export default function SuperAdminLayout({
               title={collapsed ? item.label : undefined}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
                 isActive
-                  ? "bg-white/15 text-white font-medium"
-                  : "text-white/60 hover:bg-white/10 hover:text-white"
+                  ? "bg-white text-slate-900 font-semibold shadow-sm border border-white/80"
+                  : "text-slate-600 hover:bg-white/60 hover:text-slate-900"
               }`}
             >
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0">
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${isActive ? "bg-amber-100 text-amber-700" : ""}`}>
                 <Icon className="h-4 w-4" />
               </div>
               <AnimatePresence>
@@ -158,10 +167,10 @@ export default function SuperAdminLayout({
       </nav>
 
       {/* Collapse toggle (desktop only) */}
-      <div className="hidden md:block px-2 py-3 border-t border-white/10">
+      <div className="hidden md:block px-2 py-3 border-t border-slate-200/60">
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-white/60 hover:bg-white/10 hover:text-white text-sm transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-slate-500 hover:bg-white/60 hover:text-slate-900 text-sm transition-colors"
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -177,12 +186,12 @@ export default function SuperAdminLayout({
   );
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gradient-to-br from-amber-50 via-orange-50/30 to-slate-100">
       {/* Desktop sidebar */}
       <motion.aside
-        animate={{ width: collapsed ? 56 : 220 }}
+        animate={{ width: collapsed ? 64 : 232 }}
         transition={{ duration: 0.2, ease: "easeInOut" }}
-        className="hidden md:flex flex-shrink-0 bg-gray-900 text-white flex-col overflow-hidden"
+        className="hidden md:flex flex-shrink-0 bg-white/50 backdrop-blur-md border-r border-white/60 text-slate-900 flex-col overflow-hidden"
       >
         {sidebarContent}
       </motion.aside>
@@ -195,20 +204,20 @@ export default function SuperAdminLayout({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/50 md:hidden"
+              className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm md:hidden"
               onClick={() => setMobileOpen(false)}
             />
             <motion.aside
-              initial={{ x: -220 }}
+              initial={{ x: -232 }}
               animate={{ x: 0 }}
-              exit={{ x: -220 }}
+              exit={{ x: -232 }}
               transition={{ duration: 0.2, ease: "easeInOut" }}
-              className="fixed inset-y-0 left-0 z-50 w-[220px] bg-gray-900 text-white flex flex-col md:hidden"
+              className="fixed inset-y-0 left-0 z-50 w-[232px] bg-white text-slate-900 flex flex-col md:hidden shadow-xl"
             >
               <div className="absolute top-4 right-3">
                 <button
                   onClick={() => setMobileOpen(false)}
-                  className="p-1 rounded-lg text-white/60 hover:bg-white/10 hover:text-white"
+                  className="p-1 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -222,16 +231,16 @@ export default function SuperAdminLayout({
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top header bar */}
-        <header className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+        <header className="flex items-center justify-between px-6 py-3 border-b border-white/40 bg-white/40 backdrop-blur-md flex-shrink-0">
           <div className="flex items-center gap-3">
             {/* Mobile hamburger */}
             <button
               onClick={() => setMobileOpen(true)}
-              className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 md:hidden"
+              className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 md:hidden"
             >
               <Menu className="h-5 w-5" />
             </button>
-            <span className="text-sm font-semibold text-gray-900">
+            <span className="text-sm font-semibold text-slate-900">
               Super Admin
             </span>
           </div>
@@ -243,12 +252,15 @@ export default function SuperAdminLayout({
             <div className="relative" ref={avatarRef}>
               <button
                 onClick={() => setAvatarOpen(!avatarOpen)}
-                className="flex items-center gap-2 p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/70 border border-white/60 hover:bg-white transition-colors"
               >
-                <div className="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-semibold">
+                <div className="h-8 w-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white text-xs font-semibold shadow-sm">
                   {userInitials}
                 </div>
-                <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                <span className="text-sm font-medium text-slate-700 hidden sm:inline">
+                  {session?.user?.name?.split(" ")[0] || "Admin"}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
               </button>
 
               <AnimatePresence>
@@ -258,13 +270,13 @@ export default function SuperAdminLayout({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1"
+                    className="absolute right-0 top-full mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1"
                   >
-                    <div className="px-4 py-3 border-b border-gray-100">
-                      <p className="text-sm font-medium text-gray-900">
+                    <div className="px-4 py-3 border-b border-slate-100">
+                      <p className="text-sm font-medium text-slate-900">
                         {session?.user?.name || "Super Admin"}
                       </p>
-                      <p className="text-xs text-gray-500 truncate">
+                      <p className="text-xs text-slate-500 truncate">
                         {session?.user?.email}
                       </p>
                     </div>
