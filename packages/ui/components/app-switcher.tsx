@@ -21,6 +21,73 @@ interface AppSwitcherProps {
    * admin layout uses "/api/apps/launcher" since it serves the full registry.
    */
   apiUrl?: string;
+  /**
+   * Disable the idle-time prefetch on mount. Default: prefetch enabled.
+   * Set to false in test environments where the fetch would make noise.
+   */
+  prefetch?: boolean;
+}
+
+/* ─── Module-level cache ─────────────────────────────────────────────────── */
+
+/**
+ * The app list is hoisted to a module-level cache with a 5-min TTL so:
+ *   - Re-mounts of the switcher (e.g. route transitions that remount the
+ *     header, OAuth round-trips that re-hydrate the app shell) do NOT
+ *     refetch — the first GET /api/apps/switcher on the page is the only
+ *     one that hits the network for the next 5 minutes.
+ *   - Multiple AppSwitcher instances in the same tab share one cached
+ *     response keyed by apiUrl (launcher vs switcher).
+ *
+ * Paired with the idle-time prefetch below, this means the FIRST open of
+ * the switcher is instant on the vast majority of navigations.
+ */
+interface CacheEntry {
+  apps: AppInfo[];
+  quikitUrl: string | null;
+  fetchedAt: number;
+}
+const APP_CACHE = new Map<string, CacheEntry>();
+const APP_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// In-flight promise dedupe — if two components mount simultaneously and
+// both call fetchApps, they share one network request instead of racing.
+const APP_INFLIGHT = new Map<string, Promise<CacheEntry | null>>();
+
+async function fetchAppsNetwork(apiUrl: string): Promise<CacheEntry | null> {
+  const cached = APP_CACHE.get(apiUrl);
+  if (cached && Date.now() - cached.fetchedAt < APP_CACHE_TTL_MS) {
+    return cached;
+  }
+  const existing = APP_INFLIGHT.get(apiUrl);
+  if (existing) return existing;
+
+  const p = (async (): Promise<CacheEntry | null> => {
+    try {
+      const res = await fetch(apiUrl);
+      const json = await res.json();
+      if (!json.success) return null;
+      const list = (json.data as AppInfo[]).filter(
+        (a) => a.status !== "coming_soon" && a.installed !== false,
+      );
+      const quikitUrl = typeof json.quikitUrl === "string" && json.quikitUrl ? json.quikitUrl : null;
+      const entry: CacheEntry = { apps: list, quikitUrl, fetchedAt: Date.now() };
+      APP_CACHE.set(apiUrl, entry);
+      return entry;
+    } catch {
+      return null;
+    } finally {
+      APP_INFLIGHT.delete(apiUrl);
+    }
+  })();
+  APP_INFLIGHT.set(apiUrl, p);
+  return p;
+}
+
+/** Test-only: clear both the cache and in-flight map. Exported for tests. */
+export function _resetAppSwitcherCache(): void {
+  APP_CACHE.clear();
+  APP_INFLIGHT.clear();
 }
 
 /* ─── Icon fallbacks ─── */
@@ -54,43 +121,71 @@ const DEFAULT_ICON = { emoji: "📦", bg: "bg-gray-100" };
  *   <AppSwitcher />                                 // most apps
  *   <AppSwitcher apiUrl="/api/apps/launcher" />     // quikit super admin
  */
-export function AppSwitcher({ apiUrl = "/api/apps/switcher" }: AppSwitcherProps = {}) {
+export function AppSwitcher({ apiUrl = "/api/apps/switcher", prefetch = true }: AppSwitcherProps = {}) {
   const [open, setOpen] = useState(false);
-  const [apps, setApps] = useState<AppInfo[]>([]);
+  // Hydrate initial state from the module cache so a re-mount doesn't flash
+  // "loading" when data is already warm.
+  const initialCache = APP_CACHE.get(apiUrl);
+  const initialFresh = initialCache && Date.now() - initialCache.fetchedAt < APP_CACHE_TTL_MS;
+  const [apps, setApps] = useState<AppInfo[]>(initialFresh ? initialCache.apps : []);
   const [loading, setLoading] = useState(false);
-  const [fetched, setFetched] = useState(false);
-  const [quikitUrl, setQuikitUrl] = useState<string | null>(null);
+  const [fetched, setFetched] = useState(!!initialFresh);
+  const [quikitUrl, setQuikitUrl] = useState<string | null>(initialFresh ? initialCache.quikitUrl : null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Fetch apps from the app's own launcher API. The API is responsible for
-  // tenant filtering and returning the authoritative QuikIT gateway URL.
+  // Fetch via the shared module cache so multiple components / re-mounts
+  // share one request. `fetchAppsNetwork` returns instantly if cached.
   const fetchApps = useCallback(async () => {
     if (fetched) return;
     setLoading(true);
-    try {
-      const res = await fetch(apiUrl);
-      const json = await res.json();
-      if (json.success) {
-        const list = (json.data as AppInfo[]).filter(
-          (a) => a.status !== "coming_soon" && a.installed !== false,
-        );
-        setApps(list);
-        if (typeof json.quikitUrl === "string" && json.quikitUrl) {
-          setQuikitUrl(json.quikitUrl);
-        }
-      }
-    } catch {
-      // Silently fail — grid just won't show apps
-    } finally {
-      setLoading(false);
-      setFetched(true);
+    const entry = await fetchAppsNetwork(apiUrl);
+    if (entry) {
+      setApps(entry.apps);
+      setQuikitUrl(entry.quikitUrl);
     }
+    setLoading(false);
+    setFetched(true);
   }, [apiUrl, fetched]);
 
-  // Fetch on first open
+  // Prefetch on mount with idle priority so the first click on the switcher
+  // is instant. We never prefetch if data is already warm.
+  useEffect(() => {
+    if (!prefetch) return;
+    if (fetched) return;
+    if (typeof window === "undefined") return;
+
+    // Use requestIdleCallback where supported so we don't contend with
+    // critical rendering work. Fall back to setTimeout.
+    type IdleWindow = Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const w = window as IdleWindow;
+
+    let idleId: number | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (typeof w.requestIdleCallback === "function") {
+      idleId = w.requestIdleCallback(() => {
+        void fetchApps();
+      }, { timeout: 3000 });
+    } else {
+      timeoutId = setTimeout(() => {
+        void fetchApps();
+      }, 1500);
+    }
+    return () => {
+      if (idleId !== undefined && typeof w.cancelIdleCallback === "function") {
+        w.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    };
+  }, [prefetch, fetched, fetchApps]);
+
+  // Fetch on first open (fallback — normally the prefetch above has already
+  // run, in which case this is a no-op thanks to the `fetched` guard).
   useEffect(() => {
     if (open && !fetched) {
-      fetchApps();
+      void fetchApps();
     }
   }, [open, fetched, fetchApps]);
 
