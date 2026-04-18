@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "//": "Vercel Hobby allows ONLY once-per-day crons. The 3 sub-daily crons (rollup-api-calls, health-check, evaluate-alerts) must be triggered from an external scheduler (e.g. UptimeRobot webhooks) until we upgrade to Pro. Endpoints are live and CRON_SECRET-protected — any caller with the secret can hit them.",
   "crons": [
     {
       "path": "/api/super/cron/cleanup-api-calls",
