@@ -256,9 +256,9 @@ export default function AppRegistryPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="px-8 pt-8 pb-5 md:px-10 md:pt-10 flex items-start justify-between gap-4">
+      <div className="px-4 pt-6 pb-5 md:px-10 md:pt-10 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-slate-900">App Registry</h1>
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight text-slate-900">App Registry</h1>
           <p className="text-sm text-slate-500 mt-2">
             {total} apps registered on the platform
           </p>
@@ -273,7 +273,7 @@ export default function AppRegistryPage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={probeAllApps}
             disabled={probing}
@@ -296,7 +296,7 @@ export default function AppRegistryPage() {
       </div>
 
       {/* Controls bar */}
-      <div className="px-6 py-3 border-b border-gray-200 flex items-center gap-3">
+      <div className="px-4 md:px-6 py-3 border-b border-gray-200 flex flex-wrap items-center gap-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
@@ -310,7 +310,7 @@ export default function AppRegistryPage() {
       </div>
 
       {/* Card grid */}
-      <div className="px-6 py-4">
+      <div className="px-4 md:px-6 py-4">
         {loading ? (
           <div className="text-sm text-gray-400 py-12 text-center">
             Loading...

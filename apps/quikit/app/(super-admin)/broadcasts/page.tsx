@@ -104,10 +104,10 @@ export default function BroadcastsPage() {
   }
 
   return (
-    <div className="p-8 md:p-10">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 md:p-10">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 md:mb-8">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-slate-900">Broadcasts</h1>
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight text-slate-900">Broadcasts</h1>
           <p className="text-sm text-slate-500 mt-2">Platform-wide announcements shown as banners in every app.</p>
         </div>
         <button

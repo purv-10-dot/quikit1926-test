@@ -154,10 +154,10 @@ export default function AnalyticsPage() {
   const maxActive = Math.max(1, ...data.engagement.dailyTrend.map((d) => d.activeUsers));
 
   return (
-    <div className="p-8 md:p-10 space-y-8">
-      <div className="flex items-start justify-between gap-4">
+    <div className="p-4 md:p-10 space-y-6 md:space-y-8">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-slate-900">Analytics</h1>
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight text-slate-900">Analytics</h1>
           <p className="text-sm text-slate-500 mt-2">Platform health and narrative summaries</p>
           {lastRun && (
             <p className="text-xs text-slate-400 mt-1.5">
@@ -167,7 +167,7 @@ export default function AnalyticsPage() {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={load}

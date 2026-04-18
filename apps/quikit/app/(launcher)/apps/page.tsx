@@ -153,8 +153,8 @@ export default function AppLauncherPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-5">
-          <div className="flex items-center justify-between mb-5">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
                 Q
@@ -168,7 +168,7 @@ export default function AppLauncherPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               {/* Org Selector */}
               {orgs.length > 0 && (
                 <div className="relative">
@@ -228,14 +228,14 @@ export default function AppLauncherPage() {
               )}
 
               {/* Search */}
-              <div className="relative">
+              <div className="relative flex-1 sm:flex-none min-w-[140px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Search apps..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 w-56"
+                  className="pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 w-full sm:w-56"
                 />
               </div>
             </div>
@@ -246,7 +246,7 @@ export default function AppLauncherPage() {
       </header>
 
       {/* App grid */}
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-10">
+      <main className="max-w-7xl mx-auto px-4 md:px-6 py-8 space-y-10">
         {(loadingApps || loadingOrgs) && (
           <div className="text-sm text-gray-400 text-center py-20">Loading…</div>
         )}

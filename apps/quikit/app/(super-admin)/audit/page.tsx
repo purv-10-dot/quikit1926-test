@@ -120,15 +120,15 @@ export default function AuditLogPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="px-8 pt-8 pb-5 md:px-10 md:pt-10">
-        <h1 className="text-4xl font-bold tracking-tight text-slate-900">Audit Log</h1>
+      <div className="px-4 pt-6 pb-5 md:px-10 md:pt-10">
+        <h1 className="text-2xl md:text-4xl font-bold tracking-tight text-slate-900">Audit Log</h1>
         <p className="text-sm text-slate-500 mt-2">
           Track all platform-wide administrative actions
         </p>
       </div>
 
       {/* Filter bar */}
-      <div className="px-6 py-3 border-b border-gray-200 flex flex-wrap items-center gap-3">
+      <div className="px-4 md:px-6 py-3 border-b border-gray-200 flex flex-wrap items-center gap-3">
         <Filter className="h-4 w-4 text-gray-400" />
         <FilterPicker
           value={actionFilter}
@@ -163,7 +163,7 @@ export default function AuditLogPage() {
       </div>
 
       {/* Table */}
-      <div className="px-6 py-4">
+      <div className="px-4 md:px-6 py-4">
         {loading ? (
           <div className="text-sm text-gray-400 py-12 text-center">
             Loading...
@@ -172,7 +172,8 @@ export default function AuditLogPage() {
           <EmptyState icon={FileText} message="No audit entries found." />
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[720px]">
               <thead>
                 <tr className="bg-gray-50">
                   <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide px-4 py-2.5">
@@ -198,6 +199,7 @@ export default function AuditLogPage() {
                 ))}
               </tbody>
             </table>
+            </div>
 
             {/* Pagination */}
             {totalPages > 1 && (

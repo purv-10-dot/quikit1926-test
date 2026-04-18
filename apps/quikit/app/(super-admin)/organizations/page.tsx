@@ -270,9 +270,9 @@ export default function OrgsPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="px-8 pt-8 pb-5 md:px-10 md:pt-10 flex items-center justify-between">
+      <div className="px-4 pt-6 pb-5 md:px-10 md:pt-10 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-slate-900">Organizations</h1>
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight text-slate-900">Organizations</h1>
           <p className="text-sm text-slate-500 mt-2">
             {total} total organizations on the platform
           </p>
@@ -289,7 +289,7 @@ export default function OrgsPage() {
       </div>
 
       {/* Controls bar */}
-      <div className="px-6 py-3 border-b border-gray-200 flex items-center gap-3">
+      <div className="px-4 md:px-6 py-3 border-b border-gray-200 flex flex-wrap items-center gap-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
@@ -303,7 +303,7 @@ export default function OrgsPage() {
       </div>
 
       {/* Table */}
-      <div className="px-6 py-4">
+      <div className="px-4 md:px-6 py-4">
         {loading ? (
           <div className="text-sm text-gray-400 py-12 text-center">
             Loading...
@@ -312,7 +312,8 @@ export default function OrgsPage() {
           <EmptyState icon={Building2} message="No organizations found." />
         ) : (
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[720px]">
               <thead>
                 <tr className="bg-gray-50">
                   <th className="px-4 py-2.5 w-10">
@@ -407,6 +408,7 @@ export default function OrgsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
 
             {/* Pagination */}
             {totalPages > 1 && (

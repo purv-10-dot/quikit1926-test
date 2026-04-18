@@ -866,8 +866,8 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-200 bg-white flex-shrink-0">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 md:px-6 py-3.5 border-b border-gray-200 bg-white flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-sm font-semibold text-gray-800">Dashboard</h1>
           <span className="text-[11px] bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium">
             Week {currentWeek}
@@ -996,7 +996,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200 bg-white px-6 flex-shrink-0">
+      <div className="flex border-b border-gray-200 bg-white px-4 md:px-6 flex-shrink-0">
         <button className={tabCls(activeTab === "individual")} onClick={() => setActiveTab("individual")}>
           {isAdmin ? "Individual" : "My Dashboard"}
         </button>
@@ -1006,7 +1006,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5 space-y-5">
 
         {/* KPI overview cards */}
         {(kpisLoading || kpis.length > 0) && (

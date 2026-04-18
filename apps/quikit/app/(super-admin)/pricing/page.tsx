@@ -149,10 +149,10 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="p-8 md:p-10">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 md:p-10">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 md:mb-8">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-slate-900">Pricing & Plans</h1>
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight text-slate-900">Pricing & Plans</h1>
           <p className="text-sm text-slate-500 mt-2">Plan definitions that back tenant billing and feature limits.</p>
         </div>
         <button
@@ -175,7 +175,8 @@ export default function PricingPage() {
         />
       ) : (
         <div className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 overflow-hidden shadow-sm">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-amber-50/60 text-left text-xs uppercase tracking-wider text-slate-600">
               <tr>
                 <th className="px-5 py-3.5">Plan</th>
@@ -215,6 +216,7 @@ export default function PricingPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
