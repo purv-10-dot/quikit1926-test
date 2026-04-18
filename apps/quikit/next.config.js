@@ -7,7 +7,13 @@ const nextConfig = {
     "@quikit/auth",
     "@quikit/shared",
     "@quikit/database",
+    "@quikit/redis",
   ],
+  // Needed for apps/quikit/instrumentation.ts to run at server startup.
+  // Wires up Sentry server/edge configs.
+  experimental: {
+    instrumentationHook: true,
+  },
   async headers() {
     return [
       {

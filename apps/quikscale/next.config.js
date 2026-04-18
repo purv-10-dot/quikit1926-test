@@ -25,6 +25,8 @@ const nextConfig = {
     },
     // Phase 4: Enable optimized package imports for heavy deps
     optimizePackageImports: ["lucide-react", "@tanstack/react-query"],
+    // Wires up Sentry via apps/quikscale/instrumentation.ts on server startup.
+    instrumentationHook: true,
   },
 
   /**

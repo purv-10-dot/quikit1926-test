@@ -17,6 +17,7 @@
     "@quikit/database": "*",
     "@quikit/shared": "*",
     "@quikit/ui": "*",
+    "@sentry/nextjs": "^10.48.0",
     "bcryptjs": "^2.4.3",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",

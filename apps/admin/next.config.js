@@ -2,11 +2,13 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database"],
+  transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database", "@quikit/redis"],
   experimental: {
     serverActions: {
       allowedOrigins: ["localhost:3005"],
     },
+    // Wires up Sentry via apps/admin/instrumentation.ts on server startup.
+    instrumentationHook: true,
   },
   async headers() {
     return [
