@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Activity, TrendingUp, TrendingDown, Minus, RefreshCw, Users, Building2, Zap, DollarSign, CheckCircle2 } from "lucide-react";
 import type { ElementType } from "react";
-import { severityClass, severityIcon } from "@quikit/ui";
+import { severityClass, severityIcon, Skeleton, CardSkeleton } from "@quikit/ui";
 
 interface OpenAlert {
   id: string;
@@ -134,7 +134,54 @@ export default function AnalyticsPage() {
   }, []);
 
   if (loading) {
-    return <div className="p-10 text-slate-400 text-sm">Loading analytics...</div>;
+    return (
+      <div className="p-8 md:p-10 space-y-8">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-3">
+            <Skeleton className="h-9 w-48" />
+            <Skeleton className="h-3.5 w-80" />
+            <Skeleton className="h-3 w-64" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-9 w-24 rounded-xl" />
+            <Skeleton className="h-9 w-32 rounded-xl" />
+          </div>
+        </div>
+
+        {/* Narrative banner */}
+        <div className="rounded-3xl bg-slate-900/90 p-8 shadow-lg">
+          <div className="flex items-start gap-5">
+            <Skeleton className="h-12 w-12 rounded-2xl bg-slate-700" />
+            <div className="flex-1 space-y-3">
+              <Skeleton className="h-3 w-28 bg-slate-700" />
+              <Skeleton className="h-6 w-3/4 bg-slate-700" />
+              <Skeleton className="h-4 w-1/2 bg-slate-700" />
+            </div>
+          </div>
+        </div>
+
+        {/* Stat cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </div>
+
+        {/* Alerts placeholder */}
+        <div className="space-y-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-sm px-4 py-3.5 flex items-start gap-3">
+              <Skeleton className="h-4 w-4 rounded" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-3.5 w-1/3" />
+                <Skeleton className="h-3 w-3/4" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
   if (!data) {
     return <div className="p-10 text-red-600 text-sm">Failed to load analytics</div>;

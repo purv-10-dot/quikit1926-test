@@ -19,7 +19,7 @@ import {
   Pencil,
   Ban,
 } from "lucide-react";
-import { SlidePanel, Pagination, EmptyState, Select } from "@quikit/ui";
+import { SlidePanel, Pagination, EmptyState, Select, TableSkeleton } from "@quikit/ui";
 
 interface TenantInfo {
   id: string;
@@ -305,8 +305,8 @@ export default function OrgsPage() {
       {/* Table */}
       <div className="px-4 md:px-6 py-4">
         {loading ? (
-          <div className="text-sm text-gray-400 py-12 text-center">
-            Loading...
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <TableSkeleton rows={8} cols={7} />
           </div>
         ) : tenants.length === 0 ? (
           <EmptyState icon={Building2} message="No organizations found." />

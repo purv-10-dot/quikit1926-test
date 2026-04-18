@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { useOnceEffect } from "@/lib/hooks/useOnceEffect";
 import { AppWindow, Shield } from "lucide-react";
-import { ToggleSwitch } from "@quikit/ui";
+import { ToggleSwitch, Skeleton } from "@quikit/ui";
 
 interface AppRow {
   appId: string;
@@ -94,7 +94,18 @@ export function AppAccessPanel({ tenantId }: { tenantId: string }) {
         <h2 className="font-semibold text-gray-900">App access</h2>
       </header>
       {loading ? (
-        <div className="p-5 text-gray-400 text-sm">Loading...</div>
+        <ul className="divide-y divide-gray-100">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <li key={i} className="flex items-center gap-3 px-5 py-3">
+              <Skeleton className="h-10 w-10 rounded-lg" />
+              <div className="flex-1 min-w-0 space-y-2">
+                <Skeleton className="h-3.5 w-1/3" />
+                <Skeleton className="h-3 w-1/5" />
+              </div>
+              <Skeleton className="h-6 w-11 rounded-full" />
+            </li>
+          ))}
+        </ul>
       ) : apps.length === 0 ? (
         <div className="p-5 text-gray-400 text-sm">No apps registered.</div>
       ) : (

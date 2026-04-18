@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Users, Shield, Building2, AppWindow } from "lucide-react";
-import { EmptyState } from "@quikit/ui";
+import { EmptyState, Skeleton, CardSkeleton } from "@quikit/ui";
 
 interface MembershipInfo {
   id: string;
@@ -100,8 +100,14 @@ export default function UserDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-6">
-        <div className="text-sm text-gray-400 py-12 text-center">Loading...</div>
+      <div className="p-6 space-y-6">
+        <Skeleton className="h-4 w-32" />
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <Skeleton className="h-7 w-64" />
+        </div>
+        <CardSkeleton />
+        <CardSkeleton />
       </div>
     );
   }

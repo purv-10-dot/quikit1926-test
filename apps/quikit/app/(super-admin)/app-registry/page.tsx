@@ -19,7 +19,7 @@ import {
   Activity,
   RefreshCw,
 } from "lucide-react";
-import { SlidePanel, Pagination, EmptyState, Select } from "@quikit/ui";
+import { SlidePanel, Pagination, EmptyState, Select, CardRowSkeleton } from "@quikit/ui";
 
 interface AppInfo {
   id: string;
@@ -312,9 +312,7 @@ export default function AppRegistryPage() {
       {/* Card grid */}
       <div className="px-4 md:px-6 py-4">
         {loading ? (
-          <div className="text-sm text-gray-400 py-12 text-center">
-            Loading...
-          </div>
+          <CardRowSkeleton count={6} />
         ) : apps.length === 0 ? (
           <EmptyState icon={LayoutGrid} message="No apps registered yet." />
         ) : (

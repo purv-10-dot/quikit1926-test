@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Building2, Pencil, Users, Layers, AppWindow, Plus } from "lucide-react";
-import { SlidePanel, EmptyState, Select } from "@quikit/ui";
+import { SlidePanel, EmptyState, Select, Skeleton, CardSkeleton } from "@quikit/ui";
 import { HealthPanel } from "./components/HealthPanel";
 import { AppAccessPanel } from "./components/AppAccessPanel";
 import { BillingPanel } from "./components/BillingPanel";
@@ -154,8 +154,15 @@ export default function OrgDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-6">
-        <div className="text-sm text-gray-400 py-12 text-center">Loading...</div>
+      <div className="p-8 md:p-10 space-y-6">
+        <Skeleton className="h-4 w-32" />
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-10 w-10 rounded-lg" />
+          <Skeleton className="h-8 w-72" />
+        </div>
+        <CardSkeleton />
+        <CardSkeleton />
+        <CardSkeleton />
       </div>
     );
   }
