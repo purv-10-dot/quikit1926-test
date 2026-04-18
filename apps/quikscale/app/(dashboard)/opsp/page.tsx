@@ -60,8 +60,10 @@ import {
   Copy, Lock, AlertTriangle,
   Calendar, X, Loader2, Printer, Download, FileText,
 } from "lucide-react";
-import { fiscalYearLabel, getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
+import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { OPSPSetupWizard } from "./components/SetupWizard";
+import { YearQuarterPicker } from "./components/YearQuarterPicker";
+import { buildOPSPWordBlob, triggerBlobDownload, wordFilename } from "./lib/previewExport";
 
 interface FormData {
   year: number; quarter: string; targetYears: number; status: string;
@@ -171,151 +173,8 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
     if (downloadingWord) return;
     setDownloadingWord(true);
     try {
-      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, HeadingLevel, PageOrientation } = await import("docx");
-
-      const ownerName = (id: string) => resolveOwnerName(id, users);
-
-      const heading = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 120 }, children: [new TextRun({ text, bold: true })] });
-      const subheading = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_3, spacing: { before: 200, after: 80 }, children: [new TextRun({ text, bold: true })] });
-      const para = (text: string) => new Paragraph({ spacing: { after: 60 }, children: [new TextRun(text || " ")] });
-      const numbered = (items: string[]) => items.filter(Boolean).map((t, i) => new Paragraph({ spacing: { after: 40 }, children: [new TextRun(`${i + 1}. ${t}`)] }));
-      const strip = stripHtml;
-
-      const simpleBorder = { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" };
-      const cellBorders = { top: simpleBorder, bottom: simpleBorder, left: simpleBorder, right: simpleBorder };
-
-      function makeTable(headers: string[], dataRows: string[][]) {
-        return new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: [
-            new TableRow({
-              children: headers.map(h => new TableCell({
-                borders: cellBorders,
-                children: [new Paragraph({ children: [new TextRun({ text: h, bold: true, size: 18 })] })],
-              })),
-            }),
-            ...dataRows.map(cells => new TableRow({
-              children: cells.map(c => new TableCell({
-                borders: cellBorders,
-                children: [new Paragraph({ children: [new TextRun({ text: c || " ", size: 18 })] })],
-              })),
-            })),
-          ],
-        });
-      }
-
-      const sections: any[] = [];
-
-      // Title
-      sections.push(new Paragraph({ heading: HeadingLevel.HEADING_1, alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: `One-Page Strategic Plan (OPSP) \u2014 ${form.year} ${form.quarter}`, bold: true })] }));
-
-      // PEOPLE
-      sections.push(heading("PEOPLE (Reputation Drivers)"));
-      sections.push(subheading("Employees"));
-      sections.push(...numbered(form.employees));
-      sections.push(subheading("Customers"));
-      sections.push(...numbered(form.customers));
-      sections.push(subheading("Shareholders"));
-      sections.push(...numbered(form.shareholders));
-
-      // Core Values / Purpose / Actions
-      sections.push(heading("CORE VALUES / BELIEFS"));
-      sections.push(para(strip(form.coreValues)));
-      sections.push(heading("PURPOSE"));
-      sections.push(para(strip(form.purpose)));
-      sections.push(subheading("Actions \u2014 To Live Values, Purposes, BHAG"));
-      sections.push(...numbered(form.actions));
-      sections.push(subheading("Profit per X"));
-      sections.push(para(strip(form.profitPerX)));
-      sections.push(subheading("BHAG"));
-      sections.push(para(strip(form.bhag)));
-
-      // Targets
-      sections.push(heading("TARGETS (3-5 YRS.)"));
-      sections.push(makeTable(
-        ["Category", "Projected"],
-        form.targetRows.filter(r => r.category).map(r => [r.category, r.projected]),
-      ));
-      sections.push(subheading("Sandbox"));
-      sections.push(para(strip(form.sandbox)));
-      sections.push(subheading("Key Thrusts / Capabilities"));
-      sections.push(...form.keyThrusts.filter(r => r.desc).map((r, i) => new Paragraph({ spacing: { after: 40 }, children: [new TextRun(`${i + 1}. ${r.desc}${r.owner ? ` \u2014 ${ownerName(r.owner)}` : ""}`)] })));
-      sections.push(subheading("Brand Promise KPIs"));
-      sections.push(para(strip(form.brandPromiseKPIs)));
-      sections.push(subheading("Brand Promise"));
-      sections.push(para(strip(form.brandPromise)));
-
-      // Goals
-      sections.push(heading("GOALS (1 YR.)"));
-      sections.push(makeTable(
-        ["Category", "Projected"],
-        form.goalRows.filter(r => r.category).map(r => [r.category, r.projected]),
-      ));
-      sections.push(subheading("Key Initiatives"));
-      sections.push(...form.keyInitiatives.filter(r => r.desc).map((r, i) => new Paragraph({ spacing: { after: 40 }, children: [new TextRun(`${i + 1}. ${r.desc}${r.owner ? ` \u2014 ${ownerName(r.owner)}` : ""}`)] })));
-
-      // Strengths / Weaknesses
-      sections.push(heading("Strengths / Core Competencies"));
-      sections.push(...numbered(form.processItems));
-      sections.push(heading("Weaknesses"));
-      sections.push(...numbered(form.weaknesses));
-
-      // Process
-      sections.push(heading("PROCESS (Productivity Drivers)"));
-      sections.push(subheading("Make/Buy"));
-      sections.push(...numbered(form.makeBuy));
-      sections.push(subheading("Sell"));
-      sections.push(...numbered(form.sell));
-      sections.push(subheading("Record Keeping"));
-      sections.push(...numbered(form.recordKeeping));
-
-      // Actions QTR
-      sections.push(heading("ACTIONS (QTR)"));
-      sections.push(makeTable(
-        ["Category", "Projected"],
-        form.actionsQtr.filter(r => r.category).map(r => [r.category, r.projected]),
-      ));
-      sections.push(subheading("Rocks \u2014 Quarterly Priorities"));
-      sections.push(...form.rocks.filter(r => r.desc).map((r, i) => new Paragraph({ spacing: { after: 40 }, children: [new TextRun(`${i + 1}. ${r.desc}${r.owner ? ` \u2014 ${ownerName(r.owner)}` : ""}`)] })));
-
-      // Theme
-      sections.push(heading("THEME"));
-      sections.push(para(strip(form.theme)));
-      sections.push(subheading("Scoreboard Design"));
-      sections.push(para(strip(form.scoreboardDesign)));
-      sections.push(subheading("Celebration"));
-      sections.push(para(strip(form.celebration)));
-      sections.push(subheading("Reward"));
-      sections.push(para(strip(form.reward)));
-
-      // Your Accountability
-      sections.push(heading("YOUR ACCOUNTABILITY"));
-      sections.push(makeTable(
-        ["S.no.", "KPIs", "Goal"],
-        form.kpiAccountability.filter(r => r.kpi).map((r, i) => [String(i + 1).padStart(2, "0"), r.kpi, r.goal]),
-      ));
-      sections.push(subheading("Quarterly Priorities"));
-      sections.push(makeTable(
-        ["S.no.", "Priority", "Due"],
-        form.quarterlyPriorities.filter(r => r.priority).map((r, i) => [String(i + 1).padStart(2, "0"), r.priority, r.dueDate || ""]),
-      ));
-
-      const doc = new Document({
-        sections: [{
-          properties: { page: { size: { orientation: PageOrientation.PORTRAIT } } },
-          children: sections,
-        }],
-      });
-
-      const blob = await Packer.toBlob(doc);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `OPSP_${form.year}_${form.quarter}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      const blob = await buildOPSPWordBlob(form, users);
+      triggerBlobDownload(blob, wordFilename(form));
     } catch (err) {
       console.error("Word download failed:", err);
       alert("Word download failed. Please try again.");
@@ -1158,83 +1017,30 @@ export default function OPSPPage() {
           <SaveBadge />
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative" ref={yearRef}>
-            <button
-              onClick={() => setShowYearPicker(o => !o)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showYearPicker ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
-            >
-              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {fiscalYearLabel(form.year)} · {form.quarter}
-              <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {showYearPicker && (
-              <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Fiscal Year</p>
-                  <div className="grid grid-cols-1 gap-1">
-                    {(() => {
-                      // Restrict years to the OPSP plan range if available
-                      const start = planStartYear ?? form.year - 2;
-                      const end = planEndYear ?? form.year + 2;
-                      const years: number[] = [];
-                      for (let y = start; y <= end; y++) years.push(y);
-                      return years;
-                    })().map(y => {
-                      const currentFY = getFiscalYear();
-                      const isCurrentFY = y === currentFY;
-                      const isSelected = form.year === y;
-                      const isDisabled = !isCurrentFY;
-                      return (
-                        <button key={y}
-                          disabled={isDisabled}
-                          onClick={() => { if (!isDisabled) { setForm(prev => ({ ...prev, year: y })); loadForPeriod(y, form.quarter); } }}
-                          className={`text-xs px-3 py-1.5 rounded-lg text-left transition-colors ${
-                            isSelected
-                              ? "bg-gray-900 text-white"
-                              : isDisabled
-                                ? "text-gray-300 cursor-not-allowed"
-                                : "hover:bg-gray-50 text-gray-700"
-                          }`}>
-                          {fiscalYearLabel(y)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quarter</p>
-                  <div className="grid grid-cols-4 gap-1">
-                    {(["Q1", "Q2", "Q3", "Q4"] as const).map(q => {
-                      // In the plan's first year, quarters before startQuarter are disabled
-                      const qNum = parseInt(q.replace("Q", ""));
-                      const startQNum = planStartQuarter ? parseInt(planStartQuarter.replace("Q", "")) : 1;
-                      const isBeforeStart = form.year === planStartYear && qNum < startQNum;
-                      const isSelected = form.quarter === q;
-                      return (
-                        <button key={q}
-                          disabled={isBeforeStart}
-                          onClick={() => { if (!isBeforeStart) { setForm(prev => ({ ...prev, quarter: q })); loadForPeriod(form.year, q); setShowYearPicker(false); } }}
-                          className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${
-                            isSelected
-                              ? "bg-gray-900 text-white"
-                              : isBeforeStart
-                                ? "text-gray-300 border border-gray-100 cursor-not-allowed"
-                                : "hover:bg-gray-50 text-gray-700 border border-gray-200"
-                          }`}>
-                          {q}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <YearQuarterPicker
+            ref={yearRef}
+            year={form.year}
+            quarter={form.quarter}
+            open={showYearPicker}
+            onToggle={() => setShowYearPicker(o => !o)}
+            years={(() => {
+              // Restrict years to the OPSP plan range if available
+              const start = planStartYear ?? form.year - 2;
+              const end = planEndYear ?? form.year + 2;
+              const ys: number[] = [];
+              for (let y = start; y <= end; y++) ys.push(y);
+              return ys;
+            })()}
+            isYearDisabled={(y) => y !== getFiscalYear()}
+            isQuarterDisabled={(q) => {
+              // In the plan's first year, quarters before startQuarter are disabled
+              const qNum = parseInt(q.replace("Q", ""));
+              const startQNum = planStartQuarter ? parseInt(planStartQuarter.replace("Q", "")) : 1;
+              return form.year === planStartYear && qNum < startQNum;
+            }}
+            setYear={(y) => { setForm(prev => ({ ...prev, year: y })); loadForPeriod(y, form.quarter); }}
+            setQuarter={(q) => { setForm(prev => ({ ...prev, quarter: q })); loadForPeriod(form.year, q); setShowYearPicker(false); }}
+          />
           <button onClick={() => !isFinalized && setFinalizeConfirmOpen(true)}
             className={cn("flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm font-medium",
               isFinalized
