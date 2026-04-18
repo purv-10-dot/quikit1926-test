@@ -46,7 +46,7 @@ export const listGoalsParamsSchema = z.object({
   status: z.enum(GOAL_STATUSES).optional(),
   parentGoalId: z.string().cuid().optional(),
   page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().max(200).default(50),
+  pageSize: z.coerce.number().int().positive().max(100).default(50),
 });
 
 export type CreateGoalInput = z.infer<typeof createGoalSchema>;

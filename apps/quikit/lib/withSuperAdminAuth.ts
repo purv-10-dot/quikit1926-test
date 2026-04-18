@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSuperAdmin } from "@/lib/requireSuperAdmin";
 import { logApiCall } from "@quikit/shared/apiLogging";
+import { rateLimitAsync } from "@quikit/shared/rateLimit";
 
 export interface SuperAdminAuthContext {
   userId: string;
@@ -19,6 +20,15 @@ type Handler<Params> = (
   req: NextRequest,
   ctx: { params: Params },
 ) => Promise<NextResponse> | NextResponse;
+
+// Per-super-admin mutation rate limit. Legitimate support/ops use is very
+// unlikely to exceed 60 mutations/minute — bulk operations should go via
+// dedicated bulk endpoints that have their own caps. Fail-OPEN here so a
+// Redis outage doesn't lock super admins out entirely (we still have audit
+// trail coverage and the write path is small).
+const SUPER_MUTATION_LIMIT = 60;
+const SUPER_MUTATION_WINDOW_MS = 60 * 1000;
+const MUTATION_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
 export function withSuperAdminAuth<Params = Record<string, never>>(handler: Handler<Params>) {
   return async (req: NextRequest, ctx?: { params: Params }): Promise<NextResponse> => {
@@ -32,7 +42,35 @@ export function withSuperAdminAuth<Params = Record<string, never>>(handler: Hand
         response = auth.error;
       } else {
         userIdForLog = auth.userId;
-        response = await handler({ userId: auth.userId }, req, ctx ?? ({ params: {} as Params }));
+
+        // Apply per-super-admin rate limit to mutation methods only. Reads
+        // (GET) are unthrottled at this layer — the analytics/audit endpoints
+        // have their own caching and cheap pagination.
+        if (MUTATION_METHODS.has(req.method)) {
+          const rl = await rateLimitAsync({
+            routeKey: "super:mutation",
+            clientKey: auth.userId,
+            limit: SUPER_MUTATION_LIMIT,
+            windowMs: SUPER_MUTATION_WINDOW_MS,
+            failClosed: false,
+          });
+          if (!rl.ok) {
+            response = NextResponse.json(
+              {
+                success: false,
+                error: `Super-admin mutation rate limit exceeded (${SUPER_MUTATION_LIMIT}/min). Retry in ${rl.retryAfterSeconds}s.`,
+              },
+              {
+                status: 429,
+                headers: { "retry-after": String(rl.retryAfterSeconds) },
+              },
+            );
+          } else {
+            response = await handler({ userId: auth.userId }, req, ctx ?? ({ params: {} as Params }));
+          }
+        } else {
+          response = await handler({ userId: auth.userId }, req, ctx ?? ({ params: {} as Params }));
+        }
       }
     } catch (err) {
       response = NextResponse.json(
