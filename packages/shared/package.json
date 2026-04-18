@@ -14,7 +14,6 @@
     "./env": "./lib/env.ts",
     "./moduleRegistry": "./lib/moduleRegistry.ts",
     "./apiLogging": "./lib/apiLogging.ts",
-    "./withApiLogging": "./lib/withApiLogging.ts",
     "./redisCache": "./lib/redisCache.ts"
   },
   "scripts": {
