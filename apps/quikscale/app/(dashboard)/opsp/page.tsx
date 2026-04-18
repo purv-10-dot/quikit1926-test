@@ -6,6 +6,24 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { CURRENCIES, getScales } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { normalizeLoadedOPSP } from "@/lib/utils/opspNormalize";
+import {
+  emptyArr3,
+  emptyArr5,
+  emptyCrit,
+  emptyTarget,
+  emptyGoal,
+  emptyThrust,
+  emptyKeyInitiatives,
+  emptyRocks,
+  emptyAction,
+  emptyKPI,
+  emptyQP,
+  parseUrlYear,
+  parseUrlQuarter,
+  formatDueDate,
+  stripHtml,
+  resolveOwnerName,
+} from "@/lib/utils/opspHelpers";
 import { sanitizeHtml } from "@/lib/utils/sanitizeHtml";
 import {
   FInput,
@@ -64,20 +82,9 @@ interface FormData {
   trends: string[];
 }
 
-/* ── Defaults ── */
-const emptyArr3   = (): string[]        => ["", "", ""];
-const emptyArr5   = (): string[]        => ["", "", "", "", ""];
-
-const emptyCrit   = (): CritCard        => ({ title: "", bullets: ["", "", "", ""] });
-const emptyTarget = (): TargetRow[]     => Array.from({ length: 5 }, () => ({ category:"", projected:"", y1:"", y2:"", y3:"", y4:"", y5:"" }));
-const emptyGoal   = (): GoalRow[]       => Array.from({ length: 6 }, () => ({ category:"", projected:"", q1:"", q2:"", q3:"", q4:"" }));
-const emptyThrust = (): ThrustRow[]     => Array.from({ length: 5 }, () => ({ desc:"", owner:"" }));
-const emptyKeyInitiatives = (): KeyInitiativeRow[] => Array.from({ length: 5 }, () => ({ desc:"", owner:"" }));
-const emptyRocks = (): RockRow[]         => Array.from({ length: 5 }, () => ({ desc:"", owner:"" }));
-const emptyAction = (): ActionRow[]     => Array.from({ length: 6 }, () => ({ category:"", projected:"", m1:"", m2:"", m3:"" }));
-const emptyKPI    = (): KPIAcctRow[]    => Array.from({ length: 5 }, () => ({ kpi:"", goal:"" }));
-const emptyQP     = (): QPriorRow[]     => Array.from({ length: 5 }, () => ({ priority:"", dueDate:"" }));
-
+/* ── Defaults ──
+   Empty-row factories (emptyArr3, emptyTarget, emptyGoal, …) live in
+   `@/lib/utils/opspHelpers` so they can be unit-tested without React. */
 const defaultForm = (): FormData => ({
   year: getFiscalYear(), quarter: getFiscalQuarter(), targetYears: 5, status: "draft",
   employees: emptyArr3(), customers: emptyArr3(), shareholders: emptyArr3(),
@@ -166,17 +173,13 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
     try {
       const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, HeadingLevel, PageOrientation } = await import("docx");
 
-      const ownerName = (id: string) => {
-        if (!id) return "";
-        const u = users.find(x => x.id === id);
-        return u ? `${u.firstName} ${u.lastName}` : id;
-      };
+      const ownerName = (id: string) => resolveOwnerName(id, users);
 
       const heading = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 120 }, children: [new TextRun({ text, bold: true })] });
       const subheading = (text: string) => new Paragraph({ heading: HeadingLevel.HEADING_3, spacing: { before: 200, after: 80 }, children: [new TextRun({ text, bold: true })] });
       const para = (text: string) => new Paragraph({ spacing: { after: 60 }, children: [new TextRun(text || " ")] });
       const numbered = (items: string[]) => items.filter(Boolean).map((t, i) => new Paragraph({ spacing: { after: 40 }, children: [new TextRun(`${i + 1}. ${t}`)] }));
-      const strip = (html: string) => (html || "").replace(/<[^>]*>/g, "").trim() || " ";
+      const strip = stripHtml;
 
       const simpleBorder = { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" };
       const cellBorders = { top: simpleBorder, bottom: simpleBorder, left: simpleBorder, right: simpleBorder };
@@ -323,19 +326,12 @@ function OPSPPreview({ open, onClose, form, users = [] }: {
 
   if (!open) return null;
 
-  /* ── helpers ── */
-  const ownerName = (id: string) => {
-    if (!id) return "";
-    const u = users.find(u => u.id === id);
-    return u ? `${u.firstName} ${u.lastName}` : id;
-  };
-  const fmtDue = (d: string) => {
-    if (!d) return "";
-    try {
-      const dt = new Date(d + "T00:00");
-      return `${String(dt.getMonth() + 1).padStart(2, "0")}/${String(dt.getDate()).padStart(2, "0")}/${dt.getFullYear()}`;
-    } catch { return d; }
-  };
+  /* ── helpers ──
+     ownerName / fmtDue moved to `@/lib/utils/opspHelpers` so they can be
+     unit-tested. Keep thin local bindings that close over `users` so the
+     JSX below stays readable (`ownerName(r.owner)` vs. the long form). */
+  const ownerName = (id: string) => resolveOwnerName(id, users);
+  const fmtDue = formatDueDate;
   const critColors = ["bg-green-600", "bg-yellow-500", "bg-orange-500", "bg-red-600"];
   const html = (v: string) => ({ __html: sanitizeHtml(v) });
 
@@ -864,8 +860,10 @@ export default function OPSPPage() {
 
   const [form, setForm] = useState<FormData>(() => {
     const base = defaultForm();
-    if (urlYear) base.year = parseInt(urlYear) || base.year;
-    if (urlQuarter && ["Q1", "Q2", "Q3", "Q4"].includes(urlQuarter)) base.quarter = urlQuarter;
+    const parsedYear = parseUrlYear(urlYear);
+    if (parsedYear != null) base.year = parsedYear;
+    const parsedQuarter = parseUrlQuarter(urlQuarter);
+    if (parsedQuarter != null) base.quarter = parsedQuarter;
     return base;
   });
   const [saveState, setSaveState] = useState<"idle"|"saving"|"saved"|"error">("idle");
