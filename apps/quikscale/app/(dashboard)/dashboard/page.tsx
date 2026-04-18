@@ -367,9 +367,9 @@ function AvgKPICard({ kpis }: { kpis: KPIRow[] }) {
       <span className={`text-sm font-bold ${textColor}`}>{avg}%</span>
       <span className="text-xs text-gray-400">avg KPI</span>
       {/* Divider */}
-      <span className="w-px h-4 bg-gray-300" />
+      <span className="hidden sm:inline-block w-px h-4 bg-gray-300" />
       {/* Breakdown */}
-      <div className="flex items-center gap-3">
+      <div className="hidden sm:flex items-center gap-3">
         <div className="flex flex-col items-center leading-tight">
           <span className="text-sm font-bold text-green-600">{onTrack}</span>
           <span className="text-[10px] text-green-500">on track</span>

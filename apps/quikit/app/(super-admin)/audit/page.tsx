@@ -144,21 +144,25 @@ export default function AuditLogPage() {
           allLabel="All Entities"
           placeholder="Filter by entity"
         />
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span>From</span>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className={dateCls}
-          />
-          <span>To</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className={dateCls}
-          />
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-end sm:gap-1.5 text-xs text-gray-500">
+          <label className="flex items-center gap-1.5">
+            <span>From</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className={dateCls}
+            />
+          </label>
+          <label className="flex items-center gap-1.5">
+            <span>To</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className={dateCls}
+            />
+          </label>
         </div>
       </div>
 
