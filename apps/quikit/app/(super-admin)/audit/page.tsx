@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { FileText, Filter, ChevronDown, ChevronRight } from "lucide-react";
-import { Pagination, EmptyState, FilterPicker } from "@quikit/ui";
+import { Pagination, EmptyState, FilterPicker, TableSkeleton } from "@quikit/ui";
 import type { FilterOption } from "@quikit/ui";
 
 interface AuditEntry {
@@ -165,8 +165,8 @@ export default function AuditLogPage() {
       {/* Table */}
       <div className="px-6 py-4">
         {loading ? (
-          <div className="text-sm text-gray-400 py-12 text-center">
-            Loading...
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <TableSkeleton rows={10} cols={5} />
           </div>
         ) : logs.length === 0 ? (
           <EmptyState icon={FileText} message="No audit entries found." />

@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { Megaphone, Plus, Trash2, AlertTriangle, AlertCircle, Info } from "lucide-react";
-import { SlidePanel, EmptyState } from "@quikit/ui";
+import { SlidePanel, EmptyState, CardRowSkeleton } from "@quikit/ui";
 
 interface Broadcast {
   id: string;
@@ -121,7 +121,7 @@ export default function BroadcastsPage() {
       </div>
 
       {loading ? (
-        <p className="text-gray-400">Loading...</p>
+        <CardRowSkeleton count={4} />
       ) : items.length === 0 ? (
         <EmptyState icon={Megaphone} message="No broadcasts yet. Create an announcement to push a banner to every tenant." />
       ) : (

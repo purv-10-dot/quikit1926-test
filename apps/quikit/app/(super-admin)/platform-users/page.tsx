@@ -16,7 +16,7 @@ import {
   Eye,
   ShieldAlert,
 } from "lucide-react";
-import { SlidePanel, Pagination, EmptyState, TenantPicker, type TenantOption } from "@quikit/ui";
+import { SlidePanel, Pagination, EmptyState, TenantPicker, type TenantOption, TableSkeleton } from "@quikit/ui";
 
 interface UserInfo {
   id: string;
@@ -280,8 +280,8 @@ export default function PlatformUsersPage() {
       {/* Table */}
       <div className="px-6 py-4">
         {loading ? (
-          <div className="text-sm text-gray-400 py-12 text-center">
-            Loading...
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <TableSkeleton rows={8} cols={7} />
           </div>
         ) : users.length === 0 ? (
           <EmptyState icon={Users} message="No users found." />

@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { CreditCard, Plus, Pencil, Trash2 } from "lucide-react";
-import { SlidePanel, EmptyState } from "@quikit/ui";
+import { SlidePanel, EmptyState, CardRowSkeleton } from "@quikit/ui";
 
 interface Plan {
   id: string;
@@ -166,7 +166,7 @@ export default function PricingPage() {
       </div>
 
       {loading ? (
-        <p className="text-gray-400">Loading...</p>
+        <CardRowSkeleton count={4} />
       ) : plans.length === 0 ? (
         <EmptyState
           icon={CreditCard}
