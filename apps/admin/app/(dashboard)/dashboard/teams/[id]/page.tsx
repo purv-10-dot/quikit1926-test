@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
-import { Button, Input, Select, SlidePanel } from "@quikit/ui";
+import { Button, Input, Select, SlidePanel, useConfirm } from "@quikit/ui";
 import { Avatar } from "@/components/ui/avatar";
 import {
   ArrowLeft,
@@ -43,6 +43,7 @@ interface OrgMember {
 export default function TeamDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const confirm = useConfirm();
   const [team, setTeam] = useState<TeamDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -91,7 +92,7 @@ export default function TeamDetailPage() {
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete team "${team?.name}"? This cannot be undone.`)) return;
+    if (!(await confirm({ title: `Delete team "${team?.name}"?`, description: "This cannot be undone.", confirmLabel: "Delete", tone: "danger" }))) return;
     const res = await fetch(`/api/teams/${params.id}`, { method: "DELETE" });
     const json = await res.json();
     if (json.success) {
@@ -119,7 +120,7 @@ export default function TeamDetailPage() {
   }
 
   async function removeMember(userId: string) {
-    if (!confirm("Remove this member from the team?")) return;
+    if (!(await confirm({ title: "Remove this member from the team?", description: "They will lose team access. You can add them back later.", confirmLabel: "Remove", tone: "danger" }))) return;
     await fetch(`/api/teams/${params.id}/members`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },

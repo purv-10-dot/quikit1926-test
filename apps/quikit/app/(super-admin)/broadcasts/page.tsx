@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from "react";
 import { Megaphone, Plus, Trash2 } from "lucide-react";
-import { SlidePanel, EmptyState, CardRowSkeleton, severityClass, severityIcon } from "@quikit/ui";
+import { SlidePanel, EmptyState, CardRowSkeleton, severityClass, severityIcon, useConfirm } from "@quikit/ui";
 
 interface Broadcast {
   id: string;
@@ -36,6 +36,7 @@ const defaultForm = {
 };
 
 export default function BroadcastsPage() {
+  const confirm = useConfirm();
   const [items, setItems] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -90,7 +91,7 @@ export default function BroadcastsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this broadcast? Users who haven't dismissed it won't see it anymore.")) return;
+    if (!(await confirm({ title: "Delete this broadcast?", description: "Users who haven't dismissed it won't see it anymore.", confirmLabel: "Delete", tone: "danger" }))) return;
     const r = await fetch(`/api/super/broadcasts/${id}`, { method: "DELETE" });
     const j = await r.json();
     if (j.success) load();

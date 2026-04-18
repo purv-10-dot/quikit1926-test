@@ -3,6 +3,7 @@
 import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
+import { ConfirmProvider } from "@quikit/ui";
 import { useState } from "react";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -22,7 +23,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-          {children}
+          <ConfirmProvider>{children}</ConfirmProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </SessionProvider>

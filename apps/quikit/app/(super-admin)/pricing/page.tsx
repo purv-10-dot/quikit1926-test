@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { CreditCard, Plus, Pencil, Trash2 } from "lucide-react";
-import { SlidePanel, EmptyState, CardRowSkeleton } from "@quikit/ui";
+import { SlidePanel, EmptyState, CardRowSkeleton, useConfirm } from "@quikit/ui";
 
 interface Plan {
   id: string;
@@ -43,6 +43,7 @@ const emptyForm = {
 };
 
 export default function PricingPage() {
+  const confirm = useConfirm();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -141,7 +142,7 @@ export default function PricingPage() {
       alert(`Cannot delete: ${plan.tenantCount} tenant(s) use this plan. Reassign them first.`);
       return;
     }
-    if (!confirm(`Delete "${plan.name}"?`)) return;
+    if (!(await confirm({ title: `Delete "${plan.name}"?`, description: "This plan definition will be permanently removed. This cannot be undone.", confirmLabel: "Delete", tone: "danger" }))) return;
     const r = await fetch(`/api/super/plans/${plan.id}`, { method: "DELETE" });
     const j = await r.json();
     if (j.success) load();

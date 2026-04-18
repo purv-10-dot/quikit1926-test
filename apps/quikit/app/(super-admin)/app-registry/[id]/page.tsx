@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, LayoutGrid, Key, ExternalLink, Users, ShieldOff, Pencil, RotateCw, Trash2 } from "lucide-react";
-import { EmptyState, Skeleton, CardSkeleton } from "@quikit/ui";
+import { EmptyState, Skeleton, CardSkeleton, useConfirm } from "@quikit/ui";
 
 interface OAuthClient {
   clientId: string;
@@ -50,6 +50,7 @@ function statusLabel(status: string) {
 export default function AppDetailPage() {
   const params = useParams();
   const appId = params.id as string;
+  const confirm = useConfirm();
 
   const [app, setApp] = useState<AppDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -115,7 +116,7 @@ export default function AppDetailPage() {
 
   async function handleDisable() {
     if (!app) return;
-    if (!window.confirm(`Are you sure you want to disable "${app.name}"?`)) return;
+    if (!(await confirm({ title: `Disable "${app.name}"?`, description: "This app will no longer be reachable to any tenant until re-enabled.", confirmLabel: "Disable", tone: "danger" }))) return;
     try {
       const res = await fetch(`/api/super/apps/${appId}`, {
         method: "PATCH",
@@ -190,7 +191,7 @@ export default function AppDetailPage() {
 
   async function handleRemoveOAuth() {
     if (!app) return;
-    if (!window.confirm("Are you sure you want to remove the OAuth client? This will break any existing integrations using this client.")) return;
+    if (!(await confirm({ title: "Remove OAuth client?", description: "This will break any existing integrations using this client. Users will not be able to sign in via this app until the client is recreated.", confirmLabel: "Remove", tone: "danger" }))) return;
     try {
       const res = await fetch(`/api/super/apps/${appId}/oauth`, {
         method: "DELETE",

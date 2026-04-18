@@ -17,7 +17,7 @@ import {
 import Link from "next/link";
 import { useGoals, useCreateGoal, useUpdateGoal, useDeleteGoal } from "@/lib/hooks/useGoals";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { AddButton, EmptyState } from "@quikit/ui";
+import { AddButton, EmptyState, useConfirm } from "@quikit/ui";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { GOAL_STATUSES, type GoalStatus } from "@/lib/schemas/goalSchema";
 
@@ -49,6 +49,7 @@ const STATUS_COLORS: Record<GoalStatus, { bg: string; text: string; label: strin
 export default function GoalsPage() {
   const { data: session } = useSession();
   const currentUserId = session?.user?.id as string | undefined;
+  const confirm = useConfirm();
 
   const [scope, setScope] = useState<"me" | "all">("me");
   const [year] = useState(getFiscalYear());
@@ -124,7 +125,7 @@ export default function GoalsPage() {
   }
 
   async function handleDelete(id: string, title: string) {
-    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+    if (!(await confirm({ title: `Delete "${title}"?`, description: "This cannot be undone.", confirmLabel: "Delete", tone: "danger" }))) return;
     await deleteGoal.mutateAsync(id);
   }
 

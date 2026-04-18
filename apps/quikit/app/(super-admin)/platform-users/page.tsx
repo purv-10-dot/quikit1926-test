@@ -16,7 +16,7 @@ import {
   Eye,
   ShieldAlert,
 } from "lucide-react";
-import { SlidePanel, Pagination, EmptyState, TenantPicker, type TenantOption, TableSkeleton } from "@quikit/ui";
+import { SlidePanel, Pagination, EmptyState, TenantPicker, useConfirm, type TenantOption, TableSkeleton } from "@quikit/ui";
 
 interface UserInfo {
   id: string;
@@ -31,6 +31,7 @@ interface UserInfo {
 export default function PlatformUsersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const confirm = useConfirm();
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [loading, setLoading] = useState(true);
   // UX-8: persist filters to URL query so deep links and browser back/forward
@@ -148,7 +149,7 @@ export default function PlatformUsersPage() {
   }
 
   async function handleBulkGrantSuperAdmin() {
-    if (!window.confirm(`Are you sure you want to grant Super Admin to ${selected.size} user(s)?`)) return;
+    if (!(await confirm({ title: `Grant Super Admin to ${selected.size} user(s)?`, description: "Each user will gain full platform-wide administrative access across every tenant.", confirmLabel: "Grant", tone: "danger" }))) return;
     setBulkLoading(true);
     try {
       const res = await fetch("/api/super/users/bulk", {
@@ -168,7 +169,7 @@ export default function PlatformUsersPage() {
   }
 
   async function handleBulkRevokeSuperAdmin() {
-    if (!window.confirm(`Are you sure you want to revoke Super Admin from ${selected.size} user(s)?`)) return;
+    if (!(await confirm({ title: `Revoke Super Admin from ${selected.size} user(s)?`, description: "Each user will lose platform-wide administrative access immediately.", confirmLabel: "Revoke", tone: "danger" }))) return;
     setBulkLoading(true);
     try {
       const res = await fetch("/api/super/users/bulk", {
@@ -219,13 +220,17 @@ export default function PlatformUsersPage() {
   }
 
   async function handleToggleSuperAdmin(user: UserInfo) {
-    const action = user.isSuperAdmin
-      ? "remove super admin from"
-      : "grant super admin to";
+    const isRevoke = user.isSuperAdmin;
+    const fullName = `${user.firstName} ${user.lastName}`;
     if (
-      !window.confirm(
-        `Are you sure you want to ${action} ${user.firstName} ${user.lastName}?`,
-      )
+      !(await confirm({
+        title: isRevoke ? `Revoke super admin from ${fullName}?` : `Grant super admin to ${fullName}?`,
+        description: isRevoke
+          ? "They will lose platform-wide administrative access immediately."
+          : "They will gain full platform-wide administrative access across every tenant.",
+        confirmLabel: isRevoke ? "Revoke" : "Grant",
+        tone: "danger",
+      }))
     )
       return;
     try {
