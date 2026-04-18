@@ -120,6 +120,22 @@ export async function PATCH(
       newValues: JSON.stringify(updateData),
     });
 
+    // Tech-debt #20 close — when a user is demoted from super admin, revoke
+    // any active impersonation tokens they created. Leaves accepted sessions
+    // alone (those have their own expiresAt), but prevents the demoted admin
+    // from redeeming any open tokens.
+    if (isSuperAdmin === false && existing.isSuperAdmin === true) {
+      const now = new Date();
+      try {
+        await db.impersonation.updateMany({
+          where: { superAdminId: id, acceptedAt: null, expiresAt: { gt: now } },
+          data: { expiresAt: now },
+        });
+      } catch {
+        // non-fatal — audit already written
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {

@@ -31,34 +31,31 @@ function moduleStats(appSlug: string): { parents: number; sub: number } {
 
 export default function FeatureFlagsIndexPage() {
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1.5">
-          <ToggleRight className="h-5 w-5 text-accent-600" />
-          <h1 className="text-xl font-bold text-gray-900">App Feature Flags</h1>
-        </div>
-        <p className="text-sm text-gray-500">
+    <div className="p-8 md:p-10">
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold tracking-tight text-slate-900">App Feature Flags</h1>
+        <p className="text-sm text-slate-500 mt-2">
           Pick an app to enable or disable modules per tenant. New modules ship enabled by default.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-3xl">
         {MODULE_REGISTRY.map((app) => {
           const stats = moduleStats(app.appSlug);
           return (
             <Link
               key={app.appSlug}
               href={`/feature-flags/${app.appSlug}`}
-              className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-accent-300 transition-all p-5 flex items-center gap-4"
+              className="group bg-white/70 backdrop-blur-sm rounded-2xl border border-white/60 shadow-sm hover:shadow-md hover:border-amber-300 transition-all p-6 flex items-center gap-4"
             >
-              <div className="w-12 h-12 rounded-lg bg-accent-100 flex items-center justify-center text-accent-700 font-bold">
+              <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-lg">
                 {labelFor(app.appSlug).charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-gray-900 group-hover:text-accent-700 transition-colors">
+                <div className="font-semibold text-slate-900 group-hover:text-amber-700 transition-colors">
                   {labelFor(app.appSlug)}
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="text-xs text-slate-500 mt-0.5">
                   <code className="font-mono">{app.appSlug}</code>
                   <span className="mx-1.5">·</span>
                   {stats.parents} modules
@@ -70,7 +67,7 @@ export default function FeatureFlagsIndexPage() {
                   )}
                 </div>
               </div>
-              <ChevronRight className="h-5 w-5 text-gray-300 group-hover:text-accent-600 transition-colors flex-shrink-0" />
+              <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-amber-600 transition-colors flex-shrink-0" />
             </Link>
           );
         })}

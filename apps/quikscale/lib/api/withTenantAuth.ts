@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { getTenantId } from "@/lib/api/getTenantId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
+import { logApiCall } from "@quikit/shared/apiLogging";
 
 /**
  * Context passed to a route handler after the auth + tenant guard succeeds.
@@ -55,33 +56,62 @@ export function withTenantAuth<Params = Record<string, never>>(
   options: WithTenantAuthOptions = {}
 ) {
   return async (req: NextRequest, routeCtx: { params: Params }): Promise<NextResponse> => {
+    const startedAt = Date.now();
+    let tenantIdForLog: string | null = null;
+    let userIdForLog: string | null = null;
+    let response: NextResponse;
     try {
       const session = await getServerSession(authOptions);
       if (!session?.user?.id) {
-        return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+        response = NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+      } else {
+        userIdForLog = session.user.id;
+        const tenantId = await getTenantId(session.user.id);
+        if (!tenantId) {
+          response = NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+        } else {
+          tenantIdForLog = tenantId;
+          if (options.moduleKey) {
+            const blocked = await gateModuleApi("quikscale", options.moduleKey, tenantId);
+            if (blocked) {
+              response = blocked as NextResponse;
+            } else {
+              response = await handler(
+                { session, userId: session.user.id, tenantId },
+                req,
+                routeCtx ?? ({ params: {} as Params })
+              );
+            }
+          } else {
+            response = await handler(
+              { session, userId: session.user.id, tenantId },
+              req,
+              routeCtx ?? ({ params: {} as Params })
+            );
+          }
+        }
       }
-
-      const tenantId = await getTenantId(session.user.id);
-      if (!tenantId) {
-        return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
-      }
-
-      if (options.moduleKey) {
-        const blocked = await gateModuleApi("quikscale", options.moduleKey, tenantId);
-        if (blocked) return blocked as NextResponse;
-      }
-
-      return await handler(
-        { session, userId: session.user.id, tenantId },
-        req,
-        routeCtx ?? ({ params: {} as Params })
-      );
     } catch (error: unknown) {
-      return NextResponse.json(
+      response = NextResponse.json(
         { success: false, error: toErrorMessage(error, options.fallbackErrorMessage ?? "Operation failed") },
         { status: 500 }
       );
     }
+
+    // SA-A.2: fire-and-forget API call log. Never blocks the response.
+    void logApiCall({
+      tenantId: tenantIdForLog,
+      userId: userIdForLog,
+      appSlug: "quikscale",
+      method: req.method,
+      path: req.nextUrl.pathname,
+      statusCode: response.status,
+      durationMs: Date.now() - startedAt,
+      ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      userAgent: req.headers.get("user-agent"),
+    });
+
+    return response;
   };
 }
 

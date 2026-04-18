@@ -68,6 +68,15 @@ export function resolveColorByPercentage(
 
 /**
  * Reverse color logic (lower is better).
+ *
+ * Unlike the forward resolver (whose thresholds are lower-bounds and therefore
+ * unreachable when value=0), the reverse resolver's thresholds are upper-bounds —
+ * an unentered cell with value=0 would spuriously satisfy `pct <= 80` and render
+ * BLUE. So we must short-circuit on `!isUpdated` before evaluating thresholds.
+ *
+ * Zero-tolerance target (e.g. "zero defects this week"): any positive value is a
+ * failure; only value=0 meets the target. We branch explicitly to avoid the
+ * division-protected percentage=0 leaking into the BLUE branch.
  */
 export function resolveReversedColorByPercentage(
   percentage: number,
@@ -75,11 +84,12 @@ export function resolveReversedColorByPercentage(
   value: number,
   isUpdated: boolean,
 ): ColorResult {
-  if (percentage <= 80 || (target <= 0 && value === 0)) return BLUE;
+  if (!isUpdated) return NEUTRAL;
+  if (target <= 0) return value === 0 ? BLUE : RED;
+  if (percentage <= 80) return BLUE;
   if (percentage <= 100) return GREEN;
   if (percentage <= 120) return YELLOW;
-  if (isUpdated && percentage > 120) return RED;
-  return NEUTRAL;
+  return RED;
 }
 
 /**

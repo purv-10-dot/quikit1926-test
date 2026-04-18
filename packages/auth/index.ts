@@ -205,6 +205,37 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           where: { id: user.id! },
           data: { lastSignInAt: new Date() },
         });
+        // SA-A.5: record a SessionEvent for analytics.
+        // tenantId is not yet known at signIn (org selection happens after),
+        // so we log with tenantId=null and a follow-up session event can be
+        // emitted by the app's own layout/middleware once a tenant is active.
+        try {
+          await db.sessionEvent.create({
+            data: {
+              userId: user.id!,
+              tenantId: null,
+              event: "login",
+              appSlug: "quikit",
+            },
+          });
+        } catch {
+          // Never break sign-in on a logging failure.
+        }
+      },
+      async signOut({ token }) {
+        if (!token?.id) return;
+        try {
+          await db.sessionEvent.create({
+            data: {
+              userId: token.id as string,
+              tenantId: (token.tenantId as string | undefined) ?? null,
+              event: "logout",
+              appSlug: "quikit",
+            },
+          });
+        } catch {
+          // no-op
+        }
       },
     },
   };
@@ -352,9 +383,20 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
           token.refreshToken = account.refresh_token;
           token.accessTokenExpires = Date.now() + (account.expires_in as number ?? 3600) * 1000;
         }
+        // SA-D: if the token is an impersonation session (set directly by the
+        // accept endpoint), the impersonating flag + claims are already on it
+        // and we must pass them through unchanged. Don't overwrite.
         return token;
       },
       async session({ session, token }) {
+        // SA-D: when impersonation is active, hard-fail the session if the
+        // expiry passed. Returning a session without user.id effectively
+        // signs the user out (middleware will bounce them to /login).
+        if (token.impersonating && token.impersonationExpiresAt) {
+          if (new Date(token.impersonationExpiresAt).getTime() < Date.now()) {
+            return { ...session, user: { ...session.user, id: "" as string, email: "" } as never };
+          }
+        }
         session.user = {
           ...session.user,
           id: token.id as string,
@@ -362,6 +404,10 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
           tenantId: token.tenantId as string | undefined,
           membershipRole: token.membershipRole as string | undefined,
           isSuperAdmin: false,
+          impersonating: token.impersonating,
+          impersonatorUserId: token.impersonatorUserId,
+          impersonatorEmail: token.impersonatorEmail,
+          impersonationExpiresAt: token.impersonationExpiresAt,
         };
         return session;
       },

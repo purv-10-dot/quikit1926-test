@@ -86,3 +86,49 @@ export async function sendOrgSuspendedEmail(params: {
     html: `<p>The organization <strong>${esc(params.orgName)}</strong> has been suspended on QuikIT. Contact support for more information.</p>`,
   });
 }
+
+/**
+ * SA-Tech-Debt-3 — send a platform alert notification to super admins.
+ *
+ * Called from the alerts engine cron when a new critical or warning alert is
+ * raised (first-fire) or when an alert escalates from warning to critical.
+ * Never sent on refresh — that would flood the inbox.
+ */
+export async function sendPlatformAlertEmail(params: {
+  to: string[];
+  severity: "info" | "warning" | "critical";
+  title: string;
+  message: string;
+  link?: string | null;
+}): Promise<void> {
+  const resend = getClient();
+  if (!resend) {
+    console.log("[email] Would send platform alert:", params.title, "to", params.to.join(", "));
+    return;
+  }
+  const severityColor = params.severity === "critical" ? "#dc2626" : params.severity === "warning" ? "#d97706" : "#2563eb";
+  const linkHtml = params.link ? `<p><a href="${baseUrl()}${esc(params.link)}" style="color:#4f46e5">Open in QuikIT →</a></p>` : "";
+  try {
+    await resend.emails.send({
+      from: FROM,
+      to: params.to,
+      subject: `[${params.severity.toUpperCase()}] ${params.title}`,
+      html: `
+        <div style="font-family:ui-sans-serif,system-ui;max-width:560px">
+          <p style="color:${severityColor};text-transform:uppercase;font-size:12px;letter-spacing:1px;font-weight:600">
+            Platform ${esc(params.severity)}
+          </p>
+          <h2 style="margin:8px 0 0 0">${esc(params.title)}</h2>
+          <p style="margin-top:8px;color:#374151">${esc(params.message)}</p>
+          ${linkHtml}
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+          <p style="color:#6b7280;font-size:12px">
+            This is an automated alert from the QuikIT platform. You're
+            receiving it because you're listed as a super admin.
+          </p>
+        </div>`,
+    });
+  } catch (err) {
+    console.error("[email] Failed to send platform alert:", err);
+  }
+}
