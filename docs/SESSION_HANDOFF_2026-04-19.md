@@ -63,7 +63,7 @@ Planned by end of Q2 2026 (June):
 |---|---|---|
 | **QuikCRM** | Sales / CRM | 🟡 Not started (greenfield) |
 | **QuikConstruction** | Construction site / crew management | 🟡 Not started |
-| **QuikPMS** | Project / property management (user to clarify which) | 🟡 Not started |
+| **QuikPMS** | **Project or Property management — user to clarify scope before kickoff** | 🟡 Not started |
 | **QuikWorkflows** | Automation / workflow engine | 🟡 Not started |
 
 ### Customers
@@ -290,7 +290,7 @@ packages/
 🌐 Cloudflare (DNS + CDN + DDoS + WAF) — free tier
          │
          ▼
-┌──────── India Pod (Hetzner CCX43 in EU + Azure/AWS/Hetzner India when available) ────────┐
+┌──────────────────── India Pod (cloud provider TBD — options below) ────────────────────┐
 │                                                                                            │
 │  Caddy reverse proxy (auto SSL via Let's Encrypt)                                         │
 │       │                                                                                     │
@@ -308,6 +308,21 @@ packages/
 - **Rollback via docker tag swap.** ~10-30s with health-check gate.
 - **No preview-per-PR** (lose that vs Vercel — accepted trade-off).
 - **CDN via Cloudflare** fronts everything.
+
+### Cloud provider decision for the India pod (UNRESOLVED)
+
+Hetzner does NOT have Indian data centres (closest is EU). For genuine India data residency, pick one of:
+
+| Option | Cost (mid-size VM) | Pros | Cons |
+|---|---|---|---|
+| **AWS Mumbai** (`ap-south-1`) | ~₹8-12k/mo (c6i.xlarge) | Mature India presence, broad service menu | Most expensive option |
+| **Azure India** (Mumbai / Pune / Chennai) | ~₹8-12k/mo (D4s v5) | Enterprise procurement friendly | Similar cost to AWS |
+| **GCP Mumbai** (`asia-south1`) | ~₹7-10k/mo (e2-standard-4) | Good dev tooling | Fewer India regions than AWS |
+| **DigitalOcean Bangalore** (`BLR1`) | ~₹3-5k/mo | Simple pricing, developer-friendly | Less enterprise credibility in procurement |
+| **E2E Networks / CtrlS / Netmagic** (Indian domestic cloud) | ~₹2-5k/mo | Strongest residency story (Indian company) | Tooling gap; not widely known; potential support SLA concerns |
+| **Hetzner EU** | €60/mo (~₹5k/mo) | Cheapest, best value for CPU/RAM | **Violates India data residency** — only viable if customer confirms "EU is OK" |
+
+**Action for DevOps person:** confirm one with the first paying/committed customer. If residency is contractual, Hetzner is OUT. Default recommendation: **DigitalOcean Bangalore** (cheap, simple, India-hosted) OR **AWS Mumbai** if customer wants enterprise-grade provider names on the contract.
 
 ### Migration plan (Vercel → self-hosted)
 Agreed sequence:
@@ -463,9 +478,13 @@ BASE_URL=https://quikscale.vercel.app APP=quikscale PUBLIC_ONLY=1 REQS=30 node s
 - Scope: user (persists across sessions once installed)
 - Status: installed but **requires Claude Code restart to fully activate the `woz:*` main-thread agents** (tools work now via `ToolSearch`)
 
-### Tools provided (deferred — load via `ToolSearch` or pre-load when task starts)
-- `mcp__plugin_woz_code__Search` — combined file discovery + grep + read
-- `mcp__plugin_woz_code__Edit` — batched fuzzy-match edits
+### Tools provided
+Before Claude Code restart: these appear as *deferred* tools — you must load schemas via `ToolSearch` before calling them (e.g. `ToolSearch("select:mcp__plugin_woz_code__Edit,mcp__plugin_woz_code__Search")`).
+
+After restart: the plugin boots a `woz:code` main-thread agent that has these tools first-class, and the PreToolUse hook nudges you to use them over raw Bash for file discovery / editing.
+
+- `mcp__plugin_woz_code__Search` — combined file discovery + grep + read (prefer over Bash `find`/`grep`/`cat` and over standalone `Grep`/`Glob`/`Read`)
+- `mcp__plugin_woz_code__Edit` — batched fuzzy-match edits (prefer over `Write`/`Edit` when doing multiple edits at once)
 - `mcp__plugin_woz_code__Sql` — SQL introspection
 - `mcp__plugin_woz_code__Recall` — semantic search of past sessions
 
@@ -553,11 +572,11 @@ If the new session opens with no specific task from Ashwin, here's the priority 
 Before taking any action, verify:
 
 - [ ] `git branch --show-current` = `main` (or a feature branch, NEVER dev/uat without reason)
-- [ ] `git log --oneline -3` shows `8f8bac9 test(api): cover last 4 uncovered super-admin routes` at HEAD
-- [ ] `npx turbo typecheck && npx turbo test && npx turbo lint` — all green
-- [ ] User is who I think they are (`ashwinsingone1993@gmail.com`) — check auto-memory if unsure
+- [ ] `git log --oneline -5` — the two most recent commits on `main` should be the handoff commit (this doc) and `8f8bac9 test(api): cover last 4 uncovered super-admin routes`. If the handoff branch was merged, HEAD will be the handoff commit. If not merged yet, HEAD is still `8f8bac9`.
+- [ ] `npx turbo typecheck && npx turbo test && npx turbo lint` — all green (tests ~1,360; exact count grew as new work lands)
+- [ ] User is who I think they are (`ashwinsingone1993@gmail.com`). Cross-reference the project auto-memory file at `~/.claude/projects/-Users-user-Documents-Claude-Code-QuikIT/memory/MEMORY.md` — it indexes git workflow preferences, dev ports, monorepo structure, and barrel-export client-safety rules.
 - [ ] Working dir is `/Users/user/Documents/Claude_Code/QuikIT`
-- [ ] WOZ plugin tools available (if not, ignore the PreToolUse hook reminder — use standard Edit/Write/Grep instead)
+- [ ] WOZ plugin tools available (if not, ignore the PreToolUse hook reminder — use standard Edit/Write/Grep instead). After a Claude Code restart the plugin registers a `woz:code` main-thread agent that auto-routes the MCP tools.
 
 If any of these fail: stop, report, ask Ashwin before continuing.
 
