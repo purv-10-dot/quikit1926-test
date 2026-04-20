@@ -63,6 +63,8 @@ RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
 # @quikit/* packages quikit depends on, then builds quikit itself.
 ARG NEXT_PUBLIC_SENTRY_DSN=""
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
+# Trigger next.config.js to emit `output: "standalone"` for Docker runtime.
+ENV BUILD_STANDALONE=1
 RUN npx turbo build --filter=quikit
 
 # ------------------------------------------------------------------ runner

@@ -5,8 +5,12 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   // Docker / self-hosted build output. See docs/engineering/GCP_DEPLOYMENT.md.
-  output: "standalone",
-  outputFileTracingRoot: path.join(__dirname, "../../"),
+  // Only enabled when BUILD_STANDALONE=1 (set in Dockerfiles). On Vercel this
+  // is unset so Next uses its default serverless output — mixing standalone
+  // output with Vercel's runtime causes ERR_CONNECTION_CLOSED.
+  ...(process.env.BUILD_STANDALONE === "1"
+    ? { output: "standalone", outputFileTracingRoot: path.join(__dirname, "../../") }
+    : {}),
   transpilePackages: [
     "@quikit/ui",
     "@quikit/auth",
