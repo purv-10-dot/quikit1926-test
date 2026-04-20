@@ -6,6 +6,7 @@ import { WWWPanel } from "./WWWPanel";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ColMenu } from "@/components/table/ColMenu";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
@@ -230,11 +231,13 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
     if (frozenIdx < 0) return false;
     return WWW_COL_ORDER.indexOf(colKey) <= frozenIdx;
   };
+  // Drag-to-resize: persisted widths override WWW_COL_WIDTHS defaults.
+  const { getColWidth, startResize } = useColumnResize("www", WWW_COL_WIDTHS);
   const getLeftOffset = (colKey: string): number => {
     let left = 0;
     for (const c of WWW_COL_ORDER) {
       if (c === colKey) return left;
-      if (isColFrozen(c)) left += WWW_COL_WIDTHS[c];
+      if (isColFrozen(c)) left += getColWidth(c);
     }
     return left;
   };
@@ -301,7 +304,8 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
             <tr className="bg-accent-50 border-b border-gray-200">
               {WWW_COL_ORDER.map((colKey) => {
                 const frozen = isColFrozen(colKey);
-                const width = WWW_COL_WIDTHS[colKey];
+                const width = getColWidth(colKey);
+                const isAlwaysFrozen = WWW_ALWAYS_FROZEN.has(colKey);
                 const label =
                   colKey === "_cb" ? "" :
                   colKey === "_log" ? "" :
@@ -315,7 +319,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
                 return (
                   <th key={colKey}
-                    className={`group top-0 z-30 bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
+                    className={`group relative top-0 z-30 bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
                     style={{
                       left: frozen ? getLeftOffset(colKey) : undefined,
                       width,
@@ -354,6 +358,10 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                           />
                         )}
                       </div>
+                    )}
+                    {/* Resize handle — skip on always-frozen chrome (cb/log/id) */}
+                    {!isAlwaysFrozen && (
+                      <ResizeHandle onStart={(e) => startResize(colKey, e.clientX)} />
                     )}
                   </th>
                 );
@@ -434,11 +442,11 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                     <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("who") ? "sticky" : ""}`}
                       style={{
                         left: isColFrozen("who") ? getLeftOffset("who") : undefined,
-                        width: 120,
-                        minWidth: 120,
+                        width: getColWidth("who"),
+                        minWidth: getColWidth("who"),
                         boxShadow: lastFrozenKey === "who" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
-                      <span className="text-xs text-gray-800 font-medium truncate block max-w-[108px]">
+                      <span className="text-xs text-gray-800 font-medium truncate block">
                         {whoName}
                       </span>
                     </td>
@@ -449,8 +457,8 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                     <td className={`z-20 border-r border-gray-200 px-2 py-1.5 bg-inherit ${isColFrozen("when") ? "sticky" : ""}`}
                       style={{
                         left: isColFrozen("when") ? getLeftOffset("when") : undefined,
-                        width: 110,
-                        minWidth: 110,
+                        width: getColWidth("when"),
+                        minWidth: getColWidth("when"),
                         boxShadow: lastFrozenKey === "when" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
                       <div className="flex items-center gap-1">
@@ -466,9 +474,9 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
                   {/* What — hidable */}
                   {WWW_COL_ORDER.includes("what") && (
-                    <td className="border-r border-gray-100 px-2 py-1.5" style={{ width: 300, minWidth: 300 }}>
+                    <td className="border-r border-gray-100 px-2 py-1.5" style={{ width: getColWidth("what"), minWidth: getColWidth("what") }}>
                       <WhatTooltip text={item.what}>
-                        <p className="text-xs text-gray-800 line-clamp-2 max-w-[288px] cursor-default">
+                        <p className="text-xs text-gray-800 line-clamp-2 cursor-default">
                           {item.what}
                         </p>
                       </WhatTooltip>
@@ -477,7 +485,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
                   {/* Revised Date — inline editable, hidable */}
                   {WWW_COL_ORDER.includes("revisedDate") && (
-                    <td className="relative border-r border-gray-100 px-2 py-1.5" style={{ width: 120, minWidth: 120 }}>
+                    <td className="relative border-r border-gray-100 px-2 py-1.5" style={{ width: getColWidth("revisedDate"), minWidth: getColWidth("revisedDate") }}>
                       <button
                         onClick={() => {
                           if (readOnly) return;
@@ -512,7 +520,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
                   {/* Status — hidable */}
                   {WWW_COL_ORDER.includes("status") && (
-                    <td className={`relative border-r border-gray-100 ${statusBadgeColor(item.status)}`} style={{ width: 140, minWidth: 140 }}>
+                    <td className={`relative border-r border-gray-100 ${statusBadgeColor(item.status)}`} style={{ width: getColWidth("status"), minWidth: getColWidth("status") }}>
                       <button
                         onClick={() => {
                           if (readOnly) return;
@@ -537,7 +545,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
                   {/* Notes — hidable */}
                   {WWW_COL_ORDER.includes("notes") && (
-                    <td className="border-r border-gray-100 px-2 py-1.5" style={{ minWidth: 300, width: "100%" }}>
+                    <td className="border-r border-gray-100 px-2 py-1.5" style={{ width: getColWidth("notes"), minWidth: getColWidth("notes") }}>
                       <TextTooltip text={item.notes ?? ""}>
                         <span className="text-xs text-gray-600 truncate block cursor-default">
                           {item.notes || <span className="text-gray-300">—</span>}
