@@ -25,13 +25,16 @@ export function useKPIs(params: Partial<KPIListParams> = {}) {
   });
 }
 
-// List Team KPIs — convenience wrapper that forces kpiLevel="team" and a larger pageSize
-// (team KPI sets are small; avoiding pagination gives a simpler UX for the Teams KPI page)
+// List Team KPIs — convenience wrapper that forces kpiLevel="team". Default
+// pageSize is 100 to match kpiListParamsSchema cap (security row-cap). Team
+// KPI sets per tenant per quarter are typically < 50 so this is safe
+// truncation in practice. If a tenant ever exceeds 100 team KPIs, switch
+// to paginated fetch or a dedicated /api/kpi/all endpoint.
 export function useTeamKPIs(params: Partial<KPIListParams> = {}) {
   return useKPIs({
     ...params,
     kpiLevel: "team",
-    pageSize: params.pageSize ?? 500,
+    pageSize: params.pageSize ?? 100,
   });
 }
 
