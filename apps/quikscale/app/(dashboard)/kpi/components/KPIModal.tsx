@@ -20,6 +20,7 @@ import {
   distributeContributionsEven,
   type DivisionType,
 } from "./kpiModalHelpers";
+import { WeeklyScroller } from "./WeeklyScroller";
 
 interface Props {
   mode: "create" | "edit";
@@ -937,7 +938,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
           {scaledTarget > 0 && (
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-2">Target Breakdown (Weekly)</label>
-              <div className="border border-gray-200 rounded-lg overflow-auto">
+              <WeeklyScroller>
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-gray-50">
@@ -1069,7 +1070,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                     })}
                   </tbody>
                 </table>
-              </div>
+              </WeeklyScroller>
               <div className="flex items-center justify-between mt-1 gap-2">
                 <p className="text-[10px] text-gray-400">
                   {isTeamScope && form.ownerIds.length > 0

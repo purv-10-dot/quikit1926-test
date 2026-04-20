@@ -368,6 +368,10 @@ function UpdatesTab({
   const isTeamKPI = kpi.kpiLevel === "team";
   const ownerList = (kpi.owners ?? []) as Array<{ id: string; firstName: string; lastName: string }>;
   const contribs = (kpi.ownerContributions as Record<string, number> | null | undefined) ?? {};
+  // Per-week target override map (if saved on KPI). Fallback: flat weekly target.
+  const savedWeeklyTargets = (kpi.weeklyTargets as Record<string, number> | null | undefined) ?? null;
+  const targetForWeek = (w: number): number =>
+    savedWeeklyTargets?.[String(w)] ?? weeklyTarget;
 
   function handleWeekChange(weekNumber: number, field: "value" | "notes", val: string) {
     setWeeklyState(s => ({
@@ -445,6 +449,7 @@ function UpdatesTab({
                         const canEditThisRow = (canEditAnyOwner || o.id === currentUserId) && !locked;
                         const rowState = teamWeeklyState[o.id]?.[w] ?? { value: "", notes: "" };
                         const isSelf = o.id === currentUserId;
+                        const ownerWeekTarget = targetForWeek(w) * (pct / 100);
                         return (
                           <div key={o.id} className="flex items-center gap-2 px-3 py-1.5">
                             <div className="w-32 flex-shrink-0">
@@ -453,6 +458,12 @@ function UpdatesTab({
                                 {isSelf && <span className="ml-1 text-[9px] text-accent-500">(you)</span>}
                               </div>
                               <div className="text-[9px] text-gray-400">{pct}%</div>
+                            </div>
+                            <div className="w-16 flex-shrink-0 text-center">
+                              <div className="text-[9px] text-gray-400 leading-none">Target</div>
+                              <div className="text-xs font-medium text-gray-700 mt-0.5">
+                                {ownerWeekTarget > 0 ? fmt(ownerWeekTarget) : "—"}
+                              </div>
                             </div>
                             <input
                               type="number"
@@ -496,6 +507,7 @@ function UpdatesTab({
           <>
             <div className="flex items-center gap-3 mb-1">
               <div className="w-24 text-[10px] text-gray-400 font-medium">Week</div>
+              <div className="w-20 text-[10px] text-gray-400 font-medium text-center">Target</div>
               <div className="w-24 text-[10px] text-gray-400 font-medium text-center">Value</div>
               <div className="flex-1 text-[10px] text-gray-400 font-medium">Notes</div>
             </div>
@@ -508,13 +520,14 @@ function UpdatesTab({
                   weekNumber={w}
                   value={weeklyState[w]?.value ?? ""}
                   notes={weeklyState[w]?.notes ?? ""}
-                  weeklyTarget={weeklyTarget}
+                  weeklyTarget={targetForWeek(w)}
                   year={kpi.year}
                   quarter={kpi.quarter}
                   onValueChange={v => handleWeekChange(w, "value", v)}
                   onNotesChange={n => handleWeekChange(w, "notes", n)}
                   locked={locked}
                   reverse={kpi.reverseColor ?? false}
+                  targetDisplay={targetForWeek(w) > 0 ? fmt(targetForWeek(w)) : "—"}
                 />
               );})}
             </div>

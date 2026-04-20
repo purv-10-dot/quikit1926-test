@@ -29,6 +29,7 @@ export function WeekRow({
   onNotesChange,
   locked,
   reverse,
+  targetDisplay,
 }: {
   weekNumber: number;
   value: string;
@@ -40,6 +41,8 @@ export function WeekRow({
   onNotesChange: (n: string) => void;
   locked?: boolean;
   reverse?: boolean;
+  /** Optional formatted target string shown between Week label and Value input */
+  targetDisplay?: string;
 }) {
   const numVal = parseFloat(value);
   const hasValue = value !== "" && !isNaN(numVal);
@@ -92,6 +95,12 @@ export function WeekRow({
               }}
             />
           )}
+        </div>
+      </div>
+      {/* Target (read-only display) */}
+      <div className="w-20 flex-shrink-0 pt-2 text-center">
+        <div className="text-xs font-medium text-gray-700">
+          {targetDisplay ?? "—"}
         </div>
       </div>
       {/* Value input */}
