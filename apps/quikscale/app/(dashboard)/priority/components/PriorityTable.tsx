@@ -11,6 +11,7 @@ import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ColMenu } from "@/components/table/ColMenu";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 
@@ -264,6 +265,9 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
     _cb: 40, _log: 40, _id: 40, team: 120, priorityName: 200, owner: 140,
     startWeek: 170, endWeek: 170, lastNote: 200,
   };
+  // Drag-to-resize: persisted widths override the defaults above.
+  // _cb/_log/_id stay at their defaults (always-frozen chrome — no handle rendered).
+  const { getColWidth, startResize } = useColumnResize("priority", COL_WIDTHS);
   const COL_LABELS: Record<string, string> = {
     team: "Team", priorityName: "Priority Name", owner: "Owner",
     startWeek: "Start Week", endWeek: "End Week", lastNote: "Last Note",
@@ -297,7 +301,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
     let left = 0;
     for (const c of COL_ORDER) {
       if (c === colKey) return left;
-      if (isColFrozen(c)) left += COL_WIDTHS[c];
+      if (isColFrozen(c)) left += getColWidth(c);
     }
     return left;
   };
@@ -333,7 +337,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
               {/* Header cells — checkbox/log/id always sticky, others sticky if isColFrozen */}
               {COL_ORDER.map((colKey) => {
                 const frozen = isColFrozen(colKey);
-                const width = COL_WIDTHS[colKey];
+                const width = getColWidth(colKey);
+                const isAlwaysFrozen = ALWAYS_FROZEN.has(colKey);
                 const label =
                   colKey === "_cb" ? "" :
                   colKey === "_log" ? "" :
@@ -346,7 +351,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
 
                 return (
                   <th key={colKey}
-                    className={`group top-0 z-30 bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
+                    className={`group relative top-0 z-30 bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
                     style={{
                       left: frozen ? getLeftOffset(colKey) : undefined,
                       width,
@@ -384,6 +389,10 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                           />
                         )}
                       </div>
+                    )}
+                    {/* Resize handle — skip on always-frozen chrome (cb/log/id) */}
+                    {!isAlwaysFrozen && (
+                      <ResizeHandle onStart={(e) => startResize(colKey, e.clientX)} />
                     )}
                   </th>
                 );
@@ -461,11 +470,11 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("team") ? "sticky" : ""}`}
                       style={{
                         left: isColFrozen("team") ? getLeftOffset("team") : undefined,
-                        width: 120,
-                        minWidth: 120,
+                        width: getColWidth("team"),
+                        minWidth: getColWidth("team"),
                         boxShadow: lastFrozenKey === "team" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
-                      <span className="text-xs text-gray-600 truncate block max-w-[108px]">
+                      <span className="text-xs text-gray-600 truncate block">
                         {priority.team?.name ?? <span className="text-gray-300">—</span>}
                       </span>
                     </td>
@@ -476,12 +485,12 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("priorityName") ? "sticky" : ""}`}
                       style={{
                         left: isColFrozen("priorityName") ? getLeftOffset("priorityName") : undefined,
-                        width: 200,
-                        minWidth: 200,
+                        width: getColWidth("priorityName"),
+                        minWidth: getColWidth("priorityName"),
                         boxShadow: lastFrozenKey === "priorityName" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
                       <NameTooltip name={priority.name} description={priority.description}>
-                        <span className="text-xs text-gray-800 font-medium truncate block max-w-[188px] cursor-default">
+                        <span className="text-xs text-gray-800 font-medium truncate block cursor-default">
                           {priority.name}
                         </span>
                       </NameTooltip>
@@ -493,11 +502,11 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     <td className={`z-20 border-r border-gray-200 px-2 py-1.5 bg-inherit ${isColFrozen("owner") ? "sticky" : ""}`}
                       style={{
                         left: isColFrozen("owner") ? getLeftOffset("owner") : undefined,
-                        width: 140,
-                        minWidth: 140,
+                        width: getColWidth("owner"),
+                        minWidth: getColWidth("owner"),
                         boxShadow: lastFrozenKey === "owner" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
-                      <span className="text-xs text-gray-600 truncate block max-w-[128px]">{ownerName}</span>
+                      <span className="text-xs text-gray-600 truncate block">{ownerName}</span>
                     </td>
                   )}
 
@@ -506,8 +515,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("startWeek") ? "sticky" : ""}`}
                       style={{
                         left: isColFrozen("startWeek") ? getLeftOffset("startWeek") : undefined,
-                        width: 170,
-                        minWidth: 170,
+                        width: getColWidth("startWeek"),
+                        minWidth: getColWidth("startWeek"),
                         boxShadow: lastFrozenKey === "startWeek" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
                       {priority.startWeek != null ? (
@@ -526,8 +535,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("endWeek") ? "sticky" : ""}`}
                       style={{
                         left: isColFrozen("endWeek") ? getLeftOffset("endWeek") : undefined,
-                        width: 170,
-                        minWidth: 170,
+                        width: getColWidth("endWeek"),
+                        minWidth: getColWidth("endWeek"),
                         boxShadow: lastFrozenKey === "endWeek" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
                       {priority.endWeek != null ? (
@@ -569,12 +578,12 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                       <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("lastNote") ? "sticky" : ""}`}
                         style={{
                           left: isColFrozen("lastNote") ? getLeftOffset("lastNote") : undefined,
-                          width: 200,
-                          minWidth: 200,
+                          width: getColWidth("lastNote"),
+                          minWidth: getColWidth("lastNote"),
                           boxShadow: lastFrozenKey === "lastNote" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                         }}>
                         {lastNote ? (
-                          <span className="text-xs text-gray-600 truncate block max-w-[188px]" title={lastNote}>
+                          <span className="text-xs text-gray-600 truncate block" title={lastNote}>
                             {lastWeek > 0 && <span className="text-gray-400 mr-1">W{lastWeek}:</span>}
                             {lastNote}
                           </span>
