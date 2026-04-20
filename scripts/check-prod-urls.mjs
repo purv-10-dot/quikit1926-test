@@ -53,6 +53,7 @@ const SKIP_FILES = new Set([
   "scripts/check-prod-urls.mjs",
   "scripts/check-prod-urls.sh",
   "scripts/load-test.mjs",
+  "scripts/smoke-test.mjs",
   "package-lock.json",
   "pnpm-lock.yaml",
   "yarn.lock",
