@@ -1,0 +1,51 @@
+# Build artifacts
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/coverage
+**/.vercel
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Env files (secrets — NEVER in image)
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Logs + local state
+**/*.log
+**/npm-debug.log*
+**/.DS_Store
+
+# Editor / IDE
+.vscode
+.idea
+.claude
+
+# Tests + docs (not needed at runtime)
+**/__tests__
+**/*.test.*
+**/*.spec.*
+docs/
+CLAUDE.md
+README.md
+
+# CI / tooling configs not needed inside the image
+.github
+.husky
+vercel.json
+playwright.config.ts
+**/.eslintrc*
+**/vitest.config.ts
+**/tsconfig.tsbuildinfo
+
+# Backup tags / scripts that aren't runtime
+scripts/coverage-ratchet.mjs
+scripts/check-prod-urls.mjs
+scripts/check-prod-urls.sh
+scripts/load-test.mjs
+scripts/smoke-test.mjs
