@@ -4,10 +4,21 @@ import { useSession, signOut } from "next-auth/react";
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
-const CHECK_INTERVAL = 60 * 1000;
-/** Add ±10s jitter to prevent thundering herd when many clients poll simultaneously */
+// Background poll for revoked access. Set to 24h because:
+//   1. Server-side JWT callback already re-checks membership every 5min
+//      on any authenticated request (packages/auth/index.ts RECHECK_INTERVAL).
+//      Active users catch revocation within 5 min regardless of this poll.
+//   2. Focus/visibility listener below ALSO validates immediately whenever
+//      the user returns to the tab. Active users = effectively instant.
+//   3. Only fully idle tabs (user never focuses for 24h) wait the full
+//      interval to detect server-side revocation.
+//
+// Trade: DB load on /api/session/validate drops ~1,700x vs the previous 60s
+// poll at the cost of 24h worst-case for idle-tab-with-revoked-access.
+const CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+/** Add ±30min jitter to prevent thundering herd when many clients poll simultaneously */
 function jitteredInterval() {
-  return CHECK_INTERVAL + Math.floor(Math.random() * 20_000) - 10_000;
+  return CHECK_INTERVAL + Math.floor(Math.random() * 3_600_000) - 1_800_000;
 }
 
 export interface SessionGuardConfig {
