@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { useTeamKPIs } from "@/lib/hooks/useKPI";
+import { useTeamKPIs, useDeleteKPI } from "@/lib/hooks/useKPI";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
@@ -58,6 +58,28 @@ export default function TeamsKPIPage() {
   const handleShowCol = (col: string) => {
     setShowColTrigger(t => ({ col, seq: (t?.seq ?? 0) + 1 }));
   };
+
+  // Page-level bulk delete — aggregates selection across every TeamSection.
+  // Matches the Individual KPI page pattern: button shows on left of toolbar
+  // when any KPIs are selected; clicking deletes them all and resets selection.
+  const deleteKPI = useDeleteKPI();
+  const [selectedByTeam, setSelectedByTeam] = useState<Record<string, Set<string>>>({});
+  const [clearSelectionTrigger, setClearSelectionTrigger] = useState(0);
+  const unionSelectedIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const set of Object.values(selectedByTeam)) set.forEach(id => s.add(id));
+    return s;
+  }, [selectedByTeam]);
+  const handleSectionSelectionChange = (teamId: string, ids: Set<string>) => {
+    setSelectedByTeam(prev => ({ ...prev, [teamId]: ids }));
+  };
+  async function handleBulkDelete() {
+    if (!unionSelectedIds.size) return;
+    await Promise.all([...unionSelectedIds].map(id => deleteKPI.mutateAsync(id)));
+    setSelectedByTeam({});
+    setClearSelectionTrigger(n => n + 1);
+    refetch();
+  }
 
   const { data: session } = useSession();
   const { data: teams = [], isLoading: teamsLoading } = useTeams();
@@ -132,6 +154,27 @@ export default function TeamsKPIPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Bulk delete — page-level, union of every team section's selected KPIs */}
+          {unionSelectedIds.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleteKPI.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 disabled:opacity-50 transition-colors"
+            >
+              {deleteKPI.isPending ? (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              )}
+              Delete {unionSelectedIds.size} selected
+            </button>
+          )}
+
           {/* Hidden columns — page-level pill, union of every team section's hidden cols */}
           {unionHiddenCols.size > 0 && (
             <HiddenColsMenu hiddenCols={unionHiddenCols} allCols={allTableCols} onShow={handleShowCol} />
@@ -352,6 +395,8 @@ export default function TeamsKPIPage() {
               onRefresh={refetch}
               onHiddenColsChange={handleSectionHiddenColsChange}
               showColTrigger={showColTrigger}
+              onSelectionChange={handleSectionSelectionChange}
+              clearSelectionTrigger={clearSelectionTrigger}
             />
           ))
         )}

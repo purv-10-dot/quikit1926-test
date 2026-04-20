@@ -19,9 +19,13 @@ interface Props {
   onHiddenColsChange?: (teamId: string, cols: Set<string>) => void;
   /** Page-level "show this column" trigger (broadcast to every KPITable — each unhides if present). */
   showColTrigger?: { col: string; seq: number };
+  /** Forwarded from page — aggregates selected KPI ids across all team sections for the page-level bulk-delete button. */
+  onSelectionChange?: (teamId: string, ids: Set<string>) => void;
+  /** Page-level "clear selection" trigger (broadcast to every KPITable — bumps seq to reset). */
+  clearSelectionTrigger?: number;
 }
 
-export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpanded, onHiddenColsChange, showColTrigger }: Props) {
+export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpanded, onHiddenColsChange, showColTrigger, onSelectionChange, clearSelectionTrigger }: Props) {
   const [expanded, setExpanded] = useState<boolean>(defaultExpanded ?? kpis.length > 0);
   const [editKPI, setEditKPI] = useState<KPIRow | null>(null);
 
@@ -111,6 +115,8 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
                 readOnly={!canManage}
                 onHiddenColsChange={(cols) => onHiddenColsChange?.(team.id, cols)}
                 showColTrigger={showColTrigger}
+                onSelectionChange={(ids) => onSelectionChange?.(team.id, ids)}
+                clearSelectionTrigger={clearSelectionTrigger}
               />
             </div>
           )}
