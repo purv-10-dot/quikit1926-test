@@ -9,7 +9,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -22,14 +22,13 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  LogOut,
-  ChevronDown,
   FileText,
   ToggleRight,
   BarChart3,
   Megaphone,
+  LayoutDashboard,
 } from "lucide-react";
-import { AppSwitcher } from "@quikit/ui";
+import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
 import { motion, AnimatePresence } from "framer-motion";
 
 const NAV_ITEMS = [
@@ -56,8 +55,6 @@ export default function SuperAdminLayout({
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [avatarOpen, setAvatarOpen] = useState(false);
-  const avatarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (status === "authenticated" && !isSuperAdmin) {
@@ -65,16 +62,30 @@ export default function SuperAdminLayout({
     }
   }, [status, isSuperAdmin, router]);
 
-  // Close avatar dropdown on outside click
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) {
-        setAvatarOpen(false);
-      }
+  const userFullName = session?.user?.name || session?.user?.email?.split("@")[0] || "Super Admin";
+  const userEmail = session?.user?.email || "";
+  const isImpersonating = session?.user?.impersonating === true;
+
+  async function handleSignOut() {
+    // On QuikIT itself (the IdP), globalSignOut defaults quikitUrl to
+    // window.location.origin — one call clears both the local + IdP cookie.
+    await globalSignOut({
+      localSignOut: () => signOut({ redirect: false }),
+    });
+  }
+
+  async function handleExitImpersonation() {
+    // Super admins on quikit can't be impersonating themselves in this app,
+    // but keep the handler wired for completeness + future multi-tenant
+    // super-admin scenarios.
+    try {
+      const r = await fetch("/api/auth/impersonate/exit", { method: "POST" });
+      const j = await r.json();
+      window.location.href = j?.data?.redirectUrl || "/";
+    } catch {
+      window.location.href = "/";
     }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  }
 
   if (status === "loading") {
     return (
@@ -87,14 +98,6 @@ export default function SuperAdminLayout({
   if (!isSuperAdmin) {
     return null;
   }
-
-  const userInitials =
-    (session?.user?.name || "SA")
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
 
   const sidebarContent = (
     <>
@@ -247,50 +250,16 @@ export default function SuperAdminLayout({
 
           <div className="flex items-center gap-3">
             <AppSwitcher apiUrl="/api/apps/launcher" />
-
-            {/* Avatar dropdown */}
-            <div className="relative" ref={avatarRef}>
-              <button
-                onClick={() => setAvatarOpen(!avatarOpen)}
-                className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-white/70 border border-white/60 hover:bg-white transition-colors"
-              >
-                <div className="h-8 w-8 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white text-xs font-semibold shadow-sm">
-                  {userInitials}
-                </div>
-                <span className="text-sm font-medium text-slate-700 hidden sm:inline">
-                  {session?.user?.name?.split(" ")[0] || "Admin"}
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-              </button>
-
-              <AnimatePresence>
-                {avatarOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1"
-                  >
-                    <div className="px-4 py-3 border-b border-slate-100">
-                      <p className="text-sm font-medium text-slate-900">
-                        {session?.user?.name || "Super Admin"}
-                      </p>
-                      <p className="text-xs text-slate-500 truncate">
-                        {session?.user?.email}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => signOut({ callbackUrl: "/login" })}
-                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut className="h-4 w-4" />
-                      Sign out
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+            <UserMenu
+              user={{ name: userFullName, email: userEmail }}
+              isImpersonating={isImpersonating}
+              onSignOut={handleSignOut}
+              onExitImpersonation={handleExitImpersonation}
+              items={[
+                { label: "Back to launcher", icon: LayoutDashboard, onClick: () => router.push("/apps") },
+              ]}
+              avatarClassName="bg-gradient-to-br from-amber-500 to-orange-600"
+            />
           </div>
         </header>
 

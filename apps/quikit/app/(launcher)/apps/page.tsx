@@ -11,12 +11,13 @@
  */
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import {
-  Rocket, Grid3X3, Search, ExternalLink, Plus,
+  Rocket, Search, ExternalLink, Plus,
   CheckCircle2, Clock, Sparkles, Building2, ChevronDown, Shield,
 } from "lucide-react";
 import Link from "next/link";
+import { UserMenu, globalSignOut } from "@quikit/ui";
 
 interface AppInfo {
   id: string;
@@ -57,7 +58,6 @@ const ICON_FALLBACKS: Record<string, string> = {
 
 export default function AppLauncherPage() {
   const { data: session, update } = useSession();
-  const [tab, setTab] = useState<Tab>("installed");
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [orgs, setOrgs] = useState<OrgInfo[]>([]);
   const [selectedOrg, setSelectedOrg] = useState<OrgInfo | null>(null);
@@ -67,6 +67,26 @@ export default function AppLauncherPage() {
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
 
   const isSuperAdmin = session?.user?.isSuperAdmin === true;
+  const isImpersonating = session?.user?.impersonating === true;
+  const userFullName = session?.user?.name || session?.user?.email?.split("@")[0] || "User";
+  const userEmail = session?.user?.email || "";
+
+  async function handleSignOut() {
+    // On QuikIT itself, quikitUrl defaults to window.location.origin.
+    await globalSignOut({
+      localSignOut: () => signOut({ redirect: false }),
+    });
+  }
+
+  async function handleExitImpersonation() {
+    try {
+      const r = await fetch("/api/auth/impersonate/exit", { method: "POST" });
+      const j = await r.json();
+      window.location.href = j?.data?.redirectUrl || "/";
+    } catch {
+      window.location.href = "/";
+    }
+  }
   const isAdmin =
     session?.user?.membershipRole === "admin" ||
     session?.user?.membershipRole === "super_admin" ||
@@ -226,6 +246,15 @@ export default function AppLauncherPage() {
                   <span>Super Admin</span>
                 </Link>
               )}
+
+              {/* User menu (avatar + dropdown with Sign out) */}
+              <UserMenu
+                user={{ name: userFullName, email: userEmail }}
+                isImpersonating={isImpersonating}
+                onSignOut={handleSignOut}
+                onExitImpersonation={handleExitImpersonation}
+                avatarClassName="bg-gradient-to-br from-indigo-500 to-purple-600"
+              />
 
               {/* Search */}
               <div className="relative flex-1 sm:flex-none min-w-[140px]">

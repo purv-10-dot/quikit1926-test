@@ -31,3 +31,5 @@ export { BroadcastBanner, type BroadcastBannerProps } from "./components/broadca
 export { ImpersonationBanner } from "./components/impersonation-banner";
 export { severityClass, severityIcon, type SeverityLevel, type SeverityVariant } from "./lib/severity";
 export { ConfirmProvider, useConfirm, type ConfirmOptions, type ConfirmTone } from "./components/confirm-modal";
+export { UserMenu, type UserMenuProps, type UserMenuItem } from "./components/user-menu";
+export { globalSignOut, type GlobalSignOutOptions } from "./lib/global-signout";
