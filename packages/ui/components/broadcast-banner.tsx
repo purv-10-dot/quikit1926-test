@@ -3,16 +3,21 @@
 /**
  * SA-B.6 — BroadcastBanner
  *
- * Renders active platform announcements at the top of an app. Fetches
- * from /api/broadcasts/active?app=<slug>, stacks multiple banners, and
- * calls /api/broadcasts/<id>/dismiss when the user closes one.
+ * DISABLED 2026-04-20: returns null unconditionally. Broadcasts feature
+ * parked until there's real demand; the component was polling
+ * /api/broadcasts/active every 5 min on every authenticated tab for
+ * zero business value right now (no active broadcasts in the system).
+ * Left the component exported + typed so call-sites don't need updates;
+ * re-enable by restoring the original implementation from git history.
  *
- * Intentionally minimal — no framer-motion to avoid the extra dep on
- * every tenant's bundle.
+ * Full implementation (fetch, setInterval, render, dismiss) is retained
+ * below in a commented block for quick restoration.
+ *
+ * Original doc:
+ *   Renders active platform announcements at the top of an app. Fetches
+ *   from /api/broadcasts/active?app=<slug>, stacks multiple banners, and
+ *   calls /api/broadcasts/<id>/dismiss when the user closes one.
  */
-
-import { useEffect, useState, useCallback } from "react";
-import { AlertTriangle, AlertCircle, Info, X } from "lucide-react";
 
 export interface BroadcastBannerProps {
   /** App slug for targeting (empty = platform-wide only) */
@@ -21,6 +26,18 @@ export interface BroadcastBannerProps {
   baseUrl?: string;
   className?: string;
 }
+
+// Accept all props to preserve the public API; swallow via void so lint
+// doesn't flag them as unused while the component is paused.
+export function BroadcastBanner(props: BroadcastBannerProps) {
+  void props;
+  return null;
+}
+
+/* ----- ORIGINAL IMPLEMENTATION (paused 2026-04-20) -----
+
+import { useEffect, useState, useCallback } from "react";
+import { AlertTriangle, AlertCircle, Info, X } from "lucide-react";
 
 interface ActiveBroadcast {
   id: string;
@@ -105,3 +122,5 @@ export function BroadcastBanner({ appSlug, baseUrl = "", className = "" }: Broad
     </div>
   );
 }
+
+----- END ORIGINAL ----- */

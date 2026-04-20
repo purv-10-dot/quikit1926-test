@@ -46,7 +46,7 @@ export function useMeetings(filters: {
   return useQuery({
     queryKey: meetingKeys.list(filters),
     queryFn: () => fetchJSON(`${BASE}${qs ? `?${qs}` : ""}`),
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 60 * 5,
   });
 }
 
@@ -55,7 +55,7 @@ export function useMeeting(id: string) {
     queryKey: meetingKeys.detail(id),
     queryFn: () => fetchJSON(`${BASE}/${id}`),
     enabled: !!id,
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 60 * 5,
   });
 }
 

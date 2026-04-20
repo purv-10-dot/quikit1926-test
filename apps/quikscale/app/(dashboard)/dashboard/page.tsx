@@ -3,10 +3,7 @@
 import { useState, useRef, useEffect, useMemo, CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
-import { useKPIs } from "@/lib/hooks/useKPI";
-import { usePriorities } from "@/lib/hooks/usePriority";
-import { useWWWItems } from "@/lib/hooks/useWWW";
-import { useUsers } from "@/lib/hooks/useUsers";
+import { useDashboardSummary } from "@/lib/hooks/useDashboardSummary";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption } from "@quikit/ui";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
@@ -742,22 +739,22 @@ export default function DashboardPage() {
   const roleLevel = role ? (ROLE_HIERARCHY[role] ?? 0) : 0;
   const isAdmin = roleLevel >= ADMIN_MIN_LEVEL || !!isSuperAdmin;
 
-  // Teams list with members (needed for both tabs — admin filter + team tab team picker)
-  const [allTeams, setAllTeams] = useState<Array<{ id: string; name: string; members: Array<{ userId: string }> }>>([]);
-  useEffect(() => {
-    fetch("/api/org/teams").then(r => r.json()).then(d => {
-      if (d.success) setAllTeams(d.data.map((t: { id: string; name: string; members?: Array<{ userId: string }> }) => ({
-        id: t.id,
-        name: t.name,
-        members: t.members ?? [],
-      })));
-    });
-  }, []);
+  /* ── Consolidated dashboard data — one API call instead of six ─────── */
+  const { data: summary, isLoading } = useDashboardSummary({ year, quarter });
+  const summaryData = summary?.data;
+  const allIndKpis: KPIRow[] = (summaryData?.individualKPIs ?? []) as KPIRow[];
+  const allTeamKpis: KPIRow[] = (summaryData?.teamKPIs ?? []) as KPIRow[];
+  const allPriorities = (summaryData?.priorities ?? []) as PriorityRow[];
+  const allWWW = (summaryData?.wwwItems ?? []) as WWWItem[];
+  const allOrgUsers = summaryData?.users ?? [];
+  const allOrgTeams = summaryData?.teams ?? [];
 
-  // For non-admin: only show teams the user belongs to; for admin: show all teams
-  const teams = useMemo(() =>
-    isAdmin ? allTeams : allTeams.filter(t => t.members.some(m => m.userId === userId)),
-    [allTeams, isAdmin, userId],
+  // Teams list for pickers. The consolidated payload returns tenant-wide
+  // teams; membership-based visibility is derived below via the KPI/team
+  // ownership map so non-admins still only pick from teams they work in.
+  const teams = useMemo(
+    () => allOrgTeams.map((t) => ({ id: t.id, name: t.name })),
+    [allOrgTeams],
   );
 
   // Team tab: selected team for filtering
@@ -769,28 +766,47 @@ export default function DashboardPage() {
     }
   }, [activeTab, isAdmin, teamTabTeamId, teams]);
 
-  // Users filtered by selected team (hook refetches when teamId changes)
-  // Individual tab (admin): use global filterTeam; Team tab: use teamTabTeamId
+  // Team id → Set<userId> lookup, derived from KPI ownership so we can
+  // filter the users list client-side without refetching.
+  const teamMemberIdsByTeam = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const k of allIndKpis) {
+      if (k.teamId && k.owner) {
+        if (!map.has(k.teamId)) map.set(k.teamId, new Set());
+        map.get(k.teamId)!.add(k.owner);
+      }
+    }
+    for (const k of allTeamKpis) {
+      if (k.teamId) {
+        if (!map.has(k.teamId)) map.set(k.teamId, new Set());
+        for (const id of (k.ownerIds ?? [])) map.get(k.teamId)!.add(id);
+      }
+    }
+    return map;
+  }, [allIndKpis, allTeamKpis]);
+
   const individualFilterTeam = isAdmin ? (filterTeam || undefined) : undefined;
-  const { data: users = [] } = useUsers(
-    activeTab === "individual" ? individualFilterTeam : (teamTabTeamId || undefined),
-  );
+  const selectedTeamId =
+    activeTab === "individual" ? individualFilterTeam : (teamTabTeamId || undefined);
+
+  const users = useMemo(() => {
+    if (!selectedTeamId) return allOrgUsers;
+    const ids = teamMemberIdsByTeam.get(selectedTeamId);
+    return ids ? allOrgUsers.filter((u) => ids.has(u.id)) : allOrgUsers;
+  }, [allOrgUsers, selectedTeamId, teamMemberIdsByTeam]);
 
   // Set of user IDs belonging to the selected team (all org members when no team selected)
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
 
   /* ── Individual tab data ─────────────────────────────────────────────── */
   const indOwnerFilter = isAdmin ? (filterOwner || undefined) : (userId || undefined);
-  // pageSize capped at 100 by kpiListParamsSchema (security row-cap). If a
-  // tenant ever exceeds 100 active KPIs in a quarter, switch to paginated
-  // fetch or a dedicated /api/kpi/all endpoint. Tracked as future work.
-  const { data: kpiData, isLoading: kpiLoading } = useKPIs({ year, quarter, owner: indOwnerFilter, pageSize: 100 });
-  const allIndKpis: KPIRow[] = (kpiData?.data ?? []) as KPIRow[];
-  const indKpis: KPIRow[] = (isAdmin && filterTeam && !filterOwner)
-    ? allIndKpis.filter(k => !!k.owner && teamUserIds.has(k.owner))
+  const ownerScopedIndKpis: KPIRow[] = indOwnerFilter
+    ? allIndKpis.filter((k) => k.owner === indOwnerFilter)
     : allIndKpis;
+  const indKpis: KPIRow[] = (isAdmin && filterTeam && !filterOwner)
+    ? ownerScopedIndKpis.filter(k => !!k.owner && teamUserIds.has(k.owner))
+    : ownerScopedIndKpis;
 
-  const { data: allPriorities = [], isLoading: priLoading } = usePriorities(year, quarter);
   const indPriorities = !isAdmin
     ? allPriorities.filter(p => p.owner === userId)
     : filterOwner
@@ -799,7 +815,6 @@ export default function DashboardPage() {
         ? allPriorities.filter(p => teamUserIds.has(p.owner))
         : allPriorities;
 
-  const { data: allWWW = [], isLoading: wwwLoading } = useWWWItems({});
   const [wwwStatusFilter, setWwwStatusFilter] = useState<string>("");
   const indWwwByOwner = !isAdmin
     ? allWWW.filter(w => w.who === userId)
@@ -813,12 +828,9 @@ export default function DashboardPage() {
     : indWwwByOwner;
 
   /* ── Team tab data ───────────────────────────────────────────────────── */
-  const { data: teamKpiData, isLoading: teamKpiLoading } = useKPIs({
-    // Same 100-cap rationale as above. Team KPIs per tenant per quarter
-    // are even less likely to exceed 100 — safe truncation for now.
-    year, quarter, kpiLevel: "team", teamId: teamTabTeamId || undefined, pageSize: 100,
-  });
-  const teamKpis: KPIRow[] = (teamKpiData?.data ?? []) as KPIRow[];
+  const teamKpis: KPIRow[] = teamTabTeamId
+    ? allTeamKpis.filter((k) => k.teamId === teamTabTeamId)
+    : allTeamKpis;
 
   // Team tab: priorities filtered by team members (all if no team selected for admin)
   const teamPriorities = teamTabTeamId
@@ -826,7 +838,9 @@ export default function DashboardPage() {
     : isAdmin ? allPriorities : [];
   /* ── Active tab data selection ───────────────────────────────────────── */
   const kpis = activeTab === "individual" ? indKpis : teamKpis;
-  const kpisLoading = activeTab === "individual" ? kpiLoading : teamKpiLoading;
+  const kpisLoading = isLoading;
+  const priLoading = isLoading;
+  const wwwLoading = isLoading;
   const priorities = activeTab === "individual" ? indPriorities : teamPriorities;
   const wwwItems = indWwwItems; // WWW only shown on Individual tab
 
