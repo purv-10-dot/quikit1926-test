@@ -31,8 +31,10 @@ function FreezeIcon({ className = "" }: { className?: string }) {
 // ── Resize handle ────────────────────────────────────────────────────────────
 
 function ResizeHandle({ onStart }: { onStart: (e: React.MouseEvent) => void }) {
+  // z-10 keeps the handle above sibling chrome (ColMenu, FreezeIcon) so the
+  // click isn't intercepted. w-2 = 8px hit target (was w-1.5 = 6px, too narrow).
   return (
-    <div className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400/50"
+    <div className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-blue-400/50 z-10"
       onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onStart(e); }} />
   );
 }
