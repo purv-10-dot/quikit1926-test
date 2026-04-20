@@ -1,0 +1,144 @@
+# docker-compose.yml — local full-stack validation
+#
+# Purpose: spin up all 3 apps + Postgres + Redis locally to validate that
+# the Docker images we'll push to GCP actually work end-to-end before the
+# DevOps team deploys them. Also usable as a Tier-2 "single-VM" deployment
+# on Compute Engine (though Cloud Run is recommended for prod — see
+# docs/engineering/GCP_DEPLOYMENT.md).
+#
+# Usage:
+#   1. Copy .env.local.example to .env (project root) and fill in secrets.
+#   2. docker compose up -d --build
+#   3. http://localhost:3000 (quikit), :3004 (quikscale), :3005 (admin)
+#
+# This file is NOT what Cloud Run uses. Cloud Run uses the 3 Dockerfiles
+# directly. This is for local parity + Tier-2 single-VM deploys only.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quikit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_DB: quikit
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quikit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "6379:6379"
+
+  quikit:
+    build:
+      context: .
+      dockerfile: apps/quikit/Dockerfile
+      args:
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql://quikit:devpassword@postgres:5432/quikit}
+      DATABASE_URL_DIRECT: ${DATABASE_URL_DIRECT:-postgresql://quikit:devpassword@postgres:5432/quikit}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${QUIKIT_URL:-http://localhost:3000}
+      QUIKIT_URL: ${QUIKIT_URL:-http://localhost:3000}
+      QUIKSCALE_URL: ${QUIKSCALE_URL:-http://localhost:3004}
+      ADMIN_URL: ${ADMIN_URL:-http://localhost:3005}
+      CRON_SECRET: ${CRON_SECRET:-devcronsecret}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      APP_URL: ${QUIKIT_URL:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+  quikscale:
+    build:
+      context: .
+      dockerfile: apps/quikscale/Dockerfile
+      args:
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql://quikit:devpassword@postgres:5432/quikit}
+      DATABASE_URL_DIRECT: ${DATABASE_URL_DIRECT:-postgresql://quikit:devpassword@postgres:5432/quikit}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${QUIKSCALE_URL:-http://localhost:3004}
+      QUIKIT_URL: ${QUIKIT_URL:-http://localhost:3000}
+      NEXT_PUBLIC_QUIKIT_URL: ${QUIKIT_URL:-http://localhost:3000}
+      QUIKIT_CLIENT_ID: ${QUIKSCALE_OAUTH_CLIENT_ID}
+      QUIKIT_CLIENT_SECRET: ${QUIKSCALE_OAUTH_CLIENT_SECRET}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      APP_URL: ${QUIKSCALE_URL:-http://localhost:3004}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      quikit:
+        condition: service_started
+    ports:
+      - "3004:3004"
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql://quikit:devpassword@postgres:5432/quikit}
+      DATABASE_URL_DIRECT: ${DATABASE_URL_DIRECT:-postgresql://quikit:devpassword@postgres:5432/quikit}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${ADMIN_URL:-http://localhost:3005}
+      QUIKIT_URL: ${QUIKIT_URL:-http://localhost:3000}
+      NEXT_PUBLIC_QUIKIT_URL: ${QUIKIT_URL:-http://localhost:3000}
+      QUIKIT_CLIENT_ID: ${ADMIN_OAUTH_CLIENT_ID}
+      QUIKIT_CLIENT_SECRET: ${ADMIN_OAUTH_CLIENT_SECRET}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      APP_URL: ${ADMIN_URL:-http://localhost:3005}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      quikit:
+        condition: service_started
+    ports:
+      - "3005:3005"
+
+volumes:
+  pgdata:
+  redisdata:
