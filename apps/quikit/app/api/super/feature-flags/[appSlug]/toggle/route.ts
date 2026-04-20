@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 import { getAppConfig } from "@quikit/shared/moduleRegistry";
+import { invalidate } from "@quikit/shared/redisCache";
 
 /**
  * POST /api/super/feature-flags/[appSlug]/toggle
@@ -112,6 +113,12 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
       tenantId,
       newValues: JSON.stringify({ appSlug, moduleKey, enabled, tenantName: tenant.name }),
     });
+
+    // Invalidate the target app's disabled-modules cache so the next
+    // /api/feature-flags/me fetch from that app returns fresh state.
+    // Without this, the 5-min Redis TTL makes toggles appear "stuck"
+    // in the target app's sidebar for up to 5 minutes.
+    await invalidate(`ff:me:${appSlug}:${tenantId}`);
 
     return NextResponse.json({
       success: true,
