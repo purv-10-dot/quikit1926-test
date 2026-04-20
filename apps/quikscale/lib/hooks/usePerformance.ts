@@ -31,7 +31,7 @@ export function usePerformanceTrends() {
 }
 
 export function usePerformanceReviews() {
-  return useQuery({ queryKey: ["performance", "reviews"], queryFn: () => fetchJSON(`${BASE}/reviews`), staleTime: 1000 * 60 * 2 });
+  return useQuery({ queryKey: ["performance", "reviews"], queryFn: () => fetchJSON(`${BASE}/reviews`), staleTime: 1000 * 60 * 5 });
 }
 
 export function useCreateReview() {
@@ -77,6 +77,6 @@ export function useCycle() {
   return useQuery({
     queryKey: ["performance", "cycle"],
     queryFn: () => fetchJSON(`${BASE}/cycle`),
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 60 * 5,
   });
 }

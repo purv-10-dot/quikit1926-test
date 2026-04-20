@@ -35,7 +35,7 @@ export function useFeedback(
   return useQuery({
     queryKey: feedbackKeys.list(filters),
     queryFn: () => fetchJSON(`${BASE}${qs ? `?${qs}` : ""}`),
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 60 * 5,
   });
 }
 

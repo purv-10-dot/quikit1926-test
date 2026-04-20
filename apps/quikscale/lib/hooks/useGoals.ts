@@ -34,7 +34,7 @@ export function useGoals(filters: {
   return useQuery({
     queryKey: goalKeys.list(filters),
     queryFn: () => fetchJSON(`${BASE}${qs ? `?${qs}` : ""}`),
-    staleTime: 1000 * 60 * 2,
+    staleTime: 1000 * 60 * 5,
   });
 }
 
