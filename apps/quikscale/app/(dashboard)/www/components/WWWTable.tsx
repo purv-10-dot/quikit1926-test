@@ -5,6 +5,7 @@ import type { WWWItem } from "@/lib/types/www";
 import { WWWPanel } from "./WWWPanel";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ColMenu } from "@/components/table/ColMenu";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
@@ -294,7 +295,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-auto">
+      <HorizontalScroller className="flex-1">
         <table className="border-collapse w-full">
           <thead>
             <tr className="bg-accent-50 border-b border-gray-200">
@@ -549,7 +550,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
             })}
           </tbody>
         </table>
-      </div>
+      </HorizontalScroller>
 
       {/* Pagination footer (dashboard only) */}
       {paginationEnabled && (total as number) > 0 && (

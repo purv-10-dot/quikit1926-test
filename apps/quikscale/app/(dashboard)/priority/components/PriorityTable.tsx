@@ -10,6 +10,7 @@ import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ColMenu } from "@/components/table/ColMenu";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 
@@ -325,7 +326,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   return (
     <div className="flex flex-col h-full">
       {/* Table */}
-      <div className="flex-1 overflow-auto">
+      <HorizontalScroller className="flex-1">
         <table className="border-collapse" style={{ minWidth: "max-content" }}>
           <thead>
             <tr className="bg-accent-50 border-b border-gray-200">
@@ -643,7 +644,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
             })}
           </tbody>
         </table>
-      </div>
+      </HorizontalScroller>
 
       {/* Pagination footer (dashboard only) */}
       {paginationEnabled && (total as number) > 0 && (

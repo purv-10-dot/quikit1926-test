@@ -16,6 +16,7 @@ import {
   weekDateLabel, ALL_WEEKS, getCurrentFiscalWeek,
 } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { KPITable } from "../kpi/components/KPITable";
 import { PriorityTable } from "../priority/components/PriorityTable";
 import { WWWTable } from "../www/components/WWWTable";
@@ -215,11 +216,11 @@ function Paginator({ page, total, onChange }: { page: number; total: number; onC
 
 function SectionTable({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
+    <HorizontalScroller>
       <table className="border-separate border-spacing-0" style={{ minWidth: "max-content", tableLayout: "fixed" }}>
         {children}
       </table>
-    </div>
+    </HorizontalScroller>
   );
 }
 
@@ -655,7 +656,7 @@ function WWWSection({ items }: { items: WWWItem[] }) {
 
   return (
     <>
-    <div className="overflow-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
+    <HorizontalScroller>
       <table className="border-separate border-spacing-0" style={{ tableLayout: "fixed", minWidth: "max-content", width: "100%" }}>
         <thead>
           <tr>
@@ -717,7 +718,7 @@ function WWWSection({ items }: { items: WWWItem[] }) {
           })}
         </tbody>
       </table>
-    </div>
+    </HorizontalScroller>
     <Paginator page={page} total={items.length} onChange={setPage} />
     </>
   );

@@ -6,6 +6,7 @@ import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
 import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
 import { useStickyOffsets } from "../hooks/useStickyOffsets";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { LogModal } from "./LogModal";
@@ -139,7 +140,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
   return (
     <div className="flex flex-col h-full">
 
-      <div className="flex-1 overflow-auto">
+      <HorizontalScroller className="flex-1">
         <table className="border-separate border-spacing-0 text-xs" style={{ tableLayout: "fixed", minWidth: "100%" }}>
           <thead className="sticky top-0 z-30">
             <tr ref={headerRowRef}>
@@ -442,7 +443,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
             })}
           </tbody>
         </table>
-      </div>
+      </HorizontalScroller>
 
       {/* Pagination */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-gray-200 bg-white flex-shrink-0 text-xs text-gray-500">
