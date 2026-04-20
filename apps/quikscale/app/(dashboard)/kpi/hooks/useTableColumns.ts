@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useColumnResize } from "@/lib/hooks/useColumnResize";
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   progress: 160, owner: 140, kpiName: 220,
@@ -42,71 +43,33 @@ export function useTableColumns(allCols: string[], kpiIds: string[]) {
     hideCol,
     showCol,
     showAllCols,
-    colWidths: persistedWidths,
-    saveColWidths,
   } = useTablePrefs("kpi");
 
   // Expose as a Set for existing callers
   const hiddenCols = useMemo(() => new Set(hiddenColsArr), [hiddenColsArr]);
 
-  // Local state during drag — mirrors persistedWidths but updates on every mousemove
-  const [localWidths, setLocalWidths] = useState<Record<string, number>>({});
+  // Build a defaults map that covers BOTH static cols and week cols. Shared
+  // `useColumnResize` expects a flat Record<string, number>; week cols
+  // (week1..week13) default to WEEK_WIDTH_DEFAULT.
+  const defaults = useMemo(() => {
+    const d = { ...COL_WIDTHS_DEFAULT };
+    for (const c of allCols) {
+      if (c.startsWith("week")) d[c] = WEEK_WIDTH_DEFAULT;
+    }
+    return d;
+  }, [allCols]);
 
-  // Merge: use localWidths override during drag, else persistedWidths, else defaults
-  const colWidths = useMemo(() => {
-    return { ...COL_WIDTHS_DEFAULT, ...persistedWidths, ...localWidths };
-  }, [persistedWidths, localWidths]);
+  // Drag-to-resize is now provided by the shared hook (same as Priority/WWW).
+  // It wires startResize → mousemove → saveColWidths via useTablePrefs under
+  // the hood, so persistence is unchanged from the old inline implementation.
+  const { getColWidth, startResize, colWidths } = useColumnResize("kpi", defaults);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const resizeRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
-
-  // Global mousemove/mouseup for column resize dragging
-  useEffect(() => {
-    function onMouseMove(e: MouseEvent) {
-      if (!resizeRef.current) return;
-      const { col, startX, startWidth } = resizeRef.current;
-      const newWidth = Math.max(48, startWidth + (e.clientX - startX));
-      setLocalWidths((w) => ({ ...w, [col]: newWidth }));
-    }
-    function onMouseUp() {
-      if (!resizeRef.current) return;
-      resizeRef.current = null;
-      // Persist the final widths to DB (merged with any existing persistedWidths)
-      setLocalWidths((local) => {
-        const merged = { ...persistedWidths, ...local };
-        saveColWidths(merged);
-        return {}; // clear local overrides since persisted now has them
-      });
-      // Remove drag cursor from body
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
-  }, [persistedWidths, saveColWidths]);
-
-  const getColWidth = useCallback((col: string): number => {
-    if (colWidths[col] !== undefined) return colWidths[col];
-    if (col.startsWith("week")) return WEEK_WIDTH_DEFAULT;
-    return COL_WIDTHS_DEFAULT[col] ?? 90;
-  }, [colWidths]);
 
   const isFrozen = useCallback((col: string): boolean => {
     if (!frozenUpTo) return false;
     return allCols.indexOf(col) <= allCols.indexOf(frozenUpTo);
   }, [frozenUpTo, allCols]);
-
-  const startResize = useCallback((col: string, clientX: number) => {
-    const current = colWidths[col] ?? (col.startsWith("week") ? WEEK_WIDTH_DEFAULT : COL_WIDTHS_DEFAULT[col] ?? 90);
-    resizeRef.current = { col, startX: clientX, startWidth: current };
-    // Lock cursor + prevent text selection during drag
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  }, [colWidths]);
 
   const handleFreezeCol = useCallback((col: string) => {
     setFrozenCol(frozenUpTo === col ? null : col);
