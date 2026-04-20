@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
+import { useSession, signOut } from "next-auth/react";
 import {
   LayoutDashboard, Target, CheckSquare, Activity,
   Calendar, FileText, TrendingUp, Building2,
@@ -12,9 +13,11 @@ import {
   BookOpen, Star, List, UserCheck, MessageSquare,
   ChevronDown, ChevronLeft, ChevronRight, X,
   BarChart2, LineChart, ClipboardList, Layers,
+  Settings,
 } from "lucide-react";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
+import { UserMenu, globalSignOut } from "@quikit/ui";
 
 /* ─── Types ─── */
 interface NavSubItem { label: string; href: string; icon: React.ElementType; moduleKey: string; }
@@ -221,6 +224,36 @@ interface SidebarContentProps {
 function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarContentProps) {
   const disabled = useDisabledModules();
   const visibleNav = filterNavigation(navigation, disabled);
+  const { data: session, update: updateSession } = useSession();
+  const router = useRouter();
+
+  const userFullName = session?.user?.name || session?.user?.email?.split("@")[0] || "User";
+  const userEmail = session?.user?.email || "";
+  const isImpersonating = session?.user?.impersonating === true;
+
+  async function handleSignOut() {
+    await globalSignOut({
+      quikitUrl: process.env.NEXT_PUBLIC_QUIKIT_URL,
+      localSignOut: () => signOut({ redirect: false }),
+    });
+  }
+
+  async function handleExitImpersonation() {
+    try {
+      const r = await fetch("/api/auth/impersonate/exit", { method: "POST" });
+      const j = await r.json();
+      window.location.href = j?.data?.redirectUrl || "/";
+    } catch {
+      window.location.href = "/";
+    }
+  }
+
+  async function handleSwitchOrg() {
+    await updateSession({ tenantId: null, membershipRole: null });
+    onClose?.();
+    router.push("/select-org");
+  }
+
   return (
     <div className="w-full h-full flex flex-col bg-accent-800 overflow-hidden">
       {/* Logo + collapse toggle */}
@@ -269,6 +302,26 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
         )}
       </nav>
 
+      {/* Mobile-only user menu at the bottom of the drawer.
+          Desktop header already renders UserMenu, so we only show it here
+          to give mobile users access to Sign out without having to close
+          the drawer and hunt for the header. */}
+      {isMobile && session?.user && (
+        <div className="border-t border-white/10 p-3 bg-accent-900/40">
+          <UserMenu
+            user={{ name: userFullName, email: userEmail }}
+            isImpersonating={isImpersonating}
+            onSignOut={handleSignOut}
+            onExitImpersonation={handleExitImpersonation}
+            items={[
+              { label: "Switch Organisation", icon: Building2, onClick: handleSwitchOrg },
+              { label: "Settings", icon: Settings, onClick: () => { onClose?.(); router.push("/settings"); } },
+            ]}
+            avatarClassName="bg-accent-600"
+            align="left"
+          />
+        </div>
+      )}
     </div>
   );
 }
