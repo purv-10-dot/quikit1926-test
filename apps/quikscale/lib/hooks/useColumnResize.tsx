@@ -101,7 +101,7 @@ export function ResizeHandle({
 }) {
   return (
     <div
-      className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-blue-400/50 z-10"
+      className="absolute right-0 top-0 h-full w-3 cursor-col-resize hover:bg-blue-400/50 z-10"
       onMouseDown={(e) => {
         e.preventDefault();
         e.stopPropagation();

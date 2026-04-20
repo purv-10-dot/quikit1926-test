@@ -7,6 +7,7 @@ import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiH
 import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
 import { useStickyOffsets } from "../hooks/useStickyOffsets";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { ResizeHandle as SharedResizeHandle } from "@/lib/hooks/useColumnResize";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { LogModal } from "./LogModal";
@@ -30,14 +31,10 @@ function FreezeIcon({ className = "" }: { className?: string }) {
 
 // ── Resize handle ────────────────────────────────────────────────────────────
 
-function ResizeHandle({ onStart }: { onStart: (e: React.MouseEvent) => void }) {
-  // z-10 keeps the handle above sibling chrome (ColMenu, FreezeIcon) so the
-  // click isn't intercepted. w-2 = 8px hit target (was w-1.5 = 6px, too narrow).
-  return (
-    <div className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-blue-400/50 z-10"
-      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onStart(e); }} />
-  );
-}
+// Use the shared ResizeHandle from @/lib/hooks/useColumnResize — same handle
+// used by Priority and WWW tables. Imported as SharedResizeHandle and aliased
+// below for call-site readability.
+const ResizeHandle = SharedResizeHandle;
 
 // ── Main table ───────────────────────────────────────────────────────────────
 
@@ -119,7 +116,10 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
     const sticky = isFrozen(col);
     const boundary = col === frozenUpTo;
     return [
-      "group text-left text-xs font-semibold text-gray-500 bg-accent-50",
+      // `relative` is required so the absolutely-positioned ResizeHandle
+      // anchors to the <th> itself (otherwise handle's h-full collapses
+      // inside an auto-height table cell and has zero hit area).
+      "group relative text-left text-xs font-semibold text-gray-500 bg-accent-50",
       "border-b border-r border-gray-200 select-none",
       sticky ? `sticky z-[35]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.06)]" : ""}` : "",
     ].join(" ");
@@ -143,7 +143,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
     <div className="flex flex-col h-full">
 
       <HorizontalScroller className="flex-1">
-        <table className="border-separate border-spacing-0 text-xs" style={{ tableLayout: "fixed", minWidth: "100%" }}>
+        <table className="border-separate border-spacing-0 text-xs" style={{ minWidth: "max-content" }}>
           <thead className="sticky top-0 z-30">
             <tr ref={headerRowRef}>
               {/* Fixed columns: Checkbox, Log, ID (hidable via hideColumns prop) */}
@@ -169,18 +169,16 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                 const sortable = !!SORT_KEYS[col];
                 return (
                   <th key={col} data-col-key={col} className={thClass(col)} style={stickyStyle(col, w)}>
-                    <div className="relative h-full">
-                      <div className="flex items-center gap-1 px-3 py-2 pr-2">
-                        {frozenUpTo === col && <FreezeIcon />}
-                        <span className="flex-1 truncate min-w-0">{COL_LABELS[col]}</span>
-                        <ColMenu colKey={col}
-                          onSort={sortable ? (d => onSort(SORT_KEYS[col], d)) : undefined}
-                          onFreeze={() => handleFreezeCol(col)} onHide={() => handleHideCol(col)}
-                          frozen={frozenUpTo === col}
-                          showSort={sortable} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize(col, e.clientX)} />
+                    <div className="flex items-center gap-1 px-3 py-2 pr-2">
+                      {frozenUpTo === col && <FreezeIcon />}
+                      <span className="flex-1 truncate min-w-0">{COL_LABELS[col]}</span>
+                      <ColMenu colKey={col}
+                        onSort={sortable ? (d => onSort(SORT_KEYS[col], d)) : undefined}
+                        onFreeze={() => handleFreezeCol(col)} onHide={() => handleHideCol(col)}
+                        frozen={frozenUpTo === col}
+                        showSort={sortable} />
                     </div>
+                    <ResizeHandle onStart={(e) => startResize(col, e.clientX)} />
                   </th>
                 );
               })}
@@ -191,20 +189,18 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                 const colW = getColWidth(col);
                 return (
                   <th key={w} data-col-key={col} className={thClass(col)} style={stickyStyle(col, colW)}>
-                    <div className="relative h-full">
-                      <div className="flex items-start gap-1 px-3 py-2 pr-2">
-                        {frozenUpTo === col && <FreezeIcon className="mt-0.5" />}
-                        <div className="min-w-0 flex-1">
-                          <div className="whitespace-nowrap">Week {w}</div>
-                          <div className="text-[9px] font-normal text-gray-400 leading-none mt-0.5 whitespace-nowrap">
-                            {weekDateLabel(year, quarter, w)}
-                          </div>
+                    <div className="flex items-start gap-1 px-3 py-2 pr-2">
+                      {frozenUpTo === col && <FreezeIcon className="mt-0.5" />}
+                      <div className="min-w-0 flex-1">
+                        <div className="whitespace-nowrap">Week {w}</div>
+                        <div className="text-[9px] font-normal text-gray-400 leading-none mt-0.5 whitespace-nowrap">
+                          {weekDateLabel(year, quarter, w)}
                         </div>
-                        <ColMenu colKey={col} onSort={() => {}} onFreeze={() => handleFreezeCol(col)} onHide={() => handleHideCol(col)}
-                          frozen={frozenUpTo === col} showSort={false} />
                       </div>
-                      <ResizeHandle onStart={(e) => startResize(col, e.clientX)} />
+                      <ColMenu colKey={col} onSort={() => {}} onFreeze={() => handleFreezeCol(col)} onHide={() => handleHideCol(col)}
+                        frozen={frozenUpTo === col} showSort={false} />
                     </div>
+                    <ResizeHandle onStart={(e) => startResize(col, e.clientX)} />
                   </th>
                 );
               })}
