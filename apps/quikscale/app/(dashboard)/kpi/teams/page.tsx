@@ -13,6 +13,9 @@ import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
 import { KPIModal } from "../components/KPIModal";
+import { HiddenColsMenu } from "../components/HiddenColsMenu";
+import { ALL_STATIC_COLS } from "../hooks/useTableColumns";
+import { ALL_WEEKS } from "@/lib/utils/fiscal";
 import { AddButton } from "@quikit/ui";
 
 const FISCAL_YEAR = getFiscalYear();
@@ -33,6 +36,28 @@ export default function TeamsKPIPage() {
   const [teamSearch, setTeamSearch] = useState("");
 
   const [showAddKPI, setShowAddKPI] = useState(false);
+
+  // Page-level hidden-columns pill — aggregated across every TeamSection.
+  // Each section reports its hidden set keyed by teamId; we union them for the
+  // pill display, and broadcast "showCol" triggers to every section so clicking
+  // an entry unhides that column in every team's table at once.
+  const [hiddenColsByTeam, setHiddenColsByTeam] = useState<Record<string, Set<string>>>({});
+  const [showColTrigger, setShowColTrigger] = useState<{ col: string; seq: number } | undefined>();
+  const allTableCols = useMemo(
+    () => [...ALL_STATIC_COLS, ...ALL_WEEKS.map(w => `week${w}`)],
+    []
+  );
+  const unionHiddenCols = useMemo(() => {
+    const s = new Set<string>();
+    for (const set of Object.values(hiddenColsByTeam)) set.forEach(c => s.add(c));
+    return s;
+  }, [hiddenColsByTeam]);
+  const handleSectionHiddenColsChange = (teamId: string, cols: Set<string>) => {
+    setHiddenColsByTeam(prev => ({ ...prev, [teamId]: cols }));
+  };
+  const handleShowCol = (col: string) => {
+    setShowColTrigger(t => ({ col, seq: (t?.seq ?? 0) + 1 }));
+  };
 
   const { data: session } = useSession();
   const { data: teams = [], isLoading: teamsLoading } = useTeams();
@@ -107,6 +132,11 @@ export default function TeamsKPIPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Hidden columns — page-level pill, union of every team section's hidden cols */}
+          {unionHiddenCols.size > 0 && (
+            <HiddenColsMenu hiddenCols={unionHiddenCols} allCols={allTableCols} onShow={handleShowCol} />
+          )}
+
           {/* Team filter — compact button + searchable multi-select dropdown. Matches the year picker style. */}
           <div className="relative" ref={teamRef}>
             <button
@@ -320,6 +350,8 @@ export default function TeamsKPIPage() {
               year={year}
               quarter={quarter}
               onRefresh={refetch}
+              onHiddenColsChange={handleSectionHiddenColsChange}
+              showColTrigger={showColTrigger}
             />
           ))
         )}

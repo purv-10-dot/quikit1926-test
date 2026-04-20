@@ -77,6 +77,14 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
             label: "QTD Goal",
             value: kpi.qtdGoal != null ? String(kpi.qtdGoal) : "—",
           },
+          {
+            label: "QTD Achieved",
+            value: fmt(achieved),
+          },
+          {
+            label: "Weekly Goal",
+            value: target > 0 ? fmt(target / 13) : "—",
+          },
         ].map((s) => (
           <div
             key={s.label}

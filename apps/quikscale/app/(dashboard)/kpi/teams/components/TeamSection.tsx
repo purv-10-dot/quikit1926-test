@@ -15,9 +15,13 @@ interface Props {
   quarter: string;
   onRefresh: () => void;
   defaultExpanded?: boolean;
+  /** Forwarded from page — aggregates hidden cols across all team sections for the page-level pill. */
+  onHiddenColsChange?: (teamId: string, cols: Set<string>) => void;
+  /** Page-level "show this column" trigger (broadcast to every KPITable — each unhides if present). */
+  showColTrigger?: { col: string; seq: number };
 }
 
-export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpanded }: Props) {
+export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpanded, onHiddenColsChange, showColTrigger }: Props) {
   const [expanded, setExpanded] = useState<boolean>(defaultExpanded ?? kpis.length > 0);
   const [editKPI, setEditKPI] = useState<KPIRow | null>(null);
 
@@ -105,6 +109,8 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
                 onRefresh={onRefresh}
                 hideColumns={["owner"]}
                 readOnly={!canManage}
+                onHiddenColsChange={(cols) => onHiddenColsChange?.(team.id, cols)}
+                showColTrigger={showColTrigger}
               />
             </div>
           )}
