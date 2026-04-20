@@ -1,5 +1,37 @@
 # QuikIT Development Standards
 
+## 🔒 Git Workflow — Branch Protection (NON-NEGOTIABLE)
+
+**NEVER commit or push directly to `dev`, `uat`, or `main`.** These are integration/release branches — they only receive merges, never hand-authored commits.
+
+**Every change — bug fix, feature, refactor, docs, CSS tweak — starts on a fresh branch:**
+
+```
+feature/<short-description>    # new functionality
+fix/<short-description>        # bug fixes
+chore/<short-description>      # maintenance, docs, non-code
+refactor/<short-description>   # structural changes, no behavior delta
+```
+
+**Standard merge path:** `feature/* | fix/*` → `dev` → `uat` → `main`. Merges to `dev` use `--no-ff`; `uat` and `main` fast-forward only.
+
+**Before starting any edit** — check current branch:
+```bash
+git branch --show-current
+```
+If it's `dev`, `uat`, or `main` → create a new branch first:
+```bash
+git checkout -b feature/my-change
+```
+
+**After the merge train reaches `main`** — delete the feature/fix branch locally and on origin:
+```bash
+git branch -d <branch>
+git push origin --delete <branch>
+```
+
+Why this rule exists: Vercel auto-deploys `main` → production, `uat` → UAT, `dev` → dev. A stray commit on a protected branch ships untested code. Feature branches also give us rollback targets (revert a single branch merge instead of cherry-picking).
+
 ## Prisma Query Standard
 
 - Use `select` for API endpoints that return lists (reduces payload size)
