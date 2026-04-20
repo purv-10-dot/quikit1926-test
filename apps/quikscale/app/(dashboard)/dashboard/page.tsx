@@ -781,7 +781,10 @@ export default function DashboardPage() {
 
   /* ── Individual tab data ─────────────────────────────────────────────── */
   const indOwnerFilter = isAdmin ? (filterOwner || undefined) : (userId || undefined);
-  const { data: kpiData, isLoading: kpiLoading } = useKPIs({ year, quarter, owner: indOwnerFilter, pageSize: 1000 });
+  // pageSize capped at 100 by kpiListParamsSchema (security row-cap). If a
+  // tenant ever exceeds 100 active KPIs in a quarter, switch to paginated
+  // fetch or a dedicated /api/kpi/all endpoint. Tracked as future work.
+  const { data: kpiData, isLoading: kpiLoading } = useKPIs({ year, quarter, owner: indOwnerFilter, pageSize: 100 });
   const allIndKpis: KPIRow[] = (kpiData?.data ?? []) as KPIRow[];
   const indKpis: KPIRow[] = (isAdmin && filterTeam && !filterOwner)
     ? allIndKpis.filter(k => !!k.owner && teamUserIds.has(k.owner))
@@ -811,7 +814,9 @@ export default function DashboardPage() {
 
   /* ── Team tab data ───────────────────────────────────────────────────── */
   const { data: teamKpiData, isLoading: teamKpiLoading } = useKPIs({
-    year, quarter, kpiLevel: "team", teamId: teamTabTeamId || undefined, pageSize: 1000,
+    // Same 100-cap rationale as above. Team KPIs per tenant per quarter
+    // are even less likely to exceed 100 — safe truncation for now.
+    year, quarter, kpiLevel: "team", teamId: teamTabTeamId || undefined, pageSize: 100,
   });
   const teamKpis: KPIRow[] = (teamKpiData?.data ?? []) as KPIRow[];
 
