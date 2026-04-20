@@ -8,12 +8,13 @@ const nextConfig = {
   // .next/standalone. Reduces the Docker runner image from ~2GB naive to
   // ~250MB. Required for the GCP / Linux deployment flow documented in
   // docs/engineering/GCP_DEPLOYMENT.md. No-op on Vercel (Vercel ignores it).
-  output: "standalone",
+  // Docker-only; Vercel unsets BUILD_STANDALONE so default serverless output is used.
+  ...(process.env.BUILD_STANDALONE === "1" ? { output: "standalone" } : {}),
   // In a turborepo, Next must trace deps up to the repo root so shared
   // workspace packages (@quikit/*) + Prisma engine files are copied into
   // the standalone output. Without this, runtime fails with module-not-found
   // on first request.
-  outputFileTracingRoot: path.join(__dirname, "../../"),
+  ...(process.env.BUILD_STANDALONE === "1" ? { outputFileTracingRoot: path.join(__dirname, "../../") } : {}),
   transpilePackages: [
     "@quikit/ui",
     "@quikit/auth",
