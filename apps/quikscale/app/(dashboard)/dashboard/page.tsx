@@ -787,9 +787,8 @@ function WWWSection({ items }: { items: WWWItem[] }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const [year, setYear] = useState(CURRENT_YEAR);
-  const [quarter, setQuarter] = useState<"Q1" | "Q2" | "Q3" | "Q4">(getFiscalQuarter() as "Q1" | "Q2" | "Q3" | "Q4");
-  const { filterTeam, setFilterTeam, filterOwner, setFilterOwner } = useFilterContext();
+  // Year + quarter live in FilterContext so they persist across module navigation.
+  const { filterTeam, setFilterTeam, filterOwner, setFilterOwner, year, setYear, quarter, setQuarter } = useFilterContext();
   const [activeTab, setActiveTab] = useState<"individual" | "team">("individual");
 
   // Role-based dashboard: admins see all with filters; non-admins see only their own data

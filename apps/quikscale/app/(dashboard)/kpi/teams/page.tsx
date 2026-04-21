@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useTeamKPIs, useDeleteKPI } from "@/lib/hooks/useKPI";
 import { useTeams } from "@/lib/hooks/useTeams";
+import { useFilterContext } from "@/lib/context/FilterContext";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
@@ -24,8 +25,8 @@ const CURRENT_YEAR = new Date().getFullYear();
 const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 
 export default function TeamsKPIPage() {
-  const [year, setYear] = useState<number>(FISCAL_YEAR);
-  const [quarter, setQuarter] = useState<"Q1" | "Q2" | "Q3" | "Q4">(FISCAL_QUARTER as "Q1" | "Q2" | "Q3" | "Q4");
+  // Year + quarter live in FilterContext so they persist across module nav.
+  const { year, setYear, quarter, setQuarter } = useFilterContext();
   const [showYearPicker, setShowYearPicker] = useState(false);
   const yearRef = useRef<HTMLDivElement>(null);
 
