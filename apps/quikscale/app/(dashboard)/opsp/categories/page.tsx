@@ -129,6 +129,18 @@ function CategoryPanel({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+
+  // Load existing categories so we can pre-check for duplicates on the client.
+  // Server also enforces via DB unique index — this is UX polish.
+  const { data: existingData } = useQuery<{ success: boolean; data: CategoryItem[] }>({
+    queryKey: ["categories-for-dupecheck"],
+    queryFn: async () => {
+      const res = await fetch("/api/categories?limit=1000");
+      return res.json();
+    },
+  });
+  const existing = existingData?.data ?? [];
+
   const [form, setForm] = useState<FormState>(
     editItem
       ? { name: editItem.name, dataType: editItem.dataType, currency: editItem.currency ?? "NONE", description: editItem.description ?? "" }
@@ -164,6 +176,20 @@ function CategoryPanel({
     const errs: Partial<FormState> = {};
     if (!form.name.trim()) errs.name = "Category Name is required";
     if (!form.dataType) errs.dataType = "Data Type is required";
+    // Duplicate check — case-insensitive, scoped to (name, dataType, currency).
+    // Skip the row being edited so it doesn't collide with itself.
+    if (form.name.trim() && form.dataType) {
+      const nameLower = form.name.trim().toLowerCase();
+      const effCurrency = form.dataType === "Currency" ? form.currency : null;
+      const dupe = existing.find(
+        (c) =>
+          c.id !== editItem?.id &&
+          c.name.trim().toLowerCase() === nameLower &&
+          c.dataType === form.dataType &&
+          (c.currency ?? null) === (effCurrency ?? null),
+      );
+      if (dupe) errs.name = "A category with this name and unit already exists.";
+    }
     return errs;
   }
 

@@ -8,6 +8,7 @@ import { updateCategorySchema } from "@/lib/schemas/categorySchema";
 type RouteParams = { id: string };
 
 // PUT /api/categories/[id] — update a category
+// Enforces the same (tenantId, nameKey, dataType, currency) uniqueness as create.
 export const PUT = withTenantAuth<RouteParams>(async ({ tenantId }, request, { params }) => {
   const existing = await db.categoryMaster.findFirst({ where: { id: params.id, tenantId } });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -16,17 +17,34 @@ export const PUT = withTenantAuth<RouteParams>(async ({ tenantId }, request, { p
   if (!parsed.success) return validationError(parsed);
   const { name, dataType, currency, description } = parsed.data;
 
-  const item = await db.categoryMaster.update({
-    where: { id: params.id },
-    data: {
-      name: name?.trim(),
-      dataType,
-      currency: dataType === "Currency" ? (currency || null) : null,
-      description: description?.trim() || null,
-    },
-  });
+  const trimmedName = name?.trim();
 
-  return NextResponse.json({ success: true, data: item });
+  try {
+    const item = await db.categoryMaster.update({
+      where: { id: params.id },
+      data: {
+        name: trimmedName,
+        nameKey: trimmedName !== undefined ? trimmedName.toLowerCase() : undefined,
+        dataType,
+        currency: dataType === "Currency" ? (currency || null) : null,
+        description: description?.trim() || null,
+      },
+    });
+    return NextResponse.json({ success: true, data: item });
+  } catch (err: unknown) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      (err as { code?: string }).code === "P2002"
+    ) {
+      return NextResponse.json(
+        { success: false, error: "A category with this name and unit already exists." },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 }, { fallbackErrorMessage: "Failed to update category" });
 
 // DELETE /api/categories/[id] — delete a category

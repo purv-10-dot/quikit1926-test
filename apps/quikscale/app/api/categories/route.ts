@@ -30,21 +30,46 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 }, { fallbackErrorMessage: "Failed to fetch categories" });
 
 // POST /api/categories — create a new category
+// Duplicate rule: (tenantId, lowercased name, dataType, currency) must be unique.
+// A P2002 from Prisma surfaces as a friendly 409.
 export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
   const parsed = createCategorySchema.safeParse(await request.json());
   if (!parsed.success) return validationError(parsed);
   const { name, dataType, currency, description } = parsed.data;
 
-  const item = await db.categoryMaster.create({
-    data: {
-      tenantId,
-      name: name.trim(),
-      dataType,
-      currency: dataType === "Currency" ? (currency || null) : null,
-      description: description?.trim() || null,
-      createdBy: userId,
-    },
-  });
+  const trimmedName = name.trim();
+  const effectiveCurrency = dataType === "Currency" ? (currency || null) : null;
 
-  return NextResponse.json({ success: true, data: item }, { status: 201 });
+  try {
+    const item = await db.categoryMaster.create({
+      data: {
+        tenantId,
+        name: trimmedName,
+        nameKey: trimmedName.toLowerCase(),
+        dataType,
+        currency: effectiveCurrency,
+        description: description?.trim() || null,
+        createdBy: userId,
+      },
+    });
+    return NextResponse.json({ success: true, data: item }, { status: 201 });
+  } catch (err: unknown) {
+    if (isUniqueViolation(err)) {
+      return NextResponse.json(
+        { success: false, error: "A category with this name and unit already exists." },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 }, { fallbackErrorMessage: "Failed to create category" });
+
+// Prisma P2002 = unique constraint violation
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: string }).code === "P2002"
+  );
+}
