@@ -20,6 +20,11 @@ import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { KPITable } from "../kpi/components/KPITable";
 import { PriorityTable } from "../priority/components/PriorityTable";
 import { WWWTable } from "../www/components/WWWTable";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { HiddenColsPill } from "@/components/table/HiddenColsPill";
+import { HiddenColsMenu } from "../kpi/components/HiddenColsMenu";
+import { ALL_STATIC_COLS, COL_LABELS as KPI_COL_LABELS } from "../kpi/hooks/useTableColumns";
+import { ALL_WEEKS as FISCAL_ALL_WEEKS } from "@/lib/utils/fiscal";
 
 const ADMIN_MIN_LEVEL = ROLE_HIERARCHY[ROLES.ADMIN];
 
@@ -191,6 +196,61 @@ function Section({ badge, count, right, children }: { badge: string; count?: num
         {right && <div className="ml-auto flex items-center gap-2">{right}</div>}
       </div>
       {children}
+    </div>
+  );
+}
+
+/**
+ * Collapsible container for the "KPI Overview" card grid on dashboard.
+ * Starts collapsed; clicking the header toggles. The AvgKPICard summary
+ * pill (avg % · on-track · at-risk · behind) lives inside the header to
+ * the right of the card-count badge — visible even when collapsed.
+ */
+function KPIOverviewContainer({ count, loading, kpis, children }: { count: number; loading: boolean; kpis: KPIRow[]; children: React.ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-sm" style={{ overflow: "clip" }}>
+      {/* Whole header row toggles — click anywhere to expand/collapse.
+          Uses role=button + keyboard handler so the entire area (including
+          the AvgKPICard pill) is clickable without nesting <button>s. */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setExpanded((e) => !e)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setExpanded((v) => !v);
+          }
+        }}
+        aria-expanded={expanded}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors select-none cursor-pointer"
+      >
+        <svg
+          className={`h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+        </svg>
+        <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">KPI Overview</span>
+        {!loading && count > 0 && (
+          <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full font-medium">
+            {count} {count === 1 ? "card" : "cards"}
+          </span>
+        )}
+        {/* AvgKPI summary pill — inert (div), clicks bubble up to toggle */}
+        {!loading && kpis.length > 0 && <AvgKPICard kpis={kpis} />}
+        <span className="ml-auto text-[10px] text-gray-400 flex-shrink-0">
+          {expanded ? "Click to collapse" : "Click to expand"}
+        </span>
+      </div>
+      {expanded && (
+        <div className="border-t border-gray-100 px-4 pb-4">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -851,6 +911,26 @@ export default function DashboardPage() {
   const [priPage, setPriPage] = useState(1);
   const [wwwPage, setWwwPage] = useState(1);
 
+  // Hidden-column pills — read straight from useTablePrefs so the dashboard
+  // mirrors the main pages. Showing a column from the pill persists via the
+  // same store used by the KPI/Priority/WWW pages.
+  const kpiPrefs = useTablePrefs("kpi");
+  const priorityPrefs = useTablePrefs("priority");
+  const wwwPrefs = useTablePrefs("www");
+  const kpiAllCols = useMemo(
+    () => [...ALL_STATIC_COLS, ...FISCAL_ALL_WEEKS.map((w) => `week${w}`)],
+    [],
+  );
+  const kpiHiddenSet = useMemo(() => new Set(kpiPrefs.hiddenCols), [kpiPrefs.hiddenCols]);
+  const PRIORITY_DASH_COL_LABELS: Record<string, string> = {
+    team: "Team", priorityName: "Priority Name", owner: "Owner",
+    startWeek: "Start Week", endWeek: "End Week", lastNote: "Last Note",
+  };
+  const WWW_DASH_COL_LABELS: Record<string, string> = {
+    who: "Who", when: "When", what: "What", revisedDate: "Revised Date",
+    status: "Status", notes: "Notes",
+  };
+
   // Reset to page 1 when filters, year, quarter, or tab change
   useEffect(() => { setKpiPage(1); }, [activeTab, filterTeam, filterOwner, teamTabTeamId, year, quarter, kpis.length]);
   useEffect(() => { setPriPage(1); }, [activeTab, filterTeam, filterOwner, teamTabTeamId, year, quarter, priorities.length]);
@@ -892,7 +972,7 @@ export default function DashboardPage() {
           <span className="text-[11px] bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium">
             Week {currentWeek}
           </span>
-          {!kpisLoading && kpis.length > 0 && <AvgKPICard kpis={kpis} />}
+          {/* AvgKPICard moved into the KPI Overview container header — see KPIOverviewContainer */}
         </div>
         <div className="flex items-center gap-2">
           {/* Filter button — Individual tab: admin sees Team + Owner; Team tab: everyone sees Team picker */}
@@ -1028,11 +1108,10 @@ export default function DashboardPage() {
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5 space-y-5">
 
-        {/* KPI overview cards */}
+        {/* KPI overview cards — collapsed by default, click header to expand */}
         {(kpisLoading || kpis.length > 0) && (
-          <div>
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">KPI Overview</p>
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+          <KPIOverviewContainer count={kpis.length} loading={kpisLoading} kpis={kpis}>
+            <div className="grid gap-3 pt-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
               {kpisLoading
                 ? [1, 2, 3, 4].map(i => (
                     <div key={i} className="bg-white border border-gray-200 rounded-xl px-4 py-3 animate-pulse">
@@ -1044,10 +1123,22 @@ export default function DashboardPage() {
                 : kpis.map(k => <KPICard key={k.id} kpi={k} />)
               }
             </div>
-          </div>
+          </KPIOverviewContainer>
         )}
 
-        <Section badge="KPI" count={kpis.length}>
+        <Section
+          badge="KPI"
+          count={kpis.length}
+          right={
+            kpiHiddenSet.size > 0 ? (
+              <HiddenColsMenu
+                hiddenCols={kpiHiddenSet}
+                allCols={kpiAllCols}
+                onShow={kpiPrefs.showCol}
+              />
+            ) : undefined
+          }
+        >
           {kpisLoading ? <Spinner /> : (
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <KPITable
@@ -1069,7 +1160,20 @@ export default function DashboardPage() {
           )}
         </Section>
 
-        <Section badge="Priority" count={priorities.length}>
+        <Section
+          badge="Priority"
+          count={priorities.length}
+          right={
+            priorityPrefs.hiddenCols.length > 0 ? (
+              <HiddenColsPill
+                hiddenCols={priorityPrefs.hiddenCols}
+                colLabels={PRIORITY_DASH_COL_LABELS}
+                onRestore={priorityPrefs.showCol}
+                onRestoreAll={priorityPrefs.showAllCols}
+              />
+            ) : undefined
+          }
+        >
           {priLoading ? <Spinner /> : (
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <PriorityTable
@@ -1097,16 +1201,26 @@ export default function DashboardPage() {
             badge="WWW"
             count={wwwItems.length}
             right={
-              <select
-                value={wwwStatusFilter}
-                onChange={e => setWwwStatusFilter(e.target.value)}
-                className={selectCls}
-                aria-label="Filter WWW by status"
-              >
-                {STATUS_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <>
+                {wwwPrefs.hiddenCols.length > 0 && (
+                  <HiddenColsPill
+                    hiddenCols={wwwPrefs.hiddenCols}
+                    colLabels={WWW_DASH_COL_LABELS}
+                    onRestore={wwwPrefs.showCol}
+                    onRestoreAll={wwwPrefs.showAllCols}
+                  />
+                )}
+                <select
+                  value={wwwStatusFilter}
+                  onChange={e => setWwwStatusFilter(e.target.value)}
+                  className={selectCls}
+                  aria-label="Filter WWW by status"
+                >
+                  {STATUS_FILTER_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </>
             }
           >
             {wwwLoading ? <Spinner /> : (
