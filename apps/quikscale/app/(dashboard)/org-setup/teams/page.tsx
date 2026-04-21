@@ -40,6 +40,7 @@ type FormState = {
   description: string;
   color:       string;
   headId:      string;
+  memberIds:   string[];
 };
 
 const EMPTY_FORM: FormState = {
@@ -47,6 +48,7 @@ const EMPTY_FORM: FormState = {
   description: "",
   color:       "#0066cc",
   headId:      "",
+  memberIds:   [],
 };
 
 const PRESET_COLORS = [
@@ -126,6 +128,9 @@ function TeamPanel({
         description: editTeam.description ?? "",
         color:       editTeam.color ?? "#0066cc",
         headId:      editTeam.headId ?? "",
+        // Members are managed via a separate dedicated panel on edit; keep
+        // the create-form multi-select empty when editing to avoid confusion.
+        memberIds:   [],
       } : EMPTY_FORM);
       setError("");
     }
@@ -153,6 +158,34 @@ function TeamPanel({
 
   const selectedHead = users.find(u => u.userId === form.headId);
 
+  // Member multi-select state — create flow only.
+  const [memberOpen, setMemberOpen] = useState(false);
+  const [memberSearch, setMemberSearch] = useState("");
+  const memberRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (memberRef.current && !memberRef.current.contains(e.target as Node)) setMemberOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+  const filteredMemberUsers = useMemo(() => {
+    const q = memberSearch.toLowerCase();
+    return users.filter((u) =>
+      `${u.firstName} ${u.lastName}`.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q),
+    );
+  }, [users, memberSearch]);
+  function toggleMember(userId: string) {
+    setForm((f) => ({
+      ...f,
+      memberIds: f.memberIds.includes(userId)
+        ? f.memberIds.filter((id) => id !== userId)
+        : [...f.memberIds, userId],
+    }));
+  }
+  const selectedMembers = users.filter((u) => form.memberIds.includes(u.userId));
+
   async function handleSubmit() {
     if (!form.name.trim()) { setError("Team name is required."); return; }
 
@@ -171,7 +204,45 @@ function TeamPanel({
       const json   = await res.json();
       if (!json.success) { setError(json.error || "Failed to save"); return; }
 
-      onSaved(json.data);
+      // Create-only: if members were selected, attach them in a follow-up call.
+      // A failure here doesn't roll back the team creation — the UI reports
+      // the team as saved but surfaces a warning so the user can retry from
+      // the "Add members" panel (which already exists for edit flow).
+      let savedTeam = json.data;
+      if (!editTeam && form.memberIds.length > 0) {
+        try {
+          const memRes = await fetch(`/api/org/teams/${json.data.id}/members`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userIds: form.memberIds }),
+          });
+          const memJson = await memRes.json();
+          if (memJson.success) {
+            // Refresh the team payload with the member list from the server
+            // so the parent list UI immediately shows who was added.
+            const addedIds: string[] = Array.isArray(memJson.data?.addedUserIds)
+              ? memJson.data.addedUserIds
+              : form.memberIds;
+            const addedMembers = users
+              .filter((u) => addedIds.includes(u.userId))
+              .map((u) => ({
+                userId: u.userId,
+                firstName: u.firstName,
+                lastName: u.lastName,
+                email: u.email,
+              }));
+            savedTeam = { ...savedTeam, members: addedMembers, memberCount: addedMembers.length };
+          } else {
+            // Team exists, members didn't attach — surface a non-blocking warning.
+            setError(`Team created, but failed to add members: ${memJson.error ?? "unknown error"}. Use the Add Members panel to retry.`);
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setError(`Team created, but failed to add members: ${msg}. Use the Add Members panel to retry.`);
+        }
+      }
+
+      onSaved(savedTeam);
       onClose();
     } finally {
       setSaving(false);
@@ -327,6 +398,87 @@ function TeamPanel({
               )}
             </div>
           </div>
+
+          {/* Members multi-select — create flow only; edit uses dedicated panel */}
+          {!editTeam && (
+            <div className="relative" ref={memberRef}>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Members <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setMemberOpen((o) => !o)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-accent-400"
+              >
+                <span className="truncate text-gray-700">
+                  {selectedMembers.length === 0
+                    ? "Select members…"
+                    : selectedMembers.length === 1
+                      ? `${selectedMembers[0].firstName} ${selectedMembers[0].lastName}`
+                      : `${selectedMembers.length} members selected`}
+                </span>
+                <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+              </button>
+              {memberOpen && (
+                <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg w-full">
+                  <div className="p-2 flex gap-2">
+                    <input
+                      autoFocus
+                      value={memberSearch}
+                      onChange={(e) => setMemberSearch(e.target.value)}
+                      placeholder="Search…"
+                      className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-400"
+                    />
+                    {form.memberIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => set("memberIds", [])}
+                        className="text-[10px] text-gray-500 hover:text-red-500 px-2 rounded hover:bg-red-50 transition-colors whitespace-nowrap"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-48 overflow-y-auto pb-1">
+                    {filteredMemberUsers.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-400">No users found.</p>
+                    ) : filteredMemberUsers.map((u) => {
+                      const full = `${u.firstName} ${u.lastName}`;
+                      const selected = form.memberIds.includes(u.userId);
+                      return (
+                        <button
+                          key={u.userId}
+                          type="button"
+                          onClick={() => toggleMember(u.userId)}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 ${selected ? "bg-accent-50" : ""}`}
+                        >
+                          <span className={`h-4 w-4 rounded border flex items-center justify-center flex-shrink-0 ${selected ? "bg-accent-600 border-accent-600" : "border-gray-300 bg-white"}`}>
+                            {selected && (
+                              <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </span>
+                          <div className={`h-6 w-6 rounded-full flex items-center justify-center text-white text-[9px] font-bold flex-shrink-0 ${avatarBg(full)}`}>
+                            {initials(u.firstName, u.lastName)}
+                          </div>
+                          <div className="min-w-0 text-left">
+                            <span className={`block text-sm truncate ${selected ? "text-accent-600 font-medium" : "text-gray-700"}`}>{full}</span>
+                            <span className="block text-[10px] text-gray-400 truncate">{u.email}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {form.memberIds.length > 0 && (
+                    <div className="border-t border-gray-100 px-3 py-1.5 text-[10px] text-gray-500 bg-gray-50">
+                      {form.memberIds.length} of {users.length} selected
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Preview */}
           <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">

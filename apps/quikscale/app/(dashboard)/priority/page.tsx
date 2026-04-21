@@ -23,13 +23,12 @@ const CURRENT_YEAR = new Date().getFullYear();
 const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 
 export default function PriorityPage() {
-  const [year, setYear] = useState(FISCAL_YEAR);
-  const [quarter, setQuarter] = useState<string>(FISCAL_QUARTER);
+  // Year + quarter via shared FilterContext (session-scoped persistence).
+  const { year, setYear, quarter, setQuarter, filterTeam, setFilterTeam, filterOwner, setFilterOwner } = useFilterContext();
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Search + filter
   const [search, setSearch] = useState("");
-  const { filterTeam, setFilterTeam, filterOwner, setFilterOwner } = useFilterContext();
   const [filterStatus, setFilterStatus] = useState("");
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);

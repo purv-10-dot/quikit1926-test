@@ -27,20 +27,26 @@ export default function IndividualKPIPage() {
   const { data: session } = useSession();
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Filters
+  // Year + quarter via shared FilterContext so they persist across module nav.
+  const { year: ctxYear, setYear: ctxSetYear, quarter: ctxQuarter, setQuarter: ctxSetQuarter, filterTeam, setFilterTeam, filterOwner, setFilterOwner } = useFilterContext();
+
+  // Filters — merges context-driven year/quarter with page-local params like page + sort.
   const [filters, setFilters] = useState<Partial<KPIListParams>>({
     page: 1,
     pageSize: 50,
-    year: FISCAL_YEAR,
-    quarter: FISCAL_QUARTER,
+    year: ctxYear,
+    quarter: ctxQuarter,
     kpiLevel: "individual", // Isolation: keep team KPIs out of the Individual KPI page
     sortBy: "createdAt",
     sortOrder: "desc",
   });
+  // Sync filters when context year/quarter changes (from another page).
+  useEffect(() => {
+    setFilters((f) => ({ ...f, year: ctxYear, quarter: ctxQuarter, page: 1 }));
+  }, [ctxYear, ctxQuarter]);
 
   // Filter panel state
   const [showFilter, setShowFilter] = useState(false);
-  const { filterTeam, setFilterTeam, filterOwner, setFilterOwner } = useFilterContext();
   const [filterStatus, setFilterStatus] = useState("");
   const filterRef = useRef<HTMLDivElement>(null);
   const ownerInitialized = useRef(false);
@@ -268,7 +274,7 @@ export default function IndividualKPIPage() {
                   <div className="grid grid-cols-1 gap-1">
                     {availableYears.map(y => (
                       <button key={y}
-                        onClick={() => { setFilters(f => ({ ...f, year: y, page: 1 })); }}
+                        onClick={() => { ctxSetYear(y); setFilters(f => ({ ...f, year: y, page: 1 })); }}
                         className={`text-xs px-3 py-1.5 rounded-lg text-left transition-colors ${currentYear === y ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700"}`}>
                         {fiscalYearLabel(y)}
                       </button>
@@ -280,7 +286,7 @@ export default function IndividualKPIPage() {
                   <div className="grid grid-cols-4 gap-1">
                     {(["Q1", "Q2", "Q3", "Q4"] as const).map(q => (
                       <button key={q}
-                        onClick={() => { setFilters(f => ({ ...f, quarter: q, page: 1 })); setShowYearPicker(false); }}
+                        onClick={() => { ctxSetQuarter(q); setFilters(f => ({ ...f, quarter: q, page: 1 })); setShowYearPicker(false); }}
                         className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${currentQuarter === q ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700 border border-gray-200"}`}>
                         {q}
                       </button>
