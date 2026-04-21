@@ -1019,7 +1019,31 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           );
                         }
 
-                        // Individual scope: editable input as before
+                        // Individual scope.
+                        // Standalone division: binary toggle between 0 (skip) and
+                        //   the full target value. Select element with two options.
+                        // Cumulative division or read-only past: regular number input.
+                        if (isStandalone && !isPast) {
+                          const targetStr = scaledTarget > 0 ? String(scaledTarget) : "";
+                          const current = form.weeklyBreakdown[w] ?? "";
+                          // Normalize: anything non-zero that isn't the target shows as "custom"
+                          // and users can reset to 0 or target.
+                          return (
+                            <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
+                              <select
+                                value={current === "0" || current === "" ? "0" : current === targetStr ? targetStr : current}
+                                onChange={e => setWeekBreakdown(w, e.target.value)}
+                                className="w-full px-1 py-1 text-center text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
+                              >
+                                <option value="0">0</option>
+                                <option value={targetStr}>{targetStr || "—"}</option>
+                                {current !== "0" && current !== "" && current !== targetStr && (
+                                  <option value={current}>{current} (custom)</option>
+                                )}
+                              </select>
+                            </td>
+                          );
+                        }
                         return (
                           <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
                             <input
@@ -1058,6 +1082,31 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
                             const isStandalone = form.divisionType === "Standalone";
                             const isLocked = isStandalone || isPast;
+                            // Standalone per-owner: toggle between 0 and the owner's sub-target
+                            //   (pct × scaledTarget / 100). Custom values preserved until reset.
+                            if (isStandalone && !isPast) {
+                              const ownerTarget = (pct / 100) * scaledTarget;
+                              const targetStr = ownerTarget > 0
+                                ? (form.measurementUnit === "Number" ? String(Math.round(ownerTarget)) : ownerTarget.toFixed(2))
+                                : "";
+                              const current = ownerRow[w] ?? "";
+                              const norm = current === "0" || current === "" ? "0" : current === targetStr ? targetStr : current;
+                              return (
+                                <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
+                                  <select
+                                    value={norm}
+                                    onChange={e => setOwnerWeekCell(id, w, e.target.value)}
+                                    className="w-full px-1 py-1 text-center text-[11px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
+                                  >
+                                    <option value="0">0</option>
+                                    <option value={targetStr}>{targetStr || "—"}</option>
+                                    {current !== "0" && current !== "" && current !== targetStr && (
+                                      <option value={current}>{current} (custom)</option>
+                                    )}
+                                  </select>
+                                </td>
+                              );
+                            }
                             return (
                               <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
                                 <input

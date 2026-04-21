@@ -9,6 +9,8 @@ import type { PriorityRow } from "@/lib/types/priority";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
 import { STATUS_META, STATUS_PILL_OPTIONS, STATUS_SELECT_OPTIONS } from "@/lib/constants/status";
 import { UserPicker } from "@quikit/ui";
+import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 
 interface Props {
   priority: PriorityRow;
@@ -37,6 +39,12 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // In logsOnly mode we force-lock regardless.
   const canEdit = useCanEditPriority(priority);
   const readOnly = logsOnly || !canEdit;
+
+  // Past/future-week locks — same pattern as KPI. Past respects the
+  // `canEditPastWeek` feature flag (admin opt-in); future is always disabled
+  // so users can't pre-fill statuses ahead of time.
+  const { canEditPastWeek } = usePastWeekFlags();
+  const priorityCurrentWeek = useCurrentWeek(priority.year, priority.quarter);
 
   // Edit tab state
   const [form, setForm] = useState({
@@ -274,21 +282,32 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
               </p>
               {Array.from({ length: endWeek - startWeek + 1 }, (_, i) => startWeek + i).map(weekNum => {
                 const data = weeklyData[weekNum] ?? { status: "", notes: "" };
+                // Past-week lock honors the admin feature flag; future-week lock is absolute.
+                const isPast = !canEditPastWeek && priorityCurrentWeek !== null && weekNum < priorityCurrentWeek;
+                const isFuture = priorityCurrentWeek !== null && weekNum > priorityCurrentWeek;
+                const weekLocked = readOnly || isPast || isFuture;
+                const weekTitle =
+                  isFuture ? "Future week — not yet available"
+                  : isPast ? "Past week locked — enable editing in Settings > Configurations"
+                  : readOnly && !logsOnly ? "Read-only"
+                  : undefined;
                 return (
-                  <div key={weekNum} className="border border-gray-200 rounded-lg p-3 space-y-2">
+                  <div key={weekNum} className={`border border-gray-200 rounded-lg p-3 space-y-2 ${isFuture ? "opacity-60" : ""}`}>
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="text-xs font-medium text-gray-700">Week {weekNum}</span>
                         <span className="text-[10px] text-gray-400 ml-2">
                           {weekDateLabel(priority.year, priority.quarter, weekNum)}
                         </span>
+                        {isPast && <span className="ml-2 text-[10px] text-amber-600">· past-week locked</span>}
+                        {isFuture && <span className="ml-2 text-[10px] text-gray-400">· future week</span>}
                       </div>
                       <div className="flex items-center gap-1">
                         {STATUS_PILL_OPTIONS.map(opt => (
                           <button key={opt.value} onClick={() => handleWeeklyStatusChange(weekNum, opt.value)}
-                            disabled={readOnly}
-                            title={readOnly && !logsOnly ? "Read-only" : undefined}
-                            className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-all ${data.status === opt.value ? opt.selectedClass : opt.baseClass} ${readOnly ? "cursor-not-allowed opacity-60" : ""}`}>
+                            disabled={weekLocked}
+                            title={weekTitle}
+                            className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-all ${data.status === opt.value ? opt.selectedClass : opt.baseClass} ${weekLocked ? "cursor-not-allowed opacity-60" : ""}`}>
                             {opt.label}
                           </button>
                         ))}
@@ -298,10 +317,11 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                       value={data.notes}
                       onChange={e => setWeeklyData(prev => ({ ...prev, [weekNum]: { ...prev[weekNum], status: prev[weekNum]?.status ?? "", notes: e.target.value } }))}
                       onBlur={() => handleWeeklyNotesBlur(weekNum)}
-                      readOnly={readOnly}
-                      placeholder={readOnly ? "" : "Notes for this week…"}
+                      readOnly={weekLocked}
+                      placeholder={weekLocked ? "" : "Notes for this week…"}
+                      title={weekTitle}
                       rows={2}
-                      className={`w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none text-gray-600 placeholder-gray-300 ${readOnly ? "bg-gray-50 cursor-not-allowed" : ""}`}
+                      className={`w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none text-gray-600 placeholder-gray-300 ${weekLocked ? "bg-gray-50 cursor-not-allowed" : ""}`}
                     />
                   </div>
                 );
