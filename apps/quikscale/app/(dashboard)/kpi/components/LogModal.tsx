@@ -430,7 +430,9 @@ function UpdatesTab({
             </p>
             <div className="space-y-3">
               {ALL_WEEKS.map(w => {
-                const locked = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                const isPast = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                const isFuture = currentWeek !== null && w > currentWeek;
+                const locked = isPast || isFuture;
                 // Aggregate total for this week (display only)
                 const total = ownerList.reduce((s, o) => {
                   const v = parseFloat(teamWeeklyState[o.id]?.[w]?.value ?? "") || 0;
@@ -447,7 +449,8 @@ function UpdatesTab({
                       </div>
                       <span className="text-[10px] text-gray-500">
                         Total: <span className="font-semibold text-gray-700">{fmt(total)}</span>
-                        {locked && <span className="ml-2 text-amber-600">· past-week locked</span>}
+                        {isPast && <span className="ml-2 text-amber-600">· past-week locked</span>}
+                        {isFuture && <span className="ml-2 text-gray-400">· future week</span>}
                       </span>
                     </div>
                     <div className="divide-y divide-gray-100">
@@ -486,7 +489,7 @@ function UpdatesTab({
                                   : "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                               }`}
                               title={!canEditThisRow
-                                ? (locked ? "Past week locked" : "You can only edit your own row")
+                                ? (isFuture ? "Future week — not yet available" : isPast ? "Past week locked" : "You can only edit your own row")
                                 : undefined}
                             />
                             <input
@@ -521,7 +524,9 @@ function UpdatesTab({
             </div>
             <div className="border border-gray-200 rounded-lg px-3 bg-white">
               {ALL_WEEKS.map(w => {
-                const locked = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                const isPast = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                const isFuture = currentWeek !== null && w > currentWeek;
+                const locked = isPast || isFuture;
                 return (
                 <WeekRow
                   key={w}

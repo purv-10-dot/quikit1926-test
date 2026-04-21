@@ -154,13 +154,31 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
-  const { data: users = [] } = useUsers();
+  // Owner dropdown filtering:
+  //   - Team selected → fetch members of that team (API filters server-side).
+  //   - No team → fetch all tenant users so the Owner picker is never empty.
+  // When user changes team, we clear `form.owner` if they're not in the
+  // new team's member list (handled in handleTeamChange).
+  const { data: users = [] } = useUsers(form.teamId || undefined);
   const { data: teams = [] } = useTeams();
   const createPriority = useCreatePriority();
 
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
     setErrors(e => { const n = { ...e }; delete n[key]; return n; });
+  }
+
+  // Custom handler for team changes — clears owner if the current owner
+  // isn't in the new team's members. Empty team = no filtering, keep owner.
+  function handleTeamChange(newTeamId: string) {
+    setForm(f => {
+      // If no team selected or owner is blank, just update team
+      if (!newTeamId || !f.owner) return { ...f, teamId: newTeamId };
+      // Owner may or may not be in the new team — we won't know until the
+      // next useUsers query resolves. Clear defensively; user re-picks.
+      return { ...f, teamId: newTeamId, owner: "" };
+    });
+    setErrors(e => { const n = { ...e }; delete n.teamId; delete n.owner; return n; });
   }
 
   function validate() {
@@ -232,7 +250,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Team</label>
-              <TeamSelect value={form.teamId} onChange={id => set("teamId", id)} teams={teams} />
+              <TeamSelect value={form.teamId} onChange={handleTeamChange} teams={teams} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
