@@ -26,6 +26,33 @@ function sessionCookieName(): string {
   return isSecure ? "__Secure-next-auth.session-token" : "next-auth.session-token";
 }
 
+/**
+ * Clear a NextAuth session cookie for real.
+ *
+ * Browsers treat cookies as "different" if Set-Cookie attributes don't match
+ * on delete. The `__Secure-` prefix in particular REQUIRES secure: true on
+ * the Set-Cookie directive — without it, the browser rejects the clear
+ * entirely and the old cookie survives. That's why earlier prod builds had
+ * impersonation sessions "coming back" after exit.
+ *
+ * Match the attributes used when the cookie was originally set by the
+ * accept route (see app/api/auth/impersonate/[token]/route.ts).
+ */
+function clearSessionCookie(res: NextResponse, name: string) {
+  const isSecurePrefix = name.startsWith("__Secure-") || name.startsWith("__Host-");
+  res.cookies.set({
+    name,
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    // __Secure- / __Host- prefixes MUST have secure: true or Set-Cookie is rejected.
+    secure: isSecurePrefix || process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+    expires: new Date(0),
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const rl = await rateLimitAsync({
@@ -92,10 +119,10 @@ export async function POST(req: NextRequest) {
       success: true,
       data: { redirectUrl: launcher.replace(/\/+$/, "") + "/apps" },
     });
-    // Clear both possible cookie names (prod + dev) just in case.
-    response.cookies.set({ name: sessionCookieName(), value: "", maxAge: 0, path: "/" });
-    response.cookies.set({ name: "next-auth.session-token", value: "", maxAge: 0, path: "/" });
-    response.cookies.set({ name: "__Secure-next-auth.session-token", value: "", maxAge: 0, path: "/" });
+    // Clear every NextAuth cookie variant (plain + __Secure-) with the EXACT
+    // attributes needed for the browser to honor the delete.
+    clearSessionCookie(response, "next-auth.session-token");
+    clearSessionCookie(response, "__Secure-next-auth.session-token");
     return response;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to exit impersonation";
