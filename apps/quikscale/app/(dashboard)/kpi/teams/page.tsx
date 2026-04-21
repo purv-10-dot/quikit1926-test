@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useTeamKPIs, useDeleteKPI } from "@/lib/hooks/useKPI";
 import { useTeams } from "@/lib/hooks/useTeams";
@@ -52,12 +52,23 @@ export default function TeamsKPIPage() {
     for (const set of Object.values(hiddenColsByTeam)) set.forEach(c => s.add(c));
     return s;
   }, [hiddenColsByTeam]);
-  const handleSectionHiddenColsChange = (teamId: string, cols: Set<string>) => {
-    setHiddenColsByTeam(prev => ({ ...prev, [teamId]: cols }));
-  };
-  const handleShowCol = (col: string) => {
+  // Stable callback + no-op bail when the Set hasn't actually changed. Without
+  // the bail, KPITable's useEffect — `[hiddenCols, onHiddenColsChange]` — fires
+  // on every render because inline wrapper fns are new refs each time, leading
+  // to an infinite re-render loop per TeamSection that pegs the main thread
+  // and blocks sidebar navigation.
+  const handleSectionHiddenColsChange = useCallback((teamId: string, cols: Set<string>) => {
+    setHiddenColsByTeam(prev => {
+      const existing = prev[teamId];
+      if (existing && existing.size === cols.size && [...cols].every(c => existing.has(c))) {
+        return prev; // identical membership → bail out, no re-render
+      }
+      return { ...prev, [teamId]: cols };
+    });
+  }, []);
+  const handleShowCol = useCallback((col: string) => {
     setShowColTrigger(t => ({ col, seq: (t?.seq ?? 0) + 1 }));
-  };
+  }, []);
 
   // Page-level bulk delete — aggregates selection across every TeamSection.
   // Matches the Individual KPI page pattern: button shows on left of toolbar
@@ -70,9 +81,17 @@ export default function TeamsKPIPage() {
     for (const set of Object.values(selectedByTeam)) set.forEach(id => s.add(id));
     return s;
   }, [selectedByTeam]);
-  const handleSectionSelectionChange = (teamId: string, ids: Set<string>) => {
-    setSelectedByTeam(prev => ({ ...prev, [teamId]: ids }));
-  };
+  // Same stability fix as handleSectionHiddenColsChange — prevents infinite
+  // re-render loop caused by KPITable's useEffect dep on onSelectionChange.
+  const handleSectionSelectionChange = useCallback((teamId: string, ids: Set<string>) => {
+    setSelectedByTeam(prev => {
+      const existing = prev[teamId];
+      if (existing && existing.size === ids.size && [...ids].every(id => existing.has(id))) {
+        return prev;
+      }
+      return { ...prev, [teamId]: ids };
+    });
+  }, []);
   async function handleBulkDelete() {
     if (!unionSelectedIds.size) return;
     await Promise.all([...unionSelectedIds].map(id => deleteKPI.mutateAsync(id)));
