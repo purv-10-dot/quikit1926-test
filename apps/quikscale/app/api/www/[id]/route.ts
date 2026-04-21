@@ -4,18 +4,31 @@ import { updateWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { canEditWWW } from "@/lib/api/wwwPermissions";
 const withTenantAuth = withTenantAuthForModule("www");
 
 export const PUT = withTenantAuth<{ id: string }>(
   async ({ tenantId, userId }, request, { params }) => {
     const existing = await db.wWWItem.findFirst({
       where: { id: params.id, tenantId },
-      select: { id: true },
+      select: { id: true, createdBy: true, who: true },
     });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "WWW item not found" },
         { status: 404 },
+      );
+    }
+
+    // Permission: creator, assignee, admin-level role, or super-admin only
+    const allowed = await canEditWWW(userId, tenantId, {
+      createdBy: existing.createdBy,
+      who: existing.who,
+    });
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: "Only the creator, assignee, or an admin can edit this item" },
+        { status: 403 },
       );
     }
 
@@ -84,12 +97,24 @@ export const DELETE = withTenantAuth<{ id: string }>(
   async ({ tenantId, userId }, _request, { params }) => {
     const existing = await db.wWWItem.findFirst({
       where: { id: params.id, tenantId },
-      select: { id: true },
+      select: { id: true, createdBy: true, who: true },
     });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "WWW item not found" },
         { status: 404 },
+      );
+    }
+
+    // Permission: creator, assignee, admin-level role, or super-admin only
+    const allowed = await canEditWWW(userId, tenantId, {
+      createdBy: existing.createdBy,
+      who: existing.who,
+    });
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: "Only the creator, assignee, or an admin can delete this item" },
+        { status: 403 },
       );
     }
 

@@ -12,6 +12,7 @@ import { UserPicker } from "@quikit/ui";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import {
   buildBreakdown,
@@ -44,7 +45,7 @@ type EditFormState = {
 // `./kpiModalHelpers`; this file owns only React glue code.
 
 function EditTab({
-  form, setForm, errors, users, isTeamKPI, kpiOwners,
+  form, setForm, errors, users, isTeamKPI, kpiOwners, readOnly,
 }: {
   form: EditFormState;
   setForm: React.Dispatch<React.SetStateAction<EditFormState>>;
@@ -52,6 +53,7 @@ function EditTab({
   users: User[];
   isTeamKPI?: boolean;
   kpiOwners?: Array<{ id: string; firstName: string; lastName: string }>;
+  readOnly?: boolean;
 }) {
   // Past-week lock for target breakdown editing
   const { canEditPastWeek } = usePastWeekFlags();
@@ -138,6 +140,12 @@ function EditTab({
     <div className="space-y-4">
       {errors._ && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">{errors._}</div>
+      )}
+
+      {readOnly && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+          Read-only — only the creator, assignee, team head, or an admin can edit this KPI&apos;s metadata. Weekly values may still be editable by assigned owners.
+        </div>
       )}
 
       <div className="grid grid-cols-2 gap-4">
@@ -599,6 +607,12 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
   // Shortcut used throughout: can the actor edit ANY owner's row?
   const canEditAnyOwner = isAdminActor || isTeamHeadActor;
 
+  // Edit tab metadata permission (creator / assignee / team head / admin / super-admin).
+  // Note: weekly-value cell editing has its own per-owner rules below — this
+  // only gates the KPI metadata form (name, target, description, etc.).
+  const canEditMetadata = useCanEditKPI(kpi);
+  const metadataReadOnly = !canEditMetadata;
+
   const updateKPI = useUpdateKPI(kpi.id);
   const updateWeekly = useUpdateWeeklyValue(kpi.id);
 
@@ -738,7 +752,12 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
           );
         }
       }
-      await Promise.all([updateKPI.mutateAsync(kpiPayload), ...weeklyPromises]);
+      // Skip metadata update when the actor lacks edit permission (server would 403).
+      // This lets users who can still update their own weekly row save without a server error.
+      const metadataPromise = metadataReadOnly
+        ? Promise.resolve()
+        : updateKPI.mutateAsync(kpiPayload);
+      await Promise.all([metadataPromise, ...weeklyPromises]);
 
       onRefresh();
       onClose();
@@ -808,7 +827,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {tab === "edit" && (
-            <EditTab form={editForm} setForm={setEditForm} errors={editErrors} users={users} isTeamKPI={isTeamKPI} kpiOwners={kpi.owners as Array<{ id: string; firstName: string; lastName: string }> | undefined} />
+            <EditTab form={editForm} setForm={setEditForm} errors={editErrors} users={users} isTeamKPI={isTeamKPI} kpiOwners={kpi.owners as Array<{ id: string; firstName: string; lastName: string }> | undefined} readOnly={metadataReadOnly} />
           )}
           {tab === "updates" && (
             <UpdatesTab

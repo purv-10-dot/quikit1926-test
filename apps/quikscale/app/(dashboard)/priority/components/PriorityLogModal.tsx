@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useUpdatePriority, useUpdateWeeklyStatus } from "@/lib/hooks/usePriority";
 import { useUsers } from "@/lib/hooks/useUsers";
+import { useCanEditPriority } from "@/lib/hooks/useCanEditPriority";
 import { useTeams } from "@/lib/hooks/useTeams";
 import type { PriorityRow } from "@/lib/types/priority";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
@@ -13,6 +14,12 @@ interface Props {
   priority: PriorityRow;
   onClose: () => void;
   onSuccess: () => void;
+  /**
+   * When true, the panel shows ONLY the weekly-status log (read-only).
+   * No Edit or Notes tabs, no tab bar, no Save button. Triggered by the
+   * log-icon click in the Priority table.
+   */
+  logsOnly?: boolean;
 }
 
 const CURRENT_YEAR = getFiscalYear();
@@ -21,8 +28,15 @@ const WEEK_OPTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
 
 const OVERALL_STATUS_OPTIONS = STATUS_SELECT_OPTIONS;
 
-export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
-  const [tab, setTab] = useState<"edit" | "weekly" | "notes">("edit");
+export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = false }: Props) {
+  // logsOnly mode forces the weekly-log view and locks everything read-only,
+  // regardless of edit permission.
+  const [tab, setTab] = useState<"edit" | "weekly" | "notes">(logsOnly ? "weekly" : "edit");
+
+  // Edit permission: creator, assignee, admin, or super-admin.
+  // In logsOnly mode we force-lock regardless.
+  const canEdit = useCanEditPriority(priority);
+  const readOnly = logsOnly || !canEdit;
 
   // Edit tab state
   const [form, setForm] = useState({
@@ -137,15 +151,17 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 px-6 flex-shrink-0">
-          {(["edit", "weekly", "notes"] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors capitalize ${tab === t ? "border-gray-900 text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
-              {t === "weekly" ? "Weekly Status" : t === "edit" ? "Edit" : "Notes"}
-            </button>
-          ))}
-        </div>
+        {/* Tabs (hidden in logsOnly mode — log icon opens weekly log directly) */}
+        {!logsOnly && (
+          <div className="flex border-b border-gray-200 px-6 flex-shrink-0">
+            {(["edit", "weekly", "notes"] as const).map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors capitalize ${tab === t ? "border-gray-900 text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
+                {t === "weekly" ? "Weekly Status" : t === "edit" ? "Edit" : "Notes"}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -158,6 +174,11 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
           {/* ── Edit Tab ── */}
           {tab === "edit" && (
             <div className="space-y-4">
+              {readOnly && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                  Read-only — only the creator, assignee, or an admin can edit this priority.
+                </div>
+              )}
               {/* Row 1: Priority Name (full width) */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -247,7 +268,9 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
           {tab === "weekly" && (
             <div className="space-y-3">
               <p className="text-[11px] text-gray-400">
-                Showing weeks {startWeek} – {endWeek}. Status saves automatically.
+                {logsOnly
+                  ? `Weekly status log for weeks ${startWeek} – ${endWeek} (read-only).`
+                  : `Showing weeks ${startWeek} – ${endWeek}. Status saves automatically.`}
               </p>
               {Array.from({ length: endWeek - startWeek + 1 }, (_, i) => startWeek + i).map(weekNum => {
                 const data = weeklyData[weekNum] ?? { status: "", notes: "" };
@@ -263,7 +286,9 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                       <div className="flex items-center gap-1">
                         {STATUS_PILL_OPTIONS.map(opt => (
                           <button key={opt.value} onClick={() => handleWeeklyStatusChange(weekNum, opt.value)}
-                            className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-all ${data.status === opt.value ? opt.selectedClass : opt.baseClass}`}>
+                            disabled={readOnly}
+                            title={readOnly && !logsOnly ? "Read-only" : undefined}
+                            className={`px-2.5 py-1 text-[10px] font-medium rounded-full border transition-all ${data.status === opt.value ? opt.selectedClass : opt.baseClass} ${readOnly ? "cursor-not-allowed opacity-60" : ""}`}>
                             {opt.label}
                           </button>
                         ))}
@@ -273,9 +298,10 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
                       value={data.notes}
                       onChange={e => setWeeklyData(prev => ({ ...prev, [weekNum]: { ...prev[weekNum], status: prev[weekNum]?.status ?? "", notes: e.target.value } }))}
                       onBlur={() => handleWeeklyNotesBlur(weekNum)}
-                      placeholder="Notes for this week…"
+                      readOnly={readOnly}
+                      placeholder={readOnly ? "" : "Notes for this week…"}
                       rows={2}
-                      className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none text-gray-600 placeholder-gray-300"
+                      className={`w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none text-gray-600 placeholder-gray-300 ${readOnly ? "bg-gray-50 cursor-not-allowed" : ""}`}
                     />
                   </div>
                 );
@@ -300,9 +326,10 @@ export function PriorityLogModal({ priority, onClose, onSuccess }: Props) {
             className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
             Cancel
           </button>
-          {tab !== "weekly" && (
-            <button onClick={handleSave} disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors">
+          {tab !== "weekly" && !logsOnly && (
+            <button onClick={handleSave} disabled={saving || readOnly}
+              title={readOnly ? "Only the creator, assignee, or an admin can edit this priority" : undefined}
+              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
               {saving && (
                 <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

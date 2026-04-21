@@ -4,6 +4,7 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("priority");
 import { updatePrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { canEditPriority } from "@/lib/api/priorityPermissions";
 
 
 const PRIORITY_SELECT = {
@@ -43,9 +44,24 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { p
 });
 
 export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
-  const existing = await db.priority.findUnique({ where: { id: params.id }, select: { tenantId: true } });
+  const existing = await db.priority.findUnique({
+    where: { id: params.id },
+    select: { tenantId: true, createdBy: true, owner: true },
+  });
   if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
   if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+
+  // Edit permission: creator, assignee, admin, or super-admin
+  const canEdit = await canEditPriority(userId, tenantId, {
+    createdBy: existing.createdBy,
+    owner: existing.owner,
+  });
+  if (!canEdit) {
+    return NextResponse.json(
+      { success: false, error: "Only the creator, assignee, or an admin can edit this priority." },
+      { status: 403 },
+    );
+  }
 
   const parsed = updatePrioritySchema.safeParse(await req.json());
   if (!parsed.success) {
@@ -87,9 +103,24 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
 });
 
 export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
-  const existing = await db.priority.findUnique({ where: { id: params.id }, select: { tenantId: true } });
+  const existing = await db.priority.findUnique({
+    where: { id: params.id },
+    select: { tenantId: true, createdBy: true, owner: true },
+  });
   if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
   if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+
+  // Edit permission: creator, assignee, admin, or super-admin
+  const canEdit = await canEditPriority(userId, tenantId, {
+    createdBy: existing.createdBy,
+    owner: existing.owner,
+  });
+  if (!canEdit) {
+    return NextResponse.json(
+      { success: false, error: "Only the creator, assignee, or an admin can delete this priority." },
+      { status: 403 },
+    );
+  }
 
   // Soft delete
   await db.priority.update({

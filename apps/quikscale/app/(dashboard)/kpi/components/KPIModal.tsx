@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useCreateKPI, useUpdateKPI } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
+import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
@@ -44,6 +45,10 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   // Determine whether this modal instance operates in team-level scope.
   // Priority: explicit `scope` prop > existing kpi.kpiLevel (in edit mode) > default "individual"
   const isTeamScope = scope === "team" || kpi?.kpiLevel === "team";
+
+  // Edit permission (edit mode only). Create is always allowed.
+  const canEditItem = useCanEditKPI(kpi);
+  const readOnly = mode === "edit" && !canEditItem;
 
   const [form, setForm] = useState(() => {
     const measurementUnit = kpi?.measurementUnit ?? "Number";
@@ -618,6 +623,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             </div>
           )}
 
+          {readOnly && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+              Read-only — only the creator, assignee, team head, or an admin can edit this KPI.
+            </div>
+          )}
+
           {/* KPI Name + Team/Owner */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -1102,8 +1113,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={saving}
-            className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors">
+          <button onClick={handleSubmit} disabled={saving || readOnly}
+            title={readOnly ? "Only the creator, assignee, team head, or an admin can edit this KPI" : undefined}
+            className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
             {saving && (
               <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

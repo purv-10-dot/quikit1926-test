@@ -7,7 +7,7 @@
  * `useUpdateWeeklyStatus` hook stays inline because it hits a sub-path
  * (`/api/priority/:id/weekly`) that doesn't fit the CRUD factory shape.
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
 import { createCRUDHook } from "./createCRUDHook";
 
@@ -44,6 +44,30 @@ export function usePriorities(year: number, quarter: string, sort?: string | nul
 export const useCreatePriority = priority.useCreate;
 export const useUpdatePriority = priority.useUpdate;
 export const useDeletePriority = priority.useDelete;
+
+/** Change-history log for a priority (AuditLog rows). */
+export function usePriorityLogs(priorityId: string) {
+  return useQuery({
+    queryKey: ["priority", "logs", priorityId],
+    queryFn: async () => {
+      const res = await fetch(`/api/priority/${priorityId}/logs`, { cache: "no-store" });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error ?? "Failed to fetch logs");
+      return json.data as Array<{
+        id: string;
+        action: string;
+        oldValue: string | null;
+        newValue: string | null;
+        changedBy: string;
+        changedByName: string;
+        reason: string | null;
+        createdAt: string;
+      }>;
+    },
+    enabled: !!priorityId,
+    staleTime: 1000 * 60 * 5,
+  });
+}
 
 // ── Custom sub-resource: weekly status ─────────────────────────────────────
 //
