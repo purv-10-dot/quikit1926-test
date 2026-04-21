@@ -1,14 +1,7 @@
-const path = require("path");
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  // Docker / self-hosted build output. See docs/engineering/GCP_DEPLOYMENT.md.
-  // Docker-only; Vercel unsets BUILD_STANDALONE so default serverless output is used.
-  ...(process.env.BUILD_STANDALONE === "1"
-    ? { output: "standalone", outputFileTracingRoot: path.join(__dirname, "../../") }
-    : {}),
   transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database", "@quikit/redis"],
   experimental: {
     serverActions: {
