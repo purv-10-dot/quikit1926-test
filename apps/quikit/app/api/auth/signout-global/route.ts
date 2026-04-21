@@ -58,10 +58,19 @@ export async function GET(req: NextRequest) {
   const response = NextResponse.redirect(redirectTo);
 
   for (const name of NEXT_AUTH_COOKIES) {
+    // `__Secure-` / `__Host-` prefixed cookies REQUIRE secure: true on the
+    // Set-Cookie directive, or the browser rejects it silently — leaving the
+    // old cookie in place. That's the bug that let impersonation sessions
+    // survive exit on prod. Match attributes to the originals.
+    const isSecurePrefix = name.startsWith("__Secure-") || name.startsWith("__Host-");
     response.cookies.set({
       name,
       value: "",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: isSecurePrefix || process.env.NODE_ENV === "production",
       maxAge: 0,
+      expires: new Date(0),
       path: "/",
     });
   }
