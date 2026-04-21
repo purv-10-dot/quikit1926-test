@@ -18,7 +18,6 @@ function buildPOST(): NextRequest {
 beforeEach(() => {
   resetMockDb();
   setSession(null);
-  delete process.env.NODE_ENV;
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
