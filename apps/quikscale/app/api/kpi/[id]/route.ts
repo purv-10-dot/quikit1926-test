@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateKPISchema } from "@/lib/schemas/kpiSchema";
 import { ApiResponse } from "@/lib/services/kpiService";
-import { canManageTeamKPI } from "@/lib/api/teamKPIPermissions";
+import { canEditKPI } from "@/lib/api/kpiPermissions";
 import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
@@ -37,6 +37,21 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
   if (!existingKPI) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
   if (existingKPI.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
+  // Edit permission: creator, owner/assignee, team head, admin, or super-admin
+  const canEdit = await canEditKPI(userId, tenantId, {
+    kpiLevel: existingKPI.kpiLevel,
+    createdBy: existingKPI.createdBy,
+    owner: existingKPI.owner,
+    ownerIds: existingKPI.ownerIds as string[] | null,
+    teamId: existingKPI.teamId,
+  });
+  if (!canEdit) {
+    return NextResponse.json(
+      { success: false, error: "Only the creator, assignee, team head, or an admin can edit this KPI." },
+      { status: 403 },
+    );
+  }
+
   const body = await req.json();
   const validated = updateKPISchema.parse(body);
   const oldValue = JSON.stringify(existingKPI);
@@ -46,18 +61,12 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
     (validated.kpiLevel as "individual" | "team" | undefined) ??
     (existingKPI.kpiLevel as "individual" | "team");
 
-  // Team KPI permission gate — required when the row is (or is becoming) team-level
+  // Team-KPI ownership/membership validation still runs — the edit permission
+  // above is necessary but not sufficient for shape validation.
   if (effectiveLevel === "team") {
     const effectiveTeamId = validated.teamId ?? existingKPI.teamId;
     if (!effectiveTeamId) {
       return NextResponse.json({ success: false, error: "teamId is required for team KPIs" }, { status: 400 });
-    }
-    const allowed = await canManageTeamKPI(userId, tenantId, effectiveTeamId);
-    if (!allowed) {
-      return NextResponse.json(
-        { success: false, error: "You must be a team head or admin to edit KPIs for this team." },
-        { status: 403 }
-      );
     }
 
     // If ownerIds or contributions are being changed, validate team membership + sum=100
@@ -180,15 +189,19 @@ export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
   if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-  // Team KPI permission gate
-  if (kpi.kpiLevel === "team" && kpi.teamId) {
-    const allowed = await canManageTeamKPI(userId, tenantId, kpi.teamId);
-    if (!allowed) {
-      return NextResponse.json(
-        { success: false, error: "You must be a team head or admin to delete KPIs for this team." },
-        { status: 403 }
-      );
-    }
+  // Edit permission: creator, owner/assignee, team head, admin, or super-admin
+  const canEdit = await canEditKPI(userId, tenantId, {
+    kpiLevel: kpi.kpiLevel,
+    createdBy: kpi.createdBy,
+    owner: kpi.owner,
+    ownerIds: kpi.ownerIds as string[] | null,
+    teamId: kpi.teamId,
+  });
+  if (!canEdit) {
+    return NextResponse.json(
+      { success: false, error: "Only the creator, assignee, team head, or an admin can delete this KPI." },
+      { status: 403 },
+    );
   }
 
   const oldValue = JSON.stringify(kpi);

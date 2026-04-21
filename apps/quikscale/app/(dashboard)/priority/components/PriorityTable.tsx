@@ -5,6 +5,7 @@ import type { PriorityRow } from "@/lib/types/priority";
 import { ALL_WEEKS, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
 import { PriorityModal } from "./PriorityModal";
 import { PriorityLogModal } from "./PriorityLogModal";
+import { PriorityLogsModal } from "./PriorityLogsModal";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -168,6 +169,9 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil((total as number) / (pageSize as number))) : 1;
   const [showAddModal, setShowAddModal] = useState(false);
   const [editPriority, setEditPriority] = useState<PriorityRow | null>(null);
+  // Separate state for logs-only panel (triggered by the log icon).
+  // Using a second state keeps the two entry points cleanly decoupled.
+  const [logPriority, setLogPriority] = useState<PriorityRow | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [openPicker, setOpenPicker] = useState<{ priorityId: string; weekNumber: number } | null>(null);
 
@@ -439,7 +443,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                   {COL_ORDER.includes("_log") && (
                     <td className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit"
                       style={{ left: getLeftOffset("_log"), width: 40, minWidth: 40 }}>
-                      <button onClick={() => setEditPriority(priority)}
+                      <button onClick={() => setLogPriority(priority)}
                         className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
                         title="Open log">
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -691,12 +695,20 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
         />
       )}
 
-      {/* Edit Modal */}
+      {/* Edit Modal — full panel with Edit / Weekly / Notes tabs */}
       {editPriority && (
         <PriorityLogModal
           priority={editPriority}
           onClose={() => setEditPriority(null)}
           onSuccess={() => { setEditPriority(null); onRefresh(); }}
+        />
+      )}
+
+      {/* Change-history panel — audit timeline, read-only (triggered by log icon) */}
+      {logPriority && (
+        <PriorityLogsModal
+          priority={logPriority}
+          onClose={() => setLogPriority(null)}
         />
       )}
     </div>

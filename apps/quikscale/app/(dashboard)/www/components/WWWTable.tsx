@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { WWWItem } from "@/lib/types/www";
 import { WWWPanel } from "./WWWPanel";
+import { WWWLogsModal } from "./WWWLogsModal";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ColMenu } from "@/components/table/ColMenu";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
@@ -109,17 +112,26 @@ interface DatePickerProps {
   itemId: string;
   currentDate: string; // ISO string or ""
   existingDates: string[];
+  /** Earliest allowed date — typically the item's `when` (ISO). Below this is disabled. */
+  minDate?: string;
   onSave: (id: string, date: string, allDates: string[]) => void;
   onClose: () => void;
 }
 
-function RevisedDatePicker({ itemId, currentDate, existingDates, onSave, onClose }: DatePickerProps) {
+function RevisedDatePicker({ itemId, currentDate, existingDates, minDate, onSave, onClose }: DatePickerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState(toDateInputValue(currentDate));
+  const [error, setError] = useState<string>("");
   useClickOutside(ref, onClose);
+
+  const minDateInput = minDate ? toDateInputValue(minDate) : undefined;
 
   function handleSave() {
     if (!value) return;
+    if (minDateInput && value < minDateInput) {
+      setError(`Must be on or after ${minDateInput}`);
+      return;
+    }
     const existing = existingDates ?? [];
     const last = existing[existing.length - 1];
     const allDates = last !== value ? [...existing, value] : existing;
@@ -141,10 +153,15 @@ function RevisedDatePicker({ itemId, currentDate, existingDates, onSave, onClose
       <input
         type="date"
         value={value}
-        onChange={e => setValue(e.target.value)}
+        min={minDateInput}
+        onChange={e => { setValue(e.target.value); setError(""); }}
         className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
         autoFocus
       />
+      {minDateInput && (
+        <p className="text-[9px] text-gray-400">Min: {minDateInput}</p>
+      )}
+      {error && <p className="text-[10px] text-red-500">{error}</p>}
       <div className="flex gap-2">
         <button
           onClick={handleClear}
@@ -207,8 +224,25 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editItem, setEditItem] = useState<WWWItem | null>(null);
   const [panelTab, setPanelTab] = useState<"edit" | "log">("edit");
+  // Separate state for logs-only panel (triggered by the log icon).
+  const [logItem, setLogItem] = useState<WWWItem | null>(null);
   const [openStatusPicker, setOpenStatusPicker] = useState<string | null>(null);
   const [openDatePicker, setOpenDatePicker] = useState<string | null>(null);
+
+  // Per-item edit permission: creator, assignee, admin role, or super-admin.
+  // Mirrors the server-side `canEditWWW` helper (source of truth).
+  const { data: session } = useSession();
+  const currentUserId = session?.user?.id ?? "";
+  const isAdminActor = (() => {
+    const role = (session?.user as { membershipRole?: string } | undefined)?.membershipRole;
+    if (role && (ROLE_HIERARCHY[role] ?? 0) >= ROLE_HIERARCHY[ROLES.ADMIN]) return true;
+    if ((session?.user as { isSuperAdmin?: boolean } | undefined)?.isSuperAdmin) return true;
+    return false;
+  })();
+  function canEditItem(item: WWWItem): boolean {
+    if (isAdminActor) return true;
+    return item.createdBy === currentUserId || item.who === currentUserId;
+  }
 
   // Table preferences (persisted per user in DB)
   const { frozenCol, setFrozenCol, hiddenCols, hideCol, sort, setSort } = useTablePrefs("www");
@@ -378,6 +412,8 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
             )}
             {items.map((item, rowIdx) => {
               const rowBg = rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50";
+              // Effective lock for this row: instance-level readOnly prop OR lack of permission
+              const rowLocked = !!readOnly || !canEditItem(item);
               const whoName = item.who_user
                 ? `${item.who_user.firstName} ${item.who_user.lastName}`
                 : "—";
@@ -408,7 +444,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                   {WWW_COL_ORDER.includes("_log") && (
                     <td className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit" style={{ left: getLeftOffset("_log"), width: 40, minWidth: 40 }}>
                       <button
-                        onClick={() => { setPanelTab("log"); setEditItem(item); }}
+                        onClick={() => setLogItem(item)}
                         className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
                         title="Open log"
                       >
@@ -488,29 +524,31 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                     <td className="relative border-r border-gray-100 px-2 py-1.5" style={{ width: getColWidth("revisedDate"), minWidth: getColWidth("revisedDate") }}>
                       <button
                         onClick={() => {
-                          if (readOnly) return;
+                          if (rowLocked) return;
                           setOpenStatusPicker(null);
                           setOpenDatePicker(isDatePickerOpen ? null : item.id);
                         }}
-                        disabled={readOnly}
-                        className={`flex items-center gap-1 group ${readOnly ? "cursor-default" : ""}`}
+                        disabled={rowLocked}
+                        title={rowLocked && !readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+                        className={`flex items-center gap-1 group ${rowLocked ? "cursor-default" : ""}`}
                       >
                         {lastRevisedDate ? (
                           <>
                             <svg className="h-3 w-3 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
-                            <span className={`text-xs text-blue-600 ${!readOnly ? "group-hover:underline" : ""}`}>{formatDate(lastRevisedDate)}</span>
+                            <span className={`text-xs text-blue-600 ${!rowLocked ? "group-hover:underline" : ""}`}>{formatDate(lastRevisedDate)}</span>
                           </>
                         ) : (
-                          <span className={`text-xs text-gray-300 ${!readOnly ? "group-hover:text-gray-500" : ""}`}>—</span>
+                          <span className={`text-xs text-gray-300 ${!rowLocked ? "group-hover:text-gray-500" : ""}`}>—</span>
                         )}
                       </button>
-                      {isDatePickerOpen && !readOnly && (
+                      {isDatePickerOpen && !rowLocked && (
                         <RevisedDatePicker
                           itemId={item.id}
                           currentDate={lastRevisedDate ?? ""}
                           existingDates={item.revisedDates ?? []}
+                          minDate={item.when}
                           onSave={handleRevisedDateSave}
                           onClose={() => setOpenDatePicker(null)}
                         />
@@ -523,16 +561,17 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                     <td className={`relative border-r border-gray-100 ${statusBadgeColor(item.status)}`} style={{ width: getColWidth("status"), minWidth: getColWidth("status") }}>
                       <button
                         onClick={() => {
-                          if (readOnly) return;
+                          if (rowLocked) return;
                           setOpenDatePicker(null);
                           setOpenStatusPicker(isStatusPickerOpen ? null : item.id);
                         }}
-                        disabled={readOnly}
-                        className={`w-full h-full flex items-center justify-center px-2 py-3 text-[10px] font-semibold whitespace-nowrap ${readOnly ? "cursor-default" : ""}`}
+                        disabled={rowLocked}
+                        title={rowLocked && !readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+                        className={`w-full h-full flex items-center justify-center px-2 py-3 text-[10px] font-semibold whitespace-nowrap ${rowLocked ? "cursor-default" : ""}`}
                       >
                         {statusLabel(item.status)}
                       </button>
-                      {isStatusPickerOpen && !readOnly && (
+                      {isStatusPickerOpen && !rowLocked && (
                         <StatusPicker
                           itemId={item.id}
                           currentStatus={item.status}
@@ -593,6 +632,14 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
           initialTab={panelTab}
           onClose={() => setEditItem(null)}
           onSuccess={() => { setEditItem(null); onRefresh(); }}
+        />
+      )}
+
+      {/* Change-history panel — audit timeline, read-only (triggered by log icon) */}
+      {logItem && (
+        <WWWLogsModal
+          item={logItem}
+          onClose={() => setLogItem(null)}
         />
       )}
     </div>

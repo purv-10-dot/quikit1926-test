@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useCreateWWW, useUpdateWWW } from "@/lib/hooks/useWWW";
 import { useUsers } from "@/lib/hooks/useUsers";
+import { useCanEditWWW } from "@/lib/hooks/useCanEditWWW";
 import type { WWWItem } from "@/lib/types/www";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
 
@@ -34,6 +35,12 @@ interface Props {
   initialTab?: Tab;
   onClose: () => void;
   onSuccess: () => void;
+  /**
+   * When true, shows ONLY the Log tab (summary + revised-date timeline).
+   * Hides the Edit tab, tab bar, and Save/Cancel footer. Triggered by the
+   * log-icon click in WWWTable.
+   */
+  logsOnly?: boolean;
 }
 
 // ── Log Tab ──────────────────────────────────────────────────────────────────
@@ -146,17 +153,27 @@ function EditTab({
   set,
   errors,
   users,
+  mode,
+  readOnly,
 }: {
   form: { who: string; what: string; when: string; status: string; revisedDate: string; notes: string; originalDueDate: string };
   set: (key: string, val: string) => void;
   errors: Record<string, string>;
   users: Array<{ id: string; firstName: string; lastName: string; email: string }>;
+  mode: "create" | "edit";
+  readOnly: boolean;
 }) {
   return (
     <div className="space-y-4">
       {errors._ && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
           {errors._}
+        </div>
+      )}
+
+      {readOnly && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+          Read-only — only the creator, assignee, or an admin can edit this item.
         </div>
       )}
 
@@ -169,7 +186,8 @@ function EditTab({
           <select
             value={form.who}
             onChange={e => set("who", e.target.value)}
-            className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.who ? "border-red-400" : "border-gray-200"}`}
+            disabled={readOnly}
+            className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white disabled:bg-gray-50 disabled:text-gray-500 ${errors.who ? "border-red-400" : "border-gray-200"}`}
           >
             <option value="">Select person…</option>
             {users.map(u => (
@@ -188,7 +206,8 @@ function EditTab({
             type="date"
             value={form.when}
             onChange={e => set("when", e.target.value)}
-            className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${errors.when ? "border-red-400" : "border-gray-200"}`}
+            disabled={readOnly}
+            className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50 disabled:text-gray-500 ${errors.when ? "border-red-400" : "border-gray-200"}`}
           />
           {errors.when && <p className="text-[10px] text-red-500 mt-0.5">{errors.when}</p>}
         </div>
@@ -204,13 +223,14 @@ function EditTab({
           onChange={e => set("what", e.target.value)}
           rows={4}
           placeholder="Describe what needs to be done…"
-          className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none ${errors.what ? "border-red-400" : "border-gray-200"}`}
+          disabled={readOnly}
+          className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none disabled:bg-gray-50 disabled:text-gray-500 ${errors.what ? "border-red-400" : "border-gray-200"}`}
         />
         {errors.what && <p className="text-[10px] text-red-500 mt-0.5">{errors.what}</p>}
       </div>
 
-      {/* Row 3: Status | Revised Date */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Row 3: Status | Revised Date (edit mode only — revised date hidden on create) */}
+      <div className={mode === "edit" ? "grid grid-cols-2 gap-4" : ""}>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
             Status <span className="text-red-500">*</span>
@@ -218,22 +238,30 @@ function EditTab({
           <select
             value={form.status}
             onChange={e => set("status", e.target.value)}
-            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+            disabled={readOnly}
+            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white disabled:bg-gray-50 disabled:text-gray-500"
           >
             {STATUS_SELECT_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Revised Date</label>
-          <input
-            type="date"
-            value={form.revisedDate}
-            onChange={e => set("revisedDate", e.target.value)}
-            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
-          />
-        </div>
+        {mode === "edit" && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Revised Date</label>
+            <input
+              type="date"
+              value={form.revisedDate}
+              min={form.when || undefined}
+              onChange={e => set("revisedDate", e.target.value)}
+              disabled={readOnly}
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50 disabled:text-gray-500"
+            />
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              Must be on or after the When date ({form.when || "—"}).
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Row 4: Notes */}
@@ -244,7 +272,8 @@ function EditTab({
           onChange={e => set("notes", e.target.value)}
           rows={2}
           placeholder="Additional notes…"
-          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none"
+          disabled={readOnly}
+          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none disabled:bg-gray-50 disabled:text-gray-500"
         />
       </div>
     </div>
@@ -253,11 +282,18 @@ function EditTab({
 
 // ── WWWPanel ─────────────────────────────────────────────────────────────────
 
-export function WWWPanel({ mode, item, initialTab, onClose, onSuccess }: Props) {
-  const [tab, setTab] = useState<Tab>(mode === "create" ? "edit" : (initialTab ?? "edit"));
+export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly = false }: Props) {
+  // logsOnly forces the Log tab, hides tab bar, hides footer. Read-only.
+  const [tab, setTab] = useState<Tab>(
+    logsOnly ? "log" : (mode === "create" ? "edit" : (initialTab ?? "edit")),
+  );
   const { data: users = [] } = useUsers();
   const createWWW = useCreateWWW();
   const updateWWW = useUpdateWWW(item?.id ?? "");
+  // Edit mode: only the creator, assignee, or admin/super-admin may change the
+  // item. Create mode is always allowed (anyone in the tenant can author a WWW).
+  const canEditItem = useCanEditWWW(item);
+  const readOnly = mode === "edit" && !canEditItem;
 
   const [form, setForm] = useState({
     who: item?.who ?? "",
@@ -301,6 +337,10 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess }: Props) 
     if (!form.who) errs.who = "Who is required";
     if (!form.what.trim()) errs.what = "What is required";
     if (!form.when) errs.when = "When is required";
+    // Edit mode only: revised date must not be earlier than When
+    if (mode === "edit" && form.revisedDate && form.when && form.revisedDate < form.when) {
+      errs.revisedDate = "Revised date cannot be earlier than When";
+    }
     return errs;
   }
 
@@ -345,8 +385,9 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess }: Props) 
     }
   }
 
-  const TABS: { key: Tab; label: string }[] =
-    mode === "create"
+  const TABS: { key: Tab; label: string }[] = logsOnly
+    ? [{ key: "log", label: "Log" }]
+    : mode === "create"
       ? [{ key: "edit", label: "Edit" }]
       : [{ key: "log", label: "Log" }, { key: "edit", label: "Edit" }];
 
@@ -405,7 +446,7 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess }: Props) 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {tab === "edit" && (
-            <EditTab form={form} set={set} errors={errors} users={users} />
+            <EditTab form={form} set={set} errors={errors} users={users} mode={mode} readOnly={readOnly} />
           )}
           {tab === "log" && item && (
             <LogTab item={item} users={users} />
@@ -423,8 +464,9 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess }: Props) 
             </button>
             <button
               onClick={handleSubmit}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              disabled={saving || readOnly}
+              title={readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {saving && (
                 <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
