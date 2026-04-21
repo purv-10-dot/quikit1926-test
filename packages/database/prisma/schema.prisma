@@ -649,6 +649,9 @@ model CategoryMaster {
   tenantId String
 
   name        String
+  // Lowercased+trimmed mirror of `name` for case-insensitive uniqueness.
+  // Populated by application code on every write; required by the DB constraint.
+  nameKey     String
   dataType    String // "Number" | "Percentage" | "Currency"
   currency    String? // e.g. "INR", "USD" — only when dataType = "Currency"
   description String? @db.Text
@@ -661,6 +664,10 @@ model CategoryMaster {
 
   @@index([tenantId])
   @@index([dataType])
+  // Uniqueness: (tenantId, lowercased name, dataType, currency)
+  // Two rows with the same case-insensitive name can coexist only if their
+  // (dataType, currency) tuple differs. "Revenue (Number)" and "Revenue (Currency/USD)" OK.
+  @@unique([tenantId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
 }
 
 // ============================================================================

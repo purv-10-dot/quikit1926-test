@@ -177,6 +177,20 @@ export function CategorySelect({
       setError("Name is required");
       return;
     }
+    // Client-side duplicate check — case-insensitive, scoped to (name, dataType, currency).
+    // Server enforces the same rule via DB unique index; this is a UX pre-check.
+    const effectiveCurrency = newType === "Currency" ? newCurrency : null;
+    const nameLower = trimmed.toLowerCase();
+    const dupe = cats.find(
+      (c) =>
+        c.name.trim().toLowerCase() === nameLower &&
+        c.dataType === newType &&
+        (c.currency ?? null) === (effectiveCurrency ?? null),
+    );
+    if (dupe) {
+      setError("A category with this name and unit already exists.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -186,7 +200,7 @@ export function CategorySelect({
         body: JSON.stringify({
           name: trimmed,
           dataType: newType,
-          currency: newType === "Currency" ? newCurrency : null,
+          currency: effectiveCurrency,
         }),
       });
       const json = await res.json();
