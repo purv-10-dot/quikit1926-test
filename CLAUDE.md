@@ -32,6 +32,28 @@ git push origin --delete <branch>
 
 Why this rule exists: Vercel auto-deploys `main` → production, `uat` → UAT, `dev` → dev. A stray commit on a protected branch ships untested code. Feature branches also give us rollback targets (revert a single branch merge instead of cherry-picking).
 
+### Pre-push deploy impact check
+
+Before running `git push` on **any** branch, always:
+
+1. Compute which apps + packages the commits touch (compare `git diff --name-only <base>..<head>`).
+2. Group results into one of: `quikit`, `quikscale`, `admin`, `packages/<name>` (shared — affects multiple apps), `other` (docs, CI, root).
+3. Report to the user like:
+   ```
+   📦 This push will redeploy:
+      • quikscale  (apps/quikscale/**)
+   ⏭️  Will skip (Vercel turbo-ignore):
+      • quikit
+      • admin
+   ```
+4. Pause for confirmation. Push only after user says "yes / proceed / ship / etc."
+
+Packages count as "affects multiple apps" — list every app that depends on the changed package (every app depends on every `@quikit/*` package today, so shared changes redeploy all 3).
+
+Helper: `scripts/affected-apps.mjs <from-ref> <to-ref>` — prints the grouped list in one command.
+
+**Vercel per-app skip is configured via `turbo-ignore`** (Settings → Git → Ignored Build Step, per project). Once set, apps we report as "skipped" are actually skipped by Vercel. Without it, Vercel rebuilds everything regardless of our report — but the report is still useful for reviewing scope before pushing.
+
 ## Prisma Query Standard
 
 - Use `select` for API endpoints that return lists (reduces payload size)
