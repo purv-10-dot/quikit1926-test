@@ -1,0 +1,39 @@
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { itemGroupCreateSchema } from "@/lib/schemas/masters";
+
+const withTenantAuth = withTenantAuthForModule("masters");
+
+export const GET = withTenantAuth(async ({ tenantId }, req) => {
+  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
+  const groups = await db.cnItemGroup.findMany({
+    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    orderBy: [{ depth: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
+  });
+  return NextResponse.json({ success: true, data: groups });
+});
+
+export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+  const body = await req.json();
+  const input = itemGroupCreateSchema.parse(body);
+  // Compute depth from parent chain
+  let depth = 0;
+  if (input.parentId) {
+    const parent = await db.cnItemGroup.findFirst({
+      where: { id: input.parentId, tenantId },
+      select: { depth: true },
+    });
+    if (!parent) {
+      return NextResponse.json({ success: false, error: "Parent group not found" }, { status: 400 });
+    }
+    depth = parent.depth + 1;
+    if (depth > 5) {
+      return NextResponse.json({ success: false, error: "Max hierarchy depth (5) exceeded" }, { status: 400 });
+    }
+  }
+  const group = await db.cnItemGroup.create({
+    data: { ...input, depth, tenantId, createdBy: userId },
+  });
+  return NextResponse.json({ success: true, data: group }, { status: 201 });
+});

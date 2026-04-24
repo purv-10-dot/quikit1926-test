@@ -1,0 +1,21 @@
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+
+const withTenantAuth = withTenantAuthForModule("projects");
+
+/**
+ * POST /api/projects/boq/[id]/lock — draft → locked. Once locked, downstream
+ * docs (Work Orders, RAB, DPR with boqItem refs) can safely reference it.
+ * Lock is reversible via /unlock.
+ */
+export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+  const boq = await db.cnBOQ.findFirst({ where: { id: params.id, tenantId, deletedAt: null }, select: { id: true, status: true } });
+  if (!boq) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  if (boq.status === "locked") return NextResponse.json({ success: false, error: "Already locked" }, { status: 409 });
+  const updated = await db.cnBOQ.update({
+    where: { id: boq.id },
+    data: { status: "locked", lockedAt: new Date(), lockedBy: userId, updatedBy: userId },
+  });
+  return NextResponse.json({ success: true, data: updated });
+});
