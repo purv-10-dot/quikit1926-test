@@ -1,0 +1,40 @@
+{
+  "name": "quikconstruction",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QuikConstruction — Construction ERP inside QuikIT.",
+  "scripts": {
+    "dev": "next dev -p 3007",
+    "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
+    "build": "next build",
+    "start": "next start -p 3007",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@quikit/auth": "*",
+    "@quikit/database": "*",
+    "@quikit/shared": "*",
+    "@quikit/ui": "*",
+    "@tanstack/react-query": "^5.28.0",
+    "lucide-react": "^0.294.0",
+    "next": "14.0.4",
+    "next-auth": "^4.24.0",
+    "next-themes": "^0.2.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.3.5",
+    "typescript": "^5.3.3",
+    "vitest": "^1.6.0"
+  }
+}

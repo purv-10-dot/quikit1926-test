@@ -15,7 +15,7 @@ export interface SelectOption {
   label: string;
 }
 
-export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "children"> {
+export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "children" | "size"> {
   /** Optional label displayed above the select */
   label?: string;
   /** Error message displayed below the select */
@@ -24,7 +24,17 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
   options: SelectOption[];
   /** Placeholder option (disabled, shown when no value selected) */
   placeholder?: string;
+  /**
+   * `default` = comfortable single-form sizing (px-3 py-2)
+   * `compact` = tight table-cell sizing (px-2 py-1, smaller text)
+   */
+  size?: "default" | "compact";
 }
+
+const SIZE_PADDING: Record<NonNullable<SelectProps["size"]>, string> = {
+  default: "px-3 py-2 text-sm rounded-lg",
+  compact: "px-1.5 py-1 pr-6 text-xs rounded",
+};
 
 export function Select({
   label,
@@ -33,6 +43,7 @@ export function Select({
   placeholder,
   id,
   className = "",
+  size = "default",
   ...props
 }: SelectProps) {
   const selectId = id || (label ? label.toLowerCase().replace(/\s+/g, "-") : undefined);
@@ -49,7 +60,7 @@ export function Select({
       )}
       <select
         id={selectId}
-        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 bg-white transition-colors ${
+        className={`w-full border ${SIZE_PADDING[size]} focus:outline-none focus:ring-1 bg-white transition-colors ${
           error
             ? "border-red-300 focus:ring-red-400"
             : "border-gray-200 focus:ring-accent-400"

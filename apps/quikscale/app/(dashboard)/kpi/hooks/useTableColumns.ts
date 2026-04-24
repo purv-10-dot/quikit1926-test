@@ -3,11 +3,11 @@ import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useColumnResize } from "@/lib/hooks/useColumnResize";
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
-  progress: 160, owner: 140, kpiName: 220,
+  progress: 160, owner: 140, kpiName: 260,
   team: 140, teamHead: 140, kpiOwner: 180,
   measurementUnit: 120, targetValue: 90,
   quarterlyGoal: 110, qtdGoal: 100, qtdAchieved: 110, weeklyGoal: 100,
-  description: 160,
+  description: 200,
 };
 const WEEK_WIDTH_DEFAULT = 110;
 

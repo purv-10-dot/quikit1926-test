@@ -25,6 +25,7 @@ import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { HiddenColsMenu } from "../kpi/components/HiddenColsMenu";
 import { ALL_STATIC_COLS, COL_LABELS as KPI_COL_LABELS } from "../kpi/hooks/useTableColumns";
 import { ALL_WEEKS as FISCAL_ALL_WEEKS } from "@/lib/utils/fiscal";
+import { DashboardMoreActions, type DashboardSectionKey } from "./DashboardMoreActions";
 
 const ADMIN_MIN_LEVEL = ROLE_HIERARCHY[ROLES.ADMIN];
 
@@ -791,6 +792,12 @@ export default function DashboardPage() {
   const { filterTeam, setFilterTeam, filterOwner, setFilterOwner, year, setYear, quarter, setQuarter } = useFilterContext();
   const [activeTab, setActiveTab] = useState<"individual" | "team">("individual");
 
+  // Dashboard-level trash toggle — per-section. When a section is in this Set,
+  // the corresponding cards/rows filter to `deletedAt != null`. Honest caveat:
+  // dashboard summary API currently excludes soft-deleted rows server-side, so
+  // sections in trash mode will render empty until the API adds includeDeleted.
+  const [dashTrashSections, setDashTrashSections] = useState<Set<DashboardSectionKey>>(new Set());
+
   // Role-based dashboard: admins see all with filters; non-admins see only their own data
   const { data: session } = useSession();
   const userId = session?.user?.id ?? "";
@@ -1046,6 +1053,16 @@ export default function DashboardPage() {
               )}
             </div>
           )}
+
+          {/* Global More pill — Export/Trash/Manage Cols across sections */}
+          <DashboardMoreActions
+            kpis={activeTab === "individual" ? indKpis : (allTeamKpis as any)}
+            priorities={indPriorities as any}
+            wwws={indWwwItems as any}
+            fiscalLabel={`FY${year}-${quarter}`}
+            trashSections={dashTrashSections}
+            onChangeTrashSections={setDashTrashSections}
+          />
 
           {/* Year / Quarter picker */}
           <div className="relative" ref={yearRef}>

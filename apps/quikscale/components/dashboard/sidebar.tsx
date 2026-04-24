@@ -98,7 +98,7 @@ function filterNavigation(items: NavItem[], disabled: Set<string>): NavItem[] {
     .filter((x): x is NavItem => x !== null);
 }
 
-/* ─── NavGroup (expanded mode) ─── */
+/* ─── NavGroup (expanded mode) — light theme, pale-tint active ─── */
 function NavGroup({ item }: { item: NavItem }) {
   const pathname = usePathname();
   const isChildActive = item.children?.some(c => pathname === c.href || pathname?.startsWith(c.href + "/"));
@@ -110,15 +110,12 @@ function NavGroup({ item }: { item: NavItem }) {
     return (
       <Link href={item.href!}
         className={cn(
-          "flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm font-medium transition-colors group min-w-0",
-          isActive ? "bg-white/15 text-white" : "text-white/60 hover:bg-white/10 hover:text-white/90"
+          "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors min-w-0",
+          isActive
+            ? "bg-accent-50 text-accent-700"
+            : "text-gray-700 hover:bg-gray-50"
         )}>
-        <span className={cn(
-          "flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg",
-          isActive ? "bg-white/20 text-white" : "bg-white/10 text-white/50 group-hover:bg-white/15"
-        )}>
-          <Icon className="h-4 w-4" />
-        </span>
+        <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-accent-700" : "text-gray-500")} />
         <span className="truncate">{item.label}</span>
       </Link>
     );
@@ -128,19 +125,20 @@ function NavGroup({ item }: { item: NavItem }) {
     <div>
       <button onClick={() => setOpen(!open)}
         className={cn(
-          "w-full flex items-center justify-between px-2 py-1.5 rounded-md text-sm font-medium transition-colors group min-w-0",
-          isActive ? "text-white" : "text-white/60 hover:bg-white/10 hover:text-white/90"
+          "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors min-w-0",
+          isActive
+            ? "text-accent-700"
+            : "text-gray-700 hover:bg-gray-50"
         )}>
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <span className={cn(
-            "flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg",
-            isActive ? "bg-white/20 text-white" : "bg-white/10 text-white/50 group-hover:bg-white/15"
-          )}>
-            <Icon className="h-4 w-4" />
-          </span>
+          <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-accent-700" : "text-gray-500")} />
           <span className="truncate">{item.label}</span>
         </div>
-        <ChevronDown className={cn("flex-shrink-0 h-3.5 w-3.5 text-white/40 transition-transform duration-200 ml-1", open && "rotate-180")} />
+        <ChevronDown className={cn(
+          "flex-shrink-0 h-3.5 w-3.5 transition-transform duration-200 ml-1",
+          isActive ? "text-accent-700" : "text-gray-400",
+          open && "rotate-180"
+        )} />
       </button>
 
       <AnimatePresence initial={false}>
@@ -148,43 +146,19 @@ function NavGroup({ item }: { item: NavItem }) {
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: "easeInOut" }}
             className="overflow-hidden">
-            <div style={{ paddingLeft: 12 }} className="mt-0.5 pb-0.5">
-              {item.children.map((child, idx) => {
+            <div className="mt-0.5 pb-0.5">
+              {item.children.map((child) => {
                 const active = pathname === child.href || pathname?.startsWith(child.href + "/");
-                const ChildIcon = child.icon;
-                const isLast = idx === item.children!.length - 1;
                 return (
-                  <div key={child.href} className="relative" style={{ paddingLeft: 28 }}>
-                    {/* Vertical rail */}
-                    <span className="absolute" style={{
-                      left: 10, top: 0, bottom: isLast ? "50%" : 0,
-                      width: 1.5, backgroundColor: "rgba(255,255,255,0.15)",
-                    }} />
-                    {/* Horizontal L-branch */}
-                    <span className="absolute" style={{
-                      left: 10, top: "50%", width: 16, height: 1.5,
-                      backgroundColor: "rgba(255,255,255,0.15)",
-                    }} />
-
-                    <Link href={child.href}
-                      className={cn(
-                        "flex items-center gap-2 py-[5px] px-1 rounded-lg transition-colors min-w-0",
-                        active ? "text-white" : "text-white/50 hover:text-white/80"
-                      )}>
-                      <span className={cn(
-                        "flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-colors",
-                        active ? "bg-white/20 text-white ring-1 ring-white/20" : "bg-white/10 text-white/40"
-                      )}>
-                        <ChildIcon className="h-3 w-3" />
-                      </span>
-                      <span className={cn(
-                        "truncate text-[12.5px] font-medium min-w-0",
-                        active ? "text-white" : "text-white/60"
-                      )}>
-                        {child.label}
-                      </span>
-                    </Link>
-                  </div>
+                  <Link key={child.href} href={child.href}
+                    className={cn(
+                      "flex items-center pl-11 pr-3 py-2 text-sm transition-colors min-w-0",
+                      active
+                        ? "bg-accent-50 text-accent-700 font-medium"
+                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    )}>
+                    <span className="truncate">{child.label}</span>
+                  </Link>
                 );
               })}
             </div>
@@ -195,7 +169,7 @@ function NavGroup({ item }: { item: NavItem }) {
   );
 }
 
-/* ─── NavGroup (collapsed / icon-only mode) ─── */
+/* ─── NavGroup (collapsed / icon-only mode) — light theme ─── */
 function NavGroupCollapsed({ item }: { item: NavItem }) {
   const pathname = usePathname();
   const isChildActive = item.children?.some(c => pathname === c.href || pathname?.startsWith(c.href + "/"));
@@ -207,7 +181,9 @@ function NavGroupCollapsed({ item }: { item: NavItem }) {
     <Link href={href} title={item.label}
       className={cn(
         "flex items-center justify-center w-9 h-9 rounded-lg mx-auto transition-colors",
-        isActive ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10 hover:text-white/80"
+        isActive
+          ? "bg-accent-50 text-accent-700"
+          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
       )}>
       <Icon className="h-4 w-4" />
     </Link>
@@ -255,45 +231,52 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
   }
 
   return (
-    <div className="w-full h-full flex flex-col bg-accent-800 overflow-hidden">
-      {/* Logo + collapse toggle */}
+    <div className="w-full h-full flex flex-col bg-white border-r border-gray-200 overflow-hidden">
+      {/* Brand block — icon + name (always shown, just hides the text when collapsed) */}
       <div className={cn(
-        "flex items-center border-b border-white/10 flex-shrink-0",
+        "flex items-center border-b border-gray-100 flex-shrink-0",
         collapsed ? "justify-center px-2 py-4" : "justify-between px-4 py-4"
       )}>
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded bg-white/20 flex-shrink-0 flex items-center justify-center text-white font-bold text-sm">G</div>
+            <div className="w-8 h-8 rounded bg-accent-50 text-accent-700 flex-shrink-0 flex items-center justify-center font-bold text-sm">G</div>
             <div className="leading-tight min-w-0">
-              <p className="text-xs font-bold text-white uppercase tracking-wide">GOAL</p>
-              <p className="text-[10px] text-white/50 uppercase tracking-wide">GOAL</p>
+              <p className="text-sm font-semibold text-gray-900 truncate">GOAL</p>
+              <p className="text-[10px] text-gray-400 uppercase tracking-wider">Performance OS</p>
             </div>
           </Link>
         )}
         {collapsed && (
-          <div className="w-8 h-8 rounded bg-white/20 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">G</div>
+          <div className="w-8 h-8 rounded bg-accent-50 text-accent-700 flex items-center justify-center font-bold text-sm flex-shrink-0">G</div>
         )}
 
         <div className="flex items-center gap-1 flex-shrink-0">
           {!isMobile && (
             <button onClick={() => setCollapsed(!collapsed)}
-              className="p-1.5 rounded-md hover:bg-white/10 text-white/40 hover:text-white/80 transition-colors"
+              className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
               title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
               {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </button>
           )}
           {isMobile && onClose && (
-            <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/10 text-white/50">
+            <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
       </div>
 
+      {/* MENU label — only in expanded mode, aligns with the reference UI */}
+      {!collapsed && (
+        <div className="px-4 pt-3 pb-1">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Menu</span>
+        </div>
+      )}
+
       {/* Navigation */}
       <nav className={cn(
-        "flex-1 py-3 overflow-y-auto overflow-x-hidden",
-        collapsed ? "px-1 space-y-1" : "px-3 space-y-0.5"
+        "flex-1 py-2 overflow-y-auto overflow-x-hidden",
+        collapsed ? "px-1 space-y-1" : "px-2 space-y-0.5"
       )}>
         {visibleNav.map((item) =>
           collapsed
@@ -307,7 +290,7 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
           to give mobile users access to Sign out without having to close
           the drawer and hunt for the header. */}
       {isMobile && session?.user && (
-        <div className="border-t border-white/10 p-3 bg-accent-900/40">
+        <div className="border-t border-gray-100 p-3 bg-gray-50">
           <UserMenu
             user={{ name: userFullName, email: userEmail }}
             isImpersonating={isImpersonating}

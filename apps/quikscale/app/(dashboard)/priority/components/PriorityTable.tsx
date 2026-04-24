@@ -266,7 +266,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   // Column layout — checkbox/log/id are ALWAYS frozen/visible; others are user-controlled
   const COL_ORDER_FULL = ["_cb", "_log", "_id", "team", "priorityName", "owner", "startWeek", "endWeek", "lastNote"];
   const COL_WIDTHS: Record<string, number> = {
-    _cb: 40, _log: 40, _id: 40, team: 120, priorityName: 200, owner: 140,
+    _cb: 40, _log: 40, _id: 40, team: 120, priorityName: 260, owner: 140,
     startWeek: 170, endWeek: 170, lastNote: 200,
   };
   // Drag-to-resize: persisted widths override the defaults above.
@@ -335,7 +335,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
     <div className="flex flex-col h-full">
       {/* Table */}
       <HorizontalScroller className="flex-1">
-        <table className="border-collapse" style={{ minWidth: "max-content" }}>
+        <table className="border-collapse" style={{ minWidth: "max-content", tableLayout: "fixed" }}>
           <thead>
             <tr className="bg-accent-50 border-b border-gray-200">
               {/* Header cells — checkbox/log/id always sticky, others sticky if isColFrozen */}
@@ -486,7 +486,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
 
                   {/* Priority Name — user-freezable, hidable */}
                   {COL_ORDER.includes("priorityName") && (
-                    <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("priorityName") ? "sticky" : ""}`}
+                    <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit overflow-hidden align-top ${isColFrozen("priorityName") ? "sticky" : ""}`}
                       style={{
                         left: isColFrozen("priorityName") ? getLeftOffset("priorityName") : undefined,
                         width: getColWidth("priorityName"),
@@ -494,7 +494,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                         boxShadow: lastFrozenKey === "priorityName" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                       }}>
                       <NameTooltip name={priority.name} description={priority.description}>
-                        <span className="text-xs text-gray-800 font-medium truncate block cursor-default">
+                        <span className="text-xs text-gray-800 font-medium line-clamp-2 leading-snug cursor-default break-words">
                           {priority.name}
                         </span>
                       </NameTooltip>

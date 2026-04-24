@@ -30,7 +30,7 @@ git branch -d <branch>
 git push origin --delete <branch>
 ```
 
-Why this rule exists: Vercel auto-deploys `main` → production, `uat` → UAT, `dev` → dev. A stray commit on a protected branch ships untested code. Feature branches also give us rollback targets (revert a single branch merge instead of cherry-picking).
+Why this rule exists: **Vercel auto-deploys `main` → production only** (configured via `apps/*/vercel.json` — `deploymentEnabled: {main: true}` + `ignoreCommand` blocks every other branch). `dev` and `uat` are integration branches for local/QA use; they do not auto-deploy. A stray commit on `main` ships untested code straight to production. Feature branches also give us rollback targets (revert a single branch merge instead of cherry-picking).
 
 ### Pre-push deploy impact check
 
@@ -40,19 +40,24 @@ Before running `git push` on **any** branch, always:
 2. Group results into one of: `quikit`, `quikscale`, `admin`, `packages/<name>` (shared — affects multiple apps), `other` (docs, CI, root).
 3. Report to the user like:
    ```
-   📦 This push will redeploy:
+   📦 This push will redeploy (only if pushing to main):
       • quikscale  (apps/quikscale/**)
-   ⏭️  Will skip (Vercel turbo-ignore):
+   ⏭️  Will skip (no apps/* changes):
       • quikit
       • admin
    ```
 4. Pause for confirmation. Push only after user says "yes / proceed / ship / etc."
 
-Packages count as "affects multiple apps" — list every app that depends on the changed package (every app depends on every `@quikit/*` package today, so shared changes redeploy all 3).
+Packages count as "affects multiple apps" — list every app that depends on the changed package (every app depends on every `@quikit/*` package today, so shared changes redeploy all apps on main).
 
 Helper: `scripts/affected-apps.mjs <from-ref> <to-ref>` — prints the grouped list in one command.
 
-**Vercel per-app skip is configured via `turbo-ignore`** (Settings → Git → Ignored Build Step, per project). Once set, apps we report as "skipped" are actually skipped by Vercel. Without it, Vercel rebuilds everything regardless of our report — but the report is still useful for reviewing scope before pushing.
+**Deploy gating** — only `main` triggers a Vercel build. This is enforced in three layers:
+  1. Per-app `vercel.json` (`deploymentEnabled: {main: true}`) — allow-list.
+  2. Per-app `vercel.json` `ignoreCommand` — exits 0 (skip) for any `VERCEL_GIT_COMMIT_REF != main`.
+  3. Per-project Vercel dashboard → Git → Production Branch = `main`. Preview deployments disabled.
+
+If you want a one-off preview deploy for a feature branch (e.g. to QA a UI change with a stakeholder), use the Vercel CLI manually: `vercel --prod=false`.
 
 ## Prisma Query Standard
 

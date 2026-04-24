@@ -32,7 +32,11 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
 
   const validated = kpiListParamsSchema.parse(params);
 
+  const includeDeleted = searchParams.get("includeDeleted") === "true";
   const where: any = { tenantId };
+  // Trash toggle: by default return only active (not soft-deleted). When
+  // ?includeDeleted=true, return ONLY soft-deleted records for the trash view.
+  where.deletedAt = includeDeleted ? { not: null } : null;
   if (validated.status) where.status = validated.status;
   if (validated.kpiLevel) where.kpiLevel = validated.kpiLevel;
   if (validated.owner) where.owner = validated.owner;

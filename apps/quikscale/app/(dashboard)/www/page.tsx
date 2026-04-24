@@ -6,13 +6,14 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { WWWTable } from "./components/WWWTable";
 import { WWWPanel } from "./components/WWWPanel";
-import { FilterPicker, userToFilterOption, EmptyState } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState, type ExportSelection } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { STATUS_FILTER_OPTIONS } from "@/lib/constants/status";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
-import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { AddButton } from "@quikit/ui";
 import { Trophy } from "lucide-react";
+import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { runExport } from "@/lib/export/xlsx";
 
 export default function WWWPage() {
   const [search, setSearch] = useState("");
@@ -38,16 +39,23 @@ export default function WWWPage() {
   const handleSelectionChange = useCallback((ids: Set<string>) => setSelectedIds(new Set(ids)), []);
 
   // Table preferences for WWW (sort, hidden cols)
-  const { sort: wwwSort, hiddenCols: wwwHidden, showCol: showWwwCol, showAllCols: showAllWwwCols } = useTablePrefs("www");
+  const wwwPrefs = useTablePrefs("www");
+  const { sort: wwwSort, hiddenCols: wwwHidden } = wwwPrefs;
 
   const WWW_COL_LABELS: Record<string, string> = {
     who: "Who", when: "When", what: "What", revisedDate: "Revised Date", status: "Status", notes: "Notes",
   };
+  const wwwColumns = Object.entries(WWW_COL_LABELS).map(([key, label]) => ({ key, label }));
+  const visibleWwwCols = wwwColumns.filter((c) => !wwwHidden.includes(c.key)).map((c) => c.key);
+
+  // View Trash toggle
+  const [viewTrash, setViewTrash] = useState(false);
 
   // Pass status filter + sort to API
   const { data: items = [], isLoading, error, refetch } = useWWWItems({
     status: filterStatus || undefined,
     sort: wwwSort,
+    includeDeleted: viewTrash,
   });
 
   const deleteWWW = useDeleteWWW();
@@ -82,6 +90,38 @@ export default function WWWPage() {
 
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterWho ? 1 : 0);
 
+  const handleWwwExport = useCallback(async (sel: ExportSelection) => {
+    const columns = wwwColumns
+      .filter((c) => sel.columnKeys.includes(c.key))
+      .map((c) => ({
+        key: c.key,
+        label: c.label,
+        value: (i: any) => {
+          switch (c.key) {
+            case "who": return i.who_user ? `${i.who_user.firstName} ${i.who_user.lastName}` : "";
+            case "when": return i.when ? new Date(i.when).toISOString().slice(0, 10) : "";
+            case "what": return i.what ?? "";
+            case "revisedDate": {
+              const arr = Array.isArray(i.revisedDates) ? i.revisedDates : [];
+              return arr.length ? new Date(arr[arr.length - 1]).toISOString().slice(0, 10) : "";
+            }
+            case "status": return i.status ?? "";
+            case "notes": return i.notes ?? "";
+            default: return "";
+          }
+        },
+      }));
+    await runExport<any>({
+      selection: sel,
+      columns,
+      pageRows: filtered,
+      fetchFiltered: async () => items as any[],
+      fetchAll: async () => items as any[],
+      filename: `WWW${viewTrash ? "-Trash" : ""}`,
+      sheetName: "WWW",
+    });
+  }, [wwwColumns, filtered, items, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="flex flex-col h-full">
       {/* Page Header */}
@@ -115,13 +155,22 @@ export default function WWWPage() {
             </button>
           )}
 
-          {/* Hidden columns pill (before search) */}
-          <HiddenColsPill
-            hiddenCols={wwwHidden}
-            colLabels={WWW_COL_LABELS}
-            onRestore={showWwwCol}
-            onRestoreAll={showAllWwwCols}
-          />
+          {viewTrash && (
+            <button
+              type="button"
+              onClick={() => setViewTrash(false)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-amber-50 border border-amber-200 text-amber-900 rounded-md hover:bg-amber-100 transition-colors"
+              title="Exit trash view"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Viewing deleted ({filtered.length})
+              <svg className="h-3 w-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
 
           {/* Search */}
           <div className="relative">
@@ -192,6 +241,17 @@ export default function WWWPage() {
               </div>
             )}
           </div>
+
+          <ModuleMoreActions
+            columns={wwwColumns}
+            hiddenCols={wwwHidden}
+            onHiddenColsChange={(next) => wwwPrefs.setHiddenCols(next)}
+            isTrashActive={viewTrash}
+            onToggleTrash={setViewTrash}
+            rowCounts={{ page: filtered.length, filtered: filtered.length, all: items.length }}
+            onExport={handleWwwExport}
+            defaultExportColumnKeys={visibleWwwCols}
+          />
 
           <AddButton onClick={() => setShowAddModal(true)}>Add WWW</AddButton>
         </div>

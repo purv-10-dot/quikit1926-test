@@ -39,7 +39,9 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   const sortOrder = (searchParams.get("sortOrder") || "asc") as "asc" | "desc";
   const { page, limit, skip, take } = parsePagination(req);
 
+  const includeDeleted = searchParams.get("includeDeleted") === "true";
   const where: Record<string, unknown> = { tenantId };
+  where.deletedAt = includeDeleted ? { not: null } : null;
   if (year) where.year = year;
   if (quarter) where.quarter = quarter;
 
