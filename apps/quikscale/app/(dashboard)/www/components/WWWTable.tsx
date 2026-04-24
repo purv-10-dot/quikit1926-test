@@ -333,7 +333,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
   return (
     <div className="flex flex-col h-full">
       <HorizontalScroller className="flex-1">
-        <table className="border-collapse w-full">
+        <table className="border-collapse w-full" style={{ tableLayout: "fixed" }}>
           <thead>
             <tr className="bg-accent-50 border-b border-gray-200">
               {WWW_COL_ORDER.map((colKey) => {
@@ -510,9 +510,9 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
                   {/* What — hidable */}
                   {WWW_COL_ORDER.includes("what") && (
-                    <td className="border-r border-gray-100 px-2 py-1.5" style={{ width: getColWidth("what"), minWidth: getColWidth("what") }}>
+                    <td className="border-r border-gray-100 px-2 py-1.5 overflow-hidden align-top" style={{ width: getColWidth("what"), minWidth: getColWidth("what") }}>
                       <WhatTooltip text={item.what}>
-                        <p className="text-xs text-gray-800 line-clamp-2 cursor-default">
+                        <p className="text-xs text-gray-800 line-clamp-2 leading-snug break-words cursor-default">
                           {item.what}
                         </p>
                       </WhatTooltip>
@@ -584,9 +584,9 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
 
                   {/* Notes — hidable */}
                   {WWW_COL_ORDER.includes("notes") && (
-                    <td className="border-r border-gray-100 px-2 py-1.5" style={{ width: getColWidth("notes"), minWidth: getColWidth("notes") }}>
+                    <td className="border-r border-gray-100 px-2 py-1.5 overflow-hidden align-top" style={{ width: getColWidth("notes"), minWidth: getColWidth("notes") }}>
                       <TextTooltip text={item.notes ?? ""}>
-                        <span className="text-xs text-gray-600 truncate block cursor-default">
+                        <span className="text-xs text-gray-600 line-clamp-2 leading-snug break-words block cursor-default">
                           {item.notes || <span className="text-gray-300">—</span>}
                         </span>
                       </TextTooltip>

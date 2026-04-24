@@ -11,13 +11,16 @@ import {
   getCurrentFiscalWeek, getWeekDateRange,
 } from "@/lib/utils/fiscal";
 import { KPITable } from "./components/KPITable";
-import { HiddenColsMenu } from "./components/HiddenColsMenu";
 import { KPIModal } from "./components/KPIModal";
-import { ALL_STATIC_COLS } from "./hooks/useTableColumns";
+import { ALL_STATIC_COLS, COL_LABELS } from "./hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
-import { FilterPicker, userToFilterOption, EmptyState } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState, type ExportSelection } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { AddButton } from "@quikit/ui";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { runExport } from "@/lib/export/xlsx";
+import { getKPIs } from "@/lib/services/kpiService";
 import { Target } from "lucide-react";
 
 const FISCAL_YEAR = getFiscalYear();
@@ -30,8 +33,11 @@ export default function IndividualKPIPage() {
   // Year + quarter via shared FilterContext so they persist across module nav.
   const { year: ctxYear, setYear: ctxSetYear, quarter: ctxQuarter, setQuarter: ctxSetQuarter, filterTeam, setFilterTeam, filterOwner, setFilterOwner } = useFilterContext();
 
+  // View Trash toggle — when true, list fetches ONLY soft-deleted rows (?includeDeleted=true)
+  const [viewTrash, setViewTrash] = useState(false);
+
   // Filters — merges context-driven year/quarter with page-local params like page + sort.
-  const [filters, setFilters] = useState<Partial<KPIListParams>>({
+  const [filters, setFilters] = useState<Partial<KPIListParams> & { includeDeleted?: boolean }>({
     page: 1,
     pageSize: 50,
     year: ctxYear,
@@ -40,6 +46,10 @@ export default function IndividualKPIPage() {
     sortBy: "createdAt",
     sortOrder: "desc",
   });
+  // Sync trash toggle into filters so useKPIs refetches with includeDeleted flag.
+  useEffect(() => {
+    setFilters((f) => ({ ...f, includeDeleted: viewTrash, page: 1 }));
+  }, [viewTrash]);
   // Sync filters when context year/quarter changes (from another page).
   useEffect(() => {
     setFilters((f) => ({ ...f, year: ctxYear, quarter: ctxQuarter, page: 1 }));
@@ -49,7 +59,6 @@ export default function IndividualKPIPage() {
   const [showFilter, setShowFilter] = useState(false);
   const [filterStatus, setFilterStatus] = useState("");
   const filterRef = useRef<HTMLDivElement>(null);
-  const ownerInitialized = useRef(false);
 
   // Teams list
   const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
@@ -70,13 +79,8 @@ export default function IndividualKPIPage() {
   const [availableYears, setAvailableYears] = useState<number[]>([FISCAL_YEAR]);
   const yearRef = useRef<HTMLDivElement>(null);
 
-  // Set default owner filter to current user once session loads (only if no filter already set)
-  useEffect(() => {
-    if (session?.user?.id && !ownerInitialized.current && !filterOwner) {
-      setFilterOwner(session.user.id);
-      ownerInitialized.current = true;
-    }
-  }, [session?.user?.id, filterOwner, setFilterOwner]);
+  // Default owner filter intentionally left empty on load — users asked to see
+  // all KPIs first and pick an owner filter manually when they want to narrow.
 
   // Apply filter changes — pass teamId to backend for server-side filtering
   useEffect(() => {
@@ -131,16 +135,68 @@ export default function IndividualKPIPage() {
     refetch();
   }
 
-  // Hidden columns
+  // Hidden columns — now driven through Manage Columns modal via TablePrefs
   const allTableCols = [...ALL_STATIC_COLS, ...ALL_WEEKS.map(w => `week${w}`)];
-  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  const tablePrefs = useTablePrefs("kpi");
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set(tablePrefs.hiddenCols));
   const [showColTrigger, setShowColTrigger] = useState<{ col: string; seq: number } | undefined>();
+
+  // Keep local Set in sync when the TablePreference cache updates
+  useEffect(() => { setHiddenCols(new Set(tablePrefs.hiddenCols)); }, [tablePrefs.hiddenCols]);
 
   const handleHiddenColsChange = useCallback((cols: Set<string>) => setHiddenCols(new Set(cols)), []);
   function handleShowCol(col: string) { setShowColTrigger(t => ({ col, seq: (t?.seq ?? 0) + 1 })); }
 
   const currentYear = filters.year ?? FISCAL_YEAR;
   const currentQuarter = filters.quarter ?? FISCAL_QUARTER;
+
+  // Columns metadata for Manage + Export modals — static cols only (weeks handled separately)
+  const moduleColumns = ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key }));
+  const visibleColKeys = moduleColumns.filter((c) => !hiddenCols.has(c.key)).map((c) => c.key);
+
+  // Export handler — pulls rows per scope, formats via runExport
+  const handleExport = useCallback(async (sel: ExportSelection) => {
+    const columns = moduleColumns
+      .filter((c) => sel.columnKeys.includes(c.key))
+      .map((c) => ({
+        key: c.key,
+        label: c.label,
+        value: (k: any) => {
+          switch (c.key) {
+            case "kpiName": return k.name ?? "";
+            case "kpiOwner":
+            case "owner": return k.owner_user ? `${k.owner_user.firstName} ${k.owner_user.lastName}` : "";
+            case "team": return k.team?.name ?? "";
+            case "teamHead": return k.team?.head ? `${k.team.head.firstName} ${k.team.head.lastName}` : "";
+            case "measurementUnit": return k.measurementUnit ?? "";
+            case "targetValue": return k.target ?? "";
+            case "quarterlyGoal": return k.quarterlyGoal ?? "";
+            case "qtdGoal": return k.qtdGoal ?? "";
+            case "qtdAchieved": return k.qtdAchieved ?? 0;
+            case "weeklyGoal": return k.qtdGoal ?? "";
+            case "progress": return typeof k.progressPercent === "number" ? `${k.progressPercent.toFixed(1)}%` : "";
+            case "description": return k.description ?? "";
+            default: return "";
+          }
+        },
+      }));
+    await runExport<any>({
+      selection: sel,
+      columns,
+      pageRows: kpis,
+      fetchFiltered: async () => {
+        const { data } = await getKPIs({ ...filters, page: 1, pageSize: 100 });
+        return data;
+      },
+      fetchAll: async () => {
+        const { data } = await getKPIs({ kpiLevel: "individual", page: 1, pageSize: 100, year: currentYear, quarter: currentQuarter });
+        return data;
+      },
+      filename: `IndividualKPI-FY${currentYear}-${currentQuarter}${viewTrash ? "-Trash" : ""}`,
+      sheetName: "Individual KPIs",
+    });
+  }, [moduleColumns, kpis, filters, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const fiscalWeek = getCurrentFiscalWeek(currentYear, currentQuarter);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterOwner ? 1 : 0);
 
@@ -180,9 +236,22 @@ export default function IndividualKPIPage() {
             </button>
           )}
 
-          {/* Hidden columns */}
-          {hiddenCols.size > 0 && (
-            <HiddenColsMenu hiddenCols={hiddenCols} allCols={allTableCols} onShow={handleShowCol} />
+          {/* Inline trash pill — shows only when trash toggle is on */}
+          {viewTrash && (
+            <button
+              type="button"
+              onClick={() => setViewTrash(false)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-amber-50 border border-amber-200 text-amber-900 rounded-md hover:bg-amber-100 transition-colors"
+              title="Exit trash view"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Viewing deleted ({total})
+              <svg className="h-3 w-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           )}
 
           {/* Search */}
@@ -296,6 +365,18 @@ export default function IndividualKPIPage() {
               </div>
             )}
           </div>
+
+          {/* "More" pill — sits left of AddButton */}
+          <ModuleMoreActions
+            columns={moduleColumns}
+            hiddenCols={[...hiddenCols]}
+            onHiddenColsChange={(next) => tablePrefs.setHiddenCols(next)}
+            isTrashActive={viewTrash}
+            onToggleTrash={setViewTrash}
+            rowCounts={{ page: kpis.length, filtered: total, all: total }}
+            onExport={handleExport}
+            defaultExportColumnKeys={visibleColKeys}
+          />
 
           <AddButton onClick={() => setShowAddModal(true)}>Add KPI</AddButton>
         </div>

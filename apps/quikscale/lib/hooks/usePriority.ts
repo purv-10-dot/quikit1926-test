@@ -15,6 +15,7 @@ export interface PriorityFilters {
   year: number;
   quarter: string;
   sort?: string | null;
+  includeDeleted?: boolean;
 }
 
 function buildListUrl(filters: PriorityFilters): string {
@@ -27,6 +28,7 @@ function buildListUrl(filters: PriorityFilters): string {
     if (sortBy) params.set("sortBy", sortBy);
     if (sortOrder) params.set("sortOrder", sortOrder);
   }
+  if (filters.includeDeleted) params.set("includeDeleted", "true");
   return `/api/priority?${params.toString()}`;
 }
 
@@ -37,8 +39,8 @@ const priority = createCRUDHook<PriorityRow, PriorityFilters>({
 
 // Public API — preserves the existing positional-argument signature for
 // `usePriorities(year, quarter, sort?)` so call sites don't need to change.
-export function usePriorities(year: number, quarter: string, sort?: string | null) {
-  return priority.useList({ year, quarter, sort });
+export function usePriorities(year: number, quarter: string, sort?: string | null, includeDeleted?: boolean) {
+  return priority.useList({ year, quarter, sort, includeDeleted });
 }
 
 export const useCreatePriority = priority.useCreate;

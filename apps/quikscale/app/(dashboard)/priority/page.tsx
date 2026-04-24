@@ -10,12 +10,13 @@ import {
 } from "@/lib/utils/fiscal";
 import { PriorityTable } from "./components/PriorityTable";
 import { PriorityModal } from "./components/PriorityModal";
-import { FilterPicker, userToFilterOption, EmptyState } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState, type ExportSelection } from "@quikit/ui";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
-import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { AddButton } from "@quikit/ui";
 import { Flag } from "lucide-react";
+import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { runExport } from "@/lib/export/xlsx";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -52,12 +53,18 @@ export default function PriorityPage() {
   const { data: users = [] } = useUsers(filterTeam || undefined);
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
   // Table preferences (persisted per user in DB) — need sort for the API fetch here
-  const { sort: prioritySort, hiddenCols: priorityHidden, showCol: showPriorityCol, showAllCols: showAllPriorityCols } = useTablePrefs("priority");
+  const priorityPrefs = useTablePrefs("priority");
+  const { sort: prioritySort, hiddenCols: priorityHidden } = priorityPrefs;
 
-  const { data: priorities = [], isLoading, error, refetch } = usePriorities(year, quarter, prioritySort);
+  // View Trash toggle
+  const [viewTrash, setViewTrash] = useState(false);
+
+  const { data: priorities = [], isLoading, error, refetch } = usePriorities(year, quarter, prioritySort, viewTrash);
   const deletePriority = useDeletePriority();
 
   const PRIORITY_COL_LABELS: Record<string, string> = { team: "Team", priorityName: "Priority Name", owner: "Owner" };
+  const priorityColumns = Object.entries(PRIORITY_COL_LABELS).map(([key, label]) => ({ key, label }));
+  const visiblePriorityCols = priorityColumns.filter((c) => !priorityHidden.includes(c.key)).map((c) => c.key);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -87,6 +94,32 @@ export default function PriorityPage() {
 
   const fiscalWeek = getCurrentFiscalWeek(year, quarter);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterOwner ? 1 : 0);
+
+  const handlePriorityExport = useCallback(async (sel: ExportSelection) => {
+    const columns = priorityColumns
+      .filter((c) => sel.columnKeys.includes(c.key))
+      .map((c) => ({
+        key: c.key,
+        label: c.label,
+        value: (p: any) => {
+          switch (c.key) {
+            case "priorityName": return p.name ?? "";
+            case "team": return p.team?.name ?? "";
+            case "owner": return p.owner_user ? `${p.owner_user.firstName} ${p.owner_user.lastName}` : "";
+            default: return "";
+          }
+        },
+      }));
+    await runExport<any>({
+      selection: sel,
+      columns,
+      pageRows: filtered,
+      fetchFiltered: async () => priorities as any[],
+      fetchAll: async () => priorities as any[],
+      filename: `Priorities-FY${year}-${quarter}${viewTrash ? "-Trash" : ""}`,
+      sheetName: "Priorities",
+    });
+  }, [priorityColumns, filtered, priorities, year, quarter, viewTrash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex flex-col h-full">
@@ -124,13 +157,22 @@ export default function PriorityPage() {
             </button>
           )}
 
-          {/* Hidden columns pill (before search) */}
-          <HiddenColsPill
-            hiddenCols={priorityHidden}
-            colLabels={PRIORITY_COL_LABELS}
-            onRestore={showPriorityCol}
-            onRestoreAll={showAllPriorityCols}
-          />
+          {viewTrash && (
+            <button
+              type="button"
+              onClick={() => setViewTrash(false)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-amber-50 border border-amber-200 text-amber-900 rounded-md hover:bg-amber-100 transition-colors"
+              title="Exit trash view"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Viewing deleted ({filtered.length})
+              <svg className="h-3 w-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
 
           {/* Search */}
           <div className="relative">
@@ -247,6 +289,17 @@ export default function PriorityPage() {
               </div>
             )}
           </div>
+
+          <ModuleMoreActions
+            columns={priorityColumns}
+            hiddenCols={priorityHidden}
+            onHiddenColsChange={(next) => priorityPrefs.setHiddenCols(next)}
+            isTrashActive={viewTrash}
+            onToggleTrash={setViewTrash}
+            rowCounts={{ page: filtered.length, filtered: filtered.length, all: priorities.length }}
+            onExport={handlePriorityExport}
+            defaultExportColumnKeys={visiblePriorityCols}
+          />
 
           <AddButton onClick={() => setShowAddModal(true)}>Add Priority</AddButton>
         </div>

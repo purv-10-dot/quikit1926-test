@@ -116,6 +116,14 @@ export function useTablePrefs(table: TableName) {
     persist(table, { hiddenCols: [] });
   };
 
+  // Batch-set the entire hiddenCols array (used by Manage Columns modal).
+  const setHiddenCols = (next: string[]) => {
+    if (!cache) cache = EMPTY_ALL;
+    cache = { ...cache, [table]: { ...cache[table], hiddenCols: next } };
+    notifyListeners();
+    persist(table, { hiddenCols: next });
+  };
+
   const setSort = (sort: string | null) => {
     if (!cache) cache = EMPTY_ALL;
     cache = { ...cache, [table]: { ...cache[table], sort } };
@@ -154,6 +162,7 @@ export function useTablePrefs(table: TableName) {
     hideCol,
     showCol,
     showAllCols,
+    setHiddenCols,
     setSort,
     setColWidth,
     saveColWidths,

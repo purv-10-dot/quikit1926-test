@@ -14,10 +14,13 @@ import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
 import { KPIModal } from "../components/KPIModal";
-import { HiddenColsMenu } from "../components/HiddenColsMenu";
-import { ALL_STATIC_COLS } from "../hooks/useTableColumns";
+import { ALL_STATIC_COLS, COL_LABELS } from "../hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
-import { AddButton } from "@quikit/ui";
+import { AddButton, type ExportSelection } from "@quikit/ui";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { runExport } from "@/lib/export/xlsx";
+import { getKPIs } from "@/lib/services/kpiService";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -101,9 +104,16 @@ export default function TeamsKPIPage() {
     refetch();
   }
 
+  // View Trash toggle — when true list fetches ONLY soft-deleted team KPIs
+  const [viewTrash, setViewTrash] = useState(false);
+
   const { data: session } = useSession();
   const { data: teams = [], isLoading: teamsLoading } = useTeams();
-  const { data: kpiData, isLoading: kpisLoading, refetch } = useTeamKPIs({ year, quarter });
+  const { data: kpiData, isLoading: kpisLoading, refetch } = useTeamKPIs({
+    year,
+    quarter,
+    ...({ includeDeleted: viewTrash } as any),
+  });
   const kpis = useMemo(() => (kpiData?.data ?? []) as KPIRow[], [kpiData?.data]);
 
   // Can the user add team KPIs? (admin-level role, super admin, or head of any team)
@@ -195,9 +205,21 @@ export default function TeamsKPIPage() {
             </button>
           )}
 
-          {/* Hidden columns — page-level pill, union of every team section's hidden cols */}
-          {unionHiddenCols.size > 0 && (
-            <HiddenColsMenu hiddenCols={unionHiddenCols} allCols={allTableCols} onShow={handleShowCol} />
+          {viewTrash && (
+            <button
+              type="button"
+              onClick={() => setViewTrash(false)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-amber-50 border border-amber-200 text-amber-900 rounded-md hover:bg-amber-100 transition-colors"
+              title="Exit trash view"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Viewing deleted ({kpis.length})
+              <svg className="h-3 w-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           )}
 
           {/* Team filter — compact button + searchable multi-select dropdown. Matches the year picker style. */}
@@ -386,12 +408,21 @@ export default function TeamsKPIPage() {
             )}
           </div>
 
+          <TeamKPIMoreActions
+            viewTrash={viewTrash}
+            setViewTrash={setViewTrash}
+            kpis={kpis}
+            year={year}
+            quarter={quarter}
+          />
+
           {/* + Add KPI — single page-level button */}
           {canAddTeamKPI && (
             <AddButton onClick={() => setShowAddKPI(true)}>Add KPI</AddButton>
           )}
         </div>
       </div>
+
 
       {/* Body — one TeamSection per team */}
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
@@ -423,6 +454,7 @@ export default function TeamsKPIPage() {
       </div>
 
       {/* Add KPI modal — scope="team", no pre-selected teamId so user picks the team inside the modal */}
+      {/* (JSX continues below) */}
       {showAddKPI && (
         <KPIModal
           mode="create"
@@ -437,5 +469,80 @@ export default function TeamsKPIPage() {
         />
       )}
     </div>
+  );
+}
+
+/** Page-scoped More menu for Team KPIs — shares TablePrefs "kpi" key with Individual KPI. */
+function TeamKPIMoreActions({
+  viewTrash,
+  setViewTrash,
+  kpis,
+  year,
+  quarter,
+}: {
+  viewTrash: boolean;
+  setViewTrash: (v: boolean) => void;
+  kpis: KPIRow[];
+  year: number;
+  quarter: string;
+}) {
+  const tablePrefs = useTablePrefs("kpi");
+  const moduleColumns = ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key }));
+  const visibleColKeys = moduleColumns
+    .filter((c) => !tablePrefs.hiddenCols.includes(c.key))
+    .map((c) => c.key);
+
+  const handleExport = async (sel: ExportSelection) => {
+    const columns = moduleColumns
+      .filter((c) => sel.columnKeys.includes(c.key))
+      .map((c) => ({
+        key: c.key,
+        label: c.label,
+        value: (k: any) => {
+          switch (c.key) {
+            case "kpiName": return k.name ?? "";
+            case "owner":
+            case "kpiOwner": return k.owner_user ? `${k.owner_user.firstName} ${k.owner_user.lastName}` : "";
+            case "team": return k.team?.name ?? "";
+            case "teamHead": return k.team?.head ? `${k.team.head.firstName} ${k.team.head.lastName}` : "";
+            case "measurementUnit": return k.measurementUnit ?? "";
+            case "targetValue": return k.target ?? "";
+            case "quarterlyGoal": return k.quarterlyGoal ?? "";
+            case "qtdGoal": return k.qtdGoal ?? "";
+            case "qtdAchieved": return k.qtdAchieved ?? 0;
+            case "progress": return typeof k.progressPercent === "number" ? `${k.progressPercent.toFixed(1)}%` : "";
+            case "description": return k.description ?? "";
+            default: return "";
+          }
+        },
+      }));
+    await runExport<KPIRow>({
+      selection: sel,
+      columns,
+      pageRows: kpis,
+      fetchFiltered: async () => {
+        const { data } = await getKPIs({ kpiLevel: "team", year, quarter, page: 1, pageSize: 100, ...({ includeDeleted: viewTrash } as any) });
+        return data as unknown as KPIRow[];
+      },
+      fetchAll: async () => {
+        const { data } = await getKPIs({ kpiLevel: "team", page: 1, pageSize: 100 });
+        return data as unknown as KPIRow[];
+      },
+      filename: `TeamKPI-FY${year}-${quarter}${viewTrash ? "-Trash" : ""}`,
+      sheetName: "Team KPIs",
+    });
+  };
+
+  return (
+    <ModuleMoreActions
+      columns={moduleColumns}
+      hiddenCols={tablePrefs.hiddenCols}
+      onHiddenColsChange={(next) => tablePrefs.setHiddenCols(next)}
+      isTrashActive={viewTrash}
+      onToggleTrash={setViewTrash}
+      rowCounts={{ page: kpis.length, filtered: kpis.length, all: kpis.length }}
+      onExport={handleExport}
+      defaultExportColumnKeys={visibleColKeys}
+    />
   );
 }

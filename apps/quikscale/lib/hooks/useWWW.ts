@@ -15,6 +15,7 @@ export interface WWWFilters {
   search?: string;
   status?: string;
   sort?: string | null;
+  includeDeleted?: boolean;
 }
 
 function buildListUrl(filters: WWWFilters): string {
@@ -26,6 +27,7 @@ function buildListUrl(filters: WWWFilters): string {
     if (sortBy) params.set("sortBy", sortBy);
     if (sortOrder) params.set("sortOrder", sortOrder);
   }
+  if (filters.includeDeleted) params.set("includeDeleted", "true");
   const qs = params.toString();
   return `/api/www${qs ? `?${qs}` : ""}`;
 }

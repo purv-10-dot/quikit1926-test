@@ -129,7 +129,10 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
     const sticky = isFrozen(col);
     const boundary = col === frozenUpTo;
     return [
-      "px-3 py-2 text-xs text-gray-700 border-b border-r border-gray-100",
+      // `overflow-hidden` needed so wide content doesn't blow past the column
+      // width set by `table-layout: fixed`. Individual cells that need wrap
+      // (e.g. kpiName) handle their own `line-clamp-N` on the inner span.
+      "px-3 py-2 text-xs text-gray-700 border-b border-r border-gray-100 overflow-hidden align-top",
       extra,
       sticky ? `sticky z-[15] bg-white${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.04)]" : ""}` : "",
     ].join(" ");
@@ -143,7 +146,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
     <div className="flex flex-col h-full">
 
       <HorizontalScroller className="flex-1">
-        <table className="border-separate border-spacing-0 text-xs" style={{ minWidth: "max-content" }}>
+        <table className="border-separate border-spacing-0 text-xs" style={{ minWidth: "max-content", tableLayout: "fixed" }}>
           <thead className="sticky top-0 z-30">
             <tr ref={headerRowRef}>
               {/* Fixed columns: Checkbox, Log, ID (hidable via hideColumns prop) */}
