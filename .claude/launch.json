@@ -5,7 +5,8 @@
       "name": "quikit",
       "runtimeExecutable": "/bin/bash",
       "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npx turbo dev --filter=quikit"],
-      "port": 3000
+      "port": 3000,
+      "autoPort": false
     },
     {
       "name": "quikscale",
@@ -19,6 +20,13 @@
       "runtimeExecutable": "/bin/bash",
       "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npx turbo dev --filter=admin"],
       "port": 3005
+    },
+    {
+      "name": "quikconstruction",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npx turbo dev --filter=quikconstruction"],
+      "port": 3007,
+      "autoPort": false
     },
     {
       "name": "all",

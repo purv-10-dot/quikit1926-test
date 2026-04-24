@@ -38,6 +38,7 @@ function resolveAppUrl(envName: string, devFallback: string): string {
 
 const QUIKSCALE_BASE = resolveAppUrl("QUIKSCALE_URL", "http://localhost:3004"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKCONSTRUCTION_BASE = resolveAppUrl("QUIKCONSTRUCTION_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 
 const APPS = [
   {
@@ -68,6 +69,22 @@ const APPS = [
       clientSecretPlain: "admin-dev-secret-change-in-prod",
       redirectUris: [
         `${ADMIN_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikconstruction",
+    name: "QuikConstruction",
+    description: "Construction ERP — Projects, BOQ/DPR, Purchase, Store, Finance, HRMS, Safety, Quality.",
+    baseUrl: QUIKCONSTRUCTION_BASE,
+    iconUrl: null,
+    status: "active",
+    oauth: {
+      clientId: "quikconstruction",
+      clientSecretPlain: "quikconstruction-dev-secret-change-in-prod",
+      redirectUris: [
+        `${QUIKCONSTRUCTION_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

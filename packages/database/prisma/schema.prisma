@@ -179,6 +179,76 @@ model Tenant {
   tenantAppAccess         TenantAppAccess[]
   invoices                Invoice[]
 
+  // QuikConstruction module — back-relations (additions per phase)
+  cnCompanies       CnCompany[]
+  cnVendors         CnVendor[]
+  cnCustomers       CnCustomer[]
+  cnContractors     CnContractor[]
+  cnUoms            CnUOM[]
+  cnItemGroups      CnItemGroup[]
+  cnItems           CnItem[]
+  cnBanks           CnBank[]
+  cnDepartments     CnDepartment[]
+  cnWorkCategories  CnWorkCategory[]
+  cnCostCenters     CnCostCenter[]
+  cnLocations       CnLocation[]
+  cnGstCodes        CnGSTCode[]
+  cnTdsCodes        CnTDSCode[]
+  cnTermsConditions CnTermsCondition[]
+  cnFinancialYears  CnFinancialYear[]
+  cnProjects        CnProject[]
+  cnMachinery       CnMachinery[]
+  cnAssets          CnAsset[]
+  // Phase 3 — Procurement + Store
+  cnPurchaseRequisitions CnPurchaseRequisition[]
+  cnPurchaseOrders       CnPurchaseOrder[]
+  cnGRNs                 CnGoodsReceiptNote[]
+  cnStockLedger          CnStockLedger[]
+  cnMaterialIssues       CnMaterialIssue[]
+  // Phase 3b back-relations
+  cnPurchaseIndents      CnPurchaseIndent[]
+  cnRFQs                 CnRFQ[]
+  cnGatePasses           CnGatePass[]
+  cnGoodReturns          CnGoodReturn[]
+  cnInternalReturns      CnInternalReturn[]
+  cnStockTransfers       CnStockTransfer[]
+  cnStockReconciliations CnStockReconciliation[]
+  cnDieselLogs           CnDieselLog[]
+  // Phase 4 — Projects core
+  cnBoqs        CnBOQ[]
+  cnDprs        CnDPR[]
+  cnHindrances  CnHindrance[]
+  // Phase 4b
+  cnEstimations CnEstimation[]
+  cnWorkOrders  CnWorkOrder[]
+  cnRabs        CnRAB[]
+  // Phase 5
+  cnClientInvoices CnClientInvoice[]
+  cnClientReceipts CnClientReceipt[]
+  cnVendorBills    CnVendorBill[]
+  cnVendorPayments CnVendorPayment[]
+  // Phase 7
+  cnEmployees      CnEmployee[]
+  cnAttendances    CnAttendance[]
+  cnPayrolls       CnPayroll[]
+  // Phase 8
+  cnApprovalRules    CnApprovalRule[]
+  cnApprovalRequests CnApprovalRequest[]
+  // Phase 9
+  cnQcInspections    CnQCInspection[]
+  // Phase 10
+  cnSafetyIncidents  CnSafetyIncident[]
+  cnSafetyChecklists CnSafetyChecklist[]
+  // Phase 12
+  cnDocuments        CnDocument[]
+  // Phase 14
+  cnExpenses         CnExpense[]
+  // Structural gaps
+  cnCreditNotes      CnCreditNote[]
+  cnDebitNotes       CnDebitNote[]
+  cnAuditLogs        CnAuditLog[]
+  cnNumberSequences  CnNumberSequence[]
+
   @@index([slug])
   @@index([status])
 }
@@ -662,12 +732,12 @@ model CategoryMaster {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
-  @@index([dataType])
   // Uniqueness: (tenantId, lowercased name, dataType, currency)
   // Two rows with the same case-insensitive name can coexist only if their
   // (dataType, currency) tuple differs. "Revenue (Number)" and "Revenue (Currency/USD)" OK.
   @@unique([tenantId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
+  @@index([tenantId])
+  @@index([dataType])
 }
 
 // ============================================================================
@@ -1140,6 +1210,10 @@ model QuarterSetting {
   quarter    String // Q1 | Q2 | Q3 | Q4
   startDate  DateTime
   endDate    DateTime
+  // Lifecycle: upcoming (not yet started) | active (current, open for edits)
+  // | completed (closed, locked for edits). Drives year-picker filtering and
+  // write-gate on KPI/Priority/WWW updates for past quarters.
+  status     String   @default("active") // upcoming | active | completed
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1150,6 +1224,7 @@ model QuarterSetting {
   @@unique([tenantId, fiscalYear, quarter])
   @@index([tenantId])
   @@index([fiscalYear])
+  @@index([status])
 }
 
 // ============================================================================
@@ -1343,14 +1418,14 @@ model FeedbackEntry {
 // See docs/plans/FF-1-app-feature-flags.md for the full design.
 
 model AppModuleFlag {
-  id         String   @id @default(cuid())
-  tenantId   String
-  appId      String
-  moduleKey  String   // e.g. "kpi", "kpi.teams", "opsp.review"
-  enabled    Boolean  @default(false) // only stored when disabled; kept for future flexibility
-  updatedBy  String?                   // super admin user id
-  updatedAt  DateTime @updatedAt
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  tenantId  String
+  appId     String
+  moduleKey String // e.g. "kpi", "kpi.teams", "opsp.review"
+  enabled   Boolean  @default(false) // only stored when disabled; kept for future flexibility
+  updatedBy String? // super admin user id
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
@@ -1371,12 +1446,12 @@ model AppModuleFlag {
 /// into ApiCallHourlyRollup for long-term trend analysis.
 model ApiCall {
   id          String   @id @default(cuid())
-  tenantId    String?  // null for pre-auth calls (login, OAuth flow)
+  tenantId    String? // null for pre-auth calls (login, OAuth flow)
   userId      String?
-  appSlug     String   // "quikit" | "quikscale" | "admin"
-  method      String   // GET | POST | PUT | PATCH | DELETE
-  path        String   // full request path, no query string
-  pathPattern String   // normalized: /api/kpi/[id] instead of /api/kpi/cl...
+  appSlug     String // "quikit" | "quikscale" | "admin"
+  method      String // GET | POST | PUT | PATCH | DELETE
+  path        String // full request path, no query string
+  pathPattern String // normalized: /api/kpi/[id] instead of /api/kpi/cl...
   statusCode  Int
   durationMs  Int
   ipAddress   String?
@@ -1398,7 +1473,7 @@ model ApiCallHourlyRollup {
   hourBucket      DateTime // truncated to the hour (UTC)
   method          String
   pathPattern     String
-  statusClass     String   // "2xx" | "3xx" | "4xx" | "5xx"
+  statusClass     String // "2xx" | "3xx" | "4xx" | "5xx"
   callCount       Int      @default(0)
   errorCount      Int      @default(0) // non-2xx
   totalDurationMs BigInt   @default(0) // sum, for avg calc
@@ -1417,8 +1492,8 @@ model ApiCallHourlyRollup {
 model AppHealthCheck {
   id         String   @id @default(cuid())
   appId      String
-  status     String   // "up" | "down" | "degraded"
-  statusCode Int?     // HTTP response code, null on network error
+  status     String // "up" | "down" | "degraded"
+  statusCode Int? // HTTP response code, null on network error
   durationMs Int?
   error      String?  @db.Text
   checkedAt  DateTime @default(now())
@@ -1433,10 +1508,10 @@ model AppHealthCheck {
 /// Appended to on login, logout, and (future) impersonation start/end.
 model SessionEvent {
   id        String   @id @default(cuid())
-  tenantId  String?  // null during pre-org-selection flow
+  tenantId  String? // null during pre-org-selection flow
   userId    String
-  event     String   // "login" | "logout" | "impersonation_start" | "impersonation_end"
-  appSlug   String?  // which app the user signed into (for cross-app DAU)
+  event     String // "login" | "logout" | "impersonation_start" | "impersonation_end"
+  appSlug   String? // which app the user signed into (for cross-app DAU)
   ipAddress String?
   userAgent String?  @db.Text
   createdAt DateTime @default(now())
@@ -1461,7 +1536,7 @@ model BroadcastAnnouncement {
   targetAppSlugs  String[]
   startsAt        DateTime  @default(now())
   endsAt          DateTime?
-  createdBy       String    // super admin user id
+  createdBy       String // super admin user id
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -1492,8 +1567,8 @@ model TenantAppAccess {
   tenantId  String
   appId     String
   enabled   Boolean  @default(true)
-  reason    String?  // optional reason shown to tenant (e.g. "trial expired")
-  updatedBy String?  // super admin user id
+  reason    String? // optional reason shown to tenant (e.g. "trial expired")
+  updatedBy String? // super admin user id
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 
@@ -1516,7 +1591,7 @@ model Plan {
   priceMonthly Int      @default(0) // cents, avoids Decimal precision issues
   priceYearly  Int      @default(0)
   currency     String   @default("USD")
-  limits       Json?    // { "maxUsers": 10, "maxKPIs": 50, "maxApps": 3 }
+  limits       Json? // { "maxUsers": 10, "maxKPIs": 50, "maxApps": 3 }
   features     String[] // free-form feature tags
   isActive     Boolean  @default(true)
   sortOrder    Int      @default(0)
@@ -1538,27 +1613,27 @@ model Plan {
 /// in the audit log so customer-support activity is distinguishable from
 /// user activity.
 model Impersonation {
-  id                  String    @id @default(cuid())
+  id             String    @id @default(cuid())
   /// User who initiated the impersonation (a platform super admin).
-  superAdminId        String
+  superAdminId   String
   /// The tenant whose app is being accessed.
-  targetTenantId      String
+  targetTenantId String
   /// The user whose identity will be assumed (usually an org admin).
-  targetUserId        String
+  targetUserId   String
   /// Which app to land in after token exchange ("quikscale" | "admin").
-  targetAppSlug       String
+  targetAppSlug  String
   /// Opaque single-use token — 32-byte base64url. Consumed on accept.
-  token               String    @unique
+  token          String    @unique
   /// Absolute expiry — rejected after this regardless of usage.
-  expiresAt           DateTime
+  expiresAt      DateTime
   /// Populated when the token is redeemed; null means still pending.
-  acceptedAt          DateTime?
+  acceptedAt     DateTime?
   /// Populated when the super admin explicitly exits the session.
-  exitedAt            DateTime?
+  exitedAt       DateTime?
   /// Free-form reason captured at start time for audit.
-  reason              String?
-  ipAddress           String?
-  createdAt           DateTime  @default(now())
+  reason         String?
+  ipAddress      String?
+  createdAt      DateTime  @default(now())
 
   @@index([superAdminId, createdAt])
   @@index([targetTenantId, createdAt])
@@ -1571,24 +1646,24 @@ model Impersonation {
 /// exist for currently-firing conditions. Resolved alerts are soft-deleted
 /// by setting resolvedAt.
 model PlatformAlert {
-  id         String    @id @default(cuid())
-  rule       String    // "app_down" | "api_error_spike" | "payment_failed" | "tenant_inactive"
-  severity   String    @default("warning") // "info" | "warning" | "critical"
-  title      String
-  message    String    @db.Text
+  id             String    @id @default(cuid())
+  rule           String // "app_down" | "api_error_spike" | "payment_failed" | "tenant_inactive"
+  severity       String    @default("warning") // "info" | "warning" | "critical"
+  title          String
+  message        String    @db.Text
   /// Free-form identifier for the alert subject (appId, tenantId, etc) — used
   /// for dedupe so the same condition doesn't fire twice.
-  subjectKey String
+  subjectKey     String
   /// Optional link for click-through ("/organizations/<tenantId>")
-  link       String?
-  data       Json?     // raw metrics that triggered the alert
-  firstSeenAt DateTime @default(now())
-  lastSeenAt  DateTime @default(now())
-  resolvedAt  DateTime?
+  link           String?
+  data           Json? // raw metrics that triggered the alert
+  firstSeenAt    DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  resolvedAt     DateTime?
   acknowledgedAt DateTime?
   acknowledgedBy String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([resolvedAt])
   @@index([severity, lastSeenAt])
@@ -1601,7 +1676,7 @@ model PlatformAlert {
 model Invoice {
   id          String    @id @default(cuid())
   tenantId    String
-  planSlug    String    // snapshot of plan at invoice time (history-safe)
+  planSlug    String // snapshot of plan at invoice time (history-safe)
   amountCents Int
   currency    String    @default("USD")
   status      String    @default("pending") // "pending" | "paid" | "failed" | "refunded"
@@ -1620,4 +1695,2290 @@ model Invoice {
   @@index([tenantId, status])
   @@index([status])
   @@index([periodEnd])
+}
+
+// ============================================================================
+// QUIKCONSTRUCTION MODULE (Cn* prefix)
+// ----------------------------------------------------------------------------
+// Construction ERP models ported from the standalone QuikConstruction app.
+// Convention: keep the `Cn` prefix on every model to signal ownership (the
+// construction module); `tenantId` is the ONLY tenant scope (we drop the
+// standalone app's `orgId` — QuikIT has one tenant scope, not two).
+// See docs/engineering/QUIKCONSTRUCTION_MIGRATION.md for the full plan.
+// ============================================================================
+
+model CnCompany {
+  id        String  @id @default(cuid())
+  tenantId  String
+  name      String
+  legalName String
+  gstin     String
+  pan       String
+  cin       String?
+  address   String
+  city      String
+  state     String
+  pincode   String
+  phone     String?
+  email     String?
+  website   String?
+  logoUrl   String?
+  status    String  @default("active") // active | inactive
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  banks        CnBank[]
+  finYears     CnFinancialYear[]
+  projects     CnProject[]
+
+  @@index([tenantId])
+  @@index([tenantId, gstin])
+  @@index([deletedAt])
+}
+
+model CnVendor {
+  id               String  @id @default(cuid())
+  tenantId         String
+  code             String
+  name             String
+  legalName        String?
+  gstin            String?
+  pan              String?
+  contactPerson    String?
+  phone            String?
+  email            String?
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  bankName         String?
+  bankAccountNo    String?
+  bankIfsc         String?
+  paymentTermsDays Int?
+  rating           Int?
+  status           String  @default("active") // active | inactive | blacklisted
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pos         CnPurchaseOrder[]
+  grns        CnGoodsReceiptNote[]
+  goodReturns CnGoodReturn[]
+  rfqQuotes   CnRFQVendor[]
+  bills       CnVendorBill[]
+  payments    CnVendorPayment[]
+  debitNotes  CnDebitNote[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, name])
+  @@index([deletedAt])
+}
+
+model CnCustomer {
+  id            String   @id @default(cuid())
+  tenantId      String
+  code          String
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  city          String?
+  state         String?
+  gstin         String?
+  status        String   @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  projects    CnProject[]
+  invoices    CnClientInvoice[]
+  receipts    CnClientReceipt[]
+  creditNotes CnCreditNote[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnContractor {
+  id             String   @id @default(cuid())
+  tenantId       String
+  code           String
+  name           String
+  legalName      String?
+  gstin          String?
+  pan            String?
+  contactPerson  String?
+  phone          String?
+  email          String?
+  address        String?
+  city           String?
+  state          String?
+  licenseNo      String?
+  specialization String?
+  status         String   @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrders CnWorkOrder[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnUOM {
+  id       String @id @default(cuid())
+  tenantId String
+  code     String
+  name     String
+  status   String @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items             CnItem[]
+  prLines           CnPurchaseRequisitionLine[]
+  poLines           CnPurchaseOrderLine[]
+  grnLines          CnGRNLine[]
+  stockLedgerRows   CnStockLedger[]
+  miLines           CnMaterialIssueLine[]
+  // Phase 3b
+  indentLines       CnPurchaseIndentLine[]
+  rfqLines          CnRFQLine[]
+  goodReturnLines   CnGoodReturnLine[]
+  internalReturnLines CnInternalReturnLine[]
+  transferLines     CnStockTransferLine[]
+  reconciliationLines CnStockReconciliationLine[]
+  // Phase 4
+  dprLines          CnDPRLine[]
+  boqItems          CnBOQItem[]
+  // Phase 4b
+  estimationItems   CnEstimationItem[]
+  woLines           CnWorkOrderLine[]
+  // Phase 6
+  dprMaterials      CnDPRMaterial[]
+  // Finance line items
+  invoiceLines      CnClientInvoiceLine[]
+  billLines         CnVendorBillLine[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnItemGroup {
+  id        String  @id @default(cuid())
+  tenantId  String
+  name      String
+  parentId  String?
+  depth     Int     @default(0)
+  sortOrder Int     @default(0)
+  status    String  @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   CnItemGroup?  @relation("CnItemGroupHierarchy", fields: [parentId], references: [id])
+  children CnItemGroup[] @relation("CnItemGroupHierarchy")
+  items    CnItem[]
+
+  @@index([tenantId])
+  @@index([parentId])
+  @@index([deletedAt])
+}
+
+model CnItem {
+  id            String   @id @default(cuid())
+  tenantId      String
+  code          String
+  name          String
+  description   String?
+  groupId       String
+  uomId         String
+  hsnCode       String?
+  gstRate       Decimal? @db.Decimal(5, 2)
+  minStockLevel Decimal? @db.Decimal(18, 4)
+  reorderLevel  Decimal? @db.Decimal(18, 4)
+  standardRate  Decimal? @db.Decimal(18, 2)
+  status        String   @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  group  CnItemGroup @relation(fields: [groupId], references: [id])
+  uom    CnUOM       @relation(fields: [uomId], references: [id])
+  // Phase 3 back-relations
+  prLines         CnPurchaseRequisitionLine[]
+  poLines         CnPurchaseOrderLine[]
+  grnLines        CnGRNLine[]
+  stockLedgerRows CnStockLedger[]
+  miLines         CnMaterialIssueLine[]
+  // Phase 3b
+  indentLines         CnPurchaseIndentLine[]
+  rfqLines            CnRFQLine[]
+  goodReturnLines     CnGoodReturnLine[]
+  internalReturnLines CnInternalReturnLine[]
+  transferLines       CnStockTransferLine[]
+  reconciliationLines CnStockReconciliationLine[]
+  // Phase 4
+  boqItems            CnBOQItem[]
+  // Phase 4b
+  estimationItems     CnEstimationItem[]
+  woLines             CnWorkOrderLine[]
+  // Phase 6
+  dprMaterials        CnDPRMaterial[]
+  // Phase 9
+  qcDefects           CnQCDefect[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, groupId])
+  @@index([deletedAt])
+}
+
+// ---- Phase 2 masters (continuation) ----
+
+model CnBank {
+  id          String @id @default(cuid())
+  tenantId    String
+  companyId   String
+  bankName    String
+  branchName  String?
+  accountNo   String
+  ifscCode    String
+  accountType String  // current | savings
+  status      String  @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company CnCompany @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, accountNo])
+  @@index([tenantId])
+  @@index([tenantId, companyId])
+  @@index([deletedAt])
+}
+
+model CnDepartment {
+  id         String  @id @default(cuid())
+  tenantId   String
+  code       String
+  name       String
+  headUserId String?
+  status     String  @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employees CnEmployee[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnWorkCategory {
+  id          String @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  status      String @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workOrders CnWorkOrder[]
+
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnCostCenter {
+  id        String @id @default(cuid())
+  tenantId  String
+  code      String
+  name      String
+  projectId String?
+  status    String @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnLocation {
+  id        String @id @default(cuid())
+  tenantId  String
+  code      String
+  name      String
+  type      String  // site | warehouse | head_office | yard
+  projectId String?
+  address   String?
+  city      String?
+  state     String?
+  inCharge  String?
+  status    String @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject? @relation(fields: [projectId], references: [id])
+  // Phase 3 back-relations
+  deliveryForPOs  CnPurchaseOrder[]
+  grns            CnGoodsReceiptNote[]
+  stockLedgerRows CnStockLedger[]
+  materialIssues  CnMaterialIssue[]
+  // Phase 3b
+  gatePasses            CnGatePass[]
+  goodReturns           CnGoodReturn[]
+  internalReturns       CnInternalReturn[]
+  stockTransfersFrom    CnStockTransfer[]       @relation("TransferFrom")
+  stockTransfersTo      CnStockTransfer[]       @relation("TransferTo")
+  stockReconciliations  CnStockReconciliation[]
+  dieselLogs            CnDieselLog[]
+  // Phase 6
+  dprsConsumingHere     CnDPR[]                 @relation("DprConsumptionLocation")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, type])
+  @@index([deletedAt])
+}
+
+model CnGSTCode {
+  id          String  @id @default(cuid())
+  tenantId    String
+  code        String
+  description String
+  rate        Decimal @db.Decimal(5, 2)
+  cgstRate    Decimal @db.Decimal(5, 2)
+  sgstRate    Decimal @db.Decimal(5, 2)
+  igstRate    Decimal @db.Decimal(5, 2)
+  status      String  @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnTDSCode {
+  id              String   @id @default(cuid())
+  tenantId        String
+  section         String
+  description     String
+  rate            Decimal  @db.Decimal(5, 2)
+  thresholdAmount Decimal? @db.Decimal(18, 2)
+  status          String   @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, section])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnTermsCondition {
+  id           String  @id @default(cuid())
+  tenantId     String
+  title        String
+  body         String
+  applicableTo String  // po | wo | rfq | general
+  isDefault    Boolean @default(false)
+  status       String  @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, applicableTo])
+  @@index([deletedAt])
+}
+
+model CnFinancialYear {
+  id        String   @id @default(cuid())
+  tenantId  String
+  companyId String
+  label     String
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean  @default(false)
+  status    String   @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company CnCompany @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, companyId, label])
+  @@index([tenantId])
+  @@index([tenantId, companyId])
+  @@index([deletedAt])
+}
+
+model CnProject {
+  id               String    @id @default(cuid())
+  tenantId         String
+  code             String
+  name             String
+  description      String?
+  companyId        String
+  clientId         String?
+  address          String?
+  city             String?
+  state            String?
+  startDate        DateTime?
+  expectedEndDate  DateTime?
+  actualEndDate    DateTime?
+  projectValue     Decimal?  @db.Decimal(18, 2)
+  projectManagerId String?
+  status           String    @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company   CnCompany    @relation(fields: [companyId], references: [id])
+  client    CnCustomer?  @relation(fields: [clientId], references: [id])
+  locations CnLocation[]
+  // Phase 3 back-relations
+  purchaseRequisitions CnPurchaseRequisition[]
+  purchaseOrders       CnPurchaseOrder[]
+  grns                 CnGoodsReceiptNote[]
+  stockLedgerRows      CnStockLedger[]
+  materialIssues       CnMaterialIssue[]
+  // Phase 3b
+  purchaseIndents      CnPurchaseIndent[]
+  rfqs                 CnRFQ[]
+  gatePasses           CnGatePass[]
+  goodReturns          CnGoodReturn[]
+  internalReturns      CnInternalReturn[]
+  stockTransfers       CnStockTransfer[]
+  stockReconciliations CnStockReconciliation[]
+  dieselLogs           CnDieselLog[]
+  // Phase 4
+  boqs        CnBOQ[]
+  dprs        CnDPR[]
+  hindrances  CnHindrance[]
+  // Phase 4b
+  estimations CnEstimation[]
+  workOrders  CnWorkOrder[]
+  rabs        CnRAB[]
+  // Phase 5
+  clientInvoices CnClientInvoice[]
+  vendorBills    CnVendorBill[]
+  // Phase 7
+  attendances    CnAttendance[]
+  // Phase 9
+  qcInspections  CnQCInspection[]
+  // Phase 10
+  safetyIncidents  CnSafetyIncident[]
+  safetyChecklists CnSafetyChecklist[]
+  // Phase 14
+  expenses         CnExpense[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, companyId])
+  @@index([deletedAt])
+}
+
+model CnMachinery {
+  id             String  @id @default(cuid())
+  tenantId       String
+  code           String
+  name           String
+  type           String
+  make           String?
+  model          String?
+  registrationNo String?
+  projectId      String?
+  locationId     String?
+  fuelType       String?
+  capacity       String?
+  status         String  @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dieselLogs CnDieselLog[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnAsset {
+  id             String   @id @default(cuid())
+  tenantId       String
+  code           String
+  name           String
+  category       String?
+  purchaseDate   DateTime?
+  purchaseValue  Decimal?  @db.Decimal(18, 2)
+  locationId     String?
+  assignedTo     String?
+  status         String   @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+// ============================================================================
+// QUIKCONSTRUCTION — Phase 3 (Procurement + Store)
+// ============================================================================
+// Vertical P2P slice: PR → PO → GRN → StockLedger → Material Issue.
+// Approval workflow = simple status machine per document (no engine yet).
+// Stock Ledger is the source of truth for inventory — every GRN/Issue writes
+// a row inside the same transaction as the document itself.
+// ============================================================================
+
+model CnPurchaseRequisition {
+  id            String   @id @default(cuid())
+  tenantId      String
+  prNumber      String
+  projectId     String
+  requestedById String
+  requestDate   DateTime
+  requiredDate  DateTime?
+  purpose       String?
+  status        String   @default("draft") // draft | submitted | approved | rejected | converted | cancelled
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject @relation(fields: [projectId], references: [id])
+  lines   CnPurchaseRequisitionLine[]
+  pos     CnPurchaseOrder[]
+
+  @@unique([tenantId, prNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnPurchaseRequisitionLine {
+  id              String   @id @default(cuid())
+  prId            String
+  itemId          String
+  quantity        Decimal  @db.Decimal(18, 4)
+  uomId           String
+  estimatedRate   Decimal? @db.Decimal(18, 2)
+  estimatedAmount Decimal? @db.Decimal(18, 2)
+  specification   String?
+  currentStock    Decimal? @db.Decimal(18, 4)
+  remarks         String?
+
+  pr   CnPurchaseRequisition @relation(fields: [prId], references: [id], onDelete: Cascade)
+  item CnItem                @relation(fields: [itemId], references: [id])
+  uom  CnUOM                 @relation(fields: [uomId], references: [id])
+
+  @@index([prId])
+  @@index([itemId])
+}
+
+model CnPurchaseOrder {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  poNumber           String
+  projectId          String
+  vendorId           String
+  prId               String?
+  poDate             DateTime
+  deliveryDate       DateTime?
+  deliveryLocationId String?
+  subtotal           Decimal  @default(0) @db.Decimal(18, 2)
+  taxAmount          Decimal  @default(0) @db.Decimal(18, 2)
+  totalAmount        Decimal  @default(0) @db.Decimal(18, 2)
+  status             String   @default("draft") // draft | sent | partially_received | fully_received | closed | cancelled
+  paymentTermsDays   Int?
+  termsConditionId   String?
+  remarks            String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant           Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project          CnProject              @relation(fields: [projectId], references: [id])
+  vendor           CnVendor               @relation(fields: [vendorId], references: [id])
+  pr               CnPurchaseRequisition? @relation(fields: [prId], references: [id])
+  deliveryLocation CnLocation?            @relation(fields: [deliveryLocationId], references: [id])
+  lines            CnPurchaseOrderLine[]
+  grns             CnGoodsReceiptNote[]
+  bills            CnVendorBill[]
+
+  @@unique([tenantId, poNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnPurchaseOrderLine {
+  id           String   @id @default(cuid())
+  poId         String
+  itemId       String
+  orderedQty   Decimal  @db.Decimal(18, 4)
+  receivedQty  Decimal  @default(0) @db.Decimal(18, 4)
+  pendingQty   Decimal  @db.Decimal(18, 4)
+  unitRate     Decimal  @db.Decimal(18, 2)
+  amount       Decimal  @db.Decimal(18, 2)
+  gstRate      Decimal? @db.Decimal(5, 2)
+  taxAmount    Decimal  @default(0) @db.Decimal(18, 2)
+  totalAmount  Decimal  @db.Decimal(18, 2)
+  uomId        String
+  deliveryDate DateTime?
+  remarks      String?
+
+  po   CnPurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  item CnItem          @relation(fields: [itemId], references: [id])
+  uom  CnUOM           @relation(fields: [uomId], references: [id])
+
+  @@index([poId])
+  @@index([itemId])
+}
+
+model CnGoodsReceiptNote {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  grnNumber           String
+  poId                String
+  projectId           String
+  vendorId            String
+  grnDate             DateTime
+  locationId          String
+  supplierInvoiceNo   String?
+  supplierInvoiceDate DateTime?
+  challanNo           String?
+  challanDate         DateTime?
+  receivedById        String
+  inspectedById       String?
+  status              String    @default("draft") // draft | posted (posted = stock ledger written, immutable)
+  remarks             String?
+  postedAt            DateTime?
+  postedBy            String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  po       CnPurchaseOrder @relation(fields: [poId], references: [id])
+  project  CnProject       @relation(fields: [projectId], references: [id])
+  vendor   CnVendor        @relation(fields: [vendorId], references: [id])
+  location CnLocation      @relation(fields: [locationId], references: [id])
+  lines    CnGRNLine[]
+  goodReturns CnGoodReturn[]
+  bill        CnVendorBill?
+  qcInspections CnQCInspection[]
+
+  @@unique([tenantId, grnNumber])
+  @@index([tenantId])
+  @@index([poId])
+  @@index([projectId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnGRNLine {
+  id           String   @id @default(cuid())
+  grnId        String
+  poLineId     String?
+  itemId       String
+  receivedQty  Decimal  @db.Decimal(18, 4)
+  acceptedQty  Decimal  @db.Decimal(18, 4)
+  rejectedQty  Decimal  @default(0) @db.Decimal(18, 4)
+  uomId        String
+  unitRate     Decimal  @db.Decimal(18, 2)
+  amount       Decimal  @db.Decimal(18, 2)
+  qualityStatus String  @default("pending") // pending | accepted | rejected | conditional
+  batchNo      String?
+  remarks      String?
+
+  grn  CnGoodsReceiptNote @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  item CnItem             @relation(fields: [itemId], references: [id])
+  uom  CnUOM              @relation(fields: [uomId], references: [id])
+
+  @@index([grnId])
+  @@index([itemId])
+}
+
+model CnStockLedger {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  projectId            String
+  locationId           String
+  itemId               String
+  transactionType      String   // grn | issue | return_vendor | return_internal | transfer_out | transfer_in | reconciliation_adj | opening_balance
+  transactionRefId     String
+  transactionRefNumber String
+  transactionDate      DateTime
+  qtyIn                Decimal  @default(0) @db.Decimal(18, 4)
+  qtyOut               Decimal  @default(0) @db.Decimal(18, 4)
+  unitRate             Decimal  @db.Decimal(18, 2)
+  amount               Decimal  @db.Decimal(18, 2)
+  uomId                String
+
+  createdAt DateTime @default(now())
+  createdBy String
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  CnProject  @relation(fields: [projectId], references: [id])
+  location CnLocation @relation(fields: [locationId], references: [id])
+  item     CnItem     @relation(fields: [itemId], references: [id])
+  uom      CnUOM      @relation(fields: [uomId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, projectId, locationId, itemId])
+  @@index([itemId])
+  @@index([transactionRefId])
+}
+
+model CnMaterialIssue {
+  id          String   @id @default(cuid())
+  tenantId    String
+  issueNumber String
+  projectId   String
+  locationId  String
+  issuedToId  String
+  issuedById  String
+  issueDate   DateTime
+  purpose     String?
+  status      String   @default("draft") // draft | posted
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+  postedAt  DateTime?
+  postedBy  String?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  CnProject  @relation(fields: [projectId], references: [id])
+  location CnLocation @relation(fields: [locationId], references: [id])
+  lines    CnMaterialIssueLine[]
+  internalReturns CnInternalReturn[]
+
+  @@unique([tenantId, issueNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnMaterialIssueLine {
+  id        String  @id @default(cuid())
+  issueId   String
+  itemId    String
+  issuedQty Decimal @db.Decimal(18, 4)
+  uomId     String
+  unitRate  Decimal @db.Decimal(18, 2)
+  amount    Decimal @db.Decimal(18, 2)
+  remarks   String?
+
+  issue CnMaterialIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  item  CnItem          @relation(fields: [itemId], references: [id])
+  uom   CnUOM           @relation(fields: [uomId], references: [id])
+
+  @@index([issueId])
+  @@index([itemId])
+}
+
+// ============================================================================
+// QUIKCONSTRUCTION — Phase 3b (extended procurement + store)
+// ============================================================================
+// Purchase Indent (PR → Indent → PO), RFQ (solicit quotes), Gate Pass (gate
+// register), Returns (vendor + internal), Stock Transfer (paired ledger),
+// Stock Reconciliation, Diesel Log.
+// ============================================================================
+
+model CnPurchaseIndent {
+  id            String   @id @default(cuid())
+  tenantId      String
+  indentNumber  String
+  prId          String?
+  projectId     String
+  requestedById String
+  requestDate   DateTime
+  requiredDate  DateTime?
+  purpose       String?
+  status        String   @default("draft") // draft | submitted | approved | converted | cancelled
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject @relation(fields: [projectId], references: [id])
+  lines   CnPurchaseIndentLine[]
+
+  @@unique([tenantId, indentNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnPurchaseIndentLine {
+  id            String  @id @default(cuid())
+  indentId      String
+  itemId        String
+  quantity      Decimal @db.Decimal(18, 4)
+  uomId         String
+  estimatedRate Decimal? @db.Decimal(18, 2)
+  remarks       String?
+
+  indent CnPurchaseIndent @relation(fields: [indentId], references: [id], onDelete: Cascade)
+  item   CnItem           @relation(fields: [itemId], references: [id])
+  uom    CnUOM            @relation(fields: [uomId], references: [id])
+
+  @@index([indentId])
+  @@index([itemId])
+}
+
+model CnRFQ {
+  id         String   @id @default(cuid())
+  tenantId   String
+  rfqNumber  String
+  indentId   String?
+  projectId  String
+  rfqDate    DateTime
+  closingDate DateTime?
+  status     String   @default("draft") // draft | sent | quotations_received | awarded | cancelled
+  remarks    String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject @relation(fields: [projectId], references: [id])
+  lines   CnRFQLine[]
+  vendors CnRFQVendor[]
+
+  @@unique([tenantId, rfqNumber])
+  @@index([tenantId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnRFQLine {
+  id       String  @id @default(cuid())
+  rfqId    String
+  itemId   String
+  quantity Decimal @db.Decimal(18, 4)
+  uomId    String
+  specification String?
+
+  rfq  CnRFQ  @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  item CnItem @relation(fields: [itemId], references: [id])
+  uom  CnUOM  @relation(fields: [uomId], references: [id])
+
+  @@index([rfqId])
+}
+
+model CnRFQVendor {
+  id           String @id @default(cuid())
+  rfqId        String
+  vendorId     String
+  quotationRef String?
+  totalAmount  Decimal? @db.Decimal(18, 2)
+  isAwarded    Boolean @default(false)
+
+  rfq    CnRFQ    @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  vendor CnVendor @relation(fields: [vendorId], references: [id])
+
+  @@unique([rfqId, vendorId])
+  @@index([rfqId])
+}
+
+model CnGatePass {
+  id              String   @id @default(cuid())
+  tenantId        String
+  gatePassNumber  String
+  projectId       String
+  locationId      String
+  type            String   // inward | outward | returnable | non_returnable
+  referenceType   String?  // grn | issue | return | transfer
+  referenceId     String?
+  referenceNumber String?
+  vehicleNo       String?
+  driverName      String?
+  driverPhone     String?
+  purpose         String?
+  gatePassDate    DateTime
+  status          String   @default("open") // open | closed | cancelled
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  CnProject  @relation(fields: [projectId], references: [id])
+  location CnLocation @relation(fields: [locationId], references: [id])
+
+  @@unique([tenantId, gatePassNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([deletedAt])
+}
+
+model CnGoodReturn {
+  id            String   @id @default(cuid())
+  tenantId      String
+  returnNumber  String
+  grnId         String
+  projectId     String
+  vendorId      String
+  locationId    String
+  returnDate    DateTime
+  reason        String?
+  status        String   @default("draft") // draft | posted
+  postedAt      DateTime?
+  postedBy      String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  grn      CnGoodsReceiptNote @relation(fields: [grnId], references: [id])
+  project  CnProject          @relation(fields: [projectId], references: [id])
+  vendor   CnVendor           @relation(fields: [vendorId], references: [id])
+  location CnLocation         @relation(fields: [locationId], references: [id])
+  lines    CnGoodReturnLine[]
+
+  @@unique([tenantId, returnNumber])
+  @@index([tenantId])
+  @@index([grnId])
+  @@index([deletedAt])
+}
+
+model CnGoodReturnLine {
+  id         String  @id @default(cuid())
+  returnId   String
+  itemId     String
+  returnQty  Decimal @db.Decimal(18, 4)
+  uomId      String
+  unitRate   Decimal @db.Decimal(18, 2)
+  amount     Decimal @db.Decimal(18, 2)
+  remarks    String?
+
+  return CnGoodReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  item   CnItem       @relation(fields: [itemId], references: [id])
+  uom    CnUOM        @relation(fields: [uomId], references: [id])
+
+  @@index([returnId])
+}
+
+model CnInternalReturn {
+  id           String   @id @default(cuid())
+  tenantId     String
+  returnNumber String
+  issueId      String
+  projectId    String
+  locationId   String
+  returnDate   DateTime
+  returnedBy   String
+  reason       String?
+  status       String   @default("draft") // draft | posted
+  postedAt     DateTime?
+  postedBy     String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  issue    CnMaterialIssue @relation(fields: [issueId], references: [id])
+  project  CnProject       @relation(fields: [projectId], references: [id])
+  location CnLocation      @relation(fields: [locationId], references: [id])
+  lines    CnInternalReturnLine[]
+
+  @@unique([tenantId, returnNumber])
+  @@index([tenantId])
+  @@index([issueId])
+  @@index([deletedAt])
+}
+
+model CnInternalReturnLine {
+  id        String  @id @default(cuid())
+  returnId  String
+  itemId    String
+  returnQty Decimal @db.Decimal(18, 4)
+  uomId     String
+  unitRate  Decimal @db.Decimal(18, 2)
+  amount    Decimal @db.Decimal(18, 2)
+  remarks   String?
+
+  return CnInternalReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  item   CnItem           @relation(fields: [itemId], references: [id])
+  uom    CnUOM            @relation(fields: [uomId], references: [id])
+
+  @@index([returnId])
+}
+
+model CnStockTransfer {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  transferNumber     String
+  projectId          String
+  fromLocationId     String
+  toLocationId       String
+  transferDate       DateTime
+  reason             String?
+  status             String   @default("draft") // draft | in_transit | received (fully posted)
+  inTransitAt        DateTime?
+  receivedAt         DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project      CnProject  @relation(fields: [projectId], references: [id])
+  fromLocation CnLocation @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocation   CnLocation @relation("TransferTo",   fields: [toLocationId],   references: [id])
+  lines        CnStockTransferLine[]
+
+  @@unique([tenantId, transferNumber])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnStockTransferLine {
+  id         String  @id @default(cuid())
+  transferId String
+  itemId     String
+  quantity   Decimal @db.Decimal(18, 4)
+  uomId      String
+  unitRate   Decimal @db.Decimal(18, 2)
+  amount     Decimal @db.Decimal(18, 2)
+  remarks    String?
+
+  transfer CnStockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item     CnItem          @relation(fields: [itemId], references: [id])
+  uom      CnUOM           @relation(fields: [uomId], references: [id])
+
+  @@index([transferId])
+}
+
+model CnStockReconciliation {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  reconciliationNumber String
+  projectId           String
+  locationId          String
+  reconciliationDate  DateTime
+  reason              String?
+  status              String   @default("draft") // draft | posted
+  postedAt            DateTime?
+  postedBy            String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  CnProject  @relation(fields: [projectId], references: [id])
+  location CnLocation @relation(fields: [locationId], references: [id])
+  lines    CnStockReconciliationLine[]
+
+  @@unique([tenantId, reconciliationNumber])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnStockReconciliationLine {
+  id               String  @id @default(cuid())
+  reconciliationId String
+  itemId           String
+  systemQty        Decimal @db.Decimal(18, 4)
+  physicalQty      Decimal @db.Decimal(18, 4)
+  /// positive = extra found, negative = shortage
+  adjustmentQty    Decimal @db.Decimal(18, 4)
+  uomId            String
+  unitRate         Decimal @db.Decimal(18, 2)
+  amount           Decimal @db.Decimal(18, 2)
+  remarks          String?
+
+  reconciliation CnStockReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  item           CnItem                @relation(fields: [itemId], references: [id])
+  uom            CnUOM                 @relation(fields: [uomId], references: [id])
+
+  @@index([reconciliationId])
+}
+
+model CnDieselLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  logNumber      String
+  projectId      String
+  locationId     String
+  logDate        DateTime
+  machineryId    String?
+  driverName     String?
+  vehicleNo      String?
+  fuelQty        Decimal  @db.Decimal(18, 4)
+  unitRate       Decimal? @db.Decimal(18, 2)
+  amount         Decimal? @db.Decimal(18, 2)
+  openingReading Decimal? @db.Decimal(18, 2)
+  closingReading Decimal? @db.Decimal(18, 2)
+  remarks        String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project   CnProject    @relation(fields: [projectId], references: [id])
+  location  CnLocation   @relation(fields: [locationId], references: [id])
+  machinery CnMachinery? @relation(fields: [machineryId], references: [id])
+
+  @@unique([tenantId, logNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([deletedAt])
+}
+
+// ============================================================================
+// QUIKCONSTRUCTION — Phase 4 (Projects core)
+// ============================================================================
+// BOQ: Bill of Quantities — hierarchical item list with qty × rate per project.
+// Locked once approved so downstream docs (Work Order, RAB) can reference it.
+// DPR: Daily Progress Report — site-level daily entry of activities, labour,
+// machinery. One header per (project, date). Informational, no stock effect.
+// Hindrance: blocker log — weather, permit, material shortage, etc. Used for
+// delay claims.
+// ============================================================================
+
+model CnBOQ {
+  id        String   @id @default(cuid())
+  tenantId  String
+  projectId String
+  boqNumber String
+  boqDate   DateTime
+  currency  String   @default("INR")
+  subtotal  Decimal  @default(0) @db.Decimal(18, 2)
+  taxAmount Decimal  @default(0) @db.Decimal(18, 2)
+  total     Decimal  @default(0) @db.Decimal(18, 2)
+  status    String   @default("draft") // draft | locked
+  lockedAt  DateTime?
+  lockedBy  String?
+  remarks   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject @relation(fields: [projectId], references: [id])
+  items   CnBOQItem[]
+  rabs    CnRAB[]
+  fromEstimations CnEstimation[] @relation("EstimationToBoq")
+
+  @@unique([tenantId, boqNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnBOQItem {
+  id          String  @id @default(cuid())
+  boqId       String
+  /// Parent in the BOQ tree (null for top-level). Children's rates/amounts
+  /// roll up to the parent's `amount` (computed, not stored).
+  parentId    String?
+  /// Display order within siblings.
+  sortOrder   Int     @default(0)
+  /// When kind="group" description is a header, quantity/rate/uom are null.
+  /// When kind="item" everything must be present.
+  kind        String  @default("item") // item | group
+  code        String?
+  description String
+  itemId      String?
+  uomId       String?
+  quantity    Decimal? @db.Decimal(18, 4)
+  rate        Decimal? @db.Decimal(18, 2)
+  amount      Decimal  @default(0) @db.Decimal(18, 2)
+  gstRate     Decimal? @db.Decimal(5, 2)
+  // Phase 13 — schedule + progress
+  scheduledStart  DateTime?
+  scheduledEnd    DateTime?
+  percentComplete Decimal?  @db.Decimal(5, 2)
+
+  boq       CnBOQ        @relation(fields: [boqId], references: [id], onDelete: Cascade)
+  parent    CnBOQItem?   @relation("CnBOQItemHierarchy", fields: [parentId], references: [id])
+  children  CnBOQItem[]  @relation("CnBOQItemHierarchy")
+  item      CnItem?      @relation(fields: [itemId], references: [id])
+  uom       CnUOM?       @relation(fields: [uomId], references: [id])
+  dprLines  CnDPRLine[]
+  rabLines  CnRABLine[]
+
+  @@index([boqId])
+  @@index([parentId])
+  @@index([itemId])
+}
+
+model CnDPR {
+  id           String   @id @default(cuid())
+  tenantId     String
+  projectId    String
+  dprDate      DateTime
+  weather      String?
+  reportedById String
+  remarks      String?
+  /// Default consumption location — single source for this DPR's material
+  /// lines. Required at post-time; may be null in draft.
+  consumptionLocationId String?
+  status       String   @default("draft") // draft | submitted | posted
+  postedAt     DateTime?
+  postedBy     String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project   CnProject      @relation(fields: [projectId], references: [id])
+  location  CnLocation?    @relation("DprConsumptionLocation", fields: [consumptionLocationId], references: [id])
+  lines     CnDPRLine[]
+  materials CnDPRMaterial[]
+
+  @@unique([tenantId, projectId, dprDate])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([dprDate])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+/// Materials consumed on a DPR. On post, each row writes a `dpr_consumption`
+/// qtyOut row to CnStockLedger against (projectId, consumptionLocationId,
+/// itemId). Rate snapshot taken from moving avg at post-time.
+model CnDPRMaterial {
+  id         String   @id @default(cuid())
+  dprId      String
+  itemId     String
+  uomId      String
+  quantity   Decimal  @db.Decimal(18, 4)
+  /// Snapshot unit rate (populated at post-time from prior ledger avg).
+  unitRate   Decimal  @default(0) @db.Decimal(18, 2)
+  amount     Decimal  @default(0) @db.Decimal(18, 2)
+  remarks    String?
+
+  dpr  CnDPR  @relation(fields: [dprId], references: [id], onDelete: Cascade)
+  item CnItem @relation(fields: [itemId], references: [id])
+  uom  CnUOM  @relation(fields: [uomId], references: [id])
+
+  @@index([dprId])
+  @@index([itemId])
+}
+
+model CnDPRLine {
+  id              String   @id @default(cuid())
+  dprId           String
+  /// What was done: can reference a BOQ item or a free-text description.
+  boqItemId       String?
+  activity        String
+  /// Quantity of work completed today (in uom).
+  quantityDone    Decimal  @db.Decimal(18, 4)
+  uomId           String?
+  /// Labour used today (count of persons).
+  labourCount     Int?
+  labourHours     Decimal? @db.Decimal(8, 2)
+  /// Machinery used today (free-text summary; ties to CnMachinery later).
+  machineryUsed   String?
+  /// Free-text remarks.
+  remarks         String?
+
+  dpr     CnDPR      @relation(fields: [dprId], references: [id], onDelete: Cascade)
+  boqItem CnBOQItem? @relation(fields: [boqItemId], references: [id])
+  uom     CnUOM?     @relation(fields: [uomId], references: [id])
+
+  @@index([dprId])
+  @@index([boqItemId])
+}
+
+model CnHindrance {
+  id            String   @id @default(cuid())
+  tenantId      String
+  projectId     String
+  hindranceDate DateTime
+  category      String   // weather | permit | material_shortage | design_change | labour | equipment | external | other
+  title         String
+  description   String?
+  startDate     DateTime
+  endDate       DateTime?
+  daysImpacted  Int?
+  status        String   @default("open") // open | resolved | closed
+  resolvedAt    DateTime?
+  resolvedBy    String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject @relation(fields: [projectId], references: [id])
+
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+// ============================================================================
+// QUIKCONSTRUCTION — Phase 4b (Estimation, Work Orders, RAB)
+// ============================================================================
+
+model CnEstimation {
+  id              String   @id @default(cuid())
+  tenantId        String
+  projectId       String
+  estimationNumber String
+  estimationDate  DateTime
+  subtotal        Decimal  @default(0) @db.Decimal(18, 2)
+  taxAmount       Decimal  @default(0) @db.Decimal(18, 2)
+  total           Decimal  @default(0) @db.Decimal(18, 2)
+  currency        String   @default("INR")
+  status          String   @default("draft") // draft | submitted | approved | converted | rejected
+  convertedBoqId  String?
+  remarks         String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project      CnProject @relation(fields: [projectId], references: [id])
+  convertedBoq CnBOQ?    @relation("EstimationToBoq", fields: [convertedBoqId], references: [id])
+  items        CnEstimationItem[]
+
+  @@unique([tenantId, estimationNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnEstimationItem {
+  id           String  @id @default(cuid())
+  estimationId String
+  parentId     String?
+  sortOrder    Int     @default(0)
+  kind         String  @default("item") // item | group
+  code         String?
+  description  String
+  itemId       String?
+  uomId        String?
+  quantity     Decimal? @db.Decimal(18, 4)
+  rate         Decimal? @db.Decimal(18, 2)
+  amount       Decimal  @default(0) @db.Decimal(18, 2)
+  gstRate      Decimal? @db.Decimal(5, 2)
+
+  estimation CnEstimation       @relation(fields: [estimationId], references: [id], onDelete: Cascade)
+  parent     CnEstimationItem?  @relation("CnEstimationItemHierarchy", fields: [parentId], references: [id])
+  children   CnEstimationItem[] @relation("CnEstimationItemHierarchy")
+  item       CnItem?            @relation(fields: [itemId], references: [id])
+  uom        CnUOM?             @relation(fields: [uomId], references: [id])
+
+  @@index([estimationId])
+  @@index([parentId])
+}
+
+model CnWorkOrder {
+  id               String   @id @default(cuid())
+  tenantId         String
+  woNumber         String
+  projectId        String
+  contractorId     String
+  workCategoryId   String?
+  woDate           DateTime
+  startDate        DateTime?
+  endDate          DateTime?
+  subtotal         Decimal  @default(0) @db.Decimal(18, 2)
+  taxAmount        Decimal  @default(0) @db.Decimal(18, 2)
+  totalAmount      Decimal  @default(0) @db.Decimal(18, 2)
+  status           String   @default("draft") // draft | sent | in_progress | completed | closed | cancelled
+  paymentTermsDays Int?
+  termsConditionId String?
+  remarks          String?
+  completedAt      DateTime?
+  completedBy      String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project      CnProject        @relation(fields: [projectId], references: [id])
+  contractor   CnContractor     @relation(fields: [contractorId], references: [id])
+  workCategory CnWorkCategory?  @relation(fields: [workCategoryId], references: [id])
+  lines        CnWorkOrderLine[]
+
+  @@unique([tenantId, woNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([contractorId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnWorkOrderLine {
+  id          String   @id @default(cuid())
+  woId        String
+  itemId      String?
+  description String
+  quantity    Decimal  @db.Decimal(18, 4)
+  uomId       String?
+  rate        Decimal  @db.Decimal(18, 2)
+  amount      Decimal  @db.Decimal(18, 2)
+  gstRate     Decimal? @db.Decimal(5, 2)
+  taxAmount   Decimal  @default(0) @db.Decimal(18, 2)
+  totalAmount Decimal  @db.Decimal(18, 2)
+  completedQty Decimal @default(0) @db.Decimal(18, 4)
+  remarks     String?
+
+  wo   CnWorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
+  item CnItem?     @relation(fields: [itemId], references: [id])
+  uom  CnUOM?      @relation(fields: [uomId], references: [id])
+
+  @@index([woId])
+}
+
+model CnRAB {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  rabNumber          String
+  projectId          String
+  boqId              String
+  rabDate            DateTime
+  /// Sequential bill number per project (1st RAB, 2nd RAB, …)
+  billSeqNo          Int
+  billedTillDate     DateTime
+  /// Snapshot at time of RAB: cumulative billed before THIS bill.
+  priorBilledAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  /// This period's amount = sum of lines' currentPeriodAmount
+  currentBillAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  subtotal           Decimal  @default(0) @db.Decimal(18, 2)
+  taxAmount          Decimal  @default(0) @db.Decimal(18, 2)
+  total              Decimal  @default(0) @db.Decimal(18, 2)
+  status             String   @default("draft") // draft | submitted | approved | paid | rejected
+  remarks            String?
+  approvedAt         DateTime?
+  approvedBy         String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  CnProject @relation(fields: [projectId], references: [id])
+  boq      CnBOQ     @relation(fields: [boqId], references: [id])
+  lines    CnRABLine[]
+  invoices CnClientInvoice[]
+
+  @@unique([tenantId, rabNumber])
+  @@unique([projectId, billSeqNo])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([boqId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnRABLine {
+  id                  String   @id @default(cuid())
+  rabId               String
+  boqItemId           String
+  /// Cumulative work done (in uom) TILL the end of this RAB's period.
+  cumulativeQtyDone   Decimal  @db.Decimal(18, 4)
+  /// Snapshot at time of RAB: cumulative qty before THIS bill.
+  priorCumulativeQty  Decimal  @default(0) @db.Decimal(18, 4)
+  /// = cumulative − prior. The qty billed in THIS period.
+  currentPeriodQty    Decimal  @db.Decimal(18, 4)
+  /// Rate taken from the BOQ at time of RAB creation (so historical RABs are stable).
+  rate                Decimal  @db.Decimal(18, 2)
+  /// currentPeriodQty × rate
+  currentPeriodAmount Decimal  @db.Decimal(18, 2)
+  gstRate             Decimal? @db.Decimal(5, 2)
+  taxAmount           Decimal  @default(0) @db.Decimal(18, 2)
+  remarks             String?
+
+  rab     CnRAB     @relation(fields: [rabId], references: [id], onDelete: Cascade)
+  boqItem CnBOQItem @relation(fields: [boqItemId], references: [id])
+
+  @@index([rabId])
+  @@index([boqItemId])
+}
+
+// ── Phase 5 — Finance ───────────────────────────────────────────────────
+
+model CnClientInvoice {
+  id             String   @id @default(cuid())
+  tenantId       String
+  invoiceNumber  String
+  customerId     String
+  projectId      String?
+  rabId          String?
+  invoiceDate    DateTime
+  dueDate        DateTime?
+  subtotal       Decimal  @default(0) @db.Decimal(18, 2)
+  taxAmount      Decimal  @default(0) @db.Decimal(18, 2)
+  /// GST split (additive; legacy rows zero, taxAmount stays authoritative total).
+  cgstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  sgstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  igstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  /// 2-char state code — intra-state (CGST+SGST) vs inter-state (IGST).
+  placeOfSupply  String?
+  total          Decimal  @default(0) @db.Decimal(18, 2)
+  paidAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  status         String   @default("draft") // draft | sent | partial | paid | cancelled
+  remarks        String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant       Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer     CnCustomer                    @relation(fields: [customerId], references: [id])
+  project      CnProject?                    @relation(fields: [projectId], references: [id])
+  rab          CnRAB?                        @relation(fields: [rabId], references: [id])
+  allocations  CnClientReceiptAllocation[]
+  lines        CnClientInvoiceLine[]
+  creditNotes  CnCreditNote[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([projectId])
+  @@index([rabId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnClientReceipt {
+  id               String   @id @default(cuid())
+  tenantId         String
+  receiptNumber    String
+  customerId       String
+  receiptDate      DateTime
+  amount           Decimal  @db.Decimal(18, 2)
+  allocatedAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  mode             String   // cash | cheque | bank | upi | other
+  reference        String?  // cheque #, UTR, txn id
+  remarks          String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant      Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer    CnCustomer                    @relation(fields: [customerId], references: [id])
+  allocations CnClientReceiptAllocation[]
+
+  @@unique([tenantId, receiptNumber])
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([deletedAt])
+}
+
+model CnClientReceiptAllocation {
+  id         String   @id @default(cuid())
+  receiptId  String
+  invoiceId  String
+  amount     Decimal  @db.Decimal(18, 2)
+
+  receipt CnClientReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  invoice CnClientInvoice @relation(fields: [invoiceId], references: [id])
+
+  @@unique([receiptId, invoiceId])
+  @@index([invoiceId])
+}
+
+model CnVendorBill {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  billNumber          String    // internal bill #
+  vendorId            String
+  projectId           String?
+  grnId               String?
+  poId                String?
+  supplierInvoiceNo   String?
+  supplierInvoiceDate DateTime?
+  billDate            DateTime
+  dueDate             DateTime?
+  subtotal            Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount           Decimal   @default(0) @db.Decimal(18, 2)
+  /// GST split (additive).
+  cgstAmount          Decimal   @default(0) @db.Decimal(18, 2)
+  sgstAmount          Decimal   @default(0) @db.Decimal(18, 2)
+  igstAmount          Decimal   @default(0) @db.Decimal(18, 2)
+  placeOfSupply       String?
+  total               Decimal   @default(0) @db.Decimal(18, 2)
+  paidAmount          Decimal   @default(0) @db.Decimal(18, 2)
+  status              String    @default("draft") // draft | approved | partial | paid | cancelled
+  remarks             String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant      Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor      CnVendor                      @relation(fields: [vendorId], references: [id])
+  project     CnProject?                    @relation(fields: [projectId], references: [id])
+  grn         CnGoodsReceiptNote?           @relation(fields: [grnId], references: [id])
+  po          CnPurchaseOrder?              @relation(fields: [poId], references: [id])
+  allocations CnVendorPaymentAllocation[]
+  lines       CnVendorBillLine[]
+  debitNotes  CnDebitNote[]
+
+  @@unique([tenantId, billNumber])
+  @@unique([grnId])
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([projectId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnVendorPayment {
+  id               String   @id @default(cuid())
+  tenantId         String
+  paymentNumber    String
+  vendorId         String
+  paymentDate      DateTime
+  amount           Decimal  @db.Decimal(18, 2)
+  allocatedAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  mode             String
+  reference        String?
+  remarks          String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant      Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor      CnVendor                      @relation(fields: [vendorId], references: [id])
+  allocations CnVendorPaymentAllocation[]
+
+  @@unique([tenantId, paymentNumber])
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([deletedAt])
+}
+
+model CnVendorPaymentAllocation {
+  id         String   @id @default(cuid())
+  paymentId  String
+  billId     String
+  amount     Decimal  @db.Decimal(18, 2)
+
+  payment CnVendorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  bill    CnVendorBill    @relation(fields: [billId], references: [id])
+
+  @@unique([paymentId, billId])
+  @@index([billId])
+}
+
+// ── Phase 7 — HRMS ──────────────────────────────────────────────────────
+
+model CnEmployee {
+  id           String   @id @default(cuid())
+  tenantId     String
+  empCode      String
+  firstName    String
+  lastName     String?
+  email        String?
+  phone        String?
+  designation  String?
+  departmentId String?
+  joinDate     DateTime?
+  exitDate     DateTime?
+  empType      String   @default("permanent") // permanent | contract | daily_wage
+  monthlyWage  Decimal? @db.Decimal(18, 2)
+  dailyWage    Decimal? @db.Decimal(18, 2)
+  hourlyWage   Decimal? @db.Decimal(18, 2)
+  status       String   @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department   CnDepartment?  @relation(fields: [departmentId], references: [id])
+  attendances  CnAttendance[]
+  payrollLines CnPayrollLine[]
+
+  @@unique([tenantId, empCode])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnAttendance {
+  id          String   @id @default(cuid())
+  tenantId    String
+  employeeId  String
+  projectId   String?
+  date        DateTime
+  status      String   // P | A | HD | L
+  hoursWorked Decimal? @db.Decimal(5, 2)
+  remarks     String?
+
+  createdAt DateTime @default(now())
+  createdBy String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee CnEmployee @relation(fields: [employeeId], references: [id])
+  project  CnProject? @relation(fields: [projectId], references: [id])
+
+  @@unique([tenantId, employeeId, date])
+  @@index([tenantId])
+  @@index([date])
+}
+
+model CnPayroll {
+  id          String   @id @default(cuid())
+  tenantId    String
+  runNumber   String
+  periodStart DateTime
+  periodEnd   DateTime
+  status      String   @default("draft") // draft | finalized | paid
+  totalGross  Decimal  @default(0) @db.Decimal(18, 2)
+  totalNet    Decimal  @default(0) @db.Decimal(18, 2)
+  remarks     String?
+  finalizedAt DateTime?
+  finalizedBy String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines  CnPayrollLine[]
+
+  @@unique([tenantId, runNumber])
+  @@index([tenantId])
+  @@index([deletedAt])
+}
+
+model CnPayrollLine {
+  id          String   @id @default(cuid())
+  payrollId   String
+  employeeId  String
+  daysPresent Decimal? @db.Decimal(5, 2)
+  hoursWorked Decimal? @db.Decimal(8, 2)
+  basicAmount Decimal  @db.Decimal(18, 2)
+  deductions  Decimal  @default(0) @db.Decimal(18, 2)
+  netAmount   Decimal  @db.Decimal(18, 2)
+  remarks     String?
+
+  payroll  CnPayroll  @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  employee CnEmployee @relation(fields: [employeeId], references: [id])
+
+  @@index([payrollId])
+  @@index([employeeId])
+}
+
+// ── Phase 8 — Approvals ─────────────────────────────────────────────────
+
+model CnApprovalRule {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  docType    String   // pr | po | rab | vendor_bill | payroll | other
+  /// Threshold: approval required if doc total >= this amount (null = always).
+  minAmount  Decimal? @db.Decimal(18, 2)
+  approverId String   // user id
+  status     String   @default("active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, docType])
+  @@index([deletedAt])
+}
+
+model CnApprovalRequest {
+  id           String   @id @default(cuid())
+  tenantId     String
+  docType      String
+  docId        String
+  docRef       String   // human-readable identifier (doc number)
+  amount       Decimal? @db.Decimal(18, 2)
+  requestedBy  String
+  approverId   String
+  status       String   @default("pending") // pending | approved | rejected
+  decisionAt   DateTime?
+  comment      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([approverId, status])
+  @@index([docType, docId])
+}
+
+// ── Phase 9 — Quality ───────────────────────────────────────────────────
+
+model CnQCInspection {
+  id             String   @id @default(cuid())
+  tenantId       String
+  inspectionNumber String
+  grnId          String?
+  projectId      String?
+  inspectorId    String
+  inspectionDate DateTime
+  decision       String   @default("pending") // pending | accepted | rejected | conditional
+  remarks        String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  grn     CnGoodsReceiptNote? @relation(fields: [grnId], references: [id])
+  project CnProject?          @relation(fields: [projectId], references: [id])
+  defects CnQCDefect[]
+
+  @@unique([tenantId, inspectionNumber])
+  @@index([tenantId])
+  @@index([grnId])
+  @@index([deletedAt])
+}
+
+model CnQCDefect {
+  id           String   @id @default(cuid())
+  inspectionId String
+  itemId       String?
+  defectType   String
+  severity     String   @default("minor") // minor | major | critical
+  quantity     Decimal? @db.Decimal(18, 4)
+  remarks      String?
+
+  inspection CnQCInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  item       CnItem?        @relation(fields: [itemId], references: [id])
+
+  @@index([inspectionId])
+}
+
+// ── Phase 10 — Safety ───────────────────────────────────────────────────
+
+model CnSafetyIncident {
+  id          String   @id @default(cuid())
+  tenantId    String
+  projectId   String?
+  incidentNumber String
+  incidentDate DateTime
+  category    String   // injury | near_miss | property_damage | environmental | other
+  severity    String   @default("low") // low | medium | high | critical
+  title       String
+  description String?
+  reportedBy  String
+  status      String   @default("open") // open | investigating | resolved | closed
+  resolvedAt  DateTime?
+  resolvedBy  String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject? @relation(fields: [projectId], references: [id])
+
+  @@unique([tenantId, incidentNumber])
+  @@index([tenantId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model CnSafetyChecklist {
+  id           String   @id @default(cuid())
+  tenantId     String
+  projectId    String?
+  templateName String   // e.g. "Daily site safety walk"
+  checklistDate DateTime
+  completedBy  String
+  /// JSON: [{ item: string, ok: bool, remarks?: string }]
+  items        Json
+  overallStatus String  @default("pass") // pass | fail | partial
+  remarks      String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject? @relation(fields: [projectId], references: [id])
+
+  @@index([tenantId])
+  @@index([checklistDate])
+  @@index([deletedAt])
+}
+
+// ── Phase 12 — Documents (local disk MVP) ───────────────────────────────
+
+model CnDocument {
+  id          String   @id @default(cuid())
+  tenantId    String
+  refType     String   // project | po | grn | rab | invoice | bill | incident | dpr | other
+  refId       String
+  fileName    String
+  mimeType    String
+  sizeBytes   Int
+  /// Path relative to DOCS_ROOT (e.g. "tenantId/uuid-file.pdf"). Local disk MVP.
+  storagePath String
+  uploadedBy  String
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, refType, refId])
+  @@index([deletedAt])
+}
+
+// ── Phase 14 — Expenses (petty cash, non-GRN costs) ─────────────────────
+
+model CnExpense {
+  id             String   @id @default(cuid())
+  tenantId       String
+  expenseNumber  String
+  expenseDate    DateTime
+  projectId      String?
+  category       String   // travel | site_utility | office | labour_cash | fuel | misc
+  description    String
+  paidTo         String?
+  amount         Decimal  @db.Decimal(18, 2)
+  paymentMode    String   // cash | bank | upi | cheque | other
+  reference      String?
+  status         String   @default("recorded") // recorded | reimbursed | cancelled
+  remarks        String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject? @relation(fields: [projectId], references: [id])
+
+  @@unique([tenantId, expenseNumber])
+  @@index([tenantId])
+  @@index([projectId])
+  @@index([deletedAt])
+}
+
+// ── Structural gaps — additive, non-breaking ────────────────────────────
+
+/// Optional line items for client invoices. When present, subtotal/taxAmount
+/// on the parent header should match the sum here. Absent for legacy
+/// RAB-generated invoices which carry totals only.
+model CnClientInvoiceLine {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  sortOrder   Int      @default(0)
+  description String
+  quantity    Decimal? @db.Decimal(18, 4)
+  uomId       String?
+  rate        Decimal? @db.Decimal(18, 2)
+  amount      Decimal  @db.Decimal(18, 2)
+  gstRate     Decimal? @db.Decimal(5, 2)
+  taxAmount   Decimal  @default(0) @db.Decimal(18, 2)
+  remarks     String?
+
+  invoice CnClientInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  uom     CnUOM?          @relation(fields: [uomId], references: [id])
+
+  @@index([invoiceId])
+}
+
+/// Optional line items for vendor bills. See CnClientInvoiceLine for shape rationale.
+model CnVendorBillLine {
+  id          String   @id @default(cuid())
+  billId      String
+  sortOrder   Int      @default(0)
+  description String
+  quantity    Decimal? @db.Decimal(18, 4)
+  uomId       String?
+  rate        Decimal? @db.Decimal(18, 2)
+  amount      Decimal  @db.Decimal(18, 2)
+  gstRate     Decimal? @db.Decimal(5, 2)
+  taxAmount   Decimal  @default(0) @db.Decimal(18, 2)
+  remarks     String?
+
+  bill CnVendorBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  uom  CnUOM?       @relation(fields: [uomId], references: [id])
+
+  @@index([billId])
+}
+
+/// Credit Note — reduces customer receivable. Can be linked to an invoice
+/// (in which case it is applied to that invoice on issue) or standalone.
+model CnCreditNote {
+  id             String   @id @default(cuid())
+  tenantId       String
+  noteNumber     String
+  customerId     String
+  invoiceId      String?
+  noteDate       DateTime
+  amount         Decimal  @db.Decimal(18, 2)
+  reason         String
+  status         String   @default("issued") // issued | applied | cancelled
+  remarks        String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer CnCustomer       @relation(fields: [customerId], references: [id])
+  invoice  CnClientInvoice? @relation(fields: [invoiceId], references: [id])
+
+  @@unique([tenantId, noteNumber])
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([deletedAt])
+}
+
+/// Debit Note — adjustment against a vendor. Typically reduces a bill payable
+/// (e.g. returned goods, pricing dispute).
+model CnDebitNote {
+  id             String   @id @default(cuid())
+  tenantId       String
+  noteNumber     String
+  vendorId       String
+  billId         String?
+  noteDate       DateTime
+  amount         Decimal  @db.Decimal(18, 2)
+  reason         String
+  status         String   @default("issued") // issued | applied | cancelled
+  remarks        String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor CnVendor      @relation(fields: [vendorId], references: [id])
+  bill   CnVendorBill? @relation(fields: [billId], references: [id])
+
+  @@unique([tenantId, noteNumber])
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([deletedAt])
+}
+
+/// Audit log. Free-form old/new JSON snapshots, indexed for per-entity
+/// history lookup. NOT wrapped around every endpoint in this pass — helper
+/// `logAudit()` is opt-in. Future work to wire it broadly.
+model CnAuditLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String
+  actionType  String   // create | update | delete | status_change | post | approve | …
+  entityType  String   // cnRAB | cnClientInvoice | cnVendorBill | …
+  entityId    String
+  entityRef   String?  // human-readable identifier
+  oldValues   Json?
+  newValues   Json?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, createdAt])
+}
+
+/// Per-tenant, per-prefix monotonic counters. Atomic `nextval()` via
+/// $transaction. Prevents collision under concurrent load where
+/// `Date.now().slice(-6)` can duplicate.
+model CnNumberSequence {
+  id        String   @id @default(cuid())
+  tenantId  String
+  prefix    String   // e.g. PR | PO | GRN | RAB | INV | BILL | RCP | PAY | CN | DN | EXP | PAY | INS | INC
+  /// Financial year, e.g. "FY2526". Optional — if absent, counter is not FY-scoped.
+  fyKey     String?
+  counter   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, prefix, fyKey])
+  @@index([tenantId])
 }

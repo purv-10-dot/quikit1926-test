@@ -3,6 +3,15 @@
 import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 
+/**
+ * Width presets for different form complexities:
+ *   - default (480px): simple single-column master forms (Customer, Vendor, Employee…)
+ *   - lg (720px): forms with 2-column grids and some compact line items (Receipt, Payment, Expense, Credit/Debit Notes)
+ *   - xl (1080px): multi-line document forms with wide tables (BOQ, RAB, PR, PO, GRN, Issue, Estimation, WorkOrder)
+ *   - full (100vw up to 1400px): very wide tables (BOQ import preview, Attendance bulk editor)
+ */
+type SlidePanelSize = "default" | "lg" | "xl" | "full";
+
 interface SlidePanelProps {
   open: boolean;
   onClose: () => void;
@@ -10,7 +19,15 @@ interface SlidePanelProps {
   subtitle?: string;
   children: ReactNode;
   footer?: ReactNode;
+  size?: SlidePanelSize;
 }
+
+const SIZE_CLASS: Record<SlidePanelSize, string> = {
+  default: "sm:w-[480px]",
+  lg: "sm:w-[720px]",
+  xl: "sm:w-[1080px]",
+  full: "sm:w-[1400px]",
+};
 
 export function SlidePanel({
   open,
@@ -19,6 +36,7 @@ export function SlidePanel({
   subtitle,
   children,
   footer,
+  size = "default",
 }: SlidePanelProps) {
   useEffect(() => {
     if (open) {
@@ -43,7 +61,7 @@ export function SlidePanel({
       />
 
       {/* Panel */}
-      <div className="relative z-10 ml-auto w-full sm:w-[480px] sm:max-w-[90vw] bg-white shadow-2xl flex flex-col">
+      <div className={`relative z-10 ml-auto w-full ${SIZE_CLASS[size]} sm:max-w-[95vw] bg-white shadow-2xl flex flex-col`}>
         {/* Header */}
         <div className="px-6 py-5 border-b border-gray-200 flex items-start justify-between">
           <div>
