@@ -7,6 +7,9 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { invalidateFiscalYearsCache } from "@/lib/hooks/useFiscalYears";
+import {
+  RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
+} from "@quikit/ui";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface QuarterRow {
@@ -125,25 +128,24 @@ function EditPanel({
   const computedEnd = q1EndPreview ? fmtDate(q1EndPreview.toISOString()) : fmtDate(row.endDate);
 
   return (
-    <div className="fixed inset-0 z-[200] flex">
-      <div className="flex-1 bg-black/30" onClick={onClose} />
-      <div className="w-[420px] bg-white h-full shadow-2xl flex flex-col">
-        {/* Header */}
-        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <QuarterBadge quarter={row.quarter} />
-              <span className="text-xs text-gray-400">FY {row.fiscalYear}-{String(row.fiscalYear + 1).slice(-2)}</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">Change Q1 start date — all quarters will recalculate automatically</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 mt-0.5">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 min-h-0">
+    <RightPanel
+      open
+      onClose={onClose}
+      size="sm"
+      title={`${row.quarter} · FY ${row.fiscalYear}-${String(row.fiscalYear + 1).slice(-2)}`}
+      subtitle="Change Q1 start date — all quarters will recalculate automatically"
+      footer={
+        <RightPanelFooter>
+          <RightPanelCancelButton onClick={onClose} />
+          <RightPanelSubmitButton
+            onClick={handleSubmit}
+            saving={saving}
+            icon="check"
+            label="Save & Recalculate"
+          />
+        </RightPanelFooter>
+      }
+    >
           <div>
             <label className="text-xs font-medium text-gray-600 block mb-1.5">
               Start Date <span className="text-red-400">*</span>
@@ -207,23 +209,7 @@ function EditPanel({
           {error && (
             <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50">
-          <button onClick={onClose} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 px-3 py-2 border border-gray-200 rounded-lg bg-white hover:bg-gray-50">
-            <X className="h-3.5 w-3.5" /> Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="flex items-center gap-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 px-4 py-2 rounded-lg disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save & Recalculate"}
-          </button>
-        </div>
-      </div>
-    </div>
+    </RightPanel>
   );
 }
 
@@ -234,7 +220,7 @@ function ConfirmDelete({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 w-80">
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-80">
         <h3 className="text-sm font-bold text-gray-900 mb-2">Delete {quarter}?</h3>
         <p className="text-xs text-gray-500 mb-5">
           This quarter setting will be permanently removed. This action cannot be undone.
@@ -263,7 +249,7 @@ function ConfirmDeleteFY({
   const label = `FY ${year}-${String(year + 1).slice(-2)}`;
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 w-96">
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-96">
         <h3 className="text-sm font-bold text-gray-900 mb-2">Delete {label}?</h3>
         <p className="text-xs text-gray-600 mb-2">
           This will permanently delete <span className="font-semibold">all 4 quarters</span> for {label} from the database. This action <span className="font-semibold">cannot be undone</span>.
@@ -391,7 +377,7 @@ function GenerateModal({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 w-96">
+      <div className="bg-white rounded-xl shadow-2xl p-6 w-96">
         <h3 className="text-sm font-bold text-gray-900 mb-1">Initialize Quarters</h3>
 
         {isBlocked ? (

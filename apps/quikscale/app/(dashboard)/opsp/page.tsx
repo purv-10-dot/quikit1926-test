@@ -227,7 +227,7 @@ export default function OPSPPage() {
       {/* ── Finalize confirmation ── */}
       {finalizeConfirmOpen && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
             <div className="flex items-center gap-3">
               <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
                 <AlertTriangle className="h-5 w-5 text-amber-600" />
