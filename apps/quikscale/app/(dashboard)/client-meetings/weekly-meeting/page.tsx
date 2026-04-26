@@ -12,6 +12,9 @@ import {
   RichTextField,
   UserMultiPicker,
   UserPicker,
+  DropdownPicker,
+  DatePicker,
+  TimePicker,
   type PickerUser,
 } from "@quikit/ui";
 import {
@@ -915,25 +918,17 @@ export default function WeeklyMeetingPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Meeting Date">
-                  <input
-                    type="date"
+                  <DatePicker
                     value={editing.form.meetingDate}
-                    onChange={(e) => updateField("meetingDate", e.target.value)}
-                    className={inputCls}
+                    onChange={(v) => updateField("meetingDate", v)}
                   />
                 </Field>
                 <Field label="Call Status" required>
-                  <select
+                  <DropdownPicker
                     value={editing.form.callStatus}
-                    onChange={(e) => setCallStatus(e.target.value as Status)}
-                    className={inputCls}
-                  >
-                    {STATUS_OPTS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setCallStatus(v as Status)}
+                    options={STATUS_OPTS}
+                  />
                 </Field>
               </div>
 
@@ -979,25 +974,17 @@ export default function WeeklyMeetingPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Actual Start Time" required>
-                  <input
-                    type="time"
+                  <TimePicker
                     value={editing.form.actualStartTime}
-                    onChange={(e) =>
-                      updateField("actualStartTime", e.target.value)
-                    }
+                    onChange={(v) => updateField("actualStartTime", v)}
                     disabled={editing.form.callStatus !== "HELD"}
-                    className={inputCls}
                   />
                 </Field>
                 <Field label="Actual End Time" required>
-                  <input
-                    type="time"
+                  <TimePicker
                     value={editing.form.actualEndTime}
-                    onChange={(e) =>
-                      updateField("actualEndTime", e.target.value)
-                    }
+                    onChange={(v) => updateField("actualEndTime", v)}
                     disabled={editing.form.callStatus !== "HELD"}
-                    className={inputCls}
                   />
                 </Field>
               </div>
@@ -1015,17 +1002,13 @@ export default function WeeklyMeetingPage() {
                     />
                   </Field>
                   <Field label={`${rf.label} Time`}>
-                    <input
-                      type="time"
+                    <TimePicker
                       value={editing.form[rf.pairedTime]}
-                      onChange={(e) =>
-                        updateField(rf.pairedTime, e.target.value)
-                      }
+                      onChange={(v) => updateField(rf.pairedTime, v)}
                       disabled={
                         editing.form.callStatus !== "HELD" ||
                         editing.form[rf.key] !== "YES"
                       }
-                      className={inputCls}
                     />
                   </Field>
                 </div>

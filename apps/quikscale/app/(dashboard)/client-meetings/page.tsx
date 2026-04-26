@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
-import { EmptyState, UserMultiPicker, UserPicker, type PickerUser } from "@quikit/ui";
+import { EmptyState, UserMultiPicker, UserPicker, DropdownPicker, type PickerUser } from "@quikit/ui";
 import type { PerformanceColor } from "@/lib/services/clientMeetingsMath";
 
 interface ClientOpt { id: string; name: string }
@@ -285,23 +285,25 @@ export default function ClientMeetingsDashboardPage() {
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-[160px]">
                 <label className="text-xs text-gray-600 whitespace-nowrap">Select Year:</label>
-                <select value={punchYear} onChange={e => setPunchYear(parseInt(e.target.value, 10))}
-                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
-                  {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i).map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
+                <div className="flex-1">
+                  <DropdownPicker
+                    value={String(punchYear)}
+                    onChange={(v) => setPunchYear(parseInt(v, 10))}
+                    options={Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i).map(y => ({ value: String(y), label: String(y) }))}
+                  />
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-[200px]">
                 <label className="text-xs text-gray-600 whitespace-nowrap">Select Month:</label>
-                <select value={punchMonth} onChange={e => setPunchMonth(parseInt(e.target.value, 10))}
-                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
-                  {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => (
-                    <option key={m} value={i + 1}>{m}</option>
-                  ))}
-                </select>
+                <div className="flex-1">
+                  <DropdownPicker
+                    value={String(punchMonth)}
+                    onChange={(v) => setPunchMonth(parseInt(v, 10))}
+                    options={["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => ({ value: String(i + 1), label: m }))}
+                  />
+                </div>
               </div>
               {data.punchIn && (
                 <span className="text-xs bg-accent-50 text-accent-700 px-2 py-0.5 rounded-full font-medium ml-auto">

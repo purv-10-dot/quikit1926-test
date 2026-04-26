@@ -9,8 +9,7 @@ import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
-import { UserPicker } from "@quikit/ui";
-import { UserMultiPicker } from "@quikit/ui";
+import { UserPicker, UserMultiPicker, DropdownPicker } from "@quikit/ui";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { Lock, ChevronDown } from "lucide-react";
@@ -768,22 +767,26 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Measurement Unit <span className="text-red-500">*</span>
               </label>
-              <select value={form.measurementUnit} onChange={e => setMeasurementUnit(e.target.value)}
+              <DropdownPicker
+                value={form.measurementUnit}
+                onChange={(v) => setMeasurementUnit(v)}
+                options={MEASUREMENT_UNITS.map(u => ({ value: u, label: u }))}
                 disabled={mode === "edit"}
-                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${mode === "edit" ? "border-gray-100 bg-gray-50 text-gray-600 cursor-not-allowed" : "border-gray-200 bg-white"}`}>
-                {MEASUREMENT_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
+              />
             </div>
             {isCurrency && (
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Currency</label>
-                <select value={form.currency} onChange={e => setCurrency(e.target.value)}
+                <DropdownPicker
+                  value={form.currency}
+                  onChange={(v) => setCurrency(v)}
+                  options={CURRENCIES.map(c => ({
+                    value: c.code,
+                    label: `${c.symbol} ${c.code} — ${c.name}`,
+                  }))}
+                  searchable
                   disabled={mode === "edit"}
-                  className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 ${mode === "edit" ? "border-gray-100 bg-gray-50 text-gray-600 cursor-not-allowed" : "border-gray-200 bg-white"}`}>
-                  {CURRENCIES.map(c => (
-                    <option key={c.code} value={c.code}>{c.symbol} {c.code} — {c.name}</option>
-                  ))}
-                </select>
+                />
               </div>
             )}
           </div>
