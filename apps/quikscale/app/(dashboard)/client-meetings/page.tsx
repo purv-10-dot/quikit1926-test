@@ -55,15 +55,15 @@ const DAILY_METRICS = [
 ] as const;
 
 const WEEKLY_METRICS = [
-  { key: "avgHeld",             label: "Meeting Held",         totalKey: "TotalavgHeld" },
-  { key: "avgPunctual",         label: "Punctuality",          totalKey: "TotalavgPunctual" },
-  { key: "avgDurationFollowed", label: "Duration Followed",    totalKey: "TotalavgDurationFollowed" },
-  { key: "avgAuality",          label: "Dashboard Quality",    totalKey: "TotalavgAuality" },
-  { key: "avgKP",               label: "K&P Gaps Discussed",   totalKey: "TotalavgKP" },
-  { key: "avgWWW",              label: "WWW Review",           totalKey: "TotalavgWWW" },
-  { key: "avgEF",               label: "Employee Feedback",    totalKey: "TotalavgEF" },
-  { key: "avgCI",               label: "Collective Intel",     totalKey: "TotalavgCI" },
-  { key: "avgAttendance",       label: "Attendance",           totalKey: "TotalavgAttendance" },
+  { key: "avgHeld",             label: "Avg. % of Calls happened",                              totalKey: "TotalavgHeld" },
+  { key: "avgPunctual",         label: "Avg. % of Calls where call punctuality was followed",   totalKey: "TotalavgPunctual" },
+  { key: "avgDurationFollowed", label: "Average % of call end-time adherence.",                 totalKey: "TotalavgDurationFollowed" },
+  { key: "avgAuality",          label: "Quality of the dashboards",                             totalKey: "TotalavgAuality" },
+  { key: "avgKP",               label: "Active discussion on K&P achivement gaps & action plan",totalKey: "TotalavgKP" },
+  { key: "avgWWW",              label: "WWW review and follow up",                              totalKey: "TotalavgWWW" },
+  { key: "avgEF",               label: "Customer and employee feedback segment done",           totalKey: "TotalavgEF" },
+  { key: "avgCI",               label: "Collective intelligence discussion done",               totalKey: "TotalavgCI" },
+  { key: "avgAttendance",       label: "Avg. % of people attending the calls",                  totalKey: "TotalavgAttendance" },
 ] as const;
 
 function cellClass(pct: number, isUpdate: boolean): string {
@@ -85,6 +85,8 @@ export default function ClientMeetingsDashboardPage() {
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"performance" | "punch">("performance");
   const [punchUserId, setPunchUserId] = useState<string>("");
+  const [punchYear, setPunchYear] = useState<number>(new Date().getFullYear());
+  const [punchMonth, setPunchMonth] = useState<number>(new Date().getMonth() + 1);
 
   // Excel Report modal
   const [exportOpen, setExportOpen] = useState(false);
@@ -258,13 +260,33 @@ export default function ClientMeetingsDashboardPage() {
         ) : (
           /* Member Punch-In */
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-gray-600">Member:</label>
-              <select value={punchUserId} onChange={e => setPunchUserId(e.target.value)}
-                className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
-                <option value="">Select member…</option>
-                {data.roster.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
-              </select>
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-600 whitespace-nowrap">Select Member:</label>
+                <select value={punchUserId} onChange={e => setPunchUserId(e.target.value)}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
+                  <option value="">All members</option>
+                  {data.roster.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-600 whitespace-nowrap">Select Year:</label>
+                <select value={punchYear} onChange={e => setPunchYear(parseInt(e.target.value, 10))}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
+                  {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i).map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-600 whitespace-nowrap">Select Month:</label>
+                <select value={punchMonth} onChange={e => setPunchMonth(parseInt(e.target.value, 10))}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
+                  {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => (
+                    <option key={m} value={i + 1}>{m}</option>
+                  ))}
+                </select>
+              </div>
               {data.punchIn && (
                 <span className="text-xs bg-accent-50 text-accent-700 px-2 py-0.5 rounded-full font-medium ml-auto">
                   Total Weekly Average: {data.punchIn.WeeklyTotalAverage}%
@@ -288,7 +310,12 @@ export default function ClientMeetingsDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.punchIn.weeks.map(w => (
+                    {data.punchIn.weeks
+                      .filter(w => {
+                        const d = new Date(w.meetingDate);
+                        return d.getUTCFullYear() === punchYear && d.getUTCMonth() + 1 === punchMonth;
+                      })
+                      .map(w => (
                       <tr key={w.meetingDate} className="border-b border-gray-100">
                         <td className="px-3 py-2 text-gray-700">{w.meetingDate}</td>
                         {[w.kpiWeeklyQTD, w.kpiCoding, w.priorityNotes, w.priorityStartEndDate, w.priorityColor].map((v, i) => {
