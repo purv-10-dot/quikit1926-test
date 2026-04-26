@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
-import { EmptyState, UserMultiPicker, type PickerUser } from "@quikit/ui";
+import { EmptyState, UserMultiPicker, UserPicker, type PickerUser } from "@quikit/ui";
 import type { PerformanceColor } from "@/lib/services/clientMeetingsMath";
 
 interface ClientOpt { id: string; name: string }
@@ -140,24 +140,31 @@ export default function ClientMeetingsDashboardPage() {
           </div>
           <div className="flex items-center gap-2">
             {/* Mode toggle */}
-            <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+            <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs bg-white">
               <button
                 onClick={() => { setMode("daily"); setTab("performance"); }}
-                className={`px-3 py-1.5 font-medium ${mode === "daily" ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                className={`px-3 py-1.5 font-medium transition-colors ${mode === "daily" ? "bg-accent-500 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                 Daily
               </button>
               <button
                 onClick={() => setMode("weekly")}
-                className={`px-3 py-1.5 font-medium border-l border-gray-200 ${mode === "weekly" ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                className={`px-3 py-1.5 font-medium border-l border-gray-200 transition-colors ${mode === "weekly" ? "bg-accent-500 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                 Weekly
               </button>
             </div>
-            {/* Client picker */}
-            <select value={clientId} onChange={e => setClientId(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
-              <option value="">Select client…</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            {/* Client picker — searchable single-select for consistency */}
+            <div className="min-w-[200px]">
+              <UserPicker
+                value={clientId}
+                onChange={setClientId}
+                users={clients.map<PickerUser>(c => {
+                  const parts = c.name.trim().split(/\s+/);
+                  return { id: c.id, firstName: parts[0] ?? c.name, lastName: parts.slice(1).join(" "), email: "" };
+                })}
+                placeholder={clients.length ? "Select a client…" : "No clients yet"}
+                disabled={!clients.length}
+              />
+            </div>
             <button
               onClick={() => {
                 setExportClientId(clientId || clients[0]?.id || "");
@@ -166,7 +173,7 @@ export default function ClientMeetingsDashboardPage() {
                 setExportTo("");
                 setExportOpen(true);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-lg"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent-500 hover:bg-accent-600 text-white font-medium rounded-lg whitespace-nowrap"
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
