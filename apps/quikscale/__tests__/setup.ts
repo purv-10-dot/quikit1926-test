@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { vi, beforeEach, afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { _clearLocalCache } from "@quikit/auth/cache";
 
 // ---------------------------------------------------------------------------
 // Session injection for tests
@@ -88,6 +89,11 @@ vi.spyOn(console, "error").mockImplementation(() => {});
 // ---------------------------------------------------------------------------
 beforeEach(() => {
   _state.user = null;
+  // Clear the @quikit/auth in-memory LRU between tests. Without this, a
+  // membership row resolved in test A is cached and "leaks" into test B,
+  // making mocked DB return values look ignored. Safe to import here —
+  // the cache module is a pure JS LRU, no side-effects on import.
+  _clearLocalCache();
 });
 
 // Testing Library auto-cleanup: unmount React trees between tests so queries

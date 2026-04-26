@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { vi, beforeEach, afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { _clearLocalCache } from "@quikit/auth/cache";
 
 // ---------------------------------------------------------------------------
 // Session injection for tests
@@ -75,6 +76,7 @@ vi.spyOn(console, "warn").mockImplementation(() => {});
 // ---------------------------------------------------------------------------
 beforeEach(() => {
   _state.user = null;
+  _clearLocalCache();
 });
 
 afterEach(() => {
