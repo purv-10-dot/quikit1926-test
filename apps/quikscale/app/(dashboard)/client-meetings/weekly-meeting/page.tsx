@@ -10,7 +10,7 @@ import {
   AddButton,
   EmptyState,
   RichTextField,
-  UserMultiPicker,
+  UserMultiPicker, UserPicker,
   type PickerUser,
 } from "@quikit/ui";
 import { CalendarDays, Pencil, Trash2, Save, Check } from "lucide-react";
@@ -167,6 +167,16 @@ function memberToPickerUser(m: ClientMember): PickerUser {
   return {
     id: m.userId,
     firstName: parts[0] ?? "",
+    lastName: parts.slice(1).join(" "),
+    email: "",
+  };
+}
+
+function clientToPickerUser(c: ClientOpt): PickerUser {
+  const parts = c.name.trim().split(/\s+/);
+  return {
+    id: c.id,
+    firstName: parts[0] ?? c.name,
     lastName: parts.slice(1).join(" "),
     email: "",
   };
@@ -668,29 +678,26 @@ export default function WeeklyMeetingPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <Field label="Client Name" required>
-                <select
+                <UserPicker
                   value={editing.form.clientId}
-                  onChange={async (e) => {
-                    updateField("clientId", e.target.value);
-                    await loadClientDetail(e.target.value);
+                  onChange={async (id) => {
+                    updateField("clientId", id);
+                    await loadClientDetail(id);
                   }}
+                  users={clients.map(clientToPickerUser)}
+                  placeholder="Select a client…"
                   disabled={isEdit}
-                  className={inputCls}
-                >
-                  <option value="">Select an entity</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </Field>
               <Field label="Absent Members">
                 <UserMultiPicker
                   values={editing.form.absentClientMemberIds}
                   onChange={(v) => updateField("absentClientMemberIds", v)}
                   users={pickerUsers}
-                  placeholder={pickerPlaceholder(editing.form.clientId, pickerUsers.length)}
+                  placeholder={pickerPlaceholder(
+                    editing.form.clientId,
+                    pickerUsers.length
+                  )}
                   disabled={!editing.form.clientId}
                 />
               </Field>
@@ -701,7 +708,10 @@ export default function WeeklyMeetingPage() {
                 values={editing.form.dashboardNAClientMemberIds}
                 onChange={(v) => updateField("dashboardNAClientMemberIds", v)}
                 users={pickerUsers}
-                placeholder={pickerPlaceholder(editing.form.clientId, pickerUsers.length)}
+                placeholder={pickerPlaceholder(
+                  editing.form.clientId,
+                  pickerUsers.length
+                )}
                 disabled={!editing.form.clientId}
               />
             </Field>

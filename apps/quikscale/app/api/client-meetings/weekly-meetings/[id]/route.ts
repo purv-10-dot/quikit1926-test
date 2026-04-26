@@ -31,8 +31,12 @@ export const GET = withTenantAuth<{ id: string }>(
         meetingDate: row.meetingDate.toISOString(),
         absentUserIds: row.absentMembers.map((a) => a.userId),
         dashboardNAUserIds: row.dashboardNAMembers.map((a) => a.userId),
-        absentClientMemberIds: row.absentTeamMembers.map((a) => a.clientMemberId),
-        dashboardNAClientMemberIds: row.dashboardNATeamMembers.map((a) => a.clientMemberId),
+        absentClientMemberIds: row.absentTeamMembers.map(
+          (a) => a.clientMemberId
+        ),
+        dashboardNAClientMemberIds: row.dashboardNATeamMembers.map(
+          (a) => a.clientMemberId
+        ),
         memberScores: row.memberScores.map((s) => ({
           userId: s.userId,
           kpiWeeklyQTD: s.kpiWeeklyQTD,
