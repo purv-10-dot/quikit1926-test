@@ -3,12 +3,17 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
-  Segmented, AddButton, EmptyState, RichTextField,
+  Segmented, AddButton, EmptyState, RichTextField, UserMultiPicker,
+  type PickerUser,
 } from "@quikit/ui";
-import { CalendarDays, Pencil, Trash2 } from "lucide-react";
+import { CalendarDays, Pencil, Trash2, Save, Check } from "lucide-react";
 
 type Flag = "YES" | "NO" | "NA";
-type Status = "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT";
+type Status =
+  | "HELD"
+  | "CALL_CANCELLED_BY_CLIENT"
+  | "HOLIDAY_FOR_CLIENT"
+  | "HOLIDAY_FOR_SUCCESS_ALCHEMIST";
 
 const FLAG_OPTS: Array<{ value: Flag; label: string }> = [
   { value: "YES", label: "YES" },
@@ -18,8 +23,9 @@ const FLAG_OPTS: Array<{ value: Flag; label: string }> = [
 
 const STATUS_OPTS: Array<{ value: Status; label: string }> = [
   { value: "HELD", label: "Held" },
-  { value: "NOT_HELD", label: "Not Held" },
-  { value: "CALL_CANCELLED_BY_CLIENT", label: "Cancelled by Client" },
+  { value: "CALL_CANCELLED_BY_CLIENT", label: "Call cancelled by Client" },
+  { value: "HOLIDAY_FOR_CLIENT", label: "Holiday for Client" },
+  { value: "HOLIDAY_FOR_SUCCESS_ALCHEMIST", label: "Holiday for Success Alchemist" },
 ];
 
 const RADIO_FIELDS = [
@@ -32,8 +38,17 @@ const RADIO_FIELDS = [
   { key: "opspReview",             label: "OPSP Review",                pairedTime: "segmentTime7" },
 ] as const;
 
+const SCORE_FIELDS = [
+  { key: "kpiWeeklyQTD",         label: "KPI Weekly QTD Update" },
+  { key: "kpiCoding",            label: "KPI Coding" },
+  { key: "priorityNotes",        label: "Priority Notes" },
+  { key: "priorityStartEndDate", label: "Priority State and End Date" },
+  { key: "priorityColor",        label: "Priority Colour" },
+] as const;
+
 interface ClientOpt { id: string; name: string }
-interface ClientDetail { id: string; name: string; members: Array<{ userId: string; name: string }> }
+interface ClientMember { userId: string; name: string }
+interface ClientDetail { id: string; name: string; members: ClientMember[] }
 interface MeetingRow {
   id: string; clientId: string; clientName: string;
   meetingDate: string; callStatus: Status;
@@ -42,6 +57,16 @@ interface MeetingRow {
   feedback: Flag; collectiveIntelligence: Flag; opspReview: Flag;
   absentUserIds: string[]; dashboardNAUserIds: string[];
 }
+interface MemberScore {
+  userId: string;
+  kpiWeeklyQTD: number; kpiCoding: number;
+  priorityNotes: number; priorityStartEndDate: number; priorityColor: number;
+}
+
+const emptyScore = (userId: string): MemberScore => ({
+  userId, kpiWeeklyQTD: 0, kpiCoding: 0,
+  priorityNotes: 0, priorityStartEndDate: 0, priorityColor: 0,
+});
 
 const emptyForm = {
   clientId: "",
@@ -59,14 +84,30 @@ const emptyForm = {
 };
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString("en-US", {
+    year: "numeric", month: "short", day: "numeric",
+  });
 }
 function statusBadge(s: Status) {
   return s === "HELD"
     ? "bg-green-100 text-green-700"
-    : s === "NOT_HELD"
+    : s === "CALL_CANCELLED_BY_CLIENT"
       ? "bg-red-100 text-red-700"
       : "bg-amber-100 text-amber-700";
+}
+function statusLabel(s: Status) {
+  return STATUS_OPTS.find((o) => o.value === s)?.label ?? s;
+}
+
+/** Split "First Last" or single token into PickerUser shape. */
+function memberToPickerUser(m: ClientMember): PickerUser {
+  const parts = m.name.trim().split(/\s+/);
+  return {
+    id: m.userId,
+    firstName: parts[0] ?? "",
+    lastName: parts.slice(1).join(" "),
+    email: "",
+  };
 }
 
 export default function WeeklyMeetingPage() {
@@ -76,9 +117,14 @@ export default function WeeklyMeetingPage() {
   const [filterClientId, setFilterClientId] = useState("");
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: string | null; form: typeof emptyForm } | null>(null);
-  const [activeTab, setActiveTab] = useState<"details" | "updates">("details");
+  const [activeTab, setActiveTab] = useState<"edit" | "update">("edit");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Per-member scoring grid (Update tab, edit-only).
+  const [scores, setScores] = useState<Record<string, MemberScore>>({});
+  const [scoreSavedFor, setScoreSavedFor] = useState<Record<string, boolean>>({});
+  const [scoreSavingFor, setScoreSavingFor] = useState<Record<string, boolean>>({});
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -114,15 +160,17 @@ export default function WeeklyMeetingPage() {
 
   async function openCreate() {
     setError("");
-    setActiveTab("details");
+    setActiveTab("edit");
     const clientId = filterClientId || clients[0]?.id || "";
     setEditing({ id: null, form: { ...emptyForm, clientId } });
+    setScores({});
+    setScoreSavedFor({});
     if (clientId) await loadClientDetail(clientId);
   }
 
   async function openEdit(row: MeetingRow) {
     setError("");
-    setActiveTab("details");
+    setActiveTab("edit");
     await loadClientDetail(row.clientId);
     const detailRes = await fetch(`/api/client-meetings/weekly-meetings/${row.id}`);
     const detail = (await detailRes.json()).data;
@@ -154,6 +202,13 @@ export default function WeeklyMeetingPage() {
         dashboardNAUserIds: row.dashboardNAUserIds,
       },
     });
+    // Hydrate per-member scores from the detail payload.
+    const scoreMap: Record<string, MemberScore> = {};
+    for (const s of (detail.memberScores ?? []) as MemberScore[]) {
+      scoreMap[s.userId] = s;
+    }
+    setScores(scoreMap);
+    setScoreSavedFor({});
   }
 
   function updateField<K extends keyof typeof emptyForm>(key: K, v: typeof emptyForm[K]) {
@@ -190,6 +245,49 @@ export default function WeeklyMeetingPage() {
       };
       return { ...e, form: cleared };
     });
+  }
+
+  function updateScore(userId: string, key: keyof Omit<MemberScore, "userId">, v: number) {
+    setScores(prev => {
+      const cur = prev[userId] ?? emptyScore(userId);
+      return { ...prev, [userId]: { ...cur, [key]: v } };
+    });
+    setScoreSavedFor(prev => ({ ...prev, [userId]: false }));
+  }
+
+  async function saveScore(userId: string) {
+    if (!editing?.id) return;
+    const cur = scores[userId] ?? emptyScore(userId);
+    setScoreSavingFor(prev => ({ ...prev, [userId]: true }));
+    try {
+      const res = await fetch(
+        `/api/client-meetings/weekly-meetings/${editing.id}/scores/${userId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kpiWeeklyQTD: cur.kpiWeeklyQTD,
+            kpiCoding: cur.kpiCoding,
+            priorityNotes: cur.priorityNotes,
+            priorityStartEndDate: cur.priorityStartEndDate,
+            priorityColor: cur.priorityColor,
+          }),
+        }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (j.success) {
+        setScoreSavedFor(prev => ({ ...prev, [userId]: true }));
+        setTimeout(() => {
+          setScoreSavedFor(prev => ({ ...prev, [userId]: false }));
+        }, 2500);
+      } else {
+        setError(j.error ?? "Save failed");
+      }
+    } catch {
+      setError("Network error while saving score");
+    } finally {
+      setScoreSavingFor(prev => ({ ...prev, [userId]: false }));
+    }
   }
 
   async function save() {
@@ -230,13 +328,25 @@ export default function WeeklyMeetingPage() {
         ? `/api/client-meetings/weekly-meetings/${editing.id}`
         : "/api/client-meetings/weekly-meetings";
       const method = editing.id ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const j = await res.json();
-      if (!j.success) { setError(j.error ?? "Save failed"); return; }
+      let j: { success?: boolean; error?: string } = {};
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        j = await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
+      } catch {
+        setError("Network error — could not reach the server");
+        return;
+      }
+      if (!j.success) {
+        // Friendly: take the first line; collapse newlines from Prisma stack.
+        const raw = (j.error ?? "Save failed").toString();
+        const friendly = raw.split("\n")[0].slice(0, 240);
+        setError(friendly);
+        return;
+      }
       setEditing(null);
       await refresh();
     } finally {
@@ -250,10 +360,13 @@ export default function WeeklyMeetingPage() {
     if ((await res.json()).success) refresh();
   }
 
-  const tabs = [
-    { key: "details", label: "Details" },
-    { key: "updates", label: "Updates" },
-  ];
+  const isEdit = !!editing?.id;
+  const tabs = isEdit ? [
+    { key: "edit",   label: "Edit" },
+    { key: "update", label: "Update" },
+  ] : undefined;
+
+  const pickerUsers: PickerUser[] = (clientDetail?.members ?? []).map(memberToPickerUser);
 
   return (
     <div className="p-6">
@@ -311,7 +424,7 @@ export default function WeeklyMeetingPage() {
                   <td className="px-3 py-2 whitespace-nowrap">{r.clientName}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}>
-                      {r.callStatus.replace(/_/g, " ").toLowerCase()}
+                      {statusLabel(r.callStatus)}
                     </span>
                   </td>
                   <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.actualStartTime || "—"}</td>
@@ -343,28 +456,40 @@ export default function WeeklyMeetingPage() {
         onClose={() => setEditing(null)}
         size="lg"
         title="Weekly Meeting"
-        subtitle={editing?.id ? "Edit record" : "Create new record"}
+        subtitle={isEdit ? "Edit record" : "Create new record"}
         tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={k => setActiveTab(k as "details" | "updates")}
+        activeTab={isEdit ? activeTab : undefined}
+        onTabChange={k => setActiveTab(k as "edit" | "update")}
         footer={
-          <RightPanelFooter>
-            <RightPanelCancelButton onClick={() => setEditing(null)} />
-            <RightPanelSubmitButton
-              onClick={save}
-              saving={saving}
-              icon={editing?.id ? "check" : "plus"}
-              label={editing?.id ? "Update" : "Submit"}
-            />
-          </RightPanelFooter>
+          activeTab === "update" && isEdit
+            ? undefined
+            : (
+              <RightPanelFooter>
+                <RightPanelCancelButton onClick={() => setEditing(null)} />
+                <RightPanelSubmitButton
+                  onClick={save}
+                  saving={saving}
+                  icon={isEdit ? "check" : "plus"}
+                  label={isEdit ? "Update" : "Submit"}
+                />
+              </RightPanelFooter>
+            )
         }
       >
-        {!editing ? null : activeTab === "updates" ? (
-          <p className="text-xs text-gray-400 italic">Updates coming soon.</p>
+        {!editing ? null : isEdit && activeTab === "update" ? (
+          <UpdateScoreGrid
+            members={clientDetail?.members ?? []}
+            meetingDate={editing.form.meetingDate}
+            scores={scores}
+            savedFor={scoreSavedFor}
+            savingFor={scoreSavingFor}
+            onChange={updateScore}
+            onSaveRow={saveScore}
+          />
         ) : (
           <>
             {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                 {error}
               </div>
             )}
@@ -397,7 +522,7 @@ export default function WeeklyMeetingPage() {
                     updateField("clientId", e.target.value);
                     await loadClientDetail(e.target.value);
                   }}
-                  disabled={!!editing.id}
+                  disabled={isEdit}
                   className={inputCls}
                 >
                   <option value="">Select an entity</option>
@@ -405,19 +530,23 @@ export default function WeeklyMeetingPage() {
                 </select>
               </Field>
               <Field label="Absent Members">
-                <MultiUserPicker
-                  members={clientDetail?.members ?? []}
-                  selected={editing.form.absentUserIds}
+                <UserMultiPicker
+                  values={editing.form.absentUserIds}
                   onChange={v => updateField("absentUserIds", v)}
+                  users={pickerUsers}
+                  placeholder={pickerUsers.length ? "Select members…" : "Pick a client first"}
+                  disabled={!pickerUsers.length}
                 />
               </Field>
             </div>
 
             <Field label="Weekly Dashboard NA">
-              <MultiUserPicker
-                members={clientDetail?.members ?? []}
-                selected={editing.form.dashboardNAUserIds}
+              <UserMultiPicker
+                values={editing.form.dashboardNAUserIds}
                 onChange={v => updateField("dashboardNAUserIds", v)}
+                users={pickerUsers}
+                placeholder={pickerUsers.length ? "Select members…" : "Pick a client first"}
+                disabled={!pickerUsers.length}
               />
             </Field>
 
@@ -504,32 +633,80 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-interface MultiPickerProps {
-  members: Array<{ userId: string; name: string }>;
-  selected: string[];
-  onChange: (next: string[]) => void;
+interface UpdateScoreGridProps {
+  members: ClientMember[];
+  meetingDate: string;
+  scores: Record<string, MemberScore>;
+  savedFor: Record<string, boolean>;
+  savingFor: Record<string, boolean>;
+  onChange: (userId: string, key: keyof Omit<MemberScore, "userId">, v: number) => void;
+  onSaveRow: (userId: string) => void;
 }
-function MultiUserPicker({ members, selected, onChange }: MultiPickerProps) {
+
+function UpdateScoreGrid({
+  members, meetingDate, scores, savedFor, savingFor, onChange, onSaveRow,
+}: UpdateScoreGridProps) {
   if (!members.length) {
-    return <div className="text-xs text-gray-400 italic px-3 py-2 border border-gray-200 rounded-lg bg-gray-50">Select an entity</div>;
+    return <p className="text-xs text-gray-400 italic">No members on this client roster.</p>;
   }
   return (
-    <div className="border border-gray-200 rounded-lg max-h-32 overflow-y-auto p-1.5 bg-white">
-      {members.map(m => {
-        const checked = selected.includes(m.userId);
-        return (
-          <label key={m.userId} className="flex items-center gap-2 px-1.5 py-1 hover:bg-gray-50 rounded cursor-pointer text-xs">
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={() => {
-                onChange(checked ? selected.filter(x => x !== m.userId) : [...selected, m.userId]);
-              }}
-            />
-            {m.name}
-          </label>
-        );
-      })}
+    <div className="space-y-3">
+      <span className="inline-block bg-gray-700 text-white text-xs px-3 py-1.5 rounded">
+        Meeting Date: {fmtDate(meetingDate)}
+      </span>
+      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+        <table className="min-w-full text-xs">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Member Name</th>
+              {SCORE_FIELDS.map(c => (
+                <th key={c.key} className="px-3 py-2 text-left font-medium">{c.label}</th>
+              ))}
+              <th className="px-3 py-2 text-left font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map(m => {
+              const s = scores[m.userId] ?? emptyScore(m.userId);
+              const saved = savedFor[m.userId];
+              const isSaving = savingFor[m.userId];
+              return (
+                <tr key={m.userId} className="border-t border-gray-100">
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">{m.name}</td>
+                  {SCORE_FIELDS.map(c => (
+                    <td key={c.key} className="px-3 py-1">
+                      <input
+                        type="number"
+                        min={0}
+                        max={1000}
+                        step="0.01"
+                        value={s[c.key]}
+                        onChange={e => onChange(m.userId, c.key, parseFloat(e.target.value || "0"))}
+                        className="w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400"
+                      />
+                    </td>
+                  ))}
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => onSaveRow(m.userId)}
+                      disabled={isSaving}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium ${
+                        saved
+                          ? "bg-green-500 text-white"
+                          : "bg-orange-500 text-white hover:bg-orange-600"
+                      } disabled:opacity-50`}
+                    >
+                      {saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+                      {saved ? "Updated" : isSaving ? "Saving…" : "Update"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

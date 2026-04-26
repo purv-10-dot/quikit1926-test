@@ -15,7 +15,7 @@
 
 export interface DailyHuddleForMath {
   meetingDate: Date;
-  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT";
+  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT" | "HOLIDAY_FOR_CLIENT" | "HOLIDAY_FOR_SUCCESS_ALCHEMIST";
   actualStartTime: string | null; // HH:mm
   actualEndTime: string | null;
   format1Status: "YES" | "NO" | "NA";
@@ -28,7 +28,7 @@ export interface DailyHuddleForMath {
 
 export interface WeeklyMeetingForMath {
   meetingDate: Date;
-  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT";
+  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT" | "HOLIDAY_FOR_CLIENT" | "HOLIDAY_FOR_SUCCESS_ALCHEMIST";
   actualStartTime: string | null;
   actualEndTime: string | null;
   goodNewsSharing: "YES" | "NO" | "NA";

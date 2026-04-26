@@ -332,6 +332,7 @@ model User {
   dailyHuddleAbsences   ClientDailyHuddleAbsence[]
   weeklyMeetingAbsences ClientWeeklyMeetingAbsence[]
   weeklyDashboardNAs    ClientWeeklyMeetingDashboardNA[]
+  weeklyMemberScores    ClientWeeklyMemberScore[]
 
   @@index([email])
   @@schema("public")
@@ -813,6 +814,8 @@ enum ClientMeetingStatus {
   HELD
   NOT_HELD
   CALL_CANCELLED_BY_CLIENT
+  HOLIDAY_FOR_CLIENT
+  HOLIDAY_FOR_SUCCESS_ALCHEMIST
 
   @@schema("app_quikscale")
 }
@@ -1041,6 +1044,7 @@ model ClientWeeklyMeeting {
   client             Client                           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   absentMembers      ClientWeeklyMeetingAbsence[]
   dashboardNAMembers ClientWeeklyMeetingDashboardNA[]
+  memberScores       ClientWeeklyMemberScore[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1076,9 +1080,29 @@ model ClientWeeklyMeetingDashboardNA {
   @@schema("app_quikscale")
 }
 
-/// Per-member KPI scores captured inside a weekly meeting drawer (see
-/// meetingrythm.md §5.6 `weeklyDataStore`). Integers 0..n — client-defined
-/// scoring scheme; renderer color-codes based on tenant's manageView rules.
+/// Per-member KPI scores captured inside a weekly meeting drawer.
+/// Each row is one member's snapshot for a given weekly meeting.
+model ClientWeeklyMemberScore {
+  id        String @id @default(cuid())
+  meetingId String
+  userId    String
+
+  kpiWeeklyQTD         Int @default(0)
+  kpiCoding            Int @default(0)
+  priorityNotes        Int @default(0)
+  priorityStartEndDate Int @default(0)
+  priorityColor        Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([userId])
+  @@schema("app_quikscale")
+}
+
 // ============================================================================
 // OPSP MODULE (One-Page Strategic Plan)
 // ============================================================================
