@@ -78,7 +78,7 @@ export default function IndividualPerformancePage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto min-h-0">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-gray-400">
             <Users className="h-8 w-8 mb-2" />

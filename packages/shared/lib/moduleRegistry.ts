@@ -56,15 +56,12 @@ export const MODULE_REGISTRY: AppModuleConfig[] = [
 
       { key: "www", label: "WWW", icon: "Activity", href: "/www" },
 
-      { key: "meetings", label: "Meeting Rhythm", icon: "Calendar" },
-      { key: "meetings.dashboard", label: "Dashboard", icon: "LayoutDashboard", href: "/meetings", parentKey: "meetings" },
-      { key: "meetings.dailyHuddle", label: "Daily Huddle", icon: "Clock", href: "/meetings/daily-huddle", parentKey: "meetings" },
-      { key: "meetings.weekly", label: "Weekly Meeting", icon: "CalendarDays", href: "/meetings/weekly", parentKey: "meetings" },
-      { key: "meetings.monthly", label: "Monthly Meeting", icon: "CalendarDays", href: "/meetings/monthly", parentKey: "meetings" },
-      { key: "meetings.quarterly", label: "Quarterly Offsite", icon: "CalendarDays", href: "/meetings/quarterly", parentKey: "meetings" },
-      { key: "meetings.annual", label: "Annual Planning", icon: "CalendarDays", href: "/meetings/annual", parentKey: "meetings" },
-      { key: "meetings.templates", label: "Templates", icon: "List", href: "/meetings/templates", parentKey: "meetings" },
-      { key: "meetings.history", label: "History", icon: "BookOpen", href: "/meetings/history", parentKey: "meetings" },
+      { key: "clientMeetings", label: "Meeting Rhythm", icon: "Calendar" },
+      { key: "clientMeetings.dashboard",     label: "Dashboard",       icon: "LayoutDashboard", href: "/client-meetings",                parentKey: "clientMeetings" },
+      { key: "clientMeetings.clients",       label: "Client Master",   icon: "Users",           href: "/client-meetings/clients",        parentKey: "clientMeetings" },
+      { key: "clientMeetings.members",       label: "Client Members",  icon: "User",            href: "/client-meetings/members",        parentKey: "clientMeetings" },
+      { key: "clientMeetings.dailyHuddle",   label: "Daily Huddle",    icon: "Clock",           href: "/client-meetings/daily-huddle",   parentKey: "clientMeetings" },
+      { key: "clientMeetings.weeklyMeeting", label: "Weekly Meeting",  icon: "CalendarDays",    href: "/client-meetings/weekly-meeting", parentKey: "clientMeetings" },
 
       { key: "opsp", label: "OPSP", icon: "FileText" },
       { key: "opsp.create", label: "Create OPSP", icon: "FileText", href: "/opsp", parentKey: "opsp" },

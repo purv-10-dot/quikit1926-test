@@ -40,7 +40,37 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   if (validated.status) where.status = validated.status;
   if (validated.kpiLevel) where.kpiLevel = validated.kpiLevel;
   if (validated.owner) where.owner = validated.owner;
-  if (validated.teamId) where.teamId = validated.teamId;
+  // Team filter semantics depend on kpiLevel:
+  //   - Team KPIs have KPI.teamId set → filter directly on that column.
+  //   - Individual KPIs have teamId=null → team membership is stored in
+  //     Membership.teamId. Resolve team → active member user IDs and filter
+  //     KPI.owner IN (...). Without this shim, "Individual KPI + Team filter"
+  //     always returned zero rows.
+  //   - When kpiLevel is not specified (rare on list pages), apply both
+  //     conditions as an OR so neither scope is hidden.
+  if (validated.teamId) {
+    if (validated.kpiLevel === "individual") {
+      const members = await db.membership.findMany({
+        where: { tenantId, teamId: validated.teamId, status: "active" },
+        select: { userId: true },
+      });
+      const memberIds = members.map((m) => m.userId);
+      // Empty team → force empty result (filter to a sentinel that can't match)
+      where.owner = memberIds.length > 0 ? { in: memberIds } : "__no_team_members__";
+    } else if (validated.kpiLevel === "team") {
+      where.teamId = validated.teamId;
+    } else {
+      const members = await db.membership.findMany({
+        where: { tenantId, teamId: validated.teamId, status: "active" },
+        select: { userId: true },
+      });
+      const memberIds = members.map((m) => m.userId);
+      where.OR = [
+        { teamId: validated.teamId },
+        ...(memberIds.length > 0 ? [{ owner: { in: memberIds } }] : []),
+      ];
+    }
+  }
   if (validated.quarter) where.quarter = validated.quarter;
   if (validated.year) where.year = validated.year;
   if (validated.search) {

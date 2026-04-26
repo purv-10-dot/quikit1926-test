@@ -8,15 +8,16 @@ import { useFilterContext } from "@/lib/context/FilterContext";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
-  getCurrentFiscalWeek, getWeekDateRange,
 } from "@/lib/utils/fiscal";
+import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
 import { KPIModal } from "../components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "../hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
-import { AddButton, type ExportSelection } from "@quikit/ui";
+import { AddButton, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
+import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
@@ -24,14 +25,11 @@ import { getKPIs } from "@/lib/services/kpiService";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
-const CURRENT_YEAR = new Date().getFullYear();
-const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
-
 export default function TeamsKPIPage() {
   // Year + quarter live in FilterContext so they persist across module nav.
   const { year, setYear, quarter, setQuarter } = useFilterContext();
-  const [showYearPicker, setShowYearPicker] = useState(false);
-  const yearRef = useRef<HTMLDivElement>(null);
+  const { years: fyYears, configured: fyConfigured } = useFiscalYears();
+  const availableYears = fyYears.length ? fyYears : [FISCAL_YEAR];
 
   // Team filter — multi-select. Empty array = "All teams" (show everything).
   const [filterTeamIds, setFilterTeamIds] = useState<string[]>([]);
@@ -153,13 +151,14 @@ export default function TeamsKPIPage() {
 
   const selectedFilterTeams = teams.filter(t => filterTeamIds.includes(t.id));
 
-  const fiscalWeek = getCurrentFiscalWeek(year, quarter);
+  // DB-driven current week + date range (respects QuarterSetting.startDate).
+  const fiscalWeek = useCurrentWeek(year, quarter);
+  const fiscalWeekRange = useWeekDateRange(year, quarter, fiscalWeek);
   const isLoading = teamsLoading || kpisLoading;
 
   // Close pickers on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (yearRef.current && !yearRef.current.contains(e.target as Node)) setShowYearPicker(false);
       if (teamRef.current && !teamRef.current.contains(e.target as Node)) {
         setShowTeamPicker(false);
         setTeamSearch("");
@@ -178,9 +177,11 @@ export default function TeamsKPIPage() {
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
             {kpis.length} {kpis.length === 1 ? "item" : "items"}
           </span>
-          <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
-            {quarter} · Week {fiscalWeek} · {getWeekDateRange(year, quarter, fiscalWeek)}
-          </span>
+          {fiscalWeek !== null && (
+            <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+              {quarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -353,60 +354,15 @@ export default function TeamsKPIPage() {
             )}
           </div>
 
-          {/* Year / Quarter picker */}
-          <div className="relative" ref={yearRef}>
-            <button
-              onClick={() => setShowYearPicker(o => !o)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${
-                showYearPicker ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"
-              }`}
-            >
-              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {fiscalYearLabel(year)} · {quarter}
-              <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {showYearPicker && (
-              <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Fiscal Year</p>
-                  <div className="grid grid-cols-1 gap-1">
-                    {FISCAL_YEARS.map(y => (
-                      <button
-                        key={y}
-                        onClick={() => setYear(y)}
-                        className={`text-xs px-3 py-1.5 rounded-lg text-left transition-colors ${
-                          year === y ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700"
-                        }`}
-                      >
-                        {fiscalYearLabel(y)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quarter</p>
-                  <div className="grid grid-cols-4 gap-1">
-                    {(["Q1", "Q2", "Q3", "Q4"] as const).map(q => (
-                      <button
-                        key={q}
-                        onClick={() => { setQuarter(q); setShowYearPicker(false); }}
-                        className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${
-                          quarter === q ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700 border border-gray-200"
-                        }`}
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Year / Quarter picker — shared FiscalPeriodPicker, DB-scoped */}
+          <FiscalPeriodPicker
+            years={availableYears}
+            configured={fyConfigured}
+            year={year}
+            quarter={quarter as FiscalQuarter}
+            formatYear={fiscalYearLabel}
+            onChange={({ year: y, quarter: q }) => { setYear(y); setQuarter(q); }}
+          />
 
           <TeamKPIMoreActions
             viewTrash={viewTrash}
@@ -425,7 +381,7 @@ export default function TeamsKPIPage() {
 
 
       {/* Body — one TeamSection per team */}
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 min-h-0">
         {isLoading ? (
           <TableSkeleton rows={4} cols={4} />
         ) : sortedTeams.length === 0 ? (

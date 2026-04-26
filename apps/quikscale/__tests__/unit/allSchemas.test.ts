@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 
 import { createCategorySchema, updateCategorySchema } from "@/lib/schemas/categorySchema";
-import { createHuddleSchema } from "@/lib/schemas/huddleSchema";
+// huddleSchema deleted in Client Meetings rewrite; no replacement yet.
 import { opspUpsertSchema } from "@/lib/schemas/opspSchema";
 import { selectOrgSchema, invitationActionSchema } from "@/lib/schemas/orgSchema";
 import { createPrioritySchema, updatePrioritySchema } from "@/lib/schemas/prioritySchema";
@@ -41,23 +41,7 @@ describe("categorySchema", () => {
   });
 });
 
-/* ── huddleSchema ── */
-
-describe("huddleSchema", () => {
-  const base = {
-    meetingDate: "2026-04-15T00:00:00.000Z",
-    callStatus: "Held",
-  };
-  it("accepts a valid huddle", () => {
-    expect(createHuddleSchema.safeParse(base).success).toBe(true);
-  });
-  it("requires meetingDate", () => {
-    expect(createHuddleSchema.safeParse({ callStatus: "Held" }).success).toBe(false);
-  });
-  it("requires callStatus", () => {
-    expect(createHuddleSchema.safeParse({ meetingDate: "2026-04-15T00:00:00.000Z" }).success).toBe(false);
-  });
-});
+/* ── huddleSchema — removed in Client Meetings rewrite ── */
 
 /* ── opspSchema ── */
 

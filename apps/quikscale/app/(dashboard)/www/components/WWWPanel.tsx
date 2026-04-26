@@ -12,6 +12,13 @@ import {
   statusDotColor,
   statusLabel,
 } from "@/lib/constants/status";
+import { WWW_CATEGORIES } from "@/lib/schemas/wwwSchema";
+import {
+  RightPanel,
+  RightPanelFooter,
+  RightPanelCancelButton,
+  RightPanelSubmitButton,
+} from "@quikit/ui";
 
 
 function formatDate(iso?: string | null): string {
@@ -155,13 +162,15 @@ function EditTab({
   users,
   mode,
   readOnly,
+  itemId,
 }: {
-  form: { who: string; what: string; when: string; status: string; revisedDate: string; notes: string; originalDueDate: string };
+  form: { who: string; what: string; when: string; status: string; revisedDate: string; notes: string; category: string; originalDueDate: string };
   set: (key: string, val: string) => void;
   errors: Record<string, string>;
   users: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   mode: "create" | "edit";
   readOnly: boolean;
+  itemId?: string;
 }) {
   return (
     <div className="space-y-4">
@@ -264,7 +273,23 @@ function EditTab({
         )}
       </div>
 
-      {/* Row 4: Notes */}
+      {/* Row 4: Category (single-select: eNPS / cNPS / Others) */}
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Category</label>
+        <select
+          value={form.category}
+          onChange={e => set("category", e.target.value)}
+          disabled={readOnly}
+          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white disabled:bg-gray-50 disabled:text-gray-500"
+        >
+          <option value="">Select category…</option>
+          {WWW_CATEGORIES.map(c => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Row 5: Notes */}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
         <textarea
@@ -276,6 +301,99 @@ function EditTab({
           className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none disabled:bg-gray-50 disabled:text-gray-500"
         />
       </div>
+
+      {/* Notes history — shows previous note values with timestamps.
+          Only available in edit mode where itemId exists. */}
+      {mode === "edit" && itemId && <NotesHistory itemId={itemId} users={users} />}
+    </div>
+  );
+}
+
+// ── Notes History ────────────────────────────────────────────────────────────
+
+interface AuditLogEntry {
+  id: string;
+  action: string;
+  oldValue: Record<string, unknown> | null;
+  newValue: Record<string, unknown> | null;
+  changedBy: string;
+  changedByName: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+/**
+ * NotesHistory — reads `/api/www/[id]/logs` (audit log) and surfaces only
+ * entries where the `notes` field changed. Each entry shows the previous note
+ * value, who changed it, and when.
+ *
+ * Source of truth: AuditLog rows for entityType=WWWItem. We filter in the
+ * client so the existing logs endpoint stays generic.
+ */
+function NotesHistory({ itemId, users }: { itemId: string; users: Array<{ id: string; firstName: string; lastName: string; email: string }> }) {
+  const [logs, setLogs] = useState<AuditLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetch(`/api/www/${itemId}/logs`)
+      .then(r => r.json())
+      .then(d => { if (alive && d?.success) setLogs(d.data ?? []); })
+      .catch(() => { if (alive) setLogs([]); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [itemId]);
+
+  // Filter to entries where "notes" changed, with a concrete previous value
+  const noteEntries = logs.filter(l => {
+    const oldNotes = (l.oldValue as { notes?: string | null } | null)?.notes;
+    const newNotes = (l.newValue as { notes?: string | null } | null)?.notes;
+    if (oldNotes === undefined && newNotes === undefined) return false;
+    return (oldNotes ?? null) !== (newNotes ?? null);
+  });
+
+  if (loading) {
+    return (
+      <div className="pt-3 border-t border-gray-100">
+        <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Notes History</h4>
+        <p className="text-xs text-gray-400 italic">Loading history…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pt-3 border-t border-gray-100">
+      <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Notes History</h4>
+      {noteEntries.length === 0 ? (
+        <p className="text-xs text-gray-400 italic">No previous notes.</p>
+      ) : (
+        <ul className="space-y-2">
+          {noteEntries.map(entry => {
+            const oldNotes = (entry.oldValue as { notes?: string | null } | null)?.notes ?? "";
+            const newNotes = (entry.newValue as { notes?: string | null } | null)?.notes ?? "";
+            const ts = new Date(entry.createdAt);
+            const tsLabel = ts.toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+            return (
+              <li key={entry.id} className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="text-[10px] font-medium text-gray-600">{entry.changedByName}</span>
+                  <span className="text-[10px] text-gray-400">{tsLabel}</span>
+                </div>
+                {oldNotes && (
+                  <p className="text-[11px] text-gray-500 line-through whitespace-pre-wrap mb-0.5">{oldNotes}</p>
+                )}
+                {newNotes && (
+                  <p className="text-[11px] text-gray-700 whitespace-pre-wrap">{newNotes}</p>
+                )}
+                {!oldNotes && !newNotes && (
+                  <p className="text-[11px] text-gray-400 italic">(empty)</p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
@@ -304,6 +422,7 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       ? toDateInputValue(item.revisedDates[item.revisedDates.length - 1])
       : "",
     notes: item?.notes ?? "",
+    category: item?.category ?? "",
     originalDueDate: toDateInputValue(item?.originalDueDate),
   });
 
@@ -322,6 +441,7 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
           ? toDateInputValue(item.revisedDates[item.revisedDates.length - 1])
           : "",
         notes: item.notes ?? "",
+        category: item.category ?? "",
         originalDueDate: toDateInputValue(item.originalDueDate),
       });
     }
@@ -355,6 +475,7 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
         when: form.when,
         status: form.status,
         notes: form.notes || null,
+        category: form.category || null,
         originalDueDate: form.originalDueDate || null,
       };
 
@@ -394,91 +515,42 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
   const whoUser = users.find(u => u.id === (item?.who ?? form.who));
   const whoName = whoUser ? `${whoUser.firstName} ${whoUser.lastName}` : "";
 
+  const subtitle = mode === "create"
+    ? "Create new record"
+    : [whoName, item ? `Due ${formatDate(item.when)}` : ""].filter(Boolean).join(" · ");
+
   return (
-    <div className="fixed inset-0 z-[200] flex">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative ml-auto h-full w-[520px] bg-white shadow-2xl flex flex-col">
-        {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
-          <div className="flex-1 min-w-0 pr-4">
-            <h2 className="text-sm font-semibold text-gray-800 truncate">
-              {mode === "create" ? "Add New WWW Item" : (item?.what ?? "WWW Item")}
-            </h2>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {whoName && <span className="text-[11px] text-gray-500">{whoName}</span>}
-              {item && (
-                <>
-                  {whoName && <span className="text-gray-300">·</span>}
-                  <span className="text-[11px] text-gray-400">Due {formatDate(item.when)}</span>
-                </>
-              )}
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Tabs (only in edit mode — create only has the edit form) */}
-        {TABS.length > 1 && (
-          <div className="flex gap-0 px-6 border-b border-gray-200 flex-shrink-0">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`px-4 py-2.5 text-xs font-medium transition-colors relative ${
-                  tab === t.key
-                    ? "text-gray-900"
-                    : "text-gray-400 hover:text-gray-600"
-                }`}
-              >
-                {t.label}
-                {tab === t.key && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900 rounded-t" />
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {tab === "edit" && (
-            <EditTab form={form} set={set} errors={errors} users={users} mode={mode} readOnly={readOnly} />
-          )}
-          {tab === "log" && item && (
-            <LogTab item={item} users={users} />
-          )}
-        </div>
-
-        {/* Footer — only show save buttons on edit tab (or create mode) */}
-        {tab === "edit" && (
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 flex-shrink-0">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
+    <RightPanel
+      open
+      onClose={onClose}
+      size="sm"
+      title={mode === "create" ? "Add New WWW Item" : (item?.what ?? "WWW Item")}
+      subtitle={subtitle || undefined}
+      tabs={TABS}
+      activeTab={tab}
+      onTabChange={(k) => setTab(k as Tab)}
+      footer={
+        tab === "edit" ? (
+          <RightPanelFooter>
+            <RightPanelCancelButton onClick={onClose} />
+            <RightPanelSubmitButton
               onClick={handleSubmit}
-              disabled={saving || readOnly}
+              saving={saving}
+              disabled={readOnly}
+              icon={mode === "create" ? "plus" : "check"}
+              label={mode === "create" ? "Create Item" : "Save Changes"}
               title={readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
-              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {saving && (
-                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              )}
-              {mode === "create" ? "Create Item" : "Save Changes"}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+            />
+          </RightPanelFooter>
+        ) : null
+      }
+    >
+      {tab === "edit" && (
+        <EditTab form={form} set={set} errors={errors} users={users} mode={mode} readOnly={readOnly} itemId={item?.id} />
+      )}
+      {tab === "log" && item && (
+        <LogTab item={item} users={users} />
+      )}
+    </RightPanel>
   );
 }

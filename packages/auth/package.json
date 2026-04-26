@@ -12,7 +12,8 @@
     "./require-admin": "./require-admin.ts",
     "./require-super-admin": "./require-super-admin.ts",
     "./get-tenant-id": "./get-tenant-id.ts",
-    "./feature-gate": "./feature-gate.ts"
+    "./feature-gate": "./feature-gate.ts",
+    "./cache": "./cache.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

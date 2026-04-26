@@ -2,7 +2,10 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // multiSchema enables `@@schema(...)` per-model — used to namespace each app.
+  // See packages/database/SCHEMA_LAYOUT.md for the per-model placement rules.
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
@@ -17,6 +20,12 @@ datasource db {
   // when pointing at the same URL as DATABASE_URL (a pooler-less Postgres is
   // its own direct URL).
   directUrl = env("DATABASE_URL_DIRECT")
+  // Schema-per-app layout (Pattern A from the architecture brainstorm):
+  //   public                  — identity, platform glue, cross-app FKs land here
+  //   app_quikscale           — KPI / Priority / WWW / OPSP / Client Meetings
+  //   app_quikconstruction    — Cn* construction-ERP tables
+  // admin and quikit have no app-private state — they read from public only.
+  schemas   = ["public", "app_quikscale", "app_quikconstruction"]
 }
 
 // ============================================================================
@@ -43,6 +52,7 @@ model App {
 
   @@index([slug])
   @@index([status])
+  @@schema("public")
 }
 
 // ============================================================================
@@ -64,6 +74,7 @@ model OAuthClient {
   app App @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
+  @@schema("public")
 }
 
 model OAuthCode {
@@ -83,6 +94,7 @@ model OAuthCode {
 
   @@index([code])
   @@index([expiresAt])
+  @@schema("public")
 }
 
 model OAuthRefreshToken {
@@ -101,6 +113,7 @@ model OAuthRefreshToken {
   @@index([token])
   @@index([accessToken])
   @@index([userId, clientId])
+  @@schema("public")
 }
 
 model UserAppAccess {
@@ -121,6 +134,7 @@ model UserAppAccess {
   @@index([userId])
   @@index([tenantId])
   @@index([appId])
+  @@schema("public")
 }
 
 // ============================================================================
@@ -156,9 +170,11 @@ model Tenant {
   priorities              Priority[]
   wwwItems                WWWItem[]
   categoryMasters         CategoryMaster[]
-  meetings                Meeting[]
-  meetingTemplates        MeetingTemplate[]
-  dailyHuddles            DailyHuddle[]
+  // Client Meetings module — see "CLIENT MEETINGS" section below.
+  clients                 Client[]
+  clientMembers           ClientMember[]
+  clientDailyHuddles      ClientDailyHuddle[]
+  clientWeeklyMeetings    ClientWeeklyMeeting[]
   quarterSettings         QuarterSetting[]
   opspDocuments           OPSPDocument[]
   opppPlans               OPSPPlan[]
@@ -180,25 +196,25 @@ model Tenant {
   invoices                Invoice[]
 
   // QuikConstruction module — back-relations (additions per phase)
-  cnCompanies       CnCompany[]
-  cnVendors         CnVendor[]
-  cnCustomers       CnCustomer[]
-  cnContractors     CnContractor[]
-  cnUoms            CnUOM[]
-  cnItemGroups      CnItemGroup[]
-  cnItems           CnItem[]
-  cnBanks           CnBank[]
-  cnDepartments     CnDepartment[]
-  cnWorkCategories  CnWorkCategory[]
-  cnCostCenters     CnCostCenter[]
-  cnLocations       CnLocation[]
-  cnGstCodes        CnGSTCode[]
-  cnTdsCodes        CnTDSCode[]
-  cnTermsConditions CnTermsCondition[]
-  cnFinancialYears  CnFinancialYear[]
-  cnProjects        CnProject[]
-  cnMachinery       CnMachinery[]
-  cnAssets          CnAsset[]
+  cnCompanies            CnCompany[]
+  cnVendors              CnVendor[]
+  cnCustomers            CnCustomer[]
+  cnContractors          CnContractor[]
+  cnUoms                 CnUOM[]
+  cnItemGroups           CnItemGroup[]
+  cnItems                CnItem[]
+  cnBanks                CnBank[]
+  cnDepartments          CnDepartment[]
+  cnWorkCategories       CnWorkCategory[]
+  cnCostCenters          CnCostCenter[]
+  cnLocations            CnLocation[]
+  cnGstCodes             CnGSTCode[]
+  cnTdsCodes             CnTDSCode[]
+  cnTermsConditions      CnTermsCondition[]
+  cnFinancialYears       CnFinancialYear[]
+  cnProjects             CnProject[]
+  cnMachinery            CnMachinery[]
+  cnAssets               CnAsset[]
   // Phase 3 — Procurement + Store
   cnPurchaseRequisitions CnPurchaseRequisition[]
   cnPurchaseOrders       CnPurchaseOrder[]
@@ -215,42 +231,43 @@ model Tenant {
   cnStockReconciliations CnStockReconciliation[]
   cnDieselLogs           CnDieselLog[]
   // Phase 4 — Projects core
-  cnBoqs        CnBOQ[]
-  cnDprs        CnDPR[]
-  cnHindrances  CnHindrance[]
+  cnBoqs                 CnBOQ[]
+  cnDprs                 CnDPR[]
+  cnHindrances           CnHindrance[]
   // Phase 4b
-  cnEstimations CnEstimation[]
-  cnWorkOrders  CnWorkOrder[]
-  cnRabs        CnRAB[]
+  cnEstimations          CnEstimation[]
+  cnWorkOrders           CnWorkOrder[]
+  cnRabs                 CnRAB[]
   // Phase 5
-  cnClientInvoices CnClientInvoice[]
-  cnClientReceipts CnClientReceipt[]
-  cnVendorBills    CnVendorBill[]
-  cnVendorPayments CnVendorPayment[]
+  cnClientInvoices       CnClientInvoice[]
+  cnClientReceipts       CnClientReceipt[]
+  cnVendorBills          CnVendorBill[]
+  cnVendorPayments       CnVendorPayment[]
   // Phase 7
-  cnEmployees      CnEmployee[]
-  cnAttendances    CnAttendance[]
-  cnPayrolls       CnPayroll[]
+  cnEmployees            CnEmployee[]
+  cnAttendances          CnAttendance[]
+  cnPayrolls             CnPayroll[]
   // Phase 8
-  cnApprovalRules    CnApprovalRule[]
-  cnApprovalRequests CnApprovalRequest[]
+  cnApprovalRules        CnApprovalRule[]
+  cnApprovalRequests     CnApprovalRequest[]
   // Phase 9
-  cnQcInspections    CnQCInspection[]
+  cnQcInspections        CnQCInspection[]
   // Phase 10
-  cnSafetyIncidents  CnSafetyIncident[]
-  cnSafetyChecklists CnSafetyChecklist[]
+  cnSafetyIncidents      CnSafetyIncident[]
+  cnSafetyChecklists     CnSafetyChecklist[]
   // Phase 12
-  cnDocuments        CnDocument[]
+  cnDocuments            CnDocument[]
   // Phase 14
-  cnExpenses         CnExpense[]
+  cnExpenses             CnExpense[]
   // Structural gaps
-  cnCreditNotes      CnCreditNote[]
-  cnDebitNotes       CnDebitNote[]
-  cnAuditLogs        CnAuditLog[]
-  cnNumberSequences  CnNumberSequence[]
+  cnCreditNotes          CnCreditNote[]
+  cnDebitNotes           CnDebitNote[]
+  cnAuditLogs            CnAuditLog[]
+  cnNumberSequences      CnNumberSequence[]
 
   @@index([slug])
   @@index([status])
+  @@schema("public")
 }
 
 model User {
@@ -310,7 +327,15 @@ model User {
   feedbackReceived        FeedbackEntry[]          @relation("FeedbackTo")
   sessionEvents           SessionEvent[]
 
+  // Client Meetings module
+  clientMemberships     ClientMembership[]
+  dailyHuddleAbsences   ClientDailyHuddleAbsence[]
+  weeklyMeetingAbsences ClientWeeklyMeetingAbsence[]
+  weeklyDashboardNAs    ClientWeeklyMeetingDashboardNA[]
+  weeklyMemberScores    ClientWeeklyMemberScore[]
+
   @@index([email])
+  @@schema("public")
 }
 
 model Account {
@@ -328,6 +353,7 @@ model Account {
 
   @@unique([provider, providerAccountId])
   @@index([userId])
+  @@schema("public")
 }
 
 model Session {
@@ -340,6 +366,7 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@schema("public")
 }
 
 model Membership {
@@ -367,9 +394,12 @@ model Membership {
   @@unique([tenantId, userId])
   @@index([tenantId])
   @@index([userId])
+  @@index([userId, status])
+  @@index([userId, tenantId, status])
   @@index([teamId])
   @@index([role])
   @@index([tenantId, role])
+  @@schema("public")
 }
 
 // ── User ↔ Team many-to-many (a user can belong to multiple teams) ──────────
@@ -389,6 +419,7 @@ model UserTeam {
   @@index([tenantId])
   @@index([userId])
   @@index([teamId])
+  @@schema("public")
 }
 
 // ============================================================================
@@ -425,6 +456,7 @@ model Team {
   @@index([tenantId])
   @@index([parentTeamId])
   @@index([deletedAt])
+  @@schema("public")
 }
 
 model AccountabilityFunction {
@@ -450,6 +482,7 @@ model AccountabilityFunction {
   @@unique([tenantId, name])
   @@index([tenantId])
   @@index([assignedToUserId])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -516,6 +549,8 @@ model KPI {
   logs         KPILog[]
 
   @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, kpiLevel, deletedAt])
   @@index([owner])
   @@index([teamId])
   @@index([kpiLevel])
@@ -523,6 +558,7 @@ model KPI {
   @@index([status])
   @@index([healthStatus])
   @@index([quarter, year])
+  @@schema("app_quikscale")
 }
 
 model KPIWeeklyValue {
@@ -550,6 +586,7 @@ model KPIWeeklyValue {
   @@index([tenantId])
   @@index([kpiId])
   @@index([userId])
+  @@schema("app_quikscale")
 }
 
 model KPINote {
@@ -569,6 +606,7 @@ model KPINote {
   @@index([tenantId])
   @@index([kpiId])
   @@index([authorId])
+  @@schema("app_quikscale")
 }
 
 model KPILog {
@@ -590,6 +628,7 @@ model KPILog {
   @@index([kpiId])
   @@index([createdAt])
   @@index([kpiId, createdAt])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -626,11 +665,14 @@ model Priority {
   weeklyStatuses PriorityWeeklyStatus[]
 
   @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, year, quarter, deletedAt])
   @@index([owner])
   @@index([teamId])
   @@index([quarter, year])
   @@index([tenantId, owner])
   @@index([deletedAt])
+  @@schema("app_quikscale")
 }
 
 model PriorityWeeklyStatus {
@@ -649,6 +691,7 @@ model PriorityWeeklyStatus {
 
   @@unique([priorityId, weekNumber])
   @@index([priorityId])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -663,9 +706,8 @@ model WWWItem {
   what String
   when DateTime
 
-  createdInMeetingId String?
-  linkedPriorityId   String?
-  linkedKPIId        String?
+  linkedPriorityId String?
+  linkedKPIId      String?
 
   status   String  @default("not-started")
   notes    String? @db.Text
@@ -681,7 +723,6 @@ model WWWItem {
   deletedAt DateTime?
 
   tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  meeting      Meeting?         @relation(fields: [createdInMeetingId], references: [id], onDelete: SetNull)
   revisionLogs WWWRevisionLog[]
 
   @@index([tenantId])
@@ -690,7 +731,10 @@ model WWWItem {
   @@index([status])
   @@index([createdAt])
   @@index([tenantId, who])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, status, deletedAt])
   @@index([deletedAt])
+  @@schema("app_quikscale")
 }
 
 model WWWRevisionLog {
@@ -708,6 +752,7 @@ model WWWRevisionLog {
 
   @@index([wwwItemId])
   @@index([createdAt])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -738,139 +783,322 @@ model CategoryMaster {
   @@unique([tenantId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
   @@index([tenantId])
   @@index([dataType])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
-// MEETING MODULE
+// CLIENT MEETINGS (Meeting Rhythm)
 // ============================================================================
+//
+// Rewrite of the legacy team-meeting module. Models the cadence a tenant
+// runs with each of its external *clients* (e.g. "Foods & Inns"):
+//   - Client              → the external organisation
+//   - ClientMembership    → User ↔ Client assignment with client-specific role
+//   - ClientDailyHuddle   → a single daily huddle instance
+//   - ClientWeeklyMeeting → a single weekly review instance + per-member KPI
+//
+// Ports the logic from the GOAL LCNC app (see meetingrythm.md). No JSON
+// blobs for queryable data — per-meeting member scores are their own table.
 
-model Meeting {
-  id       String @id @default(cuid())
-  tenantId String
+/// Radio-style tri-state used by every format / punctuality / quality flag.
+enum ClientMeetingFlag {
+  YES
+  NO
+  NA
 
-  templateId String?
-  name       String
-  cadence    String
-
-  scheduledAt DateTime
-  duration    Int
-
-  location    String?
-  meetingLink String?
-
-  agenda     String? @db.Text
-  decisions  String? @db.Text
-  blockers   String? @db.Text
-  highlights String? @db.Text
-
-  startedOnTime  Boolean @default(false)
-  endedOnTime    Boolean @default(false)
-  formatFollowed Boolean @default(false)
-  followUpRate   Float?
-
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  createdBy   String
-  updatedBy   String?
-  completedAt DateTime?
-  deletedAt   DateTime?
-
-  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  template          MeetingTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  attendees         MeetingAttendee[]
-  generatedWWWItems WWWItem[]
-  metrics           MeetingMetric[]
-
-  @@index([tenantId])
-  @@index([cadence])
-  @@index([scheduledAt])
-  @@index([tenantId, scheduledAt])
-  @@index([tenantId, cadence, scheduledAt]) // Phase 4: covers the most-queried meeting list pattern
-  @@index([deletedAt])
+  @@schema("app_quikscale")
 }
 
-model MeetingTemplate {
+/// Call status for daily huddles and weekly meetings.
+enum ClientMeetingStatus {
+  HELD
+  NOT_HELD
+  CALL_CANCELLED_BY_CLIENT
+
+  @@schema("app_quikscale")
+}
+
+model Client {
   id       String @id @default(cuid())
   tenantId String
 
   name        String
-  cadence     String
-  description String?
+  description String?   @db.Text
+  isActive    Boolean   @default(true)
+  startDate   DateTime?
 
-  sections         String[]
-  defaultAttendees String[]
+  /// Planned weekly meeting window (HH:mm 24h).
+  weeklyStartTime String?
+  weeklyEndTime   String?
 
-  duration Int @default(60)
+  /// Planned daily huddle window (HH:mm 24h).
+  dailyStartTime String?
+  dailyEndTime   String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   createdBy String
+  updatedBy String?
+  deletedAt DateTime?
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  meetings Meeting[]
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships    ClientMembership[]
+  /// Client's external team members (from ClientMember entity — spec §2 multiplelookup).
+  teamMembers    ClientTeamMember[]
+  dailyHuddles   ClientDailyHuddle[]
+  weeklyMeetings ClientWeeklyMeeting[]
 
+  @@unique([tenantId, name])
   @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([deletedAt])
+  @@schema("app_quikscale")
 }
 
-model MeetingAttendee {
+/// Many-to-many link between a Client and its external team members
+/// (ClientMember rows). Separate from ClientMembership (which links to tenant
+/// Users for permission purposes) — here we're modelling who-the-client-invites.
+model ClientTeamMember {
+  clientId       String
+  clientMemberId String
+  tenantId       String
+  createdAt      DateTime @default(now())
+
+  client Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  member ClientMember @relation(fields: [clientMemberId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, clientMemberId])
+  @@index([clientMemberId])
+  @@index([tenantId])
+  @@schema("app_quikscale")
+}
+
+model ClientMembership {
+  id       String @id @default(cuid())
+  tenantId String
+  clientId String
+  userId   String
+
+  /// Client-specific role (e.g. "Account Manager", "SPOC"). Separate from tenant role.
+  clientRole String?
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, userId])
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([userId])
+  @@schema("app_quikscale")
+}
+
+/// Standalone Client Member entity (spec §3). Flat list of name + email
+/// records — the "Client Members" page is a simple data-entry table. These
+/// are distinct from tenant Users (which handle login/auth).
+///
+/// Future integration point: Client Master's multi-lookup picker will pick
+/// from these records instead of (or in addition to) tenant Users.
+model ClientMember {
+  id        String    @id @default(cuid())
+  tenantId  String
+  name      String
+  email     String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant        Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clientLinks   ClientTeamMember[]
+  dailyAbsences ClientDailyHuddleTeamAbsence[]
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([email])
+  @@schema("app_quikscale")
+}
+
+model ClientDailyHuddle {
+  id       String @id @default(cuid())
+  tenantId String
+  clientId String
+
+  meetingDate DateTime
+  callStatus  ClientMeetingStatus @default(HELD)
+
+  /// Actual observed start/end (HH:mm 24h). Blank when call not held.
+  actualStartTime String?
+  actualEndTime   String?
+
+  /// Three format checks + a punctuality override radio (see meetingrythm.md §4).
+  format1Status       ClientMeetingFlag @default(NA)
+  format2Status       ClientMeetingFlag @default(NA)
+  stuckCallStatus     ClientMeetingFlag @default(NA)
+  punctualityOverride ClientMeetingFlag @default(NA)
+
+  /// Snapshot of invited roster size at meeting time (used in attendance math).
+  totalMembers Int @default(0)
+
+  /// Rich-text notes captured in the drawer (image 1).
+  notes            String? @db.Text
+  notesKPDashboard String? @db.Text
+  otherNotes       String? @db.Text
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant            Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client            Client                         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// Legacy tenant-User-based absence (kept for older dashboard math).
+  absentMembers     ClientDailyHuddleAbsence[]
+  /// New external-roster absences — picked from ClientMember.
+  absentTeamMembers ClientDailyHuddleTeamAbsence[]
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([clientId])
+  @@index([meetingDate])
+  @@index([clientId, meetingDate])
+  @@index([clientId, deletedAt, meetingDate])
+  @@index([deletedAt])
+  @@schema("app_quikscale")
+}
+
+model ClientDailyHuddleAbsence {
+  huddleId String
+  userId   String
+
+  huddle ClientDailyHuddle @relation(fields: [huddleId], references: [id], onDelete: Cascade)
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([huddleId, userId])
+  @@index([userId])
+  @@schema("app_quikscale")
+}
+
+/// Per-huddle absence link for external Client Members (distinct from the
+/// legacy tenant-User link above). Used by the Daily Huddle drawer.
+model ClientDailyHuddleTeamAbsence {
+  huddleId       String
+  clientMemberId String
+
+  huddle ClientDailyHuddle @relation(fields: [huddleId], references: [id], onDelete: Cascade)
+  member ClientMember      @relation(fields: [clientMemberId], references: [id], onDelete: Cascade)
+
+  @@id([huddleId, clientMemberId])
+  @@index([clientMemberId])
+  @@schema("app_quikscale")
+}
+
+model ClientWeeklyMeeting {
+  id       String @id @default(cuid())
+  tenantId String
+  clientId String
+
+  meetingDate DateTime
+  callStatus  ClientMeetingStatus @default(HELD)
+
+  /// Overall actual start/end (HH:mm).
+  actualStartTime String?
+  actualEndTime   String?
+
+  /// Segment timings (7 slots — mirrors spec's time-2..time-8).
+  /// Null = segment skipped. HH:mm strings.
+  segmentTime1 String?
+  segmentTime2 String?
+  segmentTime3 String?
+  segmentTime4 String?
+  segmentTime5 String?
+  segmentTime6 String?
+  segmentTime7 String?
+
+  /// Radio flags (see meetingrythm.md §5 — radio ↔ radio-6).
+  formatCheck1        ClientMeetingFlag @default(NA)
+  formatCheck2        ClientMeetingFlag @default(NA)
+  wwwReviewDone       ClientMeetingFlag @default(NA)
+  feedbackDone        ClientMeetingFlag @default(NA)
+  collectiveIntelDone ClientMeetingFlag @default(NA)
+  kpGapsDiscussed     ClientMeetingFlag @default(NA)
+  dashboardQuality    ClientMeetingFlag @default(NA)
+  punctualityOverride ClientMeetingFlag @default(NA)
+
+  totalMembers Int @default(0)
+
+  notes String? @db.Text
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  updatedBy String?
+  deletedAt DateTime?
+
+  tenant             Tenant                           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client             Client                           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  absentMembers      ClientWeeklyMeetingAbsence[]
+  dashboardNAMembers ClientWeeklyMeetingDashboardNA[]
+  memberScores       ClientWeeklyMemberScore[]
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+  @@index([clientId])
+  @@index([meetingDate])
+  @@index([clientId, meetingDate])
+  @@index([clientId, deletedAt, meetingDate])
+  @@index([deletedAt])
+  @@schema("app_quikscale")
+}
+
+model ClientWeeklyMeetingAbsence {
+  meetingId String
+  userId    String
+
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, userId])
+  @@index([userId])
+  @@schema("app_quikscale")
+}
+
+model ClientWeeklyMeetingDashboardNA {
+  meetingId String
+  userId    String
+
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, userId])
+  @@index([userId])
+  @@schema("app_quikscale")
+}
+
+/// Per-member KPI scores captured inside a weekly meeting drawer (see
+/// meetingrythm.md §5.6 `weeklyDataStore`). Integers 0..n — client-defined
+/// scoring scheme; renderer color-codes based on tenant's manageView rules.
+model ClientWeeklyMemberScore {
   id        String @id @default(cuid())
   meetingId String
   userId    String
 
-  attended   Boolean   @default(false)
-  attendedAt DateTime?
-  leftAt     DateTime?
+  kpiWeeklyQTD         Int @default(0)
+  kpiCoding            Int @default(0)
+  priorityNotes        Int @default(0)
+  priorityStartEndDate Int @default(0)
+  priorityColor        Int @default(0)
 
-  createdAt DateTime @default(now())
-
-  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([meetingId, userId])
-  @@index([meetingId])
-}
-
-model MeetingMetric {
-  id        String @id @default(cuid())
-  meetingId String
-
-  metricName String
-  value      Float
-
-  createdAt DateTime @default(now())
-
-  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-
-  @@index([meetingId])
-}
-
-// ============================================================================
-// DAILY HUDDLE
-// ============================================================================
-
-model DailyHuddle {
-  id       String @id @default(cuid())
-  tenantId String
-
-  meetingDate            DateTime
-  callStatus             String // "Scheduled" | "Held" | "Cancelled" | "Rescheduled"
-  clientName             String?
-  absentMembers          String?
-  actualStartTime        String? // "HH:MM" 24h
-  actualEndTime          String? // "HH:MM" 24h
-  yesterdaysAchievements Boolean  @default(false)
-  stuckIssues            Boolean  @default(false)
-  todaysPriority         Boolean  @default(false)
-  notesKPDashboard       String?  @db.Text
-  otherNotes             String?  @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([tenantId])
-  @@index([meetingDate])
+  @@index([userId])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -959,6 +1187,7 @@ model OPSPData {
   @@index([tenantId])
   @@index([userId])
   @@index([year, quarter])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -990,6 +1219,7 @@ model OPSPReviewEntry {
   @@index([tenantId])
   @@index([opspId])
   @@index([userId])
+  @@schema("app_quikscale")
 }
 
 model OPSPDocument {
@@ -1015,6 +1245,7 @@ model OPSPDocument {
   @@unique([tenantId, year, versionNumber])
   @@index([tenantId])
   @@index([status])
+  @@schema("app_quikscale")
 }
 
 model OPSPSection {
@@ -1035,6 +1266,7 @@ model OPSPSection {
 
   @@index([documentId])
   @@index([sectionType])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -1072,6 +1304,7 @@ model OPSPPlan {
 
   @@unique([tenantId, userId])
   @@index([tenantId])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -1113,6 +1346,7 @@ model HabitAssessment {
   @@index([assessmentDate])
   // Per-tenant quarterly dashboard. Applied CONCURRENTLY — P1-3.
   @@index([tenantId, quarter, year])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -1146,6 +1380,7 @@ model Notification {
   // Inbox unread query: WHERE tenantId=? AND userId=? AND read=false
   // Applied as CREATE INDEX CONCURRENTLY — see P1-3 migration.
   @@index([tenantId, userId, read])
+  @@schema("public")
 }
 
 model AuditLog {
@@ -1176,6 +1411,7 @@ model AuditLog {
   @@index([actorId])
   @@index([createdAt])
   @@index([tenantId, createdAt])
+  @@schema("public")
 }
 
 model FeatureFlag {
@@ -1197,6 +1433,7 @@ model FeatureFlag {
 
   @@unique([tenantId, key])
   @@index([tenantId])
+  @@schema("public")
 }
 
 // ============================================================================
@@ -1225,6 +1462,7 @@ model QuarterSetting {
   @@index([tenantId])
   @@index([fiscalYear])
   @@index([status])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -1262,6 +1500,7 @@ model PerformanceReview {
   @@index([revieweeId])
   // Per-reviewee history & period aggregates. Applied CONCURRENTLY — P1-3.
   @@index([tenantId, revieweeId, year, quarter])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -1294,6 +1533,7 @@ model TalentAssessment {
   @@unique([tenantId, userId, quarter, year])
   @@index([tenantId])
   @@index([userId])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -1337,6 +1577,7 @@ model Goal {
   @@index([ownerId])
   @@index([tenantId, year, quarter])
   @@index([parentGoalId])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -1372,6 +1613,7 @@ model OneOnOne {
   @@index([managerId])
   @@index([reportId])
   @@index([scheduledAt])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -1403,6 +1645,7 @@ model FeedbackEntry {
   @@index([toUserId])
   @@index([fromUserId])
   @@index([tenantId, toUserId, createdAt])
+  @@schema("app_quikscale")
 }
 
 // ============================================================================
@@ -1432,6 +1675,7 @@ model AppModuleFlag {
 
   @@unique([tenantId, appId, moduleKey])
   @@index([tenantId, appId])
+  @@schema("public")
 }
 
 // ============================================================================
@@ -1462,6 +1706,7 @@ model ApiCall {
   @@index([appSlug, createdAt])
   @@index([createdAt]) // retention cleanup
   @@index([userId, createdAt])
+  @@schema("public")
 }
 
 /// Hourly aggregation of ApiCall rows. Source of truth for all per-tenant
@@ -1485,6 +1730,7 @@ model ApiCallHourlyRollup {
   @@index([tenantId, hourBucket])
   @@index([appSlug, hourBucket])
   @@index([hourBucket])
+  @@schema("public")
 }
 
 /// Uptime probe record. Written by /api/super/cron/health-check which pings
@@ -1502,6 +1748,7 @@ model AppHealthCheck {
 
   @@index([appId, checkedAt])
   @@index([checkedAt])
+  @@schema("public")
 }
 
 /// Auth lifecycle events — feeds DAU/MAU and "last login" on tenant health panel.
@@ -1523,6 +1770,7 @@ model SessionEvent {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@index([event, createdAt])
+  @@schema("public")
 }
 
 /// Platform-wide announcement banner shown to tenants. Managed via super admin
@@ -1544,6 +1792,7 @@ model BroadcastAnnouncement {
 
   @@index([startsAt])
   @@index([endsAt])
+  @@schema("public")
 }
 
 /// Per-user dismissal tracking — once dismissed, the banner doesn't resurface.
@@ -1557,6 +1806,7 @@ model BroadcastDismissal {
 
   @@unique([announcementId, userId])
   @@index([userId])
+  @@schema("public")
 }
 
 /// Hard gate: if enabled=false the tenant cannot access this app at all,
@@ -1578,6 +1828,7 @@ model TenantAppAccess {
   @@unique([tenantId, appId])
   @@index([tenantId])
   @@index([appId])
+  @@schema("public")
 }
 
 /// Plan definitions as data (replaces the current hardcoded "startup|growth|enterprise"
@@ -1600,6 +1851,7 @@ model Plan {
 
   @@index([slug])
   @@index([isActive])
+  @@schema("public")
 }
 
 /// SA-D — Impersonation session record.
@@ -1639,6 +1891,7 @@ model Impersonation {
   @@index([targetTenantId, createdAt])
   @@index([targetUserId, createdAt])
   @@index([expiresAt])
+  @@schema("public")
 }
 
 /// Platform alerts raised by the alerts engine cron. Super admins see these
@@ -1668,6 +1921,7 @@ model PlatformAlert {
   @@index([resolvedAt])
   @@index([severity, lastSeenAt])
   @@index([rule, subjectKey, resolvedAt])
+  @@schema("public")
 }
 
 /// Invoice records. Dummy payment flow in Phase B writes these via the
@@ -1695,6 +1949,7 @@ model Invoice {
   @@index([tenantId, status])
   @@index([status])
   @@index([periodEnd])
+  @@schema("public")
 }
 
 // ============================================================================
@@ -1731,14 +1986,15 @@ model CnCompany {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  banks        CnBank[]
-  finYears     CnFinancialYear[]
-  projects     CnProject[]
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  banks    CnBank[]
+  finYears CnFinancialYear[]
+  projects CnProject[]
 
   @@index([tenantId])
   @@index([tenantId, gstin])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnVendor {
@@ -1782,10 +2038,11 @@ model CnVendor {
   @@index([tenantId])
   @@index([tenantId, name])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnCustomer {
-  id            String   @id @default(cuid())
+  id            String  @id @default(cuid())
   tenantId      String
   code          String
   name          String
@@ -1796,7 +2053,7 @@ model CnCustomer {
   city          String?
   state         String?
   gstin         String?
-  status        String   @default("active")
+  status        String  @default("active")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1804,7 +2061,7 @@ model CnCustomer {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   projects    CnProject[]
   invoices    CnClientInvoice[]
   receipts    CnClientReceipt[]
@@ -1813,10 +2070,11 @@ model CnCustomer {
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnContractor {
-  id             String   @id @default(cuid())
+  id             String  @id @default(cuid())
   tenantId       String
   code           String
   name           String
@@ -1831,7 +2089,7 @@ model CnContractor {
   state          String?
   licenseNo      String?
   specialization String?
-  status         String   @default("active")
+  status         String  @default("active")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1839,12 +2097,13 @@ model CnContractor {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workOrders CnWorkOrder[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnUOM {
@@ -1860,35 +2119,36 @@ model CnUOM {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  items             CnItem[]
-  prLines           CnPurchaseRequisitionLine[]
-  poLines           CnPurchaseOrderLine[]
-  grnLines          CnGRNLine[]
-  stockLedgerRows   CnStockLedger[]
-  miLines           CnMaterialIssueLine[]
+  tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items               CnItem[]
+  prLines             CnPurchaseRequisitionLine[]
+  poLines             CnPurchaseOrderLine[]
+  grnLines            CnGRNLine[]
+  stockLedgerRows     CnStockLedger[]
+  miLines             CnMaterialIssueLine[]
   // Phase 3b
-  indentLines       CnPurchaseIndentLine[]
-  rfqLines          CnRFQLine[]
-  goodReturnLines   CnGoodReturnLine[]
+  indentLines         CnPurchaseIndentLine[]
+  rfqLines            CnRFQLine[]
+  goodReturnLines     CnGoodReturnLine[]
   internalReturnLines CnInternalReturnLine[]
-  transferLines     CnStockTransferLine[]
+  transferLines       CnStockTransferLine[]
   reconciliationLines CnStockReconciliationLine[]
   // Phase 4
-  dprLines          CnDPRLine[]
-  boqItems          CnBOQItem[]
+  dprLines            CnDPRLine[]
+  boqItems            CnBOQItem[]
   // Phase 4b
-  estimationItems   CnEstimationItem[]
-  woLines           CnWorkOrderLine[]
+  estimationItems     CnEstimationItem[]
+  woLines             CnWorkOrderLine[]
   // Phase 6
-  dprMaterials      CnDPRMaterial[]
+  dprMaterials        CnDPRMaterial[]
   // Finance line items
-  invoiceLines      CnClientInvoiceLine[]
-  billLines         CnVendorBillLine[]
+  invoiceLines        CnClientInvoiceLine[]
+  billLines           CnVendorBillLine[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnItemGroup {
@@ -1914,6 +2174,7 @@ model CnItemGroup {
   @@index([tenantId])
   @@index([parentId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnItem {
@@ -1937,15 +2198,15 @@ model CnItem {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  group  CnItemGroup @relation(fields: [groupId], references: [id])
-  uom    CnUOM       @relation(fields: [uomId], references: [id])
+  tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  group               CnItemGroup                 @relation(fields: [groupId], references: [id])
+  uom                 CnUOM                       @relation(fields: [uomId], references: [id])
   // Phase 3 back-relations
-  prLines         CnPurchaseRequisitionLine[]
-  poLines         CnPurchaseOrderLine[]
-  grnLines        CnGRNLine[]
-  stockLedgerRows CnStockLedger[]
-  miLines         CnMaterialIssueLine[]
+  prLines             CnPurchaseRequisitionLine[]
+  poLines             CnPurchaseOrderLine[]
+  grnLines            CnGRNLine[]
+  stockLedgerRows     CnStockLedger[]
+  miLines             CnMaterialIssueLine[]
   // Phase 3b
   indentLines         CnPurchaseIndentLine[]
   rfqLines            CnRFQLine[]
@@ -1967,19 +2228,20 @@ model CnItem {
   @@index([tenantId])
   @@index([tenantId, groupId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 // ---- Phase 2 masters (continuation) ----
 
 model CnBank {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   tenantId    String
   companyId   String
   bankName    String
   branchName  String?
   accountNo   String
   ifscCode    String
-  accountType String  // current | savings
+  accountType String // current | savings
   status      String  @default("active")
 
   createdAt DateTime  @default(now())
@@ -1995,6 +2257,7 @@ model CnBank {
   @@index([tenantId])
   @@index([tenantId, companyId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnDepartment {
@@ -2017,14 +2280,15 @@ model CnDepartment {
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnWorkCategory {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
   tenantId    String
   name        String
   description String?
-  status      String @default("active")
+  status      String  @default("active")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2037,15 +2301,16 @@ model CnWorkCategory {
 
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnCostCenter {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   tenantId  String
   code      String
   name      String
   projectId String?
-  status    String @default("active")
+  status    String  @default("active")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2058,20 +2323,21 @@ model CnCostCenter {
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnLocation {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   tenantId  String
   code      String
   name      String
-  type      String  // site | warehouse | head_office | yard
+  type      String // site | warehouse | head_office | yard
   projectId String?
   address   String?
   city      String?
   state     String?
   inCharge  String?
-  status    String @default("active")
+  status    String  @default("active")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2079,28 +2345,29 @@ model CnLocation {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project CnProject? @relation(fields: [projectId], references: [id])
+  tenant               Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project              CnProject?              @relation(fields: [projectId], references: [id])
   // Phase 3 back-relations
-  deliveryForPOs  CnPurchaseOrder[]
-  grns            CnGoodsReceiptNote[]
-  stockLedgerRows CnStockLedger[]
-  materialIssues  CnMaterialIssue[]
+  deliveryForPOs       CnPurchaseOrder[]
+  grns                 CnGoodsReceiptNote[]
+  stockLedgerRows      CnStockLedger[]
+  materialIssues       CnMaterialIssue[]
   // Phase 3b
-  gatePasses            CnGatePass[]
-  goodReturns           CnGoodReturn[]
-  internalReturns       CnInternalReturn[]
-  stockTransfersFrom    CnStockTransfer[]       @relation("TransferFrom")
-  stockTransfersTo      CnStockTransfer[]       @relation("TransferTo")
-  stockReconciliations  CnStockReconciliation[]
-  dieselLogs            CnDieselLog[]
+  gatePasses           CnGatePass[]
+  goodReturns          CnGoodReturn[]
+  internalReturns      CnInternalReturn[]
+  stockTransfersFrom   CnStockTransfer[]       @relation("TransferFrom")
+  stockTransfersTo     CnStockTransfer[]       @relation("TransferTo")
+  stockReconciliations CnStockReconciliation[]
+  dieselLogs           CnDieselLog[]
   // Phase 6
-  dprsConsumingHere     CnDPR[]                 @relation("DprConsumptionLocation")
+  dprsConsumingHere    CnDPR[]                 @relation("DprConsumptionLocation")
 
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([tenantId, type])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnGSTCode {
@@ -2125,6 +2392,7 @@ model CnGSTCode {
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnTDSCode {
@@ -2147,6 +2415,7 @@ model CnTDSCode {
   @@unique([tenantId, section])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnTermsCondition {
@@ -2154,7 +2423,7 @@ model CnTermsCondition {
   tenantId     String
   title        String
   body         String
-  applicableTo String  // po | wo | rfq | general
+  applicableTo String // po | wo | rfq | general
   isDefault    Boolean @default(false)
   status       String  @default("active")
 
@@ -2169,6 +2438,7 @@ model CnTermsCondition {
   @@index([tenantId])
   @@index([tenantId, applicableTo])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnFinancialYear {
@@ -2194,6 +2464,7 @@ model CnFinancialYear {
   @@index([tenantId])
   @@index([tenantId, companyId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnProject {
@@ -2220,10 +2491,10 @@ model CnProject {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  company   CnCompany    @relation(fields: [companyId], references: [id])
-  client    CnCustomer?  @relation(fields: [clientId], references: [id])
-  locations CnLocation[]
+  tenant               Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company              CnCompany               @relation(fields: [companyId], references: [id])
+  client               CnCustomer?             @relation(fields: [clientId], references: [id])
+  locations            CnLocation[]
   // Phase 3 back-relations
   purchaseRequisitions CnPurchaseRequisition[]
   purchaseOrders       CnPurchaseOrder[]
@@ -2240,30 +2511,31 @@ model CnProject {
   stockReconciliations CnStockReconciliation[]
   dieselLogs           CnDieselLog[]
   // Phase 4
-  boqs        CnBOQ[]
-  dprs        CnDPR[]
-  hindrances  CnHindrance[]
+  boqs                 CnBOQ[]
+  dprs                 CnDPR[]
+  hindrances           CnHindrance[]
   // Phase 4b
-  estimations CnEstimation[]
-  workOrders  CnWorkOrder[]
-  rabs        CnRAB[]
+  estimations          CnEstimation[]
+  workOrders           CnWorkOrder[]
+  rabs                 CnRAB[]
   // Phase 5
-  clientInvoices CnClientInvoice[]
-  vendorBills    CnVendorBill[]
+  clientInvoices       CnClientInvoice[]
+  vendorBills          CnVendorBill[]
   // Phase 7
-  attendances    CnAttendance[]
+  attendances          CnAttendance[]
   // Phase 9
-  qcInspections  CnQCInspection[]
+  qcInspections        CnQCInspection[]
   // Phase 10
-  safetyIncidents  CnSafetyIncident[]
-  safetyChecklists CnSafetyChecklist[]
+  safetyIncidents      CnSafetyIncident[]
+  safetyChecklists     CnSafetyChecklist[]
   // Phase 14
-  expenses         CnExpense[]
+  expenses             CnExpense[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([tenantId, companyId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnMachinery {
@@ -2293,19 +2565,20 @@ model CnMachinery {
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnAsset {
-  id             String   @id @default(cuid())
-  tenantId       String
-  code           String
-  name           String
-  category       String?
-  purchaseDate   DateTime?
-  purchaseValue  Decimal?  @db.Decimal(18, 2)
-  locationId     String?
-  assignedTo     String?
-  status         String   @default("active")
+  id            String    @id @default(cuid())
+  tenantId      String
+  code          String
+  name          String
+  category      String?
+  purchaseDate  DateTime?
+  purchaseValue Decimal?  @db.Decimal(18, 2)
+  locationId    String?
+  assignedTo    String?
+  status        String    @default("active")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2318,6 +2591,7 @@ model CnAsset {
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 // ============================================================================
@@ -2330,7 +2604,7 @@ model CnAsset {
 // ============================================================================
 
 model CnPurchaseRequisition {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   tenantId      String
   prNumber      String
   projectId     String
@@ -2338,7 +2612,7 @@ model CnPurchaseRequisition {
   requestDate   DateTime
   requiredDate  DateTime?
   purpose       String?
-  status        String   @default("draft") // draft | submitted | approved | rejected | converted | cancelled
+  status        String    @default("draft") // draft | submitted | approved | rejected | converted | cancelled
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2346,8 +2620,8 @@ model CnPurchaseRequisition {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project CnProject @relation(fields: [projectId], references: [id])
+  tenant  Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject                   @relation(fields: [projectId], references: [id])
   lines   CnPurchaseRequisitionLine[]
   pos     CnPurchaseOrder[]
 
@@ -2356,6 +2630,7 @@ model CnPurchaseRequisition {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnPurchaseRequisitionLine {
@@ -2376,10 +2651,11 @@ model CnPurchaseRequisitionLine {
 
   @@index([prId])
   @@index([itemId])
+  @@schema("app_quikconstruction")
 }
 
 model CnPurchaseOrder {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   tenantId           String
   poNumber           String
   projectId          String
@@ -2388,10 +2664,10 @@ model CnPurchaseOrder {
   poDate             DateTime
   deliveryDate       DateTime?
   deliveryLocationId String?
-  subtotal           Decimal  @default(0) @db.Decimal(18, 2)
-  taxAmount          Decimal  @default(0) @db.Decimal(18, 2)
-  totalAmount        Decimal  @default(0) @db.Decimal(18, 2)
-  status             String   @default("draft") // draft | sent | partially_received | fully_received | closed | cancelled
+  subtotal           Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount          Decimal   @default(0) @db.Decimal(18, 2)
+  totalAmount        Decimal   @default(0) @db.Decimal(18, 2)
+  status             String    @default("draft") // draft | sent | partially_received | fully_received | closed | cancelled
   paymentTermsDays   Int?
   termsConditionId   String?
   remarks            String?
@@ -2417,20 +2693,21 @@ model CnPurchaseOrder {
   @@index([vendorId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnPurchaseOrderLine {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   poId         String
   itemId       String
-  orderedQty   Decimal  @db.Decimal(18, 4)
-  receivedQty  Decimal  @default(0) @db.Decimal(18, 4)
-  pendingQty   Decimal  @db.Decimal(18, 4)
-  unitRate     Decimal  @db.Decimal(18, 2)
-  amount       Decimal  @db.Decimal(18, 2)
-  gstRate      Decimal? @db.Decimal(5, 2)
-  taxAmount    Decimal  @default(0) @db.Decimal(18, 2)
-  totalAmount  Decimal  @db.Decimal(18, 2)
+  orderedQty   Decimal   @db.Decimal(18, 4)
+  receivedQty  Decimal   @default(0) @db.Decimal(18, 4)
+  pendingQty   Decimal   @db.Decimal(18, 4)
+  unitRate     Decimal   @db.Decimal(18, 2)
+  amount       Decimal   @db.Decimal(18, 2)
+  gstRate      Decimal?  @db.Decimal(5, 2)
+  taxAmount    Decimal   @default(0) @db.Decimal(18, 2)
+  totalAmount  Decimal   @db.Decimal(18, 2)
   uomId        String
   deliveryDate DateTime?
   remarks      String?
@@ -2441,6 +2718,7 @@ model CnPurchaseOrderLine {
 
   @@index([poId])
   @@index([itemId])
+  @@schema("app_quikconstruction")
 }
 
 model CnGoodsReceiptNote {
@@ -2469,14 +2747,14 @@ model CnGoodsReceiptNote {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  po       CnPurchaseOrder @relation(fields: [poId], references: [id])
-  project  CnProject       @relation(fields: [projectId], references: [id])
-  vendor   CnVendor        @relation(fields: [vendorId], references: [id])
-  location CnLocation      @relation(fields: [locationId], references: [id])
-  lines    CnGRNLine[]
-  goodReturns CnGoodReturn[]
-  bill        CnVendorBill?
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  po            CnPurchaseOrder  @relation(fields: [poId], references: [id])
+  project       CnProject        @relation(fields: [projectId], references: [id])
+  vendor        CnVendor         @relation(fields: [vendorId], references: [id])
+  location      CnLocation       @relation(fields: [locationId], references: [id])
+  lines         CnGRNLine[]
+  goodReturns   CnGoodReturn[]
+  bill          CnVendorBill?
   qcInspections CnQCInspection[]
 
   @@unique([tenantId, grnNumber])
@@ -2485,22 +2763,23 @@ model CnGoodsReceiptNote {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnGRNLine {
-  id           String   @id @default(cuid())
-  grnId        String
-  poLineId     String?
-  itemId       String
-  receivedQty  Decimal  @db.Decimal(18, 4)
-  acceptedQty  Decimal  @db.Decimal(18, 4)
-  rejectedQty  Decimal  @default(0) @db.Decimal(18, 4)
-  uomId        String
-  unitRate     Decimal  @db.Decimal(18, 2)
-  amount       Decimal  @db.Decimal(18, 2)
+  id            String  @id @default(cuid())
+  grnId         String
+  poLineId      String?
+  itemId        String
+  receivedQty   Decimal @db.Decimal(18, 4)
+  acceptedQty   Decimal @db.Decimal(18, 4)
+  rejectedQty   Decimal @default(0) @db.Decimal(18, 4)
+  uomId         String
+  unitRate      Decimal @db.Decimal(18, 2)
+  amount        Decimal @db.Decimal(18, 2)
   qualityStatus String  @default("pending") // pending | accepted | rejected | conditional
-  batchNo      String?
-  remarks      String?
+  batchNo       String?
+  remarks       String?
 
   grn  CnGoodsReceiptNote @relation(fields: [grnId], references: [id], onDelete: Cascade)
   item CnItem             @relation(fields: [itemId], references: [id])
@@ -2508,6 +2787,7 @@ model CnGRNLine {
 
   @@index([grnId])
   @@index([itemId])
+  @@schema("app_quikconstruction")
 }
 
 model CnStockLedger {
@@ -2516,7 +2796,7 @@ model CnStockLedger {
   projectId            String
   locationId           String
   itemId               String
-  transactionType      String   // grn | issue | return_vendor | return_internal | transfer_out | transfer_in | reconciliation_adj | opening_balance
+  transactionType      String // grn | issue | return_vendor | return_internal | transfer_out | transfer_in | reconciliation_adj | opening_balance
   transactionRefId     String
   transactionRefNumber String
   transactionDate      DateTime
@@ -2539,6 +2819,7 @@ model CnStockLedger {
   @@index([tenantId, projectId, locationId, itemId])
   @@index([itemId])
   @@index([transactionRefId])
+  @@schema("app_quikconstruction")
 }
 
 model CnMaterialIssue {
@@ -2561,10 +2842,10 @@ model CnMaterialIssue {
   postedAt  DateTime?
   postedBy  String?
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project  CnProject  @relation(fields: [projectId], references: [id])
-  location CnLocation @relation(fields: [locationId], references: [id])
-  lines    CnMaterialIssueLine[]
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project         CnProject             @relation(fields: [projectId], references: [id])
+  location        CnLocation            @relation(fields: [locationId], references: [id])
+  lines           CnMaterialIssueLine[]
   internalReturns CnInternalReturn[]
 
   @@unique([tenantId, issueNumber])
@@ -2572,6 +2853,7 @@ model CnMaterialIssue {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnMaterialIssueLine {
@@ -2590,6 +2872,7 @@ model CnMaterialIssueLine {
 
   @@index([issueId])
   @@index([itemId])
+  @@schema("app_quikconstruction")
 }
 
 // ============================================================================
@@ -2601,7 +2884,7 @@ model CnMaterialIssueLine {
 // ============================================================================
 
 model CnPurchaseIndent {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   tenantId      String
   indentNumber  String
   prId          String?
@@ -2610,7 +2893,7 @@ model CnPurchaseIndent {
   requestDate   DateTime
   requiredDate  DateTime?
   purpose       String?
-  status        String   @default("draft") // draft | submitted | approved | converted | cancelled
+  status        String    @default("draft") // draft | submitted | approved | converted | cancelled
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2618,8 +2901,8 @@ model CnPurchaseIndent {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project CnProject @relation(fields: [projectId], references: [id])
+  tenant  Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject              @relation(fields: [projectId], references: [id])
   lines   CnPurchaseIndentLine[]
 
   @@unique([tenantId, indentNumber])
@@ -2627,13 +2910,14 @@ model CnPurchaseIndent {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnPurchaseIndentLine {
-  id            String  @id @default(cuid())
+  id            String   @id @default(cuid())
   indentId      String
   itemId        String
-  quantity      Decimal @db.Decimal(18, 4)
+  quantity      Decimal  @db.Decimal(18, 4)
   uomId         String
   estimatedRate Decimal? @db.Decimal(18, 2)
   remarks       String?
@@ -2644,18 +2928,19 @@ model CnPurchaseIndentLine {
 
   @@index([indentId])
   @@index([itemId])
+  @@schema("app_quikconstruction")
 }
 
 model CnRFQ {
-  id         String   @id @default(cuid())
-  tenantId   String
-  rfqNumber  String
-  indentId   String?
-  projectId  String
-  rfqDate    DateTime
+  id          String    @id @default(cuid())
+  tenantId    String
+  rfqNumber   String
+  indentId    String?
+  projectId   String
+  rfqDate     DateTime
   closingDate DateTime?
-  status     String   @default("draft") // draft | sent | quotations_received | awarded | cancelled
-  remarks    String?
+  status      String    @default("draft") // draft | sent | quotations_received | awarded | cancelled
+  remarks     String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2663,8 +2948,8 @@ model CnRFQ {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project CnProject @relation(fields: [projectId], references: [id])
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project CnProject     @relation(fields: [projectId], references: [id])
   lines   CnRFQLine[]
   vendors CnRFQVendor[]
 
@@ -2672,14 +2957,15 @@ model CnRFQ {
   @@index([tenantId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnRFQLine {
-  id       String  @id @default(cuid())
-  rfqId    String
-  itemId   String
-  quantity Decimal @db.Decimal(18, 4)
-  uomId    String
+  id            String  @id @default(cuid())
+  rfqId         String
+  itemId        String
+  quantity      Decimal @db.Decimal(18, 4)
+  uomId         String
   specification String?
 
   rfq  CnRFQ  @relation(fields: [rfqId], references: [id], onDelete: Cascade)
@@ -2687,21 +2973,23 @@ model CnRFQLine {
   uom  CnUOM  @relation(fields: [uomId], references: [id])
 
   @@index([rfqId])
+  @@schema("app_quikconstruction")
 }
 
 model CnRFQVendor {
-  id           String @id @default(cuid())
+  id           String   @id @default(cuid())
   rfqId        String
   vendorId     String
   quotationRef String?
   totalAmount  Decimal? @db.Decimal(18, 2)
-  isAwarded    Boolean @default(false)
+  isAwarded    Boolean  @default(false)
 
   rfq    CnRFQ    @relation(fields: [rfqId], references: [id], onDelete: Cascade)
   vendor CnVendor @relation(fields: [vendorId], references: [id])
 
   @@unique([rfqId, vendorId])
   @@index([rfqId])
+  @@schema("app_quikconstruction")
 }
 
 model CnGatePass {
@@ -2710,8 +2998,8 @@ model CnGatePass {
   gatePassNumber  String
   projectId       String
   locationId      String
-  type            String   // inward | outward | returnable | non_returnable
-  referenceType   String?  // grn | issue | return | transfer
+  type            String // inward | outward | returnable | non_returnable
+  referenceType   String? // grn | issue | return | transfer
   referenceId     String?
   referenceNumber String?
   vehicleNo       String?
@@ -2735,21 +3023,22 @@ model CnGatePass {
   @@index([tenantId])
   @@index([projectId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnGoodReturn {
-  id            String   @id @default(cuid())
-  tenantId      String
-  returnNumber  String
-  grnId         String
-  projectId     String
-  vendorId      String
-  locationId    String
-  returnDate    DateTime
-  reason        String?
-  status        String   @default("draft") // draft | posted
-  postedAt      DateTime?
-  postedBy      String?
+  id           String    @id @default(cuid())
+  tenantId     String
+  returnNumber String
+  grnId        String
+  projectId    String
+  vendorId     String
+  locationId   String
+  returnDate   DateTime
+  reason       String?
+  status       String    @default("draft") // draft | posted
+  postedAt     DateTime?
+  postedBy     String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2768,27 +3057,29 @@ model CnGoodReturn {
   @@index([tenantId])
   @@index([grnId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnGoodReturnLine {
-  id         String  @id @default(cuid())
-  returnId   String
-  itemId     String
-  returnQty  Decimal @db.Decimal(18, 4)
-  uomId      String
-  unitRate   Decimal @db.Decimal(18, 2)
-  amount     Decimal @db.Decimal(18, 2)
-  remarks    String?
+  id        String  @id @default(cuid())
+  returnId  String
+  itemId    String
+  returnQty Decimal @db.Decimal(18, 4)
+  uomId     String
+  unitRate  Decimal @db.Decimal(18, 2)
+  amount    Decimal @db.Decimal(18, 2)
+  remarks   String?
 
   return CnGoodReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
   item   CnItem       @relation(fields: [itemId], references: [id])
   uom    CnUOM        @relation(fields: [uomId], references: [id])
 
   @@index([returnId])
+  @@schema("app_quikconstruction")
 }
 
 model CnInternalReturn {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   tenantId     String
   returnNumber String
   issueId      String
@@ -2797,7 +3088,7 @@ model CnInternalReturn {
   returnDate   DateTime
   returnedBy   String
   reason       String?
-  status       String   @default("draft") // draft | posted
+  status       String    @default("draft") // draft | posted
   postedAt     DateTime?
   postedBy     String?
 
@@ -2807,16 +3098,17 @@ model CnInternalReturn {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  issue    CnMaterialIssue @relation(fields: [issueId], references: [id])
-  project  CnProject       @relation(fields: [projectId], references: [id])
-  location CnLocation      @relation(fields: [locationId], references: [id])
+  tenant   Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  issue    CnMaterialIssue        @relation(fields: [issueId], references: [id])
+  project  CnProject              @relation(fields: [projectId], references: [id])
+  location CnLocation             @relation(fields: [locationId], references: [id])
   lines    CnInternalReturnLine[]
 
   @@unique([tenantId, returnNumber])
   @@index([tenantId])
   @@index([issueId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnInternalReturnLine {
@@ -2834,20 +3126,21 @@ model CnInternalReturnLine {
   uom    CnUOM            @relation(fields: [uomId], references: [id])
 
   @@index([returnId])
+  @@schema("app_quikconstruction")
 }
 
 model CnStockTransfer {
-  id                 String   @id @default(cuid())
-  tenantId           String
-  transferNumber     String
-  projectId          String
-  fromLocationId     String
-  toLocationId       String
-  transferDate       DateTime
-  reason             String?
-  status             String   @default("draft") // draft | in_transit | received (fully posted)
-  inTransitAt        DateTime?
-  receivedAt         DateTime?
+  id             String    @id @default(cuid())
+  tenantId       String
+  transferNumber String
+  projectId      String
+  fromLocationId String
+  toLocationId   String
+  transferDate   DateTime
+  reason         String?
+  status         String    @default("draft") // draft | in_transit | received (fully posted)
+  inTransitAt    DateTime?
+  receivedAt     DateTime?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2855,15 +3148,16 @@ model CnStockTransfer {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project      CnProject  @relation(fields: [projectId], references: [id])
-  fromLocation CnLocation @relation("TransferFrom", fields: [fromLocationId], references: [id])
-  toLocation   CnLocation @relation("TransferTo",   fields: [toLocationId],   references: [id])
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project      CnProject             @relation(fields: [projectId], references: [id])
+  fromLocation CnLocation            @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocation   CnLocation            @relation("TransferTo", fields: [toLocationId], references: [id])
   lines        CnStockTransferLine[]
 
   @@unique([tenantId, transferNumber])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnStockTransferLine {
@@ -2881,19 +3175,20 @@ model CnStockTransferLine {
   uom      CnUOM           @relation(fields: [uomId], references: [id])
 
   @@index([transferId])
+  @@schema("app_quikconstruction")
 }
 
 model CnStockReconciliation {
-  id                  String   @id @default(cuid())
-  tenantId            String
+  id                   String    @id @default(cuid())
+  tenantId             String
   reconciliationNumber String
-  projectId           String
-  locationId          String
-  reconciliationDate  DateTime
-  reason              String?
-  status              String   @default("draft") // draft | posted
-  postedAt            DateTime?
-  postedBy            String?
+  projectId            String
+  locationId           String
+  reconciliationDate   DateTime
+  reason               String?
+  status               String    @default("draft") // draft | posted
+  postedAt             DateTime?
+  postedBy             String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2901,14 +3196,15 @@ model CnStockReconciliation {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project  CnProject  @relation(fields: [projectId], references: [id])
-  location CnLocation @relation(fields: [locationId], references: [id])
+  tenant   Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  CnProject                   @relation(fields: [projectId], references: [id])
+  location CnLocation                  @relation(fields: [locationId], references: [id])
   lines    CnStockReconciliationLine[]
 
   @@unique([tenantId, reconciliationNumber])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnStockReconciliationLine {
@@ -2929,6 +3225,7 @@ model CnStockReconciliationLine {
   uom            CnUOM                 @relation(fields: [uomId], references: [id])
 
   @@index([reconciliationId])
+  @@schema("app_quikconstruction")
 }
 
 model CnDieselLog {
@@ -2963,6 +3260,7 @@ model CnDieselLog {
   @@index([tenantId])
   @@index([projectId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 // ============================================================================
@@ -2977,16 +3275,16 @@ model CnDieselLog {
 // ============================================================================
 
 model CnBOQ {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   tenantId  String
   projectId String
   boqNumber String
   boqDate   DateTime
-  currency  String   @default("INR")
-  subtotal  Decimal  @default(0) @db.Decimal(18, 2)
-  taxAmount Decimal  @default(0) @db.Decimal(18, 2)
-  total     Decimal  @default(0) @db.Decimal(18, 2)
-  status    String   @default("draft") // draft | locked
+  currency  String    @default("INR")
+  subtotal  Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount Decimal   @default(0) @db.Decimal(18, 2)
+  total     Decimal   @default(0) @db.Decimal(18, 2)
+  status    String    @default("draft") // draft | locked
   lockedAt  DateTime?
   lockedBy  String?
   remarks   String?
@@ -2997,10 +3295,10 @@ model CnBOQ {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project CnProject @relation(fields: [projectId], references: [id])
-  items   CnBOQItem[]
-  rabs    CnRAB[]
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project         CnProject      @relation(fields: [projectId], references: [id])
+  items           CnBOQItem[]
+  rabs            CnRAB[]
   fromEstimations CnEstimation[] @relation("EstimationToBoq")
 
   @@unique([tenantId, boqNumber])
@@ -3008,59 +3306,61 @@ model CnBOQ {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnBOQItem {
-  id          String  @id @default(cuid())
-  boqId       String
+  id              String    @id @default(cuid())
+  boqId           String
   /// Parent in the BOQ tree (null for top-level). Children's rates/amounts
   /// roll up to the parent's `amount` (computed, not stored).
-  parentId    String?
+  parentId        String?
   /// Display order within siblings.
-  sortOrder   Int     @default(0)
+  sortOrder       Int       @default(0)
   /// When kind="group" description is a header, quantity/rate/uom are null.
   /// When kind="item" everything must be present.
-  kind        String  @default("item") // item | group
-  code        String?
-  description String
-  itemId      String?
-  uomId       String?
-  quantity    Decimal? @db.Decimal(18, 4)
-  rate        Decimal? @db.Decimal(18, 2)
-  amount      Decimal  @default(0) @db.Decimal(18, 2)
-  gstRate     Decimal? @db.Decimal(5, 2)
+  kind            String    @default("item") // item | group
+  code            String?
+  description     String
+  itemId          String?
+  uomId           String?
+  quantity        Decimal?  @db.Decimal(18, 4)
+  rate            Decimal?  @db.Decimal(18, 2)
+  amount          Decimal   @default(0) @db.Decimal(18, 2)
+  gstRate         Decimal?  @db.Decimal(5, 2)
   // Phase 13 — schedule + progress
   scheduledStart  DateTime?
   scheduledEnd    DateTime?
   percentComplete Decimal?  @db.Decimal(5, 2)
 
-  boq       CnBOQ        @relation(fields: [boqId], references: [id], onDelete: Cascade)
-  parent    CnBOQItem?   @relation("CnBOQItemHierarchy", fields: [parentId], references: [id])
-  children  CnBOQItem[]  @relation("CnBOQItemHierarchy")
-  item      CnItem?      @relation(fields: [itemId], references: [id])
-  uom       CnUOM?       @relation(fields: [uomId], references: [id])
-  dprLines  CnDPRLine[]
-  rabLines  CnRABLine[]
+  boq      CnBOQ       @relation(fields: [boqId], references: [id], onDelete: Cascade)
+  parent   CnBOQItem?  @relation("CnBOQItemHierarchy", fields: [parentId], references: [id])
+  children CnBOQItem[] @relation("CnBOQItemHierarchy")
+  item     CnItem?     @relation(fields: [itemId], references: [id])
+  uom      CnUOM?      @relation(fields: [uomId], references: [id])
+  dprLines CnDPRLine[]
+  rabLines CnRABLine[]
 
   @@index([boqId])
   @@index([parentId])
   @@index([itemId])
+  @@schema("app_quikconstruction")
 }
 
 model CnDPR {
-  id           String   @id @default(cuid())
-  tenantId     String
-  projectId    String
-  dprDate      DateTime
-  weather      String?
-  reportedById String
-  remarks      String?
+  id                    String    @id @default(cuid())
+  tenantId              String
+  projectId             String
+  dprDate               DateTime
+  weather               String?
+  reportedById          String
+  remarks               String?
   /// Default consumption location — single source for this DPR's material
   /// lines. Required at post-time; may be null in draft.
   consumptionLocationId String?
-  status       String   @default("draft") // draft | submitted | posted
-  postedAt     DateTime?
-  postedBy     String?
+  status                String    @default("draft") // draft | submitted | posted
+  postedAt              DateTime?
+  postedBy              String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3068,9 +3368,9 @@ model CnDPR {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project   CnProject      @relation(fields: [projectId], references: [id])
-  location  CnLocation?    @relation("DprConsumptionLocation", fields: [consumptionLocationId], references: [id])
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project   CnProject       @relation(fields: [projectId], references: [id])
+  location  CnLocation?     @relation("DprConsumptionLocation", fields: [consumptionLocationId], references: [id])
   lines     CnDPRLine[]
   materials CnDPRMaterial[]
 
@@ -3080,21 +3380,22 @@ model CnDPR {
   @@index([dprDate])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 /// Materials consumed on a DPR. On post, each row writes a `dpr_consumption`
 /// qtyOut row to CnStockLedger against (projectId, consumptionLocationId,
 /// itemId). Rate snapshot taken from moving avg at post-time.
 model CnDPRMaterial {
-  id         String   @id @default(cuid())
-  dprId      String
-  itemId     String
-  uomId      String
-  quantity   Decimal  @db.Decimal(18, 4)
+  id       String  @id @default(cuid())
+  dprId    String
+  itemId   String
+  uomId    String
+  quantity Decimal @db.Decimal(18, 4)
   /// Snapshot unit rate (populated at post-time from prior ledger avg).
-  unitRate   Decimal  @default(0) @db.Decimal(18, 2)
-  amount     Decimal  @default(0) @db.Decimal(18, 2)
-  remarks    String?
+  unitRate Decimal @default(0) @db.Decimal(18, 2)
+  amount   Decimal @default(0) @db.Decimal(18, 2)
+  remarks  String?
 
   dpr  CnDPR  @relation(fields: [dprId], references: [id], onDelete: Cascade)
   item CnItem @relation(fields: [itemId], references: [id])
@@ -3102,24 +3403,25 @@ model CnDPRMaterial {
 
   @@index([dprId])
   @@index([itemId])
+  @@schema("app_quikconstruction")
 }
 
 model CnDPRLine {
-  id              String   @id @default(cuid())
-  dprId           String
+  id            String   @id @default(cuid())
+  dprId         String
   /// What was done: can reference a BOQ item or a free-text description.
-  boqItemId       String?
-  activity        String
+  boqItemId     String?
+  activity      String
   /// Quantity of work completed today (in uom).
-  quantityDone    Decimal  @db.Decimal(18, 4)
-  uomId           String?
+  quantityDone  Decimal  @db.Decimal(18, 4)
+  uomId         String?
   /// Labour used today (count of persons).
-  labourCount     Int?
-  labourHours     Decimal? @db.Decimal(8, 2)
+  labourCount   Int?
+  labourHours   Decimal? @db.Decimal(8, 2)
   /// Machinery used today (free-text summary; ties to CnMachinery later).
-  machineryUsed   String?
+  machineryUsed String?
   /// Free-text remarks.
-  remarks         String?
+  remarks       String?
 
   dpr     CnDPR      @relation(fields: [dprId], references: [id], onDelete: Cascade)
   boqItem CnBOQItem? @relation(fields: [boqItemId], references: [id])
@@ -3127,20 +3429,21 @@ model CnDPRLine {
 
   @@index([dprId])
   @@index([boqItemId])
+  @@schema("app_quikconstruction")
 }
 
 model CnHindrance {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   tenantId      String
   projectId     String
   hindranceDate DateTime
-  category      String   // weather | permit | material_shortage | design_change | labour | equipment | external | other
+  category      String // weather | permit | material_shortage | design_change | labour | equipment | external | other
   title         String
   description   String?
   startDate     DateTime
   endDate       DateTime?
   daysImpacted  Int?
-  status        String   @default("open") // open | resolved | closed
+  status        String    @default("open") // open | resolved | closed
   resolvedAt    DateTime?
   resolvedBy    String?
 
@@ -3157,6 +3460,7 @@ model CnHindrance {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 // ============================================================================
@@ -3164,18 +3468,18 @@ model CnHindrance {
 // ============================================================================
 
 model CnEstimation {
-  id              String   @id @default(cuid())
-  tenantId        String
-  projectId       String
+  id               String   @id @default(cuid())
+  tenantId         String
+  projectId        String
   estimationNumber String
-  estimationDate  DateTime
-  subtotal        Decimal  @default(0) @db.Decimal(18, 2)
-  taxAmount       Decimal  @default(0) @db.Decimal(18, 2)
-  total           Decimal  @default(0) @db.Decimal(18, 2)
-  currency        String   @default("INR")
-  status          String   @default("draft") // draft | submitted | approved | converted | rejected
-  convertedBoqId  String?
-  remarks         String?
+  estimationDate   DateTime
+  subtotal         Decimal  @default(0) @db.Decimal(18, 2)
+  taxAmount        Decimal  @default(0) @db.Decimal(18, 2)
+  total            Decimal  @default(0) @db.Decimal(18, 2)
+  currency         String   @default("INR")
+  status           String   @default("draft") // draft | submitted | approved | converted | rejected
+  convertedBoqId   String?
+  remarks          String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3183,9 +3487,9 @@ model CnEstimation {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project      CnProject @relation(fields: [projectId], references: [id])
-  convertedBoq CnBOQ?    @relation("EstimationToBoq", fields: [convertedBoqId], references: [id])
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project      CnProject          @relation(fields: [projectId], references: [id])
+  convertedBoq CnBOQ?             @relation("EstimationToBoq", fields: [convertedBoqId], references: [id])
   items        CnEstimationItem[]
 
   @@unique([tenantId, estimationNumber])
@@ -3193,14 +3497,15 @@ model CnEstimation {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnEstimationItem {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   estimationId String
   parentId     String?
-  sortOrder    Int     @default(0)
-  kind         String  @default("item") // item | group
+  sortOrder    Int      @default(0)
+  kind         String   @default("item") // item | group
   code         String?
   description  String
   itemId       String?
@@ -3218,10 +3523,11 @@ model CnEstimationItem {
 
   @@index([estimationId])
   @@index([parentId])
+  @@schema("app_quikconstruction")
 }
 
 model CnWorkOrder {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   tenantId         String
   woNumber         String
   projectId        String
@@ -3230,10 +3536,10 @@ model CnWorkOrder {
   woDate           DateTime
   startDate        DateTime?
   endDate          DateTime?
-  subtotal         Decimal  @default(0) @db.Decimal(18, 2)
-  taxAmount        Decimal  @default(0) @db.Decimal(18, 2)
-  totalAmount      Decimal  @default(0) @db.Decimal(18, 2)
-  status           String   @default("draft") // draft | sent | in_progress | completed | closed | cancelled
+  subtotal         Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount        Decimal   @default(0) @db.Decimal(18, 2)
+  totalAmount      Decimal   @default(0) @db.Decimal(18, 2)
+  status           String    @default("draft") // draft | sent | in_progress | completed | closed | cancelled
   paymentTermsDays Int?
   termsConditionId String?
   remarks          String?
@@ -3246,10 +3552,10 @@ model CnWorkOrder {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project      CnProject        @relation(fields: [projectId], references: [id])
-  contractor   CnContractor     @relation(fields: [contractorId], references: [id])
-  workCategory CnWorkCategory?  @relation(fields: [workCategoryId], references: [id])
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project      CnProject         @relation(fields: [projectId], references: [id])
+  contractor   CnContractor      @relation(fields: [contractorId], references: [id])
+  workCategory CnWorkCategory?   @relation(fields: [workCategoryId], references: [id])
   lines        CnWorkOrderLine[]
 
   @@unique([tenantId, woNumber])
@@ -3258,51 +3564,53 @@ model CnWorkOrder {
   @@index([contractorId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnWorkOrderLine {
-  id          String   @id @default(cuid())
-  woId        String
-  itemId      String?
-  description String
-  quantity    Decimal  @db.Decimal(18, 4)
-  uomId       String?
-  rate        Decimal  @db.Decimal(18, 2)
-  amount      Decimal  @db.Decimal(18, 2)
-  gstRate     Decimal? @db.Decimal(5, 2)
-  taxAmount   Decimal  @default(0) @db.Decimal(18, 2)
-  totalAmount Decimal  @db.Decimal(18, 2)
-  completedQty Decimal @default(0) @db.Decimal(18, 4)
-  remarks     String?
+  id           String   @id @default(cuid())
+  woId         String
+  itemId       String?
+  description  String
+  quantity     Decimal  @db.Decimal(18, 4)
+  uomId        String?
+  rate         Decimal  @db.Decimal(18, 2)
+  amount       Decimal  @db.Decimal(18, 2)
+  gstRate      Decimal? @db.Decimal(5, 2)
+  taxAmount    Decimal  @default(0) @db.Decimal(18, 2)
+  totalAmount  Decimal  @db.Decimal(18, 2)
+  completedQty Decimal  @default(0) @db.Decimal(18, 4)
+  remarks      String?
 
   wo   CnWorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
   item CnItem?     @relation(fields: [itemId], references: [id])
   uom  CnUOM?      @relation(fields: [uomId], references: [id])
 
   @@index([woId])
+  @@schema("app_quikconstruction")
 }
 
 model CnRAB {
-  id                 String   @id @default(cuid())
-  tenantId           String
-  rabNumber          String
-  projectId          String
-  boqId              String
-  rabDate            DateTime
+  id                String    @id @default(cuid())
+  tenantId          String
+  rabNumber         String
+  projectId         String
+  boqId             String
+  rabDate           DateTime
   /// Sequential bill number per project (1st RAB, 2nd RAB, …)
-  billSeqNo          Int
-  billedTillDate     DateTime
+  billSeqNo         Int
+  billedTillDate    DateTime
   /// Snapshot at time of RAB: cumulative billed before THIS bill.
-  priorBilledAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  priorBilledAmount Decimal   @default(0) @db.Decimal(18, 2)
   /// This period's amount = sum of lines' currentPeriodAmount
-  currentBillAmount  Decimal  @default(0) @db.Decimal(18, 2)
-  subtotal           Decimal  @default(0) @db.Decimal(18, 2)
-  taxAmount          Decimal  @default(0) @db.Decimal(18, 2)
-  total              Decimal  @default(0) @db.Decimal(18, 2)
-  status             String   @default("draft") // draft | submitted | approved | paid | rejected
-  remarks            String?
-  approvedAt         DateTime?
-  approvedBy         String?
+  currentBillAmount Decimal   @default(0) @db.Decimal(18, 2)
+  subtotal          Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount         Decimal   @default(0) @db.Decimal(18, 2)
+  total             Decimal   @default(0) @db.Decimal(18, 2)
+  status            String    @default("draft") // draft | submitted | approved | paid | rejected
+  remarks           String?
+  approvedAt        DateTime?
+  approvedBy        String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3310,9 +3618,9 @@ model CnRAB {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project  CnProject @relation(fields: [projectId], references: [id])
-  boq      CnBOQ     @relation(fields: [boqId], references: [id])
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  CnProject         @relation(fields: [projectId], references: [id])
+  boq      CnBOQ             @relation(fields: [boqId], references: [id])
   lines    CnRABLine[]
   invoices CnClientInvoice[]
 
@@ -3323,6 +3631,7 @@ model CnRAB {
   @@index([boqId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnRABLine {
@@ -3348,31 +3657,32 @@ model CnRABLine {
 
   @@index([rabId])
   @@index([boqItemId])
+  @@schema("app_quikconstruction")
 }
 
 // ── Phase 5 — Finance ───────────────────────────────────────────────────
 
 model CnClientInvoice {
-  id             String   @id @default(cuid())
-  tenantId       String
-  invoiceNumber  String
-  customerId     String
-  projectId      String?
-  rabId          String?
-  invoiceDate    DateTime
-  dueDate        DateTime?
-  subtotal       Decimal  @default(0) @db.Decimal(18, 2)
-  taxAmount      Decimal  @default(0) @db.Decimal(18, 2)
+  id            String    @id @default(cuid())
+  tenantId      String
+  invoiceNumber String
+  customerId    String
+  projectId     String?
+  rabId         String?
+  invoiceDate   DateTime
+  dueDate       DateTime?
+  subtotal      Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount     Decimal   @default(0) @db.Decimal(18, 2)
   /// GST split (additive; legacy rows zero, taxAmount stays authoritative total).
-  cgstAmount     Decimal  @default(0) @db.Decimal(18, 2)
-  sgstAmount     Decimal  @default(0) @db.Decimal(18, 2)
-  igstAmount     Decimal  @default(0) @db.Decimal(18, 2)
+  cgstAmount    Decimal   @default(0) @db.Decimal(18, 2)
+  sgstAmount    Decimal   @default(0) @db.Decimal(18, 2)
+  igstAmount    Decimal   @default(0) @db.Decimal(18, 2)
   /// 2-char state code — intra-state (CGST+SGST) vs inter-state (IGST).
-  placeOfSupply  String?
-  total          Decimal  @default(0) @db.Decimal(18, 2)
-  paidAmount     Decimal  @default(0) @db.Decimal(18, 2)
-  status         String   @default("draft") // draft | sent | partial | paid | cancelled
-  remarks        String?
+  placeOfSupply String?
+  total         Decimal   @default(0) @db.Decimal(18, 2)
+  paidAmount    Decimal   @default(0) @db.Decimal(18, 2)
+  status        String    @default("draft") // draft | sent | partial | paid | cancelled
+  remarks       String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3380,13 +3690,13 @@ model CnClientInvoice {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer     CnCustomer                    @relation(fields: [customerId], references: [id])
-  project      CnProject?                    @relation(fields: [projectId], references: [id])
-  rab          CnRAB?                        @relation(fields: [rabId], references: [id])
-  allocations  CnClientReceiptAllocation[]
-  lines        CnClientInvoiceLine[]
-  creditNotes  CnCreditNote[]
+  tenant      Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer    CnCustomer                  @relation(fields: [customerId], references: [id])
+  project     CnProject?                  @relation(fields: [projectId], references: [id])
+  rab         CnRAB?                      @relation(fields: [rabId], references: [id])
+  allocations CnClientReceiptAllocation[]
+  lines       CnClientInvoiceLine[]
+  creditNotes CnCreditNote[]
 
   @@unique([tenantId, invoiceNumber])
   @@index([tenantId])
@@ -3395,19 +3705,20 @@ model CnClientInvoice {
   @@index([rabId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnClientReceipt {
-  id               String   @id @default(cuid())
-  tenantId         String
-  receiptNumber    String
-  customerId       String
-  receiptDate      DateTime
-  amount           Decimal  @db.Decimal(18, 2)
-  allocatedAmount  Decimal  @default(0) @db.Decimal(18, 2)
-  mode             String   // cash | cheque | bank | upi | other
-  reference        String?  // cheque #, UTR, txn id
-  remarks          String?
+  id              String   @id @default(cuid())
+  tenantId        String
+  receiptNumber   String
+  customerId      String
+  receiptDate     DateTime
+  amount          Decimal  @db.Decimal(18, 2)
+  allocatedAmount Decimal  @default(0) @db.Decimal(18, 2)
+  mode            String // cash | cheque | bank | upi | other
+  reference       String? // cheque #, UTR, txn id
+  remarks         String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3415,33 +3726,35 @@ model CnClientReceipt {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer    CnCustomer                    @relation(fields: [customerId], references: [id])
+  tenant      Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer    CnCustomer                  @relation(fields: [customerId], references: [id])
   allocations CnClientReceiptAllocation[]
 
   @@unique([tenantId, receiptNumber])
   @@index([tenantId])
   @@index([customerId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnClientReceiptAllocation {
-  id         String   @id @default(cuid())
-  receiptId  String
-  invoiceId  String
-  amount     Decimal  @db.Decimal(18, 2)
+  id        String  @id @default(cuid())
+  receiptId String
+  invoiceId String
+  amount    Decimal @db.Decimal(18, 2)
 
   receipt CnClientReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   invoice CnClientInvoice @relation(fields: [invoiceId], references: [id])
 
   @@unique([receiptId, invoiceId])
   @@index([invoiceId])
+  @@schema("app_quikconstruction")
 }
 
 model CnVendorBill {
   id                  String    @id @default(cuid())
   tenantId            String
-  billNumber          String    // internal bill #
+  billNumber          String // internal bill #
   vendorId            String
   projectId           String?
   grnId               String?
@@ -3468,11 +3781,11 @@ model CnVendorBill {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vendor      CnVendor                      @relation(fields: [vendorId], references: [id])
-  project     CnProject?                    @relation(fields: [projectId], references: [id])
-  grn         CnGoodsReceiptNote?           @relation(fields: [grnId], references: [id])
-  po          CnPurchaseOrder?              @relation(fields: [poId], references: [id])
+  tenant      Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor      CnVendor                    @relation(fields: [vendorId], references: [id])
+  project     CnProject?                  @relation(fields: [projectId], references: [id])
+  grn         CnGoodsReceiptNote?         @relation(fields: [grnId], references: [id])
+  po          CnPurchaseOrder?            @relation(fields: [poId], references: [id])
   allocations CnVendorPaymentAllocation[]
   lines       CnVendorBillLine[]
   debitNotes  CnDebitNote[]
@@ -3484,19 +3797,20 @@ model CnVendorBill {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnVendorPayment {
-  id               String   @id @default(cuid())
-  tenantId         String
-  paymentNumber    String
-  vendorId         String
-  paymentDate      DateTime
-  amount           Decimal  @db.Decimal(18, 2)
-  allocatedAmount  Decimal  @default(0) @db.Decimal(18, 2)
-  mode             String
-  reference        String?
-  remarks          String?
+  id              String   @id @default(cuid())
+  tenantId        String
+  paymentNumber   String
+  vendorId        String
+  paymentDate     DateTime
+  amount          Decimal  @db.Decimal(18, 2)
+  allocatedAmount Decimal  @default(0) @db.Decimal(18, 2)
+  mode            String
+  reference       String?
+  remarks         String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3504,33 +3818,35 @@ model CnVendorPayment {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  vendor      CnVendor                      @relation(fields: [vendorId], references: [id])
+  tenant      Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor      CnVendor                    @relation(fields: [vendorId], references: [id])
   allocations CnVendorPaymentAllocation[]
 
   @@unique([tenantId, paymentNumber])
   @@index([tenantId])
   @@index([vendorId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnVendorPaymentAllocation {
-  id         String   @id @default(cuid())
-  paymentId  String
-  billId     String
-  amount     Decimal  @db.Decimal(18, 2)
+  id        String  @id @default(cuid())
+  paymentId String
+  billId    String
+  amount    Decimal @db.Decimal(18, 2)
 
   payment CnVendorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   bill    CnVendorBill    @relation(fields: [billId], references: [id])
 
   @@unique([paymentId, billId])
   @@index([billId])
+  @@schema("app_quikconstruction")
 }
 
 // ── Phase 7 — HRMS ──────────────────────────────────────────────────────
 
 model CnEmployee {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   tenantId     String
   empCode      String
   firstName    String
@@ -3541,11 +3857,11 @@ model CnEmployee {
   departmentId String?
   joinDate     DateTime?
   exitDate     DateTime?
-  empType      String   @default("permanent") // permanent | contract | daily_wage
-  monthlyWage  Decimal? @db.Decimal(18, 2)
-  dailyWage    Decimal? @db.Decimal(18, 2)
-  hourlyWage   Decimal? @db.Decimal(18, 2)
-  status       String   @default("active")
+  empType      String    @default("permanent") // permanent | contract | daily_wage
+  monthlyWage  Decimal?  @db.Decimal(18, 2)
+  dailyWage    Decimal?  @db.Decimal(18, 2)
+  hourlyWage   Decimal?  @db.Decimal(18, 2)
+  status       String    @default("active")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3553,14 +3869,15 @@ model CnEmployee {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  department   CnDepartment?  @relation(fields: [departmentId], references: [id])
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department   CnDepartment?   @relation(fields: [departmentId], references: [id])
   attendances  CnAttendance[]
   payrollLines CnPayrollLine[]
 
   @@unique([tenantId, empCode])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnAttendance {
@@ -3569,7 +3886,7 @@ model CnAttendance {
   employeeId  String
   projectId   String?
   date        DateTime
-  status      String   // P | A | HD | L
+  status      String // P | A | HD | L
   hoursWorked Decimal? @db.Decimal(5, 2)
   remarks     String?
 
@@ -3585,17 +3902,18 @@ model CnAttendance {
   @@unique([tenantId, employeeId, date])
   @@index([tenantId])
   @@index([date])
+  @@schema("app_quikconstruction")
 }
 
 model CnPayroll {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   tenantId    String
   runNumber   String
   periodStart DateTime
   periodEnd   DateTime
-  status      String   @default("draft") // draft | finalized | paid
-  totalGross  Decimal  @default(0) @db.Decimal(18, 2)
-  totalNet    Decimal  @default(0) @db.Decimal(18, 2)
+  status      String    @default("draft") // draft | finalized | paid
+  totalGross  Decimal   @default(0) @db.Decimal(18, 2)
+  totalNet    Decimal   @default(0) @db.Decimal(18, 2)
   remarks     String?
   finalizedAt DateTime?
   finalizedBy String?
@@ -3612,6 +3930,7 @@ model CnPayroll {
   @@unique([tenantId, runNumber])
   @@index([tenantId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnPayrollLine {
@@ -3630,6 +3949,7 @@ model CnPayrollLine {
 
   @@index([payrollId])
   @@index([employeeId])
+  @@schema("app_quikconstruction")
 }
 
 // ── Phase 8 — Approvals ─────────────────────────────────────────────────
@@ -3638,10 +3958,10 @@ model CnApprovalRule {
   id         String   @id @default(cuid())
   tenantId   String
   name       String
-  docType    String   // pr | po | rab | vendor_bill | payroll | other
+  docType    String // pr | po | rab | vendor_bill | payroll | other
   /// Threshold: approval required if doc total >= this amount (null = always).
   minAmount  Decimal? @db.Decimal(18, 2)
-  approverId String   // user id
+  approverId String // user id
   status     String   @default("active")
 
   createdAt DateTime  @default(now())
@@ -3655,20 +3975,21 @@ model CnApprovalRule {
   @@index([tenantId])
   @@index([tenantId, docType])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnApprovalRequest {
-  id           String   @id @default(cuid())
-  tenantId     String
-  docType      String
-  docId        String
-  docRef       String   // human-readable identifier (doc number)
-  amount       Decimal? @db.Decimal(18, 2)
-  requestedBy  String
-  approverId   String
-  status       String   @default("pending") // pending | approved | rejected
-  decisionAt   DateTime?
-  comment      String?
+  id          String    @id @default(cuid())
+  tenantId    String
+  docType     String
+  docId       String
+  docRef      String // human-readable identifier (doc number)
+  amount      Decimal?  @db.Decimal(18, 2)
+  requestedBy String
+  approverId  String
+  status      String    @default("pending") // pending | approved | rejected
+  decisionAt  DateTime?
+  comment     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3678,20 +3999,21 @@ model CnApprovalRequest {
   @@index([tenantId])
   @@index([approverId, status])
   @@index([docType, docId])
+  @@schema("app_quikconstruction")
 }
 
 // ── Phase 9 — Quality ───────────────────────────────────────────────────
 
 model CnQCInspection {
-  id             String   @id @default(cuid())
-  tenantId       String
+  id               String   @id @default(cuid())
+  tenantId         String
   inspectionNumber String
-  grnId          String?
-  projectId      String?
-  inspectorId    String
-  inspectionDate DateTime
-  decision       String   @default("pending") // pending | accepted | rejected | conditional
-  remarks        String?
+  grnId            String?
+  projectId        String?
+  inspectorId      String
+  inspectionDate   DateTime
+  decision         String   @default("pending") // pending | accepted | rejected | conditional
+  remarks          String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3708,6 +4030,7 @@ model CnQCInspection {
   @@index([tenantId])
   @@index([grnId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnQCDefect {
@@ -3723,24 +4046,25 @@ model CnQCDefect {
   item       CnItem?        @relation(fields: [itemId], references: [id])
 
   @@index([inspectionId])
+  @@schema("app_quikconstruction")
 }
 
 // ── Phase 10 — Safety ───────────────────────────────────────────────────
 
 model CnSafetyIncident {
-  id          String   @id @default(cuid())
-  tenantId    String
-  projectId   String?
+  id             String    @id @default(cuid())
+  tenantId       String
+  projectId      String?
   incidentNumber String
-  incidentDate DateTime
-  category    String   // injury | near_miss | property_damage | environmental | other
-  severity    String   @default("low") // low | medium | high | critical
-  title       String
-  description String?
-  reportedBy  String
-  status      String   @default("open") // open | investigating | resolved | closed
-  resolvedAt  DateTime?
-  resolvedBy  String?
+  incidentDate   DateTime
+  category       String // injury | near_miss | property_damage | environmental | other
+  severity       String    @default("low") // low | medium | high | critical
+  title          String
+  description    String?
+  reportedBy     String
+  status         String    @default("open") // open | investigating | resolved | closed
+  resolvedAt     DateTime?
+  resolvedBy     String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3755,19 +4079,20 @@ model CnSafetyIncident {
   @@index([tenantId])
   @@index([status])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 model CnSafetyChecklist {
-  id           String   @id @default(cuid())
-  tenantId     String
-  projectId    String?
-  templateName String   // e.g. "Daily site safety walk"
+  id            String   @id @default(cuid())
+  tenantId      String
+  projectId     String?
+  templateName  String // e.g. "Daily site safety walk"
   checklistDate DateTime
-  completedBy  String
+  completedBy   String
   /// JSON: [{ item: string, ok: bool, remarks?: string }]
-  items        Json
-  overallStatus String  @default("pass") // pass | fail | partial
-  remarks      String?
+  items         Json
+  overallStatus String   @default("pass") // pass | fail | partial
+  remarks       String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3781,14 +4106,15 @@ model CnSafetyChecklist {
   @@index([tenantId])
   @@index([checklistDate])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 // ── Phase 12 — Documents (local disk MVP) ───────────────────────────────
 
 model CnDocument {
-  id          String   @id @default(cuid())
+  id          String @id @default(cuid())
   tenantId    String
-  refType     String   // project | po | grn | rab | invoice | bill | incident | dpr | other
+  refType     String // project | po | grn | rab | invoice | bill | incident | dpr | other
   refId       String
   fileName    String
   mimeType    String
@@ -3804,24 +4130,25 @@ model CnDocument {
 
   @@index([tenantId, refType, refId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 // ── Phase 14 — Expenses (petty cash, non-GRN costs) ─────────────────────
 
 model CnExpense {
-  id             String   @id @default(cuid())
-  tenantId       String
-  expenseNumber  String
-  expenseDate    DateTime
-  projectId      String?
-  category       String   // travel | site_utility | office | labour_cash | fuel | misc
-  description    String
-  paidTo         String?
-  amount         Decimal  @db.Decimal(18, 2)
-  paymentMode    String   // cash | bank | upi | cheque | other
-  reference      String?
-  status         String   @default("recorded") // recorded | reimbursed | cancelled
-  remarks        String?
+  id            String   @id @default(cuid())
+  tenantId      String
+  expenseNumber String
+  expenseDate   DateTime
+  projectId     String?
+  category      String // travel | site_utility | office | labour_cash | fuel | misc
+  description   String
+  paidTo        String?
+  amount        Decimal  @db.Decimal(18, 2)
+  paymentMode   String // cash | bank | upi | cheque | other
+  reference     String?
+  status        String   @default("recorded") // recorded | reimbursed | cancelled
+  remarks       String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3836,6 +4163,7 @@ model CnExpense {
   @@index([tenantId])
   @@index([projectId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 // ── Structural gaps — additive, non-breaking ────────────────────────────
@@ -3860,6 +4188,7 @@ model CnClientInvoiceLine {
   uom     CnUOM?          @relation(fields: [uomId], references: [id])
 
   @@index([invoiceId])
+  @@schema("app_quikconstruction")
 }
 
 /// Optional line items for vendor bills. See CnClientInvoiceLine for shape rationale.
@@ -3880,21 +4209,22 @@ model CnVendorBillLine {
   uom  CnUOM?       @relation(fields: [uomId], references: [id])
 
   @@index([billId])
+  @@schema("app_quikconstruction")
 }
 
 /// Credit Note — reduces customer receivable. Can be linked to an invoice
 /// (in which case it is applied to that invoice on issue) or standalone.
 model CnCreditNote {
-  id             String   @id @default(cuid())
-  tenantId       String
-  noteNumber     String
-  customerId     String
-  invoiceId      String?
-  noteDate       DateTime
-  amount         Decimal  @db.Decimal(18, 2)
-  reason         String
-  status         String   @default("issued") // issued | applied | cancelled
-  remarks        String?
+  id         String   @id @default(cuid())
+  tenantId   String
+  noteNumber String
+  customerId String
+  invoiceId  String?
+  noteDate   DateTime
+  amount     Decimal  @db.Decimal(18, 2)
+  reason     String
+  status     String   @default("issued") // issued | applied | cancelled
+  remarks    String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3910,21 +4240,22 @@ model CnCreditNote {
   @@index([tenantId])
   @@index([customerId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 /// Debit Note — adjustment against a vendor. Typically reduces a bill payable
 /// (e.g. returned goods, pricing dispute).
 model CnDebitNote {
-  id             String   @id @default(cuid())
-  tenantId       String
-  noteNumber     String
-  vendorId       String
-  billId         String?
-  noteDate       DateTime
-  amount         Decimal  @db.Decimal(18, 2)
-  reason         String
-  status         String   @default("issued") // issued | applied | cancelled
-  remarks        String?
+  id         String   @id @default(cuid())
+  tenantId   String
+  noteNumber String
+  vendorId   String
+  billId     String?
+  noteDate   DateTime
+  amount     Decimal  @db.Decimal(18, 2)
+  reason     String
+  status     String   @default("issued") // issued | applied | cancelled
+  remarks    String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3940,22 +4271,23 @@ model CnDebitNote {
   @@index([tenantId])
   @@index([vendorId])
   @@index([deletedAt])
+  @@schema("app_quikconstruction")
 }
 
 /// Audit log. Free-form old/new JSON snapshots, indexed for per-entity
 /// history lookup. NOT wrapped around every endpoint in this pass — helper
 /// `logAudit()` is opt-in. Future work to wire it broadly.
 model CnAuditLog {
-  id          String   @id @default(cuid())
-  tenantId    String
-  userId      String
-  actionType  String   // create | update | delete | status_change | post | approve | …
-  entityType  String   // cnRAB | cnClientInvoice | cnVendorBill | …
-  entityId    String
-  entityRef   String?  // human-readable identifier
-  oldValues   Json?
-  newValues   Json?
-  metadata    Json?
+  id         String  @id @default(cuid())
+  tenantId   String
+  userId     String
+  actionType String // create | update | delete | status_change | post | approve | …
+  entityType String // cnRAB | cnClientInvoice | cnVendorBill | …
+  entityId   String
+  entityRef  String? // human-readable identifier
+  oldValues  Json?
+  newValues  Json?
+  metadata   Json?
 
   createdAt DateTime @default(now())
 
@@ -3963,6 +4295,7 @@ model CnAuditLog {
 
   @@index([tenantId, entityType, entityId])
   @@index([tenantId, createdAt])
+  @@schema("app_quikconstruction")
 }
 
 /// Per-tenant, per-prefix monotonic counters. Atomic `nextval()` via
@@ -3971,7 +4304,7 @@ model CnAuditLog {
 model CnNumberSequence {
   id        String   @id @default(cuid())
   tenantId  String
-  prefix    String   // e.g. PR | PO | GRN | RAB | INV | BILL | RCP | PAY | CN | DN | EXP | PAY | INS | INC
+  prefix    String // e.g. PR | PO | GRN | RAB | INV | BILL | RCP | PAY | CN | DN | EXP | PAY | INS | INC
   /// Financial year, e.g. "FY2526". Optional — if absent, counter is not FY-scoped.
   fyKey     String?
   counter   Int      @default(0)
@@ -3981,4 +4314,5 @@ model CnNumberSequence {
 
   @@unique([tenantId, prefix, fyKey])
   @@index([tenantId])
+  @@schema("app_quikconstruction")
 }

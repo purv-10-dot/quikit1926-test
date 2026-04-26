@@ -222,7 +222,7 @@ export default function OPSPHistoryPage() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
+      <div className="flex-1 overflow-y-auto px-6 py-5 min-h-0">
         {selectedYear === null ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-400 gap-3">
             <FileText className="h-10 w-10 text-gray-200" />

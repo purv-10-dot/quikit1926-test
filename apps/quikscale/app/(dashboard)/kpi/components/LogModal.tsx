@@ -10,8 +10,9 @@ import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserPicker } from "@quikit/ui";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
+import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
-import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import {
@@ -21,13 +22,13 @@ import {
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
+import { User as UserIcon, Calendar, CalendarDays } from "lucide-react";
 
 interface Props { kpi: KPIRow; onClose: () => void; onRefresh: () => void; initialTab?: Tab; }
 
 type Tab = "edit" | "updates" | "stats";
 
 const CURRENT_YEAR = new Date().getFullYear();
-const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 
 type EditFormState = {
   name: string; description: string; owner: string; teamId: string;
@@ -55,9 +56,13 @@ function EditTab({
   kpiOwners?: Array<{ id: string; firstName: string; lastName: string }>;
   readOnly?: boolean;
 }) {
-  // Past-week lock for target breakdown editing
+  // Past-week lock for target breakdown editing.
+  // Uses DB-driven useCurrentWeek so the week number honours the tenant's
+  // configured QuarterSetting.startDate (may be offset from the hardcoded
+  // Apr 1/Jul 1/Oct 1/Jan 1 map).
   const { canEditPastWeek } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
+  const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
 
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
@@ -291,7 +296,7 @@ function EditTab({
       {targetNum > 0 && (
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-2">Target Breakdown (Weekly)</label>
-          <div className="border border-gray-200 rounded-lg overflow-auto">
+          <WeeklyScroller>
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50">
@@ -300,7 +305,7 @@ function EditTab({
                     return (
                     <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${isPast ? "text-gray-300" : "text-gray-500"}`}>
                       <div>{isPast ? "🔒 " : ""}W{w}</div>
-                      <div className="text-[9px] font-normal text-gray-400">{weekDateLabel(parseInt(form.year), form.quarter, w)}</div>
+                      <div className="text-[9px] font-normal text-gray-400">{editTabWeekLabels[w - 1] ?? weekDateLabel(parseInt(form.year), form.quarter, w)}</div>
                     </th>
                   );})}
                 </tr>
@@ -331,7 +336,7 @@ function EditTab({
                 </tr>
               </tbody>
             </table>
-          </div>
+          </WeeklyScroller>
           <p className="text-[10px] text-gray-400 mt-1">
             {form.divisionType === "Cumulative"
               ? `Remainder distributed right-to-left — edit cells to override`
@@ -368,9 +373,10 @@ function UpdatesTab({
   const [noteInput, setNoteInput] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
-  // Past week lock
+  // Past week lock. DB-driven: respects tenant's QuarterSetting.startDate.
   const { canEditPastWeek } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+  const updatesTabWeekLabels = useWeekLabels(kpi.year, kpi.quarter);
 
   const weeklyTarget = (kpi.qtdGoal ?? kpi.target ?? 0) / 13;
   const isTeamKPI = kpi.kpiLevel === "team";
@@ -444,7 +450,7 @@ function UpdatesTab({
                       <div>
                         <span className="text-xs font-semibold text-gray-700">Week {w}</span>
                         <span className="text-[10px] text-gray-400 ml-2">
-                          {weekDateLabel(kpi.year, kpi.quarter, w)}
+                          {updatesTabWeekLabels[w - 1] ?? weekDateLabel(kpi.year, kpi.quarter, w)}
                         </span>
                       </div>
                       <span className="text-[10px] text-gray-500">
@@ -536,6 +542,7 @@ function UpdatesTab({
                   weeklyTarget={targetForWeek(w)}
                   year={kpi.year}
                   quarter={kpi.quarter}
+                  dateLabel={updatesTabWeekLabels[w - 1]}
                   onValueChange={v => handleWeekChange(w, "value", v)}
                   onNotesChange={n => handleWeekChange(w, "notes", n)}
                   locked={locked}
@@ -601,6 +608,9 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
   const { data: users = [] } = useUsers();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  // Current week-of-quarter for the header pill. DB-driven: respects tenant's
+  // QuarterSetting.startDate (may be offset from Apr 1 / Jul 1 / etc.).
+  const headerCurrentWeek = useCurrentWeek(kpi.year, kpi.quarter);
 
   const isTeamKPI = kpi.kpiLevel === "team";
   const currentUserId = session?.user?.id ?? "";
@@ -802,12 +812,21 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
                 {(kpi.progressPercent ?? 0).toFixed(0)}% · {colors.label}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="text-[11px] text-gray-500">{ownerName}</span>
-              <span className="text-gray-300">·</span>
-              <span className="text-[11px] text-gray-500">{fiscalYearLabel(kpi.year)} {kpi.quarter}</span>
-              <span className="text-gray-300">·</span>
-              <span className="text-[11px] text-gray-500">{kpi.measurementUnit}</span>
+            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-accent-50 text-accent-700 px-2 py-0.5 rounded-full border border-accent-100">
+                <UserIcon className="h-2.5 w-2.5" />
+                {ownerName}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-accent-50 text-accent-700 px-2 py-0.5 rounded-full border border-accent-100">
+                <Calendar className="h-2.5 w-2.5" />
+                {fiscalYearLabel(kpi.year)} {kpi.quarter}
+              </span>
+              {headerCurrentWeek !== null && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium bg-accent-50 text-accent-700 px-2 py-0.5 rounded-full border border-accent-100">
+                  <CalendarDays className="h-2.5 w-2.5" />
+                  Week {headerCurrentWeek}
+                </span>
+              )}
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0">

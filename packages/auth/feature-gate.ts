@@ -23,6 +23,7 @@ import type { NextAuthOptions } from "next-auth";
 import { getServerSession } from "next-auth";
 import { db } from "@quikit/database";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
+import { getOrSet } from "./cache";
 
 /**
  * React.cache() is only available in React 18 Canary / React 19 (which Next.js
@@ -45,18 +46,27 @@ const cache: <T extends (...args: never[]) => unknown>(fn: T) => T =
 export const getDisabledModules = cache(
   async (tenantId: string, appSlug: string): Promise<Set<string>> => {
     try {
-      const app = await db.app.findUnique({
-        where: { slug: appSlug },
-        select: { id: true },
-      });
-      if (!app) return new Set();
-      const rows = await db.appModuleFlag.findMany({
-        where: { tenantId, appId: app.id, enabled: false },
-        select: { moduleKey: true },
-      });
-      // Defensive: mocks / edge cases may return undefined. Treat as "all enabled".
-      if (!Array.isArray(rows)) return new Set();
-      return new Set(rows.map((r) => r.moduleKey));
+      // Disabled modules rarely change (admin toggles them in Settings →
+      // Configurations). 30s TTL keeps the FF gate fast without making a
+      // disable take "minutes" to roll out across instances.
+      const arr = await getOrSet<string[]>(
+        `disabledModules:${tenantId}:${appSlug}`,
+        30,
+        async () => {
+          const app = await db.app.findUnique({
+            where: { slug: appSlug },
+            select: { id: true },
+          });
+          if (!app) return [];
+          const rows = await db.appModuleFlag.findMany({
+            where: { tenantId, appId: app.id, enabled: false },
+            select: { moduleKey: true },
+          });
+          if (!Array.isArray(rows)) return [];
+          return rows.map((r) => r.moduleKey);
+        },
+      );
+      return new Set(arr);
     } catch {
       // Fail-open: if the gate query itself errors, don't block the app —
       // log and treat as all-enabled. A broken gate shouldn't take down the
@@ -154,17 +164,24 @@ export async function gateModuleApi(
 export const isTenantAppBlocked = cache(
   async (tenantId: string, appSlug: string): Promise<boolean> => {
     try {
-      const app = await db.app.findUnique({
-        where: { slug: appSlug },
-        select: { id: true },
-      });
-      if (!app) return false; // unknown app → not blocked (let upstream 404)
-      const access = await db.tenantAppAccess.findUnique({
-        where: { tenantId_appId: { tenantId, appId: app.id } },
-        select: { enabled: true },
-      });
-      if (!access) return false; // no row → default enabled
-      return access.enabled === false;
+      // SA-A.6 hard gate — toggled by super admins, super rare. 60s TTL is fine.
+      return await getOrSet<boolean>(
+        `tenantAppBlocked:${tenantId}:${appSlug}`,
+        60,
+        async () => {
+          const app = await db.app.findUnique({
+            where: { slug: appSlug },
+            select: { id: true },
+          });
+          if (!app) return false;
+          const access = await db.tenantAppAccess.findUnique({
+            where: { tenantId_appId: { tenantId, appId: app.id } },
+            select: { enabled: true },
+          });
+          if (!access) return false;
+          return access.enabled === false;
+        },
+      );
     } catch {
       // Fail-open: if the gate query errors, don't lock users out of the app.
       // Security posture: we trust this is a platform-wide administrative

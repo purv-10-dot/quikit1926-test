@@ -42,15 +42,12 @@ const navigation: NavItem[] = [
     { label: "Quarter Settings",href: "/org-setup/quarters", icon: CalendarDays, moduleKey: "orgSetup.quarters" },
   ]},
   { label: "WWW",            href: "/www",        icon: Activity, moduleKey: "www" },
-  { label: "Meeting Rhythm", icon: Calendar,      moduleKey: "meetings", children: [
-    { label: "Dashboard",         href: "/meetings",            icon: LayoutDashboard, moduleKey: "meetings.dashboard" },
-    { label: "Daily Huddle",      href: "/meetings/daily-huddle", icon: Clock, moduleKey: "meetings.dailyHuddle" },
-    { label: "Weekly Meeting",    href: "/meetings/weekly",     icon: CalendarDays, moduleKey: "meetings.weekly" },
-    { label: "Monthly Meeting",   href: "/meetings/monthly",    icon: CalendarDays, moduleKey: "meetings.monthly" },
-    { label: "Quarterly Offsite", href: "/meetings/quarterly",  icon: CalendarDays, moduleKey: "meetings.quarterly" },
-    { label: "Annual Planning",   href: "/meetings/annual",     icon: CalendarDays, moduleKey: "meetings.annual" },
-    { label: "Templates",         href: "/meetings/templates",  icon: List, moduleKey: "meetings.templates" },
-    { label: "History",           href: "/meetings/history",    icon: BookOpen, moduleKey: "meetings.history" },
+  { label: "Meeting Rhythm", icon: Calendar,      moduleKey: "clientMeetings", children: [
+    { label: "Dashboard",       href: "/client-meetings",                icon: LayoutDashboard, moduleKey: "clientMeetings.dashboard" },
+    { label: "Client Master",   href: "/client-meetings/clients",        icon: Users,           moduleKey: "clientMeetings.clients" },
+    { label: "Client Members",  href: "/client-meetings/members",        icon: User,            moduleKey: "clientMeetings.members" },
+    { label: "Daily Huddle",    href: "/client-meetings/daily-huddle",   icon: Clock,           moduleKey: "clientMeetings.dailyHuddle" },
+    { label: "Weekly Meeting",  href: "/client-meetings/weekly-meeting", icon: CalendarDays,    moduleKey: "clientMeetings.weeklyMeeting" },
   ]},
   { label: "OPSP",           icon: FileText,      moduleKey: "opsp", children: [
     { label: "Create OPSP",       href: "/opsp",            icon: FileText, moduleKey: "opsp.create" },

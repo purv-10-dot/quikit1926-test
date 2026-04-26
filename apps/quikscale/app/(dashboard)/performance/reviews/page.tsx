@@ -159,7 +159,7 @@ export default function ReviewsPage() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto min-h-0">
         {reviews.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-gray-400">
             <ClipboardList className="h-8 w-8 mb-2" />
@@ -217,7 +217,7 @@ export default function ReviewsPage() {
             </div>
 
             {/* Modal body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
               {/* Employee */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Employee *</label>

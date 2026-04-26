@@ -283,7 +283,7 @@ function UserPanel({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 min-h-0">
 
           {/* Name row */}
           <div className="grid grid-cols-2 gap-4">
@@ -567,7 +567,7 @@ export default function OrgUsersPage() {
       </div>
 
       {/* ── Table ── */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto min-h-0">
         <table className="w-full border-collapse" style={{ minWidth: 860 }}>
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">

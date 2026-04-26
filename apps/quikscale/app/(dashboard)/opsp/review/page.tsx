@@ -846,8 +846,9 @@ export default function OPSPReviewPage() {
         </div>
       </div>
 
-      {/* ── Content Area ── */}
-      <div className="flex-1 overflow-hidden">
+      {/* ── Content Area — `min-h-0` so flex-1 shrinks to viewport and inner
+          scroller gets bounded height (required for vertical scroll). ── */}
+      <div className="flex-1 overflow-hidden min-h-0">
         {loading ? (
           <TableSkeleton rows={10} cols={7} />
         ) : error ? (

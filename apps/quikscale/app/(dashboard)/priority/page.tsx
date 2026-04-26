@@ -6,11 +6,12 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
-  getCurrentFiscalWeek, getWeekDateRange,
 } from "@/lib/utils/fiscal";
+import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
 import { PriorityTable } from "./components/PriorityTable";
 import { PriorityModal } from "./components/PriorityModal";
-import { FilterPicker, userToFilterOption, EmptyState, type ExportSelection } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
+import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { AddButton } from "@quikit/ui";
@@ -42,9 +43,9 @@ export default function PriorityPage() {
     });
   }, []);
 
-  // Year/quarter picker
-  const [showYearPicker, setShowYearPicker] = useState(false);
-  const yearRef = useRef<HTMLDivElement>(null);
+  // Year/quarter picker — DB-scoped via shared hook
+  const { years: fyYears, configured: fyConfigured } = useFiscalYears();
+  const availableYears = fyYears.length ? fyYears : [CURRENT_YEAR];
 
   // Selection for bulk delete
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -70,7 +71,6 @@ export default function PriorityPage() {
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false);
-      if (yearRef.current && !yearRef.current.contains(e.target as Node)) setShowYearPicker(false);
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -92,7 +92,9 @@ export default function PriorityPage() {
     return true;
   });
 
-  const fiscalWeek = getCurrentFiscalWeek(year, quarter);
+  // DB-driven current week + date range (respects QuarterSetting.startDate).
+  const fiscalWeek = useCurrentWeek(year, quarter);
+  const fiscalWeekRange = useWeekDateRange(year, quarter, fiscalWeek);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterOwner ? 1 : 0);
 
   const handlePriorityExport = useCallback(async (sel: ExportSelection) => {
@@ -130,9 +132,11 @@ export default function PriorityPage() {
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
             {filtered.length} {filtered.length === 1 ? "item" : "items"}
           </span>
-          <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
-            {quarter} · Week {fiscalWeek} · {getWeekDateRange(year, quarter, fiscalWeek)}
-          </span>
+          {fiscalWeek !== null && (
+            <span className="text-xs bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+              {quarter} · Week {fiscalWeek}{fiscalWeekRange ? ` · ${fiscalWeekRange}` : ""}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -247,48 +251,15 @@ export default function PriorityPage() {
             )}
           </div>
 
-          {/* Year / Quarter picker */}
-          <div className="relative" ref={yearRef}>
-            <button
-              onClick={() => setShowYearPicker(o => !o)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showYearPicker ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
-            >
-              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {fiscalYearLabel(year)} · {quarter}
-              <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {showYearPicker && (
-              <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Fiscal Year</p>
-                  <div className="grid grid-cols-1 gap-1">
-                    {FISCAL_YEARS.map(y => (
-                      <button key={y} onClick={() => setYear(y)}
-                        className={`text-xs px-3 py-1.5 rounded-lg text-left transition-colors ${year === y ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700"}`}>
-                        {fiscalYearLabel(y)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quarter</p>
-                  <div className="grid grid-cols-4 gap-1">
-                    {(["Q1", "Q2", "Q3", "Q4"] as const).map(q => (
-                      <button key={q} onClick={() => { setQuarter(q); setShowYearPicker(false); }}
-                        className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${quarter === q ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700 border border-gray-200"}`}>
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Year / Quarter picker — shared FiscalPeriodPicker, DB-scoped */}
+          <FiscalPeriodPicker
+            years={availableYears}
+            configured={fyConfigured}
+            year={year}
+            quarter={quarter as FiscalQuarter}
+            formatYear={fiscalYearLabel}
+            onChange={({ year: y, quarter: q }) => { setYear(y); setQuarter(q); }}
+          />
 
           <ModuleMoreActions
             columns={priorityColumns}
@@ -305,8 +276,10 @@ export default function PriorityPage() {
         </div>
       </div>
 
-      {/* Table Area */}
-      <div className="flex-1 overflow-hidden">
+      {/* Table Area — `min-h-0` required so flex-1 actually shrinks to viewport
+          height; without it the inner scroller inherits content height and
+          vertical scroll silently breaks. */}
+      <div className="flex-1 overflow-hidden min-h-0">
         {isLoading ? (
           <TableSkeleton rows={10} cols={7} />
         ) : error ? (

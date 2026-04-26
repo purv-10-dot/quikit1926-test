@@ -38,6 +38,17 @@ const config = {
         },
       },
       fontFamily: {
+        // Primary typeface: Plus Jakarta Sans, injected by each app's root
+        // layout via next/font (CSS var `--font-jakarta`). System fallbacks
+        // prevent FOUT artefacts on slow networks.
+        sans: [
+          "var(--font-jakarta)",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Roboto",
+          "sans-serif",
+        ],
         display: "var(--font-family-display)",
         body: "var(--font-family-body)",
         mono: "var(--font-family-mono)",

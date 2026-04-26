@@ -16,7 +16,7 @@ describe("ancestorsOf", () => {
 
   it("returns immediate parent for 2-level keys", () => {
     expect(ancestorsOf("kpi.teams")).toEqual(["kpi"]);
-    expect(ancestorsOf("meetings.weekly")).toEqual(["meetings"]);
+    expect(ancestorsOf("clientMeetings.dailyHuddle")).toEqual(["clientMeetings"]);
   });
 
   it("returns full chain for deeper keys", () => {

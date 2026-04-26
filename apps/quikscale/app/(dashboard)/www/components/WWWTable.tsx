@@ -201,16 +201,16 @@ interface Props {
 }
 
 // Column keys: _cb, _log, _id (always visible+frozen) | who, when, what, revisedDate, status, notes
-const WWW_COL_ORDER_FULL = ["_cb", "_log", "_id", "who", "when", "what", "revisedDate", "status", "notes"];
+const WWW_COL_ORDER_FULL = ["_cb", "_log", "_id", "who", "when", "what", "revisedDate", "status", "category", "notes"];
 const WWW_COL_WIDTHS: Record<string, number> = {
   _cb: 40, _log: 40, _id: 50, who: 120, when: 110,
-  what: 300, revisedDate: 120, status: 140, notes: 300,
+  what: 300, revisedDate: 120, status: 140, category: 110, notes: 300,
 };
 const WWW_COL_LABELS: Record<string, string> = {
-  who: "Who", when: "When", what: "What", revisedDate: "Revised Date", status: "Status", notes: "Notes",
+  who: "Who", when: "When", what: "What", revisedDate: "Revised Date", status: "Status", category: "Category", notes: "Notes",
 };
 const WWW_SORT_KEYS: Record<string, string> = {
-  who: "who", when: "when", what: "what", revisedDate: "revisedDate", status: "status", notes: "notes",
+  who: "who", when: "when", what: "what", revisedDate: "revisedDate", status: "status", category: "category", notes: "notes",
 };
 const WWW_ALWAYS_VISIBLE = new Set(["_cb", "_log", "_id"]);
 const WWW_ALWAYS_FROZEN = new Set(["_cb", "_log", "_id"]);
@@ -578,6 +578,19 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                           onSave={handleStatusSave}
                           onClose={() => setOpenStatusPicker(null)}
                         />
+                      )}
+                    </td>
+                  )}
+
+                  {/* Category — hidable */}
+                  {WWW_COL_ORDER.includes("category") && (
+                    <td className="border-r border-gray-100 px-2 py-1.5 overflow-hidden align-top" style={{ width: getColWidth("category"), minWidth: getColWidth("category") }}>
+                      {item.category ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700">
+                          {item.category}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
                       )}
                     </td>
                   )}

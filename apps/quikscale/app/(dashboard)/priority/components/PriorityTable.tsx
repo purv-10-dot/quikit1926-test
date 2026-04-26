@@ -7,7 +7,7 @@ import { PriorityModal } from "./PriorityModal";
 import { PriorityLogModal } from "./PriorityLogModal";
 import { PriorityLogsModal } from "./PriorityLogsModal";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
-import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ColMenu } from "@/components/table/ColMenu";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
@@ -183,6 +183,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   // Past-week feature flags
   const { canEditPastWeek } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(year, quarter);
+  const weekLabels = useWeekLabels(year, quarter);
 
   // Table preferences (freeze + hidden cols + sort) persisted per user in DB
   const { frozenCol, setFrozenCol, hiddenCols, hideCol, showCol, showAllCols, sort, setSort } = useTablePrefs("priority");
@@ -408,7 +409,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                   className="sticky top-0 z-20 bg-accent-50 border-b border-gray-200 border-r border-r-gray-100 text-center px-1 py-2 text-[10px] font-semibold text-gray-500 whitespace-nowrap select-none"
                   style={{ minWidth: 76 }}>
                   <div>Week {w}</div>
-                  <div className="text-[9px] font-normal text-gray-400">{weekDateLabel(year, quarter, w)}</div>
+                  <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? weekDateLabel(year, quarter, w)}</div>
                 </th>
               ))}
             </tr>

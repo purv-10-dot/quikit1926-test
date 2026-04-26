@@ -3,20 +3,36 @@
 /**
  * StatsTab — read-only stats view for a KPI, used in LogModal.
  *
- * Extracted from `LogModal.tsx` in R6. Pure presentational — owns no
- * state, no mutations. The underlying stat calculations live in
- * `./kpiStats.ts` so they can be unit-tested independently.
+ * QTD semantics (per product decision 2026-04):
+ *   QTD Goal     = Σ weekly goals for weeks [1 .. currentWeek-1]
+ *                  (exclusive of the current week — "what you were
+ *                   supposed to have hit by the start of this week")
+ *   QTD Achieved = Σ weekly actuals for the same range, shown as
+ *                  `achieved / goal` so you see both at a glance.
+ *
+ * If no currentWeek can be resolved (year+quarter has not started yet,
+ * or has already ended, or is malformed), we fall back to the full-
+ * quarter totals — matching the pre-rule behaviour so historical
+ * KPIs still render something sensible.
  */
 
 import type { KPIRow } from "@/lib/types/kpi";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
 import { computeKPIStats } from "./kpiStats";
+import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
   const colors = progressColor(kpi.progressPercent ?? 0);
   const target = kpi.qtdGoal ?? kpi.target ?? 0;
   const achieved = kpi.qtdAchieved ?? 0;
   const { filledWeeks, avgPerWeek, bestWeek } = computeKPIStats(kpi);
+
+  // Week-of-quarter (1..13) — DB-driven, respects tenant's QuarterSetting.
+  const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+
+  // Compute QTD totals over [1 .. currentWeek-1]. Falls back to full-quarter
+  // totals when currentWeek is unresolvable.
+  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek);
 
   return (
     <div className="space-y-5">
@@ -75,11 +91,15 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
           },
           {
             label: "QTD Goal",
-            value: kpi.qtdGoal != null ? String(kpi.qtdGoal) : "—",
+            value: qtdGoal != null ? fmt(qtdGoal) : "—",
           },
           {
             label: "QTD Achieved",
-            value: fmt(achieved),
+            // Format "achieved / goal" so the user sees progress at a glance.
+            value:
+              qtdGoal != null
+                ? `${fmt(qtdAchieved ?? 0)} / ${fmt(qtdGoal)}`
+                : fmt(qtdAchieved ?? 0),
           },
           {
             label: "Weekly Goal",
@@ -97,4 +117,50 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Compute QTD Goal + QTD Achieved as sums over [1 .. currentWeek-1].
+ *
+ *   - Uses `kpi.weeklyTargets` (per-week goal map) when present; falls back
+ *     to an even split of the total target across 13 weeks.
+ *   - Uses `kpi.weeklyValues` actuals, filtered to weeks < currentWeek.
+ *
+ * Falls back to the server-stored kpi.qtdGoal / qtdAchieved when currentWeek
+ * is null (e.g. quarter has ended) so historical KPIs still look right.
+ */
+function computeQtd(kpi: KPIRow, currentWeek: number | null): {
+  qtdGoal: number | null;
+  qtdAchieved: number | null;
+} {
+  if (currentWeek == null) {
+    return {
+      qtdGoal: kpi.qtdGoal ?? kpi.target ?? null,
+      qtdAchieved: kpi.qtdAchieved ?? null,
+    };
+  }
+
+  // Week 1 → no prior weeks → everything is 0 (not null — we know the answer).
+  if (currentWeek <= 1) {
+    return { qtdGoal: 0, qtdAchieved: 0 };
+  }
+
+  const priorWeeks = Array.from({ length: currentWeek - 1 }, (_, i) => i + 1);
+
+  // QTD Goal: prefer per-week breakdown; fall back to even split.
+  const wt = kpi.weeklyTargets ?? {};
+  const totalTarget = kpi.qtdGoal ?? kpi.target ?? 0;
+  const flat = totalTarget > 0 ? totalTarget / 13 : 0;
+  const goal = priorWeeks.reduce((sum, w) => {
+    const v = wt[String(w)];
+    return sum + (typeof v === "number" ? v : flat);
+  }, 0);
+
+  // QTD Achieved: sum of actuals from prior weeks only.
+  const wv = kpi.weeklyValues ?? [];
+  const achieved = wv
+    .filter((v) => v.weekNumber < currentWeek)
+    .reduce((sum, v) => sum + (v.value ?? 0), 0);
+
+  return { qtdGoal: goal, qtdAchieved: achieved };
 }

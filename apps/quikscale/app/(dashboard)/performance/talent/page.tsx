@@ -329,7 +329,7 @@ export default function TalentAssessmentPage() {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6">
+      <div className="flex-1 overflow-y-auto px-6 pb-6 min-h-0">
         {view === "grid" ? (
           <NineBoxGrid gridData={gridData} onSelect={setSelected} />
         ) : (

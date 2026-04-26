@@ -6,8 +6,9 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { useQueryClient } from "@tanstack/react-query";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useTeams, type Team } from "@/lib/hooks/useTeams";
-import { UserPicker } from "@quikit/ui";
+import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton } from "@quikit/ui";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
+import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 
 interface Props {
   defaultYear?: number;
@@ -17,7 +18,6 @@ interface Props {
 }
 
 const CURRENT_YEAR = getFiscalYear();
-const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 const WEEK_OPTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
 
 // ── Team select with inline Add New ──────────────────────────────────────────
@@ -153,6 +153,9 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  // DB-scoped fiscal years via shared hook
+  const { years: fyYears } = useFiscalYears();
+  const yearOptions = fyYears.length ? fyYears : [CURRENT_YEAR];
 
   // Owner dropdown filtering:
   //   - Team selected → fetch members of that team (API filters server-side).
@@ -220,27 +223,26 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative ml-auto h-full w-[520px] bg-white shadow-2xl flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-800">Add New Priority</h2>
-            <p className="text-[11px] text-gray-400 mt-0.5">
-              {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
-            </p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          {errors._ && (
+    <RightPanel
+      open
+      onClose={onClose}
+      size="sm"
+      title="Add New Priority"
+      subtitle={`${fiscalYearLabel(parseInt(form.year))} · ${form.quarter}`}
+      footer={
+        <RightPanelFooter>
+          <RightPanelCancelButton onClick={onClose} />
+          <RightPanelSubmitButton
+            onClick={handleSubmit}
+            saving={saving}
+            icon="plus"
+            label="Create Priority"
+          />
+        </RightPanelFooter>
+      }
+    >
+      <>
+        {errors._ && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
               {errors._}
             </div>
@@ -293,7 +295,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               <div className="grid grid-cols-2 gap-2">
                 <select value={form.year} onChange={e => set("year", e.target.value)}
                   className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                  {FISCAL_YEARS.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
+                  {yearOptions.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
                 </select>
                 <select value={form.quarter} onChange={e => set("quarter", e.target.value)}
                   className={`px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.quarter ? "border-red-400" : "border-gray-200"}`}>
@@ -314,33 +316,14 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
             </div>
           </div>
 
-          {/* Row 4: Description */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-            <textarea value={form.description} onChange={e => set("description", e.target.value)}
-              rows={3} placeholder="Enter description…"
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
-          </div>
+        {/* Row 4: Description */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+          <textarea value={form.description} onChange={e => set("description", e.target.value)}
+            rows={3} placeholder="Enter description…"
+            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
         </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 flex-shrink-0">
-          <button onClick={onClose}
-            className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSubmit} disabled={saving}
-            className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors">
-            {saving && (
-              <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            )}
-            Create Priority
-          </button>
-        </div>
-      </div>
-    </div>
+      </>
+    </RightPanel>
   );
 }
