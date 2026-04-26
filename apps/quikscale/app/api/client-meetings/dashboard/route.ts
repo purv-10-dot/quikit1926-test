@@ -52,8 +52,8 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
         format1Status: h.format1Status,
         format2Status: h.format2Status,
         stuckCallStatus: h.stuckCallStatus,
-        punctualityOverride: h.punctualityOverride,
-        totalMembers: h.totalMembers,
+        punctualityOverride: ("NA" as const),
+        totalMembers: 0,
         absentCount: h.absentMembers.length,
       })),
       months,
@@ -62,21 +62,21 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
   } else {
     const meetings = await db.clientWeeklyMeeting.findMany({
       where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-      include: { absentMembers: true, dashboardNAMembers: true, memberScores: true },
+      include: { absentMembers: true, dashboardNAMembers: true },
     });
     monthlyStats = calculateWeeklyMonthlyStats(
       meetings.map(m => ({
         meetingDate: m.meetingDate,
         callStatus: m.callStatus,
         actualStartTime: m.actualStartTime, actualEndTime: m.actualEndTime,
-        formatCheck1: m.formatCheck1, formatCheck2: m.formatCheck2,
-        wwwReviewDone: m.wwwReviewDone, feedbackDone: m.feedbackDone,
-        collectiveIntelDone: m.collectiveIntelDone, kpGapsDiscussed: m.kpGapsDiscussed,
-        dashboardQuality: m.dashboardQuality,
-        punctualityOverride: m.punctualityOverride,
-        totalMembers: m.totalMembers,
+        goodNewsSharing: m.goodNewsSharing, kpDashboard: m.kpDashboard,
+        www: m.www, feedback: m.feedback,
+        collectiveIntelligence: m.collectiveIntelligence, gaps: m.gaps,
+        opspReview: m.opspReview,
+        punctualityOverride: ("NA" as const),
+        totalMembers: 0,
         absentCount: m.absentMembers.length,
-        memberScores: m.memberScores,
+        memberScores: [] as const,
       })),
       months,
       client.weeklyStartTime, client.weeklyEndTime,
@@ -112,7 +112,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
     if (member) {
       const meetings = await db.clientWeeklyMeeting.findMany({
         where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-        include: { absentMembers: true, dashboardNAMembers: true, memberScores: true },
+        include: { absentMembers: true, dashboardNAMembers: true },
         orderBy: { meetingDate: "asc" },
       });
       punchIn = computeMemberPunchIn(
@@ -120,7 +120,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
           id: m.id, meetingDate: m.meetingDate,
           absentUserIds: m.absentMembers.map(a => a.userId),
           dashboardNAUserIds: m.dashboardNAMembers.map(a => a.userId),
-          memberScores: m.memberScores,
+          memberScores: [] as const,
         })),
         { id: punchUserId, name: `${member.user.firstName} ${member.user.lastName}`.trim() },
       );

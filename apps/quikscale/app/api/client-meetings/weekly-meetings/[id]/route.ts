@@ -10,7 +10,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { p
     where: { id: params.id, tenantId, deletedAt: null },
     include: {
       client: { select: { id: true, name: true } },
-      absentMembers: true, dashboardNAMembers: true, memberScores: true,
+      absentMembers: true, dashboardNAMembers: true,
     },
   });
   if (!row) return NextResponse.json({ success: false, error: "Weekly meeting not found" }, { status: 404 });
@@ -26,7 +26,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { p
   });
 });
 
-/** PUT — replaces absence/dashboardNA/memberScores atomically. */
+/** PUT — replaces absence + dashboardNA links atomically. */
 export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, request, { params }) => {
   const parsed = updateWeeklyMeetingSchema.safeParse(await request.json());
   if (!parsed.success)
@@ -50,11 +50,12 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
         segmentTime3: d.segmentTime3, segmentTime4: d.segmentTime4,
         segmentTime5: d.segmentTime5, segmentTime6: d.segmentTime6,
         segmentTime7: d.segmentTime7,
-        formatCheck1: d.formatCheck1, formatCheck2: d.formatCheck2,
-        wwwReviewDone: d.wwwReviewDone, feedbackDone: d.feedbackDone,
-        collectiveIntelDone: d.collectiveIntelDone, kpGapsDiscussed: d.kpGapsDiscussed,
-        dashboardQuality: d.dashboardQuality, punctualityOverride: d.punctualityOverride,
-        totalMembers: d.totalMembers, notes: d.notes,
+        goodNewsSharing: d.goodNewsSharing, kpDashboard: d.kpDashboard,
+        gaps: d.gaps, www: d.www, feedback: d.feedback,
+        collectiveIntelligence: d.collectiveIntelligence,
+        opspReview: d.opspReview,
+        notesKPDashboard: d.notesKPDashboard,
+        otherNotes: d.otherNotes,
         updatedBy: userId,
       },
     });
@@ -71,19 +72,6 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
       if (d.dashboardNAUserIds.length > 0) {
         await tx.clientWeeklyMeetingDashboardNA.createMany({
           data: d.dashboardNAUserIds.map(uid => ({ meetingId: params.id, userId: uid })),
-        });
-      }
-    }
-    if (d.memberScores !== undefined) {
-      await tx.clientWeeklyMemberScore.deleteMany({ where: { meetingId: params.id } });
-      if (d.memberScores.length > 0) {
-        await tx.clientWeeklyMemberScore.createMany({
-          data: d.memberScores.map(s => ({
-            meetingId: params.id, userId: s.userId,
-            kpiWeeklyQTD: s.kpiWeeklyQTD, kpiCoding: s.kpiCoding,
-            priorityNotes: s.priorityNotes, priorityStartEndDate: s.priorityStartEndDate,
-            priorityColor: s.priorityColor,
-          })),
         });
       }
     }

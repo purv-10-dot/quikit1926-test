@@ -37,7 +37,7 @@ export const POST = withTenantAuth(async ({ tenantId }, request) => {
 
   const meetings = await db.clientWeeklyMeeting.findMany({
     where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-    include: { absentMembers: true, dashboardNAMembers: true, memberScores: true },
+    include: { absentMembers: true, dashboardNAMembers: true },
     orderBy: { meetingDate: "asc" },
   });
   if (!meetings.length)
@@ -49,7 +49,7 @@ export const POST = withTenantAuth(async ({ tenantId }, request) => {
         id: mtg.id, meetingDate: mtg.meetingDate,
         absentUserIds: mtg.absentMembers.map(a => a.userId),
         dashboardNAUserIds: mtg.dashboardNAMembers.map(a => a.userId),
-        memberScores: mtg.memberScores,
+        memberScores: [] as const,
       })),
       { id: m.userId, name: `${m.user.firstName} ${m.user.lastName}`.trim() },
     ),

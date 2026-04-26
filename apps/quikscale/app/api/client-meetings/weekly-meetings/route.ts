@@ -31,7 +31,6 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
       client: { select: { id: true, name: true } },
       absentMembers: true,
       dashboardNAMembers: true,
-      memberScores: true,
     },
   });
 
@@ -43,11 +42,15 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
       meetingDate: r.meetingDate.toISOString(),
       callStatus: r.callStatus,
       actualStartTime: r.actualStartTime, actualEndTime: r.actualEndTime,
-      formatCheck1: r.formatCheck1, formatCheck2: r.formatCheck2,
-      wwwReviewDone: r.wwwReviewDone, feedbackDone: r.feedbackDone,
-      collectiveIntelDone: r.collectiveIntelDone, kpGapsDiscussed: r.kpGapsDiscussed,
-      dashboardQuality: r.dashboardQuality, punctualityOverride: r.punctualityOverride,
-      totalMembers: r.totalMembers, notes: r.notes,
+      segmentTime1: r.segmentTime1, segmentTime2: r.segmentTime2,
+      segmentTime3: r.segmentTime3, segmentTime4: r.segmentTime4,
+      segmentTime5: r.segmentTime5, segmentTime6: r.segmentTime6,
+      segmentTime7: r.segmentTime7,
+      goodNewsSharing: r.goodNewsSharing, kpDashboard: r.kpDashboard,
+      gaps: r.gaps, www: r.www, feedback: r.feedback,
+      collectiveIntelligence: r.collectiveIntelligence,
+      opspReview: r.opspReview,
+      notesKPDashboard: r.notesKPDashboard, otherNotes: r.otherNotes,
       absentUserIds: r.absentMembers.map(a => a.userId),
       dashboardNAUserIds: r.dashboardNAMembers.map(a => a.userId),
     })),
@@ -67,10 +70,6 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
   if (d.actualStartTime && d.actualEndTime && d.actualEndTime <= d.actualStartTime)
     return NextResponse.json({ success: false, error: "Actual end time must be after start time" }, { status: 400 });
 
-  const totalMembers = d.totalMembers || (await db.clientMembership.count({
-    where: { clientId: d.clientId, deletedAt: null },
-  }));
-
   const created = await db.clientWeeklyMeeting.create({
     data: {
       tenantId, clientId: d.clientId,
@@ -81,20 +80,15 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
       segmentTime3: d.segmentTime3 ?? null, segmentTime4: d.segmentTime4 ?? null,
       segmentTime5: d.segmentTime5 ?? null, segmentTime6: d.segmentTime6 ?? null,
       segmentTime7: d.segmentTime7 ?? null,
-      formatCheck1: d.formatCheck1, formatCheck2: d.formatCheck2,
-      wwwReviewDone: d.wwwReviewDone, feedbackDone: d.feedbackDone,
-      collectiveIntelDone: d.collectiveIntelDone, kpGapsDiscussed: d.kpGapsDiscussed,
-      dashboardQuality: d.dashboardQuality, punctualityOverride: d.punctualityOverride,
-      totalMembers, notes: d.notes ?? null,
+      goodNewsSharing: d.goodNewsSharing, kpDashboard: d.kpDashboard,
+      gaps: d.gaps, www: d.www, feedback: d.feedback,
+      collectiveIntelligence: d.collectiveIntelligence,
+      opspReview: d.opspReview,
+      notesKPDashboard: d.notesKPDashboard ?? null,
+      otherNotes: d.otherNotes ?? null,
       createdBy: userId,
       absentMembers:      { create: d.absentUserIds.map(uid => ({ userId: uid })) },
       dashboardNAMembers: { create: d.dashboardNAUserIds.map(uid => ({ userId: uid })) },
-      memberScores:       { create: d.memberScores.map(s => ({
-        userId: s.userId,
-        kpiWeeklyQTD: s.kpiWeeklyQTD, kpiCoding: s.kpiCoding,
-        priorityNotes: s.priorityNotes, priorityStartEndDate: s.priorityStartEndDate,
-        priorityColor: s.priorityColor,
-      })) },
     },
   });
 

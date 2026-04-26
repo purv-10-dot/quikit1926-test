@@ -332,7 +332,6 @@ model User {
   dailyHuddleAbsences   ClientDailyHuddleAbsence[]
   weeklyMeetingAbsences ClientWeeklyMeetingAbsence[]
   weeklyDashboardNAs    ClientWeeklyMeetingDashboardNA[]
-  weeklyMemberScores    ClientWeeklyMemberScore[]
 
   @@index([email])
   @@schema("public")
@@ -1019,19 +1018,18 @@ model ClientWeeklyMeeting {
   segmentTime6 String?
   segmentTime7 String?
 
-  /// Radio flags (see meetingrythm.md §5 — radio ↔ radio-6).
-  formatCheck1        ClientMeetingFlag @default(NA)
-  formatCheck2        ClientMeetingFlag @default(NA)
-  wwwReviewDone       ClientMeetingFlag @default(NA)
-  feedbackDone        ClientMeetingFlag @default(NA)
-  collectiveIntelDone ClientMeetingFlag @default(NA)
-  kpGapsDiscussed     ClientMeetingFlag @default(NA)
-  dashboardQuality    ClientMeetingFlag @default(NA)
-  punctualityOverride ClientMeetingFlag @default(NA)
+  /// Radio flags — order matches the form spec (Good News → OPSP Review).
+  /// Each pairs with segmentTime1..7 for "<flag> Time" companion field.
+  goodNewsSharing        ClientMeetingFlag @default(NA)
+  kpDashboard            ClientMeetingFlag @default(NA)
+  gaps                   ClientMeetingFlag @default(NA)
+  www                    ClientMeetingFlag @default(NA)
+  feedback               ClientMeetingFlag @default(NA)
+  collectiveIntelligence ClientMeetingFlag @default(NA)
+  opspReview             ClientMeetingFlag @default(NA)
 
-  totalMembers Int @default(0)
-
-  notes String? @db.Text
+  notesKPDashboard String? @db.Text
+  otherNotes       String? @db.Text
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1043,7 +1041,6 @@ model ClientWeeklyMeeting {
   client             Client                           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   absentMembers      ClientWeeklyMeetingAbsence[]
   dashboardNAMembers ClientWeeklyMeetingDashboardNA[]
-  memberScores       ClientWeeklyMemberScore[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1082,25 +1079,6 @@ model ClientWeeklyMeetingDashboardNA {
 /// Per-member KPI scores captured inside a weekly meeting drawer (see
 /// meetingrythm.md §5.6 `weeklyDataStore`). Integers 0..n — client-defined
 /// scoring scheme; renderer color-codes based on tenant's manageView rules.
-model ClientWeeklyMemberScore {
-  id        String @id @default(cuid())
-  meetingId String
-  userId    String
-
-  kpiWeeklyQTD         Int @default(0)
-  kpiCoding            Int @default(0)
-  priorityNotes        Int @default(0)
-  priorityStartEndDate Int @default(0)
-  priorityColor        Int @default(0)
-
-  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([meetingId, userId])
-  @@index([userId])
-  @@schema("app_quikscale")
-}
-
 // ============================================================================
 // OPSP MODULE (One-Page Strategic Plan)
 // ============================================================================

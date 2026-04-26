@@ -99,45 +99,33 @@ export type UpdateDailyHuddleInput = z.infer<typeof updateDailyHuddleSchema>;
 
 /* ─── Weekly Meeting ────────────────────────────────────────────────────────── */
 
-export const weeklyMemberScoreSchema = z.object({
-  userId:               z.string().min(1),
-  kpiWeeklyQTD:         z.number().int().min(0).max(100).default(0),
-  kpiCoding:            z.number().int().min(0).max(100).default(0),
-  priorityNotes:        z.number().int().min(0).max(100).default(0),
-  priorityStartEndDate: z.number().int().min(0).max(100).default(0),
-  priorityColor:        z.number().int().min(0).max(100).default(0),
-});
-
 export const createWeeklyMeetingSchema = z.object({
-  clientId:            z.string().min(1),
-  meetingDate:         z.string().regex(DATE_ISO_OR_YMD),
-  callStatus:          statusSchema.default("HELD"),
-  actualStartTime:     z.string().regex(TIME_24H).optional().nullable(),
-  actualEndTime:       z.string().regex(TIME_24H).optional().nullable(),
-  segmentTime1:        z.string().regex(TIME_24H).optional().nullable(),
-  segmentTime2:        z.string().regex(TIME_24H).optional().nullable(),
-  segmentTime3:        z.string().regex(TIME_24H).optional().nullable(),
-  segmentTime4:        z.string().regex(TIME_24H).optional().nullable(),
-  segmentTime5:        z.string().regex(TIME_24H).optional().nullable(),
-  segmentTime6:        z.string().regex(TIME_24H).optional().nullable(),
-  segmentTime7:        z.string().regex(TIME_24H).optional().nullable(),
-  formatCheck1:        flagSchema.default("NA"),
-  formatCheck2:        flagSchema.default("NA"),
-  wwwReviewDone:       flagSchema.default("NA"),
-  feedbackDone:        flagSchema.default("NA"),
-  collectiveIntelDone: flagSchema.default("NA"),
-  kpGapsDiscussed:     flagSchema.default("NA"),
-  dashboardQuality:    flagSchema.default("NA"),
-  punctualityOverride: flagSchema.default("NA"),
-  totalMembers:        z.number().int().min(0).default(0),
-  notes:               z.string().max(5000).optional().nullable(),
-  absentUserIds:       z.array(z.string()).default([]),
-  dashboardNAUserIds:  z.array(z.string()).default([]),
-  memberScores:        z.array(weeklyMemberScoreSchema).default([]),
+  clientId:               z.string().min(1),
+  meetingDate:            z.string().regex(DATE_ISO_OR_YMD),
+  callStatus:             statusSchema.default("HELD"),
+  actualStartTime:        z.string().regex(TIME_24H).optional().nullable(),
+  actualEndTime:          z.string().regex(TIME_24H).optional().nullable(),
+  segmentTime1:           z.string().regex(TIME_24H).optional().nullable(),
+  segmentTime2:           z.string().regex(TIME_24H).optional().nullable(),
+  segmentTime3:           z.string().regex(TIME_24H).optional().nullable(),
+  segmentTime4:           z.string().regex(TIME_24H).optional().nullable(),
+  segmentTime5:           z.string().regex(TIME_24H).optional().nullable(),
+  segmentTime6:           z.string().regex(TIME_24H).optional().nullable(),
+  segmentTime7:           z.string().regex(TIME_24H).optional().nullable(),
+  goodNewsSharing:        flagSchema.default("NA"),
+  kpDashboard:            flagSchema.default("NA"),
+  gaps:                   flagSchema.default("NA"),
+  www:                    flagSchema.default("NA"),
+  feedback:               flagSchema.default("NA"),
+  collectiveIntelligence: flagSchema.default("NA"),
+  opspReview:             flagSchema.default("NA"),
+  notesKPDashboard:       z.string().max(20000).optional().nullable(),
+  otherNotes:             z.string().max(20000).optional().nullable(),
+  absentUserIds:          z.array(z.string()).default([]),
+  dashboardNAUserIds:     z.array(z.string()).default([]),
 });
 
 export const updateWeeklyMeetingSchema = createWeeklyMeetingSchema.partial();
 
-export type CreateWeeklyMeetingInput  = z.infer<typeof createWeeklyMeetingSchema>;
-export type UpdateWeeklyMeetingInput  = z.infer<typeof updateWeeklyMeetingSchema>;
-export type WeeklyMemberScoreInput    = z.infer<typeof weeklyMemberScoreSchema>;
+export type CreateWeeklyMeetingInput = z.infer<typeof createWeeklyMeetingSchema>;
+export type UpdateWeeklyMeetingInput = z.infer<typeof updateWeeklyMeetingSchema>;
