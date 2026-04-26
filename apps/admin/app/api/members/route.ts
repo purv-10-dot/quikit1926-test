@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { sendInvitationEmail } from "@/lib/email";
 import { ROLE_LABELS } from "@/lib/constants";
 import { inviteMemberSchema } from "@/lib/schemas/memberSchema";
+import { writeAuditLog } from "@/lib/audit";
 import crypto from "crypto";
 
 export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
@@ -80,7 +81,31 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
   }
   const { email, firstName, lastName, role } = parsed.data;
 
-  // Check if user already has a membership for this tenant
+  // Tenant lookup is needed for domain allowlist check, branding, AND email send.
+  const tenant = await db.tenant.findUnique({
+    where: { id: tenantId },
+    select: { name: true, logoUrl: true, brandColor: true, allowedEmailDomains: true },
+  });
+
+  // Domain allowlist enforcement (empty list = unrestricted).
+  if (tenant?.allowedEmailDomains && tenant.allowedEmailDomains.length > 0) {
+    const emailDomain = email.split("@")[1]?.toLowerCase() ?? "";
+    const allowed = tenant.allowedEmailDomains.map((d) => d.toLowerCase());
+    if (!allowed.includes(emailDomain)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Email domain not allowed for this organisation. Permitted domains: ${allowed.join(", ")}`,
+        },
+        { status: 422 }
+      );
+    }
+  }
+
+  // Anti-enumeration: a duplicate invite attempt (active member or pending
+  // invite for the same email) returns the SAME generic success response as
+  // a fresh invite. We log the duplicate to AuditLog so a real admin can
+  // notice; an attacker probing for member emails sees nothing.
   let user = await db.user.findUnique({ where: { email } });
 
   if (user) {
@@ -88,18 +113,21 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
       where: { tenantId_userId: { tenantId, userId: user.id } },
     });
 
-    if (existingMembership && existingMembership.status === "active") {
-      return NextResponse.json(
-        { success: false, error: "User is already an active member of this organisation" },
-        { status: 409 }
-      );
-    }
-
-    if (existingMembership && existingMembership.status === "invited") {
-      return NextResponse.json(
-        { success: false, error: "User already has a pending invitation" },
-        { status: 409 }
-      );
+    if (existingMembership && (existingMembership.status === "active" || existingMembership.status === "invited")) {
+      await writeAuditLog({
+        tenantId,
+        actorId: inviterId,
+        action: "DUPLICATE_INVITE",
+        entityType: "Membership",
+        entityId: existingMembership.id,
+        reason: `status=${existingMembership.status}`,
+        ipAddress: request.headers.get("x-forwarded-for"),
+        userAgent: request.headers.get("user-agent"),
+      });
+      return NextResponse.json({
+        success: true,
+        message: `Invitation sent to ${email}`,
+      });
     }
   }
 
@@ -117,7 +145,7 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
   }
 
   // Create or upsert the membership
-  await db.membership.upsert({
+  const membership = await db.membership.upsert({
     where: { tenantId_userId: { tenantId, userId: user.id } },
     create: {
       tenantId,
@@ -137,19 +165,33 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
     },
   });
 
-  // Get tenant info and inviter name for email
-  const [tenant, inviter] = await Promise.all([
-    db.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
-    db.user.findUnique({ where: { id: inviterId }, select: { firstName: true, lastName: true } }),
-  ]);
+  // Get inviter name for email
+  const inviter = await db.user.findUnique({
+    where: { id: inviterId },
+    select: { firstName: true, lastName: true },
+  });
 
-  // Send invitation email
+  // Send invitation email (tenant-branded)
   await sendInvitationEmail({
     to: email,
     orgName: tenant?.name || "Organisation",
+    orgLogoUrl: tenant?.logoUrl ?? null,
+    orgBrandColor: tenant?.brandColor ?? null,
     inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}` : "An admin",
     role: ROLE_LABELS[role] || role,
     token: invitationToken,
+  });
+
+  // Audit log
+  await writeAuditLog({
+    tenantId,
+    actorId: inviterId,
+    action: "INVITED",
+    entityType: "Membership",
+    entityId: membership.id,
+    newValues: { email, role, firstName, lastName },
+    ipAddress: request.headers.get("x-forwarded-for"),
+    userAgent: request.headers.get("user-agent"),
   });
 
   return NextResponse.json({

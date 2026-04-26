@@ -24,6 +24,7 @@ export const GET = withAdminAuth(async ({ tenantId }) => {
       fiscalYearStart: true,
       quarterStartMonth: true,
       weekStartDay: true,
+      allowedEmailDomains: true,
       createdAt: true,
     },
   });

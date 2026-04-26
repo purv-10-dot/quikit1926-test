@@ -1,12 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { sendInvitationEmail } from "@/lib/email";
 import { ROLE_LABELS } from "@/lib/constants";
+import { writeAuditLog } from "@/lib/audit";
 import crypto from "crypto";
 
-export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inviterId }, _request, { params }) => {
+export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inviterId }, request: NextRequest, { params }) => {
   const blocked = await gateModuleApi("admin", "members", tenantId);
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
@@ -34,16 +35,32 @@ export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inv
   });
 
   const [tenant, inviter] = await Promise.all([
-    db.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
+    db.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true, logoUrl: true, brandColor: true },
+    }),
     db.user.findUnique({ where: { id: inviterId }, select: { firstName: true, lastName: true } }),
   ]);
 
   await sendInvitationEmail({
     to: membership.user.email,
     orgName: tenant?.name || "Organisation",
+    orgLogoUrl: tenant?.logoUrl ?? null,
+    orgBrandColor: tenant?.brandColor ?? null,
     inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}` : "An admin",
     role: ROLE_LABELS[membership.role] || membership.role,
     token: newToken,
+    isReminder: true,
+  });
+
+  await writeAuditLog({
+    tenantId,
+    actorId: inviterId,
+    action: "RESENT",
+    entityType: "Membership",
+    entityId: membershipId,
+    ipAddress: request.headers.get("x-forwarded-for"),
+    userAgent: request.headers.get("user-agent"),
   });
 
   return NextResponse.json({

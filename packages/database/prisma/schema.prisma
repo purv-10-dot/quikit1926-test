@@ -158,6 +158,10 @@ model Tenant {
   plan         String  @default("startup")
   billingEmail String?
 
+  /// Empty = no restriction. Non-empty = POST /api/members must match one
+  /// (case-insensitive, no @ prefix — e.g. ["acme.com", "acme.co.uk"]).
+  allowedEmailDomains String[] @default([])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   createdBy String?

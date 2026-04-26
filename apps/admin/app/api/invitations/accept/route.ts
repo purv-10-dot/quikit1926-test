@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import { writeAuditLog } from "@/lib/audit";
+import { passwordPolicyError } from "@/lib/passwordPolicy";
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
@@ -94,13 +96,14 @@ export async function POST(request: NextRequest) {
 
   // If user needs a password, validate and set it
   if (!membership.user.password) {
-    if (!password || typeof password !== "string" || password.length < 8) {
+    const pwErr = passwordPolicyError(password);
+    if (pwErr) {
       return NextResponse.json(
-        { success: false, error: "Password is required and must be at least 8 characters" },
+        { success: false, error: pwErr },
         { status: 400 }
       );
     }
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password as string, 10);
     await db.user.update({
       where: { id: membership.user.id },
       data: { password: hashedPassword },
@@ -115,6 +118,16 @@ export async function POST(request: NextRequest) {
       acceptedAt: new Date(),
       invitationToken: null,
     },
+  });
+
+  await writeAuditLog({
+    tenantId: membership.tenantId,
+    actorId: membership.user.id,
+    action: "ACCEPTED",
+    entityType: "Membership",
+    entityId: membership.id,
+    ipAddress: request.headers.get("x-forwarded-for"),
+    userAgent: request.headers.get("user-agent"),
   });
 
   // Auto-grant access to all active apps
