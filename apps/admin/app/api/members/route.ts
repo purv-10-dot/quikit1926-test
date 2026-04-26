@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { sendInvitationEmail } from "@/lib/email";
 import { ROLE_LABELS } from "@/lib/constants";
 import { inviteMemberSchema } from "@/lib/schemas/memberSchema";
+import { writeAuditLog } from "@/lib/audit";
 import crypto from "crypto";
 
 export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
@@ -80,6 +81,27 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
   }
   const { email, firstName, lastName, role } = parsed.data;
 
+  // Tenant lookup is needed for domain allowlist check, branding, AND email send.
+  const tenant = await db.tenant.findUnique({
+    where: { id: tenantId },
+    select: { name: true, logoUrl: true, brandColor: true, allowedEmailDomains: true },
+  });
+
+  // Domain allowlist enforcement (empty list = unrestricted).
+  if (tenant?.allowedEmailDomains && tenant.allowedEmailDomains.length > 0) {
+    const emailDomain = email.split("@")[1]?.toLowerCase() ?? "";
+    const allowed = tenant.allowedEmailDomains.map((d) => d.toLowerCase());
+    if (!allowed.includes(emailDomain)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Email domain not allowed for this organisation. Permitted domains: ${allowed.join(", ")}`,
+        },
+        { status: 422 }
+      );
+    }
+  }
+
   // Check if user already has a membership for this tenant
   let user = await db.user.findUnique({ where: { email } });
 
@@ -117,7 +139,7 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
   }
 
   // Create or upsert the membership
-  await db.membership.upsert({
+  const membership = await db.membership.upsert({
     where: { tenantId_userId: { tenantId, userId: user.id } },
     create: {
       tenantId,
@@ -137,19 +159,33 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
     },
   });
 
-  // Get tenant info and inviter name for email
-  const [tenant, inviter] = await Promise.all([
-    db.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
-    db.user.findUnique({ where: { id: inviterId }, select: { firstName: true, lastName: true } }),
-  ]);
+  // Get inviter name for email
+  const inviter = await db.user.findUnique({
+    where: { id: inviterId },
+    select: { firstName: true, lastName: true },
+  });
 
-  // Send invitation email
+  // Send invitation email (tenant-branded)
   await sendInvitationEmail({
     to: email,
     orgName: tenant?.name || "Organisation",
+    orgLogoUrl: tenant?.logoUrl ?? null,
+    orgBrandColor: tenant?.brandColor ?? null,
     inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}` : "An admin",
     role: ROLE_LABELS[role] || role,
     token: invitationToken,
+  });
+
+  // Audit log
+  await writeAuditLog({
+    tenantId,
+    actorId: inviterId,
+    action: "INVITED",
+    entityType: "Membership",
+    entityId: membership.id,
+    newValues: { email, role, firstName, lastName },
+    ipAddress: request.headers.get("x-forwarded-for"),
+    userAgent: request.headers.get("user-agent"),
   });
 
   return NextResponse.json({

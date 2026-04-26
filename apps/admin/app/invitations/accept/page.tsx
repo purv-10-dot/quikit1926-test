@@ -27,10 +27,13 @@ export default function AcceptInvitationPage() {
   const [invitation, setInvitation] = useState<InvitationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isExpired, setIsExpired] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -46,11 +49,29 @@ export default function AcceptInvitationPage() {
         setInvitation(json.data);
       } else {
         setError(json.error || "Invalid invitation");
+        if (res.status === 410) setIsExpired(true);
       }
       setLoading(false);
     }
     fetchInvitation();
   }, [token]);
+
+  async function handleRequestResend() {
+    if (!token) return;
+    setRequesting(true);
+    try {
+      const res = await fetch("/api/invitations/request-resend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const json = await res.json();
+      if (json.success) setRequestSent(true);
+      else setError(json.error || "Failed to request resend");
+    } finally {
+      setRequesting(false);
+    }
+  }
 
   async function handleAccept(e: React.FormEvent) {
     e.preventDefault();
@@ -115,6 +136,35 @@ export default function AcceptInvitationPage() {
   }
 
   if (error && !invitation) {
+    if (isExpired) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
+          <Card className="w-full max-w-md text-center">
+            <XCircle className="h-12 w-12 mx-auto text-[var(--color-danger)] mb-4" />
+            <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">
+              Invitation Expired
+            </h2>
+            <p className="text-sm text-[var(--color-text-secondary)] mb-6">
+              This invitation link is no longer valid. Click below to ask the
+              administrator to send you a fresh invitation.
+            </p>
+            {requestSent ? (
+              <p className="text-sm text-[var(--color-success)]">
+                ✓ Your request has been sent. The administrator will follow up shortly.
+              </p>
+            ) : (
+              <Button
+                onClick={handleRequestResend}
+                loading={requesting}
+                className="w-full"
+              >
+                Request a new invitation
+              </Button>
+            )}
+          </Card>
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
         <Card className="w-full max-w-md text-center">

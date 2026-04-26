@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import { writeAuditLog } from "@/lib/audit";
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
@@ -115,6 +116,16 @@ export async function POST(request: NextRequest) {
       acceptedAt: new Date(),
       invitationToken: null,
     },
+  });
+
+  await writeAuditLog({
+    tenantId: membership.tenantId,
+    actorId: membership.user.id,
+    action: "ACCEPTED",
+    entityType: "Membership",
+    entityId: membership.id,
+    ipAddress: request.headers.get("x-forwarded-for"),
+    userAgent: request.headers.get("user-agent"),
   });
 
   // Auto-grant access to all active apps
