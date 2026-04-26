@@ -35,8 +35,8 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
       client: { select: { id: true, name: true } },
       absentMembers: true,
       dashboardNAMembers: true,
-      absentTeamMembers: true,
-      dashboardNATeamMembers: true,
+      absentTeamMembers: { include: { member: { select: { id: true, name: true } } } },
+      dashboardNATeamMembers: { include: { member: { select: { id: true, name: true } } } },
     },
   });
 
@@ -69,7 +69,13 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
       absentUserIds: r.absentMembers.map((a) => a.userId),
       dashboardNAUserIds: r.dashboardNAMembers.map((a) => a.userId),
       absentClientMemberIds: r.absentTeamMembers.map((a) => a.clientMemberId),
-      dashboardNAClientMemberIds: r.dashboardNATeamMembers.map((a) => a.clientMemberId),
+      absentClientMemberNames: r.absentTeamMembers.map((a) => a.member.name),
+      dashboardNAClientMemberIds: r.dashboardNATeamMembers.map(
+        (a) => a.clientMemberId
+      ),
+      dashboardNAClientMemberNames: r.dashboardNATeamMembers.map(
+        (a) => a.member.name
+      ),
     })),
   });
 });
@@ -138,10 +144,14 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
         create: d.dashboardNAUserIds.map((uid) => ({ userId: uid })),
       },
       absentTeamMembers: {
-        create: d.absentClientMemberIds.map((cmid) => ({ clientMemberId: cmid })),
+        create: d.absentClientMemberIds.map((cmid) => ({
+          clientMemberId: cmid,
+        })),
       },
       dashboardNATeamMembers: {
-        create: d.dashboardNAClientMemberIds.map((cmid) => ({ clientMemberId: cmid })),
+        create: d.dashboardNAClientMemberIds.map((cmid) => ({
+          clientMemberId: cmid,
+        })),
       },
     },
   });

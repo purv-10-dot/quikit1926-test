@@ -14,7 +14,16 @@ import {
   UserPicker,
   type PickerUser,
 } from "@quikit/ui";
-import { CalendarDays, Pencil, Trash2, Save, Check, History, Search, Filter as FilterIcon } from "lucide-react";
+import {
+  CalendarDays,
+  Pencil,
+  Trash2,
+  Save,
+  Check,
+  History,
+  Search,
+  Filter as FilterIcon,
+} from "lucide-react";
 
 type Flag = "YES" | "NO" | "NA";
 type Status =
@@ -90,6 +99,13 @@ interface MeetingRow {
   callStatus: Status;
   actualStartTime: string | null;
   actualEndTime: string | null;
+  segmentTime1: string | null;
+  segmentTime2: string | null;
+  segmentTime3: string | null;
+  segmentTime4: string | null;
+  segmentTime5: string | null;
+  segmentTime6: string | null;
+  segmentTime7: string | null;
   goodNewsSharing: Flag;
   kpDashboard: Flag;
   gaps: Flag;
@@ -98,7 +114,9 @@ interface MeetingRow {
   collectiveIntelligence: Flag;
   opspReview: Flag;
   absentClientMemberIds: string[];
+  absentClientMemberNames: string[];
   dashboardNAClientMemberIds: string[];
+  dashboardNAClientMemberNames: string[];
 }
 interface LogEntry {
   id: string;
@@ -218,7 +236,9 @@ export default function WeeklyMeetingPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Log drawer.
-  const [logsFor, setLogsFor] = useState<{ id: string; label: string } | null>(null);
+  const [logsFor, setLogsFor] = useState<{ id: string; label: string } | null>(
+    null
+  );
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
@@ -498,10 +518,15 @@ export default function WeeklyMeetingPage() {
   }
 
   async function openLogs(row: MeetingRow) {
-    setLogsFor({ id: row.id, label: `${row.clientName} · ${fmtDate(row.meetingDate)}` });
+    setLogsFor({
+      id: row.id,
+      label: `${row.clientName} · ${fmtDate(row.meetingDate)}`,
+    });
     setLogsLoading(true);
     try {
-      const res = await fetch(`/api/client-meetings/weekly-meetings/${row.id}/logs`);
+      const res = await fetch(
+        `/api/client-meetings/weekly-meetings/${row.id}/logs`
+      );
       const j = await res.json();
       setLogs(j.success ? (j.data as LogEntry[]) : []);
     } finally {
@@ -533,8 +558,10 @@ export default function WeeklyMeetingPage() {
     if (!confirm(`Delete ${selectedIds.size} selected meetings?`)) return;
     await Promise.all(
       [...selectedIds].map((id) =>
-        fetch(`/api/client-meetings/weekly-meetings/${id}`, { method: "DELETE" }),
-      ),
+        fetch(`/api/client-meetings/weekly-meetings/${id}`, {
+          method: "DELETE",
+        })
+      )
     );
     setSelectedIds(new Set());
     refresh();
@@ -570,14 +597,17 @@ export default function WeeklyMeetingPage() {
     );
   });
   const visibleIds = visibleRows.map((r) => r.id);
-  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
 
   return (
     <div className="flex flex-col h-full">
       {/* Page Header (KPI-style chrome) */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Weekly Meeting</h1>
+          <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">
+            Weekly Meeting
+          </h1>
           <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
             {rows.length} items
           </span>
@@ -626,211 +656,250 @@ export default function WeeklyMeetingPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-
-      {loading ? (
-        <p className="text-sm text-gray-500">Loading…</p>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          icon={CalendarDays}
-          title="No weekly meetings yet"
-          message="Click Add to record your first weekly meeting."
-        />
-      ) : (
-        <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
-          <table className="min-w-full text-xs">
-            <thead className="bg-accent-50 text-gray-600 sticky top-0 z-10">
-              <tr>
-                <th className="px-2 py-2 w-8">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={() => toggleSelectAll(visibleIds)}
-                    className="text-blue-600 border-gray-300"
-                  />
-                </th>
-                <th className="px-1 py-2 w-8 text-center font-semibold">Log</th>
-                <th className="px-1 py-2 w-10 text-center font-semibold">#</th>
-                <th className="px-3 py-2 text-left">Date</th>
-                <th className="px-3 py-2 text-left">Client</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Start</th>
-                <th className="px-3 py-2 text-left">End</th>
-                <th className="px-3 py-2 text-left">Good News</th>
-                <th className="px-3 py-2 text-left">K&amp;P</th>
-                <th className="px-3 py-2 text-left">GAPS</th>
-                <th className="px-3 py-2 text-left">WWW</th>
-                <th className="px-3 py-2 text-left">Feedback</th>
-                <th className="px-3 py-2 text-left">Coll. Intel.</th>
-                <th className="px-3 py-2 text-left">OPSP</th>
-                <th className="px-3 py-2 text-right" />
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.map((r, idx) => (
-                <tr
-                  key={r.id}
-                  className="border-t border-gray-100 hover:bg-blue-50/30"
-                >
-                  <td className="px-2 py-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(r.id)}
-                      onChange={() => toggleSelect(r.id)}
-                      className="text-blue-600 border-gray-300"
-                    />
-                  </td>
-                  <td className="px-1 py-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => openLogs(r)}
-                      className="text-gray-400 hover:text-blue-500 hover:bg-gray-100 rounded p-1"
-                      title="View audit log"
-                    >
-                      <History className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                  <td className="px-1 py-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(r)}
-                      className="text-gray-900 hover:underline"
-                    >
-                      {idx + 1}
-                    </button>
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {fmtDate(r.meetingDate)}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {r.clientName}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}
-                    >
-                      {statusLabel(r.callStatus)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                    {r.actualStartTime || "—"}
-                  </td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                    {r.actualEndTime || "—"}
-                  </td>
-                  <td className="px-3 py-2 text-gray-600">
-                    {r.goodNewsSharing}
-                  </td>
-                  <td className="px-3 py-2 text-gray-600">{r.kpDashboard}</td>
-                  <td className="px-3 py-2 text-gray-600">{r.gaps}</td>
-                  <td className="px-3 py-2 text-gray-600">{r.www}</td>
-                  <td className="px-3 py-2 text-gray-600">{r.feedback}</td>
-                  <td className="px-3 py-2 text-gray-600">
-                    {r.collectiveIntelligence}
-                  </td>
-                  <td className="px-3 py-2 text-gray-600">{r.opspReview}</td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <button
-                      onClick={() => openEdit(r)}
-                      className="text-gray-400 hover:text-blue-500 p-1"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => remove(r.id)}
-                      className="text-gray-400 hover:text-red-500 p-1"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <RightPanel
-        open={!!editing}
-        onClose={() => setEditing(null)}
-        size="lg"
-        title="Weekly Meeting"
-        subtitle={isEdit ? "Edit record" : "Create new record"}
-        tabs={tabs}
-        activeTab={isEdit ? activeTab : undefined}
-        onTabChange={(k) => setActiveTab(k as "edit" | "update")}
-        footer={
-          activeTab === "update" && isEdit ? undefined : (
-            <RightPanelFooter>
-              <RightPanelCancelButton onClick={() => setEditing(null)} />
-              <RightPanelSubmitButton
-                onClick={save}
-                saving={saving}
-                icon={isEdit ? "check" : "plus"}
-                label={isEdit ? "Update" : "Submit"}
-              />
-            </RightPanelFooter>
-          )
-        }
-      >
-        {!editing ? null : isEdit && activeTab === "update" ? (
-          <UpdateScoreGrid
-            members={clientDetail?.members ?? []}
-            meetingDate={editing.form.meetingDate}
-            scores={scores}
-            savedFor={scoreSavedFor}
-            savingFor={scoreSavingFor}
-            onChange={updateScore}
-            onSaveRow={saveScore}
+        {loading ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={CalendarDays}
+            title="No weekly meetings yet"
+            message="Click Add to record your first weekly meeting."
           />
         ) : (
-          <>
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {error}
+          <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
+            <table className="min-w-full text-xs">
+              <thead className="bg-accent-50 text-gray-600 sticky top-0 z-10">
+                <tr>
+                  <th className="px-2 py-2 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={() => toggleSelectAll(visibleIds)}
+                      className="text-blue-600 border-gray-300"
+                    />
+                  </th>
+                  <th className="px-1 py-2 w-8 text-center font-semibold">
+                    Log
+                  </th>
+                  <th className="px-1 py-2 w-10 text-center font-semibold">
+                    #
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Meeting Date</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Client Name</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Status</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Absent Members</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Weekly Dashboard NA</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Actual Start Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Actual End Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Good News Sharing</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Good News Sharing Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">K&amp;P dashboard</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">K&amp;P dashboard Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">GAPS</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">GAPS Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">WWW</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">WWW Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Customer/Employee Feedback</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Customer/Employee Feedback Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Collective Intelligence</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Collective Intelligence Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">OPSP Review</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">OPSP Time</th>
+                  <th className="px-3 py-2 text-right" />
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((r, idx) => (
+                  <tr
+                    key={r.id}
+                    className="border-t border-gray-100 hover:bg-blue-50/30"
+                  >
+                    <td className="px-2 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(r.id)}
+                        onChange={() => toggleSelect(r.id)}
+                        className="text-blue-600 border-gray-300"
+                      />
+                    </td>
+                    <td className="px-1 py-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => openLogs(r)}
+                        className="text-gray-400 hover:text-blue-500 hover:bg-gray-100 rounded p-1"
+                        title="View audit log"
+                      >
+                        <History className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                    <td className="px-1 py-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(r)}
+                        className="text-gray-900 hover:underline"
+                      >
+                        {idx + 1}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {fmtDate(r.meetingDate)}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {r.clientName}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}
+                      >
+                        {statusLabel(r.callStatus)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {r.absentClientMemberNames.length
+                        ? r.absentClientMemberNames.join(", ")
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {r.dashboardNAClientMemberNames.length
+                        ? r.dashboardNAClientMemberNames.join(", ")
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      {r.actualStartTime || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      {r.actualEndTime || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 text-center">{r.goodNewsSharing}</td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime1 || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600 text-center">{r.kpDashboard}</td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime2 || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600 text-center">{r.gaps}</td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime3 || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600 text-center">{r.www}</td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime4 || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600 text-center">{r.feedback}</td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime5 || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600 text-center">{r.collectiveIntelligence}</td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime6 || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600 text-center">{r.opspReview}</td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime7 || "—"}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => openEdit(r)}
+                        className="text-gray-400 hover:text-blue-500 p-1"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => remove(r.id)}
+                        className="text-gray-400 hover:text-red-500 p-1"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <RightPanel
+          open={!!editing}
+          onClose={() => setEditing(null)}
+          size="lg"
+          title="Weekly Meeting"
+          subtitle={isEdit ? "Edit record" : "Create new record"}
+          tabs={tabs}
+          activeTab={isEdit ? activeTab : undefined}
+          onTabChange={(k) => setActiveTab(k as "edit" | "update")}
+          footer={
+            activeTab === "update" && isEdit ? undefined : (
+              <RightPanelFooter>
+                <RightPanelCancelButton onClick={() => setEditing(null)} />
+                <RightPanelSubmitButton
+                  onClick={save}
+                  saving={saving}
+                  icon={isEdit ? "check" : "plus"}
+                  label={isEdit ? "Update" : "Submit"}
+                />
+              </RightPanelFooter>
+            )
+          }
+        >
+          {!editing ? null : isEdit && activeTab === "update" ? (
+            <UpdateScoreGrid
+              members={clientDetail?.members ?? []}
+              meetingDate={editing.form.meetingDate}
+              scores={scores}
+              savedFor={scoreSavedFor}
+              savingFor={scoreSavingFor}
+              onChange={updateScore}
+              onSaveRow={saveScore}
+            />
+          ) : (
+            <>
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Meeting Date">
+                  <input
+                    type="date"
+                    value={editing.form.meetingDate}
+                    onChange={(e) => updateField("meetingDate", e.target.value)}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Call Status" required>
+                  <select
+                    value={editing.form.callStatus}
+                    onChange={(e) => setCallStatus(e.target.value as Status)}
+                    className={inputCls}
+                  >
+                    {STATUS_OPTS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
               </div>
-            )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Meeting Date">
-                <input
-                  type="date"
-                  value={editing.form.meetingDate}
-                  onChange={(e) => updateField("meetingDate", e.target.value)}
-                  className={inputCls}
-                />
-              </Field>
-              <Field label="Call Status" required>
-                <select
-                  value={editing.form.callStatus}
-                  onChange={(e) => setCallStatus(e.target.value as Status)}
-                  className={inputCls}
-                >
-                  {STATUS_OPTS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Client Name" required>
+                  <UserPicker
+                    value={editing.form.clientId}
+                    onChange={async (id) => {
+                      updateField("clientId", id);
+                      await loadClientDetail(id);
+                    }}
+                    users={clients.map(clientToPickerUser)}
+                    placeholder="Select a client…"
+                    disabled={isEdit}
+                  />
+                </Field>
+                <Field label="Absent Members">
+                  <UserMultiPicker
+                    values={editing.form.absentClientMemberIds}
+                    onChange={(v) => updateField("absentClientMemberIds", v)}
+                    users={pickerUsers}
+                    placeholder={pickerPlaceholder(
+                      editing.form.clientId,
+                      pickerUsers.length
+                    )}
+                    disabled={!editing.form.clientId}
+                  />
+                </Field>
+              </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Client Name" required>
-                <UserPicker
-                  value={editing.form.clientId}
-                  onChange={async (id) => {
-                    updateField("clientId", id);
-                    await loadClientDetail(id);
-                  }}
-                  users={clients.map(clientToPickerUser)}
-                  placeholder="Select a client…"
-                  disabled={isEdit}
-                />
-              </Field>
-              <Field label="Absent Members">
+              <Field label="Weekly Dashboard NA">
                 <UserMultiPicker
-                  values={editing.form.absentClientMemberIds}
-                  onChange={(v) => updateField("absentClientMemberIds", v)}
+                  values={editing.form.dashboardNAClientMemberIds}
+                  onChange={(v) => updateField("dashboardNAClientMemberIds", v)}
                   users={pickerUsers}
                   placeholder={pickerPlaceholder(
                     editing.form.clientId,
@@ -839,136 +908,149 @@ export default function WeeklyMeetingPage() {
                   disabled={!editing.form.clientId}
                 />
               </Field>
-            </div>
 
-            <Field label="Weekly Dashboard NA">
-              <UserMultiPicker
-                values={editing.form.dashboardNAClientMemberIds}
-                onChange={(v) => updateField("dashboardNAClientMemberIds", v)}
-                users={pickerUsers}
-                placeholder={pickerPlaceholder(
-                  editing.form.clientId,
-                  pickerUsers.length
-                )}
-                disabled={!editing.form.clientId}
-              />
-            </Field>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Actual Start Time" required>
-                <input
-                  type="time"
-                  value={editing.form.actualStartTime}
-                  onChange={(e) =>
-                    updateField("actualStartTime", e.target.value)
-                  }
-                  disabled={editing.form.callStatus !== "HELD"}
-                  className={inputCls}
-                />
-              </Field>
-              <Field label="Actual End Time" required>
-                <input
-                  type="time"
-                  value={editing.form.actualEndTime}
-                  onChange={(e) => updateField("actualEndTime", e.target.value)}
-                  disabled={editing.form.callStatus !== "HELD"}
-                  className={inputCls}
-                />
-              </Field>
-            </div>
-
-            {RADIO_FIELDS.map((rf) => (
-              <div key={rf.key} className="grid grid-cols-2 gap-4">
-                <Field label={rf.label} required>
-                  <Segmented
-                    value={editing.form[rf.key]}
-                    onChange={(v) => setRadio(rf.key, rf.pairedTime, v as Flag)}
-                    options={FLAG_OPTS}
-                    disabled={editing.form.callStatus !== "HELD"}
-                  />
-                </Field>
-                <Field label={`${rf.label} Time`}>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Actual Start Time" required>
                   <input
                     type="time"
-                    value={editing.form[rf.pairedTime]}
-                    onChange={(e) => updateField(rf.pairedTime, e.target.value)}
-                    disabled={
-                      editing.form.callStatus !== "HELD" ||
-                      editing.form[rf.key] !== "YES"
+                    value={editing.form.actualStartTime}
+                    onChange={(e) =>
+                      updateField("actualStartTime", e.target.value)
                     }
+                    disabled={editing.form.callStatus !== "HELD"}
+                    className={inputCls}
+                  />
+                </Field>
+                <Field label="Actual End Time" required>
+                  <input
+                    type="time"
+                    value={editing.form.actualEndTime}
+                    onChange={(e) =>
+                      updateField("actualEndTime", e.target.value)
+                    }
+                    disabled={editing.form.callStatus !== "HELD"}
                     className={inputCls}
                   />
                 </Field>
               </div>
-            ))}
 
-            <Field label="Notes K&P dashboard">
-              <RichTextField
-                value={editing.form.notesKPDashboard}
-                onChange={(v) => updateField("notesKPDashboard", v)}
-                placeholder="Enter your content here..."
-              />
-            </Field>
-
-            <Field label="Other Notes">
-              <RichTextField
-                value={editing.form.otherNotes}
-                onChange={(v) => updateField("otherNotes", v)}
-                placeholder="Enter your content here..."
-              />
-            </Field>
-          </>
-        )}
-      </RightPanel>
-
-      <RightPanel
-        open={!!logsFor}
-        onClose={() => setLogsFor(null)}
-        size="md"
-        title="Audit log"
-        subtitle={logsFor?.label}
-      >
-        {logsLoading ? (
-          <p className="text-xs text-gray-500">Loading…</p>
-        ) : logs.length === 0 ? (
-          <p className="text-xs text-gray-400 italic">No log entries yet.</p>
-        ) : (
-          <ul className="space-y-3">
-            {logs.map((l) => (
-              <li key={l.id} className="border border-gray-200 rounded-lg p-3 text-xs">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${
-                    l.action === "CREATE" ? "bg-emerald-100 text-emerald-700"
-                    : l.action === "UPDATE" ? "bg-amber-100 text-amber-700"
-                    : l.action === "DELETE" ? "bg-red-100 text-red-700"
-                    : l.action === "SCORE_UPDATE" ? "bg-blue-100 text-blue-700"
-                    : "bg-gray-100 text-gray-700"
-                  }`}>{l.action}</span>
-                  <span className="text-gray-400 text-[11px]">
-                    {new Date(l.createdAt).toLocaleString()}
-                  </span>
+              {RADIO_FIELDS.map((rf) => (
+                <div key={rf.key} className="grid grid-cols-2 gap-4">
+                  <Field label={rf.label} required>
+                    <Segmented
+                      value={editing.form[rf.key]}
+                      onChange={(v) =>
+                        setRadio(rf.key, rf.pairedTime, v as Flag)
+                      }
+                      options={FLAG_OPTS}
+                      disabled={editing.form.callStatus !== "HELD"}
+                    />
+                  </Field>
+                  <Field label={`${rf.label} Time`}>
+                    <input
+                      type="time"
+                      value={editing.form[rf.pairedTime]}
+                      onChange={(e) =>
+                        updateField(rf.pairedTime, e.target.value)
+                      }
+                      disabled={
+                        editing.form.callStatus !== "HELD" ||
+                        editing.form[rf.key] !== "YES"
+                      }
+                      className={inputCls}
+                    />
+                  </Field>
                 </div>
-                <div className="text-gray-700">
-                  <strong>{l.changedByName}</strong>
-                  {l.reason && <span className="text-gray-500"> · {l.reason}</span>}
-                </div>
-                {l.oldValue && (
-                  <details className="mt-1.5">
-                    <summary className="cursor-pointer text-[11px] text-gray-500">Old</summary>
-                    <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">{l.oldValue}</pre>
-                  </details>
-                )}
-                {l.newValue && (
-                  <details className="mt-1">
-                    <summary className="cursor-pointer text-[11px] text-gray-500">New</summary>
-                    <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">{l.newValue}</pre>
-                  </details>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </RightPanel>
+              ))}
+
+              <Field label="Notes K&P dashboard">
+                <RichTextField
+                  value={editing.form.notesKPDashboard}
+                  onChange={(v) => updateField("notesKPDashboard", v)}
+                  placeholder="Enter your content here..."
+                />
+              </Field>
+
+              <Field label="Other Notes">
+                <RichTextField
+                  value={editing.form.otherNotes}
+                  onChange={(v) => updateField("otherNotes", v)}
+                  placeholder="Enter your content here..."
+                />
+              </Field>
+            </>
+          )}
+        </RightPanel>
+
+        <RightPanel
+          open={!!logsFor}
+          onClose={() => setLogsFor(null)}
+          size="md"
+          title="Audit log"
+          subtitle={logsFor?.label}
+        >
+          {logsLoading ? (
+            <p className="text-xs text-gray-500">Loading…</p>
+          ) : logs.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">No log entries yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {logs.map((l) => (
+                <li
+                  key={l.id}
+                  className="border border-gray-200 rounded-lg p-3 text-xs"
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${
+                        l.action === "CREATE"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : l.action === "UPDATE"
+                            ? "bg-amber-100 text-amber-700"
+                            : l.action === "DELETE"
+                              ? "bg-red-100 text-red-700"
+                              : l.action === "SCORE_UPDATE"
+                                ? "bg-blue-100 text-blue-700"
+                                : "bg-gray-100 text-gray-700"
+                      }`}
+                    >
+                      {l.action}
+                    </span>
+                    <span className="text-gray-400 text-[11px]">
+                      {new Date(l.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="text-gray-700">
+                    <strong>{l.changedByName}</strong>
+                    {l.reason && (
+                      <span className="text-gray-500"> · {l.reason}</span>
+                    )}
+                  </div>
+                  {l.oldValue && (
+                    <details className="mt-1.5">
+                      <summary className="cursor-pointer text-[11px] text-gray-500">
+                        Old
+                      </summary>
+                      <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">
+                        {l.oldValue}
+                      </pre>
+                    </details>
+                  )}
+                  {l.newValue && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-[11px] text-gray-500">
+                        New
+                      </summary>
+                      <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">
+                        {l.newValue}
+                      </pre>
+                    </details>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </RightPanel>
       </div>
     </div>
   );
