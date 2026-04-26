@@ -9,8 +9,9 @@ import type { PriorityRow } from "@/lib/types/priority";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
 import { STATUS_META, STATUS_PILL_OPTIONS, STATUS_SELECT_OPTIONS } from "@/lib/constants/status";
 import { UserPicker } from "@quikit/ui";
-import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
+import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 
 interface Props {
   priority: PriorityRow;
@@ -25,7 +26,6 @@ interface Props {
 }
 
 const CURRENT_YEAR = getFiscalYear();
-const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 const WEEK_OPTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
 
 const OVERALL_STATUS_OPTIONS = STATUS_SELECT_OPTIONS;
@@ -45,6 +45,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // so users can't pre-fill statuses ahead of time.
   const { canEditPastWeek } = usePastWeekFlags();
   const priorityCurrentWeek = useCurrentWeek(priority.year, priority.quarter);
+  const priorityWeekLabels = useWeekLabels(priority.year, priority.quarter);
 
   // Edit tab state
   const [form, setForm] = useState({
@@ -58,6 +59,10 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
     endWeek: String(priority.endWeek ?? 13),
     overallStatus: priority.overallStatus,
   });
+
+  // DB-scoped fiscal years via shared hook
+  const { years: fyYears } = useFiscalYears();
+  const yearOptions = fyYears.length ? fyYears : [CURRENT_YEAR];
 
   // Notes tab state
   const [notes, setNotes] = useState(priority.notes ?? "");
@@ -221,7 +226,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                 <div className="grid grid-cols-2 gap-2 max-w-[50%]">
                   <select value={form.year} disabled
                     className="px-3 py-2 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed">
-                    {FISCAL_YEARS.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
+                    {yearOptions.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
                   </select>
                   <select value={form.quarter} disabled
                     className="px-3 py-2 text-xs border border-gray-200 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed">
@@ -297,7 +302,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                       <div>
                         <span className="text-xs font-medium text-gray-700">Week {weekNum}</span>
                         <span className="text-[10px] text-gray-400 ml-2">
-                          {weekDateLabel(priority.year, priority.quarter, weekNum)}
+                          {priorityWeekLabels[weekNum - 1] ?? weekDateLabel(priority.year, priority.quarter, weekNum)}
                         </span>
                         {isPast && <span className="ml-2 text-[10px] text-amber-600">· past-week locked</span>}
                         {isFuture && <span className="ml-2 text-[10px] text-gray-400">· future week</span>}

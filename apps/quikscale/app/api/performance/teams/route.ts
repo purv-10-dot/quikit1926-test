@@ -20,7 +20,8 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
       }
     });
 
-    const meetings = await db.meeting.findMany({ where: { tenantId }, include: { attendees: true } });
+    // Legacy team-meeting attendance removed in Client Meetings rewrite.
+    const meetings: Array<{ attendees: Array<{ attended: boolean; userId: string }> }> = [];
 
     const teamData = teams.map(t => {
       const memberIds = t.members.map(m => m.userId);

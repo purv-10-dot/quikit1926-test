@@ -5,7 +5,8 @@ import { createPortal } from "react-dom";
 import { useSession } from "next-auth/react";
 import { useDashboardSummary } from "@/lib/hooks/useDashboardSummary";
 import { useFilterContext } from "@/lib/context/FilterContext";
-import { FilterPicker, userToFilterOption } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, FiscalPeriodPicker, type FiscalQuarter } from "@quikit/ui";
+import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import { STATUS_FILTER_OPTIONS, STATUS_DOT, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
@@ -13,8 +14,9 @@ import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
-  weekDateLabel, ALL_WEEKS, getCurrentFiscalWeek,
+  weekDateLabel, ALL_WEEKS,
 } from "@/lib/utils/fiscal";
+import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { KPITable } from "../kpi/components/KPITable";
@@ -350,6 +352,7 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
   year: number;
   quarter: string;
 }) {
+  const weekLabels = useWeekLabels(year, quarter);
   return (
     <thead>
       <tr>
@@ -367,7 +370,7 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
             style={{ ...getStickyStyle(col.key, frozenUpTo, allCols, 20), ...colW(col) }}>
             <div className="flex flex-col items-center px-1 py-1.5 gap-0.5">
               <span>{col.label}</span>
-              <span className="text-[9px] font-normal opacity-60">{weekDateLabel(year, quarter, weekNum(col))}</span>
+              <span className="text-[9px] font-normal opacity-60">{weekLabels[weekNum(col) - 1] ?? weekDateLabel(year, quarter, weekNum(col))}</span>
             </div>
           </th>
         ))}
@@ -465,6 +468,7 @@ function KPISection({ kpis, year, quarter }: { kpis: KPIRow[]; year: number; qua
   const [page, setPage] = useState(1);
   const allColKeys = ALL_KPI_COLS.map(c => c.key);
   const paged = kpis.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const weekLabels = useWeekLabels(year, quarter);
 
   if (!kpis.length) return <EmptyState label="No KPI data found" />;
 
@@ -544,7 +548,7 @@ function KPISection({ kpis, year, quarter }: { kpis: KPIRow[]; year: number; qua
                     className={`border-r border-b border-gray-100 px-0 py-0 ${bg || frozenBg}`}
                     style={{ ...getStickyStyle(col.key, frozenUpTo, ALL_KPI_COLS), ...colW(col) }}>
                     <WeekCellTooltip
-                      label={col.label} dateRange={weekDateLabel(year, quarter, w)}
+                      label={col.label} dateRange={weekLabels[w - 1] ?? weekDateLabel(year, quarter, w)}
                       content={
                         <div className="space-y-1">
                           <div className="flex justify-between gap-3">
@@ -592,6 +596,7 @@ const ALL_PRI_COLS: ColDef[] = [...PRI_COLS, ...WEEK_COLS];
 function PrioritySection({ priorities, year, quarter }: { priorities: PriorityRow[]; year: number; quarter: string }) {
   const [frozenUpTo, setFrozenUpTo] = useState<string | null>("name");
   const [page, setPage] = useState(1);
+  const weekLabels = useWeekLabels(year, quarter);
   const allColKeys = ALL_PRI_COLS.map(c => c.key);
   const paged = priorities.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -633,8 +638,8 @@ function PrioritySection({ priorities, year, quarter }: { priorities: PriorityRo
 
                 const content: Record<string, React.ReactNode> = {
                   name:      <span className="text-xs font-medium text-gray-800 line-clamp-2 block">{p.name}</span>,
-                  startWeek: <span className="text-xs text-gray-500 whitespace-nowrap">Week {start} · {weekDateLabel(year, quarter, start)}</span>,
-                  endWeek:   <span className="text-xs text-gray-500 whitespace-nowrap">Week {end} · {weekDateLabel(year, quarter, end)}</span>,
+                  startWeek: <span className="text-xs text-gray-500 whitespace-nowrap">Week {start} · {weekLabels[start - 1] ?? weekDateLabel(year, quarter, start)}</span>,
+                  endWeek:   <span className="text-xs text-gray-500 whitespace-nowrap">Week {end} · {weekLabels[end - 1] ?? weekDateLabel(year, quarter, end)}</span>,
                 };
 
                 return (
@@ -671,7 +676,7 @@ function PrioritySection({ priorities, year, quarter }: { priorities: PriorityRo
                     className={`border-r border-b border-gray-100 px-0 py-0 ${bg || frozenBg}`}
                     style={{ ...sticky, ...colW(col) }}>
                     <WeekCellTooltip
-                      label={col.label} dateRange={weekDateLabel(year, quarter, w)}
+                      label={col.label} dateRange={weekLabels[w - 1] ?? weekDateLabel(year, quarter, w)}
                       content={
                         <div className="space-y-1">
                           <p className="text-white font-medium">{meta?.label ?? "No status"}</p>
@@ -947,19 +952,22 @@ export default function DashboardPage() {
   const pagedPriorities = priorities.slice((priPage - 1) * DASHBOARD_PAGE_SIZE, priPage * DASHBOARD_PAGE_SIZE);
   const pagedWWW = wwwItems.slice((wwwPage - 1) * DASHBOARD_PAGE_SIZE, wwwPage * DASHBOARD_PAGE_SIZE);
 
-  const currentWeek = getCurrentFiscalWeek(year, quarter);
+  // DB-driven current week + date range + per-week compact labels.
+  const currentWeek = useCurrentWeek(year, quarter);
+  const currentWeekRange = useWeekDateRange(year, quarter, currentWeek);
+  const weekLabels = useWeekLabels(year, quarter);
 
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner ? 1 : 0);
 
-  const [showYearPicker, setShowYearPicker] = useState(false);
-  const yearRef = useRef<HTMLDivElement>(null);
+  // Fiscal year list — DB-scoped via shared hook
+  const { years: fyYears, configured: fyConfigured } = useFiscalYears();
+  const availableYears = fyYears.length ? fyYears : [CURRENT_YEAR];
 
   useEffect(() => {
     function handle(e: MouseEvent) {
       if (filterRef.current && !filterRef.current.contains(e.target as Node)) setShowFilter(false);
-      if (yearRef.current && !yearRef.current.contains(e.target as Node)) setShowYearPicker(false);
     }
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
@@ -975,9 +983,11 @@ export default function DashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 md:px-6 py-3.5 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-sm font-semibold text-gray-800">Dashboard</h1>
-          <span className="text-[11px] bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium">
-            Week {currentWeek}
-          </span>
+          {currentWeek !== null && (
+            <span className="text-[11px] bg-accent-50 text-accent-600 border border-accent-100 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+              {quarter} · Week {currentWeek}{currentWeekRange ? ` · ${currentWeekRange}` : ""}
+            </span>
+          )}
           {/* AvgKPICard moved into the KPI Overview container header — see KPIOverviewContainer */}
         </div>
         <div className="flex items-center gap-2">
@@ -1064,50 +1074,15 @@ export default function DashboardPage() {
             onChangeTrashSections={setDashTrashSections}
           />
 
-          {/* Year / Quarter picker */}
-          <div className="relative" ref={yearRef}>
-            <button
-              onClick={() => setShowYearPicker(o => !o)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showYearPicker ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
-            >
-              <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              {fiscalYearLabel(year)} · {quarter}
-              <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {showYearPicker && (
-              <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Fiscal Year</p>
-                  <div className="grid grid-cols-1 gap-1">
-                    {FISCAL_YEARS.map(y => (
-                      <button key={y}
-                        onClick={() => setYear(y)}
-                        className={`text-xs px-3 py-1.5 rounded-lg text-left transition-colors ${year === y ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700"}`}>
-                        {fiscalYearLabel(y)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quarter</p>
-                  <div className="grid grid-cols-4 gap-1">
-                    {QUARTERS.map(q => (
-                      <button key={q}
-                        onClick={() => { setQuarter(q as "Q1" | "Q2" | "Q3" | "Q4"); setShowYearPicker(false); }}
-                        className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${quarter === q ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700 border border-gray-200"}`}>
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Year / Quarter picker — shared FiscalPeriodPicker, DB-scoped */}
+          <FiscalPeriodPicker
+            years={availableYears}
+            configured={fyConfigured}
+            year={year}
+            quarter={quarter as FiscalQuarter}
+            formatYear={fiscalYearLabel}
+            onChange={({ year: y, quarter: q }) => { setYear(y); setQuarter(q); }}
+          />
         </div>
       </div>
 
@@ -1122,7 +1097,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5 space-y-5">
+      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5 space-y-5 min-h-0">
 
         {/* KPI overview cards — collapsed by default, click header to expand */}
         {(kpisLoading || kpis.length > 0) && (

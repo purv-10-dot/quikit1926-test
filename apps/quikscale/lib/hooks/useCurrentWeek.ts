@@ -66,3 +66,101 @@ export function invalidateCurrentWeekCache() {
   cache = null;
   pending = null;
 }
+
+/**
+ * Compact week label — matches utils/fiscal.weekDateLabel format
+ * ("1–7 Apr" or cross-month "29 Apr–5 May"), but DB-driven.
+ * Returns null while loading or if quarter is unknown.
+ */
+function formatCompactWeekLabel(weekStart: Date, weekEnd: Date): string {
+  const shortMonth = (d: Date) => d.toLocaleDateString("en-GB", { month: "short" });
+  const sameMonth = weekStart.getMonth() === weekEnd.getMonth();
+  if (sameMonth) {
+    return `${weekStart.getDate()}–${weekEnd.getDate()} ${shortMonth(weekEnd)}`;
+  }
+  return `${weekStart.getDate()} ${shortMonth(weekStart)}–${weekEnd.getDate()} ${shortMonth(weekEnd)}`;
+}
+
+/**
+ * Returns an array of 13 compact week labels (one per week) for the given
+ * (year, quarter) using the DB's QuarterSetting.startDate. Labels are indexed
+ * [week-1], so `labels[2]` is Week 3's label.
+ *
+ * Returns an empty array while loading or if the quarter is unknown.
+ * Use this to replace legacy `weekDateLabel(year, quarter, w)` in table
+ * column headers so week dates honour the tenant's quarter offset.
+ */
+export function useWeekLabels(
+  year: number | null | undefined,
+  quarter: string | null | undefined,
+): string[] {
+  const [labels, setLabels] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!year || !quarter) {
+      setLabels([]);
+      return;
+    }
+    (async () => {
+      await ensureLoaded();
+      const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
+      if (!match) {
+        setLabels([]);
+        return;
+      }
+      const start = new Date(match.startDate);
+      const out: string[] = [];
+      for (let w = 1; w <= 13; w++) {
+        const ws = new Date(start);
+        ws.setDate(ws.getDate() + (w - 1) * 7);
+        const we = new Date(ws);
+        we.setDate(we.getDate() + 6);
+        out.push(formatCompactWeekLabel(ws, we));
+      }
+      setLabels(out);
+    })();
+  }, [year, quarter]);
+
+  return labels;
+}
+
+/**
+ * Returns a human-readable date range for a given (year, quarter, week) using
+ * the actual QuarterSetting.startDate from the DB. Matches the format used by
+ * the legacy utils/fiscal.getWeekDateRange — "1 Apr – 7 Apr".
+ *
+ * Returns null while loading. Falls back to null if the quarter is unknown
+ * (caller should hide the range label).
+ */
+export function useWeekDateRange(
+  year: number | null | undefined,
+  quarter: string | null | undefined,
+  weekNumber: number | null | undefined,
+): string | null {
+  const [range, setRange] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!year || !quarter || !weekNumber || weekNumber < 1 || weekNumber > 13) {
+      setRange(null);
+      return;
+    }
+
+    (async () => {
+      await ensureLoaded();
+      const match = cache?.find((q) => q.fiscalYear === year && q.quarter === quarter);
+      if (!match) {
+        setRange(null);
+        return;
+      }
+      const start = new Date(match.startDate);
+      const weekStart = new Date(start);
+      weekStart.setDate(weekStart.getDate() + (weekNumber - 1) * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      setRange(`${fmt(weekStart)} – ${fmt(weekEnd)}`);
+    })();
+  }, [year, quarter, weekNumber]);
+
+  return range;
+}

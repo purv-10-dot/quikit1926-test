@@ -22,10 +22,8 @@ export const GET = withTenantAuth<{ userId: string }>(async ({ tenantId }, _req,
     return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
   }
 
-  const meetings = await db.meeting.findMany({
-    where: { tenantId },
-    include: { attendees: { where: { userId: params.userId } } },
-  });
+  // Legacy team-meeting attendance removed in Client Meetings rewrite.
+  const meetings: Array<{ attendees: Array<{ attended: boolean; userId: string }> }> = [];
 
   return NextResponse.json({ success: true, data: { user: target, meetings } });
 });

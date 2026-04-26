@@ -257,8 +257,10 @@ export default function WWWPage() {
         </div>
       </div>
 
-      {/* Table Area */}
-      <div className="flex-1 overflow-hidden">
+      {/* Table Area — `min-h-0` required so flex-1 actually shrinks to viewport
+          height; without it the inner scroller inherits content height and
+          vertical scroll silently breaks. */}
+      <div className="flex-1 overflow-hidden min-h-0">
         {isLoading ? (
           <TableSkeleton rows={10} cols={6} />
         ) : error ? (

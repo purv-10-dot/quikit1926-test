@@ -8,7 +8,7 @@ import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hook
 import { useStickyOffsets } from "../hooks/useStickyOffsets";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { ResizeHandle as SharedResizeHandle } from "@/lib/hooks/useColumnResize";
-import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { LogModal } from "./LogModal";
 import { KPILogsModal } from "./KPILogsModal";
@@ -71,6 +71,9 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
 
   // Blocked-week detection: past weeks with no value show a red ✕
   const currentWeek = useCurrentWeek(year, quarter);
+  // DB-driven week labels (compact "22–28 Apr") indexed [week-1].
+  // Falls back to legacy hardcoded labels while loading.
+  const weekLabels = useWeekLabels(year, quarter);
   const { canAddPastWeek } = usePastWeekFlags();
 
   function openLog(kpi: KPIRow) { if (readOnly) return; setAuditKPI(kpi); }
@@ -197,7 +200,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       <div className="min-w-0 flex-1">
                         <div className="whitespace-nowrap">Week {w}</div>
                         <div className="text-[9px] font-normal text-gray-400 leading-none mt-0.5 whitespace-nowrap">
-                          {weekDateLabel(year, quarter, w)}
+                          {weekLabels[w - 1] ?? weekDateLabel(year, quarter, w)}
                         </div>
                       </div>
                       <ColMenu colKey={col} onSort={() => {}} onFreeze={() => handleFreezeCol(col)} onHide={() => handleHideCol(col)}

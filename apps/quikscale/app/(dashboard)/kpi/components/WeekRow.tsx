@@ -30,6 +30,7 @@ export function WeekRow({
   locked,
   reverse,
   targetDisplay,
+  dateLabel,
 }: {
   weekNumber: number;
   value: string;
@@ -41,6 +42,8 @@ export function WeekRow({
   onNotesChange: (n: string) => void;
   locked?: boolean;
   reverse?: boolean;
+  /** Optional DB-driven date label override; falls back to hardcoded weekDateLabel. */
+  dateLabel?: string;
   /** Optional formatted target string shown between Week label and Value input */
   targetDisplay?: string;
 }) {
@@ -84,7 +87,7 @@ export function WeekRow({
           Week {weekNumber}
         </div>
         <div className="text-[9px] text-gray-400 mt-0.5 leading-none">
-          {weekDateLabel(year, quarter, weekNumber)}
+          {dateLabel ?? weekDateLabel(year, quarter, weekNumber)}
         </div>
         <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
           {hasValue && weeklyTarget > 0 && (

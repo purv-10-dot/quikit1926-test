@@ -132,7 +132,7 @@ export default function CycleHubPage() {
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+      <div className="flex-1 overflow-y-auto p-6 bg-gray-50 min-h-0">
         <div className="max-w-6xl mx-auto space-y-6">
           {/* Current phase card */}
           <div

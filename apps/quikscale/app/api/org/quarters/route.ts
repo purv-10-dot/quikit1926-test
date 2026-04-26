@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/api/errors";
 import { generateQuartersSchema } from "@/lib/schemas/quarterSchema";
-import { diffDays, generateQuarterDates } from "@/lib/utils/quarterGen";
+import { addDays, generateQuarterDates } from "@/lib/utils/quarterGen";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 
 async function getMembership(userId: string) {
@@ -65,37 +65,27 @@ export async function GET(request: NextRequest) {
     });
     const availableYears = allYearsRaw.map(r => r.fiscalYear);
 
-    // ── Future FY Visibility Check ──
+    // ── Future FY Visibility ──
+    // Single on/off gate: `enable_future_quarters`. When enabled, the next FY
+    // after the highest configured one is surfaced regardless of proximity to
+    // the current quarter's end. Overlap is prevented server-side by the
+    // contiguity check in POST (startDate must be after the latest existing
+    // quarter's endDate).
     let futureYearAvailable: number | null = null;
 
-    const futureFlags = await db.featureFlag.findMany({
-      where: { tenantId, key: { in: ["enable_future_quarters", "future_days_limit"] } },
-      select: { key: true, enabled: true, value: true },
+    const futureFlag = await db.featureFlag.findFirst({
+      where: { tenantId, key: "enable_future_quarters" },
+      select: { enabled: true },
     });
-    const futureEnabled = futureFlags.find(f => f.key === "enable_future_quarters")?.enabled ?? false;
-    const futureDaysLimit = parseInt(futureFlags.find(f => f.key === "future_days_limit")?.value || "0", 10);
+    const futureEnabled = futureFlag?.enabled ?? false;
 
-    if (futureEnabled && futureDaysLimit > 0) {
-      // Find the current quarter
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
-
-      const currentQuarter = await db.quarterSetting.findFirst({
-        where: {
-          tenantId,
-          startDate: { lte: today },
-          endDate: { gte: today },
-        },
-      });
-
-      if (currentQuarter) {
-        const daysUntilEnd = diffDays(today, currentQuarter.endDate);
-        if (daysUntilEnd <= futureDaysLimit) {
-          const nextFY = currentQuarter.fiscalYear + 1;
-          if (!availableYears.includes(nextFY)) {
-            futureYearAvailable = nextFY;
-            availableYears.unshift(nextFY); // add to front (most recent first)
-          }
+    if (futureEnabled) {
+      const highestExistingFY = availableYears[0] ?? null;
+      if (highestExistingFY !== null) {
+        const nextFY = highestExistingFY + 1;
+        if (!availableYears.includes(nextFY)) {
+          futureYearAvailable = nextFY;
+          availableYears.unshift(nextFY);
         }
       }
     }
@@ -117,11 +107,21 @@ export async function GET(request: NextRequest) {
     });
     const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
+    // Tenant-wide latest endDate (across all FYs) — used by the Generate
+    // modal to pre-fill the next FY's start date as latestEnd + 1 so users
+    // don't have to remember where the previous FY ended.
+    const latestRow = await db.quarterSetting.findFirst({
+      where: { tenantId },
+      orderBy: { endDate: "desc" },
+      select: { endDate: true },
+    });
+
     return NextResponse.json({
       success:        true,
       data:           rows.map(r => serializeRow(r, userMap)),
       availableYears: availableYears.sort((a, b) => b - a),
       futureYearAvailable,
+      latestEndDate:  latestRow?.endDate.toISOString() ?? null,
     });
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch quarters") }, { status: 500 });
@@ -160,43 +160,25 @@ export async function POST(request: NextRequest) {
     if (fyStartDate && isNaN(fyStartDate.getTime()))
       return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
 
-    // ── Block future FY creation if feature flag is disabled ──
+    // ── Future FY feature-flag gate ──
+    // `enable_future_quarters` is the single on/off switch. No proximity /
+    // days-limit check anymore — admins can create any future FY as long as
+    // the start date doesn't overlap an existing quarter (validated below).
     const currentMonth = new Date().getMonth(); // 0-indexed
     const currentFY = currentMonth >= (fiscalStartMonth - 1)
       ? new Date().getFullYear()
       : new Date().getFullYear() - 1;
 
     if (fiscalYear > currentFY) {
-      const futureFlags = await db.featureFlag.findMany({
-        where: { tenantId, key: { in: ["enable_future_quarters", "future_days_limit"] } },
-        select: { key: true, enabled: true, value: true },
+      const futureFlag = await db.featureFlag.findFirst({
+        where: { tenantId, key: "enable_future_quarters" },
+        select: { enabled: true },
       });
-      const futureEnabled = futureFlags.find(f => f.key === "enable_future_quarters")?.enabled ?? false;
-
-      if (!futureEnabled) {
+      if (!futureFlag?.enabled) {
         return NextResponse.json(
           { success: false, error: "Future quarters are disabled. Enable them in Settings > Configurations." },
           { status: 403 }
         );
-      }
-
-      // Also check the N-days-before-quarter-end condition
-      const futureDaysLimit = parseInt(futureFlags.find(f => f.key === "future_days_limit")?.value || "0", 10);
-      if (futureDaysLimit > 0) {
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-        const currentQuarter = await db.quarterSetting.findFirst({
-          where: { tenantId, startDate: { lte: today }, endDate: { gte: today } },
-        });
-        if (currentQuarter) {
-          const daysUntilEnd = diffDays(today, currentQuarter.endDate);
-          if (daysUntilEnd > futureDaysLimit) {
-            return NextResponse.json(
-              { success: false, error: `Future quarters can only be created within ${futureDaysLimit} days of the current quarter ending (${daysUntilEnd} days remaining).` },
-              { status: 403 }
-            );
-          }
-        }
       }
     }
 
@@ -209,6 +191,26 @@ export async function POST(request: NextRequest) {
         { success: false, error: `Quarters for FY ${fiscalYear}-${String(fiscalYear + 1).slice(-2)} already exist` },
         { status: 409 }
       );
+
+    // ── Contiguity check ──
+    // Start date must be strictly after the latest existing quarter's endDate
+    // for this tenant. Prevents overlapping FYs (e.g. new FY start before the
+    // previous FY's Q4 end).
+    if (fyStartDate) {
+      const latest = await db.quarterSetting.findFirst({
+        where: { tenantId },
+        orderBy: { endDate: "desc" },
+        select: { endDate: true, fiscalYear: true, quarter: true },
+      });
+      if (latest && fyStartDate.getTime() <= latest.endDate.getTime()) {
+        const minAllowed = addDays(latest.endDate, 1);
+        const fmt = (d: Date) => d.toISOString().slice(0, 10);
+        return NextResponse.json({
+          success: false,
+          error: `Start date must be after ${fmt(latest.endDate)} (FY ${latest.fiscalYear} ${latest.quarter} end). Earliest allowed: ${fmt(minAllowed)}.`,
+        }, { status: 400 });
+      }
+    }
 
     // Generate using day-count logic
     const quarterDates = generateQuarterDates(fiscalYear, fiscalStartMonth, fyStartDate);
@@ -241,5 +243,50 @@ export async function POST(request: NextRequest) {
     }, { status: 201 });
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to generate quarters") }, { status: 500 });
+  }
+}
+
+/* ─── DELETE /api/org/quarters?year=YYYY ────────────────────────────────────
+ *
+ * Hard-deletes every QuarterSetting row for the tenant + given fiscal year.
+ * Intended for Quarter Settings → "Delete Fiscal Year". Per-quarter deletes
+ * continue to live at DELETE /api/org/quarters/[id].
+ *
+ * Caller must have the orgSetup.quarters module license (same gate as
+ * POST/PUT). No cascade — rows in KPI / Priority / OPSP that reference
+ * (fiscalYear, quarter) by value keep their values; the picker will just
+ * drop the year from its DB-scoped list.
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id)
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+
+    const membership = await getMembership(session.user.id);
+    if (!membership)
+      return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+
+    const { tenantId } = membership;
+    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", tenantId);
+    if (blocked) return blocked;
+
+    const yearParam = request.nextUrl.searchParams.get("year");
+    if (!yearParam)
+      return NextResponse.json({ success: false, error: "year query param required" }, { status: 400 });
+    const fiscalYear = parseInt(yearParam, 10);
+    if (!Number.isFinite(fiscalYear))
+      return NextResponse.json({ success: false, error: "Invalid fiscal year" }, { status: 400 });
+
+    const result = await db.quarterSetting.deleteMany({
+      where: { tenantId, fiscalYear },
+    });
+
+    if (result.count === 0)
+      return NextResponse.json({ success: false, error: "No quarters found for that fiscal year" }, { status: 404 });
+
+    return NextResponse.json({ success: true, data: { fiscalYear, deleted: result.count } });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete fiscal year") }, { status: 500 });
   }
 }

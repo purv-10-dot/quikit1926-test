@@ -6,6 +6,7 @@ import {
   Plus, X, Pencil, Trash2, MoreVertical, Filter,
   CalendarDays,
 } from "lucide-react";
+import { invalidateFiscalYearsCache } from "@/lib/hooks/useFiscalYears";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface QuarterRow {
@@ -142,7 +143,7 @@ function EditPanel({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 min-h-0">
           <div>
             <label className="text-xs font-medium text-gray-600 block mb-1.5">
               Start Date <span className="text-red-400">*</span>
@@ -247,15 +248,51 @@ function ConfirmDelete({
   );
 }
 
+/* ─── Confirm Delete Fiscal Year ─────────────────────────────────────────────
+ *
+ * Hard-delete confirmation for an entire FY (all 4 QuarterSetting rows).
+ * Shown from the More menu in Quarter Settings. The copy below makes the
+ * blast radius explicit — existing KPI / Priority / OPSP rows that reference
+ * the year by value keep their raw values, but the year will disappear from
+ * the FiscalPeriodPicker.
+ */
+function ConfirmDeleteFY({
+  open, year, saving, onConfirm, onCancel,
+}: { open: boolean; year: number | null; saving: boolean; onConfirm: () => void; onCancel: () => void }) {
+  if (!open || year === null) return null;
+  const label = `FY ${year}-${String(year + 1).slice(-2)}`;
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-96">
+        <h3 className="text-sm font-bold text-gray-900 mb-2">Delete {label}?</h3>
+        <p className="text-xs text-gray-600 mb-2">
+          This will permanently delete <span className="font-semibold">all 4 quarters</span> for {label} from the database. This action <span className="font-semibold">cannot be undone</span>.
+        </p>
+        <p className="text-[11px] text-gray-500 mb-5">
+          Existing KPI, Priority, and OPSP records referencing {label} will keep their raw values but the year will no longer appear in fiscal-year pickers until it is re-initialized.
+        </p>
+        <div className="flex items-center justify-end gap-2">
+          <button onClick={onCancel} disabled={saving} className="px-4 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+          <button onClick={onConfirm} disabled={saving} className="px-4 py-2 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg disabled:opacity-50">
+            {saving ? "Deleting…" : `Delete ${label}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Generate Modal ─────────────────────────────────────────────────────────── */
 function GenerateModal({
-  open, onClose, onGenerated, existingYears, futureYearAvailable,
+  open, onClose, onGenerated, existingYears, futureYearAvailable, latestEndDate,
 }: {
   open:          boolean;
   onClose:       () => void;
   onGenerated:   (rows: QuarterRow[]) => void;
   existingYears: number[];
   futureYearAvailable: number | null;
+  /** ISO string of the latest endDate across all existing quarters (tenant-wide). */
+  latestEndDate: string | null;
 }) {
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState("");
@@ -266,12 +303,33 @@ function GenerateModal({
   let nextFY = currentFY;
   while (existingYears.includes(nextFY)) nextFY++;
 
-  // If the next available FY is in the future and no futureYearAvailable, block creation
+  // Block only when a future FY is requested AND the `enable_future_quarters`
+  // feature flag is off. The server returns `futureYearAvailable != null`
+  // whenever the flag is on, regardless of proximity to the current Q end.
   const isFutureFY = nextFY > currentFY;
   const isBlocked = isFutureFY && futureYearAvailable === null;
 
-  // Default start date: day 1 of the next FY year (April 1 for typical Indian FY)
-  const defaultStart = `${nextFY}-04-01`;
+  // Default start date:
+  //   - If there are existing quarters, use day-after-latest-end (contiguous FY).
+  //   - Otherwise fall back to April 1 of the next FY (typical Indian FY).
+  const defaultStart = (() => {
+    if (latestEndDate) {
+      const next = new Date(latestEndDate);
+      next.setUTCDate(next.getUTCDate() + 1);
+      return next.toISOString().slice(0, 10);
+    }
+    return `${nextFY}-04-01`;
+  })();
+
+  // Earliest allowed start for the HTML date input — mirrors the server
+  // contiguity check so users see the constraint before submitting.
+  const minStart = latestEndDate
+    ? (() => {
+        const next = new Date(latestEndDate);
+        next.setUTCDate(next.getUTCDate() + 1);
+        return next.toISOString().slice(0, 10);
+      })()
+    : undefined;
 
   useEffect(() => {
     if (open) { setError(""); setStartDate(defaultStart); }
@@ -339,9 +397,9 @@ function GenerateModal({
         {isBlocked ? (
           <>
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 my-4">
-              <p className="text-xs font-medium text-amber-800 mb-1">All quarters are up to date</p>
+              <p className="text-xs font-medium text-amber-800 mb-1">Future quarters are disabled</p>
               <p className="text-[11px] text-amber-600">
-                Current FY quarters already exist. To create next year&apos;s quarters, enable &quot;Future Quarters&quot; in Settings &gt; Configurations.
+                The current FY already has all 4 quarters configured. To add the next fiscal year, toggle <span className="font-semibold">&quot;Enable future quarters&quot;</span> in Settings &gt; Configurations.
               </p>
             </div>
             <div className="flex justify-end">
@@ -360,9 +418,13 @@ function GenerateModal({
           <input
             type="date"
             value={startDate}
+            min={minStart}
             onChange={e => { setStartDate(e.target.value); setError(""); }}
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent-400"
           />
+          {minStart && (
+            <p className="text-[10px] text-gray-400 mt-1">Earliest allowed: {fmtDate(minStart)} (day after previous FY ends).</p>
+          )}
         </div>
 
         {/* Preview */}
@@ -438,8 +500,11 @@ export default function QuarterSettingsPage() {
   const [editRow,       setEditRow]       = useState<QuarterRow | null>(null);
   const [panelOpen,     setPanelOpen]     = useState(false);
   const [deleteRow,     setDeleteRow]     = useState<QuarterRow | null>(null);
+  const [deleteFY,      setDeleteFY]      = useState<number | null>(null);
+  const [deletingFY,    setDeletingFY]    = useState(false);
   const [generateOpen,  setGenerateOpen]  = useState(false);
   const [futureYearAvailable, setFutureYearAvailable] = useState<number | null>(null);
+  const [latestEndDate, setLatestEndDate] = useState<string | null>(null);
 
   const filterRef = useRef<HTMLDivElement>(null);
   const yearRef   = useRef<HTMLDivElement>(null);
@@ -458,6 +523,7 @@ export default function QuarterSettingsPage() {
         setRows(json.data);
         setAllYears(json.availableYears ?? []);
         setFutureYearAvailable(json.futureYearAvailable ?? null);
+        setLatestEndDate(json.latestEndDate ?? null);
       }
     } finally {
       setLoading(false);
@@ -473,6 +539,7 @@ export default function QuarterSettingsPage() {
         const years: number[] = json.availableYears ?? [];
         setAllYears(years);
         setFutureYearAvailable(json.futureYearAvailable ?? null);
+        setLatestEndDate(json.latestEndDate ?? null);
         const fy = years.includes(defaultFY) ? defaultFY : (years[0] ?? defaultFY);
         setSelectedYear(fy);
         const filtered = (json.data as QuarterRow[]).filter(r => r.fiscalYear === fy);
@@ -533,7 +600,10 @@ export default function QuarterSettingsPage() {
   async function handleDelete(row: QuarterRow) {
     const res  = await fetch(`/api/org/quarters/${row.id}`, { method: "DELETE" });
     const json = await res.json();
-    if (json.success) setRows(prev => prev.filter(r => r.id !== row.id));
+    if (json.success) {
+      setRows(prev => prev.filter(r => r.id !== row.id));
+      invalidateFiscalYearsCache();
+    }
     setDeleteRow(null);
   }
 
@@ -541,6 +611,40 @@ export default function QuarterSettingsPage() {
     await Promise.all([...selectedIds].map(id => fetch(`/api/org/quarters/${id}`, { method: "DELETE" })));
     setRows(prev => prev.filter(r => !selectedIds.has(r.id)));
     setSelectedIds(new Set());
+    invalidateFiscalYearsCache();
+  }
+
+  // Hard-delete an entire fiscal year (all 4 quarters). Server endpoint:
+  // DELETE /api/org/quarters?year=YYYY. After success, switch the page to the
+  // next available FY (or clear view if none remain).
+  async function handleDeleteFY(year: number) {
+    setDeletingFY(true);
+    try {
+      const res = await fetch(`/api/org/quarters?year=${year}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error ?? "Failed to delete fiscal year");
+
+      const nextYears = allYears.filter(y => y !== year);
+      setAllYears(nextYears);
+      setSelectedIds(new Set());
+      setDeleteFY(null);
+      // Drop shared fiscal-year cache so every picker across the app refetches.
+      invalidateFiscalYearsCache();
+
+      if (nextYears.length) {
+        const nextYear = nextYears.includes(defaultFY) ? defaultFY : nextYears[0];
+        setSelectedYear(nextYear);
+        await fetchRows(nextYear);
+      } else {
+        setSelectedYear(null);
+        setRows([]);
+      }
+    } catch (err) {
+      console.error("[quarters] delete FY failed:", err);
+      alert(err instanceof Error ? err.message : "Failed to delete fiscal year");
+    } finally {
+      setDeletingFY(false);
+    }
   }
 
   const currentQW  = getCurrentQuarterAndWeek(rows);
@@ -549,7 +653,7 @@ export default function QuarterSettingsPage() {
 
   /* ── Table view ── */
   const TableView = () => (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto min-h-0">
       <table className="border-separate border-spacing-0 text-xs" style={{ minWidth: 600, width: "100%" }}>
         <thead className="sticky top-0 z-30">
           <tr>
@@ -737,6 +841,14 @@ export default function QuarterSettingsPage() {
               >
                 <Plus className="h-3.5 w-3.5 text-accent-500" /> Initialize Quarters
               </button>
+              {selectedYear !== null && (
+                <button
+                  onClick={() => { setDeleteFY(selectedYear); setMoreOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete FY {selectedYear}-{String(selectedYear + 1).slice(-2)}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -753,12 +865,21 @@ export default function QuarterSettingsPage() {
         row={editRow}
       />
 
-      {/* ── Confirm Delete ── */}
+      {/* ── Confirm Delete (single quarter) ── */}
       <ConfirmDelete
         open={!!deleteRow}
         quarter={deleteRow?.quarter ?? ""}
         onConfirm={() => deleteRow && handleDelete(deleteRow)}
         onCancel={() => setDeleteRow(null)}
+      />
+
+      {/* ── Confirm Delete Fiscal Year (hard delete of all 4 quarters) ── */}
+      <ConfirmDeleteFY
+        open={deleteFY !== null}
+        year={deleteFY}
+        saving={deletingFY}
+        onConfirm={() => deleteFY !== null && handleDeleteFY(deleteFY)}
+        onCancel={() => setDeleteFY(null)}
       />
 
       {/* ── Generate Modal ── */}
@@ -768,6 +889,7 @@ export default function QuarterSettingsPage() {
         onGenerated={handleGenerated}
         existingYears={allYears}
         futureYearAvailable={futureYearAvailable}
+        latestEndDate={latestEndDate}
       />
     </div>
   );

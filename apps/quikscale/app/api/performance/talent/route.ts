@@ -34,14 +34,8 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
       db.membership.count({ where }),
     ]);
 
-    // Scope meetings query to only the paginated user set
-    const paginatedUserIds = members.map(m => m.user.id);
-    const meetings = paginatedUserIds.length
-      ? await db.meeting.findMany({
-          where: { tenantId, attendees: { some: { userId: { in: paginatedUserIds } } } },
-          include: { attendees: { where: { userId: { in: paginatedUserIds } } } },
-        })
-      : [];
+    // Legacy team-meeting attendance removed in Client Meetings rewrite.
+    const meetings: Array<{ attendees: Array<{ attended: boolean; userId: string }> }> = [];
 
     const people = members.map((m) => {
       const u = m.user;

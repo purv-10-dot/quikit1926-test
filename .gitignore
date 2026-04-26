@@ -16,3 +16,4 @@ test-results
 .vercel
 apps/quikscale.zip
 apps/quikconstruction/uploads/*
+packages/database/.env.tmp

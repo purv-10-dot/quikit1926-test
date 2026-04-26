@@ -4,14 +4,18 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("analytics.scorecard");
 
 export const GET = withTenantAuth(async ({ tenantId }) => {
-    const [kpis, priorities, meetings, wwwItems, teams, members] = await Promise.all([
+    const [kpis, priorities, wwwItems, teams, members] = await Promise.all([
       db.kPI.findMany({ where: { tenantId }, include: { weeklyValues: true } }),
       db.priority.findMany({ where: { tenantId }, include: { weeklyStatuses: true } }),
-      db.meeting.findMany({ where: { tenantId }, include: { attendees: true } }),
       db.wWWItem.findMany({ where: { tenantId } }),
       db.team.findMany({ where: { tenantId } }),
       db.membership.findMany({ where: { tenantId }, include: { user: true } }),
     ]);
+    // Legacy team-meeting attendance was part of this scorecard. The new
+    // Client Meetings module tracks meeting-level stats per-client, not
+    // per-member, so this block reports 0/0 until we decide how (or whether)
+    // to surface client-meeting attendance on the individual scorecard.
+    const meetings: Array<{ attendees: Array<{ attended: boolean }> }> = [];
 
     // KPI health
     const kpiOnTrack = kpis.filter(k => k.healthStatus === "on-track" || k.healthStatus === "complete").length;

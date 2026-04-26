@@ -122,7 +122,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Right content area */}
-      <div className="flex-1 overflow-y-auto p-8">
+      <div className="flex-1 overflow-y-auto p-8 min-h-0">
         {activeTab === "profile" && <ProfileTab />}
         {activeTab === "company" && <CompanyTab />}
         {activeTab === "configurations" && isAdmin && <ConfigurationsTab />}

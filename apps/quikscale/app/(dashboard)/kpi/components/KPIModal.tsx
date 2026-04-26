@@ -12,7 +12,7 @@ import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/
 import { UserPicker } from "@quikit/ui";
 import { UserMultiPicker } from "@quikit/ui";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
-import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
+import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { Lock, ChevronDown } from "lucide-react";
 import {
   buildBreakdown,
@@ -37,7 +37,6 @@ interface Props {
 }
 
 const CURRENT_YEAR = new Date().getFullYear();
-const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 
 /* ── Component ─────────────────────────────────────────────────────────── */
 
@@ -347,6 +346,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   // Past-week feature flags
   const { canAddPastWeek, canEditPastWeek } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
+  const weekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
   // For create mode, use canAddPastWeek; for edit mode, use canEditPastWeek
   const pastWeekAllowed = mode === "create" ? canAddPastWeek : canEditPastWeek;
 
@@ -967,7 +967,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             {isPast && <Lock className="h-2.5 w-2.5 text-gray-300" />}
                             Week {w}
                           </div>
-                          <div className="text-[9px] font-normal text-gray-400">{weekDateLabel(parseInt(form.year), form.quarter, w)}</div>
+                          <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? weekDateLabel(parseInt(form.year), form.quarter, w)}</div>
                         </th>
                       );})}
                     </tr>

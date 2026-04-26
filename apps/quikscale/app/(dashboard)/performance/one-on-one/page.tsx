@@ -117,7 +117,7 @@ export default function OneOnOnePage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+      <div className="flex-1 overflow-y-auto p-6 bg-gray-50 min-h-0">
         <div className="max-w-4xl mx-auto space-y-6">
           {isLoading && (
             <div className="text-sm text-gray-400 text-center py-12">Loading…</div>

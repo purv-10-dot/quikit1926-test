@@ -94,7 +94,7 @@ export default function TrendsPage() {
         <p className="text-xs text-gray-500 mt-0.5">Quarter-over-quarter and weekly KPI trends</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 min-h-0">
         {/* Quarterly bar chart */}
         <div className="bg-white rounded-lg shadow-sm p-4">
           <div className="flex items-center justify-between mb-4">

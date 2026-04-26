@@ -42,7 +42,6 @@
 - **Package manager:** npm (workspaces, NOT pnpm/yarn)
 - **Working dir:** `/Users/user/Documents/Claude_Code/QuikIT`
 - **Editor:** Claude Code CLI (v2.1.87+), not VSCode/Cursor
-- **Plugin installed (as of this session):** `woz@wozcode-marketplace` v0.3.42 — provides `mcp__plugin_woz_code__{Search,Edit,Sql,Recall}` tools. Use them over raw Bash/Write/Edit when the hook reminds you.
 
 ---
 
@@ -469,30 +468,6 @@ BASE_URL=https://quikscale.vercel.app APP=quikscale PUBLIC_ONLY=1 REQS=30 node s
 ```
 
 ---
-
-## 11. Plugins / MCP tools available (as of this session)
-
-### Woz (installed via Claude Code plugin marketplace)
-- Marketplace: `wozcode-marketplace` (from `WithWoz/wozcode-plugin` on GitHub)
-- Plugin: `woz@wozcode-marketplace` v0.3.42
-- Scope: user (persists across sessions once installed)
-- Status: installed but **requires Claude Code restart to fully activate the `woz:*` main-thread agents** (tools work now via `ToolSearch`)
-
-### Tools provided
-Before Claude Code restart: these appear as *deferred* tools — you must load schemas via `ToolSearch` before calling them (e.g. `ToolSearch("select:mcp__plugin_woz_code__Edit,mcp__plugin_woz_code__Search")`).
-
-After restart: the plugin boots a `woz:code` main-thread agent that has these tools first-class, and the PreToolUse hook nudges you to use them over raw Bash for file discovery / editing.
-
-- `mcp__plugin_woz_code__Search` — combined file discovery + grep + read (prefer over Bash `find`/`grep`/`cat` and over standalone `Grep`/`Glob`/`Read`)
-- `mcp__plugin_woz_code__Edit` — batched fuzzy-match edits (prefer over `Write`/`Edit` when doing multiple edits at once)
-- `mcp__plugin_woz_code__Sql` — SQL introspection
-- `mcp__plugin_woz_code__Recall` — semantic search of past sessions
-
-### Skills provided
-- `/woz-savings`, `/woz-login`, `/woz-status`, `/woz-logout`, `/woz-update`, `/woz-recall`, `/woz-benchmark`, `/woz-settings`
-
-### Active hook
-- PreToolUse hook enforces: **use `mcp__plugin_woz_code__Edit` for file writes/edits** (not Bash `echo >` or `cat <<EOF`), and **`mcp__plugin_woz_code__Search` for discovery** (not Bash `grep`/`find`/`cat`). Raw Bash for these triggers a reminder — use the correct tool for subsequent calls.
 
 ---
 
