@@ -77,6 +77,13 @@ const SKIP_PATTERNS = [
   /^\.github\/workflows\//,
   // Claude Code local settings (developer-only command allowlists)
   /(^|\/)\.claude\//,
+  // Dev-only seed / migration / QA scripts (all run locally with a DATABASE_URL
+  // fallback to localhost). These are never bundled into a production runtime.
+  /^scripts\/seed-/,
+  /^scripts\/qa-test-/,
+  /^scripts\/migrate-legacy\//,
+  // Docker compose files are dev orchestration only, not runtime code.
+  /(^|\/)docker-compose\.ya?ml$/,
 ];
 
 /* ─── Line-level allow rules — applied AFTER we've found a match ─────── */

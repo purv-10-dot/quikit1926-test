@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { vi, beforeEach, afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { _clearLocalCache } from "@quikit/auth/cache";
 
 // ---------------------------------------------------------------------------
 // Session injection for tests
@@ -75,6 +76,9 @@ vi.spyOn(console, "warn").mockImplementation(() => {});
 // ---------------------------------------------------------------------------
 beforeEach(() => {
   _state.user = null;
+  // Clear the @quikit/auth in-memory LRU between tests so cached tenantId /
+  // membership state from a prior test doesn't leak into the next one.
+  _clearLocalCache();
 });
 
 afterEach(() => {
