@@ -9,8 +9,7 @@ import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
-import { UserPicker } from "@quikit/ui";
-import { UserMultiPicker } from "@quikit/ui";
+import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter } from "@quikit/ui";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { Lock, ChevronDown } from "lucide-react";
@@ -592,31 +591,54 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     ? (parseFloat(form.target) || 0) * getMultiplier(form.currency, form.targetScale)
     : parseFloat(form.target) || 0;
 
-  return (
-    <div className="fixed inset-0 z-[200] flex">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className={`relative ml-auto h-full bg-white shadow-2xl flex flex-col ${isTeamScope ? "w-[760px]" : "w-[520px]"}`}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-800">
-              {mode === "create"
-                ? (isTeamScope ? "Add Team KPI" : "Add New KPI")
-                : (isTeamScope ? "Edit Team KPI" : "Edit KPI")}
-            </h2>
-            <p className="text-[11px] text-gray-400 mt-0.5">
-              {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
-            </p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+  const panelTitle =
+    mode === "create"
+      ? isTeamScope
+        ? "Add Team KPI"
+        : "Add New KPI"
+      : isTeamScope
+        ? "Edit Team KPI"
+        : "Edit KPI";
+  const panelSubtitle = `${fiscalYearLabel(parseInt(form.year))} · ${form.quarter}`;
+  const submitLabel =
+    mode === "create"
+      ? isTeamScope
+        ? "Create Team KPI"
+        : "Create KPI"
+      : "Save Changes";
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+  return (
+    <RightPanel
+      open
+      onClose={onClose}
+      size={isTeamScope ? "lg" : "sm"}
+      title={panelTitle}
+      subtitle={panelSubtitle}
+      footer={
+        <RightPanelFooter>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving || readOnly}
+            title={readOnly ? "Only the creator, assignee, team head, or an admin can edit this KPI" : undefined}
+            className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {saving && (
+              <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
+            {submitLabel}
+          </button>
+        </RightPanelFooter>
+      }
+    >
           {errors._ && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
               {errors._}
@@ -1154,29 +1176,6 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
               </div>
             </div>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 flex-shrink-0">
-          <button onClick={onClose}
-            className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
-            Cancel
-          </button>
-          <button onClick={handleSubmit} disabled={saving || readOnly}
-            title={readOnly ? "Only the creator, assignee, team head, or an admin can edit this KPI" : undefined}
-            className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-            {saving && (
-              <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            )}
-            {mode === "create"
-              ? (isTeamScope ? "Create Team KPI" : "Create KPI")
-              : "Save Changes"}
-          </button>
-        </div>
-      </div>
-    </div>
+    </RightPanel>
   );
 }
