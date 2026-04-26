@@ -683,27 +683,67 @@ export default function WeeklyMeetingPage() {
                   <th className="px-1 py-2 w-10 text-center font-semibold">
                     #
                   </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Meeting Date</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Client Name</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Status</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Absent Members</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Weekly Dashboard NA</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Actual Start Time</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Actual End Time</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Good News Sharing</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Good News Sharing Time</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">K&amp;P dashboard</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">K&amp;P dashboard Time</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">GAPS</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">GAPS Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Meeting Date
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Client Name
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Status
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Absent Members
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Weekly Dashboard NA
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Actual Start Time
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Actual End Time
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Good News Sharing
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Good News Sharing Time
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    K&amp;P dashboard
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    K&amp;P dashboard Time
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    GAPS
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    GAPS Time
+                  </th>
                   <th className="px-3 py-2 text-left whitespace-nowrap">WWW</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">WWW Time</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Customer/Employee Feedback</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Customer/Employee Feedback Time</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Collective Intelligence</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Collective Intelligence Time</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">OPSP Review</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">OPSP Time</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    WWW Time
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Customer/Employee Feedback
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Customer/Employee Feedback Time
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Collective Intelligence
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Collective Intelligence Time
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    OPSP Review
+                  </th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    OPSP Time
+                  </th>
                   <th className="px-3 py-2 text-right" />
                 </tr>
               </thead>
@@ -769,20 +809,48 @@ export default function WeeklyMeetingPage() {
                     <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                       {r.actualEndTime || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">{r.goodNewsSharing}</td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime1 || "—"}</td>
-                    <td className="px-3 py-2 text-gray-600 text-center">{r.kpDashboard}</td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime2 || "—"}</td>
-                    <td className="px-3 py-2 text-gray-600 text-center">{r.gaps}</td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime3 || "—"}</td>
-                    <td className="px-3 py-2 text-gray-600 text-center">{r.www}</td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime4 || "—"}</td>
-                    <td className="px-3 py-2 text-gray-600 text-center">{r.feedback}</td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime5 || "—"}</td>
-                    <td className="px-3 py-2 text-gray-600 text-center">{r.collectiveIntelligence}</td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime6 || "—"}</td>
-                    <td className="px-3 py-2 text-gray-600 text-center">{r.opspReview}</td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.segmentTime7 || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600 text-center">
+                      {r.goodNewsSharing}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      {r.segmentTime1 || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 text-center">
+                      {r.kpDashboard}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      {r.segmentTime2 || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 text-center">
+                      {r.gaps}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      {r.segmentTime3 || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 text-center">
+                      {r.www}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      {r.segmentTime4 || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 text-center">
+                      {r.feedback}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      {r.segmentTime5 || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 text-center">
+                      {r.collectiveIntelligence}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      {r.segmentTime6 || "—"}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 text-center">
+                      {r.opspReview}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                      {r.segmentTime7 || "—"}
+                    </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       <button
                         onClick={() => openEdit(r)}

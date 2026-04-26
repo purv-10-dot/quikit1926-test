@@ -35,8 +35,12 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
       client: { select: { id: true, name: true } },
       absentMembers: true,
       dashboardNAMembers: true,
-      absentTeamMembers: { include: { member: { select: { id: true, name: true } } } },
-      dashboardNATeamMembers: { include: { member: { select: { id: true, name: true } } } },
+      absentTeamMembers: {
+        include: { member: { select: { id: true, name: true } } },
+      },
+      dashboardNATeamMembers: {
+        include: { member: { select: { id: true, name: true } } },
+      },
     },
   });
 
