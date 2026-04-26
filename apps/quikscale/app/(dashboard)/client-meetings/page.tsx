@@ -91,6 +91,8 @@ export default function ClientMeetingsDashboardPage() {
   const [exportType, setExportType] = useState<"daily" | "weekly" | "member">("daily");
   const [exportFrom, setExportFrom] = useState("");
   const [exportTo, setExportTo] = useState("");
+  const [exportMonth, setExportMonth] = useState<number>(new Date().getMonth() + 1);
+  const [exportYear, setExportYear] = useState<number>(new Date().getFullYear());
   const [exportClientId, setExportClientId] = useState("");
   const [exporting, setExporting] = useState(false);
 
@@ -277,12 +279,12 @@ export default function ClientMeetingsDashboardPage() {
                 <table className="min-w-full text-xs">
                   <thead className="bg-gray-100">
                     <tr>
-                      <th className="text-left px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">Meeting Date</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">KPI QTD</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">KPI Coding</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">Priority Notes</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">Priority Dates</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">Priority Color</th>
+                      <th className="text-left px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Meeting Date</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">KPI Weekly QTD Update</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">KPI Color Coding</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Priority Notes</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Priority Start and End Date</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Priority Color</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -370,50 +372,98 @@ export default function ClientMeetingsDashboardPage() {
                 </div>
               </div>
 
-              <div>
-                <p className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-2">
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                  Date Range
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[10px] text-gray-500 mb-1">From</label>
-                    <input
-                      type="date"
-                      value={exportFrom}
-                      onChange={(e) => setExportFrom(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-500 mb-1">To</label>
-                    <input
-                      type="date"
-                      value={exportTo}
-                      onChange={(e) => setExportTo(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
-                    />
+              {exportType === "member" ? (
+                <div>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-2">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    Period
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-1">Month</label>
+                      <select
+                        value={exportMonth}
+                        onChange={(e) => setExportMonth(parseInt(e.target.value, 10))}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                      >
+                        {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => (
+                          <option key={m} value={i + 1}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-1">Year</label>
+                      <select
+                        value={exportYear}
+                        onChange={(e) => setExportYear(parseInt(e.target.value, 10))}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                      >
+                        {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-2">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    Date Range
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-1">From</label>
+                      <input
+                        type="date"
+                        value={exportFrom}
+                        onChange={(e) => setExportFrom(e.target.value)}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-1">To</label>
+                      <input
+                        type="date"
+                        value={exportTo}
+                        onChange={(e) => setExportTo(e.target.value)}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <button
-                disabled={!exportClientId || !exportTo || exporting}
+                disabled={!exportClientId || (exportType !== "member" && !exportTo) || exporting}
                 onClick={async () => {
-                  if (!exportClientId || !exportTo) return;
+                  if (!exportClientId) return;
+                  if (exportType !== "member" && !exportTo) return;
                   setExporting(true);
                   try {
-                    const toDate = new Date(exportTo);
-                    const year = toDate.getUTCFullYear();
-                    const month = toDate.getUTCMonth() + 1; // 1-indexed for backend
+                    let year: number;
+                    let month: number;
+                    if (exportType === "member") {
+                      year = exportYear;
+                      month = exportMonth;
+                    } else {
+                      const toDate = new Date(exportTo);
+                      year = toDate.getUTCFullYear();
+                      month = toDate.getUTCMonth() + 1;
+                    }
                     const endpoint =
                       exportType === "member"
                         ? "/api/client-meetings/export/punch"
                         : `/api/client-meetings/export/${exportType}`;
+                    const body: Record<string, unknown> = { clientId: exportClientId, year, month };
+                    if (exportType !== "member") {
+                      body.from = exportFrom || null;
+                      body.to = exportTo;
+                    }
                     const res = await fetch(endpoint, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ clientId: exportClientId, year, month, from: exportFrom || null, to: exportTo }),
+                      body: JSON.stringify(body),
                     });
                     if (!res.ok) {
                       const j = await res.json().catch(() => ({}));
