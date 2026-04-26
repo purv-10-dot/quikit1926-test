@@ -1049,6 +1049,7 @@ model ClientWeeklyMeeting {
   dashboardNAMembers     ClientWeeklyMeetingDashboardNA[]
   dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
   memberScores           ClientWeeklyMemberScore[]
+  logs                   ClientWeeklyMeetingLog[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1109,6 +1110,30 @@ model ClientWeeklyMeetingTeamDashboardNA {
 
   @@id([meetingId, clientMemberId])
   @@index([clientMemberId])
+  @@schema("app_quikscale")
+}
+
+/// Audit trail for ClientWeeklyMeeting (mirrors KPILog).
+/// One row per CREATE / UPDATE field-level change / DELETE / RESTORE.
+model ClientWeeklyMeetingLog {
+  id        String @id @default(cuid())
+  tenantId  String
+  meetingId String
+
+  action    String
+  oldValue  String? @db.Text
+  newValue  String? @db.Text
+  changedBy String
+  reason    String?
+
+  createdAt DateTime @default(now())
+
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([meetingId])
+  @@index([createdAt])
+  @@index([meetingId, createdAt])
   @@schema("app_quikscale")
 }
 

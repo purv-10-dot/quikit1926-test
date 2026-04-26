@@ -83,6 +83,18 @@ export const PUT = withTenantAuth<{ id: string }>(
         { status: 400 }
       );
 
+    const oldSnapshot = JSON.stringify({
+      callStatus: existing.callStatus,
+      meetingDate: existing.meetingDate.toISOString(),
+      goodNewsSharing: existing.goodNewsSharing,
+      kpDashboard: existing.kpDashboard,
+      gaps: existing.gaps,
+      www: existing.www,
+      feedback: existing.feedback,
+      collectiveIntelligence: existing.collectiveIntelligence,
+      opspReview: existing.opspReview,
+    });
+
     await db.$transaction(async (tx) => {
       await tx.clientWeeklyMeeting.update({
         where: { id: params.id },
@@ -164,12 +176,40 @@ export const PUT = withTenantAuth<{ id: string }>(
       }
     });
 
+    const updated = await db.clientWeeklyMeeting.findUnique({
+      where: { id: params.id },
+      select: {
+        callStatus: true,
+        meetingDate: true,
+        goodNewsSharing: true,
+        kpDashboard: true,
+        gaps: true,
+        www: true,
+        feedback: true,
+        collectiveIntelligence: true,
+        opspReview: true,
+      },
+    });
+    await db.clientWeeklyMeetingLog.create({
+      data: {
+        tenantId,
+        meetingId: params.id,
+        action: "UPDATE",
+        oldValue: oldSnapshot,
+        newValue: JSON.stringify({
+          ...updated,
+          meetingDate: updated?.meetingDate.toISOString() ?? null,
+        }),
+        changedBy: userId,
+      },
+    });
+
     return NextResponse.json({ success: true });
   }
 );
 
 export const DELETE = withTenantAuth<{ id: string }>(
-  async ({ tenantId }, _req, { params }) => {
+  async ({ tenantId, userId }, _req, { params }) => {
     const existing = await db.clientWeeklyMeeting.findFirst({
       where: { id: params.id, tenantId, deletedAt: null },
     });
@@ -181,6 +221,18 @@ export const DELETE = withTenantAuth<{ id: string }>(
     await db.clientWeeklyMeeting.update({
       where: { id: params.id },
       data: { deletedAt: new Date() },
+    });
+    await db.clientWeeklyMeetingLog.create({
+      data: {
+        tenantId,
+        meetingId: params.id,
+        action: "DELETE",
+        oldValue: JSON.stringify({
+          callStatus: existing.callStatus,
+          meetingDate: existing.meetingDate.toISOString(),
+        }),
+        changedBy: userId,
+      },
     });
     return NextResponse.json({ success: true });
   }

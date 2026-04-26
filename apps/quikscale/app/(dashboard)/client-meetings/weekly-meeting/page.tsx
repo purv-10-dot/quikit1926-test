@@ -10,10 +10,11 @@ import {
   AddButton,
   EmptyState,
   RichTextField,
-  UserMultiPicker, UserPicker,
+  UserMultiPicker,
+  UserPicker,
   type PickerUser,
 } from "@quikit/ui";
-import { CalendarDays, Pencil, Trash2, Save, Check } from "lucide-react";
+import { CalendarDays, Pencil, Trash2, Save, Check, History, Search, Filter as FilterIcon } from "lucide-react";
 
 type Flag = "YES" | "NO" | "NA";
 type Status =
@@ -98,6 +99,16 @@ interface MeetingRow {
   opspReview: Flag;
   absentClientMemberIds: string[];
   dashboardNAClientMemberIds: string[];
+}
+interface LogEntry {
+  id: string;
+  action: string;
+  oldValue: string | null;
+  newValue: string | null;
+  changedBy: string;
+  changedByName: string;
+  reason: string | null;
+  createdAt: string;
 }
 interface MemberScore {
   userId: string;
@@ -201,6 +212,15 @@ export default function WeeklyMeetingPage() {
   const [activeTab, setActiveTab] = useState<"edit" | "update">("edit");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Search + selection (KPI-style chrome).
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Log drawer.
+  const [logsFor, setLogsFor] = useState<{ id: string; label: string } | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   // Per-member scoring grid (Update tab, edit-only).
   const [scores, setScores] = useState<Record<string, MemberScore>>({});
@@ -477,6 +497,49 @@ export default function WeeklyMeetingPage() {
     }
   }
 
+  async function openLogs(row: MeetingRow) {
+    setLogsFor({ id: row.id, label: `${row.clientName} · ${fmtDate(row.meetingDate)}` });
+    setLogsLoading(true);
+    try {
+      const res = await fetch(`/api/client-meetings/weekly-meetings/${row.id}/logs`);
+      const j = await res.json();
+      setLogs(j.success ? (j.data as LogEntry[]) : []);
+    } finally {
+      setLogsLoading(false);
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll(visibleIds: string[]) {
+    setSelectedIds((s) => {
+      const allSelected = visibleIds.every((id) => s.has(id));
+      if (allSelected) {
+        const next = new Set(s);
+        for (const id of visibleIds) next.delete(id);
+        return next;
+      }
+      return new Set([...s, ...visibleIds]);
+    });
+  }
+  async function bulkDelete() {
+    if (!selectedIds.size) return;
+    if (!confirm(`Delete ${selectedIds.size} selected meetings?`)) return;
+    await Promise.all(
+      [...selectedIds].map((id) =>
+        fetch(`/api/client-meetings/weekly-meetings/${id}`, { method: "DELETE" }),
+      ),
+    );
+    setSelectedIds(new Set());
+    refresh();
+  }
+
   async function remove(id: string) {
     if (!confirm("Delete this weekly meeting?")) return;
     const res = await fetch(`/api/client-meetings/weekly-meetings/${id}`, {
@@ -497,34 +560,72 @@ export default function WeeklyMeetingPage() {
     memberToPickerUser
   );
 
+  // Filter rows by search query (client name or status, case-insensitive).
+  const visibleRows = rows.filter((r) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      r.clientName.toLowerCase().includes(q) ||
+      statusLabel(r.callStatus).toLowerCase().includes(q)
+    );
+  });
+  const visibleIds = visibleRows.map((r) => r.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">
-            Weekly Meeting
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Track your weekly client meetings
-          </p>
+    <div className="flex flex-col h-full">
+      {/* Page Header (KPI-style chrome) */}
+      <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">Weekly Meeting</h1>
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
+            {rows.length} items
+          </span>
         </div>
-        <AddButton onClick={openCreate}>Add</AddButton>
+
+        <div className="flex items-center gap-2">
+          {selectedIds.size > 0 && (
+            <button
+              onClick={bulkDelete}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete {selectedIds.size} selected
+            </button>
+          )}
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
+            />
+          </div>
+
+          {/* Client filter (kept) */}
+          <select
+            value={filterClientId}
+            onChange={(e) => setFilterClientId(e.target.value)}
+            className="text-xs border border-gray-200 rounded-md px-2.5 py-1.5 bg-white"
+            title="Filter by client"
+          >
+            <option value="">All clients</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+
+          <AddButton onClick={openCreate}>Add</AddButton>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2 mb-4">
-        <select
-          value={filterClientId}
-          onChange={(e) => setFilterClientId(e.target.value)}
-          className="text-xs border border-gray-200 rounded-lg px-3 py-2 bg-white"
-        >
-          <option value="">All clients</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <div className="flex-1 overflow-y-auto p-6">
 
       {loading ? (
         <p className="text-sm text-gray-500">Loading…</p>
@@ -537,8 +638,18 @@ export default function WeeklyMeetingPage() {
       ) : (
         <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
           <table className="min-w-full text-xs">
-            <thead className="bg-accent-50 text-gray-600">
+            <thead className="bg-accent-50 text-gray-600 sticky top-0 z-10">
               <tr>
+                <th className="px-2 py-2 w-8">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={() => toggleSelectAll(visibleIds)}
+                    className="text-blue-600 border-gray-300"
+                  />
+                </th>
+                <th className="px-1 py-2 w-8 text-center font-semibold">Log</th>
+                <th className="px-1 py-2 w-10 text-center font-semibold">#</th>
                 <th className="px-3 py-2 text-left">Date</th>
                 <th className="px-3 py-2 text-left">Client</th>
                 <th className="px-3 py-2 text-left">Status</th>
@@ -555,11 +666,38 @@ export default function WeeklyMeetingPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {visibleRows.map((r, idx) => (
                 <tr
                   key={r.id}
                   className="border-t border-gray-100 hover:bg-blue-50/30"
                 >
+                  <td className="px-2 py-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(r.id)}
+                      onChange={() => toggleSelect(r.id)}
+                      className="text-blue-600 border-gray-300"
+                    />
+                  </td>
+                  <td className="px-1 py-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => openLogs(r)}
+                      className="text-gray-400 hover:text-blue-500 hover:bg-gray-100 rounded p-1"
+                      title="View audit log"
+                    >
+                      <History className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
+                  <td className="px-1 py-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(r)}
+                      className="text-gray-900 hover:underline"
+                    >
+                      {idx + 1}
+                    </button>
+                  </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {fmtDate(r.meetingDate)}
                   </td>
@@ -782,6 +920,56 @@ export default function WeeklyMeetingPage() {
           </>
         )}
       </RightPanel>
+
+      <RightPanel
+        open={!!logsFor}
+        onClose={() => setLogsFor(null)}
+        size="md"
+        title="Audit log"
+        subtitle={logsFor?.label}
+      >
+        {logsLoading ? (
+          <p className="text-xs text-gray-500">Loading…</p>
+        ) : logs.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">No log entries yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {logs.map((l) => (
+              <li key={l.id} className="border border-gray-200 rounded-lg p-3 text-xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${
+                    l.action === "CREATE" ? "bg-emerald-100 text-emerald-700"
+                    : l.action === "UPDATE" ? "bg-amber-100 text-amber-700"
+                    : l.action === "DELETE" ? "bg-red-100 text-red-700"
+                    : l.action === "SCORE_UPDATE" ? "bg-blue-100 text-blue-700"
+                    : "bg-gray-100 text-gray-700"
+                  }`}>{l.action}</span>
+                  <span className="text-gray-400 text-[11px]">
+                    {new Date(l.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className="text-gray-700">
+                  <strong>{l.changedByName}</strong>
+                  {l.reason && <span className="text-gray-500"> · {l.reason}</span>}
+                </div>
+                {l.oldValue && (
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer text-[11px] text-gray-500">Old</summary>
+                    <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">{l.oldValue}</pre>
+                  </details>
+                )}
+                {l.newValue && (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-[11px] text-gray-500">New</summary>
+                    <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">{l.newValue}</pre>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </RightPanel>
+      </div>
     </div>
   );
 }

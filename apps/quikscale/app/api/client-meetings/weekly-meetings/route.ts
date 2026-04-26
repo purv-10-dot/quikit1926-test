@@ -146,6 +146,20 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
     },
   });
 
+  await db.clientWeeklyMeetingLog.create({
+    data: {
+      tenantId,
+      meetingId: created.id,
+      action: "CREATE",
+      newValue: JSON.stringify({
+        clientId: created.clientId,
+        meetingDate: created.meetingDate.toISOString(),
+        callStatus: created.callStatus,
+      }),
+      changedBy: userId,
+    },
+  });
+
   return NextResponse.json(
     { success: true, data: { id: created.id } },
     { status: 201 }
