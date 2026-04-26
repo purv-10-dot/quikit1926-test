@@ -122,7 +122,7 @@ describe("POST /api/invitations/accept", () => {
     const res = await POST(
       buildRequest("POST", "/api/invitations/accept", {
         token: "tok",
-        password: "supersecret",
+        password: "Supersecret123!",
       })
     );
     expect(res.status).toBe(200);
@@ -142,7 +142,7 @@ describe("POST /api/invitations/accept", () => {
     );
   });
 
-  it("rejects short password", async () => {
+  it("rejects short password (<10 chars)", async () => {
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m1",
       tenantId: TENANT,
@@ -154,9 +154,51 @@ describe("POST /api/invitations/accept", () => {
     const res = await POST(
       buildRequest("POST", "/api/invitations/accept", {
         token: "tok",
-        password: "short",
+        password: "Sh0rt!",
       })
     );
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/at least 10/i);
+  });
+
+  it("rejects password missing a digit", async () => {
+    mockDb.membership.findUnique.mockResolvedValue({
+      id: "m1",
+      tenantId: TENANT,
+      status: "invited",
+      invitedAt: new Date(),
+      user: { id: "u1", password: null },
+    } as any);
+
+    const res = await POST(
+      buildRequest("POST", "/api/invitations/accept", {
+        token: "tok",
+        password: "NoDigitsHere!",
+      })
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/digit/i);
+  });
+
+  it("rejects password missing a symbol", async () => {
+    mockDb.membership.findUnique.mockResolvedValue({
+      id: "m1",
+      tenantId: TENANT,
+      status: "invited",
+      invitedAt: new Date(),
+      user: { id: "u1", password: null },
+    } as any);
+
+    const res = await POST(
+      buildRequest("POST", "/api/invitations/accept", {
+        token: "tok",
+        password: "NoSymbolsHere1",
+      })
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/symbol/i);
   });
 });

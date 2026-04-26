@@ -7,7 +7,8 @@ export type AuditAction =
   | "INVITED"
   | "RESENT"
   | "REVOKED"
-  | "ACCEPTED";
+  | "ACCEPTED"
+  | "DUPLICATE_INVITE";
 
 export type AuditEntityType = "Membership" | "Invitation" | "User" | "Tenant";
 

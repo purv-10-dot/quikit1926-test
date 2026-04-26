@@ -102,7 +102,10 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
     }
   }
 
-  // Check if user already has a membership for this tenant
+  // Anti-enumeration: a duplicate invite attempt (active member or pending
+  // invite for the same email) returns the SAME generic success response as
+  // a fresh invite. We log the duplicate to AuditLog so a real admin can
+  // notice; an attacker probing for member emails sees nothing.
   let user = await db.user.findUnique({ where: { email } });
 
   if (user) {
@@ -110,18 +113,21 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
       where: { tenantId_userId: { tenantId, userId: user.id } },
     });
 
-    if (existingMembership && existingMembership.status === "active") {
-      return NextResponse.json(
-        { success: false, error: "User is already an active member of this organisation" },
-        { status: 409 }
-      );
-    }
-
-    if (existingMembership && existingMembership.status === "invited") {
-      return NextResponse.json(
-        { success: false, error: "User already has a pending invitation" },
-        { status: 409 }
-      );
+    if (existingMembership && (existingMembership.status === "active" || existingMembership.status === "invited")) {
+      await writeAuditLog({
+        tenantId,
+        actorId: inviterId,
+        action: "DUPLICATE_INVITE",
+        entityType: "Membership",
+        entityId: existingMembership.id,
+        reason: `status=${existingMembership.status}`,
+        ipAddress: request.headers.get("x-forwarded-for"),
+        userAgent: request.headers.get("user-agent"),
+      });
+      return NextResponse.json({
+        success: true,
+        message: `Invitation sent to ${email}`,
+      });
     }
   }
 
