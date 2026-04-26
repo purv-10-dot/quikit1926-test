@@ -336,7 +336,6 @@ model User {
   dailyHuddleAbsences   ClientDailyHuddleAbsence[]
   weeklyMeetingAbsences ClientWeeklyMeetingAbsence[]
   weeklyDashboardNAs    ClientWeeklyMeetingDashboardNA[]
-  weeklyMemberScores    ClientWeeklyMemberScore[]
 
   @@index([email])
   @@schema("public")
@@ -818,6 +817,8 @@ enum ClientMeetingStatus {
   HELD
   NOT_HELD
   CALL_CANCELLED_BY_CLIENT
+  HOLIDAY_FOR_CLIENT
+  HOLIDAY_FOR_SUCCESS_ALCHEMIST
 
   @@schema("app_quikscale")
 }
@@ -916,9 +917,12 @@ model ClientMember {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant        Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  clientLinks   ClientTeamMember[]
-  dailyAbsences ClientDailyHuddleTeamAbsence[]
+  tenant            Tenant                              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clientLinks       ClientTeamMember[]
+  dailyAbsences     ClientDailyHuddleTeamAbsence[]
+  weeklyAbsences    ClientWeeklyMeetingTeamAbsence[]
+  weeklyDashboardNA ClientWeeklyMeetingTeamDashboardNA[]
+  weeklyScores      ClientWeeklyMemberScore[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1023,19 +1027,18 @@ model ClientWeeklyMeeting {
   segmentTime6 String?
   segmentTime7 String?
 
-  /// Radio flags (see meetingrythm.md §5 — radio ↔ radio-6).
-  formatCheck1        ClientMeetingFlag @default(NA)
-  formatCheck2        ClientMeetingFlag @default(NA)
-  wwwReviewDone       ClientMeetingFlag @default(NA)
-  feedbackDone        ClientMeetingFlag @default(NA)
-  collectiveIntelDone ClientMeetingFlag @default(NA)
-  kpGapsDiscussed     ClientMeetingFlag @default(NA)
-  dashboardQuality    ClientMeetingFlag @default(NA)
-  punctualityOverride ClientMeetingFlag @default(NA)
+  /// Radio flags — order matches the form spec (Good News → OPSP Review).
+  /// Each pairs with segmentTime1..7 for "<flag> Time" companion field.
+  goodNewsSharing        ClientMeetingFlag @default(NA)
+  kpDashboard            ClientMeetingFlag @default(NA)
+  gaps                   ClientMeetingFlag @default(NA)
+  www                    ClientMeetingFlag @default(NA)
+  feedback               ClientMeetingFlag @default(NA)
+  collectiveIntelligence ClientMeetingFlag @default(NA)
+  opspReview             ClientMeetingFlag @default(NA)
 
-  totalMembers Int @default(0)
-
-  notes String? @db.Text
+  notesKPDashboard String? @db.Text
+  otherNotes       String? @db.Text
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1043,11 +1046,14 @@ model ClientWeeklyMeeting {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant             Tenant                           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  client             Client                           @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  absentMembers      ClientWeeklyMeetingAbsence[]
-  dashboardNAMembers ClientWeeklyMeetingDashboardNA[]
-  memberScores       ClientWeeklyMemberScore[]
+  tenant                 Tenant                              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client                 Client                              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  absentMembers          ClientWeeklyMeetingAbsence[]
+  absentTeamMembers      ClientWeeklyMeetingTeamAbsence[]
+  dashboardNAMembers     ClientWeeklyMeetingDashboardNA[]
+  dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
+  memberScores           ClientWeeklyMemberScore[]
+  logs                   ClientWeeklyMeetingLog[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1083,13 +1089,66 @@ model ClientWeeklyMeetingDashboardNA {
   @@schema("app_quikscale")
 }
 
-/// Per-member KPI scores captured inside a weekly meeting drawer (see
-/// meetingrythm.md §5.6 `weeklyDataStore`). Integers 0..n — client-defined
-/// scoring scheme; renderer color-codes based on tenant's manageView rules.
-model ClientWeeklyMemberScore {
+/// Per-meeting absence link for external Client Members (mirrors the
+/// Daily Huddle TeamAbsence pattern). Used by the Weekly Meeting drawer's
+/// Absent Members picker when the client roster is external.
+model ClientWeeklyMeetingTeamAbsence {
+  meetingId      String
+  clientMemberId String
+
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  member  ClientMember        @relation(fields: [clientMemberId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, clientMemberId])
+  @@index([clientMemberId])
+  @@schema("app_quikscale")
+}
+
+/// Per-meeting "Weekly Dashboard NA" link for external Client Members.
+model ClientWeeklyMeetingTeamDashboardNA {
+  meetingId      String
+  clientMemberId String
+
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  member  ClientMember        @relation(fields: [clientMemberId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, clientMemberId])
+  @@index([clientMemberId])
+  @@schema("app_quikscale")
+}
+
+/// Audit trail for ClientWeeklyMeeting (mirrors KPILog).
+/// One row per CREATE / UPDATE field-level change / DELETE / RESTORE.
+model ClientWeeklyMeetingLog {
   id        String @id @default(cuid())
+  tenantId  String
   meetingId String
-  userId    String
+
+  action    String
+  oldValue  String? @db.Text
+  newValue  String? @db.Text
+  changedBy String
+  reason    String?
+
+  createdAt DateTime @default(now())
+
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([meetingId])
+  @@index([createdAt])
+  @@index([meetingId, createdAt])
+  @@schema("app_quikscale")
+}
+
+/// Per-member KPI scores captured inside a weekly meeting drawer.
+/// Keyed on ClientMember (external roster) — that's what the Update tab
+/// displays. Was historically keyed on User; migrated when external
+/// Team Members became the canonical source of "who is on this client".
+model ClientWeeklyMemberScore {
+  id             String @id @default(cuid())
+  meetingId      String
+  clientMemberId String
 
   kpiWeeklyQTD         Int @default(0)
   kpiCoding            Int @default(0)
@@ -1097,11 +1156,13 @@ model ClientWeeklyMemberScore {
   priorityStartEndDate Int @default(0)
   priorityColor        Int @default(0)
 
-  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @updatedAt
 
-  @@unique([meetingId, userId])
-  @@index([userId])
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  member  ClientMember        @relation(fields: [clientMemberId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, clientMemberId])
+  @@index([clientMemberId])
   @@schema("app_quikscale")
 }
 

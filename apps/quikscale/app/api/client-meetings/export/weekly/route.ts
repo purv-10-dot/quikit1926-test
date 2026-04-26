@@ -27,18 +27,18 @@ export const POST = withTenantAuth(async ({ tenantId }, request) => {
 
   const meetings = await db.clientWeeklyMeeting.findMany({
     where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-    include: { absentMembers: true, dashboardNAMembers: true, memberScores: true },
+    include: { absentMembers: true, dashboardNAMembers: true },
   });
   const stats = calculateWeeklyMonthlyStats(
     meetings.map(m => ({
       meetingDate: m.meetingDate, callStatus: m.callStatus,
       actualStartTime: m.actualStartTime, actualEndTime: m.actualEndTime,
-      formatCheck1: m.formatCheck1, formatCheck2: m.formatCheck2,
-      wwwReviewDone: m.wwwReviewDone, feedbackDone: m.feedbackDone,
-      collectiveIntelDone: m.collectiveIntelDone, kpGapsDiscussed: m.kpGapsDiscussed,
-      dashboardQuality: m.dashboardQuality, punctualityOverride: m.punctualityOverride,
-      totalMembers: m.totalMembers, absentCount: m.absentMembers.length,
-      memberScores: m.memberScores,
+      goodNewsSharing: m.goodNewsSharing, kpDashboard: m.kpDashboard,
+      www: m.www, feedback: m.feedback,
+      collectiveIntelligence: m.collectiveIntelligence, gaps: m.gaps,
+      opspReview: m.opspReview, punctualityOverride: ("NA" as const),
+      totalMembers: 0, absentCount: m.absentMembers.length,
+      memberScores: [] as const,
     })),
     months, client.weeklyStartTime, client.weeklyEndTime,
   );

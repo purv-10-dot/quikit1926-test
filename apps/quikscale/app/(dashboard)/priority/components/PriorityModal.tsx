@@ -6,7 +6,7 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { useQueryClient } from "@tanstack/react-query";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useTeams, type Team } from "@/lib/hooks/useTeams";
-import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton } from "@quikit/ui";
+import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, DropdownPicker } from "@quikit/ui";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 
@@ -271,10 +271,16 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Start Week <span className="text-red-500">*</span>
               </label>
-              <select value={form.startWeek} onChange={e => set("startWeek", e.target.value)}
-                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.startWeek ? "border-red-400" : "border-gray-200"}`}>
-                {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>)}
-              </select>
+              <DropdownPicker
+                value={String(form.startWeek)}
+                onChange={(v) => set("startWeek", v)}
+                options={WEEK_OPTIONS.map(w => ({
+                  value: String(w),
+                  label: `Week ${w}`,
+                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w),
+                }))}
+                searchable
+              />
               {errors.startWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.startWeek}</p>}
             </div>
             <div>
@@ -293,14 +299,16 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
                 Quarter <span className="text-red-500">*</span>
               </label>
               <div className="grid grid-cols-2 gap-2">
-                <select value={form.year} onChange={e => set("year", e.target.value)}
-                  className="px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                  {yearOptions.map(y => <option key={y} value={y}>{fiscalYearLabel(y)}</option>)}
-                </select>
-                <select value={form.quarter} onChange={e => set("quarter", e.target.value)}
-                  className={`px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.quarter ? "border-red-400" : "border-gray-200"}`}>
-                  {ALL_QUARTERS.map(q => <option key={q} value={q}>{q}</option>)}
-                </select>
+                <DropdownPicker
+                  value={String(form.year)}
+                  onChange={(v) => set("year", v)}
+                  options={yearOptions.map(y => ({ value: String(y), label: fiscalYearLabel(y) }))}
+                />
+                <DropdownPicker
+                  value={form.quarter}
+                  onChange={(v) => set("quarter", v)}
+                  options={ALL_QUARTERS.map(q => ({ value: q, label: q }))}
+                />
               </div>
               {errors.quarter && <p className="text-[10px] text-red-500 mt-0.5">{errors.quarter}</p>}
             </div>
@@ -308,10 +316,16 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 End Week <span className="text-red-500">*</span>
               </label>
-              <select value={form.endWeek} onChange={e => set("endWeek", e.target.value)}
-                className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
-                {WEEK_OPTIONS.map(w => <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>)}
-              </select>
+              <DropdownPicker
+                value={String(form.endWeek)}
+                onChange={(v) => set("endWeek", v)}
+                options={WEEK_OPTIONS.map(w => ({
+                  value: String(w),
+                  label: `Week ${w}`,
+                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w),
+                }))}
+                searchable
+              />
               {errors.endWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.endWeek}</p>}
             </div>
           </div>

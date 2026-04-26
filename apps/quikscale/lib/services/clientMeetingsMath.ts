@@ -15,7 +15,7 @@
 
 export interface DailyHuddleForMath {
   meetingDate: Date;
-  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT";
+  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT" | "HOLIDAY_FOR_CLIENT" | "HOLIDAY_FOR_SUCCESS_ALCHEMIST";
   actualStartTime: string | null; // HH:mm
   actualEndTime: string | null;
   format1Status: "YES" | "NO" | "NA";
@@ -28,16 +28,16 @@ export interface DailyHuddleForMath {
 
 export interface WeeklyMeetingForMath {
   meetingDate: Date;
-  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT";
+  callStatus: "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT" | "HOLIDAY_FOR_CLIENT" | "HOLIDAY_FOR_SUCCESS_ALCHEMIST";
   actualStartTime: string | null;
   actualEndTime: string | null;
-  formatCheck1: "YES" | "NO" | "NA";
-  formatCheck2: "YES" | "NO" | "NA";
-  wwwReviewDone: "YES" | "NO" | "NA";
-  feedbackDone: "YES" | "NO" | "NA";
-  collectiveIntelDone: "YES" | "NO" | "NA";
-  kpGapsDiscussed: "YES" | "NO" | "NA";
-  dashboardQuality: "YES" | "NO" | "NA";
+  goodNewsSharing: "YES" | "NO" | "NA";
+  kpDashboard: "YES" | "NO" | "NA";
+  www: "YES" | "NO" | "NA";
+  feedback: "YES" | "NO" | "NA";
+  collectiveIntelligence: "YES" | "NO" | "NA";
+  gaps: "YES" | "NO" | "NA";
+  opspReview: "YES" | "NO" | "NA";
   punctualityOverride: "YES" | "NO" | "NA";
   totalMembers: number;
   absentCount: number;
@@ -209,18 +209,18 @@ export function calculateWeeklyMonthlyStats(
     const punctual = held.filter(r => isPunctual(plannedStart, r.actualStartTime, r.meetingDate, r.punctualityOverride)).length;
     const durationOk = held.filter(r => isDurationFollowed(plannedStart, plannedEnd, r.actualStartTime, r.actualEndTime, r.meetingDate)).length;
 
-    // avgFormat: formatCheck1 + formatCheck2 (2 radios × heldCalls denominator)
-    const formatFlags = held.flatMap(r => [r.formatCheck1, r.formatCheck2]);
+    // avgFormat: goodNewsSharing + kpDashboard (2 radios × heldCalls denominator)
+    const formatFlags = held.flatMap(r => [r.goodNewsSharing, r.kpDashboard]);
     const avgFormat = pctYesNA(formatFlags, held.length * 2);
 
-    const avgKP  = pctYesNA(held.map(r => r.kpGapsDiscussed),      held.length);
-    const avgWWW = pctYesNA(held.map(r => r.wwwReviewDone),        held.length);
-    const avgEF  = pctYesNA(held.map(r => r.feedbackDone),         held.length);
-    const avgCI  = pctYesNA(held.map(r => r.collectiveIntelDone),  held.length);
+    const avgKP  = pctYesNA(held.map(r => r.gaps),      held.length);
+    const avgWWW = pctYesNA(held.map(r => r.www),        held.length);
+    const avgEF  = pctYesNA(held.map(r => r.feedback),         held.length);
+    const avgCI  = pctYesNA(held.map(r => r.collectiveIntelligence),  held.length);
 
-    // avgAuality (spec's "dashboard quality"): derived from dashboardQuality radio
+    // avgAuality (spec's "dashboard quality"): derived from opspReview radio
     // AND the average of all 5 member-score dimensions. We blend the two 50/50.
-    const qualityFlagPct = pctYesNA(held.map(r => r.dashboardQuality), held.length);
+    const qualityFlagPct = pctYesNA(held.map(r => r.opspReview), held.length);
     const perMeetingMemberAvgs = held.map(r => {
       if (!r.memberScores.length) return 0;
       const perMember = r.memberScores.map(s => (s.kpiWeeklyQTD + s.kpiCoding + s.priorityNotes + s.priorityStartEndDate + s.priorityColor) / 5);
