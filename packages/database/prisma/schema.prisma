@@ -332,7 +332,6 @@ model User {
   dailyHuddleAbsences   ClientDailyHuddleAbsence[]
   weeklyMeetingAbsences ClientWeeklyMeetingAbsence[]
   weeklyDashboardNAs    ClientWeeklyMeetingDashboardNA[]
-  weeklyMemberScores    ClientWeeklyMemberScore[]
 
   @@index([email])
   @@schema("public")
@@ -919,6 +918,7 @@ model ClientMember {
   dailyAbsences     ClientDailyHuddleTeamAbsence[]
   weeklyAbsences    ClientWeeklyMeetingTeamAbsence[]
   weeklyDashboardNA ClientWeeklyMeetingTeamDashboardNA[]
+  weeklyScores      ClientWeeklyMemberScore[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1138,11 +1138,13 @@ model ClientWeeklyMeetingLog {
 }
 
 /// Per-member KPI scores captured inside a weekly meeting drawer.
-/// Each row is one member's snapshot for a given weekly meeting.
+/// Keyed on ClientMember (external roster) — that's what the Update tab
+/// displays. Was historically keyed on User; migrated when external
+/// Team Members became the canonical source of "who is on this client".
 model ClientWeeklyMemberScore {
-  id        String @id @default(cuid())
-  meetingId String
-  userId    String
+  id             String @id @default(cuid())
+  meetingId      String
+  clientMemberId String
 
   kpiWeeklyQTD         Int @default(0)
   kpiCoding            Int @default(0)
@@ -1153,10 +1155,10 @@ model ClientWeeklyMemberScore {
   updatedAt DateTime @updatedAt
 
   meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  member  ClientMember        @relation(fields: [clientMemberId], references: [id], onDelete: Cascade)
 
-  @@unique([meetingId, userId])
-  @@index([userId])
+  @@unique([meetingId, clientMemberId])
+  @@index([clientMemberId])
   @@schema("app_quikscale")
 }
 

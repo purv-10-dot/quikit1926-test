@@ -38,7 +38,7 @@ export const GET = withTenantAuth<{ id: string }>(
           (a) => a.clientMemberId
         ),
         memberScores: row.memberScores.map((s) => ({
-          userId: s.userId,
+          userId: s.clientMemberId,
           kpiWeeklyQTD: s.kpiWeeklyQTD,
           kpiCoding: s.kpiCoding,
           priorityNotes: s.priorityNotes,

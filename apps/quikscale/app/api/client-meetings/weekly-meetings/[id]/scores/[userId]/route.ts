@@ -34,14 +34,16 @@ export const PATCH = withTenantAuth<{ id: string; userId: string }>(
       );
     }
 
+    // URL slug `[userId]` carries a ClientMember.id (external roster).
+    // Schema migration renamed the column to clientMemberId; we translate here.
     const data = parsed.data;
     const upserted = await db.clientWeeklyMemberScore.upsert({
       where: {
-        meetingId_userId: { meetingId: params.id, userId: params.userId },
+        meetingId_clientMemberId: { meetingId: params.id, clientMemberId: params.userId },
       },
       create: {
         meetingId: params.id,
-        userId: params.userId,
+        clientMemberId: params.userId,
         kpiWeeklyQTD: data.kpiWeeklyQTD ?? 0,
         kpiCoding: data.kpiCoding ?? 0,
         priorityNotes: data.priorityNotes ?? 0,
@@ -81,7 +83,7 @@ export const PATCH = withTenantAuth<{ id: string; userId: string }>(
     return NextResponse.json({
       success: true,
       data: {
-        userId: upserted.userId,
+        userId: upserted.clientMemberId,
         kpiWeeklyQTD: upserted.kpiWeeklyQTD,
         kpiCoding: upserted.kpiCoding,
         priorityNotes: upserted.priorityNotes,

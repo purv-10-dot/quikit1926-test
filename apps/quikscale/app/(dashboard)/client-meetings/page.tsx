@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
-import { EmptyState } from "@quikit/ui";
+import { EmptyState, UserMultiPicker, type PickerUser } from "@quikit/ui";
 import type { PerformanceColor } from "@/lib/services/clientMeetingsMath";
 
 interface ClientOpt { id: string; name: string }
@@ -84,9 +84,11 @@ export default function ClientMeetingsDashboardPage() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"performance" | "punch">("performance");
-  const [punchUserId, setPunchUserId] = useState<string>("");
+  const [punchUserIds, setPunchUserIds] = useState<string[]>([]);
   const [punchYear, setPunchYear] = useState<number>(new Date().getFullYear());
   const [punchMonth, setPunchMonth] = useState<number>(new Date().getMonth() + 1);
+  // API supports one member at a time; for multi-select we use the first id.
+  const punchUserId = punchUserIds[0] ?? "";
 
   // Excel Report modal
   const [exportOpen, setExportOpen] = useState(false);
@@ -261,13 +263,20 @@ export default function ClientMeetingsDashboardPage() {
           /* Member Punch-In */
           <div className="space-y-3">
             <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-[260px]">
                 <label className="text-xs text-gray-600 whitespace-nowrap">Select Member:</label>
-                <select value={punchUserId} onChange={e => setPunchUserId(e.target.value)}
-                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
-                  <option value="">All members</option>
-                  {data.roster.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
-                </select>
+                <div className="flex-1">
+                  <UserMultiPicker
+                    values={punchUserIds}
+                    onChange={setPunchUserIds}
+                    users={data.roster.map<PickerUser>(m => {
+                      const parts = m.name.trim().split(/\s+/);
+                      return { id: m.userId, firstName: parts[0] ?? m.name, lastName: parts.slice(1).join(" "), email: "" };
+                    })}
+                    placeholder={data.roster.length ? "Select members…" : "No team members on this client"}
+                    disabled={!data.roster.length}
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-xs text-gray-600 whitespace-nowrap">Select Year:</label>
