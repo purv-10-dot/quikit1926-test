@@ -112,7 +112,7 @@ export function OPSPSetupWizard({ onComplete, fiscalYearStart, currentFiscalYear
       {/* Overlay — NOT dismissable */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
 
-      <div className="relative bg-white rounded-2xl shadow-2xl w-[520px] max-w-[95vw] overflow-hidden">
+      <div className="relative bg-white rounded-xl shadow-2xl w-[520px] max-w-[95vw] overflow-hidden">
         {/* Header */}
         <div className="flex items-start justify-between px-8 pt-8 pb-2">
           <div>

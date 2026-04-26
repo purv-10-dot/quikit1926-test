@@ -167,7 +167,7 @@ export default function OneOnOnePage() {
 
       {showModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col">
             <div className="px-6 pt-5 pb-3 border-b border-gray-100">
               <h2 className="text-sm font-semibold text-gray-900">Schedule 1:1</h2>
             </div>
