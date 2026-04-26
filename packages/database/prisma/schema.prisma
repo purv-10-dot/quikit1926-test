@@ -914,9 +914,11 @@ model ClientMember {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant        Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  clientLinks   ClientTeamMember[]
-  dailyAbsences ClientDailyHuddleTeamAbsence[]
+  tenant            Tenant                              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clientLinks       ClientTeamMember[]
+  dailyAbsences     ClientDailyHuddleTeamAbsence[]
+  weeklyAbsences    ClientWeeklyMeetingTeamAbsence[]
+  weeklyDashboardNA ClientWeeklyMeetingTeamDashboardNA[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1040,11 +1042,13 @@ model ClientWeeklyMeeting {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant             Tenant                           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  client             Client                           @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  absentMembers      ClientWeeklyMeetingAbsence[]
-  dashboardNAMembers ClientWeeklyMeetingDashboardNA[]
-  memberScores       ClientWeeklyMemberScore[]
+  tenant                 Tenant                              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client                 Client                              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  absentMembers          ClientWeeklyMeetingAbsence[]
+  absentTeamMembers      ClientWeeklyMeetingTeamAbsence[]
+  dashboardNAMembers     ClientWeeklyMeetingDashboardNA[]
+  dashboardNATeamMembers ClientWeeklyMeetingTeamDashboardNA[]
+  memberScores           ClientWeeklyMemberScore[]
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -1077,6 +1081,34 @@ model ClientWeeklyMeetingDashboardNA {
 
   @@id([meetingId, userId])
   @@index([userId])
+  @@schema("app_quikscale")
+}
+
+/// Per-meeting absence link for external Client Members (mirrors the
+/// Daily Huddle TeamAbsence pattern). Used by the Weekly Meeting drawer's
+/// Absent Members picker when the client roster is external.
+model ClientWeeklyMeetingTeamAbsence {
+  meetingId      String
+  clientMemberId String
+
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  member  ClientMember        @relation(fields: [clientMemberId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, clientMemberId])
+  @@index([clientMemberId])
+  @@schema("app_quikscale")
+}
+
+/// Per-meeting "Weekly Dashboard NA" link for external Client Members.
+model ClientWeeklyMeetingTeamDashboardNA {
+  meetingId      String
+  clientMemberId String
+
+  meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  member  ClientMember        @relation(fields: [clientMemberId], references: [id], onDelete: Cascade)
+
+  @@id([meetingId, clientMemberId])
+  @@index([clientMemberId])
   @@schema("app_quikscale")
 }
 

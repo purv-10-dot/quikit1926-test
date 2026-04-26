@@ -2,8 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
-  Segmented, AddButton, EmptyState, RichTextField, UserMultiPicker,
+  RightPanel,
+  RightPanelFooter,
+  RightPanelCancelButton,
+  RightPanelSubmitButton,
+  Segmented,
+  AddButton,
+  EmptyState,
+  RichTextField,
+  UserMultiPicker,
   type PickerUser,
 } from "@quikit/ui";
 import { CalendarDays, Pencil, Trash2, Save, Check } from "lucide-react";
@@ -25,67 +32,122 @@ const STATUS_OPTS: Array<{ value: Status; label: string }> = [
   { value: "HELD", label: "Held" },
   { value: "CALL_CANCELLED_BY_CLIENT", label: "Call cancelled by Client" },
   { value: "HOLIDAY_FOR_CLIENT", label: "Holiday for Client" },
-  { value: "HOLIDAY_FOR_SUCCESS_ALCHEMIST", label: "Holiday for Success Alchemist" },
+  {
+    value: "HOLIDAY_FOR_SUCCESS_ALCHEMIST",
+    label: "Holiday for Success Alchemist",
+  },
 ];
 
 const RADIO_FIELDS = [
-  { key: "goodNewsSharing",        label: "Good News Sharing",          pairedTime: "segmentTime1" },
-  { key: "kpDashboard",            label: "K&P dashboard",              pairedTime: "segmentTime2" },
-  { key: "gaps",                   label: "GAPS",                       pairedTime: "segmentTime3" },
-  { key: "www",                    label: "WWW",                        pairedTime: "segmentTime4" },
-  { key: "feedback",               label: "Customer/Employee Feedback", pairedTime: "segmentTime5" },
-  { key: "collectiveIntelligence", label: "Collective Intelligence",    pairedTime: "segmentTime6" },
-  { key: "opspReview",             label: "OPSP Review",                pairedTime: "segmentTime7" },
+  {
+    key: "goodNewsSharing",
+    label: "Good News Sharing",
+    pairedTime: "segmentTime1",
+  },
+  { key: "kpDashboard", label: "K&P dashboard", pairedTime: "segmentTime2" },
+  { key: "gaps", label: "GAPS", pairedTime: "segmentTime3" },
+  { key: "www", label: "WWW", pairedTime: "segmentTime4" },
+  {
+    key: "feedback",
+    label: "Customer/Employee Feedback",
+    pairedTime: "segmentTime5",
+  },
+  {
+    key: "collectiveIntelligence",
+    label: "Collective Intelligence",
+    pairedTime: "segmentTime6",
+  },
+  { key: "opspReview", label: "OPSP Review", pairedTime: "segmentTime7" },
 ] as const;
 
 const SCORE_FIELDS = [
-  { key: "kpiWeeklyQTD",         label: "KPI Weekly QTD Update" },
-  { key: "kpiCoding",            label: "KPI Coding" },
-  { key: "priorityNotes",        label: "Priority Notes" },
+  { key: "kpiWeeklyQTD", label: "KPI Weekly QTD Update" },
+  { key: "kpiCoding", label: "KPI Coding" },
+  { key: "priorityNotes", label: "Priority Notes" },
   { key: "priorityStartEndDate", label: "Priority State and End Date" },
-  { key: "priorityColor",        label: "Priority Colour" },
+  { key: "priorityColor", label: "Priority Colour" },
 ] as const;
 
-interface ClientOpt { id: string; name: string }
-interface ClientMember { userId: string; name: string }
-interface ClientDetail { id: string; name: string; members: ClientMember[] }
+interface ClientOpt {
+  id: string;
+  name: string;
+}
+interface ClientMember {
+  userId: string;
+  name: string;
+}
+interface ClientDetail {
+  id: string;
+  name: string;
+  members: ClientMember[];
+}
 interface MeetingRow {
-  id: string; clientId: string; clientName: string;
-  meetingDate: string; callStatus: Status;
-  actualStartTime: string | null; actualEndTime: string | null;
-  goodNewsSharing: Flag; kpDashboard: Flag; gaps: Flag; www: Flag;
-  feedback: Flag; collectiveIntelligence: Flag; opspReview: Flag;
-  absentUserIds: string[]; dashboardNAUserIds: string[];
+  id: string;
+  clientId: string;
+  clientName: string;
+  meetingDate: string;
+  callStatus: Status;
+  actualStartTime: string | null;
+  actualEndTime: string | null;
+  goodNewsSharing: Flag;
+  kpDashboard: Flag;
+  gaps: Flag;
+  www: Flag;
+  feedback: Flag;
+  collectiveIntelligence: Flag;
+  opspReview: Flag;
+  absentClientMemberIds: string[];
+  dashboardNAClientMemberIds: string[];
 }
 interface MemberScore {
   userId: string;
-  kpiWeeklyQTD: number; kpiCoding: number;
-  priorityNotes: number; priorityStartEndDate: number; priorityColor: number;
+  kpiWeeklyQTD: number;
+  kpiCoding: number;
+  priorityNotes: number;
+  priorityStartEndDate: number;
+  priorityColor: number;
 }
 
 const emptyScore = (userId: string): MemberScore => ({
-  userId, kpiWeeklyQTD: 0, kpiCoding: 0,
-  priorityNotes: 0, priorityStartEndDate: 0, priorityColor: 0,
+  userId,
+  kpiWeeklyQTD: 0,
+  kpiCoding: 0,
+  priorityNotes: 0,
+  priorityStartEndDate: 0,
+  priorityColor: 0,
 });
 
 const emptyForm = {
   clientId: "",
   meetingDate: new Date().toISOString().slice(0, 10),
   callStatus: "HELD" as Status,
-  actualStartTime: "", actualEndTime: "",
-  segmentTime1: "", segmentTime2: "", segmentTime3: "", segmentTime4: "",
-  segmentTime5: "", segmentTime6: "", segmentTime7: "",
-  goodNewsSharing: "NA" as Flag, kpDashboard: "NA" as Flag,
-  gaps: "NA" as Flag, www: "NA" as Flag,
-  feedback: "NA" as Flag, collectiveIntelligence: "NA" as Flag,
+  actualStartTime: "",
+  actualEndTime: "",
+  segmentTime1: "",
+  segmentTime2: "",
+  segmentTime3: "",
+  segmentTime4: "",
+  segmentTime5: "",
+  segmentTime6: "",
+  segmentTime7: "",
+  goodNewsSharing: "NA" as Flag,
+  kpDashboard: "NA" as Flag,
+  gaps: "NA" as Flag,
+  www: "NA" as Flag,
+  feedback: "NA" as Flag,
+  collectiveIntelligence: "NA" as Flag,
   opspReview: "NA" as Flag,
-  notesKPDashboard: "", otherNotes: "",
-  absentUserIds: [] as string[], dashboardNAUserIds: [] as string[],
+  notesKPDashboard: "",
+  otherNotes: "",
+  absentClientMemberIds: [] as string[],
+  dashboardNAClientMemberIds: [] as string[],
 };
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric", month: "short", day: "numeric",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 }
 function statusBadge(s: Status) {
@@ -110,29 +172,44 @@ function memberToPickerUser(m: ClientMember): PickerUser {
   };
 }
 
+function pickerPlaceholder(clientId: string, count: number): string {
+  if (!clientId) return "Pick a client first";
+  if (count === 0) return "No members on this client's roster";
+  return "Select members…";
+}
+
 export default function WeeklyMeetingPage() {
   const [rows, setRows] = useState<MeetingRow[]>([]);
   const [clients, setClients] = useState<ClientOpt[]>([]);
   const [clientDetail, setClientDetail] = useState<ClientDetail | null>(null);
   const [filterClientId, setFilterClientId] = useState("");
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<{ id: string | null; form: typeof emptyForm } | null>(null);
+  const [editing, setEditing] = useState<{
+    id: string | null;
+    form: typeof emptyForm;
+  } | null>(null);
   const [activeTab, setActiveTab] = useState<"edit" | "update">("edit");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   // Per-member scoring grid (Update tab, edit-only).
   const [scores, setScores] = useState<Record<string, MemberScore>>({});
-  const [scoreSavedFor, setScoreSavedFor] = useState<Record<string, boolean>>({});
-  const [scoreSavingFor, setScoreSavingFor] = useState<Record<string, boolean>>({});
+  const [scoreSavedFor, setScoreSavedFor] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [scoreSavingFor, setScoreSavingFor] = useState<Record<string, boolean>>(
+    {}
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const qs = filterClientId ? `?clientId=${filterClientId}` : "";
       const [m, c] = await Promise.all([
-        fetch(`/api/client-meetings/weekly-meetings${qs}`).then(r => r.json()),
-        fetch("/api/client-meetings/clients").then(r => r.json()),
+        fetch(`/api/client-meetings/weekly-meetings${qs}`).then((r) =>
+          r.json()
+        ),
+        fetch("/api/client-meetings/clients").then((r) => r.json()),
       ]);
       if (m.success) setRows(m.data);
       if (c.success) setClients(c.data);
@@ -141,19 +218,26 @@ export default function WeeklyMeetingPage() {
     }
   }, [filterClientId]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   async function loadClientDetail(clientId: string) {
-    if (!clientId) { setClientDetail(null); return; }
+    if (!clientId) {
+      setClientDetail(null);
+      return;
+    }
     const res = await fetch(`/api/client-meetings/clients/${clientId}`);
     const j = await res.json();
     if (j.success) {
+      // Use teamMembers (external roster) — that's what shows in the
+      // Client Master "Team Members" column. Legacy `members` (tenant-user
+      // memberships) is empty in modern tenants.
+      const tm: Array<{ id: string; name: string }> = j.data.teamMembers ?? [];
       setClientDetail({
         id: j.data.id,
         name: j.data.name,
-        members: j.data.members.map((m: { userId: string; name: string }) => ({
-          userId: m.userId, name: m.name,
-        })),
+        members: tm.map((m) => ({ userId: m.id, name: m.name })),
       });
     }
   }
@@ -172,7 +256,9 @@ export default function WeeklyMeetingPage() {
     setError("");
     setActiveTab("edit");
     await loadClientDetail(row.clientId);
-    const detailRes = await fetch(`/api/client-meetings/weekly-meetings/${row.id}`);
+    const detailRes = await fetch(
+      `/api/client-meetings/weekly-meetings/${row.id}`
+    );
     const detail = (await detailRes.json()).data;
     setEditing({
       id: row.id,
@@ -198,8 +284,8 @@ export default function WeeklyMeetingPage() {
         opspReview: row.opspReview,
         notesKPDashboard: detail.notesKPDashboard ?? "",
         otherNotes: detail.otherNotes ?? "",
-        absentUserIds: row.absentUserIds,
-        dashboardNAUserIds: row.dashboardNAUserIds,
+        absentClientMemberIds: row.absentClientMemberIds,
+        dashboardNAClientMemberIds: row.dashboardNAClientMemberIds,
       },
     });
     // Hydrate per-member scores from the detail payload.
@@ -211,16 +297,19 @@ export default function WeeklyMeetingPage() {
     setScoreSavedFor({});
   }
 
-  function updateField<K extends keyof typeof emptyForm>(key: K, v: typeof emptyForm[K]) {
-    setEditing(e => (e ? { ...e, form: { ...e.form, [key]: v } } : null));
+  function updateField<K extends keyof typeof emptyForm>(
+    key: K,
+    v: (typeof emptyForm)[K]
+  ) {
+    setEditing((e) => (e ? { ...e, form: { ...e.form, [key]: v } } : null));
   }
 
   function setRadio(
-    key: typeof RADIO_FIELDS[number]["key"],
-    pairedTime: typeof RADIO_FIELDS[number]["pairedTime"],
+    key: (typeof RADIO_FIELDS)[number]["key"],
+    pairedTime: (typeof RADIO_FIELDS)[number]["pairedTime"],
     value: Flag
   ) {
-    setEditing(e => {
+    setEditing((e) => {
       if (!e) return null;
       const next = { ...e.form, [key]: value } as typeof emptyForm;
       if (value !== "YES") next[pairedTime] = "";
@@ -229,36 +318,49 @@ export default function WeeklyMeetingPage() {
   }
 
   function setCallStatus(s: Status) {
-    setEditing(e => {
+    setEditing((e) => {
       if (!e) return null;
       if (s === "HELD") return { ...e, form: { ...e.form, callStatus: s } };
       const cleared: typeof emptyForm = {
         ...e.form,
         callStatus: s,
-        actualStartTime: "", actualEndTime: "",
-        segmentTime1: "", segmentTime2: "", segmentTime3: "", segmentTime4: "",
-        segmentTime5: "", segmentTime6: "", segmentTime7: "",
-        goodNewsSharing: "NA", kpDashboard: "NA",
-        gaps: "NA", www: "NA",
-        feedback: "NA", collectiveIntelligence: "NA",
+        actualStartTime: "",
+        actualEndTime: "",
+        segmentTime1: "",
+        segmentTime2: "",
+        segmentTime3: "",
+        segmentTime4: "",
+        segmentTime5: "",
+        segmentTime6: "",
+        segmentTime7: "",
+        goodNewsSharing: "NA",
+        kpDashboard: "NA",
+        gaps: "NA",
+        www: "NA",
+        feedback: "NA",
+        collectiveIntelligence: "NA",
         opspReview: "NA",
       };
       return { ...e, form: cleared };
     });
   }
 
-  function updateScore(userId: string, key: keyof Omit<MemberScore, "userId">, v: number) {
-    setScores(prev => {
+  function updateScore(
+    userId: string,
+    key: keyof Omit<MemberScore, "userId">,
+    v: number
+  ) {
+    setScores((prev) => {
       const cur = prev[userId] ?? emptyScore(userId);
       return { ...prev, [userId]: { ...cur, [key]: v } };
     });
-    setScoreSavedFor(prev => ({ ...prev, [userId]: false }));
+    setScoreSavedFor((prev) => ({ ...prev, [userId]: false }));
   }
 
   async function saveScore(userId: string) {
     if (!editing?.id) return;
     const cur = scores[userId] ?? emptyScore(userId);
-    setScoreSavingFor(prev => ({ ...prev, [userId]: true }));
+    setScoreSavingFor((prev) => ({ ...prev, [userId]: true }));
     try {
       const res = await fetch(
         `/api/client-meetings/weekly-meetings/${editing.id}/scores/${userId}`,
@@ -276,9 +378,9 @@ export default function WeeklyMeetingPage() {
       );
       const j = await res.json().catch(() => ({}));
       if (j.success) {
-        setScoreSavedFor(prev => ({ ...prev, [userId]: true }));
+        setScoreSavedFor((prev) => ({ ...prev, [userId]: true }));
         setTimeout(() => {
-          setScoreSavedFor(prev => ({ ...prev, [userId]: false }));
+          setScoreSavedFor((prev) => ({ ...prev, [userId]: false }));
         }, 2500);
       } else {
         setError(j.error ?? "Save failed");
@@ -286,15 +388,22 @@ export default function WeeklyMeetingPage() {
     } catch {
       setError("Network error while saving score");
     } finally {
-      setScoreSavingFor(prev => ({ ...prev, [userId]: false }));
+      setScoreSavingFor((prev) => ({ ...prev, [userId]: false }));
     }
   }
 
   async function save() {
     if (!editing) return;
     const f = editing.form;
-    if (!f.clientId) { setError("Pick a client"); return; }
-    if (f.actualStartTime && f.actualEndTime && f.actualEndTime <= f.actualStartTime) {
+    if (!f.clientId) {
+      setError("Pick a client");
+      return;
+    }
+    if (
+      f.actualStartTime &&
+      f.actualEndTime &&
+      f.actualEndTime <= f.actualStartTime
+    ) {
       setError("Actual end time must be after start time");
       return;
     }
@@ -316,13 +425,15 @@ export default function WeeklyMeetingPage() {
         segmentTime7: f.segmentTime7 || null,
         goodNewsSharing: f.goodNewsSharing,
         kpDashboard: f.kpDashboard,
-        gaps: f.gaps, www: f.www, feedback: f.feedback,
+        gaps: f.gaps,
+        www: f.www,
+        feedback: f.feedback,
         collectiveIntelligence: f.collectiveIntelligence,
         opspReview: f.opspReview,
         notesKPDashboard: f.notesKPDashboard || null,
         otherNotes: f.otherNotes || null,
-        absentUserIds: f.absentUserIds,
-        dashboardNAUserIds: f.dashboardNAUserIds,
+        absentClientMemberIds: f.absentClientMemberIds,
+        dashboardNAClientMemberIds: f.dashboardNAClientMemberIds,
       };
       const url = editing.id
         ? `/api/client-meetings/weekly-meetings/${editing.id}`
@@ -335,7 +446,9 @@ export default function WeeklyMeetingPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        j = await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
+        j = await res
+          .json()
+          .catch(() => ({ success: false, error: `HTTP ${res.status}` }));
       } catch {
         setError("Network error — could not reach the server");
         return;
@@ -356,24 +469,34 @@ export default function WeeklyMeetingPage() {
 
   async function remove(id: string) {
     if (!confirm("Delete this weekly meeting?")) return;
-    const res = await fetch(`/api/client-meetings/weekly-meetings/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/client-meetings/weekly-meetings/${id}`, {
+      method: "DELETE",
+    });
     if ((await res.json()).success) refresh();
   }
 
   const isEdit = !!editing?.id;
-  const tabs = isEdit ? [
-    { key: "edit",   label: "Edit" },
-    { key: "update", label: "Update" },
-  ] : undefined;
+  const tabs = isEdit
+    ? [
+        { key: "edit", label: "Edit" },
+        { key: "update", label: "Update" },
+      ]
+    : undefined;
 
-  const pickerUsers: PickerUser[] = (clientDetail?.members ?? []).map(memberToPickerUser);
+  const pickerUsers: PickerUser[] = (clientDetail?.members ?? []).map(
+    memberToPickerUser
+  );
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Weekly Meeting</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Track your weekly client meetings</p>
+          <h1 className="text-xl font-semibold text-gray-900">
+            Weekly Meeting
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Track your weekly client meetings
+          </p>
         </div>
         <AddButton onClick={openCreate}>Add</AddButton>
       </div>
@@ -381,11 +504,15 @@ export default function WeeklyMeetingPage() {
       <div className="flex items-center gap-2 mb-4">
         <select
           value={filterClientId}
-          onChange={e => setFilterClientId(e.target.value)}
+          onChange={(e) => setFilterClientId(e.target.value)}
           className="text-xs border border-gray-200 rounded-lg px-3 py-2 bg-white"
         >
           <option value="">All clients</option>
-          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {clients.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -418,29 +545,52 @@ export default function WeeklyMeetingPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
-                <tr key={r.id} className="border-t border-gray-100 hover:bg-blue-50/30">
-                  <td className="px-3 py-2 whitespace-nowrap">{fmtDate(r.meetingDate)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{r.clientName}</td>
+              {rows.map((r) => (
+                <tr
+                  key={r.id}
+                  className="border-t border-gray-100 hover:bg-blue-50/30"
+                >
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}>
+                    {fmtDate(r.meetingDate)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {r.clientName}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}
+                    >
                       {statusLabel(r.callStatus)}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.actualStartTime || "—"}</td>
-                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.actualEndTime || "—"}</td>
-                  <td className="px-3 py-2 text-gray-600">{r.goodNewsSharing}</td>
+                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    {r.actualStartTime || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    {r.actualEndTime || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600">
+                    {r.goodNewsSharing}
+                  </td>
                   <td className="px-3 py-2 text-gray-600">{r.kpDashboard}</td>
                   <td className="px-3 py-2 text-gray-600">{r.gaps}</td>
                   <td className="px-3 py-2 text-gray-600">{r.www}</td>
                   <td className="px-3 py-2 text-gray-600">{r.feedback}</td>
-                  <td className="px-3 py-2 text-gray-600">{r.collectiveIntelligence}</td>
+                  <td className="px-3 py-2 text-gray-600">
+                    {r.collectiveIntelligence}
+                  </td>
                   <td className="px-3 py-2 text-gray-600">{r.opspReview}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <button onClick={() => openEdit(r)} className="text-gray-400 hover:text-blue-500 p-1">
+                    <button
+                      onClick={() => openEdit(r)}
+                      className="text-gray-400 hover:text-blue-500 p-1"
+                    >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={() => remove(r.id)} className="text-gray-400 hover:text-red-500 p-1">
+                    <button
+                      onClick={() => remove(r.id)}
+                      className="text-gray-400 hover:text-red-500 p-1"
+                    >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </td>
@@ -459,21 +609,19 @@ export default function WeeklyMeetingPage() {
         subtitle={isEdit ? "Edit record" : "Create new record"}
         tabs={tabs}
         activeTab={isEdit ? activeTab : undefined}
-        onTabChange={k => setActiveTab(k as "edit" | "update")}
+        onTabChange={(k) => setActiveTab(k as "edit" | "update")}
         footer={
-          activeTab === "update" && isEdit
-            ? undefined
-            : (
-              <RightPanelFooter>
-                <RightPanelCancelButton onClick={() => setEditing(null)} />
-                <RightPanelSubmitButton
-                  onClick={save}
-                  saving={saving}
-                  icon={isEdit ? "check" : "plus"}
-                  label={isEdit ? "Update" : "Submit"}
-                />
-              </RightPanelFooter>
-            )
+          activeTab === "update" && isEdit ? undefined : (
+            <RightPanelFooter>
+              <RightPanelCancelButton onClick={() => setEditing(null)} />
+              <RightPanelSubmitButton
+                onClick={save}
+                saving={saving}
+                icon={isEdit ? "check" : "plus"}
+                label={isEdit ? "Update" : "Submit"}
+              />
+            </RightPanelFooter>
+          )
         }
       >
         {!editing ? null : isEdit && activeTab === "update" ? (
@@ -499,17 +647,21 @@ export default function WeeklyMeetingPage() {
                 <input
                   type="date"
                   value={editing.form.meetingDate}
-                  onChange={e => updateField("meetingDate", e.target.value)}
+                  onChange={(e) => updateField("meetingDate", e.target.value)}
                   className={inputCls}
                 />
               </Field>
               <Field label="Call Status" required>
                 <select
                   value={editing.form.callStatus}
-                  onChange={e => setCallStatus(e.target.value as Status)}
+                  onChange={(e) => setCallStatus(e.target.value as Status)}
                   className={inputCls}
                 >
-                  {STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  {STATUS_OPTS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
                 </select>
               </Field>
             </div>
@@ -518,7 +670,7 @@ export default function WeeklyMeetingPage() {
               <Field label="Client Name" required>
                 <select
                   value={editing.form.clientId}
-                  onChange={async e => {
+                  onChange={async (e) => {
                     updateField("clientId", e.target.value);
                     await loadClientDetail(e.target.value);
                   }}
@@ -526,27 +678,31 @@ export default function WeeklyMeetingPage() {
                   className={inputCls}
                 >
                   <option value="">Select an entity</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
                 </select>
               </Field>
               <Field label="Absent Members">
                 <UserMultiPicker
-                  values={editing.form.absentUserIds}
-                  onChange={v => updateField("absentUserIds", v)}
+                  values={editing.form.absentClientMemberIds}
+                  onChange={(v) => updateField("absentClientMemberIds", v)}
                   users={pickerUsers}
-                  placeholder={pickerUsers.length ? "Select members…" : "Pick a client first"}
-                  disabled={!pickerUsers.length}
+                  placeholder={pickerPlaceholder(editing.form.clientId, pickerUsers.length)}
+                  disabled={!editing.form.clientId}
                 />
               </Field>
             </div>
 
             <Field label="Weekly Dashboard NA">
               <UserMultiPicker
-                values={editing.form.dashboardNAUserIds}
-                onChange={v => updateField("dashboardNAUserIds", v)}
+                values={editing.form.dashboardNAClientMemberIds}
+                onChange={(v) => updateField("dashboardNAClientMemberIds", v)}
                 users={pickerUsers}
-                placeholder={pickerUsers.length ? "Select members…" : "Pick a client first"}
-                disabled={!pickerUsers.length}
+                placeholder={pickerPlaceholder(editing.form.clientId, pickerUsers.length)}
+                disabled={!editing.form.clientId}
               />
             </Field>
 
@@ -555,7 +711,9 @@ export default function WeeklyMeetingPage() {
                 <input
                   type="time"
                   value={editing.form.actualStartTime}
-                  onChange={e => updateField("actualStartTime", e.target.value)}
+                  onChange={(e) =>
+                    updateField("actualStartTime", e.target.value)
+                  }
                   disabled={editing.form.callStatus !== "HELD"}
                   className={inputCls}
                 />
@@ -564,19 +722,19 @@ export default function WeeklyMeetingPage() {
                 <input
                   type="time"
                   value={editing.form.actualEndTime}
-                  onChange={e => updateField("actualEndTime", e.target.value)}
+                  onChange={(e) => updateField("actualEndTime", e.target.value)}
                   disabled={editing.form.callStatus !== "HELD"}
                   className={inputCls}
                 />
               </Field>
             </div>
 
-            {RADIO_FIELDS.map(rf => (
+            {RADIO_FIELDS.map((rf) => (
               <div key={rf.key} className="grid grid-cols-2 gap-4">
                 <Field label={rf.label} required>
                   <Segmented
                     value={editing.form[rf.key]}
-                    onChange={v => setRadio(rf.key, rf.pairedTime, v as Flag)}
+                    onChange={(v) => setRadio(rf.key, rf.pairedTime, v as Flag)}
                     options={FLAG_OPTS}
                     disabled={editing.form.callStatus !== "HELD"}
                   />
@@ -585,7 +743,7 @@ export default function WeeklyMeetingPage() {
                   <input
                     type="time"
                     value={editing.form[rf.pairedTime]}
-                    onChange={e => updateField(rf.pairedTime, e.target.value)}
+                    onChange={(e) => updateField(rf.pairedTime, e.target.value)}
                     disabled={
                       editing.form.callStatus !== "HELD" ||
                       editing.form[rf.key] !== "YES"
@@ -599,7 +757,7 @@ export default function WeeklyMeetingPage() {
             <Field label="Notes K&P dashboard">
               <RichTextField
                 value={editing.form.notesKPDashboard}
-                onChange={v => updateField("notesKPDashboard", v)}
+                onChange={(v) => updateField("notesKPDashboard", v)}
                 placeholder="Enter your content here..."
               />
             </Field>
@@ -607,7 +765,7 @@ export default function WeeklyMeetingPage() {
             <Field label="Other Notes">
               <RichTextField
                 value={editing.form.otherNotes}
-                onChange={v => updateField("otherNotes", v)}
+                onChange={(v) => updateField("otherNotes", v)}
                 placeholder="Enter your content here..."
               />
             </Field>
@@ -621,7 +779,15 @@ export default function WeeklyMeetingPage() {
 const inputCls =
   "w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50 disabled:text-gray-400";
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -639,15 +805,29 @@ interface UpdateScoreGridProps {
   scores: Record<string, MemberScore>;
   savedFor: Record<string, boolean>;
   savingFor: Record<string, boolean>;
-  onChange: (userId: string, key: keyof Omit<MemberScore, "userId">, v: number) => void;
+  onChange: (
+    userId: string,
+    key: keyof Omit<MemberScore, "userId">,
+    v: number
+  ) => void;
   onSaveRow: (userId: string) => void;
 }
 
 function UpdateScoreGrid({
-  members, meetingDate, scores, savedFor, savingFor, onChange, onSaveRow,
+  members,
+  meetingDate,
+  scores,
+  savedFor,
+  savingFor,
+  onChange,
+  onSaveRow,
 }: UpdateScoreGridProps) {
   if (!members.length) {
-    return <p className="text-xs text-gray-400 italic">No members on this client roster.</p>;
+    return (
+      <p className="text-xs text-gray-400 italic">
+        No members on this client roster.
+      </p>
+    );
   }
   return (
     <div className="space-y-3">
@@ -659,21 +839,25 @@ function UpdateScoreGrid({
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <th className="px-3 py-2 text-left font-medium">Member Name</th>
-              {SCORE_FIELDS.map(c => (
-                <th key={c.key} className="px-3 py-2 text-left font-medium">{c.label}</th>
+              {SCORE_FIELDS.map((c) => (
+                <th key={c.key} className="px-3 py-2 text-left font-medium">
+                  {c.label}
+                </th>
               ))}
               <th className="px-3 py-2 text-left font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
-            {members.map(m => {
+            {members.map((m) => {
               const s = scores[m.userId] ?? emptyScore(m.userId);
               const saved = savedFor[m.userId];
               const isSaving = savingFor[m.userId];
               return (
                 <tr key={m.userId} className="border-t border-gray-100">
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">{m.name}</td>
-                  {SCORE_FIELDS.map(c => (
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-800">
+                    {m.name}
+                  </td>
+                  {SCORE_FIELDS.map((c) => (
                     <td key={c.key} className="px-3 py-1">
                       <input
                         type="number"
@@ -681,7 +865,13 @@ function UpdateScoreGrid({
                         max={1000}
                         step="0.01"
                         value={s[c.key]}
-                        onChange={e => onChange(m.userId, c.key, parseFloat(e.target.value || "0"))}
+                        onChange={(e) =>
+                          onChange(
+                            m.userId,
+                            c.key,
+                            parseFloat(e.target.value || "0")
+                          )
+                        }
                         className="w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400"
                       />
                     </td>
@@ -697,7 +887,11 @@ function UpdateScoreGrid({
                           : "bg-orange-500 text-white hover:bg-orange-600"
                       } disabled:opacity-50`}
                     >
-                      {saved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+                      {saved ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Save className="h-3.5 w-3.5" />
+                      )}
                       {saved ? "Updated" : isSaving ? "Saving…" : "Update"}
                     </button>
                   </td>

@@ -35,6 +35,8 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
       client: { select: { id: true, name: true } },
       absentMembers: true,
       dashboardNAMembers: true,
+      absentTeamMembers: true,
+      dashboardNATeamMembers: true,
     },
   });
 
@@ -66,6 +68,8 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
       otherNotes: r.otherNotes,
       absentUserIds: r.absentMembers.map((a) => a.userId),
       dashboardNAUserIds: r.dashboardNAMembers.map((a) => a.userId),
+      absentClientMemberIds: r.absentTeamMembers.map((a) => a.clientMemberId),
+      dashboardNAClientMemberIds: r.dashboardNATeamMembers.map((a) => a.clientMemberId),
     })),
   });
 });
@@ -132,6 +136,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
       },
       dashboardNAMembers: {
         create: d.dashboardNAUserIds.map((uid) => ({ userId: uid })),
+      },
+      absentTeamMembers: {
+        create: d.absentClientMemberIds.map((cmid) => ({ clientMemberId: cmid })),
+      },
+      dashboardNATeamMembers: {
+        create: d.dashboardNAClientMemberIds.map((cmid) => ({ clientMemberId: cmid })),
       },
     },
   });

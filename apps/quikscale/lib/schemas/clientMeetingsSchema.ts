@@ -127,8 +127,13 @@ export const createWeeklyMeetingSchema = z.object({
   opspReview: flagSchema.default("NA"),
   notesKPDashboard: z.string().max(20000).optional().nullable(),
   otherNotes: z.string().max(20000).optional().nullable(),
+  /// Tenant-user absences (legacy). Empty in most modern tenants.
   absentUserIds: z.array(z.string()).default([]),
   dashboardNAUserIds: z.array(z.string()).default([]),
+  /// External-roster absences (ClientMember ids). This is what the new
+  /// Absent Members + Weekly Dashboard NA pickers send.
+  absentClientMemberIds: z.array(z.string()).default([]),
+  dashboardNAClientMemberIds: z.array(z.string()).default([]),
 });
 
 export const updateWeeklyMeetingSchema = createWeeklyMeetingSchema.partial();

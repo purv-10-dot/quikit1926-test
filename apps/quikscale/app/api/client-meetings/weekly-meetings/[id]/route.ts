@@ -13,6 +13,8 @@ export const GET = withTenantAuth<{ id: string }>(
         client: { select: { id: true, name: true } },
         absentMembers: true,
         dashboardNAMembers: true,
+        absentTeamMembers: true,
+        dashboardNATeamMembers: true,
         memberScores: true,
       },
     });
@@ -29,6 +31,8 @@ export const GET = withTenantAuth<{ id: string }>(
         meetingDate: row.meetingDate.toISOString(),
         absentUserIds: row.absentMembers.map((a) => a.userId),
         dashboardNAUserIds: row.dashboardNAMembers.map((a) => a.userId),
+        absentClientMemberIds: row.absentTeamMembers.map((a) => a.clientMemberId),
+        dashboardNAClientMemberIds: row.dashboardNATeamMembers.map((a) => a.clientMemberId),
         memberScores: row.memberScores.map((s) => ({
           userId: s.userId,
           kpiWeeklyQTD: s.kpiWeeklyQTD,
@@ -124,6 +128,32 @@ export const PUT = withTenantAuth<{ id: string }>(
             data: d.dashboardNAUserIds.map((uid) => ({
               meetingId: params.id,
               userId: uid,
+            })),
+          });
+        }
+      }
+      if (d.absentClientMemberIds !== undefined) {
+        await tx.clientWeeklyMeetingTeamAbsence.deleteMany({
+          where: { meetingId: params.id },
+        });
+        if (d.absentClientMemberIds.length > 0) {
+          await tx.clientWeeklyMeetingTeamAbsence.createMany({
+            data: d.absentClientMemberIds.map((cmid) => ({
+              meetingId: params.id,
+              clientMemberId: cmid,
+            })),
+          });
+        }
+      }
+      if (d.dashboardNAClientMemberIds !== undefined) {
+        await tx.clientWeeklyMeetingTeamDashboardNA.deleteMany({
+          where: { meetingId: params.id },
+        });
+        if (d.dashboardNAClientMemberIds.length > 0) {
+          await tx.clientWeeklyMeetingTeamDashboardNA.createMany({
+            data: d.dashboardNAClientMemberIds.map((cmid) => ({
+              meetingId: params.id,
+              clientMemberId: cmid,
             })),
           });
         }

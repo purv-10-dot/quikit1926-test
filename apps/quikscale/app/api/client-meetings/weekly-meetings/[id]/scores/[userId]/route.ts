@@ -15,7 +15,10 @@ export const PATCH = withTenantAuth<{ id: string; userId: string }>(
     const parsed = updateMemberScoreSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+        {
+          success: false,
+          error: parsed.error.errors[0]?.message ?? "Invalid input",
+        },
         { status: 400 }
       );
     }
@@ -33,7 +36,9 @@ export const PATCH = withTenantAuth<{ id: string; userId: string }>(
 
     const data = parsed.data;
     const upserted = await db.clientWeeklyMemberScore.upsert({
-      where: { meetingId_userId: { meetingId: params.id, userId: params.userId } },
+      where: {
+        meetingId_userId: { meetingId: params.id, userId: params.userId },
+      },
       create: {
         meetingId: params.id,
         userId: params.userId,
@@ -44,11 +49,19 @@ export const PATCH = withTenantAuth<{ id: string; userId: string }>(
         priorityColor: data.priorityColor ?? 0,
       },
       update: {
-        ...(data.kpiWeeklyQTD !== undefined && { kpiWeeklyQTD: data.kpiWeeklyQTD }),
+        ...(data.kpiWeeklyQTD !== undefined && {
+          kpiWeeklyQTD: data.kpiWeeklyQTD,
+        }),
         ...(data.kpiCoding !== undefined && { kpiCoding: data.kpiCoding }),
-        ...(data.priorityNotes !== undefined && { priorityNotes: data.priorityNotes }),
-        ...(data.priorityStartEndDate !== undefined && { priorityStartEndDate: data.priorityStartEndDate }),
-        ...(data.priorityColor !== undefined && { priorityColor: data.priorityColor }),
+        ...(data.priorityNotes !== undefined && {
+          priorityNotes: data.priorityNotes,
+        }),
+        ...(data.priorityStartEndDate !== undefined && {
+          priorityStartEndDate: data.priorityStartEndDate,
+        }),
+        ...(data.priorityColor !== undefined && {
+          priorityColor: data.priorityColor,
+        }),
       },
     });
 
