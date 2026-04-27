@@ -36,7 +36,7 @@ const ABBR_TO_LABEL: Record<string, string> = {
  * e.g. "1 L" with INR category → 1 × 100000 = 100000
  * e.g. "5000" with Number category → 5000
  */
-function resolveProjected(categoryName: string, projected: string): number | null {
+export function resolveProjected(categoryName: string, projected: string): number | null {
   const trimmed = (projected ?? "").trim();
   if (!trimmed) return null;
 
@@ -859,7 +859,14 @@ export function RocksModal({
             <p className="text-base font-bold text-gray-900 uppercase tracking-wide">
               ROCKS
             </p>
-            <p className="text-xs text-gray-500">Quarterly Priorities</p>
+            <p className="text-xs text-gray-500">
+              Quarterly Priorities
+              {rows.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
+                <span className="text-red-600 font-medium ml-1">
+                  ({rows.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
+                </span>
+              )}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -883,22 +890,26 @@ export function RocksModal({
                 {String(i + 1).padStart(2, "0")}
               </span>
               <div className="flex-1 min-w-0">
-                <textarea
-                  value={row.desc}
-                  placeholder="Quarterly Priority"
-                  onChange={(e) => {
-                    const next = [...rows];
-                    next[i] = { ...next[i], desc: e.target.value };
-                    onChange(next);
-                  }}
-                  rows={1}
-                  onInput={(e) => {
-                    const el = e.currentTarget;
-                    el.style.height = "auto";
-                    el.style.height = el.scrollHeight + "px";
-                  }}
-                  className="w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white resize-none overflow-hidden"
-                />
+                <div className="relative w-full">
+                  <textarea
+                    value={row.desc}
+                    placeholder="Quarterly Priority"
+                    maxLength={75}
+                    onChange={(e) => {
+                      const next = [...rows];
+                      next[i] = { ...next[i], desc: e.target.value.slice(0, 75) };
+                      onChange(next);
+                    }}
+                    rows={1}
+                    onInput={(e) => {
+                      const el = e.currentTarget;
+                      el.style.height = "auto";
+                      el.style.height = el.scrollHeight + "px";
+                    }}
+                    className="w-full border border-gray-200 rounded px-3 py-2 pb-5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white resize-none overflow-hidden"
+                  />
+                  <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.desc.length >= 75 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.desc.length}/75</span>
+                </div>
               </div>
               <div className="relative w-40 flex-shrink-0 pt-0.5">
                 <OwnerSelect
@@ -953,7 +964,14 @@ export function KeyThrustsModal({
             <p className="text-base font-bold text-gray-900 uppercase tracking-wide">
               KEY THRUSTS / CAPABILITIES
             </p>
-            <p className="text-xs text-gray-500">3–5 Year Priorities</p>
+            <p className="text-xs text-gray-500">
+              3–5 Year Priorities
+              {rows.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
+                <span className="text-red-600 font-medium ml-1">
+                  ({rows.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
+                </span>
+              )}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -977,22 +995,26 @@ export function KeyThrustsModal({
                 {String(i + 1).padStart(2, "0")}
               </span>
               <div className="flex-1 min-w-0">
-                <textarea
-                  value={row.desc}
-                  placeholder="Capability"
-                  onChange={(e) => {
-                    const next = [...rows];
-                    next[i] = { ...next[i], desc: e.target.value };
-                    onChange(next);
-                  }}
-                  rows={1}
-                  onInput={(e) => {
-                    const el = e.currentTarget;
-                    el.style.height = "auto";
-                    el.style.height = el.scrollHeight + "px";
-                  }}
-                  className="w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white resize-none overflow-hidden"
-                />
+                <div className="relative w-full">
+                  <textarea
+                    value={row.desc}
+                    placeholder="Capability"
+                    maxLength={70}
+                    onChange={(e) => {
+                      const next = [...rows];
+                      next[i] = { ...next[i], desc: e.target.value.slice(0, 70) };
+                      onChange(next);
+                    }}
+                    rows={1}
+                    onInput={(e) => {
+                      const el = e.currentTarget;
+                      el.style.height = "auto";
+                      el.style.height = el.scrollHeight + "px";
+                    }}
+                    className="w-full border border-gray-200 rounded px-3 py-2 pb-5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white resize-none overflow-hidden"
+                  />
+                  <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.desc.length >= 70 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.desc.length}/70</span>
+                </div>
               </div>
               <div className="relative w-40 flex-shrink-0 pt-0.5">
                 <OwnerSelect
@@ -1047,7 +1069,14 @@ export function KeyInitiativesModal({
             <p className="text-base font-bold text-gray-900 uppercase tracking-wide">
               KEY INITIATIVES
             </p>
-            <p className="text-xs text-gray-500">1 Year Priorities</p>
+            <p className="text-xs text-gray-500">
+              1 Year Priorities
+              {rows.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
+                <span className="text-red-600 font-medium ml-1">
+                  ({rows.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
+                </span>
+              )}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -1071,22 +1100,26 @@ export function KeyInitiativesModal({
                 {String(i + 1).padStart(2, "0")}
               </span>
               <div className="flex-1 min-w-0">
-                <textarea
-                  value={row.desc}
-                  placeholder="Initiative"
-                  onChange={(e) => {
-                    const next = [...rows];
-                    next[i] = { ...next[i], desc: e.target.value };
-                    onChange(next);
-                  }}
-                  rows={1}
-                  onInput={(e) => {
-                    const el = e.currentTarget;
-                    el.style.height = "auto";
-                    el.style.height = el.scrollHeight + "px";
-                  }}
-                  className="w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white resize-none overflow-hidden"
-                />
+                <div className="relative w-full">
+                  <textarea
+                    value={row.desc}
+                    placeholder="Initiative"
+                    maxLength={70}
+                    onChange={(e) => {
+                      const next = [...rows];
+                      next[i] = { ...next[i], desc: e.target.value.slice(0, 70) };
+                      onChange(next);
+                    }}
+                    rows={1}
+                    onInput={(e) => {
+                      const el = e.currentTarget;
+                      el.style.height = "auto";
+                      el.style.height = el.scrollHeight + "px";
+                    }}
+                    className="w-full border border-gray-200 rounded px-3 py-2 pb-5 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white resize-none overflow-hidden"
+                  />
+                  <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.desc.length >= 70 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.desc.length}/70</span>
+                </div>
               </div>
               <div className="relative w-40 flex-shrink-0 pt-0.5">
                 <OwnerSelect
@@ -1166,29 +1199,33 @@ export function AccountabilityModal({
                     <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">
                       {String(i + 1).padStart(2, "0")}
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-1.5">
+                    <td className="border-r border-gray-200 px-3 py-1.5 relative">
                       <input
                         value={row.kpi}
+                        maxLength={30}
                         onChange={e => {
                           const next = [...rows];
-                          next[i] = { ...next[i], kpi: e.target.value };
+                          next[i] = { ...next[i], kpi: e.target.value.slice(0, 30) };
                           onChange(next);
                         }}
                         placeholder="Input text"
-                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1 pr-10"
                       />
+                      <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.kpi.length >= 30 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.kpi.length}/30</span>
                     </td>
-                    <td className="px-3 py-1.5">
+                    <td className="px-3 py-1.5 relative">
                       <input
                         value={row.goal}
+                        maxLength={20}
                         onChange={e => {
                           const next = [...rows];
-                          next[i] = { ...next[i], goal: e.target.value };
+                          next[i] = { ...next[i], goal: e.target.value.slice(0, 20) };
                           onChange(next);
                         }}
                         placeholder="Input text"
-                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1 pr-10"
                       />
+                      <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.goal.length >= 20 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.goal.length}/20</span>
                     </td>
                   </tr>
                 ))}
@@ -1261,17 +1298,19 @@ export function QuarterlyPrioritiesModal({
                     <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">
                       {String(i + 1).padStart(2, "0")}
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-1.5">
+                    <td className="border-r border-gray-200 px-3 py-1.5 relative">
                       <input
                         value={row.priority}
+                        maxLength={70}
                         onChange={e => {
                           const next = [...rows];
-                          next[i] = { ...next[i], priority: e.target.value };
+                          next[i] = { ...next[i], priority: e.target.value.slice(0, 70) };
                           onChange(next);
                         }}
                         placeholder="Input text"
-                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1 pr-10"
                       />
+                      <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.priority.length >= 70 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.priority.length}/70</span>
                     </td>
                     <td className="px-3 py-1.5 w-40">
                       <div className="relative flex items-center gap-2 cursor-pointer">

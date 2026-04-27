@@ -38,6 +38,7 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
             placeholder="Enter core values..."
             className="flex-1 min-h-0"
             resetKey={`${form.year}-${form.quarter}`}
+            maxLength={1500}
           />
         </div>
       </Card>
@@ -51,6 +52,7 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
             onChange={(v) => set("purpose", v)}
             placeholder="Enter purpose..."
             resetKey={`${form.year}-${form.quarter}`}
+            maxLength={800}
           />
         </div>
         <div className="border-t border-gray-100 pt-3">
@@ -65,7 +67,7 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <WithTooltip content={v} className="relative flex-1 min-w-0">
-                  <FInput value={v} onChange={(nv) => setArr("actions", i, nv)} />
+                  <FInput value={v} onChange={(nv) => setArr("actions", i, nv)} maxLength={80} />
                 </WithTooltip>
               </div>
             ))}
@@ -73,7 +75,9 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
         </div>
         <div className="border-t border-gray-100 pt-3">
           <p className="text-xs font-semibold text-gray-700 mb-2">Profit per X</p>
-          <FInput value={form.profitPerX} onChange={(v) => set("profitPerX", v)} />
+          <WithTooltip content={form.profitPerX} className="relative block w-full">
+            <FInput value={form.profitPerX} onChange={(v) => set("profitPerX", v)} maxLength={280} />
+          </WithTooltip>
         </div>
         {/* BHAG — fills remaining space */}
         <div className="border-t border-gray-100 pt-3 flex-1 flex flex-col">
@@ -83,6 +87,7 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
             onChange={(v) => set("bhag", v)}
             rows={3}
             className="flex-1 min-h-[60px]"
+            maxLength={280}
           />
         </div>
       </Card>

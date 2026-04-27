@@ -257,7 +257,7 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   actionOwner: {
-    width: "18mm",
+    width: "12mm",
     paddingHorizontal: 4,
     paddingVertical: 4,
     borderLeftWidth: 1,
@@ -570,9 +570,18 @@ function NumberedRow({
 export interface OPSPDocumentProps {
   form: FormData;
   users?: { id: string; firstName: string; lastName: string }[];
+  /** Rendered in Page 1 blue band "Organization:" field. */
+  tenantName?: string;
+  /** Rendered in Page 2 blue band "Your Name:" field. */
+  currentUserName?: string;
 }
 
-export function OPSPDocument({ form, users = [] }: OPSPDocumentProps) {
+export function OPSPDocument({
+  form,
+  users = [],
+  tenantName = "",
+  currentUserName = "",
+}: OPSPDocumentProps) {
   const owner = (id: string) => ownerNameOf(id, users);
 
   /* ── Page-1 prepared data ── */
@@ -607,6 +616,7 @@ export function OPSPDocument({ form, users = [] }: OPSPDocumentProps) {
           </View>
           <View style={[s.topBandSection, s.topBandDivider]}>
             <Text style={s.topBandLabel}>Organization:</Text>
+            <Text style={s.topBandValue}>{tenantName || "—"}</Text>
           </View>
         </View>
 
@@ -845,7 +855,7 @@ export function OPSPDocument({ form, users = [] }: OPSPDocumentProps) {
         <View style={s.topBand}>
           <View style={[s.topBandSection, { flex: 1 }]}>
             <Text style={s.topBandLabel}>Your Name:</Text>
-            <Text style={s.topBandValue}>{employees[0] || ""}</Text>
+            <Text style={s.topBandValue}>{currentUserName || "—"}</Text>
           </View>
           <View style={[s.topBandSection, s.topBandDivider]}>
             <Text style={s.topBandLabel}>Date:</Text>

@@ -119,7 +119,7 @@ export default function OPSPHistoryPage() {
   }
 
   const statusBadge = (status: string) => {
-    if (status === "finalized") {
+    if (status === "finalized" || status === "reviewed") {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-full bg-green-100 text-green-700 border border-green-200">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
@@ -330,14 +330,14 @@ export default function OPSPHistoryPage() {
                                         Preview
                                       </button>
                                       <button
-                                        onClick={() => opsp.status !== "finalized" && handleEdit(year, q)}
-                                        disabled={opsp.status === "finalized"}
+                                        onClick={() => opsp.status === "draft" && handleEdit(year, q)}
+                                        disabled={opsp.status !== "draft"}
                                         className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-medium rounded-lg transition-colors ${
-                                          opsp.status === "finalized"
+                                          opsp.status !== "draft"
                                             ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                                             : "bg-blue-600 text-white hover:bg-blue-700"
                                         }`}
-                                        title={opsp.status === "finalized" ? "OPSP is finalized and cannot be edited" : "Edit this OPSP"}
+                                        title={opsp.status !== "draft" ? "OPSP is finalized and cannot be edited" : "Edit this OPSP"}
                                       >
                                         <Pencil className="h-3 w-3" />
                                         Edit

@@ -6,6 +6,7 @@ import {
   getFiscalYear,
   getFiscalQuarter,
   fiscalYearLabel,
+  QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
 // Map achieved% to traffic-light bg color (same thresholds as KPI)
 function achievedPctColor(pct: number): string {
@@ -149,18 +150,21 @@ const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 
 function getPeriodLabels(
   horizon: Horizon,
-  fiscalYearStart: number,
+  _fiscalYearStart: number,
   quarter: string,
   year: number,
   targetYears: number,
 ): { key: string; label: string }[] {
   if (horizon === "quarter") {
-    const qNum = parseInt(quarter.replace("Q", "")) - 1;
-    const start = ((fiscalYearStart - 1) + qNum * 3) % 12;
+    // Use the same April-based QUARTER_STARTS map the rest of quikscale uses,
+    // so review months stay consistent with the OPSP create page and KPI/WWW.
+    // (The DB tenant.fiscalYearStart is ignored here — it defaulted to 1 for
+    // legacy rows and would otherwise show Jan/Feb/Mar for Q1.)
+    const [startMonth] = QUARTER_STARTS[quarter] ?? [3, 1];
     return [
-      { key: "m1", label: MONTH_NAMES[start] },
-      { key: "m2", label: MONTH_NAMES[(start + 1) % 12] },
-      { key: "m3", label: MONTH_NAMES[(start + 2) % 12] },
+      { key: "m1", label: MONTH_NAMES[startMonth % 12] },
+      { key: "m2", label: MONTH_NAMES[(startMonth + 1) % 12] },
+      { key: "m3", label: MONTH_NAMES[(startMonth + 2) % 12] },
     ];
   }
   if (horizon === "yearly") {
@@ -368,7 +372,54 @@ export default function OPSPReviewPage() {
 
   const labels = HORIZON_LABELS[horizon];
   const isFinalized = data?.opspStatus === "finalized";
+  const isReviewed = data?.opspStatus === "reviewed";
   const hasOPSP = !!data?.opspId;
+
+  /* ── Submit gate (Quarter horizon only) ──
+     Enable when every Action row has an achieved value across every period,
+     and every Rocks row has a status filled. The achieved/status edits live
+     in primaryEdits/secondaryEdits — fall back to data on first load. */
+  const allActionsAchieved = useMemo(() => {
+    if (horizon !== "quarter") return false;
+    if (!data?.rows?.length) return false;
+    for (const row of data.rows) {
+      if (!row.category.trim()) continue;
+      for (const pl of periodLabels) {
+        const pd = row.periods[pl.key];
+        if (!pd || pd.achieved == null) return false;
+      }
+    }
+    return true;
+  }, [data, horizon, periodLabels]);
+
+  const allRocksStatusFilled = useMemo(() => {
+    if (horizon !== "quarter") return false;
+    if (!secondaryTableRows.length) return false;
+    return secondaryTableRows.every((r) => r.status && r.status.trim() !== "");
+  }, [secondaryTableRows, horizon]);
+
+  const canSubmit = horizon === "quarter" && isFinalized && !isReviewed && allActionsAchieved && allRocksStatusFilled;
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  const handleSubmitReview = useCallback(async () => {
+    if (!canSubmit || submittingReview) return;
+    setSubmittingReview(true);
+    try {
+      const r = await fetch("/api/opsp/review/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ year, quarter }),
+      });
+      const j = await r.json();
+      if (j.success) {
+        setData((prev) => (prev ? { ...prev, opspStatus: "reviewed" } : prev));
+        window.dispatchEvent(new Event("opsp-review-submitted"));
+      }
+    } finally {
+      setSubmittingReview(false);
+    }
+  }, [canSubmit, submittingReview, year, quarter]);
+
   const tableTitle = viewMode === "primary"
     ? `${labels.primaryTitle} – ${quarter} - ${year}`
     : `${labels.secondaryTitle} – ${quarter} - ${year}`;
@@ -759,9 +810,27 @@ export default function OPSPReviewPage() {
             {labels.secondary}
           </button>
 
-          {/* Submit (disabled placeholder) */}
-          <Button size="sm" disabled className="opacity-50 cursor-not-allowed" title="Coming soon">
-            Submit
+          {/* Submit — gated on all Achieved + all Rock statuses filled (quarter horizon) */}
+          <Button
+            size="sm"
+            disabled={!canSubmit || submittingReview}
+            onClick={handleSubmitReview}
+            className={!canSubmit && !isReviewed ? "opacity-50 cursor-not-allowed" : ""}
+            title={
+              isReviewed
+                ? "Review already submitted"
+                : horizon !== "quarter"
+                  ? "Submit available on Quarter view"
+                  : !isFinalized
+                    ? "Finalize the OPSP first"
+                    : !allActionsAchieved
+                      ? "Fill every Achieved value in Actions"
+                      : !allRocksStatusFilled
+                        ? "Set status on every Rock"
+                        : "Submit review"
+            }
+          >
+            {isReviewed ? "Submitted" : submittingReview ? "Submitting…" : "Submit"}
           </Button>
 
           {/* Search */}

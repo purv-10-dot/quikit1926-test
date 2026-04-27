@@ -96,6 +96,10 @@ export interface OPSPFormHandle {
   planStartYear: number | null;
   planEndYear: number | null;
   planStartQuarter: string | null;
+  /** "{year}:{quarter}" keys whose review has been submitted. Drives quarter unlock. */
+  reviewedQuarters: string[];
+  /** Re-fetch the reviewed-quarter set (called when review submission events fire). */
+  refreshReviewedQuarters: () => Promise<void>;
   showSetupWizard: boolean;
   setShowSetupWizard: React.Dispatch<React.SetStateAction<boolean>>;
   /** Reload the OPSP form for a different (year, quarter) period. */
@@ -132,6 +136,16 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   const [planStartYear, setPlanStartYear] = useState<number | null>(null);
   const [planEndYear, setPlanEndYear] = useState<number | null>(null);
   const [planStartQuarter, setPlanStartQuarter] = useState<string | null>(null); // e.g. "Q2" if onboarded mid-year
+  const [reviewedQuarters, setReviewedQuarters] = useState<string[]>([]);
+
+  const refreshReviewedQuarters = useCallback(async () => {
+    try {
+      const r = await fetch("/api/opsp/config");
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j.success && Array.isArray(j.reviewedQuarters)) setReviewedQuarters(j.reviewedQuarters);
+    } catch {}
+  }, []);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstLoad = useRef(true);
@@ -147,6 +161,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
           const config = await configRes.json();
           if (config.success) {
             if (typeof config.fiscalYearStart === "number") setFiscalYearStart(config.fiscalYearStart);
+            if (Array.isArray(config.reviewedQuarters)) setReviewedQuarters(config.reviewedQuarters);
             if (!config.hasSetup) {
               // No OPSP setup exists — show wizard
               setShowSetupWizard(true);
@@ -334,6 +349,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     planStartYear,
     planEndYear,
     planStartQuarter,
+    reviewedQuarters,
+    refreshReviewedQuarters,
     showSetupWizard,
     setShowSetupWizard,
     loadForPeriod,

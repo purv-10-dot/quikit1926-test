@@ -96,6 +96,7 @@ export function TargetsSection({
           value={form.sandbox}
           onChange={(v) => set("sandbox", v)}
           rows={3}
+          maxLength={150}
         />
       </div>
       <div className="border-t border-gray-100 pt-3">
@@ -104,7 +105,14 @@ export function TargetsSection({
             <p className="text-xs font-bold text-gray-800 uppercase">
               Key Thrusts/Capabilities
             </p>
-            <p className="text-xs text-gray-500">3–5 Year Priorities</p>
+            <p className="text-xs text-gray-500">
+              3–5 Year Priorities
+              {form.keyThrusts.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
+                <span className="text-red-600 font-medium ml-1">
+                  ({form.keyThrusts.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
+                </span>
+              )}
+            </p>
           </div>
           <button
             onClick={onExpandKeyThrusts}
@@ -128,6 +136,7 @@ export function TargetsSection({
                 <FInput
                   value={row.desc}
                   placeholder="Capability"
+                  maxLength={70}
                   onChange={(v) => {
                     const next = [...form.keyThrusts];
                     next[i] = { ...next[i], desc: v };
@@ -160,6 +169,7 @@ export function TargetsSection({
             onChange={(v) => set("brandPromiseKPIs", v)}
             rows={3}
             className="flex-1 min-h-[60px]"
+            maxLength={280}
           />
         </div>
         <div className="flex-1 flex flex-col">
@@ -171,6 +181,7 @@ export function TargetsSection({
             onChange={(v) => set("brandPromise", v)}
             rows={3}
             className="flex-1 min-h-[60px]"
+            maxLength={280}
           />
         </div>
       </div>

@@ -6,6 +6,44 @@ import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { opspReviewSaveSchema } from "@/lib/schemas/opspReviewSchema";
+import { getScales } from "@/lib/utils/currency";
+
+/**
+ * Server-side mirror of the client `resolveProjected` logic. OPSP stores
+ * currency targets as "10 K" / "1.5 L" / etc. — naked parseFloat would drop
+ * the suffix and produce 10 instead of 10000. This walks the same scale
+ * abbreviations the OPSP modals use (K/M/B/L/Cr/Hundred Crore) and applies
+ * the multiplier when the category is a Currency type.
+ */
+const SCALE_ABBR: Record<string, string> = {
+  "": "-", Thousand: "K", Million: "M", Billion: "B",
+  Lakh: "L", Crore: "Cr", "Hundred Crore": "HCr",
+};
+
+function resolveStoredValue(
+  raw: string,
+  catMeta: { dataType: string; currency: string | null } | undefined,
+): number | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return null;
+
+  if (catMeta?.dataType === "Currency") {
+    const currency = catMeta.currency ?? "USD";
+    const scales = getScales(currency);
+    for (const s of scales) {
+      const abbr = SCALE_ABBR[s.label];
+      if (!abbr || abbr === "-") continue;
+      const re = new RegExp(`^(.+?)\\s+${abbr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+      const m = trimmed.match(re);
+      if (m) {
+        const n = parseFloat(m[1].trim());
+        return isNaN(n) ? null : n * s.multiplier;
+      }
+    }
+  }
+  const n = parseFloat(trimmed);
+  return isNaN(n) ? null : n;
+}
 
 /**
  * GET /api/opsp/review?year=2026&quarter=Q1&horizon=quarter
@@ -71,7 +109,15 @@ export async function GET(req: NextRequest) {
       entryMap.set(`${e.rowIndex}:${e.period}`, e);
     }
 
-    // 5. Merge source rows with review data
+    // 5a. Build category meta lookup so currency scales (K/M/L/Cr…) get applied.
+    const cats = await db.categoryMaster.findMany({
+      where: { tenantId },
+      select: { name: true, dataType: true, currency: true },
+    });
+    const catMetaMap = new Map<string, { dataType: string; currency: string | null }>();
+    for (const c of cats) catMetaMap.set(c.name, { dataType: c.dataType, currency: c.currency });
+
+    // 5b. Merge source rows with review data
     const periodKeys = getPeriodKeys(horizon, opsp.targetYears);
     const rows = sourceRows.map((row, idx) => {
       const periods: Record<string, {
@@ -83,11 +129,13 @@ export async function GET(req: NextRequest) {
         autoPopulated?: boolean;
       }> = {};
 
+      const meta = catMetaMap.get(row.category as string);
       for (const pKey of periodKeys) {
         const entry = entryMap.get(`${idx}:${pKey}`);
-        // Target: use per-period value from OPSP, fall back to projected
-        const planTarget = parseFloat(row[pKey] as string) || null;
-        const projected = parseFloat(row.projected as string) || null;
+        // Target: use per-period value from OPSP, fall back to projected.
+        // Both are stored as scaled strings (e.g. "10 K") — resolve with category meta.
+        const planTarget = resolveStoredValue(row[pKey] as string, meta);
+        const projected = resolveStoredValue(row.projected as string, meta);
 
         periods[pKey] = {
           target: entry?.targetValue ? Number(entry.targetValue) : (planTarget ?? projected),
@@ -108,7 +156,7 @@ export async function GET(req: NextRequest) {
 
     // 6. Auto-populate achieved/gap/achievedPct from child horizons
     if (horizon === "yearly" || horizon === "3to5year") {
-      await populateCascadeData(tenantId, userId, year, rows, horizon, opsp.targetYears);
+      await populateCascadeData(tenantId, userId, year, rows, horizon, opsp.targetYears, catMetaMap);
     }
 
     // 7. Get tenant fiscal config
@@ -316,12 +364,14 @@ async function getQuarterCumulativeForCategory(
   opspId: string,
   category: string,
   sourceRows: Record<string, unknown>[],
+  catMetaMap?: Map<string, { dataType: string; currency: string | null }>,
 ): Promise<{ target: number; achieved: number; gap: number; achievedPct: number; hasAchieved: boolean }> {
   // Find the actionsQtr rowIndex matching this category
   const rowIdx = sourceRows.findIndex(
     (r) => (r.category as string)?.toLowerCase() === category.toLowerCase(),
   );
   if (rowIdx < 0) return { target: 0, achieved: 0, gap: 0, achievedPct: 0, hasAchieved: false };
+  const meta = catMetaMap?.get(category);
 
   const entries = await db.oPSPReviewEntry.findMany({
     where: {
@@ -338,9 +388,10 @@ async function getQuarterCumulativeForCategory(
   let cumAchieved = 0;
   let hasAchieved = false;
 
-  // Sum targets from OPSP source (m1, m2, m3 fields)
+  // Sum targets from OPSP source (m1, m2, m3 fields).
+  // Resolve scaled values ("10 K" → 10000) using category meta when present.
   for (const pKey of ["m1", "m2", "m3"]) {
-    const sourceTarget = parseFloat(sourceRows[rowIdx][pKey] as string) || 0;
+    const sourceTarget = resolveStoredValue(sourceRows[rowIdx][pKey] as string, meta) ?? 0;
     const entry = entries.find((e) => e.period === pKey);
     cumTarget += entry?.targetValue ? Number(entry.targetValue) : sourceTarget;
     if (entry?.achievedValue != null) {
@@ -368,6 +419,7 @@ async function populateCascadeData(
   rows: { rowIndex: number; category: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; gap: number | null; achievedPct: number | null; comment: string | null; autoPopulated?: boolean }> }[],
   horizon: string,
   targetYears: number,
+  catMetaMap?: Map<string, { dataType: string; currency: string | null }>,
 ) {
   if (horizon === "yearly") {
     // For each quarter period (q1-q4), find the matching quarter OPSP and compute cumulative
@@ -399,6 +451,7 @@ async function populateCascadeData(
           qOpsp.id,
           row.category,
           sourceRows,
+          catMetaMap,
         );
 
         if (cum.hasAchieved) {

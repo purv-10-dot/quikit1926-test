@@ -85,12 +85,15 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const { year, quarter } = parsedFinalize.data;
   const yearNum = typeof year === "number" ? year : parseInt(year);
 
+  // Only flip draft → finalized. A "reviewed" OPSP is a stronger lock and must
+  // not be downgraded back to "finalized" if Finalize is clicked again.
   const result = await db.oPSPData.updateMany({
     where: {
       tenantId,
       userId,
       year: yearNum,
       quarter,
+      status: "draft",
     },
     data: { status: "finalized", updatedBy: userId },
   });

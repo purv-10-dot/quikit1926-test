@@ -74,6 +74,13 @@ html.dark .glass {
    ============================================================================ */
 
 .rich-editor:focus { outline: none; }
+.rich-editor {
+  font-family: inherit;
+  font-size: 0.875rem;   /* match text-sm — same as FInput / FTextarea */
+  line-height: 1.25rem;
+  color: rgb(55 65 81);  /* text-gray-700 */
+}
+.rich-editor div { margin: 2px 0; }
 .rich-editor b, .rich-editor strong { font-weight: 700; }
 .rich-editor i, .rich-editor em { font-style: italic; }
 .rich-editor u { text-decoration: underline; }

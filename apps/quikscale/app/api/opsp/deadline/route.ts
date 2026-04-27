@@ -49,8 +49,8 @@ export async function GET(_req: NextRequest) {
       select: { id: true, status: true, createdAt: true },
     });
 
-    // No OPSP exists or already finalized — don't show banner
-    if (!opsp || opsp.status === "finalized") {
+    // No OPSP exists or already finalized/reviewed — don't show banner
+    if (!opsp || opsp.status === "finalized" || opsp.status === "reviewed") {
       return NextResponse.json({ success: true, show: false });
     }
 
