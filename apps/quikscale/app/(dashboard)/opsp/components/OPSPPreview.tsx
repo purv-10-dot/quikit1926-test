@@ -6,13 +6,19 @@
  * The modal embeds <PDFViewer> showing OPSPDocument. The "Download PDF" button
  * generates the same artifact via pdf().toBlob(). Preview = PDF guaranteed.
  *
- * Word download (.docx) keeps its own pipeline via the `docx` library — it
- * targets a different format and shares only the form data.
+ * Chrome layout — single compact 52px slate-800 toolbar with three zones:
+ *   • left:   document title (icon + "OPSP — {year} {quarter}")
+ *   • center: zoom controls ([−] [100%] [+])
+ *   • right:  primary download + close
+ *
+ * Zoom is implemented via CSS `transform: scale()` on the iframe wrapper —
+ * snappy and instant. PDF inside scales as a bitmap (slight blur at high
+ * zoom is acceptable for preview; the download is always pixel-perfect).
  */
 
 import dynamic from "next/dynamic";
 import { useState, useCallback } from "react";
-import { Loader2, Printer, Download, FileText, X } from "lucide-react";
+import { Loader2, Download, FileText, X, Plus, Minus } from "lucide-react";
 import type { FormData } from "../hooks/useOPSPForm";
 import { OPSPDocument } from "./OPSPDocument";
 
@@ -31,6 +37,12 @@ function PDFLoading() {
   );
 }
 
+/** Discrete zoom levels (50% → 200% in 25% steps). Click the % indicator to
+ * reset to 100%. Min/max enforced via button disabled states. */
+const ZOOM_STEPS = [50, 75, 100, 125, 150, 175, 200] as const;
+const ZOOM_MIN = ZOOM_STEPS[0];
+const ZOOM_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+
 export function OPSPPreview({
   open,
   onClose,
@@ -43,7 +55,7 @@ export function OPSPPreview({
   users?: { id: string; firstName: string; lastName: string }[];
 }) {
   const [downloading, setDownloading] = useState(false);
-  const [downloadingWord, setDownloadingWord] = useState(false);
+  const [zoom, setZoom] = useState<number>(100);
 
   /* ── Download PDF ── single render path: react-pdf .toBlob() ── */
   const handleDownloadPDF = useCallback(async () => {
@@ -68,354 +80,123 @@ export function OPSPPreview({
     }
   }, [downloading, form, users]);
 
-  /* ── Download Word (.docx) — independent path via `docx` library ── */
-  const handleDownloadWord = useCallback(async () => {
-    if (downloadingWord) return;
-    setDownloadingWord(true);
-    try {
-      const {
-        Document,
-        Packer,
-        Paragraph,
-        TextRun,
-        Table,
-        TableRow,
-        TableCell,
-        WidthType,
-        BorderStyle,
-        AlignmentType,
-        HeadingLevel,
-        PageOrientation,
-      } = await import("docx");
-
-      const ownerName = (id: string) => {
-        if (!id) return "";
-        const u = users.find((x) => x.id === id);
-        return u ? `${u.firstName} ${u.lastName}` : id;
-      };
-
-      const heading = (text: string) =>
-        new Paragraph({
-          heading: HeadingLevel.HEADING_2,
-          spacing: { before: 240, after: 120 },
-          children: [new TextRun({ text, bold: true })],
-        });
-      const subheading = (text: string) =>
-        new Paragraph({
-          heading: HeadingLevel.HEADING_3,
-          spacing: { before: 200, after: 80 },
-          children: [new TextRun({ text, bold: true })],
-        });
-      const para = (text: string) =>
-        new Paragraph({ spacing: { after: 60 }, children: [new TextRun(text || " ")] });
-      const numbered = (items: string[]) =>
-        items
-          .filter(Boolean)
-          .map(
-            (t, i) =>
-              new Paragraph({
-                spacing: { after: 40 },
-                children: [new TextRun(`${i + 1}. ${t}`)],
-              }),
-          );
-      const strip = (html: string) => (html || "").replace(/<[^>]*>/g, "").trim() || " ";
-
-      const simpleBorder = { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" };
-      const cellBorders = {
-        top: simpleBorder,
-        bottom: simpleBorder,
-        left: simpleBorder,
-        right: simpleBorder,
-      };
-
-      function makeTable(headers: string[], dataRows: string[][]) {
-        return new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: [
-            new TableRow({
-              children: headers.map(
-                (h) =>
-                  new TableCell({
-                    borders: cellBorders,
-                    children: [
-                      new Paragraph({
-                        children: [new TextRun({ text: h, bold: true, size: 18 })],
-                      }),
-                    ],
-                  }),
-              ),
-            }),
-            ...dataRows.map(
-              (cells) =>
-                new TableRow({
-                  children: cells.map(
-                    (c) =>
-                      new TableCell({
-                        borders: cellBorders,
-                        children: [
-                          new Paragraph({
-                            children: [new TextRun({ text: c || " ", size: 18 })],
-                          }),
-                        ],
-                      }),
-                  ),
-                }),
-            ),
-          ],
-        });
-      }
-
-      const sections: unknown[] = [];
-
-      sections.push(
-        new Paragraph({
-          heading: HeadingLevel.HEADING_1,
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 200 },
-          children: [
-            new TextRun({
-              text: `One-Page Strategic Plan (OPSP) — ${form.year} ${form.quarter}`,
-              bold: true,
-            }),
-          ],
-        }),
-      );
-      sections.push(heading("PEOPLE (Reputation Drivers)"));
-      sections.push(subheading("Employees"));
-      sections.push(...numbered(form.employees));
-      sections.push(subheading("Customers"));
-      sections.push(...numbered(form.customers));
-      sections.push(subheading("Shareholders"));
-      sections.push(...numbered(form.shareholders));
-      sections.push(heading("CORE VALUES / BELIEFS"));
-      sections.push(para(strip(form.coreValues)));
-      sections.push(heading("PURPOSE"));
-      sections.push(para(strip(form.purpose)));
-      sections.push(subheading("Actions — To Live Values, Purposes, BHAG"));
-      sections.push(...numbered(form.actions));
-      sections.push(subheading("Profit per X"));
-      sections.push(para(strip(form.profitPerX)));
-      sections.push(subheading("BHAG"));
-      sections.push(para(strip(form.bhag)));
-      sections.push(heading("TARGETS (3-5 YRS.)"));
-      // makeTable returns a Table, not a Paragraph — but docx Document accepts both.
-      // We cast to Paragraph[] above for ergonomic push; add tables via any cast below.
-      (sections as unknown[]).push(
-        makeTable(
-          ["Category", "Projected"],
-          form.targetRows.filter((r) => r.category).map((r) => [r.category, r.projected]),
-        ),
-      );
-      sections.push(subheading("Sandbox"));
-      sections.push(para(strip(form.sandbox)));
-      sections.push(subheading("Key Thrusts / Capabilities"));
-      sections.push(
-        ...form.keyThrusts
-          .filter((r) => r.desc)
-          .map(
-            (r, i) =>
-              new Paragraph({
-                spacing: { after: 40 },
-                children: [
-                  new TextRun(
-                    `${i + 1}. ${r.desc}${r.owner ? ` — ${ownerName(r.owner)}` : ""}`,
-                  ),
-                ],
-              }),
-          ),
-      );
-      sections.push(subheading("Brand Promise KPIs"));
-      sections.push(para(strip(form.brandPromiseKPIs)));
-      sections.push(subheading("Brand Promise"));
-      sections.push(para(strip(form.brandPromise)));
-      sections.push(heading("GOALS (1 YR.)"));
-      (sections as unknown[]).push(
-        makeTable(
-          ["Category", "Projected"],
-          form.goalRows.filter((r) => r.category).map((r) => [r.category, r.projected]),
-        ),
-      );
-      sections.push(subheading("Key Initiatives"));
-      sections.push(
-        ...form.keyInitiatives
-          .filter((r) => r.desc)
-          .map(
-            (r, i) =>
-              new Paragraph({
-                spacing: { after: 40 },
-                children: [
-                  new TextRun(
-                    `${i + 1}. ${r.desc}${r.owner ? ` — ${ownerName(r.owner)}` : ""}`,
-                  ),
-                ],
-              }),
-          ),
-      );
-      sections.push(heading("Strengths / Core Competencies"));
-      sections.push(...numbered(form.processItems));
-      sections.push(heading("Weaknesses"));
-      sections.push(...numbered(form.weaknesses));
-      sections.push(heading("PROCESS (Productivity Drivers)"));
-      sections.push(subheading("Make/Buy"));
-      sections.push(...numbered(form.makeBuy));
-      sections.push(subheading("Sell"));
-      sections.push(...numbered(form.sell));
-      sections.push(subheading("Record Keeping"));
-      sections.push(...numbered(form.recordKeeping));
-      sections.push(heading("ACTIONS (QTR)"));
-      (sections as unknown[]).push(
-        makeTable(
-          ["Category", "Projected"],
-          form.actionsQtr.filter((r) => r.category).map((r) => [r.category, r.projected]),
-        ),
-      );
-      sections.push(subheading("Rocks — Quarterly Priorities"));
-      sections.push(
-        ...form.rocks
-          .filter((r) => r.desc)
-          .map(
-            (r, i) =>
-              new Paragraph({
-                spacing: { after: 40 },
-                children: [
-                  new TextRun(
-                    `${i + 1}. ${r.desc}${r.owner ? ` — ${ownerName(r.owner)}` : ""}`,
-                  ),
-                ],
-              }),
-          ),
-      );
-      sections.push(heading("THEME"));
-      sections.push(para(strip(form.theme)));
-      sections.push(subheading("Scoreboard Design"));
-      sections.push(para(strip(form.scoreboardDesign)));
-      sections.push(subheading("Celebration"));
-      sections.push(para(strip(form.celebration)));
-      sections.push(subheading("Reward"));
-      sections.push(para(strip(form.reward)));
-      sections.push(heading("YOUR ACCOUNTABILITY"));
-      (sections as unknown[]).push(
-        makeTable(
-          ["S.no.", "KPIs", "Goal"],
-          form.kpiAccountability
-            .filter((r) => r.kpi)
-            .map((r, i) => [String(i + 1).padStart(2, "0"), r.kpi, r.goal]),
-        ),
-      );
-      sections.push(subheading("Quarterly Priorities"));
-      (sections as unknown[]).push(
-        makeTable(
-          ["S.no.", "Priority", "Due"],
-          form.quarterlyPriorities
-            .filter((r) => r.priority)
-            .map((r, i) => [String(i + 1).padStart(2, "0"), r.priority, r.dueDate || ""]),
-        ),
-      );
-
-      const doc = new Document({
-        sections: [
-          {
-            properties: { page: { size: { orientation: PageOrientation.PORTRAIT } } },
-            children: sections as unknown as InstanceType<typeof Paragraph>[],
-          },
-        ],
-      });
-
-      const blob = await Packer.toBlob(doc);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `OPSP_${form.year}_${form.quarter}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Word download failed:", err);
-      alert("Word download failed. Please try again.");
-    } finally {
-      setDownloadingWord(false);
-    }
-  }, [downloadingWord, form, users]);
-
-  const handlePrint = useCallback(() => {
-    // PDFViewer renders into an <iframe>. Using window.print() prints the parent
-    // page, not the iframe. Instead, generate a fresh blob and open in a new tab
-    // where the user can print using their browser's native PDF print.
-    (async () => {
-      try {
-        const { pdf } = await import("@react-pdf/renderer");
-        const blob = await pdf(<OPSPDocument form={form} users={users} />).toBlob();
-        const url = URL.createObjectURL(blob);
-        window.open(url, "_blank");
-        // browser will revoke when tab closes
-      } catch (err) {
-        console.error("Print failed:", err);
-      }
-    })();
-  }, [form, users]);
+  /* ── Zoom controls ── walk discrete steps, clamp to bounds ── */
+  const zoomIn = useCallback(() => {
+    setZoom((z) => ZOOM_STEPS.find((s) => s > z) ?? z);
+  }, []);
+  const zoomOut = useCallback(() => {
+    setZoom((z) => [...ZOOM_STEPS].reverse().find((s) => s < z) ?? z);
+  }, []);
+  const resetZoom = useCallback(() => setZoom(100), []);
 
   if (!open) return null;
 
+  const canZoomOut = zoom > ZOOM_MIN;
+  const canZoomIn = zoom < ZOOM_MAX;
+
   return (
-    <div className="fixed inset-0 z-[300] flex flex-col bg-black/70 print:bg-white print:static">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-3 bg-gray-900 text-white flex-shrink-0 print:hidden shadow-lg">
-        <span className="text-sm font-semibold tracking-wide">
-          OPSP Preview — {form.year} {form.quarter}
-        </span>
+    <div className="fixed inset-0 z-[300] flex flex-col bg-black/70">
+      {/* ── Toolbar (52px slate-800) ────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-5 h-13 bg-slate-800 text-white shrink-0 shadow-lg border-b border-slate-700"
+        style={{ height: 52 }}
+      >
+        {/* Left zone — document title */}
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText className="h-4 w-4 text-slate-400 flex-shrink-0" />
+          <span className="text-sm font-semibold tracking-wide truncate">
+            OPSP — {form.year} {form.quarter}
+          </span>
+        </div>
+
+        {/* Center zone — zoom controls */}
+        <div className="flex items-center gap-1 bg-slate-900/60 rounded-lg p-0.5">
+          <button
+            onClick={zoomOut}
+            disabled={!canZoomOut}
+            title="Zoom out"
+            className="p-1.5 hover:bg-white/10 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          >
+            <Minus className="h-4 w-4" />
+          </button>
+          <button
+            onClick={resetZoom}
+            title="Reset to 100%"
+            className="px-3 py-1 text-xs font-medium tabular-nums hover:bg-white/10 rounded-md transition-colors min-w-[58px] text-center"
+          >
+            {zoom}%
+          </button>
+          <button
+            onClick={zoomIn}
+            disabled={!canZoomIn}
+            title="Zoom in"
+            className="p-1.5 hover:bg-white/10 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Right zone — download + close */}
         <div className="flex items-center gap-2">
           <button
             onClick={handleDownloadPDF}
             disabled={downloading}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium bg-white/10 hover:bg-white/20 rounded-lg border border-white/20 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
           >
             {downloading ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Download className="h-3.5 w-3.5" />
             )}
-            {downloading ? "Generating..." : "Download PDF"}
+            {downloading ? "Generating…" : "Download PDF"}
           </button>
-          <button
-            onClick={handleDownloadWord}
-            disabled={downloadingWord}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium bg-white/10 hover:bg-white/20 rounded-lg border border-white/20 transition-colors disabled:opacity-50"
-          >
-            {downloadingWord ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <FileText className="h-3.5 w-3.5" />
-            )}
-            {downloadingWord ? "Generating..." : "Download Word"}
-          </button>
-          <button
-            onClick={handlePrint}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium bg-white/10 hover:bg-white/20 rounded-lg border border-white/20 transition-colors"
-          >
-            <Printer className="h-3.5 w-3.5" /> Print
-          </button>
-          <div className="w-px h-5 bg-white/20 mx-1" />
+          <div className="w-px h-6 bg-white/15" />
           <button
             onClick={onClose}
             className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-            title="Close Preview"
+            title="Close (Esc)"
+            aria-label="Close preview"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
       </div>
 
-      {/* Inline PDF preview — same artifact as the download */}
-      <div className="flex-1 bg-gray-400 print:bg-white">
-        <PDFViewer
-          width="100%"
-          height="100%"
-          showToolbar={false}
-          style={{ border: 0 }}
-        >
-          <OPSPDocument form={form} users={users} />
-        </PDFViewer>
+      {/* ── Document area — gray bg, centered, zoom-scrollable ────────── */}
+      <div className="flex-1 overflow-auto bg-slate-300">
+        <div className="flex justify-center p-6">
+          <div
+            // Outer wrapper takes the SCALED dimensions so scrollbars appear
+            // when zoomed in. Base size is 800×1130 (~A4 portrait aspect).
+            style={{
+              width: (800 * zoom) / 100,
+              height: (1130 * zoom) / 100,
+              flexShrink: 0,
+              transition: "width 120ms ease-out, height 120ms ease-out",
+            }}
+          >
+            <div
+              // Inner wrapper renders the PDFViewer at base size and visually
+              // scales via CSS transform. transformOrigin:top left so the
+              // scaled box matches the outer wrapper's pixel dimensions.
+              style={{
+                width: 800,
+                height: 1130,
+                transformOrigin: "top left",
+                transform: `scale(${zoom / 100})`,
+                transition: "transform 120ms ease-out",
+              }}
+            >
+              <PDFViewer
+                width="100%"
+                height="100%"
+                showToolbar={false}
+                style={{ border: 0, backgroundColor: "white" }}
+              >
+                <OPSPDocument form={form} users={users} />
+              </PDFViewer>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
