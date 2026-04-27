@@ -480,7 +480,7 @@ function tokenizeInline(html: string): Inline[] {
   }));
 }
 
-function RichText({ html, style }: { html: string; style?: Record<string, unknown> }) {
+function RichText({ html, style }: { html: string; style?: { color?: string } }) {
   if (!html || !html.trim())
     return <Text style={{ ...s.cellBodyText, ...s.cellEmpty, ...(style ?? {}) }}>—</Text>;
 
@@ -510,10 +510,7 @@ function RichText({ html, style }: { html: string; style?: Record<string, unknow
         // overlap visually (the strikethrough effect we saw in the PDF).
         return (
           <View key={bi} style={{ marginBottom: 3 }}>
-            <Text
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              style={{ ...s.cellBodyText, ...(style ?? {}) } as any}
-            >
+            <Text style={{ ...s.cellBodyText, ...(style ?? {}) }}>
               {prefix}
               {inlines.map((inline, ii) => (
                 <Text

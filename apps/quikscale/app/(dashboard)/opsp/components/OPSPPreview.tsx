@@ -316,8 +316,7 @@ export function OPSPPreview({
         sections: [
           {
             properties: { page: { size: { orientation: PageOrientation.PORTRAIT } } },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            children: sections as any,
+            children: sections as unknown as InstanceType<typeof Paragraph>[],
           },
         ],
       });
