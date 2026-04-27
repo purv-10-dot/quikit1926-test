@@ -197,7 +197,7 @@ interface SidebarContentProps {
 function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarContentProps) {
   const disabled = useDisabledModules();
   const visibleNav = filterNavigation(navigation, disabled);
-  const { data: session, update: updateSession } = useSession();
+  const { data: session } = useSession();
   const router = useRouter();
 
   const userFullName = session?.user?.name || session?.user?.email?.split("@")[0] || "User";
@@ -219,12 +219,6 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
     } catch {
       window.location.href = "/";
     }
-  }
-
-  async function handleSwitchOrg() {
-    await updateSession({ tenantId: null, membershipRole: null });
-    onClose?.();
-    router.push("/select-org");
   }
 
   return (
@@ -294,7 +288,6 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
             onSignOut={handleSignOut}
             onExitImpersonation={handleExitImpersonation}
             items={[
-              { label: "Switch Organisation", icon: Building2, onClick: handleSwitchOrg },
               { label: "Settings", icon: Settings, onClick: () => { onClose?.(); router.push("/settings"); } },
             ]}
             avatarClassName="bg-accent-600"

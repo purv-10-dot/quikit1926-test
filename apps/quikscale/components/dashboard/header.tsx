@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Menu, Settings, Building2 } from "lucide-react";
+import { Menu, Settings } from "lucide-react";
 import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
 
 interface HeaderProps {
@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuClick }: HeaderProps) {
-  const { data: session, update: updateSession } = useSession();
+  const { data: session } = useSession();
   const router = useRouter();
 
   const fullName = session?.user?.name || session?.user?.email?.split("@")[0] || "User";
@@ -33,11 +33,6 @@ export function Header({ onMenuClick }: HeaderProps) {
     } catch {
       window.location.href = "/";
     }
-  }
-
-  async function handleSwitchOrg() {
-    await updateSession({ tenantId: null, membershipRole: null });
-    router.push("/select-org");
   }
 
   function handleSettings() {
@@ -69,7 +64,6 @@ export function Header({ onMenuClick }: HeaderProps) {
           onSignOut={handleSignOut}
           onExitImpersonation={handleExitImpersonation}
           items={[
-            { label: "Switch Organisation", icon: Building2, onClick: handleSwitchOrg },
             { label: "Settings", icon: Settings, onClick: handleSettings },
           ]}
           avatarClassName="bg-accent-600"
