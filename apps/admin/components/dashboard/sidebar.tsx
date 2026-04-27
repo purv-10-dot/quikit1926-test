@@ -13,6 +13,7 @@ import {
   AppWindow,
   Settings,
   ShieldCheck,
+  ScrollText,
 } from "lucide-react";
 
 const navItems = [
@@ -21,6 +22,7 @@ const navItems = [
   { key: "teams", label: "Teams", href: PATHS.TEAMS, icon: FolderTree },
   { key: "apps", label: "Apps", href: PATHS.APPS, icon: AppWindow },
   { key: "roles", label: "Roles", href: PATHS.ROLES, icon: ShieldCheck },
+  { key: "audit", label: "Audit Log", href: PATHS.AUDIT, icon: ScrollText },
   { key: "settings", label: "Settings", href: PATHS.SETTINGS, icon: Settings },
 ];
 

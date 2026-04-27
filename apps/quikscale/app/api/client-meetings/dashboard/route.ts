@@ -28,7 +28,11 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 
   const client = await db.client.findFirst({
     where: { id: clientId, tenantId, deletedAt: null },
-    include: { memberships: { where: { deletedAt: null }, include: { user: { select: { id: true, firstName: true, lastName: true } } } } },
+    include: {
+      teamMembers: {
+        include: { member: { select: { id: true, name: true, email: true, deletedAt: true } } },
+      },
+    },
   });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
 
@@ -52,8 +56,8 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
         format1Status: h.format1Status,
         format2Status: h.format2Status,
         stuckCallStatus: h.stuckCallStatus,
-        punctualityOverride: h.punctualityOverride,
-        totalMembers: h.totalMembers,
+        punctualityOverride: ("NA" as const),
+        totalMembers: 0,
         absentCount: h.absentMembers.length,
       })),
       months,
@@ -62,21 +66,21 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
   } else {
     const meetings = await db.clientWeeklyMeeting.findMany({
       where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-      include: { absentMembers: true, dashboardNAMembers: true, memberScores: true },
+      include: { absentMembers: true, dashboardNAMembers: true },
     });
     monthlyStats = calculateWeeklyMonthlyStats(
       meetings.map(m => ({
         meetingDate: m.meetingDate,
         callStatus: m.callStatus,
         actualStartTime: m.actualStartTime, actualEndTime: m.actualEndTime,
-        formatCheck1: m.formatCheck1, formatCheck2: m.formatCheck2,
-        wwwReviewDone: m.wwwReviewDone, feedbackDone: m.feedbackDone,
-        collectiveIntelDone: m.collectiveIntelDone, kpGapsDiscussed: m.kpGapsDiscussed,
-        dashboardQuality: m.dashboardQuality,
-        punctualityOverride: m.punctualityOverride,
-        totalMembers: m.totalMembers,
+        goodNewsSharing: m.goodNewsSharing, kpDashboard: m.kpDashboard,
+        www: m.www, feedback: m.feedback,
+        collectiveIntelligence: m.collectiveIntelligence, gaps: m.gaps,
+        opspReview: m.opspReview,
+        punctualityOverride: ("NA" as const),
+        totalMembers: 0,
         absentCount: m.absentMembers.length,
-        memberScores: m.memberScores,
+        memberScores: [] as const,
       })),
       months,
       client.weeklyStartTime, client.weeklyEndTime,
@@ -108,11 +112,15 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
   let punchIn: ReturnType<typeof computeMemberPunchIn> | null = null;
   let punchInOverallAverage: number | null = null;
   if (mode === "weekly" && punchUserId) {
-    const member = client.memberships.find(m => m.userId === punchUserId);
-    if (member) {
+    const tm = client.teamMembers.find(t => t.member.id === punchUserId);
+    if (tm && !tm.member.deletedAt) {
       const meetings = await db.clientWeeklyMeeting.findMany({
         where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-        include: { absentMembers: true, dashboardNAMembers: true, memberScores: true },
+        include: {
+          absentMembers: true,
+          dashboardNAMembers: true,
+          memberScores: { where: { clientMemberId: punchUserId } },
+        },
         orderBy: { meetingDate: "asc" },
       });
       punchIn = computeMemberPunchIn(
@@ -120,9 +128,16 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
           id: m.id, meetingDate: m.meetingDate,
           absentUserIds: m.absentMembers.map(a => a.userId),
           dashboardNAUserIds: m.dashboardNAMembers.map(a => a.userId),
-          memberScores: m.memberScores,
+          memberScores: m.memberScores.map(s => ({
+            userId: s.clientMemberId,
+            kpiWeeklyQTD: s.kpiWeeklyQTD,
+            kpiCoding: s.kpiCoding,
+            priorityNotes: s.priorityNotes,
+            priorityStartEndDate: s.priorityStartEndDate,
+            priorityColor: s.priorityColor,
+          })),
         })),
-        { id: punchUserId, name: `${member.user.firstName} ${member.user.lastName}`.trim() },
+        { id: punchUserId, name: tm.member.name },
       );
       punchInOverallAverage = calculateOverallFinalAverage([punchIn]);
     }
@@ -137,9 +152,11 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
       monthlyStats,
       overallStats,
       totalCallsAssessed,
-      roster: client.memberships.map(m => ({
-        userId: m.userId, name: `${m.user.firstName} ${m.user.lastName}`.trim(),
-      })),
+      // External Client Member roster — matches Update tab + Absent picker.
+      // Field name kept as `userId` for client back-compat; semantically a ClientMember.id.
+      roster: client.teamMembers
+        .filter(tm => !tm.member.deletedAt)
+        .map(tm => ({ userId: tm.member.id, name: tm.member.name })),
       punchIn,
       punchInOverallAverage,
     },

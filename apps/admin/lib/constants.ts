@@ -20,4 +20,5 @@ export const PATHS = {
   APPS: "/dashboard/apps",
   SETTINGS: "/dashboard/settings",
   ROLES: "/dashboard/roles",
+  AUDIT: "/dashboard/audit",
 } as const;

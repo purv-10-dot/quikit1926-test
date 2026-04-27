@@ -14,7 +14,7 @@ import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "./hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
-import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, DropdownPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { AddButton } from "@quikit/ui";
@@ -292,13 +292,16 @@ export default function IndividualKPIPage() {
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Status</p>
-                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
-                    <option value="">All statuses</option>
-                    <option value="active">Active</option>
-                    <option value="paused">Paused</option>
-                    <option value="completed">Completed</option>
-                  </select>
+                  <DropdownPicker
+                    value={filterStatus}
+                    onChange={setFilterStatus}
+                    options={[
+                      { value: "", label: "All statuses" },
+                      { value: "active", label: "Active" },
+                      { value: "paused", label: "Paused" },
+                      { value: "completed", label: "Completed" },
+                    ]}
+                  />
                 </div>
                 {(filterTeam || filterStatus || filterOwner) && (
                   <button

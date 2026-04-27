@@ -8,6 +8,7 @@ import {
   LayoutDashboard, BarChart3, ListChecks, Users,
 } from "lucide-react";
 import { applyAccentColor } from "@quikit/ui/theme-applier";
+import { DropdownPicker } from "@quikit/ui";
 import { invalidateFeatureFlagsCache } from "@/lib/hooks/useFeatureFlags";
 
 /* ─── Constants ─────────────────────────────────────────────────────────────── */
@@ -246,35 +247,29 @@ function ProfileTab() {
 
         {/* Country */}
         <FieldRow label="Country">
-          <select
+          <DropdownPicker
             value={form.country}
-            onChange={(e) => {
-              const c = COUNTRIES.find((ct) => ct.code === e.target.value);
-              setForm({ ...form, country: e.target.value, timezone: c?.timezones[0]?.value || "" });
+            onChange={(v) => {
+              const c = COUNTRIES.find((ct) => ct.code === v);
+              setForm({ ...form, country: v, timezone: c?.timezones[0]?.value || "" });
             }}
+            options={COUNTRIES.map((c) => ({ value: c.code, label: c.name }))}
+            placeholder="Select country"
+            searchable
             disabled={!editMode}
-            className="w-full border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] disabled:opacity-70"
-          >
-            <option value="">Select country</option>
-            {COUNTRIES.map((c) => (
-              <option key={c.code} value={c.code}>{c.name}</option>
-            ))}
-          </select>
+          />
         </FieldRow>
 
         {/* Timezone */}
         <FieldRow label="Timezone">
-          <select
+          <DropdownPicker
             value={form.timezone}
-            onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+            onChange={(v) => setForm({ ...form, timezone: v })}
+            options={timezones.map((tz) => ({ value: tz.value, label: tz.label }))}
+            placeholder="Select timezone"
+            searchable
             disabled={!editMode || timezones.length === 0}
-            className="w-full border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] disabled:opacity-70"
-          >
-            <option value="">Select timezone</option>
-            {timezones.map((tz) => (
-              <option key={tz.value} value={tz.value}>{tz.label}</option>
-            ))}
-          </select>
+          />
         </FieldRow>
 
         {/* Bio */}

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { ROLE_LABELS } from "@/lib/constants";
 import { formatDate, formatRelativeDate } from "@/lib/utils";
-import { ArrowLeft, Loader2, Mail, UserX, Send } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, UserX, Send, Ban } from "lucide-react";
 
 interface MemberDetail {
   membershipId: string;
@@ -75,6 +75,30 @@ export default function MemberDetailPage() {
     await fetch(`/api/members/${params.id}/resend-invite`, { method: "POST" });
     setUpdating(false);
     alert("Invitation resent!");
+  }
+
+  async function handleRevoke() {
+    if (
+      !(await confirm({
+        title: "Revoke this invitation?",
+        description:
+          "The invitation link will be invalidated and the user will not be able to accept. You can re-invite them later.",
+        confirmLabel: "Revoke",
+        tone: "danger",
+      }))
+    )
+      return;
+    setUpdating(true);
+    const res = await fetch(`/api/members/${params.id}/invitation`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      router.push("/dashboard/members");
+    } else {
+      const json = await res.json().catch(() => ({}));
+      alert(json.error || "Failed to revoke invitation");
+      setUpdating(false);
+    }
   }
 
   if (loading) {
@@ -145,15 +169,26 @@ export default function MemberDetailPage() {
 
           <div className="mt-6 space-y-2">
             {member.status === "invited" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={handleResendInvite}
-                disabled={updating}
-              >
-                <Send className="h-4 w-4" /> Resend Invitation
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={handleResendInvite}
+                  disabled={updating}
+                >
+                  <Send className="h-4 w-4" /> Resend Invitation
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  className="w-full"
+                  onClick={handleRevoke}
+                  disabled={updating}
+                >
+                  <Ban className="h-4 w-4" /> Revoke Invitation
+                </Button>
+              </>
             )}
             {member.status === "active" && (
               <Button

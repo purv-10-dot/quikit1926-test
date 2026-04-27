@@ -6,7 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Button, Input } from "@quikit/ui";
 import { Badge } from "@/components/ui/badge";
 import { ROLE_LABELS } from "@/lib/constants";
-import { CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, Check } from "lucide-react";
+import { checkPasswordRules, isPasswordValid, PASSWORD_MIN_LENGTH } from "@/lib/passwordPolicy";
 
 interface InvitationData {
   orgName: string;
@@ -27,10 +28,13 @@ export default function AcceptInvitationPage() {
   const [invitation, setInvitation] = useState<InvitationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isExpired, setIsExpired] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -46,18 +50,36 @@ export default function AcceptInvitationPage() {
         setInvitation(json.data);
       } else {
         setError(json.error || "Invalid invitation");
+        if (res.status === 410) setIsExpired(true);
       }
       setLoading(false);
     }
     fetchInvitation();
   }, [token]);
 
+  async function handleRequestResend() {
+    if (!token) return;
+    setRequesting(true);
+    try {
+      const res = await fetch("/api/invitations/request-resend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const json = await res.json();
+      if (json.success) setRequestSent(true);
+      else setError(json.error || "Failed to request resend");
+    } finally {
+      setRequesting(false);
+    }
+  }
+
   async function handleAccept(e: React.FormEvent) {
     e.preventDefault();
 
     if (invitation?.needsPassword) {
-      if (password.length < 8) {
-        setError("Password must be at least 8 characters");
+      if (!isPasswordValid(password)) {
+        setError("Password does not meet the requirements below");
         return;
       }
       if (password !== confirmPassword) {
@@ -115,6 +137,35 @@ export default function AcceptInvitationPage() {
   }
 
   if (error && !invitation) {
+    if (isExpired) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
+          <Card className="w-full max-w-md text-center">
+            <XCircle className="h-12 w-12 mx-auto text-[var(--color-danger)] mb-4" />
+            <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">
+              Invitation Expired
+            </h2>
+            <p className="text-sm text-[var(--color-text-secondary)] mb-6">
+              This invitation link is no longer valid. Click below to ask the
+              administrator to send you a fresh invitation.
+            </p>
+            {requestSent ? (
+              <p className="text-sm text-[var(--color-success)]">
+                ✓ Your request has been sent. The administrator will follow up shortly.
+              </p>
+            ) : (
+              <Button
+                onClick={handleRequestResend}
+                loading={requesting}
+                className="w-full"
+              >
+                Request a new invitation
+              </Button>
+            )}
+          </Card>
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
         <Card className="w-full max-w-md text-center">
@@ -164,11 +215,12 @@ export default function AcceptInvitationPage() {
                 id="password"
                 label="Create Password"
                 type="password"
-                placeholder="Min 8 characters"
+                placeholder={`Min ${PASSWORD_MIN_LENGTH} characters`}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
+              <PasswordRules password={password} />
               <Input
                 id="confirm-password"
                 label="Confirm Password"
@@ -191,5 +243,32 @@ export default function AcceptInvitationPage() {
         </form>
       </Card>
     </div>
+  );
+}
+
+function PasswordRules({ password }: { password: string }) {
+  const r = checkPasswordRules(password);
+  const items: { ok: boolean; label: string }[] = [
+    { ok: r.minLength, label: `At least ${PASSWORD_MIN_LENGTH} characters` },
+    { ok: r.hasLetter, label: "At least one letter" },
+    { ok: r.hasDigit, label: "At least one digit" },
+    { ok: r.hasSymbol, label: "At least one symbol" },
+  ];
+  return (
+    <ul className="space-y-1 text-xs">
+      {items.map((item) => (
+        <li
+          key={item.label}
+          className={
+            item.ok
+              ? "flex items-center gap-1.5 text-[var(--color-success)]"
+              : "flex items-center gap-1.5 text-[var(--color-text-tertiary)]"
+          }
+        >
+          <Check className={`h-3 w-3 ${item.ok ? "opacity-100" : "opacity-30"}`} />
+          {item.label}
+        </li>
+      ))}
+    </ul>
   );
 }

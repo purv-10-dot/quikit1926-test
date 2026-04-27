@@ -247,7 +247,7 @@ export default function GoalsPage() {
       {/* Create modal */}
       {showModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
             <div className="px-6 pt-5 pb-3 border-b border-gray-100">
               <h2 className="text-sm font-semibold text-gray-900">New Goal</h2>
             </div>

@@ -203,7 +203,7 @@ function CategoryPanel({
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center">
       <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
         <div className="bg-gray-50 border-b border-gray-200 px-6 py-4 flex items-start justify-between">
           <div>

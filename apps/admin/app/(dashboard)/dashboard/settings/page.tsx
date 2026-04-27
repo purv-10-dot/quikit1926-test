@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button, Input, Select } from "@quikit/ui";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Save, Building2 } from "lucide-react";
+import { Loader2, Save, Building2, Plus, X, Mail } from "lucide-react";
 
 interface OrgSettings {
   id: string;
@@ -19,6 +19,7 @@ interface OrgSettings {
   fiscalYearStart: number;
   quarterStartMonth: number;
   weekStartDay: number;
+  allowedEmailDomains: string[];
   createdAt: string;
 }
 
@@ -35,6 +36,8 @@ const MONTH_NAMES = [
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+const DOMAIN_RE = /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i;
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<OrgSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +50,10 @@ export default function SettingsPage() {
     billingEmail: "",
     fiscalYearStart: 1,
     weekStartDay: 1,
+    allowedEmailDomains: [] as string[],
   });
+  const [domainDraft, setDomainDraft] = useState("");
+  const [domainError, setDomainError] = useState("");
 
   async function fetchSettings() {
     const res = await fetch("/api/settings");
@@ -61,6 +67,7 @@ export default function SettingsPage() {
         billingEmail: json.data.billingEmail || "",
         fiscalYearStart: json.data.fiscalYearStart,
         weekStartDay: json.data.weekStartDay,
+        allowedEmailDomains: json.data.allowedEmailDomains ?? [],
       });
     }
     setLoading(false);
@@ -69,6 +76,36 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchSettings();
   }, []);
+
+  function addDomain() {
+    const value = domainDraft.trim().toLowerCase();
+    if (!value) return;
+    if (!DOMAIN_RE.test(value)) {
+      setDomainError("Invalid domain (e.g. acme.com)");
+      return;
+    }
+    if (form.allowedEmailDomains.includes(value)) {
+      setDomainError("Already added");
+      return;
+    }
+    if (form.allowedEmailDomains.length >= 20) {
+      setDomainError("Max 20 domains");
+      return;
+    }
+    setForm({
+      ...form,
+      allowedEmailDomains: [...form.allowedEmailDomains, value],
+    });
+    setDomainDraft("");
+    setDomainError("");
+  }
+
+  function removeDomain(d: string) {
+    setForm({
+      ...form,
+      allowedEmailDomains: form.allowedEmailDomains.filter((x) => x !== d),
+    });
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -85,6 +122,7 @@ export default function SettingsPage() {
         billingEmail: form.billingEmail || null,
         fiscalYearStart: form.fiscalYearStart,
         weekStartDay: form.weekStartDay,
+        allowedEmailDomains: form.allowedEmailDomains,
       }),
     });
 
@@ -185,6 +223,72 @@ export default function SettingsPage() {
             value={form.billingEmail}
             onChange={(e) => setForm({ ...form, billingEmail: e.target.value })}
           />
+        </Card>
+
+        {/* Member Invitations */}
+        <Card>
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)] mb-1 flex items-center gap-2">
+            <Mail className="h-4 w-4" /> Member Invitations
+          </h3>
+          <p className="text-xs text-[var(--color-text-tertiary)] mb-4">
+            Restrict invitations to specific email domains. Leave empty to allow any address.
+          </p>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={domainDraft}
+                onChange={(e) => {
+                  setDomainDraft(e.target.value);
+                  if (domainError) setDomainError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addDomain();
+                  }
+                }}
+                placeholder="e.g. acme.com"
+                className="flex-1 px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addDomain}
+                disabled={!domainDraft.trim()}
+              >
+                <Plus className="h-4 w-4" /> Add
+              </Button>
+            </div>
+            {domainError && (
+              <p className="text-xs text-[var(--color-danger)]">{domainError}</p>
+            )}
+            {form.allowedEmailDomains.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {form.allowedEmailDomains.map((d) => (
+                  <span
+                    key={d}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[var(--color-bg-secondary)] text-xs text-[var(--color-text-primary)] border border-[var(--color-border)]"
+                  >
+                    {d}
+                    <button
+                      type="button"
+                      onClick={() => removeDomain(d)}
+                      className="hover:text-[var(--color-danger)]"
+                      aria-label={`Remove ${d}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--color-text-tertiary)] italic">
+                No restrictions — any email domain may be invited.
+              </p>
+            )}
+          </div>
         </Card>
 
         {/* Calendar */}

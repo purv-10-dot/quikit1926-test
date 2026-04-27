@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
-import { EmptyState } from "@quikit/ui";
+import { EmptyState, UserMultiPicker, UserPicker, DropdownPicker, type PickerUser } from "@quikit/ui";
 import type { PerformanceColor } from "@/lib/services/clientMeetingsMath";
 
 interface ClientOpt { id: string; name: string }
@@ -46,24 +46,24 @@ interface DashboardPayload {
 }
 
 const DAILY_METRICS = [
-  { key: "avgHeld",             label: "Meeting Held",       totalKey: "TotalavgHeld" },
-  { key: "avgPunctual",         label: "Punctuality",        totalKey: "TotalavgPunctual" },
-  { key: "avgDurationFollowed", label: "Duration Followed",  totalKey: "TotalavgDurationFollowed" },
-  { key: "avgFormat",           label: "Format Followed",    totalKey: "TotalavgFormat" },
-  { key: "avgAttendance",       label: "Attendance",         totalKey: "TotalavgAttendance" },
-  { key: "avgStuckCalls",       label: "Stuck Issue Called", totalKey: "TotalavgStuckCalls" },
+  { key: "avgHeld",             label: "Avg. % of Calls happened",                                    totalKey: "TotalavgHeld" },
+  { key: "avgPunctual",         label: "Avg. % of Calls where call punctuality was followed",         totalKey: "TotalavgPunctual" },
+  { key: "avgDurationFollowed", label: "Avg. % of Calls where call duration + time per member was followed", totalKey: "TotalavgDurationFollowed" },
+  { key: "avgFormat",           label: "Avg. % of format being followed",                             totalKey: "TotalavgFormat" },
+  { key: "avgAttendance",       label: "Avg. % of people attending the calls",                        totalKey: "TotalavgAttendance" },
+  { key: "avgStuckCalls",       label: "Avg. % of Stucks called out",                                 totalKey: "TotalavgStuckCalls" },
 ] as const;
 
 const WEEKLY_METRICS = [
-  { key: "avgHeld",             label: "Meeting Held",         totalKey: "TotalavgHeld" },
-  { key: "avgPunctual",         label: "Punctuality",          totalKey: "TotalavgPunctual" },
-  { key: "avgDurationFollowed", label: "Duration Followed",    totalKey: "TotalavgDurationFollowed" },
-  { key: "avgAuality",          label: "Dashboard Quality",    totalKey: "TotalavgAuality" },
-  { key: "avgKP",               label: "K&P Gaps Discussed",   totalKey: "TotalavgKP" },
-  { key: "avgWWW",              label: "WWW Review",           totalKey: "TotalavgWWW" },
-  { key: "avgEF",               label: "Employee Feedback",    totalKey: "TotalavgEF" },
-  { key: "avgCI",               label: "Collective Intel",     totalKey: "TotalavgCI" },
-  { key: "avgAttendance",       label: "Attendance",           totalKey: "TotalavgAttendance" },
+  { key: "avgHeld",             label: "Avg. % of Calls happened",                              totalKey: "TotalavgHeld" },
+  { key: "avgPunctual",         label: "Avg. % of Calls where call punctuality was followed",   totalKey: "TotalavgPunctual" },
+  { key: "avgDurationFollowed", label: "Average % of call end-time adherence.",                 totalKey: "TotalavgDurationFollowed" },
+  { key: "avgAuality",          label: "Quality of the dashboards",                             totalKey: "TotalavgAuality" },
+  { key: "avgKP",               label: "Active discussion on K&P achivement gaps & action plan",totalKey: "TotalavgKP" },
+  { key: "avgWWW",              label: "WWW review and follow up",                              totalKey: "TotalavgWWW" },
+  { key: "avgEF",               label: "Customer and employee feedback segment done",           totalKey: "TotalavgEF" },
+  { key: "avgCI",               label: "Collective intelligence discussion done",               totalKey: "TotalavgCI" },
+  { key: "avgAttendance",       label: "Avg. % of people attending the calls",                  totalKey: "TotalavgAttendance" },
 ] as const;
 
 function cellClass(pct: number, isUpdate: boolean): string {
@@ -84,7 +84,21 @@ export default function ClientMeetingsDashboardPage() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"performance" | "punch">("performance");
-  const [punchUserId, setPunchUserId] = useState<string>("");
+  const [punchUserIds, setPunchUserIds] = useState<string[]>([]);
+  const [punchYear, setPunchYear] = useState<number>(new Date().getFullYear());
+  const [punchMonth, setPunchMonth] = useState<number>(new Date().getMonth() + 1);
+  // API supports one member at a time; for multi-select we use the first id.
+  const punchUserId = punchUserIds[0] ?? "";
+
+  // Excel Report modal
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportType, setExportType] = useState<"daily" | "weekly" | "member">("daily");
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const [exportMonth, setExportMonth] = useState<number>(new Date().getMonth() + 1);
+  const [exportYear, setExportYear] = useState<number>(new Date().getFullYear());
+  const [exportClientId, setExportClientId] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetch("/api/client-meetings/clients").then(r => r.json()).then(j => {
@@ -126,42 +140,45 @@ export default function ClientMeetingsDashboardPage() {
           </div>
           <div className="flex items-center gap-2">
             {/* Mode toggle */}
-            <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+            <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs bg-white">
               <button
                 onClick={() => { setMode("daily"); setTab("performance"); }}
-                className={`px-3 py-1.5 font-medium ${mode === "daily" ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                className={`px-3 py-1.5 font-medium transition-colors ${mode === "daily" ? "bg-accent-500 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                 Daily
               </button>
               <button
                 onClick={() => setMode("weekly")}
-                className={`px-3 py-1.5 font-medium border-l border-gray-200 ${mode === "weekly" ? "bg-gray-900 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>
+                className={`px-3 py-1.5 font-medium border-l border-gray-200 transition-colors ${mode === "weekly" ? "bg-accent-500 text-white" : "text-gray-600 hover:bg-gray-50"}`}>
                 Weekly
               </button>
             </div>
-            {/* Client picker */}
-            <select value={clientId} onChange={e => setClientId(e.target.value)}
-              className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
-              <option value="">Select client…</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            {/* Client picker — searchable single-select for consistency */}
+            <div className="min-w-[200px]">
+              <UserPicker
+                value={clientId}
+                onChange={setClientId}
+                users={clients.map<PickerUser>(c => {
+                  const parts = c.name.trim().split(/\s+/);
+                  return { id: c.id, firstName: parts[0] ?? c.name, lastName: parts.slice(1).join(" "), email: "" };
+                })}
+                placeholder={clients.length ? "Select a client…" : "No clients yet"}
+                disabled={!clients.length}
+              />
+            </div>
             <button
-              disabled={!clientId}
-              onClick={async () => {
-                const res = await fetch(`/api/client-meetings/export/${mode}`, {
-                  method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ clientId }),
-                });
-                if (!res.ok) { alert("Export failed"); return; }
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url; a.download = `${data?.client.name ?? "client"}_${mode}.xlsx`;
-                document.body.appendChild(a); a.click(); a.remove();
-                URL.revokeObjectURL(url);
+              onClick={() => {
+                setExportClientId(clientId || clients[0]?.id || "");
+                setExportType(mode === "weekly" ? "weekly" : "daily");
+                setExportFrom("");
+                setExportTo("");
+                setExportOpen(true);
               }}
-              className="px-3 py-1.5 text-xs bg-accent-500 hover:bg-accent-600 text-white font-medium rounded-lg disabled:opacity-40"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent-500 hover:bg-accent-600 text-white font-medium rounded-lg whitespace-nowrap"
             >
-              Export {mode === "daily" ? "Daily" : "Weekly"}
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
+              </svg>
+              Excel Report
             </button>
           </div>
         </div>
@@ -206,8 +223,8 @@ export default function ClientMeetingsDashboardPage() {
             <table className="min-w-full text-xs">
               <thead className="bg-gray-100">
                 <tr>
-                  <th className="text-left px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">#</th>
-                  <th className="text-left px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">Metric</th>
+                  <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Sr No.</th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Metric Description</th>
                   {data.months.map(m => (
                     <th key={`${m.year}-${m.month}`} className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">
                       {m.monthName.slice(0, 3)} {String(m.year).slice(-2)}
@@ -252,13 +269,42 @@ export default function ClientMeetingsDashboardPage() {
         ) : (
           /* Member Punch-In */
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-gray-600">Member:</label>
-              <select value={punchUserId} onChange={e => setPunchUserId(e.target.value)}
-                className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400">
-                <option value="">Select member…</option>
-                {data.roster.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
-              </select>
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2 min-w-[260px]">
+                <label className="text-xs text-gray-600 whitespace-nowrap">Select Member:</label>
+                <div className="flex-1">
+                  <UserMultiPicker
+                    values={punchUserIds}
+                    onChange={setPunchUserIds}
+                    users={data.roster.map<PickerUser>(m => {
+                      const parts = m.name.trim().split(/\s+/);
+                      return { id: m.userId, firstName: parts[0] ?? m.name, lastName: parts.slice(1).join(" "), email: "" };
+                    })}
+                    placeholder={data.roster.length ? "Select members…" : "No team members on this client"}
+                    disabled={!data.roster.length}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 min-w-[160px]">
+                <label className="text-xs text-gray-600 whitespace-nowrap">Select Year:</label>
+                <div className="flex-1">
+                  <DropdownPicker
+                    value={String(punchYear)}
+                    onChange={(v) => setPunchYear(parseInt(v, 10))}
+                    options={Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i).map(y => ({ value: String(y), label: String(y) }))}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 min-w-[200px]">
+                <label className="text-xs text-gray-600 whitespace-nowrap">Select Month:</label>
+                <div className="flex-1">
+                  <DropdownPicker
+                    value={String(punchMonth)}
+                    onChange={(v) => setPunchMonth(parseInt(v, 10))}
+                    options={["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => ({ value: String(i + 1), label: m }))}
+                  />
+                </div>
+              </div>
               {data.punchIn && (
                 <span className="text-xs bg-accent-50 text-accent-700 px-2 py-0.5 rounded-full font-medium ml-auto">
                   Total Weekly Average: {data.punchIn.WeeklyTotalAverage}%
@@ -273,16 +319,21 @@ export default function ClientMeetingsDashboardPage() {
                 <table className="min-w-full text-xs">
                   <thead className="bg-gray-100">
                     <tr>
-                      <th className="text-left px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">Meeting Date</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">KPI QTD</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">KPI Coding</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">Priority Notes</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">Priority Dates</th>
-                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200">Priority Color</th>
+                      <th className="text-left px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Meeting Date</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">KPI Weekly QTD Update</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">KPI Color Coding</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Priority Notes</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Priority Start and End Date</th>
+                      <th className="text-center px-3 py-2 font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">Priority Color</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.punchIn.weeks.map(w => (
+                    {data.punchIn.weeks
+                      .filter(w => {
+                        const d = new Date(w.meetingDate);
+                        return d.getUTCFullYear() === punchYear && d.getUTCMonth() + 1 === punchMonth;
+                      })
+                      .map(w => (
                       <tr key={w.meetingDate} className="border-b border-gray-100">
                         <td className="px-3 py-2 text-gray-700">{w.meetingDate}</td>
                         {[w.kpiWeeklyQTD, w.kpiCoding, w.priorityNotes, w.priorityStartEndDate, w.priorityColor].map((v, i) => {
@@ -305,6 +356,189 @@ export default function ClientMeetingsDashboardPage() {
           </div>
         )}
       </div>
+
+      {exportOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40" onClick={() => setExportOpen(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h3 className="text-sm font-semibold text-gray-900">Export Report</h3>
+              </div>
+              <button onClick={() => setExportOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-1.5">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                  Client
+                </label>
+                <select
+                  value={exportClientId}
+                  onChange={(e) => setExportClientId(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                >
+                  <option value="">Select a client…</option>
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <p className="text-xs font-medium text-gray-600 mb-2">Report Type</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: "daily",   label: "Daily",   icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" },
+                    { value: "weekly",  label: "Weekly",  icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" },
+                    { value: "member",  label: "Member",  icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" },
+                  ] as const).map((opt) => (
+                    <button
+                      type="button"
+                      key={opt.value}
+                      onClick={() => setExportType(opt.value)}
+                      className={`flex flex-col items-center gap-1 px-3 py-3 border rounded-lg text-xs font-medium transition-colors ${
+                        exportType === opt.value
+                          ? "border-accent-300 bg-accent-50 text-accent-700"
+                          : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={opt.icon} />
+                      </svg>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {exportType === "member" ? (
+                <div>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-2">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    Period
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-1">Month</label>
+                      <select
+                        value={exportMonth}
+                        onChange={(e) => setExportMonth(parseInt(e.target.value, 10))}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                      >
+                        {["January","February","March","April","May","June","July","August","September","October","November","December"].map((m, i) => (
+                          <option key={m} value={i + 1}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-1">Year</label>
+                      <select
+                        value={exportYear}
+                        onChange={(e) => setExportYear(parseInt(e.target.value, 10))}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                      >
+                        {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-2">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    Date Range
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-1">From</label>
+                      <input
+                        type="date"
+                        value={exportFrom}
+                        onChange={(e) => setExportFrom(e.target.value)}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-500 mb-1">To</label>
+                      <input
+                        type="date"
+                        value={exportTo}
+                        onChange={(e) => setExportTo(e.target.value)}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button
+                disabled={!exportClientId || (exportType !== "member" && !exportTo) || exporting}
+                onClick={async () => {
+                  if (!exportClientId) return;
+                  if (exportType !== "member" && !exportTo) return;
+                  setExporting(true);
+                  try {
+                    let year: number;
+                    let month: number;
+                    if (exportType === "member") {
+                      year = exportYear;
+                      month = exportMonth;
+                    } else {
+                      const toDate = new Date(exportTo);
+                      year = toDate.getUTCFullYear();
+                      month = toDate.getUTCMonth() + 1;
+                    }
+                    const endpoint =
+                      exportType === "member"
+                        ? "/api/client-meetings/export/punch"
+                        : `/api/client-meetings/export/${exportType}`;
+                    const body: Record<string, unknown> = { clientId: exportClientId, year, month };
+                    if (exportType !== "member") {
+                      body.from = exportFrom || null;
+                      body.to = exportTo;
+                    }
+                    const res = await fetch(endpoint, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(body),
+                    });
+                    if (!res.ok) {
+                      const j = await res.json().catch(() => ({}));
+                      alert(j.error ?? "Export failed");
+                      return;
+                    }
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    const cName = clients.find((c) => c.id === exportClientId)?.name ?? "client";
+                    a.href = url;
+                    a.download = `${cName}_${exportType}_${year}-${String(month).padStart(2, "0")}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                    setExportOpen(false);
+                  } finally {
+                    setExporting(false);
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-medium bg-accent-500 hover:bg-accent-600 text-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" /></svg>
+                {exporting ? "Exporting…" : "Export Data"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -185,9 +185,16 @@ describe("POST /api/members", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 409 when user is already an active member", async () => {
+  it("returns generic 200 (no leak) when user is already an active member, and writes DUPLICATE_INVITE audit", async () => {
     asAuthedAdmin();
 
+    mockDb.tenant.findUnique.mockResolvedValue({
+      id: TENANT,
+      name: "Acme",
+      logoUrl: null,
+      brandColor: null,
+      allowedEmailDomains: [],
+    } as any);
     mockDb.user.findUnique.mockResolvedValue({ id: "u2", email: "existing@test.com" } as any);
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m2",
@@ -204,14 +211,34 @@ describe("POST /api/members", () => {
         role: "employee",
       })
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.error).toContain("already an active member");
+    expect(body.success).toBe(true);
+    expect(body.message).toContain("existing@test.com");
+    expect(mockDb.membership.upsert).not.toHaveBeenCalled();
+    expect(mockDb.user.create).not.toHaveBeenCalled();
+    expect(mockDb.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "DUPLICATE_INVITE",
+          entityType: "Membership",
+          entityId: "m2",
+          reason: "status=active",
+        }),
+      })
+    );
   });
 
-  it("returns 409 when user already has a pending invitation", async () => {
+  it("returns generic 200 (no leak) when user has a pending invite, and writes DUPLICATE_INVITE audit", async () => {
     asAuthedAdmin();
 
+    mockDb.tenant.findUnique.mockResolvedValue({
+      id: TENANT,
+      name: "Acme",
+      logoUrl: null,
+      brandColor: null,
+      allowedEmailDomains: [],
+    } as any);
     mockDb.user.findUnique.mockResolvedValue({ id: "u2", email: "pending@test.com" } as any);
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m2",
@@ -228,9 +255,16 @@ describe("POST /api/members", () => {
         role: "employee",
       })
     );
-    expect(res.status).toBe(409);
-    const body = await res.json();
-    expect(body.error).toContain("pending invitation");
+    expect(res.status).toBe(200);
+    expect(mockDb.membership.upsert).not.toHaveBeenCalled();
+    expect(mockDb.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "DUPLICATE_INVITE",
+          reason: "status=invited",
+        }),
+      })
+    );
   });
 
   it("creates invitation for new user (happy path)", async () => {
@@ -267,5 +301,106 @@ describe("POST /api/members", () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.message).toContain("new@test.com");
+  });
+
+  it("rejects email outside the tenant allowlist with 422", async () => {
+    asAuthedAdmin();
+
+    mockDb.tenant.findUnique.mockResolvedValue({
+      id: TENANT,
+      name: "Acme Corp",
+      logoUrl: null,
+      brandColor: null,
+      allowedEmailDomains: ["acme.com"],
+    } as any);
+
+    const res = await POST(
+      buildRequest("POST", "/api/members", {
+        email: "outsider@yahoo.com",
+        firstName: "Out",
+        lastName: "Sider",
+        role: "employee",
+      })
+    );
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error).toMatch(/domain not allowed/i);
+    expect(mockDb.user.create).not.toHaveBeenCalled();
+    expect(mockDb.membership.upsert).not.toHaveBeenCalled();
+  });
+
+  it("accepts email matching the tenant allowlist (case-insensitive)", async () => {
+    asAuthedAdmin();
+
+    mockDb.tenant.findUnique.mockResolvedValue({
+      id: TENANT,
+      name: "Acme Corp",
+      logoUrl: null,
+      brandColor: null,
+      allowedEmailDomains: ["acme.com"],
+    } as any);
+    mockDb.user.findUnique.mockResolvedValueOnce(null);
+    mockDb.user.create.mockResolvedValue({ id: "u-ok", email: "ok@ACME.com" } as any);
+    mockDb.membership.upsert.mockResolvedValue({ id: "m-ok" } as any);
+    mockDb.user.findUnique.mockResolvedValue({
+      id: USER,
+      firstName: "Admin",
+      lastName: "User",
+    } as any);
+
+    const res = await POST(
+      buildRequest("POST", "/api/members", {
+        email: "ok@ACME.com",
+        firstName: "OK",
+        lastName: "User",
+        role: "employee",
+      })
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("writes an INVITED audit log on successful invite", async () => {
+    asAuthedAdmin();
+
+    mockDb.tenant.findUnique.mockResolvedValue({
+      id: TENANT,
+      name: "Acme Corp",
+      logoUrl: null,
+      brandColor: null,
+      allowedEmailDomains: [],
+    } as any);
+    mockDb.user.findUnique.mockResolvedValueOnce(null);
+    mockDb.user.create.mockResolvedValue({
+      id: "u-audit",
+      email: "audit@test.com",
+    } as any);
+    mockDb.membership.upsert.mockResolvedValue({ id: "m-audit" } as any);
+    mockDb.user.findUnique.mockResolvedValue({
+      id: USER,
+      firstName: "Admin",
+      lastName: "User",
+    } as any);
+
+    const res = await POST(
+      buildRequest("POST", "/api/members", {
+        email: "audit@test.com",
+        firstName: "Audit",
+        lastName: "User",
+        role: "employee",
+      })
+    );
+    expect(res.status).toBe(200);
+    expect(mockDb.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "INVITED",
+          entityType: "Membership",
+          entityId: "m-audit",
+          tenantId: TENANT,
+          actorId: USER,
+        }),
+      })
+    );
   });
 });

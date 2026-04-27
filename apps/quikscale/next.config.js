@@ -59,12 +59,20 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:",
               "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
-              "font-src 'self' fonts.gstatic.com",
+              "font-src 'self' fonts.gstatic.com data:",
               "img-src 'self' data: blob: https:",
-              "connect-src 'self' https://*.sentry.io",
-              "frame-ancestors 'none'",
+              // react-pdf fetches embedded fonts/assets via data: URLs.
+              "connect-src 'self' https://*.sentry.io data: blob:",
+              // PDFViewer (react-pdf) loads its rendered PDF into an iframe via a
+              // blob: URL and uses Web Workers to do the layout. Allow both.
+              "frame-src 'self' blob:",
+              "worker-src 'self' blob:",
+              "child-src 'self' blob:",
+              // Must be 'self' (not 'none') so the blob: PDF iframe — which
+              // inherits this CSP — can be framed by the same origin.
+              "frame-ancestors 'self'",
             ].join("; "),
           },
           {

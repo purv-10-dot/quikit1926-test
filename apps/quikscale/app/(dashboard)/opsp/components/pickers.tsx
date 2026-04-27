@@ -186,7 +186,7 @@ export function QuarterDropdown({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 w-52 p-3">
+          <div className="absolute right-0 top-full mt-2 z-50 bg-white rounded-xl shadow-xl border border-gray-100 w-52 p-3">
             <div className="space-y-1">
               {QUARTERS.map((q, i) => (
                 <button
