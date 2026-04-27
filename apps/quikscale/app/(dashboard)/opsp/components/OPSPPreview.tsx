@@ -43,6 +43,13 @@ const ZOOM_STEPS = [50, 75, 100, 125, 150, 175, 200] as const;
 const ZOOM_MIN = ZOOM_STEPS[0];
 const ZOOM_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1];
 
+/** Base page render dimensions — A4 portrait aspect ratio (210:297 ≈ 1:1.41).
+ * The PDFViewer iframe always renders at this fixed pixel size; zoom is
+ * applied as a CSS transform on a wrapper. Higher base = sharper at 100%
+ * zoom but larger initial render cost. 800×1130 is a good middle ground. */
+const PAGE_W = 800;
+const PAGE_H = 1130;
+
 export function OPSPPreview({
   open,
   onClose,
@@ -161,40 +168,42 @@ export function OPSPPreview({
         </div>
       </div>
 
-      {/* ── Document area — gray bg, centered, zoom-scrollable ────────── */}
-      <div className="flex-1 overflow-auto bg-slate-300">
-        <div className="flex justify-center p-6">
+      {/* ── Document area — gray bg, centered, zoom-scrollable ──────────
+          Layout strategy:
+            - Outer flex container scrolls in both directions when needed.
+            - Centered scaled wrapper takes the *visual* (scaled) dimensions
+              so scrollbars appear naturally when zoomed > 100%.
+            - Inner wrapper renders PDFViewer at fixed PAGE_W × PAGE_H and
+              CSS-scales — explicit pixel dims on the iframe avoid the
+              "100% of transformed parent" sizing bug. */}
+      <div className="flex-1 overflow-auto bg-slate-300 flex justify-center items-start p-6">
+        <div
+          style={{
+            width: (PAGE_W * zoom) / 100,
+            height: (PAGE_H * zoom) / 100,
+            flexShrink: 0,
+            transition: "width 150ms ease-out, height 150ms ease-out",
+          }}
+        >
           <div
-            // Outer wrapper takes the SCALED dimensions so scrollbars appear
-            // when zoomed in. Base size is 800×1130 (~A4 portrait aspect).
             style={{
-              width: (800 * zoom) / 100,
-              height: (1130 * zoom) / 100,
-              flexShrink: 0,
-              transition: "width 120ms ease-out, height 120ms ease-out",
+              width: PAGE_W,
+              height: PAGE_H,
+              transformOrigin: "top left",
+              transform: `scale(${zoom / 100})`,
+              transition: "transform 150ms ease-out",
+              backgroundColor: "white",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
             }}
           >
-            <div
-              // Inner wrapper renders the PDFViewer at base size and visually
-              // scales via CSS transform. transformOrigin:top left so the
-              // scaled box matches the outer wrapper's pixel dimensions.
-              style={{
-                width: 800,
-                height: 1130,
-                transformOrigin: "top left",
-                transform: `scale(${zoom / 100})`,
-                transition: "transform 120ms ease-out",
-              }}
+            <PDFViewer
+              width={PAGE_W}
+              height={PAGE_H}
+              showToolbar={false}
+              style={{ border: 0 }}
             >
-              <PDFViewer
-                width="100%"
-                height="100%"
-                showToolbar={false}
-                style={{ border: 0, backgroundColor: "white" }}
-              >
-                <OPSPDocument form={form} users={users} />
-              </PDFViewer>
-            </div>
+              <OPSPDocument form={form} users={users} />
+            </PDFViewer>
           </div>
         </div>
       </div>
