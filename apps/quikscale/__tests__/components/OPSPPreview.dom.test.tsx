@@ -136,26 +136,29 @@ describe("OPSPPreview (react-pdf / Architecture B)", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders the toolbar header with year and quarter when open", () => {
+  it("renders the toolbar title with year and quarter when open", () => {
     const form = buildForm({ year: 2027, quarter: "Q3" });
     render(<OPSPPreview open={true} onClose={vi.fn()} form={form} />);
-    expect(screen.getByText(/OPSP Preview/i)).toBeInTheDocument();
+    // New chrome: title shows "OPSP — {year} {quarter}"
+    expect(screen.getByText(/OPSP/)).toBeInTheDocument();
     expect(screen.getByText(/2027/)).toBeInTheDocument();
     expect(screen.getByText(/Q3/)).toBeInTheDocument();
   });
 
-  it("renders Download PDF, Download Word, Print, and Close controls", () => {
+  it("renders Download PDF, zoom controls, and Close", () => {
     render(<OPSPPreview open={true} onClose={vi.fn()} form={buildForm()} />);
     expect(screen.getByRole("button", { name: /Download PDF/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Download Word/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Print/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Close Preview/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Zoom in/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Zoom out/i })).toBeInTheDocument();
+    // Zoom-reset button has visible text "100%" (title attribute is "Reset to 100%")
+    expect(screen.getByRole("button", { name: /100%/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Close preview/i })).toBeInTheDocument();
   });
 
   it("calls onClose when the close button is clicked", () => {
     const onClose = vi.fn();
     render(<OPSPPreview open={true} onClose={onClose} form={buildForm()} />);
-    const closeBtn = screen.getByRole("button", { name: /Close Preview/i });
+    const closeBtn = screen.getByRole("button", { name: /Close preview/i });
     closeBtn.click();
     expect(onClose).toHaveBeenCalledOnce();
   });
