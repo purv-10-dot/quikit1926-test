@@ -62,29 +62,33 @@ export function AccountabilitySection({
                   <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">
                     {String(i + 1).padStart(2, "0")}
                   </td>
-                  <td className="border-r border-gray-200 px-3 py-1.5">
+                  <td className="border-r border-gray-200 px-3 py-1.5 relative">
                     <input
                       value={row.kpi}
+                      maxLength={30}
                       onChange={(e) => {
                         const next = [...form.kpiAccountability];
-                        next[i] = { ...next[i], kpi: e.target.value };
+                        next[i] = { ...next[i], kpi: e.target.value.slice(0, 30) };
                         set("kpiAccountability", next);
                       }}
                       placeholder="Input text"
-                      className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                      className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1 pr-10"
                     />
+                    <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.kpi.length >= 30 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.kpi.length}/30</span>
                   </td>
-                  <td className="px-3 py-1.5">
+                  <td className="px-3 py-1.5 relative">
                     <input
                       value={row.goal}
+                      maxLength={20}
                       onChange={(e) => {
                         const next = [...form.kpiAccountability];
-                        next[i] = { ...next[i], goal: e.target.value };
+                        next[i] = { ...next[i], goal: e.target.value.slice(0, 20) };
                         set("kpiAccountability", next);
                       }}
                       placeholder="Input text"
-                      className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                      className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1 pr-10"
                     />
+                    <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.goal.length >= 20 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.goal.length}/20</span>
                   </td>
                 </tr>
               ))}
@@ -129,22 +133,24 @@ export function AccountabilitySection({
                   <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">
                     {String(i + 1).padStart(2, "0")}
                   </td>
-                  <td className="border-r border-gray-200 px-3 py-1.5">
+                  <td className="border-r border-gray-200 px-3 py-1.5 relative">
                     <WithTooltip
                       content={row.priority}
                       className="relative block w-full"
                     >
                       <input
                         value={row.priority}
+                        maxLength={70}
                         onChange={(e) => {
                           const next = [...form.quarterlyPriorities];
-                          next[i] = { ...next[i], priority: e.target.value };
+                          next[i] = { ...next[i], priority: e.target.value.slice(0, 70) };
                           set("quarterlyPriorities", next);
                         }}
                         placeholder="Input text"
-                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1"
+                        className="w-full text-sm text-gray-700 placeholder-gray-400 bg-transparent focus:outline-none py-1 pr-10"
                       />
                     </WithTooltip>
+                    <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.priority.length >= 70 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.priority.length}/70</span>
                   </td>
                   <td className="px-3 py-1.5 w-32">
                     <div className="relative flex items-center gap-2 cursor-pointer">

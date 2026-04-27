@@ -136,7 +136,14 @@ export function ActionsSection({
           <div className="flex items-start justify-between mb-2">
             <div>
               <p className="text-xs font-bold text-gray-800 uppercase">Rocks</p>
-              <p className="text-xs text-gray-500">Quarterly Priorities</p>
+              <p className="text-xs text-gray-500">
+                Quarterly Priorities
+                {form.rocks.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
+                  <span className="text-red-600 font-medium ml-1">
+                    ({form.rocks.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
+                  </span>
+                )}
+              </p>
             </div>
             <button
               onClick={onExpandRocks}
@@ -164,6 +171,7 @@ export function ActionsSection({
                   <FInput
                     value={row.desc}
                     placeholder="Quarterly Priority"
+                    maxLength={75}
                     onChange={(v) => {
                       const next = [...form.rocks];
                       next[i] = { ...next[i], desc: v };
@@ -211,6 +219,7 @@ export function ActionsSection({
             onChange={(v) => set("theme", v)}
             rows={4}
             className="flex-1 min-h-[60px]"
+            maxLength={750}
           />
         </div>
         <div className="flex-1 flex flex-col p-4 border-t border-gray-100">
@@ -225,6 +234,7 @@ export function ActionsSection({
             onChange={(v) => set("scoreboardDesign", v)}
             rows={3}
             className="flex-1 min-h-[60px]"
+            maxLength={800}
           />
         </div>
         <div className="flex-1 flex flex-col p-4 border-t border-gray-100">
@@ -236,6 +246,7 @@ export function ActionsSection({
             onChange={(v) => set("celebration", v)}
             rows={3}
             className="flex-1 min-h-[60px]"
+            maxLength={400}
           />
         </div>
         <div className="flex-1 flex flex-col p-4 border-t border-gray-100">
@@ -247,6 +258,7 @@ export function ActionsSection({
             onChange={(v) => set("reward", v)}
             rows={3}
             className="flex-1 min-h-[60px]"
+            maxLength={400}
           />
         </div>
       </Card>

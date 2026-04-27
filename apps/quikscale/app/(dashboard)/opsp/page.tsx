@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { cn } from "@/lib/utils";
 import { FInput } from "./components/RichEditor";
@@ -18,6 +19,7 @@ import { ActionsSection } from "./components/ActionsSection";
 import { AccountabilitySection } from "./components/AccountabilitySection";
 import { useOPSPForm, type FormData } from "./hooks/useOPSPForm";
 import { OPSPPreview } from "./components/OPSPPreview";
+import { validateOPSP, type ValidationError } from "./lib/validateOPSP";
 
 /* ═══════════════════════════════════════════════
    Main Page
@@ -35,6 +37,7 @@ export default function OPSPPage() {
     saveState, loading,
     fiscalYearStart,
     planStartYear, planEndYear, planStartQuarter,
+    reviewedQuarters, refreshReviewedQuarters,
     showSetupWizard,
     loadForPeriod,
     completeSetup,
@@ -50,10 +53,38 @@ export default function OPSPPage() {
   const [kpiAcctOpen, setKpiAcctOpen] = useState(false);
   const [qPrioritiesOpen, setQPrioritiesOpen] = useState(false);
   const [finalizeConfirmOpen, setFinalizeConfirmOpen] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [previewOpen, setPreviewOpen] = useState(urlPreview);
   const [showYearPicker, setShowYearPicker] = useState(false);
   const yearRef = useRef<HTMLDivElement>(null);
   const { data: allUsers = [] } = useUsers();
+
+  // Tenant name + signed-in user name — surfaced in OPSP preview blue bands
+  // (Page 1 "Organization:" + Page 2 "Your Name:"). Tenant fetched once on
+  // mount; user name comes from the NextAuth session.
+  const { data: session } = useSession();
+  const currentUserName =
+    session?.user?.name ?? session?.user?.email ?? "";
+  const [tenantName, setTenantName] = useState<string>("");
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/org/info")
+      .then((r) => r.json())
+      .then((j) => {
+        if (!cancelled && j?.success && j?.data?.name) setTenantName(j.data.name);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Re-fetch unlocked quarters when a review is submitted in another tab/page
+  useEffect(() => {
+    const handler = () => { refreshReviewedQuarters(); };
+    window.addEventListener("opsp-review-submitted", handler);
+    return () => window.removeEventListener("opsp-review-submitted", handler);
+  }, [refreshReviewedQuarters]);
 
   // Close year picker on outside click
   useEffect(() => {
@@ -72,14 +103,19 @@ export default function OPSPPage() {
       .catch(() => {});
   }, []);
 
-  /* ── Field helpers ── */
+  /* ── Field helpers ──
+     "reviewed" is a stronger lock than "finalized" — once the OPSP review has
+     been submitted, the form remains read-only and is still presented as
+     "Finalized" in the header (a reviewed OPSP is by definition finalized). */
+  const isLocked = form.status === "finalized" || form.status === "reviewed";
+
   const set = <K extends keyof FormData>(key: K, value: FormData[K]) => {
-    if (form.status === "finalized" && key !== "status") return; // read-only guard
+    if (isLocked && key !== "status") return; // read-only guard
     setForm(prev => ({ ...prev, [key]: value }));
   };
 
   const setArr = (key: keyof FormData, idx: number, value: string) => {
-    if (form.status === "finalized") return; // read-only guard
+    if (isLocked) return; // read-only guard
     setForm(prev => {
       const arr = [...(prev[key] as string[])];
       arr[idx] = value;
@@ -88,7 +124,7 @@ export default function OPSPPage() {
   };
 
   /* ── Finalize ── */
-  const isFinalized = form.status === "finalized";
+  const isFinalized = isLocked;
   const confirmFinalize = async () => {
     await fetch("/api/opsp", {
       method: "POST",
@@ -192,14 +228,26 @@ export default function OPSPPage() {
                       const startQNum = planStartQuarter ? parseInt(planStartQuarter.replace("Q", "")) : 1;
                       const isBeforeStart = form.year === planStartYear && qNum < startQNum;
                       const isSelected = form.quarter === q;
+
+                      // A quarter is locked until the prior quarter's review has
+                      // been submitted. Skip the gate for the plan's first quarter
+                      // and for quarters the user is already on / has been on.
+                      const isPlanFirst =
+                        form.year === planStartYear && qNum === startQNum;
+                      const prevYear = qNum === 1 ? form.year - 1 : form.year;
+                      const prevQ = qNum === 1 ? "Q4" : `Q${qNum - 1}`;
+                      const prevReviewed = reviewedQuarters.includes(`${prevYear}:${prevQ}`);
+                      const isLocked = !isBeforeStart && !isPlanFirst && !prevReviewed;
+                      const disabled = isBeforeStart || isLocked;
                       return (
                         <button key={q}
-                          disabled={isBeforeStart}
-                          onClick={() => { if (!isBeforeStart) { setForm(prev => ({ ...prev, quarter: q })); loadForPeriod(form.year, q); setShowYearPicker(false); } }}
+                          disabled={disabled}
+                          title={isLocked ? `Submit ${prevQ} review to unlock ${q}` : undefined}
+                          onClick={() => { if (!disabled) { setForm(prev => ({ ...prev, quarter: q })); loadForPeriod(form.year, q); setShowYearPicker(false); } }}
                           className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${
                             isSelected
                               ? "bg-gray-900 text-white"
-                              : isBeforeStart
+                              : disabled
                                 ? "text-gray-300 border border-gray-100 cursor-not-allowed"
                                 : "hover:bg-gray-50 text-gray-700 border border-gray-200"
                           }`}>
@@ -212,7 +260,16 @@ export default function OPSPPage() {
               </div>
             )}
           </div>
-          <button onClick={() => !isFinalized && setFinalizeConfirmOpen(true)}
+          <button onClick={() => {
+              if (isFinalized) return;
+              const errs = validateOPSP(form);
+              if (errs.length > 0) {
+                setValidationErrors(errs);
+                return;
+              }
+              setValidationErrors([]);
+              setFinalizeConfirmOpen(true);
+            }}
             className={cn("flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm font-medium",
               isFinalized
                 ? "border-green-500 text-green-600 bg-green-50 cursor-default"
@@ -223,6 +280,45 @@ export default function OPSPPage() {
           <button onClick={() => setPreviewOpen(true)} className="p-1.5 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50" title="Preview OPSP"><Eye className="h-4 w-4" /></button>
         </div>
       </div>
+
+      {/* ── Validation toast (Finalize blocked) ── */}
+      {validationErrors.length > 0 && (
+        <div className="fixed top-20 right-6 z-[400] w-[420px] max-h-[70vh] overflow-y-auto bg-white border border-red-200 rounded-xl shadow-2xl">
+          <div className="flex items-start gap-3 px-4 py-3 border-b border-red-100 bg-red-50 rounded-t-xl">
+            <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-red-800">Cannot finalize — fix {validationErrors.length} issue{validationErrors.length === 1 ? "" : "s"}</p>
+              <p className="text-xs text-red-600 mt-0.5">Projection vs breakdown sums and missing owners must be resolved.</p>
+            </div>
+            <button
+              onClick={() => setValidationErrors([])}
+              className="p-1 rounded hover:bg-red-100 text-red-500 flex-shrink-0"
+              aria-label="Dismiss"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+          <ul className="px-4 py-3 space-y-2">
+            {(() => {
+              const grouped: Record<string, ValidationError[]> = {};
+              for (const e of validationErrors) {
+                if (!grouped[e.section]) grouped[e.section] = [];
+                grouped[e.section].push(e);
+              }
+              return Object.entries(grouped).map(([section, errs]) => (
+                <li key={section}>
+                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">{section}</p>
+                  <ul className="mt-1 ml-3 space-y-0.5">
+                    {errs.map((e, i) => (
+                      <li key={i} className="text-xs text-red-700 leading-relaxed">• {e.message}</li>
+                    ))}
+                  </ul>
+                </li>
+              ));
+            })()}
+          </ul>
+        </div>
+      )}
 
       {/* ── Finalize confirmation ── */}
       {finalizeConfirmOpen && (
@@ -282,7 +378,14 @@ export default function OPSPPage() {
         rows={form.quarterlyPriorities} onChange={r => set("quarterlyPriorities", r)} readOnly={isFinalized} />
 
       {/* ── OPSP Preview (PDF / Word export) ── */}
-      <OPSPPreview open={previewOpen} onClose={() => setPreviewOpen(false)} form={form} users={allUsers} />
+      <OPSPPreview
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        form={form}
+        users={allUsers}
+        tenantName={tenantName}
+        currentUserName={currentUserName}
+      />
 
       {/* ── Finalized read-only banner ── */}
       {isFinalized && (

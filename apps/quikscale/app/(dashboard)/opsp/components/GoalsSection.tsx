@@ -144,7 +144,14 @@ export function GoalsSection({
             <p className="text-xs font-bold text-gray-800 uppercase">
               Key Initiatives
             </p>
-            <p className="text-xs text-gray-500">1 Year Priorities</p>
+            <p className="text-xs text-gray-500">
+              1 Year Priorities
+              {form.keyInitiatives.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
+                <span className="text-red-600 font-medium ml-1">
+                  ({form.keyInitiatives.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
+                </span>
+              )}
+            </p>
           </div>
           <button
             onClick={onExpandKeyInitiatives}
@@ -167,6 +174,7 @@ export function GoalsSection({
                 <FInput
                   value={row.desc}
                   placeholder="Initiative"
+                  maxLength={70}
                   onChange={(v) => {
                     const next = [...form.keyInitiatives];
                     next[i] = { ...next[i], desc: v };

@@ -36,6 +36,7 @@ export const GET = withTenantAuth(async ({ tenantId, userId }) => {
       targetYears: null,
       startQuarter: null,
       fiscalYearStart,
+      reviewedQuarters: [],
     });
   }
 
@@ -43,6 +44,14 @@ export const GET = withTenantAuth(async ({ tenantId, userId }) => {
   const startQuarter = earliest.quarter;
   const targetYears = earliest.targetYears ?? 5;
   const endYear = startYear + targetYears - 1;
+
+  // List of "{year}:{quarter}" keys that have been review-submitted.
+  // Drives the quarter unlock logic in the OPSP create page.
+  const reviewed = await db.oPSPData.findMany({
+    where: { tenantId, userId, status: "reviewed" },
+    select: { year: true, quarter: true },
+  });
+  const reviewedQuarters = reviewed.map((r) => `${r.year}:${r.quarter}`);
 
   return NextResponse.json({
     success: true,
@@ -52,5 +61,6 @@ export const GET = withTenantAuth(async ({ tenantId, userId }) => {
     targetYears,
     startQuarter,
     fiscalYearStart,
+    reviewedQuarters,
   });
 });

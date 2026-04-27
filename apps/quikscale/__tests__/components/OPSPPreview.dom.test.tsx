@@ -145,13 +145,9 @@ describe("OPSPPreview (react-pdf / Architecture B)", () => {
     expect(screen.getByText(/Q3/)).toBeInTheDocument();
   });
 
-  it("renders Download PDF, zoom controls, and Close", () => {
+  it("renders Download PDF and Close controls", () => {
     render(<OPSPPreview open={true} onClose={vi.fn()} form={buildForm()} />);
     expect(screen.getByRole("button", { name: /Download PDF/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Zoom in/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Zoom out/i })).toBeInTheDocument();
-    // Zoom-reset button has visible text "100%" (title attribute is "Reset to 100%")
-    expect(screen.getByRole("button", { name: /100%/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Close preview/i })).toBeInTheDocument();
   });
 

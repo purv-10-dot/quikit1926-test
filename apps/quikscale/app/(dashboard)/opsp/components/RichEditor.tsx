@@ -35,27 +35,59 @@ import {
 
 /* ── Basic inputs ── */
 
+/** Counter pill — bottom-right "remaining/limit" indicator. Red when at/over limit. */
+function CharCounter({ used, max }: { used: number; max: number }) {
+  const remaining = max - used;
+  const danger = remaining <= 0;
+  const warn = !danger && remaining <= Math.max(5, Math.floor(max * 0.1));
+  return (
+    <span
+      aria-live="polite"
+      className={cn(
+        "pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums select-none",
+        danger ? "text-red-600 font-semibold" : warn ? "text-amber-600" : "text-gray-400",
+      )}
+    >
+      {used}/{max}
+    </span>
+  );
+}
+
 export function FInput({
   value,
   onChange,
   placeholder = "Input text",
   className,
+  maxLength,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
+  maxLength?: number;
 }) {
-  return (
+  const input = (
     <input
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => {
+        const v = e.target.value;
+        onChange(maxLength ? v.slice(0, maxLength) : v);
+      }}
       placeholder={placeholder}
+      maxLength={maxLength}
       className={cn(
         "w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white",
+        maxLength ? "pr-14" : "",
         className,
       )}
     />
+  );
+  if (!maxLength) return input;
+  return (
+    <div className="relative w-full">
+      {input}
+      <CharCounter used={value.length} max={maxLength} />
+    </div>
   );
 }
 
@@ -65,24 +97,38 @@ export function FTextarea({
   placeholder = "Input text",
   rows = 4,
   className,
+  maxLength,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   rows?: number;
   className?: string;
+  maxLength?: number;
 }) {
-  return (
+  const ta = (
     <textarea
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => {
+        const v = e.target.value;
+        onChange(maxLength ? v.slice(0, maxLength) : v);
+      }}
       placeholder={placeholder}
       rows={rows}
+      maxLength={maxLength}
       className={cn(
         "w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none bg-white",
+        maxLength ? "pb-5" : "",
         className,
       )}
     />
+  );
+  if (!maxLength) return ta;
+  return (
+    <div className={cn("relative", className?.includes("flex-1") ? "flex-1 flex" : "")}>
+      {ta}
+      <CharCounter used={value.length} max={maxLength} />
+    </div>
   );
 }
 
@@ -336,31 +382,51 @@ export function RichEditor({
   placeholder = "Input text",
   className,
   resetKey,
+  maxLength,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   className?: string;
   resetKey?: string;
+  maxLength?: number;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [isEmpty, setIsEmpty] = useState(
     !value || value === "" || value === "<br>",
   );
+  const [textLen, setTextLen] = useState(0);
 
   useEffect(() => {
     if (editorRef.current) {
       editorRef.current.innerHTML = value || "";
       setIsEmpty(!value || value === "" || value === "<br>");
+      setTextLen(editorRef.current.innerText?.replace(/ /g, " ").length ?? 0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
 
   const handleInput = () => {
     if (!editorRef.current) return;
-    const html = editorRef.current.innerHTML;
+    const el = editorRef.current;
+    const text = (el.innerText ?? "").replace(/ /g, " ");
+    if (maxLength && text.length > maxLength) {
+      // Hard cap — strip last input by reverting to previous value
+      el.innerHTML = value || "";
+      // place caret at end
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      setTextLen((el.innerText ?? "").length);
+      return;
+    }
+    const html = el.innerHTML;
     onChange(html);
     setIsEmpty(!html || html === "<br>" || html === "<div><br></div>");
+    setTextLen(text.length);
   };
 
   return (
@@ -378,8 +444,26 @@ export function RichEditor({
           suppressContentEditableWarning
           onInput={handleInput}
           style={{ minHeight: "inherit" }}
-          className="rich-editor w-full h-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white overflow-y-auto"
+          className={cn(
+            "rich-editor w-full h-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white overflow-y-auto",
+            maxLength ? "pb-5" : "",
+          )}
         />
+        {maxLength !== undefined && (
+          <span
+            aria-live="polite"
+            className={cn(
+              "pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums select-none",
+              textLen >= maxLength
+                ? "text-red-600 font-semibold"
+                : textLen >= maxLength - Math.max(5, Math.floor(maxLength * 0.1))
+                  ? "text-amber-600"
+                  : "text-gray-400",
+            )}
+          >
+            {textLen}/{maxLength}
+          </span>
+        )}
       </div>
     </div>
   );
