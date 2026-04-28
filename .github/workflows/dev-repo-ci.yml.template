@@ -1,0 +1,117 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dev-repo CI template
+#
+# Drop this file into each per-dev repo as `.github/workflows/ci.yml` (rename
+# during onboarding). Mirrors the master monorepo's gates so devs catch issues
+# locally before opening a PR.
+#
+# Differences from master CI (.github/workflows/ci.yml):
+#   - No e2e job (per-dev repos don't have prod-shaped data).
+#   - No prisma migration status (per-dev repos use db push, not migrations).
+#   - Adds branch-name + commit-message format checks (master enforces these
+#     on PR merge; dev repo catches them at push time so the dev sees them
+#     before opening a PR).
+#
+# Required secrets in dev's repo Settings → Secrets and variables → Actions:
+#   DATABASE_URL — point at a placeholder local-shape Postgres URL; the
+#                  workflow uses `db push` so no real data is needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: ["**"]
+
+jobs:
+  branch-name:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Validate branch name
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          # Allow main/master/dev/uat as historical defaults; require feature/* etc. for everything else.
+          case "$BRANCH" in
+            main|master|dev|uat) ;;
+            feature/*|fix/*|chore/*|refactor/*) ;;
+            *)
+              echo "❌ Branch name '$BRANCH' invalid."
+              echo "   Use feature/<name>, fix/<name>, chore/<name>, or refactor/<name>."
+              exit 1
+              ;;
+          esac
+          echo "✅ Branch name OK: $BRANCH"
+
+  commit-format:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate commit messages (Conventional Commits)
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          BAD=0
+          while IFS= read -r line; do
+            # accept: feat(scope): subject  or  fix: subject  etc.
+            if ! echo "$line" | grep -qE '^(feat|fix|chore|refactor|docs|test|perf|build|ci)(\([a-z0-9-]+\))?: .{3,}'; then
+              echo "❌ Bad commit message: $line"
+              BAD=1
+            fi
+          done < <(git log --pretty=%s "$BASE..$HEAD")
+          if [ "$BAD" = "1" ]; then
+            echo ""
+            echo "Use Conventional Commits: type(scope): subject"
+            echo "Examples:"
+            echo "  feat(quiksocial): add campaign builder UI"
+            echo "  fix(quiksocial): debounce search input"
+            echo "  chore(quiksocial): bump dependency X"
+            exit 1
+          fi
+          echo "✅ All commit messages OK"
+
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Lint
+        run: npx turbo run lint
+
+      - name: Typecheck
+        run: npx turbo run typecheck
+
+      - name: Test
+        run: npx turbo run test
+        env:
+          NODE_ENV: test
+
+      - name: Coverage (your-app)
+        # Replace `<your-app>` with your app id once during onboarding.
+        run: npx vitest run --coverage
+        working-directory: apps/<your-app>
+        env:
+          NODE_ENV: test
+
+      - name: Coverage ratchet
+        run: node scripts/coverage-ratchet.mjs apps/<your-app>/coverage/coverage-summary.json
+
+      - name: Security audit
+        run: npm audit --audit-level=high --omit=dev || true
+        # `|| true` matches master CI — advisory-only vulns don't block PRs.

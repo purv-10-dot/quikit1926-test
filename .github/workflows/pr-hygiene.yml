@@ -1,0 +1,87 @@
+name: PR Hygiene
+
+# Lightweight gate that runs on every PR to ensure branch-name + commit-format
+# rules are followed before the heavy CI (lint/typecheck/test) burns minutes.
+#
+# Mirrors the dev-repo CI template at .github/workflows/dev-repo-ci.yml.template
+# so devs catch the same issues locally first.
+
+on:
+  pull_request:
+    branches: [dev, uat, main]
+
+jobs:
+  branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate source branch name
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          # Allow integration owner's own branches (integrate-* used by integrate-app.sh).
+          case "$BRANCH" in
+            feature/*|fix/*|chore/*|refactor/*|integrate-*) ;;
+            *)
+              echo "❌ Source branch '$BRANCH' invalid."
+              echo "   Use feature/<name>, fix/<name>, chore/<name>, refactor/<name>."
+              echo "   See docs/02-integration-protocol.md."
+              exit 1
+              ;;
+          esac
+          echo "✅ Branch name OK: $BRANCH"
+
+  commit-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate commit messages (Conventional Commits)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          BAD=0
+          while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            # Allow merge commits (start with "Merge").
+            if [[ "$line" == Merge* ]]; then continue; fi
+            if ! echo "$line" | grep -qE '^(feat|fix|chore|refactor|docs|test|perf|build|ci)(\([a-z0-9-]+\))?: .{3,}'; then
+              echo "❌ Bad commit message: $line"
+              BAD=1
+            fi
+          done < <(git log --pretty=%s "$BASE_SHA..$HEAD_SHA")
+          if [ "$BAD" = "1" ]; then
+            echo ""
+            echo "Use Conventional Commits: type(scope): subject"
+            echo "  feat(quiksocial): add campaign builder UI"
+            echo "  fix(quiksocial): debounce search input"
+            echo "  chore(quiksocial): remove unused lodash dependency"
+            exit 1
+          fi
+          echo "✅ All commit messages OK"
+
+  packages-protection:
+    runs-on: ubuntu-latest
+    # Only the integration owner can modify packages/. This job flags any PR
+    # that touches them so reviewers explicitly approve cross-package changes.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect packages/ changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          TOUCHED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep '^packages/' || true)
+          if [[ -n "$TOUCHED" ]]; then
+            echo "⚠ This PR modifies files under packages/:"
+            echo "$TOUCHED" | sed 's/^/   /'
+            echo ""
+            echo "packages/ is owned by the integration owner. CODEOWNERS will"
+            echo "route the review accordingly. This is informational — not a"
+            echo "fail — but the integration owner must explicitly approve."
+          else
+            echo "✅ No packages/ changes — pure app-level PR"
+          fi
