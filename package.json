@@ -23,6 +23,7 @@
     "db:studio": "cd packages/database && npx prisma studio",
     "db:generate": "cd packages/database && npx prisma generate",
     "db:seed:e2e": "cd packages/database && npm run db:seed:e2e",
+    "db:seed:quikvc": "cd packages/database && npm run db:seed:quikvc",
     "e2e": "cd apps/quikscale && npx playwright test",
     "e2e:quikit": "cd apps/quikit && npx playwright test",
     "e2e:all": "npm run e2e && npm run e2e:quikit",

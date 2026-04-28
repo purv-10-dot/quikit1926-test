@@ -24,8 +24,9 @@ datasource db {
   //   public                  — identity, platform glue, cross-app FKs land here
   //   app_quikscale           — KPI / Priority / WWW / OPSP / Client Meetings
   //   app_quikconstruction    — Cn* construction-ERP tables
+  //   app_quikvc              — VC OS: deals, scoring, IC memos, capital
   // admin and quikit have no app-private state — they read from public only.
-  schemas   = ["public", "app_quikscale", "app_quikconstruction"]
+  schemas   = ["public", "app_quikscale", "app_quikconstruction", "app_quikvc"]
 }
 
 // ============================================================================
@@ -268,6 +269,36 @@ model Tenant {
   cnDebitNotes           CnDebitNote[]
   cnAuditLogs            CnAuditLog[]
   cnNumberSequences      CnNumberSequence[]
+
+  // QuikVC OS — back-relations (Sprint 1 foundation + Sprint 2 deal workspace)
+  vcFundProfile          VCFundProfile?
+  vcVerticals            VCVertical[]
+  vcScoringCriteria      VCScoringCriterion[]
+  vcApplications         VCApplication[]
+  vcDeals                VCDeal[]
+  vcTimelineEvents       VCTimelineEvent[]
+  vcDealDocuments        VCDealDocument[]
+  vcDealQuestions        VCDealQuestion[]
+  vcDealScores           VCDealScore[]
+  vcDealSignals          VCDealSignal[]
+  vcICMemos              VCICMemo[]
+  vcICMemoVersions       VCICMemoVersion[]
+  vcComparableCompanies  VCComparableCompany[]
+  vcMeetings             VCMeeting[]
+  vcMeetingTranscripts   VCMeetingTranscript[]
+  vcICVotes              VCICVote[]
+  vcInvestors            VCInvestor[]
+  vcCommitments          VCCommitment[]
+  vcCapitalCalls         VCCapitalCall[]
+  vcDealAllocations      VCDealAllocation[]
+  vcRepaymentSchedules   VCRepaymentSchedule[]
+  vcRepaymentPayments    VCRepaymentPayment[]
+  vcTermSheetTemplates   VCTermSheetTemplate[]
+  vcTermSheets           VCTermSheet[]
+  vcCapitalCallPayments  VCCapitalCallPayment[]
+  vcSourcedOpportunities VCSourcedOpportunity[]
+  vcNotifications        VCNotification[]
+  vcAuditLogs            VCAuditLog[]
 
   @@index([slug])
   @@index([status])
@@ -917,7 +948,7 @@ model ClientMember {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant            Tenant                              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant            Tenant                               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   clientLinks       ClientTeamMember[]
   dailyAbsences     ClientDailyHuddleTeamAbsence[]
   weeklyAbsences    ClientWeeklyMeetingTeamAbsence[]
@@ -1046,8 +1077,8 @@ model ClientWeeklyMeeting {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant                 Tenant                              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  client                 Client                              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tenant                 Tenant                               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client                 Client                               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   absentMembers          ClientWeeklyMeetingAbsence[]
   absentTeamMembers      ClientWeeklyMeetingTeamAbsence[]
   dashboardNAMembers     ClientWeeklyMeetingDashboardNA[]
@@ -4380,4 +4411,941 @@ model CnNumberSequence {
   @@unique([tenantId, prefix, fyKey])
   @@index([tenantId])
   @@schema("app_quikconstruction")
+}
+
+// ============================================================================
+// QUIKVC OS (app_quikvc)
+// ============================================================================
+//
+// VC firm operating system. See _internal/architecture-notes/quikvc-architecture-v1.md
+// for the full architecture brief (30-model target; this is the Sprint 1
+// foundation — 6 models: tenant config + deal core + audit).
+//
+// Conventions (mirror app_quikscale):
+//   - Every tenant-scoped model has tenantId String + @@index([tenantId])
+//   - createdAt / updatedAt / createdBy / updatedBy on every model
+//   - Cascade delete from Tenant
+//   - JSON columns for variable-shape data (signals, answers, evidence)
+//
+// Sprint 2+ adds: DealScore, DealFinancials, DealSignal, DealDocument,
+// Meeting, MeetingTranscript, ICMemo (+versions), ICVote, Investor,
+// Commitment, CapitalCall, DealAllocation, RepaymentSchedule, TermSheet,
+// SourcedOpportunity, ComparableCompany, NotificationItem, etc.
+// ============================================================================
+
+/// Per-tenant VC OS configuration. 1:1 with Tenant when QuikVC is enabled.
+/// Holds VC-specific settings that don't apply to QuikScale tenants.
+model VCFundProfile {
+  id             String  @id @default(cuid())
+  tenantId       String  @unique
+  /// Display name for the fund (shown in Fund switcher; v1 = single-fund per tenant)
+  fundName       String
+  /// Currency code for capital amounts (ISO 4217). Defaults to INR for India.
+  currency       String  @default("INR")
+  /// IC voting mode for this tenant: "single" or "multi"
+  icVotingMode   String  @default("single")
+  /// Quorum count for "multi" mode (ignored when icVotingMode = "single")
+  icQuorum       Int     @default(2)
+  /// Threshold for "multi" mode: "simple-majority" | "two-thirds" | "unanimous"
+  icThreshold    String  @default("simple-majority")
+  /// Voting visibility: "open" (voters see each other's vote) or "anonymous"
+  icVisibility   String  @default("open")
+  /// Tenant's investment thesis — used by Claude for sourced-opportunity scoring
+  thesis         String? @db.Text
+  /// Daily summary cron — local hour (0–23) in tenant locale
+  dailyBriefHour Int     @default(6)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@schema("app_quikvc")
+}
+
+/// Industry / sector vertical (e.g., SaaS, FinTech). Per-tenant configurable.
+/// Default seed: 7 verticals (SaaS, FinTech, AgriTech, HealthTech & D2C,
+/// Logistics & SupplyChain, ConsumerInternet & E-commerce, DeepTech & AI).
+model VCVertical {
+  id          String  @id @default(cuid())
+  tenantId    String
+  /// Stable slug (kebab-case) — used in URLs and as scoring criteria foreign key
+  slug        String
+  name        String
+  description String? @db.Text
+  /// Display order in admin / pickers
+  sortOrder   Int     @default(0)
+  enabled     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant               Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scoringCriteria      VCScoringCriterion[]
+  applications         VCApplication[]
+  deals                VCDeal[]
+  sourcedOpportunities VCSourcedOpportunity[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@schema("app_quikvc")
+}
+
+/// Per-vertical scoring criterion. Weights must sum to 100% per vertical.
+/// Used by Claude scoring + analyst override workflow.
+model VCScoringCriterion {
+  id          String  @id @default(cuid())
+  tenantId    String
+  verticalId  String
+  /// Stable slug — referenced by DealScore rows
+  slug        String
+  name        String
+  description String? @db.Text
+  /// Weight 0–100 (integer percentage). Sum across vertical's criteria must = 100
+  weight      Int
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vertical VCVertical @relation(fields: [verticalId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, verticalId, slug])
+  @@index([tenantId, verticalId])
+  @@schema("app_quikvc")
+}
+
+/// Founder-submitted startup application. Master record created on form
+/// submit; auto-creates a linked VCDeal at Intake stage.
+model VCApplication {
+  id           String  @id @default(cuid())
+  tenantId     String
+  /// User ID of the founder (Membership in this tenant with role = "founder")
+  founderId    String
+  verticalId   String
+  /// Display name of the startup
+  startupName  String
+  contactName  String
+  contactEmail String
+  contactPhone String?
+  website      String?
+  sector       String?
+  foundedYear  Int?
+  teamSize     Int?
+  /// Plain-text business description from form
+  description  String? @db.Text
+  /// Funding ask in tenant's currency (smallest unit, e.g. paise)
+  fundingAsk   BigInt?
+  /// One of: "term-loan" | "rbf" | "equity"
+  loanType     String?
+  /// Tenure in months (for term-loan / RBF)
+  tenureMonths Int?
+  /// Purpose of funds — short answer
+  purpose      String? @db.Text
+  /// Form-bound answers (Step 3 financials, etc.) — variable shape
+  formAnswers  Json?
+  status       String  @default("submitted") // submitted | converted | rejected
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vertical VCVertical @relation(fields: [verticalId], references: [id], onDelete: Restrict)
+  deal     VCDeal? // 1:1 — created automatically on submit
+
+  @@index([tenantId])
+  @@index([tenantId, founderId])
+  @@index([tenantId, status])
+  @@schema("app_quikvc")
+}
+
+/// Core deal record. Drives the 9-stage pipeline + 6-column Kanban view.
+/// Sprint 1: holds enough state to render Pipeline + Deal Overview.
+model VCDeal {
+  id              String  @id @default(cuid())
+  tenantId        String
+  applicationId   String  @unique
+  verticalId      String
+  /// One of the 9 canonical stages: intake | onboarding | doc-collection |
+  /// discovery-call | research | partner-review | ic-review | due-diligence |
+  /// final-decision. Tenant can rename / reorder via PipelineStageConfig (Sprint 4).
+  currentStage    String  @default("intake")
+  /// Closed status when stage reaches final-decision: open | closed-won | closed-lost
+  closedStatus    String  @default("open")
+  /// Primary analyst (Membership ID with role = "analyst" or "partner")
+  analystId       String?
+  /// Optional partner assigned for visibility
+  partnerId       String?
+  /// AI composite score (0-100) computed from all DealScore rows
+  aiScore         Int?
+  /// Analyst composite score (overrides AI when set)
+  analystScore    Int?
+  /// Funding amount allocated so far (sum of DealAllocation amounts; Sprint 4)
+  allocatedAmount BigInt  @default(0)
+  /// % completion of required documents (0-100)
+  docCompleteness Int     @default(0)
+  /// Days the deal has been in its current stage (recomputed by background job)
+  daysInStage     Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application    VCApplication         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  vertical       VCVertical            @relation(fields: [verticalId], references: [id], onDelete: Restrict)
+  timelineEvents VCTimelineEvent[]
+  documents      VCDealDocument[]
+  questions      VCDealQuestion[]
+  scores         VCDealScore[]
+  signals        VCDealSignal[]
+  icMemos        VCICMemo[]
+  comparables    VCComparableCompany[]
+  meetings       VCMeeting[]
+  allocations    VCDealAllocation[]
+  termSheet      VCTermSheet?
+
+  @@index([tenantId])
+  @@index([tenantId, currentStage])
+  @@index([tenantId, verticalId])
+  @@index([tenantId, analystId])
+  @@schema("app_quikvc")
+}
+
+/// Append-only timeline event log per deal. Captures stage transitions, doc
+/// uploads, score updates, IC votes, allocations — anything the analyst /
+/// founder / investor needs to see in chronological order.
+///
+/// Pattern parallels existing AuditLog (in public schema); this one is
+/// scoped per deal and rendered in the Deal Overview / Workbench timeline tab.
+model VCTimelineEvent {
+  id         String  @id @default(cuid())
+  tenantId   String
+  dealId     String
+  /// Event type — extensible enum string for now. See architecture brief §6.
+  /// Examples: stage-advanced | doc-uploaded | doc-rejected | score-updated |
+  /// memo-generated | ic-vote-cast | capital-allocated | meeting-scheduled
+  type       String
+  /// Actor's User ID (null for system events like cron, AI background jobs)
+  actorId    String?
+  /// Human-readable summary shown in timeline UI
+  summary    String  @db.Text
+  /// Structured event payload (varies by type)
+  payload    Json?
+  /// Visibility — "internal" (VC team only) | "founder" (also visible in startup portal) | "investor"
+  visibility String  @default("internal")
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId, createdAt])
+  @@index([tenantId, type])
+  @@schema("app_quikvc")
+}
+
+// ============================================================================
+// QUIKVC OS — Sprint 2 deal workspace models
+// ============================================================================
+
+/// Document uploaded against a deal. Stored in Vercel Blob (URL field) and
+/// classified by category (pitch deck, financials, incorp cert, etc.). Status
+/// tracks the VC team's review state visible to the founder in real time.
+model VCDealDocument {
+  id           String  @id @default(cuid())
+  tenantId     String
+  dealId       String
+  /// Document category (slug from VCDocumentRequirement when those land in
+  /// Sprint 5; for now a free-text slug like "pitch-deck" / "financials" /
+  /// "incorporation" / "gst-returns" / "bank-statements")
+  category     String
+  /// Display name shown in document vault
+  filename     String
+  /// MIME type (application/pdf, image/png, etc.)
+  mimeType     String
+  /// Size in bytes
+  sizeBytes    Int
+  /// Vercel Blob URL — public read, signed write
+  blobUrl      String
+  /// Version number — increments when same category is re-uploaded
+  version      Int     @default(1)
+  /// Review status: "missing" | "under-review" | "accepted" | "rejected"
+  status       String  @default("under-review")
+  /// When status = "rejected", reason shown to founder
+  rejectReason String? @db.Text
+  /// User ID of uploader (founder via founder portal, analyst via deal workspace)
+  uploadedById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId])
+  @@index([tenantId, status])
+  @@schema("app_quikvc")
+}
+
+/// Q&A thread between analyst and founder against a deal. Analyst posts a
+/// question, founder responds. Stored as a single row with optional answer
+/// (so the analyst surfaces unanswered questions easily).
+model VCDealQuestion {
+  id           String    @id @default(cuid())
+  tenantId     String
+  dealId       String
+  /// Analyst (Membership ID) who posted the question
+  askedById    String
+  /// Question text (analyst-side)
+  question     String    @db.Text
+  /// Founder's response, if any
+  answer       String?   @db.Text
+  /// Founder's User ID (Membership) — populated when answered
+  answeredById String?
+  answeredAt   DateTime?
+  /// Status: "open" | "answered" | "closed"
+  status       String    @default("open")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId, status])
+  @@schema("app_quikvc")
+}
+
+/// Per-criterion AI score + analyst override. Sprint 2 stub — Sprint 3
+/// extends with score history, override justification fields, AI confidence.
+model VCDealScore {
+  id             String  @id @default(cuid())
+  tenantId       String
+  dealId         String
+  /// References VCScoringCriterion.slug (not FK because criteria can be
+  /// renamed / disabled and we want to keep score history)
+  criterionSlug  String
+  /// AI-generated score 0-100
+  aiScore        Int?
+  /// Analyst-overridden score (null when not overridden)
+  analystScore   Int?
+  /// Required when analystScore is set — analyst rationale for override
+  overrideReason String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dealId, criterionSlug])
+  @@index([tenantId, dealId])
+  @@schema("app_quikvc")
+}
+
+// ============================================================================
+// QUIKVC OS — Sprint 3 evaluation + AI models
+// ============================================================================
+
+/// Auto-detected or manually-added risk signal against a deal.
+/// Severity follows the canonical traffic light. Sprint 3a: manual entry +
+/// transcript-detected (when Sprint 3b ships meeting transcripts).
+model VCDealSignal {
+  id          String  @id @default(cuid())
+  tenantId    String
+  dealId      String
+  /// Severity: "red" | "amber" | "green"
+  severity    String
+  /// Source category: "financial" | "compliance" | "transcript" | "manual"
+  source      String
+  /// Short signal title shown in risk register
+  title       String
+  /// Detailed description
+  description String? @db.Text
+  /// Mitigation plan (analyst-entered)
+  mitigation  String? @db.Text
+  /// Status: "open" | "mitigated" | "accepted" | "resolved"
+  status      String  @default("open")
+  /// Owner — analyst/partner responsible for tracking this signal
+  ownerId     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId, status])
+  @@index([tenantId, severity])
+  @@schema("app_quikvc")
+}
+
+/// IC Memo — top-level record per deal. Points to the current version.
+/// Versions are immutable snapshots; "freeze" promotes the working version
+/// to the IC review artifact and stops further edits.
+model VCICMemo {
+  id               String  @id @default(cuid())
+  tenantId         String
+  dealId           String  @unique
+  /// Status: "draft" | "under-review" | "frozen"
+  status           String  @default("draft")
+  /// Pointer to the current working version (latest unfrozen)
+  currentVersionId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal           VCDeal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  versions       VCICMemoVersion[] @relation("MemoVersions")
+  currentVersion VCICMemoVersion?  @relation("CurrentMemoVersion", fields: [currentVersionId], references: [id])
+  votes          VCICVote[]
+
+  @@index([tenantId])
+  @@schema("app_quikvc")
+}
+
+/// Versioned snapshot of memo content. Sections stored as JSON for editor
+/// flexibility (rich text per section + metadata).
+model VCICMemoVersion {
+  id         String  @id @default(cuid())
+  tenantId   String
+  memoId     String
+  /// Sequential version number per memo (1, 2, 3, …)
+  version    Int
+  /// Sections array — see lib/memo/types.ts for shape:
+  /// [{ id, slug, title, contentHtml, generatedBy, generatedAt }]
+  sections   Json
+  /// Plain-text summary of what changed vs prior version (analyst note)
+  changeNote String? @db.Text
+  /// Source of this version: "claude" (full AI generation) | "analyst-edit" |
+  /// "claude-section" (one section AI-generated, rest manual)
+  source     String  @default("analyst-edit")
+
+  createdAt DateTime @default(now())
+  createdBy String?
+
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memo           VCICMemo  @relation("MemoVersions", fields: [memoId], references: [id], onDelete: Cascade)
+  currentForMemo VCICMemo? @relation("CurrentMemoVersion")
+
+  @@unique([memoId, version])
+  @@index([tenantId, memoId])
+  @@schema("app_quikvc")
+}
+
+/// Comparable company added to a deal — for benchmarking + IC context.
+/// Sprint 3a: manual add. Sprint 3b: Claude-suggested via prompt against
+/// the deal's vertical + description.
+model VCComparableCompany {
+  id                String  @id @default(cuid())
+  tenantId          String
+  dealId            String
+  name              String
+  sector            String?
+  /// Source: "manual" | "ai-suggested"
+  source            String  @default("manual")
+  /// Why this comp is relevant (analyst rationale)
+  reason            String? @db.Text
+  /// Free-form metrics (revenue, valuation, multiple, etc.) — JSON for shape variability
+  metrics           Json?
+  /// External link if any (Crunchbase, company site)
+  link              String?
+  /// True when the analyst has pinned this as the primary benchmark
+  pinnedAsBenchmark Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId])
+  @@schema("app_quikvc")
+}
+
+/// Meeting record per deal — discovery calls, partner meetings, etc.
+/// Sprint 3a: just CRUD; Sprint 3b adds transcript paste + Claude analysis.
+model VCMeeting {
+  id              String    @id @default(cuid())
+  tenantId        String
+  dealId          String
+  title           String
+  /// Scheduled or actual start time
+  scheduledAt     DateTime?
+  /// Duration in minutes (post-meeting)
+  durationMinutes Int?
+  /// Meet/Zoom URL or location
+  meetingUrl      String?
+  /// Type: "discovery-call" | "partner-meeting" | "ic-review" | "follow-up"
+  type            String    @default("discovery-call")
+  /// Status: "scheduled" | "completed" | "cancelled"
+  status          String    @default("scheduled")
+  /// JSON array of participant Membership IDs + names + roles
+  participants    Json?
+  /// Analyst pre-meeting notes
+  agenda          String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal       VCDeal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  transcript VCMeetingTranscript?
+
+  @@index([tenantId, dealId])
+  @@index([tenantId, status])
+  @@schema("app_quikvc")
+}
+
+/// Raw transcript text + Claude-extracted analysis. Separate from VCMeeting
+/// because transcripts can be large (db.Text) and aren't always present.
+model VCMeetingTranscript {
+  id         String @id @default(cuid())
+  tenantId   String
+  meetingId  String @unique
+  /// Raw pasted transcript text
+  rawText    String @db.Text
+  /// Claude analysis output — JSON shape:
+  ///   { summary, keyPoints[], redFlags[], actionItems[], sentiment }
+  analysis   Json?
+  /// Status: "raw" | "analysed" | "error"
+  status     String @default("raw")
+  /// Token usage for cost tracking
+  tokensUsed Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  meeting VCMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@schema("app_quikvc")
+}
+
+// ============================================================================
+// QUIKVC OS — Sprint 4 decision + capital models
+// ============================================================================
+
+/// IC vote cast against a frozen memo version. Per voter per memo (not
+/// per version — voters vote on the frozen artifact). Decision values map
+/// to UX blueprint W14: approve / conditional-approve / reject / abstain.
+model VCICVote {
+  id         String  @id @default(cuid())
+  tenantId   String
+  memoId     String
+  voterId    String // Membership user id with canVoteIC=true
+  /// Decision: "approve" | "conditional-approve" | "reject" | "abstain"
+  decision   String
+  /// Rationale shown to peers (per VCFundProfile.icVisibility)
+  rationale  String? @db.Text
+  /// Conditions to clear before final approval (only when decision = conditional-approve)
+  conditions String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memo   VCICMemo @relation(fields: [memoId], references: [id], onDelete: Cascade)
+
+  /// Voters cast at most one vote per memo (re-cast updates this row).
+  @@unique([memoId, voterId])
+  @@index([tenantId, memoId])
+  @@schema("app_quikvc")
+}
+
+/// Investor record per tenant — LP, HNI, or angel.
+model VCInvestor {
+  id           String  @id @default(cuid())
+  tenantId     String
+  /// Display name (firm or individual)
+  name         String
+  /// Type: "lp" | "hni" | "angel"
+  type         String  @default("lp")
+  /// Optional User link if the investor logs into the Investor Portal
+  userId       String?
+  /// Contact details
+  email        String?
+  phone        String?
+  /// KYC status: "pending" | "verified" | "rejected"
+  kycStatus    String  @default("pending")
+  /// Account class for accreditation (e.g., "accredited", "qualified")
+  accountClass String?
+  notes        String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  commitments        VCCommitment[]
+  capitalCalls       VCCapitalCall[]
+  allocations        VCDealAllocation[]
+  repaymentSchedules VCRepaymentSchedule[]
+  repaymentPayments  VCRepaymentPayment[]
+
+  @@index([tenantId])
+  @@index([tenantId, type])
+  @@schema("app_quikvc")
+}
+
+/// Commitment record per investor. One-shot pledge (totalAmount upfront)
+/// OR scheduled (callable in tranches via VCCommitmentSchedule child rows).
+model VCCommitment {
+  id          String @id @default(cuid())
+  tenantId    String
+  investorId  String
+  /// Type: "one-shot" | "scheduled"
+  type        String @default("one-shot")
+  /// Total amount committed in paise (smallest INR unit)
+  totalAmount BigInt
+  /// Currency code (typically INR; per VCFundProfile.currency)
+  currency    String @default("INR")
+  /// Vintage year (when the commitment was made)
+  vintageYear Int?
+  /// Status: "active" | "fulfilled" | "defaulted" | "cancelled"
+  status      String @default("active")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  investor VCInvestor @relation(fields: [investorId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, investorId])
+  @@schema("app_quikvc")
+}
+
+/// Capital call issued to an investor (against an active commitment) to draw
+/// down funds for a specific deal allocation. Tracks the lifecycle:
+/// issued → paid (or overdue/defaulted on miss).
+model VCCapitalCall {
+  id           String    @id @default(cuid())
+  tenantId     String
+  investorId   String
+  /// Optional link to the allocation that triggered this call
+  allocationId String?
+  /// Amount called in paise
+  amount       BigInt
+  /// Date payment is due
+  dueDate      DateTime
+  /// Status: "issued" | "paid" | "partial" | "overdue" | "defaulted"
+  status       String    @default("issued")
+  /// Sum of all VCCapitalCallPayment amounts so far (denormalized for fast queries)
+  paidAmount   BigInt    @default(0)
+  paidAt       DateTime?
+  notes        String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant   Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  investor VCInvestor             @relation(fields: [investorId], references: [id], onDelete: Cascade)
+  payments VCCapitalCallPayment[]
+
+  @@index([tenantId, investorId, status])
+  @@index([tenantId, dueDate])
+  @@schema("app_quikvc")
+}
+
+/// Payment received against a capital call. Supports partial payments.
+model VCCapitalCallPayment {
+  id            String   @id @default(cuid())
+  tenantId      String
+  capitalCallId String
+  amount        BigInt
+  paidAt        DateTime
+  reference     String? // bank ref / UTR
+  notes         String?  @db.Text
+
+  createdAt DateTime @default(now())
+  createdBy String?
+
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  capitalCall VCCapitalCall @relation(fields: [capitalCallId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, capitalCallId])
+  @@schema("app_quikvc")
+}
+
+/// Allocation of capital to a deal. Multiple investors per deal allowed.
+/// Rolls into VCDeal.allocatedAmount (denormalized for fast queries).
+model VCDealAllocation {
+  id          String    @id @default(cuid())
+  tenantId    String
+  dealId      String
+  investorId  String
+  /// Amount allocated in paise
+  amount      BigInt
+  /// Status: "pending" | "confirmed" | "disbursed"
+  status      String    @default("pending")
+  /// Disbursed date once funds move (after capital calls clear)
+  disbursedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal     VCDeal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  investor VCInvestor @relation(fields: [investorId], references: [id], onDelete: Restrict)
+
+  @@unique([dealId, investorId])
+  @@index([tenantId, dealId])
+  @@index([tenantId, investorId])
+  @@schema("app_quikvc")
+}
+
+/// Repayment schedule per deal × investor. Type determines structure:
+///   - "emi": fixed monthly EMI for term loans, schedule generated upfront
+///   - "equity-exit": no fixed schedule; payments recorded on liquidity events
+///   - "rbf": revenue-based — payments recorded as % of monthly revenue
+model VCRepaymentSchedule {
+  id            String @id @default(cuid())
+  tenantId      String
+  dealId        String
+  investorId    String
+  /// Type: "emi" | "equity-exit" | "rbf"
+  type          String
+  /// Total expected repayment principal + interest (paise)
+  totalExpected BigInt
+  /// Total received so far (denormalized from VCRepaymentPayment)
+  totalPaid     BigInt @default(0)
+  /// EMI schedule details when type = "emi"
+  /// JSON: [{ dueDate, amount, status: "due"|"paid"|"overdue" }]
+  scheduleJson  Json?
+  /// Status: "active" | "completed" | "defaulted" | "exited"
+  status        String @default("active")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant   Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  investor VCInvestor           @relation(fields: [investorId], references: [id], onDelete: Restrict)
+  payments VCRepaymentPayment[]
+
+  @@index([tenantId, dealId])
+  @@index([tenantId, investorId])
+  @@schema("app_quikvc")
+}
+
+/// Repayment payment received from the startup back to investors.
+model VCRepaymentPayment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  scheduleId String
+  investorId String
+  amount     BigInt
+  paidAt     DateTime
+  /// "principal" | "interest" | "exit" — for rolling up
+  category   String   @default("principal")
+  reference  String? // bank UTR
+  notes      String?  @db.Text
+
+  createdAt DateTime @default(now())
+  createdBy String?
+
+  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schedule VCRepaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  investor VCInvestor          @relation(fields: [investorId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, scheduleId])
+  @@index([tenantId, investorId, paidAt])
+  @@schema("app_quikvc")
+}
+
+/// Per-tenant term sheet template. Contains rich-text body with {{variable}}
+/// placeholders that get substituted from deal data at generation time.
+/// Only Fund Admin edits this. v1 supports a single template per tenant.
+model VCTermSheetTemplate {
+  id       String @id @default(cuid())
+  tenantId String
+  name     String @default("Default Term Sheet")
+  /// Rich-text body with {{startup.name}} / {{deal.fundingAsk}} etc.
+  bodyHtml String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@schema("app_quikvc")
+}
+
+/// Generated term sheet for a deal. 1:1 — re-generation creates a new version
+/// referenced via the rendered HTML in renderedBodyHtml + version counter.
+model VCTermSheet {
+  id               String    @id @default(cuid())
+  tenantId         String
+  dealId           String    @unique
+  /// Sequential version (1, 2, 3, …) — increments on every regen
+  version          Int       @default(1)
+  /// Rendered HTML (variables already substituted)
+  renderedBodyHtml String    @db.Text
+  /// Status: "draft" | "sent" | "signed"
+  status           String    @default("draft")
+  sentAt           DateTime?
+  signedAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@schema("app_quikvc")
+}
+
+/// Inbound deal-flow item before a formal application is submitted.
+/// Created via manual entry, CSV upload, or email-forward parser.
+/// Converts → VCApplication + VCDeal once analyst clicks "Convert to deal".
+model VCSourcedOpportunity {
+  id                     String  @id @default(cuid())
+  tenantId               String
+  /// Source: "manual" | "csv" | "email" | "referral"
+  source                 String  @default("manual")
+  /// Free-form startup name
+  startupName            String
+  /// Optional contact details
+  contactName            String?
+  contactEmail           String?
+  contactPhone           String?
+  website                String?
+  /// Funding ask in paise (optional at sourcing stage)
+  fundingAsk             BigInt?
+  /// Free-form pitch / one-liner
+  pitch                  String? @db.Text
+  /// Vertical assignment (set by analyst or thesis-fit auto-suggest)
+  verticalId             String?
+  /// AI-computed thesis-fit score 0-100 (Claude per fund's verticals/criteria)
+  thesisFitScore         Int?
+  /// AI rationale for thesis-fit score
+  thesisFitReason        String? @db.Text
+  /// Status: "new" | "reviewing" | "qualified" | "converted" | "rejected"
+  status                 String  @default("new")
+  /// Once converted → links to created application
+  convertedApplicationId String?
+  /// Free-form notes
+  notes                  String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vertical VCVertical? @relation(fields: [verticalId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@schema("app_quikvc")
+}
+
+/// In-app notifications for users. Triggered from key lifecycle events
+/// (allocation, schedule created, payment received, vote settled, etc.).
+/// Email is sent in parallel via Resend; this row tracks the in-app feed.
+model VCNotification {
+  id       String    @id @default(cuid())
+  tenantId String
+  /// Recipient User.id
+  userId   String
+  /// Event type: "allocation" | "repayment-schedule" | "repayment-payment"
+  ///           | "vote-cast" | "vote-settled" | "stage-advanced" | "memo-frozen"
+  ///           | "deal-assigned" | "term-sheet-generated"
+  type     String
+  /// Short headline
+  title    String
+  /// Optional body
+  body     String?   @db.Text
+  /// Optional deep-link target inside the app
+  href     String?
+  /// Read state
+  readAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, readAt])
+  @@index([tenantId, userId, createdAt])
+  @@schema("app_quikvc")
+}
+
+/// Audit log for QuikVC. Captures security-sensitive events:
+///   - Forbidden access (403 from RBAC gate)
+///   - Successful privileged actions (allocation, ic-settle, term-sheet-generate, etc.)
+///   - Admin config changes (verticals, scoring criteria, fund profile, term-sheet template)
+///
+/// Append-only. Never edit or delete rows. Retention policy is enforced by
+/// a periodic cleanup job (Sprint 6 — currently keeps everything).
+model VCAuditLog {
+  id        String  @id @default(cuid())
+  tenantId  String
+  /// Actor user id (may be null for system / cron jobs)
+  userId    String?
+  /// Action: "rbac.deny" | "allocation.create" | "ic.settle" | "term-sheet.generate" |
+  ///         "vertical.update" | "scoring-criterion.update" | "fund-profile.update" |
+  ///         "term-sheet-template.update" | etc.
+  action    String
+  /// Optional resource id this event acts on (deal id, investor id, etc.)
+  resource  String?
+  /// HTTP outcome — useful for separating allowed vs denied
+  outcome   String  @default("ok") // ok | denied | error
+  /// Free-form metadata (request path, role, error message, payload digest, etc.)
+  metadata  Json?
+  /// IP for forensics
+  ipAddress String?
+  /// User agent for forensics
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, action, createdAt])
+  @@index([tenantId, userId, createdAt])
+  @@index([tenantId, outcome, createdAt])
+  @@schema("app_quikvc")
 }

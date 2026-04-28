@@ -18,7 +18,8 @@
     "db:migrate:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
     "db:seed:e2e": "tsx prisma/seed-e2e.ts",
-    "db:seed:oauth": "tsx prisma/seed-oauth.ts"
+    "db:seed:oauth": "tsx prisma/seed-oauth.ts",
+    "db:seed:quikvc": "tsx prisma/seed-quikvc.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.7.0"
