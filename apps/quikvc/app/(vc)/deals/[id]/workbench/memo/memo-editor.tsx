@@ -17,20 +17,25 @@ export default function MemoEditor({
   dealId,
   initialSections,
   versionList,
+  status,
 }: {
   dealId: string;
   initialSections: MemoSection[];
   versionList: VersionInfo[];
+  status: string;
 }) {
   const router = useRouter();
   const [sections, setSections] = useState<MemoSection[]>(initialSections);
   const [generatingSlug, setGeneratingSlug] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [freezing, setFreezing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [activeSlug, setActiveSlug] = useState<string>(
     initialSections[0]?.slug ?? "",
   );
+
+  const isFrozen = status === "frozen";
 
   const updateSection = useCallback((slug: string, content: string) => {
     setSections((prev) =>
@@ -101,6 +106,25 @@ export default function MemoEditor({
     }
   }
 
+  async function freeze() {
+    if (!confirm("Freeze the memo for IC review? Editing will be locked.")) return;
+    setFreezing(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/memos/${dealId}/freeze`, { method: "POST" });
+      const j = await r.json();
+      if (!j.success) {
+        setError(j.error ?? "Freeze failed");
+        return;
+      }
+      router.refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setFreezing(false);
+    }
+  }
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
       {/* Section outline (sticky) */}
@@ -135,14 +159,31 @@ export default function MemoEditor({
           })}
 
           <div className="pt-2 mt-2 border-t border-gray-100 space-y-2">
-            <button
-              type="button"
-              disabled={saving}
-              onClick={save}
-              className="w-full text-xs px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save version"}
-            </button>
+            {isFrozen ? (
+              <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 text-center">
+                ❄ Frozen — read-only
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={save}
+                  className="w-full text-xs px-3 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save version"}
+                </button>
+                <button
+                  type="button"
+                  disabled={freezing || versionList.length === 0}
+                  onClick={freeze}
+                  className="w-full text-xs px-3 py-2 border border-amber-300 text-amber-700 hover:bg-amber-50 rounded-lg disabled:opacity-40"
+                  title={versionList.length === 0 ? "Save at least one version first" : ""}
+                >
+                  {freezing ? "Freezing…" : "❄ Freeze for IC"}
+                </button>
+              </>
+            )}
             {savedAt && (
               <p className="text-[10px] text-gray-400 text-center">Saved at {savedAt}</p>
             )}
@@ -184,18 +225,21 @@ export default function MemoEditor({
             >
               <header className="flex items-center justify-between gap-3">
                 <h3 className="text-base font-semibold text-gray-900">{section.title}</h3>
-                <button
-                  type="button"
-                  disabled={isGenerating}
-                  onClick={() => generateSection(section.slug)}
-                  className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg disabled:opacity-50"
-                >
-                  {isGenerating ? "Generating…" : section.contentHtml ? "Re-draft with AI" : "Draft with AI"}
-                </button>
+                {!isFrozen && (
+                  <button
+                    type="button"
+                    disabled={isGenerating}
+                    onClick={() => generateSection(section.slug)}
+                    className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg disabled:opacity-50"
+                  >
+                    {isGenerating ? "Generating…" : section.contentHtml ? "Re-draft with AI" : "Draft with AI"}
+                  </button>
+                )}
               </header>
               <textarea
                 rows={14}
-                className="w-full text-sm text-gray-800 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono"
+                disabled={isFrozen}
+                className="w-full text-sm text-gray-800 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono disabled:bg-gray-50 disabled:text-gray-600"
                 placeholder="Write or generate this section…"
                 value={section.contentHtml}
                 onChange={(e) => updateSection(section.slug, e.target.value)}

@@ -1,13 +1,15 @@
 /**
  * Scorecard tab — per-criterion AI score + analyst override.
  *
- * Sprint 3a: read-only listing of AI scores from VCDealScore. Sprint 3b
- * adds inline override editor + score trend chart.
+ * Sprint 3a: read-only listing.
+ * Sprint 3b: inline override editor (this commit) — analyst types a number
+ * + justification per criterion, server recomputes the composite.
  */
 import { notFound } from "next/navigation";
 import { getDevAwareSession } from "@/lib/dev-session";
 import { db } from "@/lib/db";
 import { cn } from "@/lib/utils";
+import ScorecardTable from "./scorecard-table";
 
 export default async function ScorecardPage({
   params,
@@ -77,76 +79,18 @@ export default async function ScorecardPage({
         )}
       </header>
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
-            <tr>
-              <th className="px-4 py-2.5 text-left">Criterion</th>
-              <th className="px-4 py-2.5 text-center">Weight</th>
-              <th className="px-4 py-2.5 text-center">AI</th>
-              <th className="px-4 py-2.5 text-center">Analyst</th>
-              <th className="px-4 py-2.5 text-left">Override reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {criteria.map((c) => {
-              const s = scoreBySlug[c.slug];
-              const finalScore = s?.analystScore ?? s?.aiScore ?? null;
-              return (
-                <tr key={c.slug} className="border-t border-gray-100">
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">{c.name}</p>
-                    {c.description && (
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {c.description}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center text-gray-700">{c.weight}%</td>
-                  <td className="px-4 py-3 text-center">
-                    {s?.aiScore != null ? (
-                      <span
-                        className={cn(
-                          "text-sm font-semibold tabular-nums",
-                          s.aiScore >= 80
-                            ? "text-green-600"
-                            : s.aiScore >= 60
-                              ? "text-amber-600"
-                              : "text-red-600",
-                        )}
-                      >
-                        {s.aiScore}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-400">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {s?.analystScore != null ? (
-                      <span className="text-sm font-semibold text-blue-600 tabular-nums">
-                        {s.analystScore}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-300">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-500 max-w-xs">
-                    {s?.overrideReason ?? <span className="text-gray-300">—</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-        <p className="text-xs text-blue-800">
-          <strong>Sprint 3a:</strong> AI scores auto-populate on application
-          submit (Claude Sonnet). Analyst override editor + score trend chart
-          ship in Sprint 3b. Re-trigger scoring from this tab in Sprint 3b.
-        </p>
-      </div>
+      <ScorecardTable
+        dealId={params.id}
+        rows={criteria.map((c) => ({
+          criterionSlug: c.slug,
+          criterionName: c.name,
+          description: c.description,
+          weight: c.weight,
+          aiScore: scoreBySlug[c.slug]?.aiScore ?? null,
+          analystScore: scoreBySlug[c.slug]?.analystScore ?? null,
+          overrideReason: scoreBySlug[c.slug]?.overrideReason ?? null,
+        }))}
+      />
     </div>
   );
 }

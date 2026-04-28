@@ -68,6 +68,7 @@ export default async function MemoPage({
       </header>
       <MemoEditor
         dealId={params.id}
+        status={memo?.status ?? "draft"}
         initialSections={initialSections}
         versionList={versionList.map((v) => ({
           ...v,

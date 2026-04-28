@@ -19,6 +19,7 @@ const TABS = [
   { slug: "scorecard",   label: "Scorecard" },
   { slug: "risks",       label: "Risks" },
   { slug: "comparables", label: "Comparables" },
+  { slug: "meetings",    label: "Meetings" },
   { slug: "memo",        label: "Memo" },
 ];
 
@@ -45,6 +46,29 @@ export default async function WorkbenchLayout({
   if (!deal) notFound();
 
   const score = deal.analystScore ?? deal.aiScore;
+
+  // Right panel data — small queries, run in parallel
+  const [openSignals, openQuestions, recentEvents, latestMemo] = await Promise.all([
+    db.vCDealSignal.findMany({
+      where: { tenantId, dealId: deal.id, status: { not: "resolved" } },
+      orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
+      select: { id: true, severity: true, title: true },
+      take: 5,
+    }),
+    db.vCDealQuestion.count({
+      where: { tenantId, dealId: deal.id, status: "open" },
+    }),
+    db.vCTimelineEvent.findMany({
+      where: { tenantId, dealId: deal.id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, type: true, summary: true, createdAt: true },
+      take: 5,
+    }),
+    db.vCICMemo.findUnique({
+      where: { dealId: deal.id },
+      select: { status: true, currentVersion: { select: { version: true } } },
+    }),
+  ]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)]">
@@ -103,13 +127,96 @@ export default async function WorkbenchLayout({
         <main className="flex-1 overflow-y-auto bg-white">{children}</main>
 
         {/* Right intelligence panel */}
-        <aside className="w-72 bg-gray-50 border-l border-gray-200 px-4 py-4 flex-shrink-0 overflow-y-auto hidden xl:block">
-          <p className="text-xs uppercase tracking-wider text-gray-400">
-            AI insights
-          </p>
-          <p className="text-xs text-gray-400 italic mt-3">
-            Sprint 3b: live evidence, AI-detected red flags, related deals.
-          </p>
+        <aside className="w-80 bg-gray-50 border-l border-gray-200 px-4 py-4 flex-shrink-0 overflow-y-auto hidden xl:block space-y-5">
+          {/* Top blockers */}
+          <section>
+            <p className="text-xs uppercase tracking-wider text-gray-400 mb-2">
+              Open blockers
+            </p>
+            {openSignals.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No open signals.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {openSignals.map((s) => (
+                  <li
+                    key={s.id}
+                    className={cn(
+                      "text-xs px-2 py-1.5 rounded border",
+                      s.severity === "red"
+                        ? "bg-red-50 text-red-800 border-red-200"
+                        : s.severity === "amber"
+                          ? "bg-amber-50 text-amber-800 border-amber-200"
+                          : "bg-green-50 text-green-800 border-green-200",
+                    )}
+                  >
+                    <span className="text-[10px] uppercase tracking-wider mr-1">
+                      {s.severity}
+                    </span>
+                    {s.title}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Quick stats */}
+          <section className="grid grid-cols-2 gap-2 text-xs">
+            <div className="bg-white border border-gray-200 rounded-lg p-2">
+              <p className="text-[10px] uppercase tracking-wider text-gray-400">
+                Open Q&amp;A
+              </p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900">
+                {openQuestions}
+              </p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-2">
+              <p className="text-[10px] uppercase tracking-wider text-gray-400">
+                Docs complete
+              </p>
+              <p className="text-lg font-semibold tabular-nums text-gray-900">
+                {deal.docCompleteness}%
+              </p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-2 col-span-2">
+              <p className="text-[10px] uppercase tracking-wider text-gray-400">
+                IC memo
+              </p>
+              <p className="text-sm text-gray-900 mt-0.5">
+                {latestMemo
+                  ? `${latestMemo.status} · v${latestMemo.currentVersion?.version ?? "?"}`
+                  : "Not started"}
+              </p>
+            </div>
+          </section>
+
+          {/* Recent activity */}
+          <section>
+            <p className="text-xs uppercase tracking-wider text-gray-400 mb-2">
+              Recent activity
+            </p>
+            {recentEvents.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No activity yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {recentEvents.map((e) => (
+                  <li
+                    key={e.id}
+                    className="text-xs border-l-2 border-blue-200 pl-2"
+                  >
+                    <p className="text-gray-700 leading-snug">{e.summary}</p>
+                    <p className="text-[10px] text-gray-400">
+                      {new Date(e.createdAt).toLocaleString("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </aside>
       </div>
     </div>

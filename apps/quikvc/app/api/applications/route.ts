@@ -15,6 +15,7 @@ import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { fullApplicationSchema } from "@/lib/schemas/applicationSchema";
 import { scoreDeal } from "@/lib/ai/prompts/score-deal";
+import { detectFinancialSignals } from "@/lib/risk/auto-detect";
 
 export const POST = withTenantAuth(
   async ({ tenantId, userId }, req: NextRequest) => {
@@ -170,6 +171,37 @@ export const POST = withTenantAuth(
       const message = scoringErr instanceof Error ? scoringErr.message : "Scoring failed";
       // eslint-disable-next-line no-console
       console.error("[applications] AI scoring failed:", message);
+    }
+
+    // ── Heuristic risk auto-detection from financials ──
+    // Synchronous + cheap. Writes any detected signals to VCDealSignal so the
+    // Risk Register populates without analyst manual entry.
+    try {
+      const signals = detectFinancialSignals({
+        fundingAskLakhs: data.fundingAskLakhs,
+        monthlyRevenueLakhs: data.monthlyRevenueLakhs ?? null,
+        ebitdaLakhs: data.ebitdaLakhs ?? null,
+        existingDebtLakhs: data.existingDebtLakhs ?? null,
+        loanType: data.loanType,
+      });
+      if (signals.length > 0) {
+        await db.vCDealSignal.createMany({
+          data: signals.map((s) => ({
+            tenantId,
+            dealId: result.dealId,
+            severity: s.severity,
+            source: "financial",
+            title: s.title,
+            description: s.description,
+            status: "open",
+            createdBy: userId,
+            updatedBy: userId,
+          })),
+        });
+      }
+    } catch (sigErr: unknown) {
+      // eslint-disable-next-line no-console
+      console.error("[applications] auto-detect failed:", sigErr instanceof Error ? sigErr.message : "unknown");
     }
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });

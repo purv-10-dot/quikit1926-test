@@ -1,10 +1,11 @@
 /**
- * Comparable Companies tab — manual add for Sprint 3a, Claude-suggested in 3b.
+ * Comparable Companies tab — manual add (3a) + Claude-suggested (3b).
  */
 import { notFound } from "next/navigation";
 import { getDevAwareSession } from "@/lib/dev-session";
 import { db } from "@/lib/db";
 import ComparableAddButton from "./comparable-add-button";
+import ComparableSuggestButton from "./comparable-suggest-button";
 
 export default async function ComparablesPage({
   params,
@@ -30,11 +31,14 @@ export default async function ComparablesPage({
         <div>
           <h2 className="text-xl font-semibold text-gray-900">Comparable Companies</h2>
           <p className="text-sm text-gray-500 mt-1">
-            Benchmark companies cited in the IC memo. Sprint 3b adds
-            Claude-suggested comps based on the deal's sector + description.
+            Benchmark companies cited in the IC memo. Add manually or ask
+            Claude for suggestions based on the deal's sector + description.
           </p>
         </div>
-        <ComparableAddButton dealId={params.id} />
+        <div className="flex items-center gap-2">
+          <ComparableSuggestButton dealId={params.id} />
+          <ComparableAddButton dealId={params.id} />
+        </div>
       </header>
 
       {comps.length === 0 ? (
