@@ -17,3 +17,14 @@ test-results
 apps/quikscale.zip
 apps/quikconstruction/uploads/*
 packages/database/.env.tmp
+
+# ────────────────────────────────────────────────────────────────────────────
+# Internal working artifacts — audits, handoffs, mind maps, brainstorm
+# captures, scratch notes. Local-only; never committed.
+#
+# Three tiers of non-code files:
+#   /docs/         → Category A: shippable, versioned, part of platform contract
+#   /_internal/    → Category B: gitignored (this), your scratch space
+#   ~/Desktop/...  → Category C: external shareables (kits, zips, exports)
+# ────────────────────────────────────────────────────────────────────────────
+/_internal/
