@@ -9,8 +9,10 @@
  */
 import Link from "next/link";
 import NotificationBell from "@/components/notification-bell";
+import OrgSwitcher from "@/components/org-switcher";
 import { requireSession } from "@/lib/require-session";
 import { getVCRole, FUND_ADMIN_ROLES } from "@/lib/rbac";
+import { db } from "@/lib/db";
 
 const ALL_NAV_ITEMS = [
   { label: "Home",      href: "/home",      roles: null },
@@ -24,7 +26,17 @@ export default async function VCLayout({ children }: { children: React.ReactNode
   // Hardened: redirects to /login when no session. Demo bypass requires
   // QUIKVC_DEV_BYPASS=1 (see lib/dev-session.ts).
   const { userId, tenantId } = await requireSession();
-  const role = await getVCRole(userId, tenantId);
+  const [role, tenant, fundProfile] = await Promise.all([
+    getVCRole(userId, tenantId),
+    db.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true },
+    }),
+    db.vCFundProfile.findUnique({
+      where: { tenantId },
+      select: { fundName: true },
+    }),
+  ]);
 
   const NAV_ITEMS = ALL_NAV_ITEMS.filter(
     (i) => !i.roles || (role && i.roles.includes(role)),
@@ -58,9 +70,13 @@ export default async function VCLayout({ children }: { children: React.ReactNode
         {/* Top context bar */}
         <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-6 flex-shrink-0">
           <div className="flex items-center gap-2 text-sm min-w-0">
-            <span className="font-medium text-gray-900 truncate">ValleyNXT Ventures</span>
+            <OrgSwitcher currentTenantName={tenant?.name ?? undefined} />
+            {/* Fund switcher placeholder — single-fund-per-tenant in v1; UI hint
+                only. Becomes a dropdown when multi-fund support lands. */}
             <span className="text-gray-400 hidden sm:inline">/</span>
-            <span className="text-gray-600 hidden sm:inline">Fund I</span>
+            <span className="text-gray-600 hidden sm:inline truncate">
+              {fundProfile?.fundName ?? "Fund I"}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <button className="hidden sm:inline-block text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">

@@ -135,7 +135,7 @@ async function main() {
   // 5. Users + memberships (5 accounts)
   const password = await bcrypt.hash("Password123!", 10);
   const seedUsers = [
-    { email: "fund@valleynxt.test",      first: "Asha",     last: "Kapoor",    role: "fund_admin" },
+    { email: "fund@valleynxt.test",      first: "Asha",     last: "Kapoor",    role: "fund-admin" },
     { email: "partner@valleynxt.test",   first: "Vikram",   last: "Mehta",     role: "partner" },
     { email: "analyst@valleynxt.test",   first: "Priya",    last: "Iyer",      role: "analyst" },
     { email: "founder1@example.test",    first: "Rohan",    last: "Sharma",    role: "founder" },
@@ -157,8 +157,19 @@ async function main() {
       update: { role: u.role, status: "active" },
       create: { userId: user.id, tenantId: tenant.id, role: u.role, status: "active" },
     });
+
+    // UserAppAccess for QuikVC — required by the org-memberships factory's
+    // appSlug filter. Without this row, the user wouldn't see ValleyNXT in
+    // their QuikVC org switcher even though the membership exists.
+    await prisma.userAppAccess.upsert({
+      where: {
+        userId_tenantId_appId: { userId: user.id, tenantId: tenant.id, appId: app.id },
+      },
+      update: { role: u.role },
+      create: { userId: user.id, tenantId: tenant.id, appId: app.id, role: u.role },
+    });
   }
-  console.log(`  ✓ 6 demo users (password: Password123!)`);
+  console.log(`  ✓ 6 demo users + UserAppAccess (password: Password123!)`);
 
   // 6. Demo deals across stages (5 startups)
   for (const d of DEMO_DEALS) {
