@@ -5,6 +5,8 @@
  * and repayments — never other investors' positions.
  */
 import Link from "next/link";
+import NotificationBell from "@/components/notification-bell";
+import { requireSession } from "@/lib/require-session";
 
 const NAV = [
   { label: "Dashboard", href: "/dashboard" },
@@ -12,11 +14,14 @@ const NAV = [
   { label: "Repayments", href: "/repayments" },
 ];
 
-export default function InvestorLayout({
+export default async function InvestorLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Hardened: redirects to /login when no session. The portal reveals
+  // private commitment + payment data, so no anonymous access.
+  await requireSession();
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
@@ -37,9 +42,12 @@ export default function InvestorLayout({
             ))}
           </nav>
         </div>
-        <button className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-600">
-          Sign out
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          <button className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg text-gray-600">
+            Sign out
+          </button>
+        </div>
       </header>
       <main className="flex-1">{children}</main>
     </div>

@@ -11,9 +11,18 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { notifyRole } from "@/lib/notifications";
+import { ANALYST_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 
 export const POST = withTenantAuth(
-  async ({ tenantId, userId }, _req: NextRequest, { params }: { params: { id: string } }) => {
+  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = await requireRoleOrAudit(userId, tenantId, ANALYST_ROLES, {
+      action: "deal.advance",
+      resource: params.id,
+      req,
+    });
+    if (denied) return denied;
+
     const dealId = params.id;
     const memo = await db.vCICMemo.findUnique({ where: { dealId } });
     if (!memo || memo.tenantId !== tenantId) {
@@ -46,6 +55,22 @@ export const POST = withTenantAuth(
           summary: `IC memo frozen for review`,
           visibility: "internal",
         },
+      }),
+    ]);
+
+    // Notify IC voters that a memo is ready for review
+    await Promise.all([
+      notifyRole(tenantId, "partner", {
+        type: "memo-frozen",
+        title: "IC memo frozen for review",
+        body: "A new memo is ready for your IC vote.",
+        href: `/deals/${dealId}/ic`,
+      }),
+      notifyRole(tenantId, "ic-member", {
+        type: "memo-frozen",
+        title: "IC memo frozen for review",
+        body: "A new memo is ready for your IC vote.",
+        href: `/deals/${dealId}/ic`,
       }),
     ]);
 

@@ -5,6 +5,7 @@
  * no risk/scoring visibility. Sprint 1 minimal shell; Sprint 2 wires real auth.
  */
 import Link from "next/link";
+import { requireSession } from "@/lib/require-session";
 
 const NAV = [
   { label: "Dashboard", href: "/dashboard" },
@@ -13,11 +14,13 @@ const NAV = [
   { label: "Questions", href: "/questions" },
 ];
 
-export default function FounderLayout({
+export default async function FounderLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Hardened: redirects to /login when no session.
+  await requireSession();
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">

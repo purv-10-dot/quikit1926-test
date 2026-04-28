@@ -24,6 +24,8 @@ import {
 } from "@/lib/pipeline";
 import { sendEmail } from "@/lib/email";
 import StageChangedEmail from "@/lib/email/templates/stage-changed";
+import { ANALYST_ROLES, PARTNER_ROLES, requireRoleOrAudit } from "@/lib/rbac";
+import { audit } from "@/lib/audit";
 
 const STAGE_ENUM = STAGE_ORDER as unknown as readonly [StageId, ...StageId[]];
 
@@ -79,6 +81,18 @@ export const POST = withTenantAuth(
       );
     }
 
+    // Gating: partner-only transitions vs analyst+ transitions
+    const PARTNER_GATED_STAGES: StageId[] = ["ic-review", "due-diligence", "final-decision"];
+    const requiredRoles = PARTNER_GATED_STAGES.includes(toStage)
+      ? PARTNER_ROLES
+      : ANALYST_ROLES;
+    const denied = await requireRoleOrAudit(userId, tenantId, requiredRoles, {
+      action: "deal.advance",
+      resource: deal.id,
+      req,
+    });
+    if (denied) return denied;
+
     // Persist + audit
     await db.$transaction([
       db.vCDeal.update({
@@ -107,6 +121,15 @@ export const POST = withTenantAuth(
         },
       }),
     ]);
+
+    await audit({
+      tenantId,
+      userId,
+      action: "deal.advance",
+      resource: deal.id,
+      metadata: { fromStage, toStage, justification: parsed.data.justification ?? null },
+      req,
+    });
 
     // Best-effort email — failures don't block the advance.
     try {
