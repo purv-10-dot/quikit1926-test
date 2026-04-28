@@ -1,5 +1,7 @@
 # QuikIT Development Standards
 
+> **New contributor?** Start at [`docs/00-getting-started.md`](docs/00-getting-started.md). It walks you through clone → env → first PR in 60 minutes. Then read [`docs/02-integration-protocol.md`](docs/02-integration-protocol.md) before your first PR. **App-level rules in `apps/<your-app>/CLAUDE.md` override anything more permissive in this file.**
+
 ## 🔒 Git Workflow — Branch Protection (NON-NEGOTIABLE)
 
 **NEVER commit or push directly to `dev`, `uat`, or `main`.** These are integration/release branches — they only receive merges, never hand-authored commits.
