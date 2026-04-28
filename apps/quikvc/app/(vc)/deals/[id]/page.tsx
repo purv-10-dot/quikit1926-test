@@ -12,6 +12,7 @@ import { getDevAwareSession } from "@/lib/dev-session";
 import { db } from "@/lib/db";
 import { STAGE_ORDER, STAGE_LABEL, type StageId } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
+import AdvanceButton from "./advance-button";
 
 export default async function DealOverviewPage({
   params,
@@ -102,9 +103,18 @@ export default async function DealOverviewPage({
           >
             Open workbench
           </Link>
-          <button className="text-sm px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-slate-800">
-            Advance stage
-          </button>
+          <div className="relative">
+            <AdvanceButton
+              dealId={deal.id}
+              currentStage={deal.currentStage as StageId}
+              nextStage={
+                STAGE_ORDER.indexOf(deal.currentStage as StageId) <
+                STAGE_ORDER.length - 1
+                  ? STAGE_ORDER[STAGE_ORDER.indexOf(deal.currentStage as StageId) + 1]
+                  : null
+              }
+            />
+          </div>
         </div>
       </header>
 

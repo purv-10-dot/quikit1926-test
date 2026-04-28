@@ -14,6 +14,7 @@ import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { fullApplicationSchema } from "@/lib/schemas/applicationSchema";
+import { scoreDeal } from "@/lib/ai/prompts/score-deal";
 
 export const POST = withTenantAuth(
   async ({ tenantId, userId }, req: NextRequest) => {
@@ -101,6 +102,75 @@ export const POST = withTenantAuth(
 
       return { applicationId: application.id, dealId: deal.id };
     });
+
+    // ── AI scoring (best-effort, non-blocking on response) ──
+    // We await so the analyst sees a score on first visit, but errors are
+    // swallowed: a failed scoring call shouldn't reject a valid application.
+    try {
+      const criteria = await db.vCScoringCriterion.findMany({
+        where: { tenantId, verticalId: vertical.id },
+        select: { slug: true, name: true, description: true, weight: true },
+        orderBy: { sortOrder: "asc" },
+      });
+
+      const scored = await scoreDeal({
+        startupName: data.startupName,
+        description: data.description,
+        sector: vertical.name,
+        fundingAskInr: data.fundingAskLakhs,
+        loanType: data.loanType,
+        teamSize: data.teamSize ?? null,
+        foundedYear: data.foundedYear ?? null,
+        monthlyRevenueLakhs: data.monthlyRevenueLakhs ?? null,
+        ebitdaLakhs: data.ebitdaLakhs ?? null,
+        existingDebtLakhs: data.existingDebtLakhs ?? null,
+        criteria,
+      });
+
+      // Persist per-criterion scores + composite on the deal
+      await db.$transaction([
+        ...scored.scores.map((s) =>
+          db.vCDealScore.upsert({
+            where: {
+              tenantId_dealId_criterionSlug: {
+                tenantId,
+                dealId: result.dealId,
+                criterionSlug: s.slug,
+              },
+            },
+            update: { aiScore: s.score },
+            create: {
+              tenantId,
+              dealId: result.dealId,
+              criterionSlug: s.slug,
+              aiScore: s.score,
+              createdBy: userId,
+              updatedBy: userId,
+            },
+          }),
+        ),
+        db.vCDeal.update({
+          where: { id: result.dealId },
+          data: { aiScore: scored.composite, updatedBy: userId },
+        }),
+        db.vCTimelineEvent.create({
+          data: {
+            tenantId,
+            dealId: result.dealId,
+            type: "score-updated",
+            summary: `AI scored deal ${scored.composite}/100`,
+            payload: { composite: scored.composite, caveats: scored.caveats },
+            visibility: "internal",
+          },
+        }),
+      ]);
+    } catch (scoringErr: unknown) {
+      // Don't fail the application submit on scoring error — analyst can
+      // re-trigger scoring from the workbench.
+      const message = scoringErr instanceof Error ? scoringErr.message : "Scoring failed";
+      // eslint-disable-next-line no-console
+      console.error("[applications] AI scoring failed:", message);
+    }
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
   },

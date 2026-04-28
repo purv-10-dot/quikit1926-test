@@ -280,6 +280,12 @@ model Tenant {
   vcDealDocuments        VCDealDocument[]
   vcDealQuestions        VCDealQuestion[]
   vcDealScores           VCDealScore[]
+  vcDealSignals          VCDealSignal[]
+  vcICMemos              VCICMemo[]
+  vcICMemoVersions       VCICMemoVersion[]
+  vcComparableCompanies  VCComparableCompany[]
+  vcMeetings             VCMeeting[]
+  vcMeetingTranscripts   VCMeetingTranscript[]
 
   @@index([slug])
   @@index([status])
@@ -4588,6 +4594,10 @@ model VCDeal {
   documents      VCDealDocument[]
   questions      VCDealQuestion[]
   scores         VCDealScore[]
+  signals        VCDealSignal[]
+  icMemos        VCICMemo[]
+  comparables    VCComparableCompany[]
+  meetings       VCMeeting[]
 
   @@index([tenantId])
   @@index([tenantId, currentStage])
@@ -4731,5 +4741,193 @@ model VCDealScore {
 
   @@unique([tenantId, dealId, criterionSlug])
   @@index([tenantId, dealId])
+  @@schema("app_quikvc")
+}
+
+// ============================================================================
+// QUIKVC OS — Sprint 3 evaluation + AI models
+// ============================================================================
+
+/// Auto-detected or manually-added risk signal against a deal.
+/// Severity follows the canonical traffic light. Sprint 3a: manual entry +
+/// transcript-detected (when Sprint 3b ships meeting transcripts).
+model VCDealSignal {
+  id          String   @id @default(cuid())
+  tenantId    String
+  dealId      String
+  /// Severity: "red" | "amber" | "green"
+  severity    String
+  /// Source category: "financial" | "compliance" | "transcript" | "manual"
+  source      String
+  /// Short signal title shown in risk register
+  title       String
+  /// Detailed description
+  description String?  @db.Text
+  /// Mitigation plan (analyst-entered)
+  mitigation  String?  @db.Text
+  /// Status: "open" | "mitigated" | "accepted" | "resolved"
+  status      String   @default("open")
+  /// Owner — analyst/partner responsible for tracking this signal
+  ownerId     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId, status])
+  @@index([tenantId, severity])
+  @@schema("app_quikvc")
+}
+
+/// IC Memo — top-level record per deal. Points to the current version.
+/// Versions are immutable snapshots; "freeze" promotes the working version
+/// to the IC review artifact and stops further edits.
+model VCICMemo {
+  id              String   @id @default(cuid())
+  tenantId        String
+  dealId          String   @unique
+  /// Status: "draft" | "under-review" | "frozen"
+  status          String   @default("draft")
+  /// Pointer to the current working version (latest unfrozen)
+  currentVersionId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal           VCDeal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  versions       VCICMemoVersion[] @relation("MemoVersions")
+  currentVersion VCICMemoVersion?  @relation("CurrentMemoVersion", fields: [currentVersionId], references: [id])
+
+  @@index([tenantId])
+  @@schema("app_quikvc")
+}
+
+/// Versioned snapshot of memo content. Sections stored as JSON for editor
+/// flexibility (rich text per section + metadata).
+model VCICMemoVersion {
+  id        String   @id @default(cuid())
+  tenantId  String
+  memoId    String
+  /// Sequential version number per memo (1, 2, 3, …)
+  version   Int
+  /// Sections array — see lib/memo/types.ts for shape:
+  /// [{ id, slug, title, contentHtml, generatedBy, generatedAt }]
+  sections  Json
+  /// Plain-text summary of what changed vs prior version (analyst note)
+  changeNote String? @db.Text
+  /// Source of this version: "claude" (full AI generation) | "analyst-edit" |
+  /// "claude-section" (one section AI-generated, rest manual)
+  source    String   @default("analyst-edit")
+
+  createdAt DateTime @default(now())
+  createdBy String?
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memo         VCICMemo @relation("MemoVersions", fields: [memoId], references: [id], onDelete: Cascade)
+  currentForMemo VCICMemo? @relation("CurrentMemoVersion")
+
+  @@unique([memoId, version])
+  @@index([tenantId, memoId])
+  @@schema("app_quikvc")
+}
+
+/// Comparable company added to a deal — for benchmarking + IC context.
+/// Sprint 3a: manual add. Sprint 3b: Claude-suggested via prompt against
+/// the deal's vertical + description.
+model VCComparableCompany {
+  id          String   @id @default(cuid())
+  tenantId    String
+  dealId      String
+  name        String
+  sector      String?
+  /// Source: "manual" | "ai-suggested"
+  source      String   @default("manual")
+  /// Why this comp is relevant (analyst rationale)
+  reason      String?  @db.Text
+  /// Free-form metrics (revenue, valuation, multiple, etc.) — JSON for shape variability
+  metrics     Json?
+  /// External link if any (Crunchbase, company site)
+  link        String?
+  /// True when the analyst has pinned this as the primary benchmark
+  pinnedAsBenchmark Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId])
+  @@schema("app_quikvc")
+}
+
+/// Meeting record per deal — discovery calls, partner meetings, etc.
+/// Sprint 3a: just CRUD; Sprint 3b adds transcript paste + Claude analysis.
+model VCMeeting {
+  id              String   @id @default(cuid())
+  tenantId        String
+  dealId          String
+  title           String
+  /// Scheduled or actual start time
+  scheduledAt     DateTime?
+  /// Duration in minutes (post-meeting)
+  durationMinutes Int?
+  /// Meet/Zoom URL or location
+  meetingUrl      String?
+  /// Type: "discovery-call" | "partner-meeting" | "ic-review" | "follow-up"
+  type            String   @default("discovery-call")
+  /// Status: "scheduled" | "completed" | "cancelled"
+  status          String   @default("scheduled")
+  /// JSON array of participant Membership IDs + names + roles
+  participants    Json?
+  /// Analyst pre-meeting notes
+  agenda          String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant     Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal       VCDeal                @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  transcript VCMeetingTranscript?
+
+  @@index([tenantId, dealId])
+  @@index([tenantId, status])
+  @@schema("app_quikvc")
+}
+
+/// Raw transcript text + Claude-extracted analysis. Separate from VCMeeting
+/// because transcripts can be large (db.Text) and aren't always present.
+model VCMeetingTranscript {
+  id          String  @id @default(cuid())
+  tenantId    String
+  meetingId   String  @unique
+  /// Raw pasted transcript text
+  rawText     String  @db.Text
+  /// Claude analysis output — JSON shape:
+  ///   { summary, keyPoints[], redFlags[], actionItems[], sentiment }
+  analysis    Json?
+  /// Status: "raw" | "analysed" | "error"
+  status      String  @default("raw")
+  /// Token usage for cost tracking
+  tokensUsed  Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  meeting VCMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
   @@schema("app_quikvc")
 }
