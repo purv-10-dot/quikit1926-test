@@ -5,8 +5,8 @@
  * via Deal Overview action button). Sprint 3 wires real-time + DnD.
  */
 import Link from "next/link";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { getDevAwareSession } from "@/lib/dev-session";
+
 import { db } from "@/lib/db";
 import { KANBAN_COLUMNS, STAGE_LABEL, type StageId } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
@@ -53,7 +53,7 @@ async function loadDeals(tenantId: string): Promise<DealCard[]> {
 }
 
 export default async function DealsPipelinePage() {
-  const session = await getServerSession(authOptions);
+  const session = await getDevAwareSession();
   const tenantId = session?.user?.tenantId;
   const deals = tenantId ? await loadDeals(tenantId) : [];
 

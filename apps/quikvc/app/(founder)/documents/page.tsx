@@ -5,8 +5,8 @@
  * upload posts to /api/documents/upload (Vercel Blob). Status updates from
  * VC team appear here in real time.
  */
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { getDevAwareSession } from "@/lib/dev-session";
+
 import { db } from "@/lib/db";
 import DocumentsClient from "./documents-client";
 
@@ -19,7 +19,7 @@ const REQUIRED_CATEGORIES = [
 ];
 
 export default async function FounderDocumentsPage() {
-  const session = await getServerSession(authOptions);
+  const session = await getDevAwareSession();
   const tenantId = session?.user?.tenantId;
   const userId = session?.user?.id;
 

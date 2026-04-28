@@ -3,13 +3,13 @@
  *
  * Open questions go to the top; answered questions to the bottom.
  */
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { getDevAwareSession } from "@/lib/dev-session";
+
 import { db } from "@/lib/db";
 import QuestionsClient from "./questions-client";
 
 export default async function FounderQuestionsPage() {
-  const session = await getServerSession(authOptions);
+  const session = await getDevAwareSession();
   const tenantId = session?.user?.tenantId;
   const userId = session?.user?.id;
   if (!tenantId || !userId) {

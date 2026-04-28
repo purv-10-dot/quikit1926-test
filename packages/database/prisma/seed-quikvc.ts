@@ -82,9 +82,8 @@ async function main() {
       slug: "quikvc",
       name: "QuikVC",
       description: "AI-powered VC operating system",
-      icon: "Briefcase",
-      url: "/quikvc",
-      sortOrder: 40,
+      baseUrl: "/quikvc",
+      status: "active",
     },
   });
   await prisma.tenantAppAccess.upsert({
@@ -154,7 +153,7 @@ async function main() {
     userIds[u.role] = user.id;
 
     await prisma.membership.upsert({
-      where: { userId_tenantId: { userId: user.id, tenantId: tenant.id } },
+      where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
       update: { role: u.role, status: "active" },
       create: { userId: user.id, tenantId: tenant.id, role: u.role, status: "active" },
     });
@@ -175,7 +174,11 @@ async function main() {
         // just create on every run if missing.
         id: `seed-app-${d.startup.toLowerCase()}`,
       },
-      update: { status: "converted" },
+      update: {
+        status: "converted",
+        // 1 lakh INR = 10,000,000 paise (smallest unit)
+        fundingAsk: BigInt(d.askLakhs) * BigInt(10_000_000),
+      },
       create: {
         id: `seed-app-${d.startup.toLowerCase()}`,
         tenantId: tenant.id,
@@ -187,7 +190,7 @@ async function main() {
         sector: vertical.name,
         teamSize: 8 + Math.floor(Math.random() * 12),
         description: `${d.startup} is building solutions in the ${vertical.name} space.`,
-        fundingAsk: BigInt(d.askLakhs * 100_000),
+        fundingAsk: BigInt(d.askLakhs) * BigInt(10_000_000),
         loanType: d.loanType,
         tenureMonths: d.loanType === "equity" ? null : 36,
         purpose: "Working capital + product development",

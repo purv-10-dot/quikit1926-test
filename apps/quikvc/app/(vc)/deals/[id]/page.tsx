@@ -7,8 +7,8 @@
  */
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { getDevAwareSession } from "@/lib/dev-session";
+
 import { db } from "@/lib/db";
 import { STAGE_ORDER, STAGE_LABEL, type StageId } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ export default async function DealOverviewPage({
 }: {
   params: { id: string };
 }) {
-  const session = await getServerSession(authOptions);
+  const session = await getDevAwareSession();
   const tenantId = session?.user?.tenantId;
   if (!tenantId) notFound();
 

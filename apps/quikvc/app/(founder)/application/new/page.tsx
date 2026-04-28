@@ -8,11 +8,11 @@
 import { Suspense } from "react";
 import ApplicationWizard from "./application-wizard";
 import { db } from "@/lib/db";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { getDevAwareSession } from "@/lib/dev-session";
+
 
 async function loadVerticals() {
-  const session = await getServerSession(authOptions);
+  const session = await getDevAwareSession();
   const tenantId = session?.user?.tenantId;
   if (!tenantId) return [];
   return db.vCVertical.findMany({

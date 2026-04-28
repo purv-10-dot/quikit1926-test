@@ -9,8 +9,7 @@
  *     Removes once Sprint 5 ships full role lifecycle.
  */
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { getDevAwareSession } from "@/lib/dev-session";
 import { homePathForPortal, portalForRole, type QuikVCRole } from "@/lib/roles";
 
 export default async function RootPage({
@@ -18,7 +17,7 @@ export default async function RootPage({
 }: {
   searchParams?: { role?: string };
 }) {
-  const session = await getServerSession(authOptions);
+  const session = await getDevAwareSession();
 
   // Dev override (remove in Sprint 5)
   const overrideRole = searchParams?.role as QuikVCRole | undefined;
