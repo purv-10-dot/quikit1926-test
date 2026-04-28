@@ -32,7 +32,7 @@ export default async function ComparablesPage({
           <h2 className="text-xl font-semibold text-gray-900">Comparable Companies</h2>
           <p className="text-sm text-gray-500 mt-1">
             Benchmark companies cited in the IC memo. Add manually or ask
-            Claude for suggestions based on the deal's sector + description.
+            Claude for suggestions based on the deal&apos;s sector + description.
           </p>
         </div>
         <div className="flex items-center gap-2">

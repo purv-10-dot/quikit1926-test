@@ -21,6 +21,9 @@ const TABS = [
   { slug: "comparables", label: "Comparables" },
   { slug: "meetings",    label: "Meetings" },
   { slug: "memo",        label: "Memo" },
+  { slug: "term-sheet",  label: "Term Sheet" },
+  { slug: "funding",     label: "Funding" },
+  { slug: "repayments",  label: "Repayments" },
 ];
 
 export default async function WorkbenchLayout({
@@ -108,15 +111,15 @@ export default async function WorkbenchLayout({
         </div>
       </header>
 
-      {/* 3-pane body */}
-      <div className="flex-1 flex min-h-0">
-        {/* Left rail — tab nav */}
-        <nav className="w-44 bg-gray-50 border-r border-gray-200 py-2 flex-shrink-0 overflow-y-auto">
+      {/* 3-pane body — column on mobile, row on md+ */}
+      <div className="flex-1 flex flex-col md:flex-row min-h-0">
+        {/* Left rail — tab nav (vertical on md+, horizontal scroll on mobile) */}
+        <nav className="md:w-44 md:flex-shrink-0 md:overflow-y-auto bg-gray-50 border-b md:border-b-0 md:border-r border-gray-200 py-2 flex md:block overflow-x-auto md:overflow-x-visible">
           {TABS.map((t) => (
             <Link
               key={t.slug}
               href={`/deals/${deal.id}/workbench/${t.slug}`}
-              className="block px-4 py-2 text-sm text-gray-700 hover:bg-white"
+              className="px-4 py-2 text-sm text-gray-700 hover:bg-white whitespace-nowrap md:block"
             >
               {t.label}
             </Link>

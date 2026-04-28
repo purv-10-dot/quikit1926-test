@@ -81,7 +81,7 @@ export default async function RisksPage({ params }: { params: { id: string } }) 
         <div className="bg-white border border-gray-200 rounded-xl p-8 text-center">
           <p className="text-sm text-gray-500">No risks logged yet.</p>
           <p className="text-xs text-gray-400 mt-1">
-            Click "Add risk" above or wait for Sprint 3b auto-detection.
+            Click &ldquo;Add risk&rdquo; above or wait for Sprint 3b auto-detection.
           </p>
         </div>
       ) : (
