@@ -109,11 +109,11 @@ Dev hatch — preview each portal without auth wired:
 
 | Sprint | Weeks | Status |
 |---|---|---|
-| **Sprint 1 — Foundation** | 1–2 | ✅ **Done** (this commit) |
-| Sprint 2 — VC core (Pipeline, Workbench skeleton, Application wizard, Documents, Founder dashboard) | 3–4 | Pending |
-| Sprint 3 — Evaluation + AI (Scorecard, Risk register, Comparables, Meetings, Memo Builder, Daily Summary) | 5–6 | Pending |
+| Sprint 1 — Foundation | 1–2 | ✅ Done |
+| **Sprint 2 — VC core** | 3–4 | ✅ **Done** (this commit) |
+| Sprint 3 — Evaluation + AI (Scorecard, Risk register, Comparables, Meetings, Memo Builder, Daily Summary live) | 5–6 | Pending |
 | Sprint 4 — Decision + Capital (Partner Review, IC Review + voting, Term Sheet, Allocation, Investor Mgmt, Repayments, Investor Portal) | 7 | Pending |
-| Sprint 5 — Sourcing + admin + polish (Sourcing dashboard, Underwriting Setup admin, Notifications, Mobile QA, Production deploy) | 8 | Pending |
+| Sprint 5 — Sourcing + admin + polish (Sourcing dashboard, Underwriting Setup admin, Notifications wiring, Mobile QA, Production deploy) | 8 | Pending |
 
 ---
 
@@ -171,4 +171,5 @@ In addition to the rules in `apps/quikvc/CLAUDE.md` (which apply to every QuikIT
 
 ## Commit log
 
-- **Sprint 1 (this commit)**: scaffold + 6 models + 3 portal layouts + 3 home screens + auth scaffolding + module registry + tenant back-relations + typecheck green across all 4 apps.
+- **Sprint 1**: scaffold + 6 Prisma models + 3 portal layouts + 3 home screens + auth scaffolding + module registry + tenant back-relations.
+- **Sprint 2 (this commit)**: + 3 Prisma models (VCDealDocument, VCDealQuestion, VCDealScore) + real NextAuth session role lookup + seed-quikvc.ts (1 demo tenant ValleyNXT + 7 verticals × 7 criteria + 6 users + 5 demo deals across stages) + 5-step Application Wizard + POST /api/applications (transactional create-app+create-deal+timeline) + Pipeline Kanban view (9 stages → 6 columns) + Deal Overview screen + document upload via Vercel Blob + Documents UI + Q&A API (POST + PATCH) + Founder Q&A UI + Resend email layer + stage-changed react-email template + Vercel Cron stub for daily summary (00:30 UTC = 06:00 IST). Typecheck green across all 4 apps.

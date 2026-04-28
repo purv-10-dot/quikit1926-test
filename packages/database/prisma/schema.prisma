@@ -270,13 +270,16 @@ model Tenant {
   cnAuditLogs            CnAuditLog[]
   cnNumberSequences      CnNumberSequence[]
 
-  // QuikVC OS — back-relations (Sprint 1 foundation)
+  // QuikVC OS — back-relations (Sprint 1 foundation + Sprint 2 deal workspace)
   vcFundProfile          VCFundProfile?
   vcVerticals            VCVertical[]
   vcScoringCriteria      VCScoringCriterion[]
   vcApplications         VCApplication[]
   vcDeals                VCDeal[]
   vcTimelineEvents       VCTimelineEvent[]
+  vcDealDocuments        VCDealDocument[]
+  vcDealQuestions        VCDealQuestion[]
+  vcDealScores           VCDealScore[]
 
   @@index([slug])
   @@index([status])
@@ -4582,6 +4585,9 @@ model VCDeal {
   application    VCApplication     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   vertical       VCVertical        @relation(fields: [verticalId], references: [id], onDelete: Restrict)
   timelineEvents VCTimelineEvent[]
+  documents      VCDealDocument[]
+  questions      VCDealQuestion[]
+  scores         VCDealScore[]
 
   @@index([tenantId])
   @@index([tenantId, currentStage])
@@ -4620,5 +4626,110 @@ model VCTimelineEvent {
 
   @@index([tenantId, dealId, createdAt])
   @@index([tenantId, type])
+  @@schema("app_quikvc")
+}
+
+// ============================================================================
+// QUIKVC OS — Sprint 2 deal workspace models
+// ============================================================================
+
+/// Document uploaded against a deal. Stored in Vercel Blob (URL field) and
+/// classified by category (pitch deck, financials, incorp cert, etc.). Status
+/// tracks the VC team's review state visible to the founder in real time.
+model VCDealDocument {
+  id           String   @id @default(cuid())
+  tenantId     String
+  dealId       String
+  /// Document category (slug from VCDocumentRequirement when those land in
+  /// Sprint 5; for now a free-text slug like "pitch-deck" / "financials" /
+  /// "incorporation" / "gst-returns" / "bank-statements")
+  category     String
+  /// Display name shown in document vault
+  filename     String
+  /// MIME type (application/pdf, image/png, etc.)
+  mimeType     String
+  /// Size in bytes
+  sizeBytes    Int
+  /// Vercel Blob URL — public read, signed write
+  blobUrl      String
+  /// Version number — increments when same category is re-uploaded
+  version      Int      @default(1)
+  /// Review status: "missing" | "under-review" | "accepted" | "rejected"
+  status       String   @default("under-review")
+  /// When status = "rejected", reason shown to founder
+  rejectReason String?  @db.Text
+  /// User ID of uploader (founder via founder portal, analyst via deal workspace)
+  uploadedById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId])
+  @@index([tenantId, status])
+  @@schema("app_quikvc")
+}
+
+/// Q&A thread between analyst and founder against a deal. Analyst posts a
+/// question, founder responds. Stored as a single row with optional answer
+/// (so the analyst surfaces unanswered questions easily).
+model VCDealQuestion {
+  id          String   @id @default(cuid())
+  tenantId    String
+  dealId      String
+  /// Analyst (Membership ID) who posted the question
+  askedById   String
+  /// Question text (analyst-side)
+  question    String   @db.Text
+  /// Founder's response, if any
+  answer      String?  @db.Text
+  /// Founder's User ID (Membership) — populated when answered
+  answeredById String?
+  answeredAt  DateTime?
+  /// Status: "open" | "answered" | "closed"
+  status      String   @default("open")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId, status])
+  @@schema("app_quikvc")
+}
+
+/// Per-criterion AI score + analyst override. Sprint 2 stub — Sprint 3
+/// extends with score history, override justification fields, AI confidence.
+model VCDealScore {
+  id              String   @id @default(cuid())
+  tenantId        String
+  dealId          String
+  /// References VCScoringCriterion.slug (not FK because criteria can be
+  /// renamed / disabled and we want to keep score history)
+  criterionSlug   String
+  /// AI-generated score 0-100
+  aiScore         Int?
+  /// Analyst-overridden score (null when not overridden)
+  analystScore    Int?
+  /// Required when analystScore is set — analyst rationale for override
+  overrideReason  String?  @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dealId, criterionSlug])
+  @@index([tenantId, dealId])
   @@schema("app_quikvc")
 }
