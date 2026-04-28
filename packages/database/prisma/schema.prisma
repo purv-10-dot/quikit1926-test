@@ -24,8 +24,9 @@ datasource db {
   //   public                  — identity, platform glue, cross-app FKs land here
   //   app_quikscale           — KPI / Priority / WWW / OPSP / Client Meetings
   //   app_quikconstruction    — Cn* construction-ERP tables
+  //   app_quikvc              — VC OS: deals, scoring, IC memos, capital
   // admin and quikit have no app-private state — they read from public only.
-  schemas   = ["public", "app_quikscale", "app_quikconstruction"]
+  schemas   = ["public", "app_quikscale", "app_quikconstruction", "app_quikvc"]
 }
 
 // ============================================================================
@@ -268,6 +269,14 @@ model Tenant {
   cnDebitNotes           CnDebitNote[]
   cnAuditLogs            CnAuditLog[]
   cnNumberSequences      CnNumberSequence[]
+
+  // QuikVC OS — back-relations (Sprint 1 foundation)
+  vcFundProfile          VCFundProfile?
+  vcVerticals            VCVertical[]
+  vcScoringCriteria      VCScoringCriterion[]
+  vcApplications         VCApplication[]
+  vcDeals                VCDeal[]
+  vcTimelineEvents       VCTimelineEvent[]
 
   @@index([slug])
   @@index([status])
@@ -4380,4 +4389,236 @@ model CnNumberSequence {
   @@unique([tenantId, prefix, fyKey])
   @@index([tenantId])
   @@schema("app_quikconstruction")
+}
+
+// ============================================================================
+// QUIKVC OS (app_quikvc)
+// ============================================================================
+//
+// VC firm operating system. See _internal/architecture-notes/quikvc-architecture-v1.md
+// for the full architecture brief (30-model target; this is the Sprint 1
+// foundation — 6 models: tenant config + deal core + audit).
+//
+// Conventions (mirror app_quikscale):
+//   - Every tenant-scoped model has tenantId String + @@index([tenantId])
+//   - createdAt / updatedAt / createdBy / updatedBy on every model
+//   - Cascade delete from Tenant
+//   - JSON columns for variable-shape data (signals, answers, evidence)
+//
+// Sprint 2+ adds: DealScore, DealFinancials, DealSignal, DealDocument,
+// Meeting, MeetingTranscript, ICMemo (+versions), ICVote, Investor,
+// Commitment, CapitalCall, DealAllocation, RepaymentSchedule, TermSheet,
+// SourcedOpportunity, ComparableCompany, NotificationItem, etc.
+// ============================================================================
+
+/// Per-tenant VC OS configuration. 1:1 with Tenant when QuikVC is enabled.
+/// Holds VC-specific settings that don't apply to QuikScale tenants.
+model VCFundProfile {
+  id            String   @id @default(cuid())
+  tenantId      String   @unique
+  /// Display name for the fund (shown in Fund switcher; v1 = single-fund per tenant)
+  fundName      String
+  /// Currency code for capital amounts (ISO 4217). Defaults to INR for India.
+  currency      String   @default("INR")
+  /// IC voting mode for this tenant: "single" or "multi"
+  icVotingMode  String   @default("single")
+  /// Quorum count for "multi" mode (ignored when icVotingMode = "single")
+  icQuorum      Int      @default(2)
+  /// Threshold for "multi" mode: "simple-majority" | "two-thirds" | "unanimous"
+  icThreshold   String   @default("simple-majority")
+  /// Voting visibility: "open" (voters see each other's vote) or "anonymous"
+  icVisibility  String   @default("open")
+  /// Tenant's investment thesis — used by Claude for sourced-opportunity scoring
+  thesis        String?  @db.Text
+  /// Daily summary cron — local hour (0–23) in tenant locale
+  dailyBriefHour Int     @default(6)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@schema("app_quikvc")
+}
+
+/// Industry / sector vertical (e.g., SaaS, FinTech). Per-tenant configurable.
+/// Default seed: 7 verticals (SaaS, FinTech, AgriTech, HealthTech & D2C,
+/// Logistics & SupplyChain, ConsumerInternet & E-commerce, DeepTech & AI).
+model VCVertical {
+  id          String   @id @default(cuid())
+  tenantId    String
+  /// Stable slug (kebab-case) — used in URLs and as scoring criteria foreign key
+  slug        String
+  name        String
+  description String?  @db.Text
+  /// Display order in admin / pickers
+  sortOrder   Int      @default(0)
+  enabled     Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scoringCriteria   VCScoringCriterion[]
+  applications      VCApplication[]
+  deals             VCDeal[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@schema("app_quikvc")
+}
+
+/// Per-vertical scoring criterion. Weights must sum to 100% per vertical.
+/// Used by Claude scoring + analyst override workflow.
+model VCScoringCriterion {
+  id          String   @id @default(cuid())
+  tenantId    String
+  verticalId  String
+  /// Stable slug — referenced by DealScore rows
+  slug        String
+  name        String
+  description String?  @db.Text
+  /// Weight 0–100 (integer percentage). Sum across vertical's criteria must = 100
+  weight      Int
+  sortOrder   Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vertical VCVertical @relation(fields: [verticalId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, verticalId, slug])
+  @@index([tenantId, verticalId])
+  @@schema("app_quikvc")
+}
+
+/// Founder-submitted startup application. Master record created on form
+/// submit; auto-creates a linked VCDeal at Intake stage.
+model VCApplication {
+  id           String   @id @default(cuid())
+  tenantId     String
+  /// User ID of the founder (Membership in this tenant with role = "founder")
+  founderId    String
+  verticalId   String
+  /// Display name of the startup
+  startupName  String
+  contactName  String
+  contactEmail String
+  contactPhone String?
+  website      String?
+  sector       String?
+  foundedYear  Int?
+  teamSize     Int?
+  /// Plain-text business description from form
+  description  String?  @db.Text
+  /// Funding ask in tenant's currency (smallest unit, e.g. paise)
+  fundingAsk   BigInt?
+  /// One of: "term-loan" | "rbf" | "equity"
+  loanType     String?
+  /// Tenure in months (for term-loan / RBF)
+  tenureMonths Int?
+  /// Purpose of funds — short answer
+  purpose      String?  @db.Text
+  /// Form-bound answers (Step 3 financials, etc.) — variable shape
+  formAnswers  Json?
+  status       String   @default("submitted") // submitted | converted | rejected
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vertical VCVertical @relation(fields: [verticalId], references: [id], onDelete: Restrict)
+  deal     VCDeal?    // 1:1 — created automatically on submit
+
+  @@index([tenantId])
+  @@index([tenantId, founderId])
+  @@index([tenantId, status])
+  @@schema("app_quikvc")
+}
+
+/// Core deal record. Drives the 9-stage pipeline + 6-column Kanban view.
+/// Sprint 1: holds enough state to render Pipeline + Deal Overview.
+model VCDeal {
+  id              String   @id @default(cuid())
+  tenantId        String
+  applicationId   String   @unique
+  verticalId      String
+  /// One of the 9 canonical stages: intake | onboarding | doc-collection |
+  /// discovery-call | research | partner-review | ic-review | due-diligence |
+  /// final-decision. Tenant can rename / reorder via PipelineStageConfig (Sprint 4).
+  currentStage    String   @default("intake")
+  /// Closed status when stage reaches final-decision: open | closed-won | closed-lost
+  closedStatus    String   @default("open")
+  /// Primary analyst (Membership ID with role = "analyst" or "partner")
+  analystId       String?
+  /// Optional partner assigned for visibility
+  partnerId       String?
+  /// AI composite score (0-100) computed from all DealScore rows
+  aiScore         Int?
+  /// Analyst composite score (overrides AI when set)
+  analystScore    Int?
+  /// Funding amount allocated so far (sum of DealAllocation amounts; Sprint 4)
+  allocatedAmount BigInt   @default(0)
+  /// % completion of required documents (0-100)
+  docCompleteness Int      @default(0)
+  /// Days the deal has been in its current stage (recomputed by background job)
+  daysInStage     Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  application    VCApplication     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  vertical       VCVertical        @relation(fields: [verticalId], references: [id], onDelete: Restrict)
+  timelineEvents VCTimelineEvent[]
+
+  @@index([tenantId])
+  @@index([tenantId, currentStage])
+  @@index([tenantId, verticalId])
+  @@index([tenantId, analystId])
+  @@schema("app_quikvc")
+}
+
+/// Append-only timeline event log per deal. Captures stage transitions, doc
+/// uploads, score updates, IC votes, allocations — anything the analyst /
+/// founder / investor needs to see in chronological order.
+///
+/// Pattern parallels existing AuditLog (in public schema); this one is
+/// scoped per deal and rendered in the Deal Overview / Workbench timeline tab.
+model VCTimelineEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  dealId    String
+  /// Event type — extensible enum string for now. See architecture brief §6.
+  /// Examples: stage-advanced | doc-uploaded | doc-rejected | score-updated |
+  /// memo-generated | ic-vote-cast | capital-allocated | meeting-scheduled
+  type      String
+  /// Actor's User ID (null for system events like cron, AI background jobs)
+  actorId   String?
+  /// Human-readable summary shown in timeline UI
+  summary   String   @db.Text
+  /// Structured event payload (varies by type)
+  payload   Json?
+  /// Visibility — "internal" (VC team only) | "founder" (also visible in startup portal) | "investor"
+  visibility String  @default("internal")
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, dealId, createdAt])
+  @@index([tenantId, type])
+  @@schema("app_quikvc")
 }

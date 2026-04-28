@@ -96,6 +96,35 @@ export const MODULE_REGISTRY: AppModuleConfig[] = [
       { key: "settings", label: "Settings", icon: "Settings", href: "/settings" },
     ],
   },
+  {
+    // QuikVC OS — VC firm operating system. See _internal/architecture-notes/quikvc-architecture-v1.md.
+    // 3 portals (VC / Founder / Investor) routed by role; modules below are the VC-portal nav.
+    appSlug: "quikvc",
+    modules: [
+      { key: "home",     label: "Home",     icon: "LayoutDashboard", href: "/home" },
+      { key: "sourcing", label: "Sourcing", icon: "Compass",         href: "/sourcing" },
+
+      { key: "deals",          label: "Deals",    icon: "Briefcase" },
+      { key: "deals.list",     label: "Pipeline", icon: "Kanban",  href: "/deals",       parentKey: "deals" },
+      { key: "deals.tasks",    label: "Tasks",    icon: "CheckSquare", href: "/tasks",   parentKey: "deals" },
+      { key: "deals.meetings", label: "Meetings", icon: "Calendar", href: "/meetings",   parentKey: "deals" },
+
+      { key: "investors",        label: "Investors", icon: "Users" },
+      { key: "investors.list",   label: "Investors", icon: "User",  href: "/investors",  parentKey: "investors" },
+      { key: "investors.calls",  label: "Capital Calls", icon: "PhoneCall", href: "/investors/calls", parentKey: "investors" },
+
+      { key: "repayments", label: "Repayments", icon: "Repeat", href: "/repayments" },
+      { key: "reports",    label: "Reports",    icon: "BarChart3", href: "/reports" },
+      { key: "alerts",     label: "Alerts",     icon: "Bell",   href: "/alerts" },
+
+      { key: "underwriting",                  label: "Underwriting Setup", icon: "Settings" },
+      { key: "underwriting.verticals",        label: "Verticals",          icon: "Layers",   href: "/admin/verticals",          parentKey: "underwriting" },
+      { key: "underwriting.scoring",          label: "Scoring",            icon: "Target",   href: "/admin/scoring",            parentKey: "underwriting" },
+      { key: "underwriting.workflow",         label: "Workflow",           icon: "GitBranch", href: "/admin/workflow",          parentKey: "underwriting" },
+      { key: "underwriting.icVoting",         label: "IC Voting",          icon: "Vote",     href: "/admin/ic-voting",          parentKey: "underwriting" },
+      { key: "underwriting.termSheet",        label: "Term Sheet Template", icon: "FileText", href: "/admin/term-sheet-template", parentKey: "underwriting" },
+    ],
+  },
 ];
 
 /* ─── Utilities ───────────────────────────────────────────────────────── */
