@@ -8,10 +8,12 @@
  * module registry, tenant/fund switcher, and the global command palette.
  */
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import NotificationBell from "@/components/notification-bell";
 import OrgSwitcher from "@/components/org-switcher";
 import { requireSession } from "@/lib/require-session";
 import { getVCRole, FUND_ADMIN_ROLES } from "@/lib/rbac";
+import { homePathForPortal, portalForRole } from "@/lib/roles";
 import { db } from "@/lib/db";
 
 const ALL_NAV_ITEMS = [
@@ -38,6 +40,14 @@ export default async function VCLayout({ children }: { children: React.ReactNode
     }),
   ]);
 
+  // Portal gate — bounce non-VC roles to their own portal home. Without
+  // this, a founder or investor who navigates to /home (manually or via a
+  // stale URL) gets the VC layout rendered with their data missing/wrong.
+  const portal = portalForRole(role ?? undefined);
+  if (portal !== "vc") {
+    redirect(homePathForPortal(portal));
+  }
+
   const NAV_ITEMS = ALL_NAV_ITEMS.filter(
     (i) => !i.roles || (role && i.roles.includes(role)),
   );
@@ -61,7 +71,7 @@ export default async function VCLayout({ children }: { children: React.ReactNode
           ))}
         </nav>
         <div className="px-5 py-3 border-t border-slate-800 text-xs text-slate-400">
-          Sprint 1 shell — auth wiring in Sprint 2
+          {role ? <>Signed in as <strong className="text-slate-200">{role}</strong></> : "Signed in"}
         </div>
       </aside>
 

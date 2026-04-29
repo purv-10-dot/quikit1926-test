@@ -39,6 +39,7 @@ function resolveAppUrl(envName: string, devFallback: string): string {
 const QUIKSCALE_BASE = resolveAppUrl("QUIKSCALE_URL", "http://localhost:3004"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCONSTRUCTION_BASE = resolveAppUrl("QUIKCONSTRUCTION_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 
 const APPS = [
   {
@@ -46,7 +47,7 @@ const APPS = [
     name: "QuikScale",
     description: "Scaling Up execution — KPI tracking, Priority management, OPSP, WWW, Meeting Rhythm, Performance.",
     baseUrl: QUIKSCALE_BASE,
-    iconUrl: null,
+    iconUrl: "/app-icons/quikscale.png",
     status: "active",
     oauth: {
       clientId: "quikscale",
@@ -62,7 +63,7 @@ const APPS = [
     name: "Admin Portal",
     description: "Organization administration — user management, team setup, app access control, billing.",
     baseUrl: ADMIN_BASE,
-    iconUrl: null,
+    iconUrl: "/app-icons/admin.png",
     status: "active",
     oauth: {
       clientId: "admin",
@@ -78,13 +79,29 @@ const APPS = [
     name: "QuikConstruction",
     description: "Construction ERP — Projects, BOQ/DPR, Purchase, Store, Finance, HRMS, Safety, Quality.",
     baseUrl: QUIKCONSTRUCTION_BASE,
-    iconUrl: null,
+    iconUrl: "/app-icons/quikconstruction.png",
     status: "active",
     oauth: {
       clientId: "quikconstruction",
       clientSecretPlain: "quikconstruction-dev-secret-change-in-prod",
       redirectUris: [
         `${QUIKCONSTRUCTION_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikvc",
+    name: "QuikVC",
+    description: "AI-powered VC operating system — sourcing, deal flow, IC memos, allocations, repayments.",
+    baseUrl: QUIKVC_BASE,
+    iconUrl: "/app-icons/quikvc.png",
+    status: "active",
+    oauth: {
+      clientId: "quikvc",
+      clientSecretPlain: "quikvc-dev-secret-change-in-prod",
+      redirectUris: [
+        `${QUIKVC_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },
@@ -161,6 +178,11 @@ QUIKIT_CLIENT_SECRET="quikscale-dev-secret-change-in-prod"
 QUIKIT_URL="${quikitUrlDev}"
 QUIKIT_CLIENT_ID="admin"
 QUIKIT_CLIENT_SECRET="admin-dev-secret-change-in-prod"
+
+# apps/quikvc/.env.local
+QUIKIT_URL="${quikitUrlDev}"
+QUIKIT_CLIENT_ID="quikvc"
+QUIKIT_CLIENT_SECRET="quikvc-dev-secret-change-in-prod"
 `);
 }
 

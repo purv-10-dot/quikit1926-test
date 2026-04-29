@@ -5,12 +5,19 @@
  * and repayments — never other investors' positions.
  */
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import NotificationBell from "@/components/notification-bell";
 import { requireSession } from "@/lib/require-session";
+import { getVCRole } from "@/lib/rbac";
+import { homePathForPortal, portalForRole } from "@/lib/roles";
 
 const NAV = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Portfolio", href: "/portfolio" },
+  // Investor's "summary" page = capital roll-up. Routed under /summary
+  // (not /dashboard) because (founder)/dashboard already owns that path —
+  // Next.js doesn't allow two parallel route groups to resolve to the same
+  // URL.
+  { label: "Summary",    href: "/summary" },
+  { label: "Portfolio",  href: "/portfolio" },
   { label: "Repayments", href: "/repayments" },
 ];
 
@@ -21,7 +28,16 @@ export default async function InvestorLayout({
 }) {
   // Hardened: redirects to /login when no session. The portal reveals
   // private commitment + payment data, so no anonymous access.
-  await requireSession();
+  const { userId, tenantId } = await requireSession();
+
+  // Portal gate — bounce non-investor roles. Internal staff (analyst,
+  // partner, fund-admin) shouldn't see the investor portal because the
+  // pages query by VCInvestor.userId and would fail / show stranger data.
+  const role = await getVCRole(userId, tenantId);
+  const portal = portalForRole(role ?? undefined);
+  if (portal !== "investor") {
+    redirect(homePathForPortal(portal));
+  }
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">

@@ -21,9 +21,10 @@ const TABS = [
   { slug: "comparables", label: "Comparables" },
   { slug: "meetings",    label: "Meetings" },
   { slug: "memo",        label: "Memo" },
-  { slug: "term-sheet",  label: "Term Sheet" },
-  { slug: "funding",     label: "Funding" },
-  { slug: "repayments",  label: "Repayments" },
+  { slug: "term-sheet",    label: "Term Sheet" },
+  { slug: "funding",       label: "Funding" },
+  { slug: "capital-calls", label: "Capital Calls" },
+  { slug: "repayments",    label: "Repayments" },
 ];
 
 export default async function WorkbenchLayout({

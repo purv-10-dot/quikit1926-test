@@ -11,8 +11,11 @@
  * After selection, redirects based on the user's role in that tenant:
  *   - VC roles (analyst / partner / fund-admin / ic-member / admin) → /home
  *   - founder                                                       → /dashboard
- *   - investor                                                      → /dashboard
+ *   - investor                                                      → /summary
  *   - unknown                                                       → /home
+ *
+ * Note: /summary (not /dashboard) for investor because the (founder) and
+ * (investor) route groups can't both expose /dashboard in Next.js.
  *
  * Dev escape hatch: when QUIKVC_DEV_BYPASS=1 the middleware skips this
  * page entirely; visit it manually if you want to test the picker.
@@ -37,7 +40,7 @@ const INVESTOR_ROLES = new Set(["investor", "lp"]);
 function landingPathForRole(role: string): string {
   if (VC_ROLES.has(role)) return "/home";
   if (FOUNDER_ROLES.has(role)) return "/dashboard";
-  if (INVESTOR_ROLES.has(role)) return "/dashboard";
+  if (INVESTOR_ROLES.has(role)) return "/summary";
   return "/home";
 }
 

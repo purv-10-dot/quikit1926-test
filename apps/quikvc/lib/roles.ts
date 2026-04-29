@@ -1,44 +1,50 @@
 /**
  * QuikVC role / portal mapping.
  *
- * The platform has 5 internal roles mapped to 3 portals. Role comes from the
- * NextAuth session via `session.user.membershipRole`. The portal is derived
- * deterministically from the role — there's no portal switcher per user, only
- * a tenant/fund switcher within a portal.
+ * Role comes from `session.user.membershipRole` (set by the QuikIT IdP from
+ * Membership.role). Portal is derived deterministically — there's no portal
+ * switcher per user, only a tenant/fund switcher within a portal.
  *
- * Sprint 2 will hook this into the real session; for now Sprint 1 ships a
- * `?role=` query-param dev hatch so we can preview the three portals without
- * an auth setup. Remove the dev hatch before Sprint 2.
+ * Role naming: hyphenated kebab-case (`fund-admin`, `ic-member`). This matches
+ * Membership.role values seeded by seed-quikvc.ts and the role groups in
+ * lib/rbac.ts. Older code used underscores — those are gone.
  */
 
 export type QuikVCRole =
   | "founder"
+  | "investor"
   | "analyst"
   | "partner"
-  | "fund_admin"
-  | "ic_member";
+  | "fund-admin"
+  | "ic-member"
+  /// Tenant-level admin (inherited from QuikIT). Treated as VC + fund-admin.
+  | "admin";
 
 export type QuikVCPortal = "vc" | "founder" | "investor";
 
 const ROLE_TO_PORTAL: Record<QuikVCRole, QuikVCPortal> = {
   founder: "founder",
+  investor: "investor",
   analyst: "vc",
   partner: "vc",
-  fund_admin: "vc",
-  ic_member: "vc",
+  "fund-admin": "vc",
+  "ic-member": "vc",
+  admin: "vc",
 };
 
-export function portalForRole(role: QuikVCRole | undefined): QuikVCPortal {
+export function portalForRole(role: QuikVCRole | string | undefined): QuikVCPortal {
   if (!role) return "founder"; // safest default — limited surface
-  return ROLE_TO_PORTAL[role] ?? "founder";
+  return ROLE_TO_PORTAL[role as QuikVCRole] ?? "founder";
 }
 
 export const ROLE_LABEL: Record<QuikVCRole, string> = {
   founder: "Founder",
+  investor: "Investor",
   analyst: "Analyst",
   partner: "Partner",
-  fund_admin: "Fund Admin",
-  ic_member: "IC Member",
+  "fund-admin": "Fund Admin",
+  "ic-member": "IC Member",
+  admin: "Admin",
 };
 
 /** Display name for a portal. */
@@ -48,7 +54,12 @@ export const PORTAL_LABEL: Record<QuikVCPortal, string> = {
   investor: "Investor",
 };
 
-/** Default landing path per portal. */
+/** Default landing path per portal.
+ *
+ * Investor home is `/summary`, not `/dashboard`, because Next.js doesn't
+ * allow two parallel route groups (`(founder)` + `(investor)`) to resolve
+ * to the same URL. See app/(investor)/summary/page.tsx for the actual page.
+ */
 export function homePathForPortal(portal: QuikVCPortal): string {
   switch (portal) {
     case "vc":
@@ -56,6 +67,6 @@ export function homePathForPortal(portal: QuikVCPortal): string {
     case "founder":
       return "/dashboard";
     case "investor":
-      return "/dashboard";
+      return "/summary";
   }
 }

@@ -5,7 +5,10 @@
  * no risk/scoring visibility. Sprint 1 minimal shell; Sprint 2 wires real auth.
  */
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/require-session";
+import { getVCRole } from "@/lib/rbac";
+import { homePathForPortal, portalForRole } from "@/lib/roles";
 
 const NAV = [
   { label: "Dashboard", href: "/dashboard" },
@@ -20,7 +23,16 @@ export default async function FounderLayout({
   children: React.ReactNode;
 }) {
   // Hardened: redirects to /login when no session.
-  await requireSession();
+  const { userId, tenantId } = await requireSession();
+
+  // Portal gate — bounce non-founder roles to their own portal home so
+  // an analyst or investor can't view the founder portal with their
+  // session, which would render confusing / empty data.
+  const role = await getVCRole(userId, tenantId);
+  const portal = portalForRole(role ?? undefined);
+  if (portal !== "founder") {
+    redirect(homePathForPortal(portal));
+  }
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">

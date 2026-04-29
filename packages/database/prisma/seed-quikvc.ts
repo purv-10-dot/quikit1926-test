@@ -19,6 +19,30 @@ const prisma = new PrismaClient();
 const TENANT_SLUG = "valleynxt";
 const TENANT_NAME = "ValleyNXT Ventures";
 
+/**
+ * Resolve QuikVC's absolute base URL — the launcher uses this for the
+ * "Launch" button. Must be absolute (http(s)://...), not a relative path.
+ *
+ * - Dev fallback: `http://localhost:3008` (matches apps/quikvc/package.json's dev port)
+ * - Prod: set QUIKVC_URL to the deployed URL (e.g., https://quikvc.vercel.app).
+ *   In production we refuse to seed with localhost values — the launcher
+ *   would redirect every user to localhost:3008 (broken).
+ */
+function resolveQuikVCUrl(): string {
+  const v = process.env.QUIKVC_URL;
+  if (v) return v;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      `[seed-quikvc] QUIKVC_URL is required when NODE_ENV=production. ` +
+        `Seeding localhost or a relative path would break the launcher's ` +
+        `"Launch" button for every real user. Set it before re-running.`,
+    );
+  }
+  return "http://localhost:3008"; // prod-safety-allow: dev fallback, prod throws
+}
+
+const QUIKVC_BASE = resolveQuikVCUrl();
+
 /** Default scoring criteria from BRD §2.2 (sum to 100%). Same list per vertical for v1. */
 const DEFAULT_CRITERIA = [
   { slug: "founding-team",       name: "Founding team",                description: "Background, experience, completeness", weight: 30 },
@@ -75,14 +99,23 @@ async function main() {
   console.log(`  ✓ Tenant ${tenant.name} (${tenant.id})`);
 
   // 2. App row + TenantAppAccess for quikvc
+  //    baseUrl MUST be absolute — the launcher does `window.location.href = baseUrl`,
+  //    so a relative path like "/quikvc" resolves against the launcher's host
+  //    (localhost:3000) and 404s. See resolveQuikVCUrl above.
   const app = await prisma.app.upsert({
     where: { slug: "quikvc" },
-    update: { name: "QuikVC", description: "AI-powered VC operating system" },
+    update: {
+      name: "QuikVC",
+      description: "AI-powered VC operating system",
+      baseUrl: QUIKVC_BASE,
+      iconUrl: "/app-icons/quikvc.png",
+    },
     create: {
       slug: "quikvc",
       name: "QuikVC",
       description: "AI-powered VC operating system",
-      baseUrl: "/quikvc",
+      baseUrl: QUIKVC_BASE,
+      iconUrl: "/app-icons/quikvc.png",
       status: "active",
     },
   });

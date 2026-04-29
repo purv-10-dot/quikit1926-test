@@ -24,6 +24,22 @@ interface OrgInfo {
   status: string;
 }
 
+const VC_ROLES = new Set(["analyst", "partner", "fund-admin", "ic-member", "admin"]);
+const FOUNDER_ROLES = new Set(["founder"]);
+const INVESTOR_ROLES = new Set(["investor", "lp"]);
+
+/**
+ * Where each role lands after a successful org switch. Mirrors the
+ * landingPathForRole() in /select-org so swap behavior is consistent
+ * regardless of entry point.
+ */
+function landingPathForRole(role: string): string {
+  if (VC_ROLES.has(role)) return "/home";
+  if (FOUNDER_ROLES.has(role)) return "/dashboard";
+  if (INVESTOR_ROLES.has(role)) return "/summary";
+  return "/home";
+}
+
 export default function OrgSwitcher({
   currentTenantName,
 }: {
@@ -73,7 +89,10 @@ export default function OrgSwitcher({
         return;
       }
       await update({ tenantId: org.tenantId, membershipRole: org.role });
-      window.location.href = "/home";
+      // Role-aware redirect — same logic as /select-org. The OrgSwitcher
+      // lives in the (vc) layout so most callers land on /home, but a
+      // tenant where this user is a founder/investor should route there.
+      window.location.href = landingPathForRole(org.role);
     } catch {
       setSwitching(null);
     }
