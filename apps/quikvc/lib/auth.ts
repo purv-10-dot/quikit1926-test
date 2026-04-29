@@ -2,13 +2,17 @@ import { createOAuthClientOptions, createAuthOptions } from "@quikit/auth";
 import "@quikit/auth/types";
 
 /**
- * QuikScale auth configuration.
+ * QuikVC auth configuration.
  *
- * When QUIKIT_URL is set, QuikScale authenticates via QuikIT's OAuth2
- * flow (the platform IdP model). When unset, falls back to the direct
- * CredentialsProvider for backward compatibility during migration.
+ * When QUIKIT_URL (or the OIDC-style alias QUIKIT_ISSUER_URL) is set,
+ * QuikVC authenticates via QuikIT's OAuth2 flow (the platform IdP model).
+ * When unset, falls back to a direct CredentialsProvider for local-only dev.
+ *
+ * Both env names are accepted because some operators provision the IdP URL
+ * under the OIDC-conventional name `QUIKIT_ISSUER_URL`. They mean the same
+ * thing — the base URL of the QuikIT IdP, without trailing slash.
  */
-const QUIKIT_URL = process.env.QUIKIT_URL;
+const QUIKIT_URL = process.env.QUIKIT_URL ?? process.env.QUIKIT_ISSUER_URL;
 const QUIKIT_CLIENT_ID = process.env.QUIKIT_CLIENT_ID;
 const QUIKIT_CLIENT_SECRET = process.env.QUIKIT_CLIENT_SECRET;
 

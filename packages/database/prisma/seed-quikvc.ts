@@ -19,6 +19,30 @@ const prisma = new PrismaClient();
 const TENANT_SLUG = "valleynxt";
 const TENANT_NAME = "ValleyNXT Ventures";
 
+/**
+ * Resolve QuikVC's absolute base URL — the launcher uses this for the
+ * "Launch" button. Must be absolute (http(s)://...), not a relative path.
+ *
+ * - Dev fallback: `http://localhost:3008` (matches apps/quikvc/package.json's dev port)
+ * - Prod: set QUIKVC_URL to the deployed URL (e.g., https://quikvc.vercel.app).
+ *   In production we refuse to seed with localhost values — the launcher
+ *   would redirect every user to localhost:3008 (broken).
+ */
+function resolveQuikVCUrl(): string {
+  const v = process.env.QUIKVC_URL;
+  if (v) return v;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      `[seed-quikvc] QUIKVC_URL is required when NODE_ENV=production. ` +
+        `Seeding localhost or a relative path would break the launcher's ` +
+        `"Launch" button for every real user. Set it before re-running.`,
+    );
+  }
+  return "http://localhost:3008"; // prod-safety-allow: dev fallback, prod throws
+}
+
+const QUIKVC_BASE = resolveQuikVCUrl();
+
 /** Default scoring criteria from BRD §2.2 (sum to 100%). Same list per vertical for v1. */
 const DEFAULT_CRITERIA = [
   { slug: "founding-team",       name: "Founding team",                description: "Background, experience, completeness", weight: 30 },
@@ -75,14 +99,23 @@ async function main() {
   console.log(`  ✓ Tenant ${tenant.name} (${tenant.id})`);
 
   // 2. App row + TenantAppAccess for quikvc
+  //    baseUrl MUST be absolute — the launcher does `window.location.href = baseUrl`,
+  //    so a relative path like "/quikvc" resolves against the launcher's host
+  //    (localhost:3000) and 404s. See resolveQuikVCUrl above.
   const app = await prisma.app.upsert({
     where: { slug: "quikvc" },
-    update: { name: "QuikVC", description: "AI-powered VC operating system" },
+    update: {
+      name: "QuikVC",
+      description: "AI-powered VC operating system",
+      baseUrl: QUIKVC_BASE,
+      iconUrl: "/app-icons/quikvc.png",
+    },
     create: {
       slug: "quikvc",
       name: "QuikVC",
       description: "AI-powered VC operating system",
-      baseUrl: "/quikvc",
+      baseUrl: QUIKVC_BASE,
+      iconUrl: "/app-icons/quikvc.png",
       status: "active",
     },
   });
@@ -135,7 +168,7 @@ async function main() {
   // 5. Users + memberships (5 accounts)
   const password = await bcrypt.hash("Password123!", 10);
   const seedUsers = [
-    { email: "fund@valleynxt.test",      first: "Asha",     last: "Kapoor",    role: "fund_admin" },
+    { email: "fund@valleynxt.test",      first: "Asha",     last: "Kapoor",    role: "fund-admin" },
     { email: "partner@valleynxt.test",   first: "Vikram",   last: "Mehta",     role: "partner" },
     { email: "analyst@valleynxt.test",   first: "Priya",    last: "Iyer",      role: "analyst" },
     { email: "founder1@example.test",    first: "Rohan",    last: "Sharma",    role: "founder" },
@@ -157,8 +190,19 @@ async function main() {
       update: { role: u.role, status: "active" },
       create: { userId: user.id, tenantId: tenant.id, role: u.role, status: "active" },
     });
+
+    // UserAppAccess for QuikVC — required by the org-memberships factory's
+    // appSlug filter. Without this row, the user wouldn't see ValleyNXT in
+    // their QuikVC org switcher even though the membership exists.
+    await prisma.userAppAccess.upsert({
+      where: {
+        userId_tenantId_appId: { userId: user.id, tenantId: tenant.id, appId: app.id },
+      },
+      update: { role: u.role },
+      create: { userId: user.id, tenantId: tenant.id, appId: app.id, role: u.role },
+    });
   }
-  console.log(`  ✓ 6 demo users (password: Password123!)`);
+  console.log(`  ✓ 6 demo users + UserAppAccess (password: Password123!)`);
 
   // 6. Demo deals across stages (5 startups)
   for (const d of DEMO_DEALS) {
