@@ -29,21 +29,36 @@ import { Clock, FileText, X, RotateCcw, AlertTriangle } from "lucide-react";
    Checkbox hook (shared for primary + secondary)
    ═══════════════════════════════════════════════ */
 
+/**
+ * Row-selection hook — returns a memoized object so consumers can include
+ * the whole hook return value in `useMemo`/`useCallback` deps without
+ * busting them on every render. Method refs are stable (useCallback with
+ * empty deps + functional setState).
+ */
 function useRowSelection() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const toggle = (idx: number) =>
+
+  const toggle = useCallback((idx: number) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(idx)) next.delete(idx);
       else next.add(idx);
       return next;
     });
-  const toggleAll = (allIdxs: number[]) =>
+  }, []);
+
+  const toggleAll = useCallback((allIdxs: number[]) => {
     setSelected((prev) =>
       prev.size === allIdxs.length ? new Set() : new Set(allIdxs),
     );
-  const clear = () => setSelected(new Set());
-  return { selected, toggle, toggleAll, clear };
+  }, []);
+
+  const clear = useCallback(() => setSelected(new Set()), []);
+
+  return useMemo(
+    () => ({ selected, toggle, toggleAll, clear }),
+    [selected, toggle, toggleAll, clear],
+  );
 }
 
 /* ═══════════════════════════════════════════════
@@ -424,8 +439,9 @@ export default function OPSPReviewPage() {
     ? `${labels.primaryTitle} – ${quarter} - ${year}`
     : `${labels.secondaryTitle} – ${quarter} - ${year}`;
 
-  /* ── Open primary modal ── */
-  function openPrimaryModal(rowIndex: number) {
+  /* ── Open primary modal ── wrapped in useCallback so the columns useMemo
+     below can include it in deps without re-creating columns every render. */
+  const openPrimaryModal = useCallback((rowIndex: number) => {
     const row = data?.rows.find((r) => r.rowIndex === rowIndex);
     if (!row) return;
     const edits: typeof primaryEdits = {};
@@ -438,7 +454,8 @@ export default function OPSPReviewPage() {
     setPrimaryEdits(edits);
     setPrimaryActiveTab(periodLabels[0]?.key ?? "");
     setPrimaryOpen(true);
-  }
+  // setPrimaryX setters are stable (useState); only data + periodLabels are reactive.
+  }, [data, periodLabels]);
 
   /** Check if a period tab's achieved value is auto-populated from child horizon */
   const isTabAutoPopulated = useMemo(() => {
@@ -448,8 +465,8 @@ export default function OPSPReviewPage() {
     return row.periods[primaryActiveTab]?.autoPopulated === true;
   }, [data, primaryIdx, primaryActiveTab]);
 
-  /* ── Open secondary modal ── */
-  function openSecondaryModal(index: number) {
+  /* ── Open secondary modal ── same useCallback rationale as primary. */
+  const openSecondaryModal = useCallback((index: number) => {
     const row = secondaryTableRows[index];
     if (!row) return;
     setSecondaryIdx(index);
@@ -458,7 +475,7 @@ export default function OPSPReviewPage() {
     setSecondaryStatus(row.status);
     setSecondaryComment(row.comment);
     setSecondaryOpen(true);
-  }
+  }, [secondaryTableRows]);
 
   /* ── Save primary ── */
   async function handlePrimarySave() {
@@ -667,7 +684,7 @@ export default function OPSPReviewPage() {
         <span className="text-gray-500 truncate block">{row.comment || "—"}</span>
       ),
     },
-  ], [primarySel.selected, primaryCategoryIdxs, logsRowIndex, data?.opspId, horizon]);
+  ], [primarySel, primaryCategoryIdxs, logsRowIndex, data?.opspId, horizon, openPrimaryModal]);
 
   const secondaryIdxs = useMemo(
     () => filteredSecondary.map((r) => r.index),
@@ -770,7 +787,7 @@ export default function OPSPReviewPage() {
         <span className="text-gray-500 truncate block">{row.comment || "—"}</span>
       ),
     },
-  ], [secondarySel.selected, secondaryIdxs, logsRowIndex, data?.opspId, horizon]);
+  ], [secondarySel, secondaryIdxs, logsRowIndex, data?.opspId, horizon, openSecondaryModal]);
 
   /* ═══════════════════════════════════════════════
      Render
