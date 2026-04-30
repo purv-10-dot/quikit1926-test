@@ -58,8 +58,21 @@ export async function GET() {
 
   const accessMap = new Map(accessRecords.map((a) => [a.appId, a.role]));
 
+  // Env-override map: if the deployment supplies a per-app URL via env, use
+  // it instead of the DB's stored baseUrl. Lets local dev (.env.local with
+  // localhost ports) run against a Neon DB whose App.baseUrl rows hold prod
+  // URLs, without redirecting every launch to production.
+  const envBaseUrls: Record<string, string | undefined> = {
+    quikit: process.env.QUIKIT_URL,
+    quikscale: process.env.QUIKSCALE_URL,
+    admin: process.env.ADMIN_URL,
+    quikvc: process.env.QUIKVC_URL,
+    quikconstruction: process.env.QUIKCONSTRUCTION_URL,
+  };
+
   const data = allApps.map((app) => ({
     ...app,
+    baseUrl: envBaseUrls[app.slug] ?? app.baseUrl,
     installed: accessMap.has(app.id),
     role: accessMap.get(app.id) ?? undefined,
   }));
