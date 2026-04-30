@@ -8,7 +8,9 @@ import "@quikit/auth/types";
  * flow (the platform IdP model). When unset, falls back to the direct
  * CredentialsProvider for backward compatibility during migration.
  */
-const QUIKIT_URL = process.env.QUIKIT_URL;
+// Accept both env names — operators sometimes provision the IdP base URL
+// under the OIDC-conventional alias QUIKIT_ISSUER_URL.
+const QUIKIT_URL = process.env.QUIKIT_URL ?? process.env.QUIKIT_ISSUER_URL;
 const QUIKIT_CLIENT_ID = process.env.QUIKIT_CLIENT_ID;
 const QUIKIT_CLIENT_SECRET = process.env.QUIKIT_CLIENT_SECRET;
 

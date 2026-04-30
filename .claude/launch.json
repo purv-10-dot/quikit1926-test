@@ -19,7 +19,8 @@
       "name": "admin",
       "runtimeExecutable": "/bin/bash",
       "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npx turbo dev --filter=admin"],
-      "port": 3005
+      "port": 3005,
+      "autoPort": false
     },
     {
       "name": "quikconstruction",
@@ -39,7 +40,8 @@
       "name": "all",
       "runtimeExecutable": "/bin/bash",
       "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npm run dev"],
-      "port": 3000
+      "port": 3000,
+      "autoPort": false
     }
   ]
 }

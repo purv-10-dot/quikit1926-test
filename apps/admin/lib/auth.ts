@@ -7,7 +7,9 @@ import "@quikit/auth/types";
  * When QUIKIT_URL is set, Admin authenticates via QuikIT's OAuth2 flow.
  * When unset, falls back to direct CredentialsProvider.
  */
-const QUIKIT_URL = process.env.QUIKIT_URL;
+// Accept both env names — operators sometimes provision the IdP base URL
+// under the OIDC-conventional alias QUIKIT_ISSUER_URL.
+const QUIKIT_URL = process.env.QUIKIT_URL ?? process.env.QUIKIT_ISSUER_URL;
 const QUIKIT_CLIENT_ID = process.env.QUIKIT_CLIENT_ID;
 const QUIKIT_CLIENT_SECRET = process.env.QUIKIT_CLIENT_SECRET;
 
