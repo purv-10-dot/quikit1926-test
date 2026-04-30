@@ -84,6 +84,9 @@ const SKIP_PATTERNS = [
   /^scripts\/migrate-legacy\//,
   // Docker compose files are dev orchestration only, not runtime code.
   /(^|\/)docker-compose\.ya?ml$/,
+  // Dev-only shell scripts (onboarding, regen tooling). Never bundled.
+  /^scripts\/onboard-/,
+  /^scripts\/regen-/,
 ];
 
 /* ─── Line-level allow rules — applied AFTER we've found a match ─────── */

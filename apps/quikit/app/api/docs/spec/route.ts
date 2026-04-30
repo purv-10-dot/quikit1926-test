@@ -36,6 +36,32 @@ export async function GET() {
       const fallback = join(process.cwd(), "lib", "openapi.yaml");
       yaml = await readFile(fallback, "utf-8");
     }
+
+    // Inject `servers:` block at runtime from env. Committed YAML has no
+    // localhost — local dev gets URLs from .env.local, prod gets them from
+    // Vercel env. This satisfies the prod-safety gate (no localhost in source)
+    // while keeping local dev fully functional.
+    const servers = [
+      { url: process.env.QUIKIT_URL, label: "quikit" },
+      { url: process.env.QUIKSCALE_URL, label: "quikscale" },
+      { url: process.env.ADMIN_URL, label: "admin" },
+      { url: process.env.QUIKVC_URL, label: "quikvc" },
+      { url: process.env.QUIKCONSTRUCTION_URL, label: "quikconstruction" },
+    ].filter((s): s is { url: string; label: string } => Boolean(s.url));
+
+    if (servers.length > 0) {
+      const env =
+        process.env.NODE_ENV === "production" ? "Production" : "Local dev";
+      const block = [
+        "servers:",
+        ...servers.flatMap((s) => [
+          `  - url: ${s.url}`,
+          `    description: "${s.label} — ${env}"`,
+        ]),
+      ].join("\n");
+      yaml = yaml.replace(/^servers:\s*\[\s*\]\s*$/m, block);
+    }
+
     return new NextResponse(yaml, {
       status: 200,
       headers: {

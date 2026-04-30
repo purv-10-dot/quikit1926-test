@@ -140,7 +140,11 @@ export const POST = withTenantAuth(
           founderName: deal.application.contactName,
           startupName: deal.application.startupName,
           newStageLabel: FOUNDER_STAGE_LABEL[toStage],
-          appUrl: process.env.NEXTAUTH_URL ?? "http://localhost:3008",
+          appUrl:
+            process.env.NEXTAUTH_URL ??
+            (process.env.NODE_ENV === "production"
+              ? (() => { throw new Error("NEXTAUTH_URL env var not set"); })()
+              : "http://localhost:3008"), // prod-safety-allow: dev-only fallback, prod throws
         }),
       });
     } catch (emailErr: unknown) {
