@@ -18,17 +18,10 @@ info:
   contact:
     name: "QuikIT Platform Team"
 
-servers:
-  - url: http://localhost:3000
-    description: "quikit — Local dev"
-  - url: http://localhost:3004
-    description: "quikscale — Local dev"
-  - url: http://localhost:3005
-    description: "admin — Local dev"
-  - url: http://localhost:3008
-    description: "quikvc — Local dev"
-  - url: http://localhost:3007
-    description: "quikconstruction — Local dev"
+# servers: injected at runtime by app/api/docs/spec/route.ts from env vars
+# (QUIKIT_URL, QUIKSCALE_URL, ADMIN_URL, QUIKVC_URL, QUIKCONSTRUCTION_URL).
+# Local dev uses http://localhost:* via .env.local; prod uses Vercel env.
+servers: []
 
 components:
   securitySchemes:
@@ -5602,7 +5595,7 @@ paths:
         
         URL resolution:
         - Production: QUIKIT_URL env var (set in Vercel)
-        - Local dev:  defaults to http://localhost:3000
+        - Local dev:  uses QUIKIT_URL from .env.local
       tags:
         - "app:quikscale"
         - "quikscale:docs"

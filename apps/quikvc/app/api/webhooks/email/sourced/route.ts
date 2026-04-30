@@ -44,7 +44,7 @@ const bodySchema = z.object({
  *   acme.sourcing@in.quikvc.test     → "acme"
  *   sourcing@in.quikvc.test          → null (no slug)
  */
-export function extractTenantSlug(address: string): string | null {
+function extractTenantSlug(address: string): string | null {
   const m1 = address.match(/^sourcing\+([a-z0-9-]+)@/i);
   if (m1) return m1[1].toLowerCase();
   const m2 = address.match(/^([a-z0-9-]+)\.sourcing@/i);

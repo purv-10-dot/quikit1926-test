@@ -8,6 +8,10 @@ const nextConfig = {
       // Replace 3010 with your app's port (matches package.json scripts).
       allowedOrigins: ["localhost:3008"],
     },
+    // @vercel/blob bundles its own undici which uses private class fields
+    // (#target) that Next 14.0.4's webpack loader can't parse. Mark as
+    // server-external so Node loads it natively from node_modules.
+    serverComponentsExternalPackages: ["@vercel/blob"],
   },
   async headers() {
     return [
