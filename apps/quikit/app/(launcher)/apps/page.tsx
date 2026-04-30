@@ -13,11 +13,39 @@
 import { useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import {
-  Rocket, Search, ExternalLink, Plus,
-  CheckCircle2, Clock, Sparkles, Building2, ChevronDown, Shield,
+  Rocket, Search, CheckCircle2, Building2, ChevronDown, Shield,
 } from "lucide-react";
 import Link from "next/link";
 import { UserMenu, globalSignOut } from "@quikit/ui";
+import FlipCard from "@/components/ui/flip-card";
+import SpotlightBackground from "@/components/ui/spotlight-background";
+import { getAppConfig } from "@quikit/shared";
+
+/**
+ * Per-app brand accent — used by FlipCard for gradients + CTA color.
+ * Add new entries when an app onboards. Falls back to indigo if missing.
+ */
+const APP_BRAND: Record<string, string> = {
+  quikscale: "#5b6cff",
+  admin: "#0ea5e9",
+  quikconstruction: "#f97316",
+  quikvc: "#5b3df5",
+  "super-admin-portal": "#0f172a",
+};
+
+/**
+ * Pull the first 4 user-visible top-level modules for an app from
+ * MODULE_REGISTRY. Skips dropdown parents (modules without href) so the
+ * "What's inside" preview stays informative.
+ */
+function previewModules(slug: string): string[] {
+  const cfg = getAppConfig(slug);
+  if (!cfg) return [];
+  return cfg.modules
+    .filter((m) => m.href && !m.parentKey)
+    .slice(0, 4)
+    .map((m) => m.label);
+}
 
 interface AppInfo {
   id: string;
@@ -39,22 +67,10 @@ interface OrgInfo {
   plan: string;
 }
 
-type Tab = "installed" | "available";
-
-const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  active: { label: "Active", icon: CheckCircle2, color: "text-green-600 bg-green-50 border-green-200" },
-  beta: { label: "Beta", icon: Sparkles, color: "text-purple-600 bg-purple-50 border-purple-200" },
-  coming_soon: { label: "Coming Soon", icon: Clock, color: "text-amber-600 bg-amber-50 border-amber-200" },
-};
-
-const ICON_FALLBACKS: Record<string, string> = {
-  quikscale: "📊",
-  "admin-portal": "⚙️",
-  "super-admin-portal": "🛡️",
-  quikhr: "👥",
-  quikfinance: "💰",
-  quiksales: "📈",
-};
+// (Tab type, STATUS_CONFIG, ICON_FALLBACKS, and the AppCard component were
+//  removed when the "Available to enable" section was retired — super admin
+//  controls per-tenant app visibility centrally, so users no longer self-enable
+//  apps from the launcher.)
 
 export default function AppLauncherPage() {
   const { data: session, update } = useSession();
@@ -143,20 +159,6 @@ export default function AppLauncherPage() {
     await selectOrgInSession(org.tenantId, org.role);
   }
 
-  async function handleEnable(appId: string) {
-    const res = await fetch("/api/apps/enable", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ appId }),
-    });
-    const j = await res.json();
-    if (j.success) {
-      setApps((prev) =>
-        prev.map((a) => (a.id === appId ? { ...a, installed: true } : a)),
-      );
-    }
-  }
-
   function handleLaunch(app: AppInfo) {
     window.location.href = app.baseUrl;
   }
@@ -167,21 +169,20 @@ export default function AppLauncherPage() {
     (a.description ?? "").toLowerCase().includes(search.toLowerCase());
 
   const installed = apps.filter((a) => a.installed && matchesSearch(a));
-  const available = apps.filter((a) => !a.installed && matchesSearch(a));
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200">
+    <SpotlightBackground>
+      {/* Header — dark glass-on-spotlight */}
+      <header className="bg-zinc-950/40 backdrop-blur-md border-b border-white/5">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-5">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-indigo-500/30">
                 Q
               </div>
               <div>
-                <h1 className="text-lg font-bold text-gray-900">QuikIT</h1>
-                <p className="text-xs text-gray-500">
+                <h1 className="text-lg font-bold text-white">QuikIT</h1>
+                <p className="text-xs text-zinc-400">
                   {session?.user?.name
                     ? `Welcome, ${session.user.name.split(" ")[0]}`
                     : "Your platform"}
@@ -194,38 +195,38 @@ export default function AppLauncherPage() {
                 <div className="relative">
                   <button
                     onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
-                    className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white hover:bg-gray-50 transition-colors"
+                    className="flex items-center gap-2 px-3 py-2 text-sm border border-white/10 rounded-xl bg-white/5 hover:bg-white/10 backdrop-blur-sm transition-colors text-zinc-100"
                   >
-                    <Building2 className="h-4 w-4 text-gray-500" />
-                    <span className="font-medium text-gray-700">
+                    <Building2 className="h-4 w-4 text-zinc-400" />
+                    <span className="font-medium">
                       {selectedOrg?.name ?? "Select org"}
                     </span>
                     {selectedOrg && (
-                      <span className="text-[10px] text-gray-400 uppercase">
+                      <span className="text-[10px] text-zinc-500 uppercase">
                         {selectedOrg.role}
                       </span>
                     )}
-                    <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                    <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
                   </button>
                   {orgDropdownOpen && (
                     <>
-                      <div className="fixed inset-0 z-10" onClick={() => setOrgDropdownOpen(false)} />
-                      <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg w-64 py-1">
+                      <div className="fixed inset-0 z-[999]" onClick={() => setOrgDropdownOpen(false)} />
+                      <div className="absolute right-0 top-full mt-1 z-[1000] bg-zinc-900/95 border border-white/10 backdrop-blur-md rounded-xl shadow-2xl w-64 py-1">
                         {orgs.map((org) => (
                           <button
                             key={org.tenantId}
                             onClick={() => switchOrg(org)}
-                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors ${
-                              selectedOrg?.tenantId === org.tenantId ? "bg-indigo-50" : ""
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors ${
+                              selectedOrg?.tenantId === org.tenantId ? "bg-indigo-500/10" : ""
                             }`}
                           >
-                            <Building2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            <Building2 className="h-4 w-4 text-zinc-400 flex-shrink-0" />
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium text-gray-900 truncate">{org.name}</p>
-                              <p className="text-[10px] text-gray-500 uppercase">{org.role} · {org.plan}</p>
+                              <p className="text-sm font-medium text-zinc-100 truncate">{org.name}</p>
+                              <p className="text-[10px] text-zinc-500 uppercase">{org.role} · {org.plan}</p>
                             </div>
                             {selectedOrg?.tenantId === org.tenantId && (
-                              <CheckCircle2 className="h-4 w-4 text-indigo-600 flex-shrink-0" />
+                              <CheckCircle2 className="h-4 w-4 text-indigo-400 flex-shrink-0" />
                             )}
                           </button>
                         ))}
@@ -239,7 +240,7 @@ export default function AppLauncherPage() {
               {isSuperAdmin && (
                 <Link
                   href="/organizations"
-                  className="flex items-center gap-2 px-3 py-2 text-sm border border-red-200 rounded-xl bg-red-50 text-red-700 hover:bg-red-100 transition-colors font-medium"
+                  className="flex items-center gap-2 px-3 py-2 text-sm border border-red-400/30 rounded-xl bg-red-500/10 text-red-300 hover:bg-red-500/20 transition-colors font-medium backdrop-blur-sm"
                   title="Open Super Admin Portal"
                 >
                   <Shield className="h-4 w-4" />
@@ -254,148 +255,71 @@ export default function AppLauncherPage() {
                 onSignOut={handleSignOut}
                 onExitImpersonation={handleExitImpersonation}
                 avatarClassName="bg-gradient-to-br from-indigo-500 to-purple-600"
+                dark
               />
 
               {/* Search */}
               <div className="relative flex-1 sm:flex-none min-w-[140px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
                 <input
                   type="text"
                   placeholder="Search apps..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 w-full sm:w-56"
+                  className="pl-10 pr-4 py-2 text-sm border border-white/10 rounded-xl bg-white/5 backdrop-blur-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400/50 w-full sm:w-56 text-zinc-100 placeholder:text-zinc-500"
                 />
               </div>
             </div>
           </div>
-
-          {/* removed tabs — only show installed apps */}
         </div>
       </header>
 
       {/* App grid */}
       <main className="max-w-7xl mx-auto px-4 md:px-6 py-8 space-y-10">
         {(loadingApps || loadingOrgs) && (
-          <div className="text-sm text-gray-400 text-center py-20">Loading…</div>
+          <div className="text-sm text-zinc-500 text-center py-20">Loading…</div>
         )}
-        {!loadingApps && !loadingOrgs && installed.length === 0 && available.length === 0 && (
+        {!loadingApps && !loadingOrgs && installed.length === 0 && (
           <div className="text-center py-20">
-            <Rocket className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-sm text-gray-500">
+            <Rocket className="h-12 w-12 text-zinc-700 mx-auto mb-3" />
+            <p className="text-sm text-zinc-500">
               No apps available. Contact your administrator.
             </p>
           </div>
         )}
 
-        {/* Installed apps */}
+        {/* Installed apps — flip-card layout (FlipCard) */}
         {installed.length > 0 && (
           <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-4">
               Your apps
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {installed.map((app) => (
-                <AppCard
-                  key={app.id}
-                  app={app}
-                  isAdmin={isAdmin}
-                  onLaunch={() => handleLaunch(app)}
-                  onEnable={() => handleEnable(app.id)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Available apps — only admins can enable them */}
-        {isAdmin && available.length > 0 && (
-          <section>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
-              Available to enable
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {available.map((app) => (
-                <AppCard
-                  key={app.id}
-                  app={app}
-                  isAdmin={isAdmin}
-                  onLaunch={() => handleLaunch(app)}
-                  onEnable={() => handleEnable(app.id)}
-                />
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 justify-items-center sm:justify-items-start">
+              {installed.map((app) => {
+                const desc = app.description ?? "";
+                const sentences = desc.split(/(?<=[.!?])\s+/);
+                const subtitle = sentences[0] ?? desc;
+                const longDesc = sentences.length > 1 ? sentences.slice(1).join(" ") : desc;
+                return (
+                  <FlipCard
+                    key={app.id}
+                    title={app.name}
+                    subtitle={subtitle}
+                    description={longDesc || subtitle}
+                    features={previewModules(app.slug)}
+                    iconUrl={app.iconUrl}
+                    status={app.status}
+                    color={APP_BRAND[app.slug] ?? "#5b3df5"}
+                    onLaunch={() => handleLaunch(app)}
+                    disabled={app.status === "coming_soon" || app.status === "disabled"}
+                  />
+                );
+              })}
             </div>
           </section>
         )}
       </main>
-    </div>
+    </SpotlightBackground>
   );
 }
 
-function AppCard({
-  app,
-  isAdmin,
-  onLaunch,
-  onEnable,
-}: {
-  app: AppInfo;
-  isAdmin: boolean;
-  onLaunch: () => void;
-  onEnable: () => void;
-}) {
-  const statusCfg = STATUS_CONFIG[app.status] ?? STATUS_CONFIG.active;
-  const StatusIcon = statusCfg.icon;
-  const icon = app.iconUrl ?? ICON_FALLBACKS[app.slug] ?? "📦";
-  const isEmoji = !app.iconUrl;
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-5 hover:border-indigo-300 hover:shadow-md transition-all group">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          {isEmoji ? (
-            <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center text-2xl">
-              {icon}
-            </div>
-          ) : (
-            <img src={icon} alt={app.name} className="h-12 w-12 rounded-xl object-cover" />
-          )}
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900 truncate">{app.name}</h3>
-            <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${statusCfg.color}`}>
-              <StatusIcon className="h-2.5 w-2.5" />
-              {statusCfg.label}
-            </span>
-          </div>
-        </div>
-      </div>
-      {app.description && (
-        <p className="text-xs text-gray-600 mb-4 line-clamp-2">{app.description}</p>
-      )}
-      <div className="flex items-center gap-2">
-        {app.installed ? (
-          <button
-            onClick={onLaunch}
-            disabled={app.status === "coming_soon"}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors disabled:opacity-50"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Launch
-          </button>
-        ) : isAdmin ? (
-          <button
-            onClick={onEnable}
-            disabled={app.status === "coming_soon"}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors disabled:opacity-50"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Enable for org
-          </button>
-        ) : (
-          <span className="flex-1 text-center text-xs text-gray-400 py-2">
-            Contact admin to enable
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}

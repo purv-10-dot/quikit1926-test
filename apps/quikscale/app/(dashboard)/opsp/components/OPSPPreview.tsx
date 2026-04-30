@@ -75,7 +75,7 @@ export function OPSPPreview({
     } finally {
       setDownloading(false);
     }
-  }, [downloading, form, users]);
+  }, [downloading, form, users, tenantName, currentUserName]);
 
   if (!open) return null;
 

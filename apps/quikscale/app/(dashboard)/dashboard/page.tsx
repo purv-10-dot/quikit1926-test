@@ -814,12 +814,33 @@ export default function DashboardPage() {
   /* ── Consolidated dashboard data — one API call instead of six ─────── */
   const { data: summary, isLoading } = useDashboardSummary({ year, quarter });
   const summaryData = summary?.data;
-  const allIndKpis: KPIRow[] = (summaryData?.individualKPIs ?? []) as KPIRow[];
-  const allTeamKpis: KPIRow[] = (summaryData?.teamKPIs ?? []) as KPIRow[];
-  const allPriorities = (summaryData?.priorities ?? []) as PriorityRow[];
-  const allWWW = (summaryData?.wwwItems ?? []) as WWWItem[];
-  const allOrgUsers = summaryData?.users ?? [];
-  const allOrgTeams = summaryData?.teams ?? [];
+  // Each of these uses `?? []` which would create a fresh array on every
+  // render when the source is undefined — that breaks downstream useMemo
+  // deps. Memoize each so consumers can include them in deps cleanly.
+  const allIndKpis = useMemo<KPIRow[]>(
+    () => (summaryData?.individualKPIs ?? []) as KPIRow[],
+    [summaryData],
+  );
+  const allTeamKpis = useMemo<KPIRow[]>(
+    () => (summaryData?.teamKPIs ?? []) as KPIRow[],
+    [summaryData],
+  );
+  const allPriorities = useMemo<PriorityRow[]>(
+    () => (summaryData?.priorities ?? []) as PriorityRow[],
+    [summaryData],
+  );
+  const allWWW = useMemo<WWWItem[]>(
+    () => (summaryData?.wwwItems ?? []) as WWWItem[],
+    [summaryData],
+  );
+  const allOrgUsers = useMemo(
+    () => summaryData?.users ?? [],
+    [summaryData],
+  );
+  const allOrgTeams = useMemo(
+    () => summaryData?.teams ?? [],
+    [summaryData],
+  );
 
   // Teams list for pickers. The consolidated payload returns tenant-wide
   // teams; membership-based visibility is derived below via the KPI/team
