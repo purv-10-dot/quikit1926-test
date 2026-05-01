@@ -18,11 +18,12 @@ import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
   AddButton, EmptyState, Modal, ModalContent, ModalHeader, ModalTitle, ModalBody,
-  Segmented, FilterPicker, UserMultiPicker, type ExportSelection,
+  Segmented, FilterPicker, UserMultiPicker, Pagination, type ExportSelection,
 } from "@quikit/ui";
 import { Users, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
+import { fmtAuditPayload, diffAuditPayload } from "@/lib/utils/auditLog";
 
 interface ClientRow {
   id: string;
@@ -138,6 +139,13 @@ export default function ClientsPage() {
 
   const activeFilterCount = (filterClientId ? 1 : 0) + (filterStatus ? 1 : 0);
   const clientOptions = useMemo(() => rows.map(r => ({ value: r.id, label: r.name })), [rows]);
+
+  // Pagination — default 10 rows, options 10/20/30/50
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  useEffect(() => { setPage(1); }, [search, filterClientId, filterStatus, viewTrash, pageSize]);
+  const pagedClients = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const totalClientPages = Math.max(1, Math.ceil(filtered.length / pageSize));
 
   // Adapt ClientMember rows to UserMultiPicker's PickerUser shape
   // (UserMultiPicker expects firstName/lastName — we split on first space).
@@ -383,7 +391,8 @@ export default function ClientsPage() {
             />
           </div>
         ) : (
-          <div className="h-full overflow-auto">
+          <div className="h-full flex flex-col min-h-0">
+            <div className="flex-1 overflow-auto min-h-0">
             <table className="min-w-full text-xs bg-white">
               <thead className="sticky top-0 bg-accent-50 z-10">
                 <tr>
@@ -407,7 +416,7 @@ export default function ClientsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(r => (
+                {pagedClients.map(r => (
                   <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
                     <td className="px-3 py-3 text-center">
                       <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)}
@@ -493,6 +502,17 @@ export default function ClientsPage() {
                 ))}
               </tbody>
             </table>
+            </div>
+            {filtered.length > 0 && (
+              <Pagination
+                page={page}
+                totalPages={totalClientPages}
+                total={filtered.length}
+                limit={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+              />
+            )}
           </div>
         )}
       </div>
@@ -620,28 +640,29 @@ export default function ClientsPage() {
                           <span>{fmtDateTime(entry.createdAt)}</span>
                         </div>
                       </div>
-                      {entry.action === "UPDATE" && !!entry.oldValue && !!entry.newValue && (
-                        <div className="text-[11px] space-y-0.5 mt-1">
-                          {Object.keys(entry.newValue as Record<string, unknown>).map(k => {
-                            const oldV = (entry.oldValue as Record<string, unknown>)[k];
-                            const newV = (entry.newValue as Record<string, unknown>)[k];
-                            if (JSON.stringify(oldV) === JSON.stringify(newV)) return null;
-                            return (
-                              <p key={k} className="text-gray-600">
-                                <span className="font-medium">{k}:</span>{" "}
-                                <span className="line-through text-gray-400">{JSON.stringify(oldV ?? "")}</span>
+                      {entry.action === "UPDATE" && !!entry.oldValue && !!entry.newValue && (() => {
+                        const diffs = diffAuditPayload(entry.oldValue, entry.newValue);
+                        return diffs.length ? (
+                          <div className="text-[11px] space-y-0.5 mt-1">
+                            {diffs.map(({ key, oldValue, newValue }) => (
+                              <p key={key} className="text-gray-600">
+                                <span className="font-medium">{key}:</span>{" "}
+                                <span className="line-through text-gray-400">{JSON.stringify(oldValue ?? "")}</span>
                                 <span className="mx-1 text-gray-400">→</span>
-                                <span className="text-gray-800">{JSON.stringify(newV ?? "")}</span>
+                                <span className="text-gray-800">{JSON.stringify(newValue ?? "")}</span>
                               </p>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {entry.action === "CREATE" && !!entry.newValue && (
-                        <div className="text-[11px] text-gray-600 mt-1">
-                          Created with: {Object.entries(entry.newValue as Record<string, unknown>).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ")}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        ) : null;
+                      })()}
+                      {entry.action === "CREATE" && !!entry.newValue && (() => {
+                        const text = fmtAuditPayload(entry.newValue);
+                        return text ? (
+                          <div className="text-[11px] text-gray-600 mt-1 break-words">
+                            Created with: {text}
+                          </div>
+                        ) : null;
+                      })()}
                       {entry.action === "DELETE" && (
                         <div className="text-[11px] text-gray-600 mt-1 italic">Client deleted.</div>
                       )}

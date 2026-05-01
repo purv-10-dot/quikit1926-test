@@ -169,8 +169,12 @@ export default function ClientMeetingsDashboardPage() {
               onClick={() => {
                 setExportClientId(clientId || clients[0]?.id || "");
                 setExportType(mode === "weekly" ? "weekly" : "daily");
-                setExportFrom("");
-                setExportTo("");
+                // Default both From and To to current year + month so the year
+                // is preselected. User can change either freely.
+                const now = new Date();
+                const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+                setExportFrom(ym);
+                setExportTo(ym);
                 setExportOpen(true);
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-accent-500 hover:bg-accent-600 text-white font-medium rounded-lg whitespace-nowrap"
@@ -451,39 +455,96 @@ export default function ClientMeetingsDashboardPage() {
                   </div>
                 </div>
               ) : (
-                <div>
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-2">
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    Date Range
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
+                (() => {
+                  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+                  const YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i);
+                  // Parse YYYY-MM strings into separate year/month dropdowns; rebuild on change.
+                  const parse = (v: string) => {
+                    const [y, m] = v ? v.split("-") : ["", ""];
+                    return { y, m };
+                  };
+                  const fromParts = parse(exportFrom);
+                  const toParts = parse(exportTo);
+                  const compose = (y: string, m: string) => (y && m ? `${y}-${m}` : "");
+                  return (
                     <div>
-                      <label className="block text-[10px] text-gray-500 mb-1">From</label>
-                      <input
-                        type="date"
-                        value={exportFrom}
-                        onChange={(e) => setExportFrom(e.target.value)}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
-                      />
+                      <p className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-2">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        Month Range
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* From: Year + Month */}
+                        <div>
+                          <label className="block text-[10px] text-gray-500 mb-1">From</label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <select
+                              value={fromParts.y}
+                              onChange={(e) => {
+                                const newY = e.target.value;
+                                setExportFrom(compose(newY, fromParts.m));
+                                // Sync To's year to match — user can still override afterwards.
+                                if (newY) setExportTo(compose(newY, toParts.m));
+                              }}
+                              className="w-full px-2 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                            >
+                              <option value="">Year</option>
+                              {YEAR_OPTIONS.map((y) => (<option key={y} value={String(y)}>{y}</option>))}
+                            </select>
+                            <select
+                              value={fromParts.m}
+                              onChange={(e) => setExportFrom(compose(fromParts.y, e.target.value))}
+                              className="w-full px-2 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                            >
+                              <option value="">Month</option>
+                              {MONTH_NAMES.map((name, i) => (
+                                <option key={name} value={String(i + 1).padStart(2, "0")}>{name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        {/* To: Year + Month */}
+                        <div>
+                          <label className="block text-[10px] text-gray-500 mb-1">To</label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <select
+                              value={toParts.y}
+                              onChange={(e) => setExportTo(compose(e.target.value, toParts.m))}
+                              className="w-full px-2 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                            >
+                              <option value="">Year</option>
+                              {YEAR_OPTIONS.map((y) => (<option key={y} value={String(y)}>{y}</option>))}
+                            </select>
+                            <select
+                              value={toParts.m}
+                              onChange={(e) => setExportTo(compose(toParts.y, e.target.value))}
+                              className="w-full px-2 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                            >
+                              <option value="">Month</option>
+                              {MONTH_NAMES.map((name, i) => (
+                                <option key={name} value={String(i + 1).padStart(2, "0")}>{name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      {exportFrom && exportTo && exportFrom > exportTo && (
+                        <p className="text-[10px] text-red-500 mt-1.5">From month must be before or equal to To month.</p>
+                      )}
                     </div>
-                    <div>
-                      <label className="block text-[10px] text-gray-500 mb-1">To</label>
-                      <input
-                        type="date"
-                        value={exportTo}
-                        onChange={(e) => setExportTo(e.target.value)}
-                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400"
-                      />
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()
               )}
 
               <button
-                disabled={!exportClientId || (exportType !== "member" && !exportTo) || exporting}
+                disabled={
+                  !exportClientId ||
+                  (exportType !== "member" && (!exportTo || (!!exportFrom && exportFrom > exportTo))) ||
+                  exporting
+                }
                 onClick={async () => {
                   if (!exportClientId) return;
                   if (exportType !== "member" && !exportTo) return;
+                  if (exportType !== "member" && exportFrom && exportFrom > exportTo) return;
                   setExporting(true);
                   try {
                     let year: number;

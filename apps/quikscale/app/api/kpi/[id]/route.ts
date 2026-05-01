@@ -19,7 +19,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { pa
       qtdAchieved: true, currentWeekValue: true, progressPercent: true,
       status: true, healthStatus: true, lastNotes: true, lastNotesAt: true,
       divisionType: true, weeklyTargets: true, weeklyOwnerTargets: true,
-      currency: true, targetScale: true, reverseColor: true,
+      currency: true, targetScale: true, reverseColor: true, frequency: true,
       createdAt: true, updatedAt: true, createdBy: true, updatedBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
       weeklyValues: { select: { weekNumber: true, value: true, notes: true }, orderBy: { weekNumber: "asc" } },
@@ -132,6 +132,22 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
     }
   }
 
+  // When qtdGoal or target changes, recompute progressPercent from existing qtdAchieved
+  // so the header badge and stats display don't show stale data after save.
+  const newQtdGoal = validated.qtdGoal !== undefined
+    ? validated.qtdGoal
+    : (validated.target !== undefined ? validated.target : null);
+  const recomputedProgress = newQtdGoal != null && newQtdGoal > 0
+    ? ((existingKPI.qtdAchieved ?? 0) / newQtdGoal) * 100
+    : null;
+  const recomputedHealth = recomputedProgress != null
+    ? ((validated.status ?? existingKPI.status) === "completed"
+        ? "complete"
+        : recomputedProgress >= 100 ? "on-track"
+        : recomputedProgress >= 80 ? "behind-schedule"
+        : "critical")
+    : undefined;
+
   const updatedKPI = await db.kPI.update({
     where: { id: params.id },
     data: {
@@ -163,7 +179,10 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
       currency: validated.currency ?? null,
       targetScale: validated.targetScale ?? null,
       reverseColor: validated.reverseColor ?? undefined,
+      frequency: validated.frequency ?? undefined,
       updatedBy: userId,
+      ...(recomputedProgress != null && { progressPercent: recomputedProgress }),
+      ...(recomputedHealth !== undefined && { healthStatus: recomputedHealth }),
     },
     select: {
       id: true, name: true, description: true, kpiLevel: true, owner: true,
@@ -171,7 +190,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
       parentKPIId: true, quarter: true, year: true, measurementUnit: true,
       target: true, quarterlyGoal: true, qtdGoal: true, qtdAchieved: true,
       progressPercent: true, status: true, healthStatus: true,
-      divisionType: true, weeklyTargets: true, currency: true, targetScale: true, reverseColor: true,
+      divisionType: true, weeklyTargets: true, currency: true, targetScale: true, reverseColor: true, frequency: true,
       createdAt: true, updatedAt: true, createdBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
     },

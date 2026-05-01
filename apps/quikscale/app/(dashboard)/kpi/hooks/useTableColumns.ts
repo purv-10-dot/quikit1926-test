@@ -7,7 +7,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   team: 140, teamHead: 140, kpiOwner: 180,
   measurementUnit: 120, targetValue: 90,
   quarterlyGoal: 110, qtdGoal: 100, qtdAchieved: 110, weeklyGoal: 100,
-  description: 200,
+  description: 200, lastNotes: 200,
 };
 const WEEK_WIDTH_DEFAULT = 110;
 
@@ -16,7 +16,7 @@ export const ALL_STATIC_COLS = [
   "team", "teamHead", "kpiOwner",
   "measurementUnit", "targetValue",
   "quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal",
-  "description",
+  "description", "lastNotes",
 ];
 
 export const COL_LABELS: Record<string, string> = {
@@ -24,7 +24,7 @@ export const COL_LABELS: Record<string, string> = {
   team: "Team", teamHead: "Team Head", kpiOwner: "KPI Owner",
   measurementUnit: "Measurement Unit", targetValue: "Target Value",
   quarterlyGoal: "Quarterly Goal", qtdGoal: "QTD Goal", qtdAchieved: "QTD Achieved", weeklyGoal: "Weekly Goal",
-  description: "Description",
+  description: "Description", lastNotes: "Last Notes",
 };
 
 export const SORT_KEYS: Record<string, string> = {

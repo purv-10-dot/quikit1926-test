@@ -40,8 +40,8 @@ export function fmtBreakdown(
  * Compute a 13-week breakdown for a KPI target.
  *
  * - **Standalone**: every week = `target` (full target each week)
- * - **Cumulative + Number**: floor-divide across editable weeks, pile
- *   `remainder` onto the last `remainder` editable weeks so the sum matches
+ * - **Cumulative + Number**: every editable week shows `floor(target/N)`;
+ *   Week 13 absorbs the entire flooring residue so the sum matches the target
  * - **Cumulative + other**: equal 2-decimal split across editable weeks with
  *   the last editable week absorbing the rounding residue
  *
@@ -66,11 +66,15 @@ export function buildBreakdown(
     return map;
   }
 
-  // Standalone: every week = full target (independent of blocking)
+  // Standalone: each week independently carries the full target.
+  // Past weeks default to 0 (you can't plan a target retroactively); the
+  // user can flip a past week to `target` later when the past-week toggle
+  // is enabled. Current..13 hold the full target.
   if (divisionType === "Standalone") {
-    const val = fmtBreakdown(targetNum, measurementUnit);
+    const targetVal = fmtBreakdown(targetNum, measurementUnit);
+    const zeroVal = measurementUnit === "Number" ? "0" : "0.00";
     ALL_WEEKS.forEach((w) => {
-      map[w] = val;
+      map[w] = w < firstEditableWeek ? zeroVal : targetVal;
     });
     return map;
   }
@@ -81,14 +85,14 @@ export function buildBreakdown(
 
   if (measurementUnit === "Number") {
     const base = Math.floor(targetNum / editableCount);
-    const extra = Math.round(targetNum - base * editableCount);
+    // Week 13 absorbs the entire flooring residue (target - base * (editableCount-1)).
     ALL_WEEKS.forEach((w) => {
       if (w < firstEditableWeek) {
         map[w] = "0";
+      } else if (w === lastEditableWeek) {
+        map[w] = String(Math.round(targetNum - base * (editableCount - 1)));
       } else {
-        // Pile extra onto the last `extra` editable weeks
-        const posFromEnd = lastEditableWeek - w; // 0 for week 13, 1 for week 12, etc.
-        map[w] = String(posFromEnd < extra ? base + 1 : base);
+        map[w] = String(base);
       }
     });
   } else {
@@ -129,14 +133,17 @@ export function buildOwnerBreakdown(
     return Object.fromEntries(ALL_WEEKS.map((w) => [w, ""])) as WeeklyBreakdown;
   }
 
-  // Standalone: every week = full sub-target (independent of blocking)
+  // Standalone: each week independently = full owner sub-target.
+  // Past weeks default to 0; user can flip them to sub-target when the
+  // past-week toggle is enabled. Current..13 hold the full sub-target.
   if (division === "Standalone") {
-    const val =
+    const targetVal =
       unit === "Number"
         ? String(Math.round(ownerSubTarget))
         : ownerSubTarget.toFixed(2);
+    const zeroVal = unit === "Number" ? "0" : "0.00";
     return Object.fromEntries(
-      ALL_WEEKS.map((w) => [w, val]),
+      ALL_WEEKS.map((w) => [w, w < firstEditableWeek ? zeroVal : targetVal]),
     ) as WeeklyBreakdown;
   }
 
@@ -147,13 +154,14 @@ export function buildOwnerBreakdown(
 
   if (unit === "Number") {
     const base = Math.floor(ownerSubTarget / editableCount);
-    const extra = Math.round(ownerSubTarget - base * editableCount);
+    // Week 13 absorbs all flooring residue.
     ALL_WEEKS.forEach((w) => {
       if (w < firstEditableWeek) {
         map[w] = "0";
+      } else if (w === lastEditableWeek) {
+        map[w] = String(Math.round(ownerSubTarget - base * (editableCount - 1)));
       } else {
-        const posFromEnd = lastEditableWeek - w;
-        map[w] = String(posFromEnd < extra ? base + 1 : base);
+        map[w] = String(base);
       }
     });
   } else {
@@ -196,10 +204,11 @@ export function redistributeOwnerRemainder(
   if (rightCount <= 0) return row;
 
   if (unit === "Number") {
+    // Number unit: each subsequent week gets floor(remaining/rightCount);
+    // Week 13 absorbs the entire flooring residue.
     const base = Math.floor(remaining / rightCount);
-    const extra = Math.round(remaining - base * rightCount);
     for (let i = fromWeek + 1; i <= 13; i++) {
-      row[i] = String(13 - i < extra ? base + 1 : base);
+      row[i] = String(i === 13 ? Math.round(remaining - base * (rightCount - 1)) : base);
     }
   } else {
     const base = parseFloat((remaining / rightCount).toFixed(2));
@@ -208,6 +217,75 @@ export function redistributeOwnerRemainder(
     row[13] = (base + diff).toFixed(2);
   }
   return row;
+}
+
+/**
+ * Rebuild a weekly breakdown when the row's target changes (e.g. user edits
+ * the Target Value field). PRESERVES the past-week cells exactly — only
+ * redistributes the *remaining* target across `[firstEditableWeek..13]`.
+ *
+ *   remaining = max(0, target - sum(cells 1..firstEditableWeek-1))
+ *   Number   → each editable week = floor(remaining/N); Week 13 absorbs residue
+ *   Other    → 2-decimal even split; Week 13 absorbs rounding residue
+ *
+ * Standalone mode is reset (every week = full target) since the per-week
+ * value is independent of past data — semantic shift, not a redistribution.
+ *
+ * Called by KPIModal's `setTarget` (and the analogous owner-row recompute in
+ * team scope) so past-week edits the user already made are not erased when
+ * they tweak the total.
+ */
+export function redistributeFromCurrentWeek(
+  current: WeeklyBreakdown,
+  targetNum: number,
+  divisionType: DivisionType,
+  unit: MeasurementUnit,
+  firstEditableWeek: number = 1,
+): WeeklyBreakdown {
+  if (targetNum <= 0) {
+    return Object.fromEntries(ALL_WEEKS.map((w) => [w, ""])) as WeeklyBreakdown;
+  }
+
+  if (divisionType === "Standalone") {
+    const targetVal =
+      unit === "Number" ? String(Math.round(targetNum)) : targetNum.toFixed(2);
+    const zeroVal = unit === "Number" ? "0" : "0.00";
+    return Object.fromEntries(
+      ALL_WEEKS.map((w) => [w, w < firstEditableWeek ? zeroVal : targetVal]),
+    ) as WeeklyBreakdown;
+  }
+
+  // Preserve past cells exactly (carrying over whatever the user/DB left there).
+  const out: WeeklyBreakdown = {};
+  for (let w = 1; w < firstEditableWeek; w++) {
+    const v = current[w];
+    out[w] = v != null && v !== "" ? v : (unit === "Number" ? "0" : "0.00");
+  }
+
+  let pastSum = 0;
+  for (let w = 1; w < firstEditableWeek; w++) {
+    pastSum += parseFloat(String(out[w])) || 0;
+  }
+  const remaining = Math.max(0, targetNum - pastSum);
+  const editableCount = Math.max(1, 14 - firstEditableWeek);
+  const lastEditableWeek = 13;
+
+  if (unit === "Number") {
+    const base = Math.floor(remaining / editableCount);
+    for (let w = firstEditableWeek; w <= 13; w++) {
+      out[w] = String(
+        w === lastEditableWeek
+          ? Math.round(remaining - base * (editableCount - 1))
+          : base,
+      );
+    }
+  } else {
+    const base = parseFloat((remaining / editableCount).toFixed(2));
+    const diff = parseFloat((remaining - base * editableCount).toFixed(2));
+    for (let w = firstEditableWeek; w <= 13; w++) out[w] = base.toFixed(2);
+    out[lastEditableWeek] = (base + diff).toFixed(2);
+  }
+  return out;
 }
 
 /**

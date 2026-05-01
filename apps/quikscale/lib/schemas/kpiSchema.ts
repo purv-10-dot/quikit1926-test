@@ -25,6 +25,7 @@ const kpiBaseFields = {
   currency: z.string().optional().nullable(),
   targetScale: z.string().optional().nullable(),
   reverseColor: z.boolean().optional(),
+  frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).default("weekly"),
 };
 
 // Create KPI — enforces the kpiLevel invariants:
@@ -91,6 +92,7 @@ export const updateKPISchema = z
     currency: z.string().optional().nullable(),
     targetScale: z.string().optional().nullable(),
     reverseColor: z.boolean().optional(),
+    frequency: z.enum(["daily", "weekly", "monthly", "yearly"]).optional(),
   })
   .refine(
     (d) => {

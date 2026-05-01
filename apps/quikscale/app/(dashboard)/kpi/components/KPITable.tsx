@@ -17,6 +17,7 @@ import { DescTooltip } from "./DescTooltip";
 import { NameTooltip } from "./NameTooltip";
 import { ColMenu } from "@/components/table/ColMenu";
 import { X } from "lucide-react";
+import { Pagination } from "@quikit/ui";
 export { HiddenColsMenu } from "./HiddenColsMenu";
 
 // ── Lock icon for freeze boundary ────────────────────────────────────────────
@@ -46,6 +47,7 @@ interface Props {
   year: number;
   quarter: string;
   onPageChange: (p: number) => void;
+  onPageSizeChange?: (size: number) => void;
   onSort: (col: string, dir: "asc" | "desc") => void;
   onRefresh: () => void;
   onSelectionChange?: (ids: Set<string>) => void;
@@ -61,7 +63,7 @@ interface Props {
   readOnly?: boolean;
 }
 
-export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly }: Props) {
+export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly }: Props) {
   const kpis = maxRows != null ? kpisAll.slice(0, maxRows) : kpisAll;
   const allCols = [...ALL_STATIC_COLS, ...ALL_WEEKS.map(w => `week${w}`)];
   const headerRowRef = useRef<HTMLTableRowElement>(null);
@@ -371,6 +373,18 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       </DescTooltip>
                     </td>
                   )}
+                  {/* Last Notes */}
+                  {!localHideSet.has("lastNotes") && (
+                    <td className={tdClass("lastNotes")} style={stickyStyle("lastNotes", getColWidth("lastNotes"))}>
+                      {kpi.lastNotes ? (
+                        <span className="line-clamp-2 text-gray-500 leading-snug cursor-default" title={kpi.lastNotes}>
+                          {kpi.lastNotes}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                  )}
 
                   {/* Week columns */}
                   {visibleWeekCols.map(w => {
@@ -449,19 +463,14 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
         </table>
       </HorizontalScroller>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between px-4 py-2 border-t border-gray-200 bg-white flex-shrink-0 text-xs text-gray-500">
-        {total === 0 ? (
-          <span>No results</span>
-        ) : (<>
-          <span>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total} results</span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">Previous</button>
-            <span className="px-2 py-1 bg-gray-900 text-white rounded">{page}</span>
-            <button onClick={() => onPageChange(page + 1)} disabled={page >= totalPages} className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">Next</button>
-          </div>
-        </>)}
-      </div>
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        limit={pageSize}
+        onPageChange={onPageChange}
+        onPageSizeChange={onPageSizeChange}
+      />
 
       {logKPI && <LogModal kpi={logKPI} onClose={() => setLogKPI(null)} onRefresh={onRefresh} initialTab={logInitialTab} />}
       {auditKPI && <KPILogsModal kpi={auditKPI} onClose={() => setAuditKPI(null)} />}

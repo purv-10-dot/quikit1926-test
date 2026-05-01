@@ -15,6 +15,7 @@ import {
   DropdownPicker,
   DatePicker,
   TimePicker,
+  Pagination,
   type PickerUser,
 } from "@quikit/ui";
 import {
@@ -22,7 +23,6 @@ import {
   Pencil,
   Trash2,
   Save,
-  Check,
   History,
   Search,
   Filter as FilterIcon,
@@ -245,9 +245,19 @@ export default function WeeklyMeetingPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
-  // Per-member scoring grid (Update tab, edit-only).
+  // Per-member scoring grid (Update tab — works in Add and Edit).
+  // Row-level state machine, independent per member:
+  //   `scoreDirtyFor`  — user has typed values OR clicked Edit on a saved row.
+  //                      Drives "Save button visible" in the grid.
+  //   `scoreLockedFor` — row is committed (Edit-mode: persisted via PATCH;
+  //                      Add-mode: staged locally for batch-PATCH after POST).
+  //                      Drives "inputs disabled + Edit button visible".
+  //   `scoreSavingFor` — row's PATCH is in flight (Edit-mode only).
   const [scores, setScores] = useState<Record<string, MemberScore>>({});
-  const [scoreSavedFor, setScoreSavedFor] = useState<Record<string, boolean>>(
+  const [scoreDirtyFor, setScoreDirtyFor] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [scoreLockedFor, setScoreLockedFor] = useState<Record<string, boolean>>(
     {}
   );
   const [scoreSavingFor, setScoreSavingFor] = useState<Record<string, boolean>>(
@@ -301,7 +311,9 @@ export default function WeeklyMeetingPage() {
     const clientId = filterClientId || clients[0]?.id || "";
     setEditing({ id: null, form: { ...emptyForm, clientId } });
     setScores({});
-    setScoreSavedFor({});
+    setScoreDirtyFor({});
+    setScoreLockedFor({});
+    setScoreSavingFor({});
     if (clientId) await loadClientDetail(clientId);
   }
 
@@ -341,13 +353,21 @@ export default function WeeklyMeetingPage() {
         dashboardNAClientMemberIds: row.dashboardNAClientMemberIds,
       },
     });
-    // Hydrate per-member scores from the detail payload.
+    // Hydrate per-member scores from the detail payload. Rows with persisted
+    // scores start LOCKED (Edit button visible) and DIRTY (so clicking Edit
+    // immediately re-shows the Save button on the now-editable row).
     const scoreMap: Record<string, MemberScore> = {};
+    const lockMap: Record<string, boolean> = {};
+    const dirtyMap: Record<string, boolean> = {};
     for (const s of (detail.memberScores ?? []) as MemberScore[]) {
       scoreMap[s.userId] = s;
+      lockMap[s.userId] = true;
+      dirtyMap[s.userId] = true;
     }
     setScores(scoreMap);
-    setScoreSavedFor({});
+    setScoreLockedFor(lockMap);
+    setScoreDirtyFor(dirtyMap);
+    setScoreSavingFor({});
   }
 
   function updateField<K extends keyof typeof emptyForm>(
@@ -407,12 +427,26 @@ export default function WeeklyMeetingPage() {
       const cur = prev[userId] ?? emptyScore(userId);
       return { ...prev, [userId]: { ...cur, [key]: v } };
     });
-    setScoreSavedFor((prev) => ({ ...prev, [userId]: false }));
+    // Typing reveals the Save button. (Locked rows can't reach this path —
+    // their inputs are disabled.)
+    setScoreDirtyFor((prev) => ({ ...prev, [userId]: true }));
+  }
+
+  /** Re-open a saved row for editing. Save button reappears immediately. */
+  function editScore(userId: string) {
+    setScoreLockedFor((prev) => ({ ...prev, [userId]: false }));
+    setScoreDirtyFor((prev) => ({ ...prev, [userId]: true }));
   }
 
   async function saveScore(userId: string) {
-    if (!editing?.id) return;
     const cur = scores[userId] ?? emptyScore(userId);
+    // Add mode (no meeting id yet): stage the row locally. Persistence runs
+    // after the meeting POST succeeds in `save()` below.
+    if (!editing?.id) {
+      setScoreLockedFor((prev) => ({ ...prev, [userId]: true }));
+      return;
+    }
+    // Edit mode: PATCH straight away — same upsert endpoint as before.
     setScoreSavingFor((prev) => ({ ...prev, [userId]: true }));
     try {
       const res = await fetch(
@@ -431,10 +465,7 @@ export default function WeeklyMeetingPage() {
       );
       const j = await res.json().catch(() => ({}));
       if (j.success) {
-        setScoreSavedFor((prev) => ({ ...prev, [userId]: true }));
-        setTimeout(() => {
-          setScoreSavedFor((prev) => ({ ...prev, [userId]: false }));
-        }, 2500);
+        setScoreLockedFor((prev) => ({ ...prev, [userId]: true }));
       } else {
         setError(j.error ?? "Save failed");
       }
@@ -492,7 +523,11 @@ export default function WeeklyMeetingPage() {
         ? `/api/client-meetings/weekly-meetings/${editing.id}`
         : "/api/client-meetings/weekly-meetings";
       const method = editing.id ? "PUT" : "POST";
-      let j: { success?: boolean; error?: string } = {};
+      let j: {
+        success?: boolean;
+        error?: string;
+        data?: { id?: string };
+      } = {};
       try {
         const res = await fetch(url, {
           method,
@@ -513,6 +548,59 @@ export default function WeeklyMeetingPage() {
         setError(friendly);
         return;
       }
+
+      // Add mode: now that the meeting exists, persist any staged or typed
+      // per-member scores. We persist any row the user touched (locked OR
+      // dirty) and that maps to a currently active (non-absent) member, so
+      // an unsaved-but-typed row isn't silently discarded. The PATCH route
+      // upserts on (meetingId, clientMemberId) so duplicates are impossible.
+      const newId = !editing.id ? j.data?.id : null;
+      if (newId) {
+        const absentSetSubmit = new Set(f.absentClientMemberIds);
+        const rosterIds = new Set(
+          (clientDetail?.members ?? []).map((m) => m.userId)
+        );
+        const userIds = Object.keys(scores).filter(
+          (uid) =>
+            (scoreLockedFor[uid] || scoreDirtyFor[uid]) &&
+            rosterIds.has(uid) &&
+            !absentSetSubmit.has(uid)
+        );
+        if (userIds.length) {
+          const results = await Promise.allSettled(
+            userIds.map((uid) => {
+              const s = scores[uid] ?? emptyScore(uid);
+              return fetch(
+                `/api/client-meetings/weekly-meetings/${newId}/scores/${uid}`,
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    kpiWeeklyQTD: s.kpiWeeklyQTD,
+                    kpiCoding: s.kpiCoding,
+                    priorityNotes: s.priorityNotes,
+                    priorityStartEndDate: s.priorityStartEndDate,
+                    priorityColor: s.priorityColor,
+                  }),
+                }
+              );
+            })
+          );
+          const failed = results.filter(
+            (r) =>
+              r.status === "rejected" ||
+              (r.status === "fulfilled" && !r.value.ok)
+          ).length;
+          if (failed > 0) {
+            // Meeting was created; surface a non-blocking warning. User can
+            // re-open the meeting and re-save the affected rows.
+            setError(
+              `Meeting saved, but ${failed} member score row${failed === 1 ? "" : "s"} failed to save. Open the meeting to retry.`
+            );
+          }
+        }
+      }
+
       setEditing(null);
       await refresh();
     } finally {
@@ -579,16 +667,32 @@ export default function WeeklyMeetingPage() {
   }
 
   const isEdit = !!editing?.id;
-  const tabs = isEdit
+  // Update tab is exposed in both Add and Edit. The grid handles the "no
+  // client selected yet" case with an inline hint, so we don't gate the
+  // tab strip on clientId.
+  const tabs = editing
     ? [
         { key: "edit", label: "Edit" },
         { key: "update", label: "Update" },
       ]
     : undefined;
+  const hasClient = !!editing?.form.clientId;
 
   const pickerUsers: PickerUser[] = (clientDetail?.members ?? []).map(
     memberToPickerUser
   );
+
+  // Update tab roster — present members only (exclude those flagged Absent in
+  // the Edit tab). Reactive: toggling an absence in Edit removes/re-adds the
+  // row in Update without a save round-trip. Per-member scores are keyed by
+  // clientMemberId server-side, so any saved scores for a now-absent member
+  // are preserved in the DB and reappear if the user un-marks them.
+  const absentSet = new Set(editing?.form.absentClientMemberIds ?? []);
+  const activeMembers = (clientDetail?.members ?? []).filter(
+    (m) => !absentSet.has(m.userId)
+  );
+  const allAbsent =
+    (clientDetail?.members.length ?? 0) > 0 && activeMembers.length === 0;
 
   // Filter rows by search query (client name or status, case-insensitive).
   const visibleRows = rows.filter((r) => {
@@ -602,6 +706,13 @@ export default function WeeklyMeetingPage() {
   const visibleIds = visibleRows.map((r) => r.id);
   const allVisibleSelected =
     visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+
+  // Pagination — default 10 rows, options 10/20/30/50
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  useEffect(() => { setPage(1); }, [searchQuery, pageSize]);
+  const pagedMeetings = visibleRows.slice((page - 1) * pageSize, page * pageSize);
+  const totalMeetingPages = Math.max(1, Math.ceil(visibleRows.length / pageSize));
 
   return (
     <div className="flex flex-col h-full">
@@ -658,7 +769,7 @@ export default function WeeklyMeetingPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 flex flex-col overflow-hidden p-6 min-h-0">
         {loading ? (
           <p className="text-sm text-gray-500">Loading…</p>
         ) : rows.length === 0 ? (
@@ -668,7 +779,8 @@ export default function WeeklyMeetingPage() {
             message="Click Add to record your first weekly meeting."
           />
         ) : (
-          <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
+          <div className="flex-1 flex flex-col min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="flex-1 overflow-auto min-h-0">
             <table className="min-w-full text-xs">
               <thead className="bg-accent-50 text-gray-600 sticky top-0 z-10">
                 <tr>
@@ -751,7 +863,7 @@ export default function WeeklyMeetingPage() {
                 </tr>
               </thead>
               <tbody>
-                {visibleRows.map((r, idx) => (
+                {pagedMeetings.map((r, idx) => (
                   <tr
                     key={r.id}
                     className="border-t border-gray-100 hover:bg-blue-50/30"
@@ -780,7 +892,7 @@ export default function WeeklyMeetingPage() {
                         onClick={() => openEdit(r)}
                         className="text-gray-900 hover:underline"
                       >
-                        {idx + 1}
+                        {(page - 1) * pageSize + idx + 1}
                       </button>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
@@ -872,6 +984,17 @@ export default function WeeklyMeetingPage() {
                 ))}
               </tbody>
             </table>
+            </div>
+            {visibleRows.length > 0 && (
+              <Pagination
+                page={page}
+                totalPages={totalMeetingPages}
+                total={visibleRows.length}
+                limit={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+              />
+            )}
           </div>
         )}
 
@@ -882,10 +1005,14 @@ export default function WeeklyMeetingPage() {
           title="Weekly Meeting"
           subtitle={isEdit ? "Edit record" : "Create new record"}
           tabs={tabs}
-          activeTab={isEdit ? activeTab : undefined}
+          activeTab={editing ? activeTab : undefined}
           onTabChange={(k) => setActiveTab(k as "edit" | "update")}
           footer={
-            activeTab === "update" && isEdit ? undefined : (
+            // Hide footer only on Edit-mode + Update tab (per-row PATCH covers
+            // persistence). Add-mode keeps the footer on both tabs so the user
+            // can Submit from either; the Submit handler runs the create POST
+            // and then batch-PATCHes any staged/typed score rows.
+            isEdit && activeTab === "update" ? undefined : (
               <RightPanelFooter>
                 <RightPanelCancelButton onClick={() => setEditing(null)} />
                 <RightPanelSubmitButton
@@ -898,15 +1025,19 @@ export default function WeeklyMeetingPage() {
             )
           }
         >
-          {!editing ? null : isEdit && activeTab === "update" ? (
+          {!editing ? null : activeTab === "update" ? (
             <UpdateScoreGrid
-              members={clientDetail?.members ?? []}
+              members={activeMembers}
+              allAbsent={allAbsent}
+              needsClient={!hasClient}
               meetingDate={editing.form.meetingDate}
               scores={scores}
-              savedFor={scoreSavedFor}
+              dirtyFor={scoreDirtyFor}
+              lockedFor={scoreLockedFor}
               savingFor={scoreSavingFor}
               onChange={updateScore}
               onSaveRow={saveScore}
+              onEditRow={editScore}
             />
           ) : (
             <>
@@ -938,6 +1069,14 @@ export default function WeeklyMeetingPage() {
                     value={editing.form.clientId}
                     onChange={async (id) => {
                       updateField("clientId", id);
+                      // Switching clients (Add mode only — disabled in Edit)
+                      // invalidates the score grid: scores are keyed by the
+                      // previous client's member ids. Wipe per-row UI state
+                      // so the new roster starts fresh.
+                      setScores({});
+                      setScoreDirtyFor({});
+                      setScoreLockedFor({});
+                      setScoreSavingFor({});
                       await loadClientDetail(id);
                     }}
                     users={clients.map(clientToPickerUser)}
@@ -1132,9 +1271,16 @@ function Field({
 
 interface UpdateScoreGridProps {
   members: ClientMember[];
+  /** True when the client roster has members but every one is marked absent. */
+  allAbsent?: boolean;
+  /** Add-mode early state — no client picked yet on the Edit tab. */
+  needsClient?: boolean;
   meetingDate: string;
   scores: Record<string, MemberScore>;
-  savedFor: Record<string, boolean>;
+  /** Row has unsaved input — drives Save-button visibility. */
+  dirtyFor: Record<string, boolean>;
+  /** Row is committed (Edit mode: PATCHed; Add mode: staged) — disables inputs and shows Edit. */
+  lockedFor: Record<string, boolean>;
   savingFor: Record<string, boolean>;
   onChange: (
     userId: string,
@@ -1142,21 +1288,35 @@ interface UpdateScoreGridProps {
     v: number
   ) => void;
   onSaveRow: (userId: string) => void;
+  onEditRow: (userId: string) => void;
 }
 
 function UpdateScoreGrid({
   members,
+  allAbsent = false,
+  needsClient = false,
   meetingDate,
   scores,
-  savedFor,
+  dirtyFor,
+  lockedFor,
   savingFor,
   onChange,
   onSaveRow,
+  onEditRow,
 }: UpdateScoreGridProps) {
+  if (needsClient) {
+    return (
+      <p className="text-xs text-gray-400 italic">
+        Select a client on the Edit tab to load its members.
+      </p>
+    );
+  }
   if (!members.length) {
     return (
       <p className="text-xs text-gray-400 italic">
-        No members on this client roster.
+        {allAbsent
+          ? "All members are marked absent — no one to score."
+          : "No members on this client roster."}
       </p>
     );
   }
@@ -1181,8 +1341,15 @@ function UpdateScoreGrid({
           <tbody>
             {members.map((m) => {
               const s = scores[m.userId] ?? emptyScore(m.userId);
-              const saved = savedFor[m.userId];
-              const isSaving = savingFor[m.userId];
+              const dirty = !!dirtyFor[m.userId];
+              const locked = !!lockedFor[m.userId];
+              const isSaving = !!savingFor[m.userId];
+              const inputsDisabled = locked || isSaving;
+              // Save shows once the user has typed values (or after Edit was
+              // clicked on a saved row — onEditRow keeps dirty=true so Save
+              // reappears immediately). Edit shows whenever the row is locked.
+              const showSave = dirty && !locked;
+              const showEdit = locked;
               return (
                 <tr key={m.userId} className="border-t border-gray-100">
                   <td className="px-3 py-2 whitespace-nowrap text-gray-800">
@@ -1193,38 +1360,45 @@ function UpdateScoreGrid({
                       <input
                         type="number"
                         min={0}
-                        max={1000}
+                        max={100}
                         step="0.01"
                         value={s[c.key]}
-                        onChange={(e) =>
-                          onChange(
-                            m.userId,
-                            c.key,
-                            parseFloat(e.target.value || "0")
-                          )
-                        }
-                        className="w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400"
+                        disabled={inputsDisabled}
+                        onChange={(e) => {
+                          // Clamp to [0, 100] — browser `max` only validates
+                          // on submit; paste / typing / arrow-step can still
+                          // produce out-of-range values without this guard.
+                          const raw = parseFloat(e.target.value || "0");
+                          const clamped = Number.isNaN(raw)
+                            ? 0
+                            : Math.min(100, Math.max(0, raw));
+                          onChange(m.userId, c.key, clamped);
+                        }}
+                        className={`w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400 ${inputsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
                       />
                     </td>
                   ))}
                   <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => onSaveRow(m.userId)}
-                      disabled={isSaving}
-                      className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium ${
-                        saved
-                          ? "bg-green-500 text-white"
-                          : "bg-orange-500 text-white hover:bg-orange-600"
-                      } disabled:opacity-50`}
-                    >
-                      {saved ? (
-                        <Check className="h-3.5 w-3.5" />
-                      ) : (
+                    {showEdit ? (
+                      <button
+                        type="button"
+                        onClick={() => onEditRow(m.userId)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium bg-blue-500 text-white hover:bg-blue-600"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                    ) : showSave ? (
+                      <button
+                        type="button"
+                        onClick={() => onSaveRow(m.userId)}
+                        disabled={isSaving}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium bg-green-500 text-white hover:bg-green-600 disabled:opacity-50"
+                      >
                         <Save className="h-3.5 w-3.5" />
-                      )}
-                      {saved ? "Updated" : isSaving ? "Saving…" : "Update"}
-                    </button>
+                        {isSaving ? "Saving…" : "Save"}
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               );

@@ -35,6 +35,10 @@ export default function PriorityPage() {
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
 
+  // Pagination
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   // Teams list
   const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
   useEffect(() => {
@@ -91,6 +95,11 @@ export default function PriorityPage() {
     if (filterStatus && p.overallStatus !== filterStatus) return false;
     return true;
   });
+
+  // Reset to page 1 whenever filter results would push current page out of range
+  useEffect(() => { setPage(1); }, [search, filterOwner, filterTeam, filterStatus, year, quarter, viewTrash, pageSize]);
+
+  const pagedPriorities = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   // DB-driven current week + date range (respects QuarterSetting.startDate).
   const fiscalWeek = useCurrentWeek(year, quarter);
@@ -297,7 +306,7 @@ export default function PriorityPage() {
           </div>
         ) : (
           <PriorityTable
-            priorities={filtered}
+            priorities={pagedPriorities}
             onRefresh={refetch}
             year={year}
             quarter={quarter}
@@ -305,6 +314,11 @@ export default function PriorityPage() {
             defaultQuarter={quarter}
             onSelectionChange={handleSelectionChange}
             hideColumns={["startWeek", "endWeek", "lastNote"]}
+            page={page}
+            pageSize={pageSize}
+            total={filtered.length}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
           />
         )}
       </div>

@@ -562,6 +562,10 @@ model KPI {
   targetScale        String?
   reverseColor       Boolean @default(false)
 
+  // Reporting cadence — informational only (display label in modal/list).
+  // Targets remain weekly-bucketed regardless of this value.
+  frequency          String  @default("weekly") // "daily" | "weekly" | "monthly" | "yearly"
+
   lastNotes   String?
   lastNotesAt DateTime?
   lastNotedBy String?

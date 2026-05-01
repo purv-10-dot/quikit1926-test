@@ -98,6 +98,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       targetScale: savedScale,
       divisionType,
       reverseColor: kpi?.reverseColor ?? false,
+      frequency: (kpi?.frequency as "daily" | "weekly" | "monthly" | "yearly" | undefined) ?? "weekly",
       weeklyBreakdown,
     };
   });
@@ -284,6 +285,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     const out: Record<string, Record<number, string>> = {};
     for (const id of f.ownerIds) {
       const pct = parseFloat(f.ownerContributions[id]) || 0;
+      // Re-derive each owner row from formula: past = 0, distribute owner
+      // sub-target across [firstEditableWeek..13] with residue on Week 13.
       out[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek);
     }
     return out;
@@ -343,11 +346,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   }, []);
 
   // Past-week feature flags
-  const { canAddPastWeek, canEditPastWeek } = usePastWeekFlags();
+  const { canAddPastWeek, canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const weekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
-  // For create mode, use canAddPastWeek; for edit mode, use canEditPastWeek
-  const pastWeekAllowed = mode === "create" ? canAddPastWeek : canEditPastWeek;
+  // For create mode, use canAddPastWeek; for edit mode, use canEditPastWeek.
+  // Only evaluate after flags have loaded — before that, default is false anyway.
+  const pastWeekAllowed = flagsLoaded && (mode === "create" ? canAddPastWeek : canEditPastWeek);
 
   /** Resolve display-target → actual stored number (handles Currency scale multiplier). */
   function actualNum(f: typeof form): number {
@@ -356,22 +360,32 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
     return base * getMultiplier(f.currency, f.targetScale);
   }
 
-  // First editable week for target distribution — blocked weeks get 0
-  // In Standalone mode this is ignored (every week gets full target)
-  const firstEditableWeek = (!pastWeekAllowed && currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
+  // First editable week for target distribution — blocked weeks get 0.
+  // Distribution always starts at the current week, even when the past-week
+  // data flag is enabled (the flag controls *editability* of past cells, not
+  // default distribution). Standalone mode ignores this — every week gets the
+  // full target.
+  const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
 
-  // When firstEditableWeek resolves (async from API) and we're in create mode,
-  // recalculate the breakdown so blocked weeks get 0 and editable weeks share the target.
+  // When firstEditableWeek resolves (async from API), recalculate the breakdown.
+  //  - Create mode: always re-derive so blocked weeks get 0 and editable weeks share the target.
+  //  - Edit mode: only re-derive for Standalone, where the past=0 / current..13=target invariant
+  //    must hold regardless of what was saved under older logic. Cumulative edit mode keeps the
+  //    saved DB breakdown (per-week target plan) untouched.
   const firstEditableWeekResolved = useRef(false);
   useEffect(() => {
-    if (firstEditableWeekResolved.current || mode !== "create" || firstEditableWeek <= 1) return;
+    if (firstEditableWeekResolved.current || firstEditableWeek <= 1) return;
     firstEditableWeekResolved.current = true;
-    const targetNum = actualNum(form);
-    if (targetNum <= 0) return;
     setForm(f => {
+      const allowRebuild = mode === "create" || f.divisionType === "Standalone";
+      if (!allowRebuild) return f;
+      const tNum = f.measurementUnit === "Currency"
+        ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
+        : parseFloat(f.target) || 0;
+      if (tNum <= 0) return f;
       const next = {
         ...f,
-        weeklyBreakdown: buildBreakdown(f.divisionType, actualNum(f), f.measurementUnit, firstEditableWeek),
+        weeklyBreakdown: buildBreakdown(f.divisionType, tNum, f.measurementUnit, firstEditableWeek),
       };
       if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
       return next;
@@ -432,7 +446,16 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       const n = f.measurementUnit === "Currency"
         ? (parseFloat(val) || 0) * getMultiplier(f.currency, f.targetScale)
         : parseFloat(val) || 0;
-      const next = { ...f, target: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek) };
+      // Editing the target re-derives the WHOLE breakdown:
+      // past weeks (1..firstEditableWeek-1) → 0, target distributes across
+      // [firstEditableWeek..13] with residue on Week 13. Applies in both
+      // create and edit forms — the previous distribution (which may have
+      // populated past weeks under older logic) is overwritten.
+      const next = {
+        ...f,
+        target: val,
+        weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek),
+      };
       if (isTeamScope) next.weeklyOwnerBreakdown = computeAllOwnerBreakdowns(next);
       return next;
     });
@@ -465,10 +488,11 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       if (rightCount <= 0) return { ...f, weeklyBreakdown: newBreakdown };
 
       if (isWhole) {
+        // Number unit: each editable week gets floor(remaining/rightCount);
+        // Week 13 absorbs the entire flooring residue.
         const base = Math.floor(remaining / rightCount);
-        const extra = Math.round(remaining - base * rightCount);
         for (let i = w + 1; i <= 13; i++) {
-          newBreakdown[i] = String(13 - i < extra ? base + 1 : base);
+          newBreakdown[i] = String(i === 13 ? Math.round(remaining - base * (rightCount - 1)) : base);
         }
       } else {
         const base = parseFloat((remaining / rightCount).toFixed(2));
@@ -540,6 +564,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         currency: isCurr ? form.currency : null,
         targetScale: isCurr ? form.targetScale : null,
         reverseColor: form.reverseColor,
+        frequency: form.frequency,
         // In team scope: derive weeklyTargets (total per week) as the live sum of per-owner cells.
         // In individual scope: use the editable weeklyBreakdown as-is.
         weeklyTargets: isTeamScope && form.ownerIds.length > 0
@@ -776,11 +801,26 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             </div>
           )}
 
-          {/* Quarter (read-only) */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
-            <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
-              {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
+          {/* Quarter (read-only) + Frequency */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
+              <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
+                {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
+              <DropdownPicker
+                value={form.frequency}
+                onChange={(v) => set("frequency", v)}
+                options={[
+                  { value: "daily",   label: "Daily"   },
+                  { value: "weekly",  label: "Weekly"  },
+                  { value: "monthly", label: "Monthly" },
+                  { value: "yearly",  label: "Yearly"  },
+                ]}
+              />
             </div>
           </div>
 
@@ -1045,26 +1085,38 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                           );
                         }
 
-                        // Individual scope.
-                        // Standalone division: binary toggle between 0 (skip) and
-                        //   the full target value. Select element with two options.
-                        // Cumulative division or read-only past: regular number input.
-                        if (isStandalone && !isPast) {
-                          const targetStr = scaledTarget > 0 ? String(scaledTarget) : "";
+                        // Individual scope — Standalone division.
+                        // Standalone semantics: each week independently carries the full target.
+                        //  - Past weeks WITH the past-week toggle on → editable <select> 0/target
+                        //    (lets the user retroactively mark a past week as skipped).
+                        //  - All other Standalone cells (current..13, plus past with toggle off)
+                        //    → locked <input> showing the cell's current value (target or 0).
+                        const isStandalonePastEditable =
+                          isStandalone && currentWeek != null && w < currentWeek && pastWeekAllowed;
+                        if (isStandalonePastEditable) {
+                          const isNumUnit = form.measurementUnit === "Number";
+                          // Use properly-formatted strings that match what buildBreakdown stores
+                          const zeroStr = isNumUnit ? "0" : "0.00";
+                          const targetStr = scaledTarget > 0
+                            ? (isNumUnit ? String(Math.round(scaledTarget)) : scaledTarget.toFixed(2))
+                            : "";
                           const current = form.weeklyBreakdown[w] ?? "";
-                          // Normalize: anything non-zero that isn't the target shows as "custom"
-                          // and users can reset to 0 or target.
+                          const currentNum = parseFloat(current) || 0;
+                          // Normalize to one of the two canonical values (zero / target)
+                          const norm = (currentNum === 0 || current === "") ? zeroStr
+                            : (targetStr && Math.abs(currentNum - scaledTarget) < 0.001) ? targetStr
+                            : current;
                           return (
                             <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
                               <select
-                                value={current === "0" || current === "" ? "0" : current === targetStr ? targetStr : current}
+                                value={norm}
                                 onChange={e => setWeekBreakdown(w, e.target.value)}
                                 className="w-full px-1 py-1 text-center text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
                               >
-                                <option value="0">0</option>
+                                <option value={zeroStr}>0</option>
                                 <option value={targetStr}>{targetStr || "—"}</option>
-                                {current !== "0" && current !== "" && current !== targetStr && (
-                                  <option value={current}>{current} (custom)</option>
+                                {norm !== zeroStr && norm !== "" && norm !== targetStr && (
+                                  <option value={norm}>{norm} (custom)</option>
                                 )}
                               </select>
                             </td>
@@ -1108,15 +1160,23 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             const isPast = currentWeek !== null && w < currentWeek && !pastWeekAllowed;
                             const isStandalone = form.divisionType === "Standalone";
                             const isLocked = isStandalone || isPast;
-                            // Standalone per-owner: toggle between 0 and the owner's sub-target
-                            //   (pct × scaledTarget / 100). Custom values preserved until reset.
-                            if (isStandalone && !isPast) {
+                            // Standalone per-owner: editable 0/sub-target toggle is shown
+                            // ONLY for past weeks when the past-week toggle is enabled.
+                            // Current..13 are locked at the owner sub-target.
+                            const isStandalonePastEditable =
+                              isStandalone && currentWeek != null && w < currentWeek && pastWeekAllowed;
+                            if (isStandalonePastEditable) {
+                              const isNumUnit = form.measurementUnit === "Number";
                               const ownerTarget = (pct / 100) * scaledTarget;
+                              const zeroStr = isNumUnit ? "0" : "0.00";
                               const targetStr = ownerTarget > 0
-                                ? (form.measurementUnit === "Number" ? String(Math.round(ownerTarget)) : ownerTarget.toFixed(2))
+                                ? (isNumUnit ? String(Math.round(ownerTarget)) : ownerTarget.toFixed(2))
                                 : "";
                               const current = ownerRow[w] ?? "";
-                              const norm = current === "0" || current === "" ? "0" : current === targetStr ? targetStr : current;
+                              const currentNum = parseFloat(current) || 0;
+                              const norm = (currentNum === 0 || current === "") ? zeroStr
+                                : (targetStr && Math.abs(currentNum - ownerTarget) < 0.001) ? targetStr
+                                : current;
                               return (
                                 <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
                                   <select
@@ -1124,10 +1184,10 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                     onChange={e => setOwnerWeekCell(id, w, e.target.value)}
                                     className="w-full px-1 py-1 text-center text-[11px] border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px] cursor-pointer"
                                   >
-                                    <option value="0">0</option>
+                                    <option value={zeroStr}>0</option>
                                     <option value={targetStr}>{targetStr || "—"}</option>
-                                    {current !== "0" && current !== "" && current !== targetStr && (
-                                      <option value={current}>{current} (custom)</option>
+                                    {norm !== zeroStr && norm !== "" && norm !== targetStr && (
+                                      <option value={norm}>{norm} (custom)</option>
                                     )}
                                   </select>
                                 </td>

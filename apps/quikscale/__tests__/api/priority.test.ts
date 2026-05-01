@@ -186,6 +186,63 @@ describe("POST /api/priority — happy path", () => {
     expect(auditArg.data.entityType).toBe("Priority");
   });
 
+  it("seeds weekly statuses: past=not-yet-started, current+future=not-applicable", async () => {
+    mockDb.priority.create.mockResolvedValue({
+      id: "new-p3",
+      owner_user: null,
+      team: null,
+      weeklyStatuses: [],
+    } as any);
+    // getCurrentFiscalWeekFromDB reads quarterSetting; return a window where
+    // "now" sits at week 5 (start = 4 weeks before today, end = 8 weeks after).
+    const now = Date.now();
+    const week = 7 * 24 * 60 * 60 * 1000;
+    mockDb.quarterSetting.findFirst.mockResolvedValue({
+      startDate: new Date(now - 4 * week),
+      endDate: new Date(now + 8 * week),
+    } as any);
+    mockDb.priorityWeeklyStatus.createMany.mockResolvedValue({ count: 13 } as any);
+    mockDb.priority.findUnique.mockResolvedValue({
+      id: "new-p3",
+      owner_user: null,
+      team: null,
+      weeklyStatuses: [],
+    } as any);
+    mockDb.auditLog.create.mockResolvedValue({} as any);
+
+    await POST(
+      buildPOST({ ...validBody, startWeek: 1, endWeek: 13 }),
+      { params: {} } as any,
+    );
+
+    expect(mockDb.priorityWeeklyStatus.createMany).toHaveBeenCalledOnce();
+    const seedArg = (mockDb.priorityWeeklyStatus.createMany as any).mock.calls[0][0];
+    const seeds: Array<{ weekNumber: number; status: string }> = seedArg.data;
+    expect(seeds).toHaveLength(13);
+    // Weeks 1..4 are past → not-yet-started
+    for (const w of [1, 2, 3, 4]) {
+      expect(seeds.find((s) => s.weekNumber === w)?.status).toBe("not-yet-started");
+    }
+    // Week 5 (current) and 6..13 (future) → not-applicable
+    for (const w of [5, 6, 7, 8, 9, 10, 11, 12, 13]) {
+      expect(seeds.find((s) => s.weekNumber === w)?.status).toBe("not-applicable");
+    }
+  });
+
+  it("does not seed weekly statuses when startWeek/endWeek are missing", async () => {
+    mockDb.priority.create.mockResolvedValue({
+      id: "new-p4",
+      owner_user: null,
+      team: null,
+      weeklyStatuses: [],
+    } as any);
+    mockDb.auditLog.create.mockResolvedValue({} as any);
+
+    await POST(buildPOST(validBody), { params: {} } as any);
+
+    expect(mockDb.priorityWeeklyStatus.createMany).not.toHaveBeenCalled();
+  });
+
   it("stores tenantId and createdBy from the session", async () => {
     mockDb.priority.create.mockResolvedValue({
       id: "new-p2",

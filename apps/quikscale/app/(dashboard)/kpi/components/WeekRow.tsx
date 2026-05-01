@@ -31,6 +31,7 @@ export function WeekRow({
   reverse,
   targetDisplay,
   dateLabel,
+  lockReason,
 }: {
   weekNumber: number;
   value: string;
@@ -46,6 +47,8 @@ export function WeekRow({
   dateLabel?: string;
   /** Optional formatted target string shown between Week label and Value input */
   targetDisplay?: string;
+  /** Override the default "Past week editing is disabled" lock tooltip. */
+  lockReason?: string;
 }) {
   const numVal = parseFloat(value);
   const hasValue = value !== "" && !isNaN(numVal);
@@ -58,7 +61,7 @@ export function WeekRow({
     : "bg-gray-200";
 
   const lockTitle = locked
-    ? "Past week editing is disabled. Enable in Settings > Configurations."
+    ? (lockReason ?? "Past week editing is disabled. Enable in Settings > Configurations.")
     : undefined;
 
   return (

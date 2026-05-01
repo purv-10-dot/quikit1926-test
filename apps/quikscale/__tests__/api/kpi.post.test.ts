@@ -128,6 +128,41 @@ describe("POST /api/kpi — individual happy path", () => {
     const res = await POST(buildRequest(baseIndividual), { params: {} } as any);
     expect(res.status).toBe(404);
   });
+
+  it("defaults frequency to 'weekly' when not provided in payload", async () => {
+    mockDb.user.findUnique.mockResolvedValue({ id: USER } as any);
+    mockDb.kPI.create.mockResolvedValue({ id: "new-kpi-freq-default" } as any);
+    mockDb.kPILog.create.mockResolvedValue({} as any);
+
+    const res = await POST(buildRequest(baseIndividual), { params: {} } as any);
+    expect(res.status).toBe(201);
+    const createArg = (mockDb.kPI.create as any).mock.calls[0][0];
+    expect(createArg.data.frequency).toBe("weekly");
+  });
+
+  it("persists frequency value when supplied (e.g. 'monthly')", async () => {
+    mockDb.user.findUnique.mockResolvedValue({ id: USER } as any);
+    mockDb.kPI.create.mockResolvedValue({ id: "new-kpi-freq-monthly" } as any);
+    mockDb.kPILog.create.mockResolvedValue({} as any);
+
+    const res = await POST(
+      buildRequest({ ...baseIndividual, frequency: "monthly" }),
+      { params: {} } as any,
+    );
+    expect(res.status).toBe(201);
+    const createArg = (mockDb.kPI.create as any).mock.calls[0][0];
+    expect(createArg.data.frequency).toBe("monthly");
+  });
+
+  it("rejects invalid frequency values (Zod enum)", async () => {
+    const res = await POST(
+      buildRequest({ ...baseIndividual, frequency: "hourly" }),
+      { params: {} } as any,
+    );
+    expect([400, 500]).toContain(res.status);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+  });
 });
 
 describe("POST /api/kpi — team KPI permission", () => {

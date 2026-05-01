@@ -42,10 +42,15 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 
   let monthlyStats: MonthlyStatRow[] = [];
 
+  // Roster size — fallback for meetings that didn't snapshot `totalMembers`
+  // and the canonical denominator for Weekly attendance (the model has no
+  // `totalMembers` column).
+  const rosterSize = client.teamMembers.filter(tm => !tm.member.deletedAt).length;
+
   if (mode === "daily") {
     const huddles = await db.clientDailyHuddle.findMany({
       where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-      include: { absentMembers: true },
+      include: { absentMembers: true, absentTeamMembers: true },
     });
     monthlyStats = calculateDailyMonthlyStats(
       huddles.map(h => ({
@@ -56,9 +61,17 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
         format1Status: h.format1Status,
         format2Status: h.format2Status,
         stuckCallStatus: h.stuckCallStatus,
-        punctualityOverride: ("NA" as const),
-        totalMembers: 0,
-        absentCount: h.absentMembers.length,
+        // Read the real override column — was hardcoded to "NA", which combined
+        // with the (now-fixed) NA-as-pass branch in isPunctual auto-passed
+        // every held call. Now NA falls through to the time check.
+        punctualityOverride: h.punctualityOverride,
+        // Snapshot taken at save-time; fall back to current roster if older
+        // rows were saved with the legacy default of 0.
+        totalMembers: h.totalMembers > 0 ? h.totalMembers : rosterSize,
+        // Legacy User-based absences + new external Client Member absences;
+        // the form drawer writes to whichever roster the client uses, so the
+        // accurate count is the union (members can't be in both tables).
+        absentCount: h.absentMembers.length + h.absentTeamMembers.length,
       })),
       months,
       client.dailyStartTime, client.dailyEndTime,
@@ -66,22 +79,34 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
   } else {
     const meetings = await db.clientWeeklyMeeting.findMany({
       where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-      include: { absentMembers: true, dashboardNAMembers: true },
+      include: {
+        absentMembers: true, absentTeamMembers: true,
+        dashboardNAMembers: true, dashboardNATeamMembers: true,
+      },
     });
     monthlyStats = calculateWeeklyMonthlyStats(
-      meetings.map(m => ({
-        meetingDate: m.meetingDate,
-        callStatus: m.callStatus,
-        actualStartTime: m.actualStartTime, actualEndTime: m.actualEndTime,
-        goodNewsSharing: m.goodNewsSharing, kpDashboard: m.kpDashboard,
-        www: m.www, feedback: m.feedback,
-        collectiveIntelligence: m.collectiveIntelligence, gaps: m.gaps,
-        opspReview: m.opspReview,
-        punctualityOverride: ("NA" as const),
-        totalMembers: 0,
-        absentCount: m.absentMembers.length,
-        memberScores: [] as const,
-      })),
+      meetings.map(m => {
+        // Members on Dashboard-NA aren't expected to update that week, so
+        // they shouldn't drag the attendance score down — drop them from the
+        // denominator AND from the absent count if they happened to overlap.
+        const naCount = m.dashboardNAMembers.length + m.dashboardNATeamMembers.length;
+        const absentCount = m.absentMembers.length + m.absentTeamMembers.length;
+        return {
+          meetingDate: m.meetingDate,
+          callStatus: m.callStatus,
+          actualStartTime: m.actualStartTime, actualEndTime: m.actualEndTime,
+          goodNewsSharing: m.goodNewsSharing, kpDashboard: m.kpDashboard,
+          www: m.www, feedback: m.feedback,
+          collectiveIntelligence: m.collectiveIntelligence, gaps: m.gaps,
+          opspReview: m.opspReview,
+          // Weekly model has no override column; with the fixed isPunctual,
+          // "NA" no longer auto-passes — falls through to the time check.
+          punctualityOverride: ("NA" as const),
+          totalMembers: Math.max(0, rosterSize - naCount),
+          absentCount,
+          memberScores: [] as const,
+        };
+      }),
       months,
       client.weeklyStartTime, client.weeklyEndTime,
     );

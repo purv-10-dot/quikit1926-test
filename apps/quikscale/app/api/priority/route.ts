@@ -6,6 +6,7 @@ import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createPrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 const PRIORITY_SELECT = {
   id: true,
@@ -91,7 +92,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   }
   const { name, description, owner, teamId, quarter, year, startWeek, endWeek, overallStatus } = parsed.data;
 
-  const priority = await db.priority.create({
+  const created = await db.priority.create({
     data: {
       tenantId,
       name,
@@ -107,6 +108,33 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
     },
     select: PRIORITY_SELECT,
   });
+
+  // Seed weekly statuses across [startWeek..endWeek]:
+  //   week <  currentWeek  → "not-yet-started"  (past)
+  //   week >= currentWeek  → "not-applicable"   (current + future)
+  // Only seed when both bounds are set; otherwise leave the priority bare so
+  // existing list/detail flows behave unchanged.
+  let priority = created;
+  if (startWeek != null && endWeek != null && startWeek <= endWeek) {
+    const currentWeek = await getCurrentFiscalWeekFromDB(tenantId, year, quarter);
+    const seeds = [];
+    for (let w = startWeek; w <= endWeek; w++) {
+      seeds.push({
+        priorityId: created.id,
+        weekNumber: w,
+        status: w < currentWeek ? "not-yet-started" : "not-applicable",
+        updatedBy: userId,
+      });
+    }
+    if (seeds.length) {
+      await db.priorityWeeklyStatus.createMany({ data: seeds, skipDuplicates: true });
+      const refreshed = await db.priority.findUnique({
+        where: { id: created.id },
+        select: PRIORITY_SELECT,
+      });
+      if (refreshed) priority = refreshed;
+    }
+  }
 
   await writeAuditLog({
     tenantId,

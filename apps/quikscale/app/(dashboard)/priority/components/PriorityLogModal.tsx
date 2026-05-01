@@ -89,6 +89,18 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
     setErrors(e => { const n = { ...e }; delete n[key]; return n; });
   }
 
+  // Start Week change auto-bumps End Week if it would become invalid (< startWeek).
+  // Keeps the End Week dropdown selection in sync with its filtered options.
+  function handleStartWeekChange(val: string) {
+    setForm(f => {
+      const sw = parseInt(val);
+      const ew = parseInt(f.endWeek);
+      const nextEnd = !isNaN(sw) && !isNaN(ew) && ew < sw ? val : f.endWeek;
+      return { ...f, startWeek: val, endWeek: nextEnd };
+    });
+    setErrors(e => { const n = { ...e }; delete n.startWeek; delete n.endWeek; return n; });
+  }
+
   function validate() {
     const errs: Record<string, string> = {};
     if (!form.name.trim()) errs.name = "Name is required";
@@ -239,7 +251,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Start Week</label>
-                  <select value={form.startWeek} onChange={e => setField("startWeek", e.target.value)}
+                  <select value={form.startWeek} onChange={e => handleStartWeekChange(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                     {WEEK_OPTIONS.map(w => (
                       <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>
@@ -250,7 +262,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   <label className="block text-xs font-medium text-gray-600 mb-1">End Week</label>
                   <select value={form.endWeek} onChange={e => setField("endWeek", e.target.value)}
                     className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
-                    {WEEK_OPTIONS.map(w => (
+                    {WEEK_OPTIONS.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => (
                       <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>
                     ))}
                   </select>

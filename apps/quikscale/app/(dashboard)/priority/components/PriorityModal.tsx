@@ -171,6 +171,18 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
     setErrors(e => { const n = { ...e }; delete n[key]; return n; });
   }
 
+  // Start Week change auto-bumps End Week if it would become invalid (< startWeek).
+  // Keeps the End Week dropdown selection in sync with its filtered options.
+  function handleStartWeekChange(val: string) {
+    setForm(f => {
+      const sw = parseInt(val);
+      const ew = parseInt(f.endWeek);
+      const nextEnd = !isNaN(sw) && !isNaN(ew) && ew < sw ? val : f.endWeek;
+      return { ...f, startWeek: val, endWeek: nextEnd };
+    });
+    setErrors(e => { const n = { ...e }; delete n.startWeek; delete n.endWeek; return n; });
+  }
+
   // Custom handler for team changes — clears owner if the current owner
   // isn't in the new team's members. Empty team = no filtering, keep owner.
   function handleTeamChange(newTeamId: string) {
@@ -273,7 +285,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               </label>
               <DropdownPicker
                 value={String(form.startWeek)}
-                onChange={(v) => set("startWeek", v)}
+                onChange={handleStartWeekChange}
                 options={WEEK_OPTIONS.map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
@@ -319,7 +331,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
               <DropdownPicker
                 value={String(form.endWeek)}
                 onChange={(v) => set("endWeek", v)}
-                options={WEEK_OPTIONS.map(w => ({
+                options={WEEK_OPTIONS.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
                   hint: getWeekDateRange(parseInt(form.year), form.quarter, w),
