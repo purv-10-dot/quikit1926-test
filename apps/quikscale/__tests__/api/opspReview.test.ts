@@ -32,13 +32,6 @@ function asAdmin() {
     role: "admin",
     status: "active",
   } as any);
-  // Default empty results for the lookups GET /api/opsp/review issues
-  // alongside the OPSP record itself. Individual tests can override these
-  // with specific values when needed (e.g. categoryMaster currency rules).
-  // Without these mocks, vitest-mock-extended returns undefined and the
-  // route crashes iterating over `cats`/`ownerUsers`.
-  mockDb.categoryMaster.findMany.mockResolvedValue([] as any);
-  mockDb.user.findMany.mockResolvedValue([] as any);
 }
 
 function mockOPSP(overrides: Record<string, unknown> = {}) {

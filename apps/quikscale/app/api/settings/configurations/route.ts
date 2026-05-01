@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
+import { authOptions } from "@/lib/auth";
+import { getTenantId } from "@/lib/api/getTenantId";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { updateConfigurationsSchema } from "@/lib/schemas/settingsSchema";
 
 export async function GET() {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-
-    const { tenantId } = auth;
+    // Feature flags are readable by any authenticated tenant member —
+    // only PATCH (writing) requires admin.
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
+    const tenantId = await getTenantId(session.user.id);
+    if (!tenantId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    }
 
     const flags = await db.featureFlag.findMany({
       where: { tenantId },

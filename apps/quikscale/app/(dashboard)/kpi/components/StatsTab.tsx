@@ -23,7 +23,9 @@ import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
   const colors = progressColor(kpi.progressPercent ?? 0);
-  const target = kpi.qtdGoal ?? kpi.target ?? 0;
+  // kpi.target is the user-set quarterly target; kpi.qtdGoal is a derived aggregate
+  // that can lag behind after a target edit. Use kpi.target as the primary.
+  const target = kpi.target ?? kpi.qtdGoal ?? 0;
   const achieved = kpi.qtdAchieved ?? 0;
   const { filledWeeks, avgPerWeek, bestWeek } = computeKPIStats(kpi);
 
@@ -33,6 +35,33 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // Compute QTD totals over [1 .. currentWeek-1]. Falls back to full-quarter
   // totals when currentWeek is unresolvable.
   const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek);
+
+  // Weekly Goal tile shows "<latest reported value> / <that week's target>".
+  // We look at the most recent week (≤ currentWeek when known, else any week)
+  // that has a non-null actual entered. If nothing's been entered yet, fall
+  // back to "— / <current-week target>" so the tile still shows a target.
+  const weekAvg = target > 0 ? target / 13 : 0;
+  const wt = kpi.weeklyTargets ?? {};
+  const weekTargetFor = (w: number): number => {
+    const raw = wt[String(w)];
+    // Use the saved per-week target as-is (including explicit 0).
+    // Fall back to the flat average only when no per-week breakdown exists (undefined).
+    return typeof raw === "number" ? raw : weekAvg;
+  };
+
+  // Weekly Goal = (currentWeek-1) actual value / (currentWeek-1) target.
+  const prevWeek = currentWeek != null && currentWeek > 1 ? currentWeek - 1 : null;
+  const prevWeekValue = prevWeek != null
+    ? ((kpi.weeklyValues ?? []).find(v => v.weekNumber === prevWeek)?.value ?? null)
+    : null;
+  const prevWeekTarget = prevWeek != null ? weekTargetFor(prevWeek) : 0;
+  const weeklyGoalDisplay = (() => {
+    if (prevWeek == null) return "—";
+    const valueStr = prevWeekValue != null ? fmt(prevWeekValue) : "—";
+    const targetStr = prevWeekTarget > 0 ? fmt(prevWeekTarget) : "—";
+    if (valueStr === "—" && targetStr === "—") return "—";
+    return `${valueStr} / ${targetStr}`;
+  })();
 
   return (
     <div className="space-y-5">
@@ -103,7 +132,7 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
           },
           {
             label: "Weekly Goal",
-            value: target > 0 ? fmt(target / 13) : "—",
+            value: weeklyGoalDisplay,
           },
         ].map((s) => (
           <div
@@ -135,7 +164,7 @@ function computeQtd(kpi: KPIRow, currentWeek: number | null): {
 } {
   if (currentWeek == null) {
     return {
-      qtdGoal: kpi.qtdGoal ?? kpi.target ?? null,
+      qtdGoal: kpi.target ?? kpi.qtdGoal ?? null,
       qtdAchieved: kpi.qtdAchieved ?? null,
     };
   }
@@ -148,11 +177,16 @@ function computeQtd(kpi: KPIRow, currentWeek: number | null): {
   const priorWeeks = Array.from({ length: currentWeek - 1 }, (_, i) => i + 1);
 
   // QTD Goal: prefer per-week breakdown; fall back to even split.
+  // Treat an explicit 0 the same as "not set" — buildBreakdown zeroes out weeks
+  // before firstEditableWeek (KPI created mid-quarter), so using those 0s as
+  // intentional targets would make QTD Goal = 0 even when a real target exists.
   const wt = kpi.weeklyTargets ?? {};
-  const totalTarget = kpi.qtdGoal ?? kpi.target ?? 0;
+  const totalTarget = kpi.target ?? kpi.qtdGoal ?? 0;
   const flat = totalTarget > 0 ? totalTarget / 13 : 0;
   const goal = priorWeeks.reduce((sum, w) => {
     const v = wt[String(w)];
+    // Use actual per-week target (including explicit 0 for weeks with no target).
+    // Fall back to flat rate only when no breakdown exists at all (undefined).
     return sum + (typeof v === "number" ? v : flat);
   }, 0);
 

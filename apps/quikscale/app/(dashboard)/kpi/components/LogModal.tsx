@@ -5,9 +5,8 @@ import { useSession } from "next-auth/react";
 import { useUpdateKPI, useUpdateWeeklyValue, useNotes, useAddNote } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
 import type { KPIRow, WeeklyValue, User } from "@/lib/types/kpi";
-import { fiscalYearLabel, weekDateLabel, ALL_WEEKS, MEASUREMENT_UNITS, ALL_QUARTERS } from "@/lib/utils/fiscal";
+import { fiscalYearLabel, weekDateLabel, ALL_WEEKS } from "@/lib/utils/fiscal";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
-import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserPicker } from "@quikit/ui";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
 import { WeeklyScroller } from "./WeeklyScroller";
@@ -18,7 +17,6 @@ import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import {
   buildBreakdown,
   redistributeOwnerRemainder,
-  type DivisionType,
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
@@ -28,7 +26,6 @@ interface Props { kpi: KPIRow; onClose: () => void; onRefresh: () => void; initi
 
 type Tab = "edit" | "updates" | "stats";
 
-const CURRENT_YEAR = new Date().getFullYear();
 
 type EditFormState = {
   name: string; description: string; owner: string; teamId: string;
@@ -60,9 +57,11 @@ function EditTab({
   // Uses DB-driven useCurrentWeek so the week number honours the tenant's
   // configured QuarterSetting.startDate (may be offset from the hardcoded
   // Apr 1/Jul 1/Oct 1/Jan 1 map).
-  const { canEditPastWeek } = usePastWeekFlags();
+  const { canEditPastWeek, loaded: flagsLoaded } = usePastWeekFlags();
+  const pastWeekAllowed = flagsLoaded && canEditPastWeek;
   const currentWeek = useCurrentWeek(parseInt(form.year) || null, form.quarter);
   const editTabWeekLabels = useWeekLabels(parseInt(form.year) || null, form.quarter);
+  const firstEditableWeek = (currentWeek !== null && currentWeek > 1) ? currentWeek : 1;
 
   function set(key: string, val: string) {
     setForm(f => ({ ...f, [key]: val }));
@@ -75,33 +74,15 @@ function EditTab({
     return base * getMultiplier(f.currency, f.targetScale);
   }
 
-  function setMeasurementUnit(val: string) {
-    setForm(f => {
-      const n = val === "Currency"
-        ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
-        : parseFloat(f.target) || 0;
-      return { ...f, measurementUnit: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, val) };
-    });
-  }
-
-  function setCurrency(val: string) {
-    setForm(f => {
-      // Reset scale if it doesn't exist for the new currency
-      const validScale = getScales(val).find(s => s.label === f.targetScale) ? f.targetScale : "";
-      const n = (parseFloat(f.target) || 0) * getMultiplier(val, validScale);
-      return { ...f, currency: val, targetScale: validScale, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit) };
-    });
-  }
-
   function setTargetScale(val: string) {
     setForm(f => {
       const n = (parseFloat(f.target) || 0) * getMultiplier(f.currency, val);
-      return { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit) };
+      return { ...f, targetScale: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek) };
     });
   }
 
   function setDivisionType(dt: "Cumulative" | "Standalone") {
-    setForm(f => ({ ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit) }));
+    setForm(f => ({ ...f, divisionType: dt, weeklyBreakdown: buildBreakdown(dt, actualNum(f), f.measurementUnit, firstEditableWeek) }));
   }
 
   function setTarget(val: string) {
@@ -109,7 +90,7 @@ function EditTab({
       const n = f.measurementUnit === "Currency"
         ? (parseFloat(val) || 0) * getMultiplier(f.currency, f.targetScale)
         : parseFloat(val) || 0;
-      return { ...f, target: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit) };
+      return { ...f, target: val, weeklyBreakdown: buildBreakdown(f.divisionType, n, f.measurementUnit, firstEditableWeek) };
     });
   }
 
@@ -301,10 +282,12 @@ function EditTab({
               <thead>
                 <tr className="bg-gray-50">
                   {ALL_WEEKS.map(w => {
-                    const isPast = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                    const isPastWeek = currentWeek !== null && w < currentWeek;
+                    const isStandaloneEditable = form.divisionType === "Standalone" && isPastWeek && pastWeekAllowed;
+                    const showLock = isPastWeek && !isStandaloneEditable && !pastWeekAllowed;
                     return (
-                    <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${isPast ? "text-gray-300" : "text-gray-500"}`}>
-                      <div>{isPast ? "🔒 " : ""}W{w}</div>
+                    <th key={w} className={`px-2 py-1.5 text-center font-medium border-r border-gray-200 last:border-r-0 whitespace-nowrap ${showLock ? "text-gray-300" : "text-gray-500"}`}>
+                      <div>{showLock ? "🔒 " : ""}W{w}</div>
                       <div className="text-[9px] font-normal text-gray-400">{editTabWeekLabels[w - 1] ?? weekDateLabel(parseInt(form.year), form.quarter, w)}</div>
                     </th>
                   );})}
@@ -313,9 +296,41 @@ function EditTab({
               <tbody>
                 <tr>
                   {ALL_WEEKS.map(w => {
-                    const isPast = !canEditPastWeek && currentWeek !== null && w < currentWeek;
+                    const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandalone = form.divisionType === "Standalone";
-                    const isLocked = isStandalone || isPast;
+                    const isStandalonePastEditable = isStandalone && isPastWeek && pastWeekAllowed;
+                    // Standalone: locked unless it's a past week with the edit toggle ON (→ SELECT)
+                    // Cumulative: locked only if past week and toggle OFF
+                    const isLocked = isStandalone ? !isStandalonePastEditable : (isPastWeek && !pastWeekAllowed);
+
+                    if (isStandalonePastEditable) {
+                      const isNumUnit = form.measurementUnit === "Number";
+                      const zeroStr = isNumUnit ? "0" : "0.00";
+                      const targetStr = scaledTarget > 0
+                        ? (isNumUnit ? String(Math.round(scaledTarget)) : scaledTarget.toFixed(2))
+                        : "";
+                      const current = form.weeklyBreakdown[w] ?? "";
+                      const currentNum = parseFloat(current) || 0;
+                      const norm = (currentNum === 0 || current === "") ? zeroStr
+                        : (targetStr && Math.abs(currentNum - scaledTarget) < 0.001) ? targetStr
+                        : current;
+                      return (
+                        <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
+                          <select
+                            value={norm}
+                            onChange={e => setWeekBreakdown(w, e.target.value)}
+                            className="w-full px-1 py-1 text-center text-xs border rounded border-gray-200 focus:outline-none focus:ring-1 focus:ring-accent-400 min-w-[72px]"
+                          >
+                            <option value={zeroStr}>0</option>
+                            {targetStr && <option value={targetStr}>{targetStr}</option>}
+                            {norm !== zeroStr && norm !== "" && norm !== targetStr && (
+                              <option value={norm}>{norm} (custom)</option>
+                            )}
+                          </select>
+                        </td>
+                      );
+                    }
+
                     return (
                     <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0">
                       <input
@@ -324,7 +339,7 @@ function EditTab({
                         value={form.weeklyBreakdown[w] ?? ""}
                         onChange={e => setWeekBreakdown(w, e.target.value)}
                         readOnly={isLocked}
-                        title={isPast ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
+                        title={isPastWeek && !pastWeekAllowed ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
                         className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
                           isLocked
                             ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
@@ -359,6 +374,8 @@ function UpdatesTab({
   setTeamWeeklyState,
   currentUserId,
   canEditAnyOwner,
+  liveFormTarget,
+  liveWeeklyTargets,
 }: {
   kpi: KPIRow;
   weeklyState: Record<number, { value: string; notes: string }>;
@@ -367,6 +384,10 @@ function UpdatesTab({
   setTeamWeeklyState: React.Dispatch<React.SetStateAction<Record<string, Record<number, { value: string; notes: string }>>>>;
   currentUserId: string;
   canEditAnyOwner: boolean;
+  /** Live target number from editForm (before save). Overrides kpi.qtdGoal for display. */
+  liveFormTarget?: number | null;
+  /** Live per-week target map from editForm.weeklyBreakdown (before save). */
+  liveWeeklyTargets?: Record<string, number>;
 }) {
   const { data: notesData, refetch: refetchNotes } = useNotes(kpi.id);
   const addNote = useAddNote(kpi.id);
@@ -378,12 +399,16 @@ function UpdatesTab({
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
   const updatesTabWeekLabels = useWeekLabels(kpi.year, kpi.quarter);
 
-  const weeklyTarget = (kpi.qtdGoal ?? kpi.target ?? 0) / 13;
+  // Use live form target when available so the header and per-week targets
+  // reflect editForm changes immediately (before save).
+  const weeklyTarget = (liveFormTarget ?? kpi.qtdGoal ?? kpi.target ?? 0) / 13;
   const isTeamKPI = kpi.kpiLevel === "team";
   const ownerList = (kpi.owners ?? []) as Array<{ id: string; firstName: string; lastName: string }>;
   const contribs = (kpi.ownerContributions as Record<string, number> | null | undefined) ?? {};
-  // Per-week target override map (if saved on KPI). Fallback: flat weekly target.
-  const savedWeeklyTargets = (kpi.weeklyTargets as Record<string, number> | null | undefined) ?? null;
+  // Prefer live breakdown (from editForm) over DB snapshot so the per-week
+  // target display updates before the user hits Save.
+  const savedWeeklyTargets: Record<string, number> | null =
+    liveWeeklyTargets ?? (kpi.weeklyTargets as Record<string, number> | null | undefined) ?? null;
   const targetForWeek = (w: number): number =>
     savedWeeklyTargets?.[String(w)] ?? weeklyTarget;
 
@@ -533,6 +558,11 @@ function UpdatesTab({
                 const isPast = !canEditPastWeek && currentWeek !== null && w < currentWeek;
                 const isFuture = currentWeek !== null && w > currentWeek;
                 const locked = isPast || isFuture;
+                // When a week has no target (target = 0 or unset), lock the input
+                // so nothing new can be entered — but keep any existing historical
+                // value visible so previously entered data is not hidden.
+                const hasTarget = targetForWeek(w) > 0;
+                const noTargetLocked = !hasTarget;
                 return (
                 <WeekRow
                   key={w}
@@ -545,9 +575,10 @@ function UpdatesTab({
                   dateLabel={updatesTabWeekLabels[w - 1]}
                   onValueChange={v => handleWeekChange(w, "value", v)}
                   onNotesChange={n => handleWeekChange(w, "notes", n)}
-                  locked={locked}
+                  locked={locked || noTargetLocked}
+                  lockReason={noTargetLocked ? "No target set for this week." : undefined}
                   reverse={kpi.reverseColor ?? false}
-                  targetDisplay={targetForWeek(w) > 0 ? fmt(targetForWeek(w)) : "—"}
+                  targetDisplay={hasTarget ? fmt(targetForWeek(w)) : "—"}
                 />
               );})}
             </div>
@@ -714,16 +745,21 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
     setSaveError("");
     try {
       // Immutable fields (owner, quarter, year, measurementUnit, currency) are NOT sent on edit
+      const newTarget = editForm.target
+        ? (parseFloat(editForm.target) || 0) * (editForm.measurementUnit === "Currency" ? getMultiplier(editForm.currency, editForm.targetScale) : 1)
+        : undefined;
+
       const kpiPayload = {
         name: editForm.name.trim(),
         description: editForm.description || undefined,
         teamId: editForm.teamId || undefined,
         parentKPIId: editForm.parentKPIId || undefined,
-        target: editForm.target
-          ? (parseFloat(editForm.target) || 0) * (editForm.measurementUnit === "Currency" ? getMultiplier(editForm.currency, editForm.targetScale) : 1)
-          : undefined,
+        target: newTarget,
         quarterlyGoal: editForm.quarterlyGoal ? parseFloat(editForm.quarterlyGoal) : undefined,
-        qtdGoal: editForm.qtdGoal ? parseFloat(editForm.qtdGoal) : undefined,
+        // Keep qtdGoal in sync with the new target so progressPercent uses the correct denominator.
+        // editForm.qtdGoal is initialized from the old kpi.qtdGoal and is never edited by the user,
+        // so it would re-save the stale value if target changes.
+        qtdGoal: newTarget !== undefined ? newTarget : (editForm.qtdGoal ? parseFloat(editForm.qtdGoal) : undefined),
         status: editForm.status as "active" | "paused" | "completed",
         divisionType: editForm.divisionType,
         targetScale: editForm.measurementUnit === "Currency" ? editForm.targetScale : null,
@@ -734,10 +770,11 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
         ),
       };
 
-      // Save KPI metadata + weekly values in parallel.
-      // For team KPIs, iterate (owner, week) pairs and include userId.
-      // For individual KPIs, keep the per-week loop with no userId (server infers from kpi.owner).
-      const weeklyPromises: Promise<any>[] = [];
+      // Collect weekly inputs WITHOUT starting the requests yet.
+      // Metadata must commit first so the weekly endpoint reads the updated qtdGoal
+      // when recomputing progressPercent — otherwise a race condition leaves it stale.
+      type WeeklyInput = { weekNumber: number; value: number | null; notes: string | null; userId?: string };
+      const weeklyInputs: WeeklyInput[] = [];
       if (isTeamKPI) {
         for (const ownerId of Object.keys(teamWeeklyState)) {
           // Skip owners the actor can't edit (to avoid 403 responses that would roll back the batch)
@@ -745,34 +782,29 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
           if (!canEditThisOwner) continue;
           for (const w of ALL_WEEKS) {
             const { value, notes } = teamWeeklyState[ownerId]?.[w] ?? { value: "", notes: "" };
-            weeklyPromises.push(
-              updateWeekly.mutateAsync({
-                weekNumber: w,
-                value: value !== "" ? parseFloat(value) : null,
-                notes: notes || null,
-                userId: ownerId,
-              })
-            );
+            weeklyInputs.push({ weekNumber: w, value: value !== "" ? parseFloat(value) : null, notes: notes || null, userId: ownerId });
           }
         }
       } else {
         for (const w of ALL_WEEKS) {
-          const { value, notes } = weeklyState[w] ?? { value: "", notes: "" };
-          weeklyPromises.push(
-            updateWeekly.mutateAsync({
-              weekNumber: w,
-              value: value !== "" ? parseFloat(value) : null,
-              notes: notes || null,
-            })
-          );
+          const newWeeklyTarget = parseFloat(editForm.weeklyBreakdown[w]) || 0;
+          if (newWeeklyTarget === 0) {
+            // No target for this week after the save — wipe any existing value + notes
+            // so stale data doesn't persist in the DB or skew stats calculations.
+            weeklyInputs.push({ weekNumber: w, value: null, notes: null });
+          } else {
+            const { value, notes } = weeklyState[w] ?? { value: "", notes: "" };
+            weeklyInputs.push({ weekNumber: w, value: value !== "" ? parseFloat(value) : null, notes: notes || null });
+          }
         }
       }
-      // Skip metadata update when the actor lacks edit permission (server would 403).
-      // This lets users who can still update their own weekly row save without a server error.
-      const metadataPromise = metadataReadOnly
-        ? Promise.resolve()
-        : updateKPI.mutateAsync(kpiPayload);
-      await Promise.all([metadataPromise, ...weeklyPromises]);
+
+      // Step 1: metadata first (skip when actor lacks edit permission — server would 403).
+      if (!metadataReadOnly) {
+        await updateKPI.mutateAsync(kpiPayload);
+      }
+      // Step 2: weekly values in parallel, after metadata is committed.
+      await Promise.all(weeklyInputs.map(input => updateWeekly.mutateAsync(input)));
 
       onRefresh();
       onClose();
@@ -786,7 +818,32 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
   const ownerName = kpi.owner_user
     ? `${kpi.owner_user.firstName} ${kpi.owner_user.lastName}`
     : kpi.owner;
-  const colors = progressColor(kpi.progressPercent ?? 0);
+
+  // Build a live KPI snapshot that reflects the current editForm values so the
+  // Stats tab and header badge show updated numbers without requiring a save first.
+  const liveFormTarget = editForm.target
+    ? (parseFloat(editForm.target) || 0) *
+      (editForm.measurementUnit === "Currency" ? getMultiplier(editForm.currency, editForm.targetScale) : 1)
+    : null;
+  const liveProgressPercent = liveFormTarget != null && liveFormTarget > 0
+    ? ((kpi.qtdAchieved ?? 0) / liveFormTarget) * 100
+    : kpi.progressPercent ?? 0;
+  const liveWeeklyTargets = Object.fromEntries(
+    Object.entries(editForm.weeklyBreakdown).map(([k, v]) => [k, parseFloat(v) || 0])
+  );
+  const statsKpi: KPIRow = {
+    ...kpi,
+    target: liveFormTarget ?? kpi.target,
+    qtdGoal: liveFormTarget ?? kpi.qtdGoal,
+    // Quarterly goal tracks the user-visible target; update it so the tile
+    // shows the new value immediately instead of the old saved one.
+    quarterlyGoal: liveFormTarget ?? kpi.quarterlyGoal,
+    weeklyTargets: liveWeeklyTargets as unknown as typeof kpi.weeklyTargets,
+    progressPercent: liveProgressPercent,
+    status: editForm.status,
+  };
+
+  const colors = progressColor(liveProgressPercent);
 
   const TABS: { key: Tab; label: string }[] = [
     { key: "edit", label: "Edit" },
@@ -809,7 +866,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
                 colors.text === "text-yellow-600" ? "bg-yellow-100 text-yellow-700" :
                 "bg-red-100 text-red-600"
               }`}>
-                {(kpi.progressPercent ?? 0).toFixed(0)}% · {colors.label}
+                {liveProgressPercent.toFixed(0)}% · {colors.label}
               </span>
             </div>
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -862,9 +919,11 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
               setTeamWeeklyState={setTeamWeeklyState}
               currentUserId={currentUserId}
               canEditAnyOwner={canEditAnyOwner}
+              liveFormTarget={liveFormTarget}
+              liveWeeklyTargets={liveWeeklyTargets}
             />
           )}
-          {tab === "stats" && <StatsTab kpi={kpi} />}
+          {tab === "stats" && <StatsTab kpi={statsKpi} />}
         </div>
 
         {/* Footer – always Cancel + Save Changes */}

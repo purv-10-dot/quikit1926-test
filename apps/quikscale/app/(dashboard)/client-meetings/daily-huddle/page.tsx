@@ -18,11 +18,12 @@ import { useFilterContext } from "@/lib/context/FilterContext";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
-  AddButton, EmptyState, Segmented, FilterPicker, UserMultiPicker, type ExportSelection,
+  AddButton, EmptyState, Segmented, FilterPicker, UserMultiPicker, Pagination, type ExportSelection,
 } from "@quikit/ui";
 import { Calendar, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
+import { fmtAuditPayload } from "@/lib/utils/auditLog";
 
 type Status = "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT";
 const STATUS_OPTS: Array<{ value: Status; label: string }> = [
@@ -152,6 +153,13 @@ export default function DailyHuddlePage() {
 
   const activeFilterCount = (filterClientId ? 1 : 0) + (filterStatus ? 1 : 0);
   const clientOptions = useMemo(() => clients.map(c => ({ value: c.id, label: c.name })), [clients]);
+
+  // Pagination — default 10 rows, options 10/20/30/50
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  useEffect(() => { setPage(1); }, [search, filterClientId, filterStatus, viewTrash, pageSize]);
+  const pagedHuddles = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const totalHuddlePages = Math.max(1, Math.ceil(filtered.length / pageSize));
 
   // Adapt ClientMember → PickerUser for UserMultiPicker (splits "name" on first space).
   const memberPickerOptions = useMemo(() => members.map(m => {
@@ -423,7 +431,8 @@ export default function DailyHuddlePage() {
             />
           </div>
         ) : (
-          <div className="h-full overflow-auto">
+          <div className="h-full flex flex-col min-h-0">
+            <div className="flex-1 overflow-auto min-h-0">
             <table className="min-w-full text-xs bg-white">
               <thead className="sticky top-0 bg-accent-50 z-10">
                 <tr>
@@ -450,7 +459,7 @@ export default function DailyHuddlePage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(r => (
+                {pagedHuddles.map(r => (
                   <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
                     <td className="px-3 py-3 text-center">
                       <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)}
@@ -531,6 +540,17 @@ export default function DailyHuddlePage() {
                 ))}
               </tbody>
             </table>
+            </div>
+            {filtered.length > 0 && (
+              <Pagination
+                page={page}
+                totalPages={totalHuddlePages}
+                total={filtered.length}
+                limit={pageSize}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+              />
+            )}
           </div>
         )}
       </div>
@@ -586,11 +606,12 @@ export default function DailyHuddlePage() {
                         <span>{fmtDateTime(entry.createdAt)}</span>
                       </div>
                     </div>
-                    {!!entry.newValue && (
-                      <p className="text-[11px] text-gray-600">
-                        {Object.entries(entry.newValue as Record<string, unknown>).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ")}
-                      </p>
-                    )}
+                    {!!entry.newValue && (() => {
+                      const text = fmtAuditPayload(entry.newValue);
+                      return text ? (
+                        <p className="text-[11px] text-gray-600 break-words">{text}</p>
+                      ) : null;
+                    })()}
                   </li>
                 ))}
               </ul>

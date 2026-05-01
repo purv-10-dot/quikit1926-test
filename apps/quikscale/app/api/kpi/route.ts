@@ -116,6 +116,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
       currency: true,
       targetScale: true,
       reverseColor: true,
+      frequency: true,
       createdAt: true,
       updatedAt: true,
       createdBy: true,
@@ -298,6 +299,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
       currency: validated.currency ?? null,
       targetScale: validated.targetScale ?? null,
       reverseColor: validated.reverseColor ?? false,
+      frequency: validated.frequency ?? "weekly",
       createdBy: userId,
     },
     select: {

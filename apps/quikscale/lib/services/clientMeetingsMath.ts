@@ -80,8 +80,12 @@ function toTime(date: Date, hhmm: string): Date {
 
 /**
  * §7.3 Punctuality:
- * - If override is YES or NA, counts as punctual (spec's override behaviour).
- * - Otherwise: actualStart <= plannedStart + 60s grace.
+ * - Only an explicit YES override counts the call as punctual regardless of
+ *   the clock — that matches "this lateness was sanctioned/planned".
+ *   NA / NO / missing fall through to the time comparison; treating NA as a
+ *   pass was the regression where every held call auto-scored 100% because
+ *   the form defaults `punctualityOverride` to NA.
+ * - Otherwise: actualStart <= plannedStart + 60s grace (inclusive boundary).
  */
 export function isPunctual(
   planned: string | null,
@@ -89,7 +93,7 @@ export function isPunctual(
   date: Date,
   override: "YES" | "NO" | "NA",
 ): boolean {
-  if (override === "YES" || override === "NA") return true;
+  if (override === "YES") return true;
   if (!planned || !actual) return false;
   const plannedT = toTime(date, planned);
   const actualT = toTime(date, actual);

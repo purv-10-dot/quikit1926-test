@@ -13,6 +13,7 @@ import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
+import { Pagination } from "@quikit/ui";
 
 import {
   STATUS_PICKER_OPTIONS,
@@ -198,6 +199,7 @@ interface Props {
   pageSize?: number;
   total?: number;
   onPageChange?: (p: number) => void;
+  onPageSizeChange?: (size: number) => void;
 }
 
 // Column keys: _cb, _log, _id (always visible+frozen) | who, when, what, revisedDate, status, notes
@@ -217,7 +219,7 @@ const WWW_ALWAYS_FROZEN = new Set(["_cb", "_log", "_id"]);
 // Only who/when can be sticky-frozen (they're early in the order)
 const WWW_FREEZABLE = new Set(["who", "when"]);
 
-export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange }: Props) {
+export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange }: Props) {
   const items = maxRows != null ? itemsAll.slice(0, maxRows) : itemsAll;
   const paginationEnabled = page != null && pageSize != null && total != null && onPageChange != null;
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil((total as number) / (pageSize as number))) : 1;
@@ -612,30 +614,16 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         </table>
       </HorizontalScroller>
 
-      {/* Pagination footer (dashboard only) */}
-      {paginationEnabled && (total as number) > 0 && (
-        <div className="flex items-center justify-between px-4 py-2 border-t border-gray-200 bg-white text-xs text-gray-500 flex-shrink-0">
-          <span>
-            Showing {((page as number) - 1) * (pageSize as number) + 1}–{Math.min((page as number) * (pageSize as number), total as number)} of {total} results
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onPageChange?.((page as number) - 1)}
-              disabled={(page as number) === 1}
-              className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <span>Page {page} of {totalPages}</span>
-            <button
-              onClick={() => onPageChange?.((page as number) + 1)}
-              disabled={(page as number) >= totalPages}
-              className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
+      {/* Pagination footer */}
+      {paginationEnabled && (
+        <Pagination
+          page={page as number}
+          totalPages={totalPages}
+          total={total as number}
+          limit={pageSize as number}
+          onPageChange={onPageChange as (p: number) => void}
+          onPageSizeChange={onPageSizeChange}
+        />
       )}
 
       {editItem && (

@@ -19,6 +19,7 @@ import {
   RightPanelFooter,
   RightPanelCancelButton,
   RightPanelSubmitButton,
+  Pagination,
 } from "@quikit/ui";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
@@ -695,6 +696,13 @@ export default function OrgUsersPage() {
   const filterCount =
     (roleFilter ? 1 : 0) + (statusFilter !== "active" ? 1 : 0);
 
+  // Pagination — default 10 rows, options 10/20/30/50
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  useEffect(() => { setPage(1); }, [crud.search, roleFilter, statusFilter, pageSize]);
+  const pagedUsers = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const totalUserPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
   return (
     <div className="flex flex-col h-full bg-gray-50">
       {/* ── Header ── */}
@@ -799,7 +807,8 @@ export default function OrgUsersPage() {
       </div>
 
       {/* ── Table ── */}
-      <div className="flex-1 overflow-auto min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 overflow-auto min-h-0">
         <table className="w-full border-collapse" style={{ minWidth: 860 }}>
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
@@ -849,7 +858,7 @@ export default function OrgUsersPage() {
                 </td>
               </tr>
             ) : (
-              filtered.map((u) => {
+              pagedUsers.map((u) => {
                 const full = `${u.firstName} ${u.lastName}`;
                 const color = avatarColor(full);
                 const teamNames = u.teamNames?.length
@@ -949,6 +958,17 @@ export default function OrgUsersPage() {
             )}
           </tbody>
         </table>
+        </div>
+        {filtered.length > 0 && (
+          <Pagination
+            page={page}
+            totalPages={totalUserPages}
+            total={filtered.length}
+            limit={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        )}
       </div>
 
       {/* ── Panel ── */}

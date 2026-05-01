@@ -141,11 +141,11 @@ export const updateWeeklyMeetingSchema = createWeeklyMeetingSchema.partial();
 /// Per-member KPI scores (Update tab grid in image 1).
 export const weeklyMemberScoreSchema = z.object({
   userId: z.string().min(1),
-  kpiWeeklyQTD: z.number().min(0).max(1000).default(0),
-  kpiCoding: z.number().min(0).max(1000).default(0),
-  priorityNotes: z.number().min(0).max(1000).default(0),
-  priorityStartEndDate: z.number().min(0).max(1000).default(0),
-  priorityColor: z.number().min(0).max(1000).default(0),
+  kpiWeeklyQTD: z.number().min(0).max(100).default(0),
+  kpiCoding: z.number().min(0).max(100).default(0),
+  priorityNotes: z.number().min(0).max(100).default(0),
+  priorityStartEndDate: z.number().min(0).max(100).default(0),
+  priorityColor: z.number().min(0).max(100).default(0),
 });
 
 /// PATCH body for a single member's scores. userId comes from URL, not body.

@@ -40,7 +40,7 @@ export default function IndividualKPIPage() {
   // Filters — merges context-driven year/quarter with page-local params like page + sort.
   const [filters, setFilters] = useState<Partial<KPIListParams> & { includeDeleted?: boolean }>({
     page: 1,
-    pageSize: 50,
+    pageSize: 10,
     year: ctxYear,
     quarter: ctxQuarter,
     kpiLevel: "individual", // Isolation: keep team KPIs out of the Individual KPI page
@@ -89,7 +89,6 @@ export default function IndividualKPIPage() {
       status: (filterStatus as any) || undefined,
       owner: filterOwner || undefined,
       teamId: filterTeam && !filterOwner ? filterTeam : undefined,
-      pageSize: 50,
       page: 1,
     }));
   }, [filterStatus, filterOwner, filterTeam]);
@@ -367,10 +366,11 @@ export default function IndividualKPIPage() {
             kpis={kpis}
             total={total}
             page={filters.page ?? 1}
-            pageSize={filters.pageSize ?? 50}
+            pageSize={filters.pageSize ?? 10}
             year={currentYear}
             quarter={currentQuarter}
             onPageChange={(p) => setFilters(f => ({ ...f, page: p }))}
+            onPageSizeChange={(size) => setFilters(f => ({ ...f, pageSize: size, page: 1 }))}
             onSort={(col, dir) => setFilters(f => ({ ...f, sortBy: col as any, sortOrder: dir, page: 1 }))}
             onRefresh={refetch}
             onSelectionChange={handleSelectionChange}

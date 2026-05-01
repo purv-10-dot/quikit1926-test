@@ -57,6 +57,7 @@ export interface KPIRow {
   currency?: string | null;
   targetScale?: string | null;
   reverseColor?: boolean;
+  frequency?: string;
   // Team KPI per-owner weekly targets: { userId: { weekNumber: value } }
   weeklyOwnerTargets?: Record<string, Record<string, number>> | null;
   // weeklyValues for team KPIs is the aggregated (sum) per-week view built by the API

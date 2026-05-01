@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { invalidateFiscalYearsCache } from "@/lib/hooks/useFiscalYears";
 import {
-  RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
+  RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, Pagination,
 } from "@quikit/ui";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
@@ -637,9 +637,17 @@ export default function QuarterSettingsPage() {
   const fyLabel    = selectedYear ? `FY ${selectedYear}-${String(selectedYear + 1).slice(-2)}` : "—";
   const activeFilters = (filterQ ? 1 : 0);
 
+  // Pagination — default 10 rows, options 10/20/30/50
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  useEffect(() => { setPage(1); }, [selectedYear, search, filterQ, pageSize]);
+  const pagedQuarters = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const totalQuarterPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
   /* ── Table view ── */
   const TableView = () => (
-    <div className="flex-1 overflow-auto min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div className="flex-1 overflow-auto min-h-0">
       <table className="border-separate border-spacing-0 text-xs" style={{ minWidth: 600, width: "100%" }}>
         <thead className="sticky top-0 z-30">
           <tr>
@@ -671,7 +679,7 @@ export default function QuarterSettingsPage() {
                 </div>
               </td>
             </tr>
-          ) : filtered.map((row, idx) => {
+          ) : pagedQuarters.map((row, idx) => {
             const isQ1 = row.quarter === "Q1";
             return (
             <tr
@@ -687,7 +695,7 @@ export default function QuarterSettingsPage() {
                   className="rounded border-gray-300 text-accent-600 cursor-pointer"
                 />
               </td>
-              <td className="px-3 py-2 border-b border-r border-gray-100 text-xs font-semibold text-accent-600">{idx + 1}</td>
+              <td className="px-3 py-2 border-b border-r border-gray-100 text-xs font-semibold text-accent-600">{(page - 1) * pageSize + idx + 1}</td>
               <td className="px-3 py-2 border-b border-r border-gray-100"><QuarterBadge quarter={row.quarter} /></td>
               <td className="px-3 py-2 border-b border-r border-gray-100 text-xs text-gray-700">{fmtDate(row.startDate)}</td>
               <td className="px-3 py-2 border-b border-r border-gray-100 text-xs text-gray-700">{fmtDate(row.endDate)}</td>
@@ -713,6 +721,17 @@ export default function QuarterSettingsPage() {
           );})}
         </tbody>
       </table>
+      </div>
+      {filtered.length > 0 && (
+        <Pagination
+          page={page}
+          totalPages={totalQuarterPages}
+          total={filtered.length}
+          limit={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      )}
     </div>
   );
 

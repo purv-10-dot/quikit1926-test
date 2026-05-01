@@ -20,7 +20,7 @@
  *   </HorizontalScroller>
  */
 
-import { useEffect, useId, useRef, useState, useCallback, type ReactNode, type CSSProperties } from "react";
+import { useEffect, useRef, useState, useCallback, type ReactNode, type CSSProperties } from "react";
 
 interface Props {
   children: ReactNode;
@@ -55,9 +55,6 @@ export function HorizontalScroller({
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
-  // Generated DOM id for the scroll container so the custom scrollbar
-  // (role="scrollbar") can reference it via aria-controls per ARIA spec.
-  const scrollerId = useId();
   const [metrics, setMetrics] = useState({ scrollLeft: 0, scrollWidth: 0, clientWidth: 0 });
   const [dragging, setDragging] = useState(false);
 
@@ -134,11 +131,10 @@ export function HorizontalScroller({
     : (thumbClassName ?? "bg-accent-400 group-hover:bg-accent-500");
 
   return (
-    <div className={`flex flex-col ${className}`}>
+    <div className={`flex flex-col min-h-0 ${className}`}>
       <div className="relative flex-1 min-h-0">
         <div
           ref={scrollRef}
-          id={scrollerId}
           className={`h-full overflow-auto horizontal-scroller-hide ${innerClassName}`}
           style={innerStyle}
         >
@@ -165,7 +161,6 @@ export function HorizontalScroller({
         <div
           ref={trackRef}
           role="scrollbar"
-          aria-controls={scrollerId}
           aria-orientation="horizontal"
           aria-valuemin={0}
           aria-valuemax={100}

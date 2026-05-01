@@ -88,6 +88,12 @@ export default function WWWPage() {
     );
   });
 
+  // Pagination state — default 10 rows per page; selectable 10/20/30/50.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  useEffect(() => { setPage(1); }, [filterWho, filterTeam, filterStatus, search, viewTrash, pageSize]);
+  const pagedItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+
   const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterWho ? 1 : 0);
 
   const handleWwwExport = useCallback(async (sel: ExportSelection) => {
@@ -278,9 +284,14 @@ export default function WWWPage() {
           </div>
         ) : (
           <WWWTable
-            items={filtered}
+            items={pagedItems}
             onRefresh={refetch}
             onSelectionChange={handleSelectionChange}
+            page={page}
+            pageSize={pageSize}
+            total={filtered.length}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
           />
         )}
       </div>
