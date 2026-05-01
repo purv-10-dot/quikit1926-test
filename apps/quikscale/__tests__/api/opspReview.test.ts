@@ -32,6 +32,10 @@ function asAdmin() {
     role: "admin",
     status: "active",
   } as any);
+  // Route calls these unconditionally / conditionally — shared default to empty
+  // so individual tests only override when shape matters.
+  mockDb.categoryMaster.findMany.mockResolvedValue([] as any);
+  mockDb.user.findMany.mockResolvedValue([] as any);
 }
 
 function mockOPSP(overrides: Record<string, unknown> = {}) {
