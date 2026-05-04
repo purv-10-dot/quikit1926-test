@@ -25,11 +25,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -60,8 +60,8 @@ describe("GET /api/performance/goals — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(403);
   });
@@ -107,7 +107,7 @@ describe("GET /api/performance/goals — happy path", () => {
     // Verify tenant isolation
     expect(mockDb.goal.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: TENANT }),
+        where: expect.objectContaining({ orgId: TENANT }),
       }),
     );
   });
@@ -124,8 +124,8 @@ describe("POST /api/performance/goals — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST(validBody), { params: {} as any });
     expect(res.status).toBe(403);
   });
@@ -173,15 +173,15 @@ describe("POST /api/performance/goals — owner membership", () => {
   beforeEach(asAdmin);
 
   it("returns 400 when owner is not an active member", async () => {
-    // The first mockDb.membership.findFirst resolves for asAdmin().
+    // The first mockDb.orgMember.findFirst resolves for asAdmin().
     // The second call (owner membership check) needs to return null.
-    // Since withTenantAuth uses getTenantId which calls findFirst once,
+    // Since withOrgAuth uses getTenantId which calls findFirst once,
     // we override the second call for the owner membership check.
-    mockDb.membership.findFirst
+    mockDb.orgMember.findFirst
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
@@ -203,10 +203,10 @@ describe("POST /api/performance/goals — parentGoalId validation", () => {
 
   it("returns 404 when parentGoalId does not exist in tenant", async () => {
     // Owner membership OK
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
@@ -232,10 +232,10 @@ describe("POST /api/performance/goals — happy path", () => {
 
   it("creates a goal with 201", async () => {
     // Owner membership OK
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
@@ -259,10 +259,10 @@ describe("POST /api/performance/goals — happy path", () => {
   });
 
   it("auto-computes progressPercent when targetValue and currentValue are set", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
@@ -284,7 +284,7 @@ describe("POST /api/performance/goals — happy path", () => {
 
     const createArg = (mockDb.goal.create as any).mock.calls[0][0];
     expect(createArg.data.progressPercent).toBe(50);
-    expect(createArg.data.tenantId).toBe(TENANT);
+    expect(createArg.data.orgId).toBe(TENANT);
     expect(createArg.data.createdBy).toBe(USER);
   });
 });

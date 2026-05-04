@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, ANALYST_ROLES } from "@/lib/rbac";
 
 const patchSchema = z.object({
@@ -24,10 +24,10 @@ const patchSchema = z.object({
   fundingAskLakhs: z.number().int().nonnegative().nullable().optional(),
 });
 
-export const GET = withTenantAuth(
-  async ({ tenantId }, _req: NextRequest, { params }: { params: { id: string } }) => {
+export const GET = withOrgAuth(
+  async ({ orgId }, _req: NextRequest, { params }: { params: { id: string } }) => {
     const item = await db.vCSourcedOpportunity.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       include: { vertical: { select: { id: true, name: true } } },
     });
     if (!item) {
@@ -40,9 +40,9 @@ export const GET = withTenantAuth(
   },
 );
 
-export const PATCH = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), ANALYST_ROLES);
+export const PATCH = withOrgAuth(
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = denyIfNotInRoles(await getVCRole(userId, orgId), ANALYST_ROLES);
     if (denied) return denied;
 
     const parsed = patchSchema.safeParse(await req.json());
@@ -53,7 +53,7 @@ export const PATCH = withTenantAuth(
       );
     }
     const item = await db.vCSourcedOpportunity.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true },
     });
     if (!item) {

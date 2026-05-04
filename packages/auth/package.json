@@ -13,7 +13,11 @@
     "./require-super-admin": "./require-super-admin.ts",
     "./get-tenant-id": "./get-tenant-id.ts",
     "./feature-gate": "./feature-gate.ts",
-    "./cache": "./cache.ts"
+    "./cache": "./cache.ts",
+    "./jwt": "./jwt.ts",
+    "./with-auth": "./with-auth.ts",
+    "./verify-token-remote": "./verify-token-remote.ts",
+    "./session-store": "./session-store.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -22,6 +26,7 @@
   },
   "dependencies": {
     "@quikit/database": "*",
+    "@quikit/redis": "*",
     "@quikit/shared": "*",
     "bcryptjs": "^2.4.3",
     "next-auth": "^4.24.0"

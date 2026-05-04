@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
 const postSchema = z.object({
   dealId: z.string().min(1),
@@ -12,7 +12,7 @@ const postSchema = z.object({
   mitigation: z.string().max(4000).optional(),
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const parsed = postSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -22,12 +22,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   }
   const data = parsed.data;
 
-  const deal = await db.vCDeal.findFirst({ where: { id: data.dealId, tenantId } });
+  const deal = await db.vCDeal.findFirst({ where: { id: data.dealId, orgId } });
   if (!deal) return NextResponse.json({ success: false, error: "Deal not found" }, { status: 404 });
 
   const signal = await db.vCDealSignal.create({
     data: {
-      tenantId,
+      orgId,
       dealId: data.dealId,
       severity: data.severity,
       source: "manual",
@@ -43,7 +43,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   await db.vCTimelineEvent.create({
     data: {
-      tenantId,
+      orgId,
       dealId: data.dealId,
       type: "risk-added",
       actorId: userId,

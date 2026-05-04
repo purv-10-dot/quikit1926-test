@@ -30,16 +30,16 @@ interface Data {
   };
 }
 
-export function AnalyticsPanel({ tenantId }: { tenantId: string }) {
+export function AnalyticsPanel({ orgId }: { orgId: string }) {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
 
   useOnceEffect(() => {
-    fetch(`/api/super/analytics/tenant/${tenantId}`)
+    fetch(`/api/super/analytics/org/${orgId}`)
       .then((r) => r.json())
       .then((j) => j.success && setData(j.data))
       .finally(() => setLoading(false));
-  }, [tenantId]);
+  }, [orgId]);
 
   if (loading) return <div className="text-gray-400 text-sm">Loading analytics...</div>;
   if (!data) return null;

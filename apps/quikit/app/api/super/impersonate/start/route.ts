@@ -2,7 +2,7 @@
  * SA-D.2 — Start an impersonation session.
  *
  * POST /api/super/impersonate/start
- *   Body: { targetUserId, targetTenantId, targetAppSlug, reason? }
+ *   Body: { targetUserId, targetOrgId, targetAppSlug, reason? }
  *
  * Creates an Impersonation row with a single-use token (2h expiry), writes
  * an audit log entry, and returns { redirectUrl } — a deep link to the
@@ -51,23 +51,23 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
   try {
     const body = await req.json();
     const targetUserId = typeof body.targetUserId === "string" ? body.targetUserId : null;
-    const targetTenantId = typeof body.targetTenantId === "string" ? body.targetTenantId : null;
+    const targetOrgId = typeof body.targetOrgId === "string" ? body.targetOrgId : null;
     const targetAppSlug = typeof body.targetAppSlug === "string" ? body.targetAppSlug : null;
     const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 500) : null;
 
-    if (!targetUserId || !targetTenantId || !targetAppSlug) {
+    if (!targetUserId || !targetOrgId || !targetAppSlug) {
       return NextResponse.json(
-        { success: false, error: "targetUserId, targetTenantId, and targetAppSlug are required" },
+        { success: false, error: "targetUserId, targetOrgId, and targetAppSlug are required" },
         { status: 400 },
       );
     }
 
     // Validate: target user must have an active membership in the target tenant.
-    const membership = await db.membership.findFirst({
-      where: { userId: targetUserId, tenantId: targetTenantId, status: "active" },
+    const membership = await db.orgMember.findFirst({
+      where: { userId: targetUserId, orgId: targetOrgId, status: "active" },
       include: {
         user: { select: { id: true, email: true, firstName: true, lastName: true } },
-        tenant: { select: { id: true, name: true } },
+        org: { select: { id: true, name: true } },
       },
     });
     if (!membership) {
@@ -120,7 +120,7 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
       data: {
         superAdminId: auth.userId,
         targetUserId,
-        targetTenantId,
+        targetOrgId,
         targetAppSlug,
         token,
         expiresAt,
@@ -130,14 +130,14 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
     });
 
     logAudit({
-      tenantId: targetTenantId,
+      orgId: targetOrgId,
       actorId: auth.userId,
       action: "CREATE",
       entityType: "Impersonation",
       entityId: impersonation.id,
       newValues: JSON.stringify({
         targetUserId,
-        targetTenantId,
+        targetOrgId,
         targetAppSlug,
         targetEmail: targetUser?.email,
         reason,
@@ -156,7 +156,7 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
         target: {
           userEmail: membership.user.email,
           userName: `${membership.user.firstName} ${membership.user.lastName}`.trim(),
-          tenantName: membership.tenant.name,
+          orgName: membership.org.name,
           appName: app.name,
         },
       },

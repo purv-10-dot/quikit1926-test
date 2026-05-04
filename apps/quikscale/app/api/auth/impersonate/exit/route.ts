@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     const session = await getServerSession(authOptions);
     const isImp = session?.user?.impersonating === true;
-    const tenantId = session?.user?.tenantId ?? null;
+    const orgId = session?.user?.orgId ?? null;
     const userId = session?.user?.id ?? null;
     const impersonatorUserId = session?.user?.impersonatorUserId ?? null;
 
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       try {
         await db.sessionEvent.create({
           data: {
-            tenantId,
+            orgId,
             userId,
             event: "impersonation_end",
             appSlug: "quikscale",

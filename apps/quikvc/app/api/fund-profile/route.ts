@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { FUND_ADMIN_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 
@@ -23,15 +23,15 @@ const putSchema = z.object({
   dailyBriefHour: z.number().int().min(0).max(23).optional(),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const profile = await db.vCFundProfile.findUnique({
-    where: { tenantId },
+    where: { orgId },
   });
   return NextResponse.json({ success: true, data: profile });
 });
 
-export const PUT = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = await requireRoleOrAudit(userId, tenantId, FUND_ADMIN_ROLES, {
+export const PUT = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = await requireRoleOrAudit(userId, orgId, FUND_ADMIN_ROLES, {
     action: "fund-profile.update",
     req,
   });
@@ -46,10 +46,10 @@ export const PUT = withTenantAuth(async ({ tenantId, userId }, req: NextRequest)
   }
 
   const profile = await db.vCFundProfile.upsert({
-    where: { tenantId },
+    where: { orgId },
     update: { ...parsed.data, updatedBy: userId },
     create: {
-      tenantId,
+      orgId,
       fundName: parsed.data.fundName ?? "Fund I",
       ...parsed.data,
       createdBy: userId,
@@ -58,7 +58,7 @@ export const PUT = withTenantAuth(async ({ tenantId, userId }, req: NextRequest)
   });
 
   await audit({
-    tenantId,
+    orgId,
     userId,
     action: "fund-profile.update",
     metadata: { keys: Object.keys(parsed.data) },

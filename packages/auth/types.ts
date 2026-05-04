@@ -5,7 +5,7 @@ declare module "next-auth" {
     user: {
       id: string;
       email: string;
-      tenantId?: string;
+      orgId?: string;
       membershipRole?: string;
       membershipInvalid?: boolean;
       isSuperAdmin?: boolean;
@@ -31,11 +31,13 @@ declare module "next-auth/jwt" {
   interface JWT {
     id?: string;
     email?: string;
-    tenantId?: string;
+    orgId?: string;
     membershipRole?: string;
     membershipCheckedAt?: number;
     membershipInvalid?: boolean;
     isSuperAdmin?: boolean;
+    sessionId?: string;
+    sessionTouchedAt?: number;
     impersonating?: boolean;
     impersonatorUserId?: string;
     impersonatorEmail?: string;

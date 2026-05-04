@@ -14,6 +14,8 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "dev:quikscale": "turbo dev --filter=quikscale",
+    "dev:auth": "turbo dev --filter=auth",
+    "dev:quikit": "turbo dev --filter=quikit",
     "dev:admin": "turbo dev --filter=admin",
     "dev:super-admin": "turbo dev --filter=super-admin",
     "db:push": "cd packages/database && npx prisma db push",

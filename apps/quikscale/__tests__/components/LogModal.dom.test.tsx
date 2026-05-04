@@ -97,7 +97,7 @@ function buildKPI(partial: Partial<KPIRow> = {}): KPIRow {
 }
 
 beforeEach(() => {
-  setSession({ id: "user-1", tenantId: "t-1", role: "admin" });
+  setSession({ id: "user-1", orgId: "t-1", role: "admin" });
   pastWeekFlagsState = { canAddPastWeek: false, canEditPastWeek: false, loaded: true };
   mockUpdateKPIMutate.mockClear();
   mockUpdateWeeklyMutate.mockClear();

@@ -7,7 +7,7 @@ function makeKPI(
 ): KPIRow {
   return {
     id: "kpi-1",
-    tenantId: "t-1",
+    orgId: "t-1",
     name: "Test KPI",
     target: 100,
     qtdGoal: 100,

@@ -2,7 +2,7 @@
  * QuikIT super-admin wrapper that combines requireSuperAdmin + API-call logging.
  *
  * Covers every /api/super/* route. Logs to ApiCall with appSlug="quikit".
- * tenantId in the log is always null for super-admin calls (they operate
+ * orgId in the log is always null for super-admin calls (they operate
  * across tenants, not from within one), but userId is populated.
  */
 
@@ -80,7 +80,7 @@ export function withSuperAdminAuth<Params = Record<string, never>>(handler: Hand
     }
 
     void logApiCall({
-      tenantId: null,
+      orgId: null,
       userId: userIdForLog,
       appSlug: "quikit",
       method: req.method,

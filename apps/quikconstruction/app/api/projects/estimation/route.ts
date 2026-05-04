@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { estimationCreateSchema } from "@/lib/schemas/projects-4b";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const list = await db.cnEstimation.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null, ...(projectId ? { projectId } : {}) },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null, ...(projectId ? { projectId } : {}) },
     include: {
       project: { select: { id: true, name: true, code: true } },
       _count: { select: { items: true } },
@@ -19,12 +19,12 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = estimationCreateSchema.parse(body);
-  const project = await db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } });
+  const project = await db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } });
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
-  const dup = await db.cnEstimation.findFirst({ where: { tenantId, estimationNumber: input.estimationNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnEstimation.findFirst({ where: { orgId, estimationNumber: input.estimationNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Estimation '${input.estimationNumber}' already exists` }, { status: 409 });
 
   let subtotal = 0, taxAmount = 0;
@@ -38,7 +38,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const est = await db.$transaction(async (tx) => {
     const created = await tx.cnEstimation.create({
       data: {
-        tenantId, projectId: input.projectId,
+        orgId, projectId: input.projectId,
         estimationNumber: input.estimationNumber,
         estimationDate: new Date(input.estimationDate),
         subtotal, taxAmount, total: subtotal + taxAmount,

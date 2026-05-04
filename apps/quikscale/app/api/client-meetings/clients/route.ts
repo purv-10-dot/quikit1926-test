@@ -1,21 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { createClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.clients");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.clients");
 
 /**
  * GET /api/client-meetings/clients
  *   ?includeDeleted=true → return ONLY soft-deleted rows (trash view).
  */
-export const GET = withTenantAuth(async ({ tenantId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
   const rows = await db.client.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     orderBy: { createdAt: "asc" },
     include: {
       teamMembers: { include: { member: { select: { id: true, name: true, email: true } } } },
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
-    const { tenantId, userId } = auth as { tenantId: string; userId: string };
+    const { orgId, userId } = auth as { orgId: string; userId: string };
 
     const parsed = createClientSchema.safeParse(await request.json());
     if (!parsed.success) {
@@ -79,14 +79,14 @@ export async function POST(request: NextRequest) {
     }
     const d = parsed.data;
 
-    const existing = await db.client.findFirst({ where: { tenantId, name: d.name, deletedAt: null } });
+    const existing = await db.client.findFirst({ where: { orgId, name: d.name, deletedAt: null } });
     if (existing)
       return NextResponse.json({ success: false, error: "A client with that name already exists" }, { status: 409 });
 
     // Confirm all requested team members exist for this tenant.
     if (d.teamMemberIds.length) {
       const validIds = await db.clientMember.findMany({
-        where: { id: { in: d.teamMemberIds }, tenantId, deletedAt: null },
+        where: { id: { in: d.teamMemberIds }, orgId, deletedAt: null },
         select: { id: true },
       });
       if (validIds.length !== d.teamMemberIds.length)
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     const created = await db.client.create({
       data: {
-        tenantId,
+        orgId,
         name: d.name,
         description: d.description ?? null,
         isActive: d.isActive,
@@ -106,13 +106,13 @@ export async function POST(request: NextRequest) {
         dailyEndTime:    d.dailyEndTime ?? null,
         createdBy: userId,
         teamMembers: {
-          create: d.teamMemberIds.map(cmId => ({ tenantId, clientMemberId: cmId })),
+          create: d.teamMemberIds.map(cmId => ({ orgId, clientMemberId: cmId })),
         },
       },
     });
 
     await writeAuditLog({
-      tenantId, actorId: userId, action: "CREATE",
+      orgId, actorId: userId, action: "CREATE",
       entityType: "Client", entityId: created.id,
       newValues: {
         name: created.name,

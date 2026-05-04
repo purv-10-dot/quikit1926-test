@@ -117,7 +117,7 @@ async function main() {
   ];
 
   for (const m of membershipData) {
-    await db.membership.upsert({
+    await db.orgMember.upsert({
       where: { tenantId_userId: { tenantId: TENANT, userId: m.userId } },
       update: {},
       create: { tenantId: TENANT, ...m, status: "active" },
@@ -125,7 +125,7 @@ async function main() {
   }
 
   // Fix Sarim's membership to assign to sales team
-  await db.membership.update({
+  await db.orgMember.update({
     where: { tenantId_userId: { tenantId: TENANT, userId: EXISTING.sarim } },
     data: { teamId: TEAMS.sales },
   });

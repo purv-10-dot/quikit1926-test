@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.cycle");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.cycle");
 
 /**
  * GET /api/performance/cycle
@@ -44,14 +44,14 @@ function computePhaseFromDate(
   return "manager-review";
 }
 
-export const GET = withTenantAuth(
-  async ({ tenantId, userId }) => {
+export const GET = withOrgAuth(
+  async ({ orgId, userId }) => {
     const today = new Date();
 
     // 1. Find the current quarter (the one containing today)
     const currentQuarter = await db.quarterSetting.findFirst({
       where: {
-        tenantId,
+        orgId,
         startDate: { lte: today },
         endDate: { gte: today },
       },
@@ -91,7 +91,7 @@ export const GET = withTenantAuth(
     // 2. Find this user's review for the current quarter (if any)
     const userReview = await db.performanceReview.findFirst({
       where: {
-        tenantId,
+        orgId,
         revieweeId: userId,
         quarter: currentQuarter.quarter,
         year: currentQuarter.fiscalYear,
@@ -109,7 +109,7 @@ export const GET = withTenantAuth(
     const [activeGoalsCount, totalGoalsCount] = await Promise.all([
       db.goal.count({
         where: {
-          tenantId,
+          orgId,
           ownerId: userId,
           year: currentQuarter.fiscalYear,
           quarter: currentQuarter.quarter,
@@ -118,7 +118,7 @@ export const GET = withTenantAuth(
       }),
       db.goal.count({
         where: {
-          tenantId,
+          orgId,
           ownerId: userId,
           year: currentQuarter.fiscalYear,
           quarter: currentQuarter.quarter,
@@ -131,7 +131,7 @@ export const GET = withTenantAuth(
       await Promise.all([
         db.performanceReview.count({
           where: {
-            tenantId,
+            orgId,
             quarter: currentQuarter.quarter,
             year: currentQuarter.fiscalYear,
             status: { in: ["draft", "self-assessment", "manager-review"] },
@@ -139,7 +139,7 @@ export const GET = withTenantAuth(
         }),
         db.performanceReview.count({
           where: {
-            tenantId,
+            orgId,
             quarter: currentQuarter.quarter,
             year: currentQuarter.fiscalYear,
             status: { in: ["approved", "shared", "signed", "finalized"] },
@@ -147,7 +147,7 @@ export const GET = withTenantAuth(
         }),
         db.goal.count({
           where: {
-            tenantId,
+            orgId,
             year: currentQuarter.fiscalYear,
             quarter: currentQuarter.quarter,
             status: { in: ["active", "on-track", "at-risk"] },

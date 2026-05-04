@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
 /**
  * GET /api/finance/summary — AR + AP snapshot.
@@ -11,16 +11,16 @@ const withTenantAuth = withTenantAuthForModule("finance");
  * AP (Accounts Payable)    = outstanding on non-cancelled bills (total - paidAmount)
  * Also returns overdue sub-totals (dueDate < today, status ≠ paid/cancelled).
  */
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const today = new Date();
 
   const [invoices, bills] = await Promise.all([
     db.cnClientInvoice.findMany({
-      where: { tenantId, deletedAt: null, status: { not: "cancelled" } },
+      where: { orgId, deletedAt: null, status: { not: "cancelled" } },
       select: { total: true, paidAmount: true, dueDate: true, status: true },
     }),
     db.cnVendorBill.findMany({
-      where: { tenantId, deletedAt: null, status: { not: "cancelled" } },
+      where: { orgId, deletedAt: null, status: { not: "cancelled" } },
       select: { total: true, paidAmount: true, dueDate: true, status: true },
     }),
   ]);
@@ -43,10 +43,10 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
   );
 
   const [invoiceCount, billCount, receiptCount, paymentCount] = await Promise.all([
-    db.cnClientInvoice.count({ where: { tenantId, deletedAt: null } }),
-    db.cnVendorBill.count({ where: { tenantId, deletedAt: null } }),
-    db.cnClientReceipt.count({ where: { tenantId, deletedAt: null } }),
-    db.cnVendorPayment.count({ where: { tenantId, deletedAt: null } }),
+    db.cnClientInvoice.count({ where: { orgId, deletedAt: null } }),
+    db.cnVendorBill.count({ where: { orgId, deletedAt: null } }),
+    db.cnClientReceipt.count({ where: { orgId, deletedAt: null } }),
+    db.cnVendorPayment.count({ where: { orgId, deletedAt: null } }),
   ]);
 
   return NextResponse.json({

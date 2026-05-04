@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { debitNoteSchema } from "@/lib/schemas/finance";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const vendorId = req.nextUrl.searchParams.get("vendorId") || undefined;
   const list = await db.cnDebitNote.findMany({
-    where: { tenantId, deletedAt: null, ...(vendorId ? { vendorId } : {}) },
+    where: { orgId, deletedAt: null, ...(vendorId ? { vendorId } : {}) },
     include: {
       vendor: { select: { id: true, name: true, code: true } },
       bill: { select: { id: true, billNumber: true } },
@@ -23,18 +23,18 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
  * POST /api/finance/debit-notes — reduces a vendor bill's outstanding. Same
  * pattern as credit-note but against CnVendorBill.
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = debitNoteSchema.parse(await req.json());
-  const dup = await db.cnDebitNote.findFirst({ where: { tenantId, noteNumber: input.noteNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnDebitNote.findFirst({ where: { orgId, noteNumber: input.noteNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Debit note '${input.noteNumber}' already exists` }, { status: 409 });
 
-  const vendor = await db.cnVendor.findFirst({ where: { id: input.vendorId, tenantId }, select: { id: true } });
+  const vendor = await db.cnVendor.findFirst({ where: { id: input.vendorId, orgId }, select: { id: true } });
   if (!vendor) return NextResponse.json({ success: false, error: "Vendor not found" }, { status: 400 });
 
   let billId: string | null = null;
   if (input.billId) {
     const b = await db.cnVendorBill.findFirst({
-      where: { id: input.billId, tenantId, vendorId: input.vendorId, deletedAt: null },
+      where: { id: input.billId, orgId, vendorId: input.vendorId, deletedAt: null },
       select: { id: true, total: true, paidAmount: true, status: true },
     });
     if (!b) return NextResponse.json({ success: false, error: "Bill not found or vendor mismatch" }, { status: 400 });
@@ -47,7 +47,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const result = await db.$transaction(async (tx) => {
     const note = await tx.cnDebitNote.create({
       data: {
-        tenantId, noteNumber: input.noteNumber,
+        orgId, noteNumber: input.noteNumber,
         vendorId: input.vendorId, billId,
         noteDate: new Date(input.noteDate),
         amount: input.amount, reason: input.reason,
@@ -63,7 +63,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
       const status = newPaid >= total - 0.01 ? "paid" : "partial";
       await tx.cnVendorBill.update({ where: { id: billId }, data: { paidAmount: newPaid, status } });
     }
-    await logAudit({ tenantId, userId, actionType: "create", entityType: "cnDebitNote", entityId: note.id, entityRef: note.noteNumber, newValues: note, tx });
+    await logAudit({ orgId, userId, actionType: "create", entityType: "cnDebitNote", entityId: note.id, entityRef: note.noteNumber, newValues: note, tx });
     return note;
   });
   return NextResponse.json({ success: true, data: result }, { status: 201 });

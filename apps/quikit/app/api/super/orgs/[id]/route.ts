@@ -13,7 +13,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _request, { 
   try {
     const { id } = params;
 
-    const tenant = await db.tenant.findUnique({
+    const org = await db.org.findUnique({
       where: { id },
       include: {
         _count: { select: { users: true, teams: true, userAppAccess: true } },
@@ -29,14 +29,14 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _request, { 
       },
     });
 
-    if (!tenant) {
+    if (!org) {
       return NextResponse.json(
         { success: false, error: "Organization not found" },
         { status: 404 },
       );
     }
 
-    return NextResponse.json({ success: true, data: tenant });
+    return NextResponse.json({ success: true, data: org });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -59,7 +59,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async ({ userId }, reque
       );
     }
 
-    const existing = await db.tenant.findUnique({ where: { id } });
+    const existing = await db.org.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "Organization not found" },
@@ -76,7 +76,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async ({ userId }, reque
     if (billingEmail !== undefined) updateData.billingEmail = billingEmail;
     if (description !== undefined) updateData.description = description;
 
-    const tenant = await db.tenant.update({
+    const org = await db.org.update({
       where: { id },
       data: updateData,
     });
@@ -86,12 +86,12 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async ({ userId }, reque
       entityType: "tenant",
       entityId: id,
       actorId: userId,
-      tenantId: id,
+      orgId: id,
       oldValues: JSON.stringify({ name: existing.name, plan: existing.plan, status: existing.status }),
       newValues: JSON.stringify(updateData),
     });
 
-    return NextResponse.json({ success: true, data: tenant });
+    return NextResponse.json({ success: true, data: org });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -105,7 +105,7 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async ({ userId }, _req
   try {
     const { id } = params;
 
-    const existing = await db.tenant.findUnique({ where: { id } });
+    const existing = await db.org.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "Organization not found" },
@@ -113,7 +113,7 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async ({ userId }, _req
       );
     }
 
-    await db.tenant.update({
+    await db.org.update({
       where: { id },
       data: { status: "suspended" },
     });
@@ -123,14 +123,14 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async ({ userId }, _req
       entityType: "tenant",
       entityId: id,
       actorId: userId,
-      tenantId: id,
+      orgId: id,
       oldValues: JSON.stringify({ status: existing.status }),
       newValues: JSON.stringify({ status: "suspended" }),
     });
 
     // Fire-and-forget: notify org admins about suspension
-    db.membership.findMany({
-      where: { tenantId: id, role: { in: ["owner", "admin"] }, status: "active" },
+    db.orgMember.findMany({
+      where: { orgId: id, role: { in: ["owner", "admin"] }, status: "active" },
       include: { user: { select: { email: true } } },
     }).then((members) => {
       for (const m of members) {

@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { prCreateSchema } from "@/lib/schemas/procurement";
 
-const withTenantAuth = withTenantAuthForModule("purchase");
+const withOrgAuth = withOrgAuthForModule("purchase");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const prs = await db.cnPurchaseRequisition.findMany({
     where: {
-      tenantId,
+      orgId,
       deletedAt: includeDeleted ? { not: null } : null,
       ...(projectId ? { projectId } : {}),
       ...(status ? { status } : {}),
@@ -25,17 +25,17 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: prs });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = prCreateSchema.parse(body);
 
   // Validate project
-  const project = await db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } });
+  const project = await db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } });
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
 
   // Duplicate PR number?
   const dup = await db.cnPurchaseRequisition.findFirst({
-    where: { tenantId, prNumber: input.prNumber, deletedAt: null },
+    where: { orgId, prNumber: input.prNumber, deletedAt: null },
     select: { id: true },
   });
   if (dup) {
@@ -47,7 +47,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const pr = await db.cnPurchaseRequisition.create({
     data: {
-      tenantId,
+      orgId,
       prNumber: input.prNumber,
       projectId: input.projectId,
       requestedById: input.requestedById,

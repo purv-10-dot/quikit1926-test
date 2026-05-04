@@ -5,7 +5,7 @@ const API_BASE = "/api/kpi";
 
 export interface KPIResponse {
   id: string;
-  tenantId: string;
+  orgId: string;
   name: string;
   description?: string;
   owner: string;

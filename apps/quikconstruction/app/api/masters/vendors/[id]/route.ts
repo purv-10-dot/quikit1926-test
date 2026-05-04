@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { vendorUpdateSchema } from "@/lib/schemas/masters";
 
-const withTenantAuth = withTenantAuthForModule("masters");
+const withOrgAuth = withOrgAuthForModule("masters");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const vendor = await db.cnVendor.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
   });
   if (!vendor) {
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -15,9 +15,9 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { p
   return NextResponse.json({ success: true, data: vendor });
 });
 
-export const PATCH = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existing = await db.cnVendor.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     select: { id: true, code: true },
   });
   if (!existing) {
@@ -27,7 +27,7 @@ export const PATCH = withTenantAuth<{ id: string }>(async ({ tenantId, userId },
   const input = vendorUpdateSchema.parse(body);
   if (input.code && input.code !== existing.code) {
     const conflict = await db.cnVendor.findFirst({
-      where: { tenantId, code: input.code, deletedAt: null, NOT: { id: params.id } },
+      where: { orgId, code: input.code, deletedAt: null, NOT: { id: params.id } },
       select: { id: true },
     });
     if (conflict) {
@@ -44,9 +44,9 @@ export const PATCH = withTenantAuth<{ id: string }>(async ({ tenantId, userId },
   return NextResponse.json({ success: true, data: updated });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.cnVendor.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     select: { id: true },
   });
   if (!existing) {

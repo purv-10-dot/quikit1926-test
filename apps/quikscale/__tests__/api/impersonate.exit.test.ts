@@ -70,7 +70,7 @@ describe("POST /api/auth/impersonate/exit — cookie clearing", () => {
   it("marks Impersonation.exitedAt when session is impersonating", async () => {
     setSession({
       id: "target-user",
-      tenantId: "t1",
+      orgId: "t1",
       role: "member",
       impersonating: true,
       impersonatorUserId: "super-admin-1",

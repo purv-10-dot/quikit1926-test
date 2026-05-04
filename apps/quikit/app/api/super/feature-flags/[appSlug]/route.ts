@@ -5,7 +5,7 @@ import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { getAppConfig } from "@quikit/shared/moduleRegistry";
 
 /**
- * GET /api/super/feature-flags/[appSlug]?tenantId=X
+ * GET /api/super/feature-flags/[appSlug]?orgId=X
  *
  * Returns the set of disabled moduleKeys for the given (tenant, app). The
  * registry is static + client-safe so the caller can merge this result with
@@ -25,10 +25,10 @@ export const GET = withSuperAdminAuth<{ appSlug: string }>(async (auth, request:
       );
     }
 
-    const tenantId = request.nextUrl.searchParams.get("tenantId");
-    if (!tenantId) {
+    const orgId = request.nextUrl.searchParams.get("orgId");
+    if (!orgId) {
       return NextResponse.json(
-        { success: false, error: "tenantId query param required" },
+        { success: false, error: "orgId query param required" },
         { status: 400 },
       );
     }
@@ -45,7 +45,7 @@ export const GET = withSuperAdminAuth<{ appSlug: string }>(async (auth, request:
     }
 
     const rows = await db.appModuleFlag.findMany({
-      where: { tenantId, appId: app.id, enabled: false },
+      where: { orgId, appId: app.id, enabled: false },
       select: { moduleKey: true },
     });
 
@@ -53,7 +53,7 @@ export const GET = withSuperAdminAuth<{ appSlug: string }>(async (auth, request:
       success: true,
       data: {
         appSlug,
-        tenantId,
+        orgId,
         disabledKeys: rows.map((r) => r.moduleKey),
       },
     });

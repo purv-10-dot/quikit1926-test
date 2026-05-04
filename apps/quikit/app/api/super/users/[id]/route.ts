@@ -28,7 +28,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (auth, _request: Nex
             id: true,
             role: true,
             status: true,
-            tenant: {
+            org: {
               select: { id: true, name: true, slug: true, plan: true },
             },
           },
@@ -40,7 +40,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (auth, _request: Nex
             app: {
               select: { id: true, name: true, slug: true },
             },
-            tenant: {
+            org: {
               select: { id: true, name: true },
             },
           },

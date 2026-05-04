@@ -30,8 +30,8 @@ export async function GET(_req: NextRequest) {
       return NextResponse.json({ success: true, show: false });
     }
 
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) {
+    const orgId = await getTenantId(session.user.id);
+    if (!orgId) {
       return NextResponse.json({ success: true, show: false });
     }
 
@@ -41,7 +41,7 @@ export async function GET(_req: NextRequest) {
     // 1. Find the OPSP record for current fiscal period
     const opsp = await db.oPSPData.findFirst({
       where: {
-        tenantId,
+        orgId,
         userId: session.user.id,
         year: fiscalYear,
         quarter: fiscalQuarter,
@@ -56,7 +56,7 @@ export async function GET(_req: NextRequest) {
 
     // 2. Get the threshold setting
     const flag = await db.featureFlag.findUnique({
-      where: { tenantId_key: { tenantId, key: "opsp_threshold_days" } },
+      where: { orgId_key: { orgId, key: "opsp_threshold_days" } },
       select: { value: true, enabled: true },
     });
 
@@ -85,7 +85,7 @@ export async function GET(_req: NextRequest) {
 
       // Fire-and-forget audit log (writeAuditLog is non-throwing)
       await writeAuditLog({
-        tenantId,
+        orgId,
         actorId: "system:auto-finalize",
         action: "UPDATE",
         entityType: "OPSPData",

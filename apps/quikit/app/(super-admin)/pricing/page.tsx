@@ -154,7 +154,7 @@ export default function PricingPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6 md:mb-8">
         <div>
           <h1 className="text-2xl md:text-4xl font-bold tracking-tight text-slate-900">Pricing & Plans</h1>
-          <p className="text-sm text-slate-500 mt-2">Plan definitions that back tenant billing and feature limits.</p>
+          <p className="text-sm text-slate-500 mt-2">Plan definitions that back organization billing and feature limits.</p>
         </div>
         <button
           type="button"

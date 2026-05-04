@@ -3,12 +3,12 @@ import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { validationError } from "@/lib/api/validationError";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
-export const GET = withTenantAuth(
-  async ({ tenantId }, request) => {
+export const GET = withOrgAuth(
+  async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
-    const where = { tenantId };
+    const where = { orgId };
 
     const [teams, total] = await Promise.all([
       db.team.findMany({
@@ -26,14 +26,14 @@ export const GET = withTenantAuth(
   { fallbackErrorMessage: "Failed to fetch teams" },
 );
 
-export const POST = withTenantAuth(
-  async ({ tenantId }, request) => {
+export const POST = withOrgAuth(
+  async ({ orgId }, request) => {
     const parsed = createTeamSchema.safeParse(await request.json());
     if (!parsed.success) return validationError(parsed);
     const name = parsed.data.name.trim();
 
     const existing = await db.team.findFirst({
-      where: { tenantId, name: { equals: name, mode: "insensitive" } },
+      where: { orgId, name: { equals: name, mode: "insensitive" } },
     });
     if (existing) {
       return NextResponse.json(
@@ -49,7 +49,7 @@ export const POST = withTenantAuth(
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
 
     const team = await db.team.create({
-      data: { name, slug, tenantId },
+      data: { name, slug, orgId },
       select: { id: true, name: true },
     });
 

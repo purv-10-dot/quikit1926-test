@@ -44,53 +44,53 @@ describe("POST /api/super/impersonate/start", () => {
 
   it("returns 401 when caller is not a super admin", async () => {
     setSession({ id: "u-1", email: "u@test.com", isSuperAdmin: false });
-    const res = await POST(makeRequest({ targetUserId: "u", targetTenantId: "t", targetAppSlug: "quikscale" }));
+    const res = await POST(makeRequest({ targetUserId: "u", targetOrgId: "t", targetAppSlug: "quikscale" }));
     expect([401, 403]).toContain(res.status);
   });
 
   it("returns 404 when target user has no active membership", async () => {
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await POST(makeRequest({
       targetUserId: "target-user",
-      targetTenantId: "tenant-1",
+      targetOrgId: "tenant-1",
       targetAppSlug: "quikscale",
     }));
     expect(res.status).toBe(404);
   });
 
   it("returns 403 when trying to impersonate another super admin", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       role: "admin",
       user: { id: "su-2", email: "su2@test.com", firstName: "Other", lastName: "SA" },
-      tenant: { id: "tenant-1", name: "Test" },
+      org: { id: "tenant-1", name: "Test" },
     } as never);
     mockDb.app.findUnique.mockResolvedValue({
-      id: "app-1", baseUrl: "http://localhost:3004", name: "QuikScale", status: "active",
+      id: "app-1", baseUrl: "http://localhost:3002", name: "QuikScale", status: "active",
     } as never);
     mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: true, email: "su2@test.com" } as never);
     const res = await POST(makeRequest({
       targetUserId: "su-2",
-      targetTenantId: "tenant-1",
+      targetOrgId: "tenant-1",
       targetAppSlug: "quikscale",
     }));
     expect(res.status).toBe(403);
   });
 
   it("creates an Impersonation row and returns a redirect URL on happy path", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       role: "admin",
       user: { id: "target-1", email: "target@test.com", firstName: "Target", lastName: "User" },
-      tenant: { id: "tenant-1", name: "Acme Corp" },
+      org: { id: "tenant-1", name: "Acme Corp" },
     } as never);
     mockDb.app.findUnique.mockResolvedValue({
-      id: "app-1", baseUrl: "http://localhost:3004", name: "QuikScale", status: "active",
+      id: "app-1", baseUrl: "http://localhost:3002", name: "QuikScale", status: "active",
     } as never);
     mockDb.user.findUnique.mockResolvedValue({ isSuperAdmin: false, email: "target@test.com" } as never);
     mockDb.impersonation.create.mockResolvedValue({ id: "imp-1" } as never);
 
     const res = await POST(makeRequest({
       targetUserId: "target-1",
-      targetTenantId: "tenant-1",
+      targetOrgId: "tenant-1",
       targetAppSlug: "quikscale",
       reason: "Debugging support ticket #123",
     }));
@@ -98,7 +98,7 @@ describe("POST /api/super/impersonate/start", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.data.redirectUrl).toMatch(/^http:\/\/localhost:3004\/api\/auth\/impersonate\//);
+    expect(body.data.redirectUrl).toMatch(/^http:\/\/localhost:3002\/api\/auth\/impersonate\//);
     expect(body.data.target.userEmail).toBe("target@test.com");
     expect(body.data.target.appName).toBe("QuikScale");
 
@@ -107,7 +107,7 @@ describe("POST /api/super/impersonate/start", () => {
     expect(createCall?.data).toMatchObject({
       superAdminId: SUPER_ADMIN.id,
       targetUserId: "target-1",
-      targetTenantId: "tenant-1",
+      targetOrgId: "tenant-1",
       targetAppSlug: "quikscale",
       reason: "Debugging support ticket #123",
     });
@@ -116,10 +116,10 @@ describe("POST /api/super/impersonate/start", () => {
   });
 
   it("rejects apps with a relative (launcher-self) baseUrl", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       role: "admin",
       user: { id: "target-1", email: "t@test.com", firstName: "T", lastName: "U" },
-      tenant: { id: "tenant-1", name: "Acme" },
+      org: { id: "tenant-1", name: "Acme" },
     } as never);
     mockDb.app.findUnique.mockResolvedValue({
       id: "app-1", baseUrl: "/", name: "QuikIT", status: "active",
@@ -128,7 +128,7 @@ describe("POST /api/super/impersonate/start", () => {
 
     const res = await POST(makeRequest({
       targetUserId: "target-1",
-      targetTenantId: "tenant-1",
+      targetOrgId: "tenant-1",
       targetAppSlug: "quikit",
     }));
     expect(res.status).toBe(400);

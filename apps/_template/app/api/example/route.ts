@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
 /**
  * Canonical API route shape — copy this when adding new endpoints.
  *
  * Rules (enforced by reviewers + lint, see CLAUDE.md "API Route Pattern"):
- *   1. Wrap with `withTenantAuth` (or `requireAdmin`) — never trust the client.
+ *   1. Wrap with `withOrgAuth` (or `requireAdmin`) — never trust the client.
  *   2. Validate input with Zod — never use raw `req.body`.
  *   3. Filter every Prisma query by tenantId.
  *   4. Use `select` for list endpoints; `include` only when you need the full model.
@@ -23,7 +23,7 @@ const createSchema = z.object({
 });
 
 /* GET — list example items for the current tenant */
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withOrgAuth(async ({ tenantId }) => {
   // Replace `widget` with your actual model. The tenantId filter is non-negotiable.
   const items = await db.widget.findMany({
     where: { tenantId },
@@ -35,7 +35,7 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
 });
 
 /* POST — create an example item */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ tenantId, userId }, req: NextRequest) => {
   const parsed = createSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

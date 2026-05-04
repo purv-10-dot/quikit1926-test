@@ -11,7 +11,7 @@
 export interface ErrorContext {
   route?: string;
   userId?: string | null;
-  tenantId?: string | null;
+  orgId?: string | null;
   extra?: Record<string, unknown>;
 }
 
@@ -27,7 +27,7 @@ export function reportError(err: unknown, context: ErrorContext = {}): void {
   //   const Sentry = require("@sentry/nextjs");
   //   Sentry.withScope((scope: any) => {
   //     if (context.route) scope.setTag("route", context.route);
-  //     if (context.tenantId) scope.setTag("tenantId", context.tenantId);
+  //     if (context.orgId) scope.setTag("orgId", context.orgId);
   //     if (context.userId) scope.setUser({ id: context.userId });
   //     if (context.extra) scope.setContext("extra", context.extra);
   //     Sentry.captureException(err instanceof Error ? err : new Error(msg));

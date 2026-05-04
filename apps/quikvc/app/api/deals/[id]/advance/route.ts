@@ -15,7 +15,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import {
   STAGE_ORDER,
   STAGE_LABEL,
@@ -34,8 +34,8 @@ const bodySchema = z.object({
   justification: z.string().max(2000).optional(),
 });
 
-export const POST = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+export const POST = withOrgAuth(
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const parsed = bodySchema.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) {
       return NextResponse.json(
@@ -45,7 +45,7 @@ export const POST = withTenantAuth(
     }
 
     const deal = await db.vCDeal.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       include: {
         application: {
           select: { startupName: true, contactName: true, contactEmail: true },
@@ -86,7 +86,7 @@ export const POST = withTenantAuth(
     const requiredRoles = PARTNER_GATED_STAGES.includes(toStage)
       ? PARTNER_ROLES
       : ANALYST_ROLES;
-    const denied = await requireRoleOrAudit(userId, tenantId, requiredRoles, {
+    const denied = await requireRoleOrAudit(userId, orgId, requiredRoles, {
       action: "deal.advance",
       resource: deal.id,
       req,
@@ -107,7 +107,7 @@ export const POST = withTenantAuth(
       }),
       db.vCTimelineEvent.create({
         data: {
-          tenantId,
+          orgId,
           dealId: deal.id,
           type: "stage-advanced",
           actorId: userId,
@@ -123,7 +123,7 @@ export const POST = withTenantAuth(
     ]);
 
     await audit({
-      tenantId,
+      orgId,
       userId,
       action: "deal.advance",
       resource: deal.id,

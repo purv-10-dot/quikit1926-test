@@ -4,14 +4,14 @@ import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 
-export const GET = withAdminAuth(async ({ tenantId }) => {
-  const blocked = await gateModuleApi("admin", "apps", tenantId);
+export const GET = withAdminAuth(async ({ orgId }) => {
+  const blocked = await gateModuleApi("admin", "apps", orgId);
   if (blocked) return blocked as NextResponse;
 
   // Parallel fetch: members, apps, and access records
   const [members, apps, accessRecords] = await Promise.all([
-    db.membership.findMany({
-      where: { tenantId, status: { in: ["active", "invited"] } },
+    db.orgMember.findMany({
+      where: { orgId, status: { in: ["active", "invited"] } },
       select: {
         status: true,
         user: {
@@ -22,7 +22,7 @@ export const GET = withAdminAuth(async ({ tenantId }) => {
     }),
     db.app.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, slug: true, status: true } }),
     db.userAppAccess.findMany({
-      where: { tenantId },
+      where: { orgId },
       select: { userId: true, appId: true, role: true },
     }),
   ]);
@@ -54,8 +54,8 @@ export const GET = withAdminAuth(async ({ tenantId }) => {
   });
 });
 
-export const POST = withAdminAuth(async ({ tenantId, userId: grantedBy }, request: NextRequest) => {
-  const blocked = await gateModuleApi("admin", "apps", tenantId);
+export const POST = withAdminAuth(async ({ orgId, userId: grantedBy }, request: NextRequest) => {
+  const blocked = await gateModuleApi("admin", "apps", orgId);
   if (blocked) return blocked as NextResponse;
   const { userId, appId, role = "member" } = await request.json();
 
@@ -75,16 +75,16 @@ export const POST = withAdminAuth(async ({ tenantId, userId: grantedBy }, reques
   }
 
   await db.userAppAccess.upsert({
-    where: { userId_tenantId_appId: { userId, tenantId, appId } },
-    create: { userId, tenantId, appId, role, grantedBy },
+    where: { userId_orgId_appId: { userId, orgId, appId } },
+    create: { userId, orgId, appId, role, grantedBy },
     update: { role },
   });
 
   return NextResponse.json({ success: true, message: "Access granted" });
 });
 
-export const DELETE = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
-  const blocked = await gateModuleApi("admin", "apps", tenantId);
+export const DELETE = withAdminAuth(async ({ orgId }, request: NextRequest) => {
+  const blocked = await gateModuleApi("admin", "apps", orgId);
   if (blocked) return blocked as NextResponse;
   const { userId, appId } = await request.json();
 
@@ -96,7 +96,7 @@ export const DELETE = withAdminAuth(async ({ tenantId }, request: NextRequest) =
   }
 
   await db.userAppAccess.deleteMany({
-    where: { userId, tenantId, appId },
+    where: { userId, orgId, appId },
   });
 
   return NextResponse.json({ success: true, message: "Access revoked" });

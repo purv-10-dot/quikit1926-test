@@ -35,7 +35,7 @@ describe("GET /api/invitations/accept", () => {
   });
 
   it("returns 404 for unknown token", async () => {
-    mockDb.membership.findUnique.mockResolvedValue(null);
+    mockDb.orgMember.findUnique.mockResolvedValue(null);
     const res = await GET(
       buildRequest("GET", "/api/invitations/accept?token=missing")
     );
@@ -44,14 +44,14 @@ describe("GET /api/invitations/accept", () => {
 
   it("returns 410 for expired invitation (>7 days old)", async () => {
     const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitationToken: "tok",
       invitedAt: eightDaysAgo,
       role: "employee",
-      tenant: { name: "Acme", logoUrl: null, brandColor: null },
+      org: { name: "Acme", logoUrl: null, brandColor: null },
       user: { email: "x@y.com", firstName: "X", lastName: "Y", password: null },
     } as any);
 
@@ -64,14 +64,14 @@ describe("GET /api/invitations/accept", () => {
   });
 
   it("returns 400 when invitation already accepted", async () => {
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "active",
       invitationToken: "tok",
       invitedAt: new Date(),
       role: "employee",
-      tenant: { name: "Acme", logoUrl: null, brandColor: null },
+      org: { name: "Acme", logoUrl: null, brandColor: null },
       user: { email: "x@y.com", firstName: "X", lastName: "Y", password: "hash" },
     } as any);
 
@@ -82,14 +82,14 @@ describe("GET /api/invitations/accept", () => {
   });
 
   it("returns invitation details for valid token (needsPassword=true)", async () => {
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitationToken: "tok",
       invitedAt: new Date(),
       role: "employee",
-      tenant: { name: "Acme", logoUrl: null, brandColor: "#abc123" },
+      org: { name: "Acme", logoUrl: null, brandColor: "#abc123" },
       user: { email: "x@y.com", firstName: "X", lastName: "Y", password: null },
     } as any);
 
@@ -107,16 +107,16 @@ describe("GET /api/invitations/accept", () => {
 
 describe("POST /api/invitations/accept", () => {
   it("activates membership and writes ACCEPTED audit log", async () => {
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitedAt: new Date(),
       createdBy: "admin-1",
       user: { id: "u1", password: null },
     } as any);
     mockDb.user.update.mockResolvedValue({} as any);
-    mockDb.membership.update.mockResolvedValue({} as any);
+    mockDb.orgMember.update.mockResolvedValue({} as any);
     mockDb.app.findMany.mockResolvedValue([]);
 
     const res = await POST(
@@ -127,7 +127,7 @@ describe("POST /api/invitations/accept", () => {
     );
     expect(res.status).toBe(200);
     expect(mockDb.user.update).toHaveBeenCalled();
-    expect(mockDb.membership.update).toHaveBeenCalledWith(
+    expect(mockDb.orgMember.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: "active" }),
       })
@@ -143,9 +143,9 @@ describe("POST /api/invitations/accept", () => {
   });
 
   it("rejects short password (<10 chars)", async () => {
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitedAt: new Date(),
       user: { id: "u1", password: null },
@@ -163,9 +163,9 @@ describe("POST /api/invitations/accept", () => {
   });
 
   it("rejects password missing a digit", async () => {
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitedAt: new Date(),
       user: { id: "u1", password: null },
@@ -183,9 +183,9 @@ describe("POST /api/invitations/accept", () => {
   });
 
   it("rejects password missing a symbol", async () => {
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitedAt: new Date(),
       user: { id: "u1", password: null },

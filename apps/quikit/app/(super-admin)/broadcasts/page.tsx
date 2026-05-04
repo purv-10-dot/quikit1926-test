@@ -16,7 +16,7 @@ interface Broadcast {
   title: string;
   body: string;
   severity: "info" | "warning" | "critical";
-  targetTenantIds: string[];
+  targetOrgIds: string[];
   targetAppSlugs: string[];
   startsAt: string;
   endsAt: string | null;
@@ -29,7 +29,7 @@ const defaultForm = {
   title: "",
   body: "",
   severity: "info" as "info" | "warning" | "critical",
-  targetTenantIdsCSV: "",
+  targetOrgIdsCSV: "",
   targetAppSlugsCSV: "",
   startsAt: "",
   endsAt: "",
@@ -67,7 +67,7 @@ export default function BroadcastsPage() {
         title: form.title.trim(),
         body: form.body.trim(),
         severity: form.severity,
-        targetTenantIds: form.targetTenantIdsCSV.split(",").map((s) => s.trim()).filter(Boolean),
+        targetOrgIds: form.targetOrgIdsCSV.split(",").map((s) => s.trim()).filter(Boolean),
         targetAppSlugs: form.targetAppSlugsCSV.split(",").map((s) => s.trim()).filter(Boolean),
         startsAt: form.startsAt || undefined,
         endsAt: form.endsAt || undefined,
@@ -144,7 +144,7 @@ export default function BroadcastsPage() {
                     <span>Starts {new Date(b.startsAt).toLocaleString()}</span>
                     {b.endsAt && <span>Ends {new Date(b.endsAt).toLocaleString()}</span>}
                     <span>{b.dismissalCount} dismissals</span>
-                    {b.targetTenantIds.length > 0 && <span>{b.targetTenantIds.length} tenants targeted</span>}
+                    {b.targetOrgIds.length > 0 && <span>{b.targetOrgIds.length} tenants targeted</span>}
                     {b.targetAppSlugs.length > 0 && <span>Apps: {b.targetAppSlugs.join(", ")}</span>}
                   </div>
                 </div>
@@ -201,8 +201,8 @@ export default function BroadcastsPage() {
             <span className="block text-xs font-semibold text-gray-700 mb-1">Target tenants (comma-separated IDs, empty = all)</span>
             <input
               type="text"
-              value={form.targetTenantIdsCSV}
-              onChange={(e) => setForm((f) => ({ ...f, targetTenantIdsCSV: e.target.value }))}
+              value={form.targetOrgIdsCSV}
+              onChange={(e) => setForm((f) => ({ ...f, targetOrgIdsCSV: e.target.value }))}
               placeholder="e.g. ckabc123,ckdef456"
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
             />

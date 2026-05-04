@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { CAPITAL_OPS_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 
@@ -22,9 +22,9 @@ const postSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-export const POST = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = await requireRoleOrAudit(userId, tenantId, CAPITAL_OPS_ROLES, {
+export const POST = withOrgAuth(
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = await requireRoleOrAudit(userId, orgId, CAPITAL_OPS_ROLES, {
       action: "allocation.create",
       resource: params.id,
       req,
@@ -42,7 +42,7 @@ export const POST = withTenantAuth(
     const amountPaise = BigInt(Math.round(amountLakhs * 10_000_000));
 
     const call = await db.vCCapitalCall.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true, amount: true, paidAmount: true, status: true, allocationId: true, investorId: true },
     });
     if (!call) {
@@ -52,7 +52,7 @@ export const POST = withTenantAuth(
     const result = await db.$transaction(async (tx) => {
       const payment = await tx.vCCapitalCallPayment.create({
         data: {
-          tenantId,
+          orgId,
           capitalCallId: call.id,
           amount: amountPaise,
           paidAt: paidAt ? new Date(paidAt) : new Date(),
@@ -76,7 +76,7 @@ export const POST = withTenantAuth(
     });
 
     await audit({
-      tenantId,
+      orgId,
       userId,
       action: "allocation.create",
       resource: call.id,

@@ -9,10 +9,10 @@ export default async function InvestorPortfolioPage() {
   if (!ctx) {
     return <div className="px-6 py-12 text-center text-sm text-gray-500">No investor profile found.</div>;
   }
-  const { tenantId, investorId } = ctx;
+  const { orgId, investorId } = ctx;
 
   const allocations = await db.vCDealAllocation.findMany({
-    where: { tenantId, investorId },
+    where: { orgId, investorId },
     include: {
       deal: {
         select: {

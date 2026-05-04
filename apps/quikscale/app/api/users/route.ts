@@ -1,21 +1,21 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
-export const GET = withTenantAuth(
-  async ({ tenantId }, request) => {
+export const GET = withOrgAuth(
+  async ({ orgId }, request) => {
     const teamId = request.nextUrl.searchParams.get("teamId");
     const { page, limit, skip, take } = parsePagination(request);
 
     const where = {
-      tenantId,
+      orgId,
       status: "active",
       ...(teamId ? { teamId } : {}),
     };
 
     const [members, total] = await Promise.all([
-      db.membership.findMany({
+      db.orgMember.findMany({
         where,
         select: {
           user: {
@@ -26,7 +26,7 @@ export const GET = withTenantAuth(
         skip,
         take,
       }),
-      db.membership.count({ where }),
+      db.orgMember.count({ where }),
     ]);
 
     const users = members.map((m) => m.user).filter(Boolean);

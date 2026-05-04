@@ -9,8 +9,8 @@ import { inviteMemberSchema } from "@/lib/schemas/memberSchema";
 import { writeAuditLog } from "@/lib/audit";
 import crypto from "crypto";
 
-export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
-  const blocked = await gateModuleApi("admin", "members", tenantId);
+export const GET = withAdminAuth(async ({ orgId }, request: NextRequest) => {
+  const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
 
   // Pagination
@@ -20,8 +20,8 @@ export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
   const skip = (page - 1) * limit;
 
   const [memberships, total] = await Promise.all([
-    db.membership.findMany({
-      where: { tenantId },
+    db.orgMember.findMany({
+      where: { orgId },
       include: {
         user: {
           select: {
@@ -32,7 +32,7 @@ export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
             avatar: true,
             lastSignInAt: true,
             userTeams: {
-              where: { tenantId },
+              where: { orgId },
               include: { team: { select: { name: true } } },
             },
           },
@@ -42,7 +42,7 @@ export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
       skip,
       take: limit,
     }),
-    db.membership.count({ where: { tenantId } }),
+    db.orgMember.count({ where: { orgId } }),
   ]);
 
   const memberData = memberships.map((m) => ({
@@ -67,8 +67,8 @@ export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
   });
 });
 
-export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, request: NextRequest) => {
-  const blocked = await gateModuleApi("admin", "members", tenantId);
+export const POST = withAdminAuth(async ({ orgId, userId: inviterId }, request: NextRequest) => {
+  const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
 
   const body = await request.json();
@@ -82,15 +82,15 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
   const { email, firstName, lastName, role } = parsed.data;
 
   // Tenant lookup is needed for domain allowlist check, branding, AND email send.
-  const tenant = await db.tenant.findUnique({
-    where: { id: tenantId },
+  const org = await db.org.findUnique({
+    where: { id: orgId },
     select: { name: true, logoUrl: true, brandColor: true, allowedEmailDomains: true },
   });
 
   // Domain allowlist enforcement (empty list = unrestricted).
-  if (tenant?.allowedEmailDomains && tenant.allowedEmailDomains.length > 0) {
+  if (org?.allowedEmailDomains && org.allowedEmailDomains.length > 0) {
     const emailDomain = email.split("@")[1]?.toLowerCase() ?? "";
-    const allowed = tenant.allowedEmailDomains.map((d) => d.toLowerCase());
+    const allowed = org.allowedEmailDomains.map((d) => d.toLowerCase());
     if (!allowed.includes(emailDomain)) {
       return NextResponse.json(
         {
@@ -109,13 +109,13 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
   let user = await db.user.findUnique({ where: { email } });
 
   if (user) {
-    const existingMembership = await db.membership.findUnique({
-      where: { tenantId_userId: { tenantId, userId: user.id } },
+    const existingMembership = await db.orgMember.findUnique({
+      where: { orgId_userId: { orgId, userId: user.id } },
     });
 
     if (existingMembership && (existingMembership.status === "active" || existingMembership.status === "invited")) {
       await writeAuditLog({
-        tenantId,
+        orgId,
         actorId: inviterId,
         action: "DUPLICATE_INVITE",
         entityType: "Membership",
@@ -145,10 +145,10 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
   }
 
   // Create or upsert the membership
-  const membership = await db.membership.upsert({
-    where: { tenantId_userId: { tenantId, userId: user.id } },
+  const membership = await db.orgMember.upsert({
+    where: { orgId_userId: { orgId, userId: user.id } },
     create: {
-      tenantId,
+      orgId,
       userId: user.id,
       role,
       status: "invited",
@@ -174,9 +174,9 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
   // Send invitation email (tenant-branded)
   await sendInvitationEmail({
     to: email,
-    orgName: tenant?.name || "Organisation",
-    orgLogoUrl: tenant?.logoUrl ?? null,
-    orgBrandColor: tenant?.brandColor ?? null,
+    orgName: org?.name || "Organisation",
+    orgLogoUrl: org?.logoUrl ?? null,
+    orgBrandColor: org?.brandColor ?? null,
     inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}` : "An admin",
     role: ROLE_LABELS[role] || role,
     token: invitationToken,
@@ -184,7 +184,7 @@ export const POST = withAdminAuth(async ({ tenantId, userId: inviterId }, reques
 
   // Audit log
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: inviterId,
     action: "INVITED",
     entityType: "Membership",

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("priority");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("priority");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createPrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
@@ -32,7 +32,7 @@ const PRIORITY_SELECT = {
 };
 
 // GET /api/priority — list priorities filtered by year + quarter
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const year = searchParams.get("year") ? parseInt(searchParams.get("year")!) : undefined;
   const quarter = searchParams.get("quarter") || undefined;
@@ -41,7 +41,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
 
   const includeDeleted = searchParams.get("includeDeleted") === "true";
-  const where: Record<string, unknown> = { tenantId };
+  const where: Record<string, unknown> = { orgId };
   where.deletedAt = includeDeleted ? { not: null } : null;
   if (year) where.year = year;
   if (quarter) where.quarter = quarter;
@@ -70,10 +70,10 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
 });
 
 // POST /api/priority — create a priority
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const rl = rateLimit({
     routeKey: "priority:create",
-    clientKey: `${tenantId}:${userId}`,
+    clientKey: `${orgId}:${userId}`,
     limit: LIMITS.mutation.limit,
     windowMs: LIMITS.mutation.windowMs,
   });
@@ -94,7 +94,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const created = await db.priority.create({
     data: {
-      tenantId,
+      orgId,
       name,
       description: description ?? null,
       owner,
@@ -116,7 +116,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   // existing list/detail flows behave unchanged.
   let priority = created;
   if (startWeek != null && endWeek != null && startWeek <= endWeek) {
-    const currentWeek = await getCurrentFiscalWeekFromDB(tenantId, year, quarter);
+    const currentWeek = await getCurrentFiscalWeekFromDB(orgId, year, quarter);
     const seeds = [];
     for (let w = startWeek; w <= endWeek; w++) {
       seeds.push({
@@ -137,7 +137,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   }
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "CREATE",
     entityType: "Priority",

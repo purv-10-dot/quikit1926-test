@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { payrollRunSchema } from "@/lib/schemas/hrms";
 
-const withTenantAuth = withTenantAuthForModule("hrms");
+const withOrgAuth = withOrgAuthForModule("hrms");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const list = await db.cnPayroll.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     include: { _count: { select: { lines: true } } },
     orderBy: { periodStart: "desc" },
   });
@@ -28,9 +28,9 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
  *   - deductions = 0 (extend later)
  *   - netAmount = basicAmount
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = payrollRunSchema.parse(await req.json());
-  const dup = await db.cnPayroll.findFirst({ where: { tenantId, runNumber: input.runNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnPayroll.findFirst({ where: { orgId, runNumber: input.runNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Run '${input.runNumber}' already exists` }, { status: 409 });
 
   const start = new Date(input.periodStart);
@@ -39,12 +39,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const workingDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / msPerDay) + 1);
 
   const employees = await db.cnEmployee.findMany({
-    where: { tenantId, deletedAt: null, status: "active" },
+    where: { orgId, deletedAt: null, status: "active" },
     select: { id: true, empType: true, monthlyWage: true, dailyWage: true, hourlyWage: true },
   });
 
   const attendance = await db.cnAttendance.findMany({
-    where: { tenantId, date: { gte: start, lte: end } },
+    where: { orgId, date: { gte: start, lte: end } },
     select: { employeeId: true, status: true, hoursWorked: true },
   });
 
@@ -71,7 +71,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const payroll = await db.cnPayroll.create({
     data: {
-      tenantId,
+      orgId,
       runNumber: input.runNumber,
       periodStart: start,
       periodEnd: end,

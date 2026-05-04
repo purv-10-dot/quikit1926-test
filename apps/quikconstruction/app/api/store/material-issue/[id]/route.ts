@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const issue = await db.cnMaterialIssue.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     include: {
       project: { select: { id: true, name: true } },
       location: { select: { id: true, name: true } },
@@ -22,9 +22,9 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { p
   return NextResponse.json({ success: true, data: issue });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.cnMaterialIssue.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     select: { id: true, status: true },
   });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });

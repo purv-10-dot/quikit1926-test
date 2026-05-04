@@ -16,42 +16,42 @@ describe("canManageTeamKPI", () => {
   });
 
   it("returns true for an admin-level membership", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({ role: "admin" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as any);
     expect(await canManageTeamKPI(USER, TENANT, TEAM)).toBe(true);
   });
 
   it("returns true for an executive-level membership (above admin threshold in this repo)", async () => {
     // executive=4, admin threshold=5 → executive is BELOW admin. Must check.
-    mockDb.membership.findFirst.mockResolvedValue({ role: "executive" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "executive" } as any);
     mockDb.team.findFirst.mockResolvedValue(null); // not team head either
     expect(await canManageTeamKPI(USER, TENANT, TEAM)).toBe(false);
   });
 
   it("returns true for a super_admin", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({ role: "super_admin" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "super_admin" } as any);
     expect(await canManageTeamKPI(USER, TENANT, TEAM)).toBe(true);
   });
 
   it("returns true when user is team head (even without admin role)", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({ role: "employee" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "employee" } as any);
     mockDb.team.findFirst.mockResolvedValue({ headId: USER } as any);
     expect(await canManageTeamKPI(USER, TENANT, TEAM)).toBe(true);
   });
 
   it("returns false when user is a plain member and not team head", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({ role: "employee" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "employee" } as any);
     mockDb.team.findFirst.mockResolvedValue({ headId: "someone-else" } as any);
     expect(await canManageTeamKPI(USER, TENANT, TEAM)).toBe(false);
   });
 
   it("returns false when team does not exist", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({ role: "employee" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "employee" } as any);
     mockDb.team.findFirst.mockResolvedValue(null);
     expect(await canManageTeamKPI(USER, TENANT, TEAM)).toBe(false);
   });
 
   it("returns false when user has no membership at all", async () => {
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     mockDb.team.findFirst.mockResolvedValue({ headId: "someone-else" } as any);
     expect(await canManageTeamKPI(USER, TENANT, TEAM)).toBe(false);
   });

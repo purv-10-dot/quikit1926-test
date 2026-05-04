@@ -57,8 +57,8 @@ export async function GET(req: NextRequest) {
   try {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
-    const { tenantId, userId } = auth;
-    const blocked = await gateModuleApi("quikscale", "opsp.review", tenantId);
+    const { orgId, userId } = auth;
+    const blocked = await gateModuleApi("quikscale", "opsp.review", orgId);
     if (blocked) return blocked;
 
     const { searchParams } = req.nextUrl;
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     // 1. Load the OPSP for this user + fiscal period
     const opsp = await db.oPSPData.findUnique({
       where: {
-        tenantId_userId_year_quarter: { tenantId, userId, year, quarter },
+        orgId_userId_year_quarter: { orgId, userId, year, quarter },
       },
     });
 
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
 
     // 3. Load all review entries for this OPSP + horizon
     const entries = await db.oPSPReviewEntry.findMany({
-      where: { tenantId, opspId: opsp.id, horizon },
+      where: { orgId, opspId: opsp.id, horizon },
       select: {
         rowIndex: true,
         period: true,
@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
 
     // 5a. Build category meta lookup so currency scales (K/M/L/Cr…) get applied.
     const cats = await db.categoryMaster.findMany({
-      where: { tenantId },
+      where: { orgId },
       select: { name: true, dataType: true, currency: true },
     });
     const catMetaMap = new Map<string, { dataType: string; currency: string | null }>();
@@ -156,12 +156,12 @@ export async function GET(req: NextRequest) {
 
     // 6. Auto-populate achieved/gap/achievedPct from child horizons
     if (horizon === "yearly" || horizon === "3to5year") {
-      await populateCascadeData(tenantId, userId, year, rows, horizon, opsp.targetYears, catMetaMap);
+      await populateCascadeData(orgId, userId, year, rows, horizon, opsp.targetYears, catMetaMap);
     }
 
     // 7. Get tenant fiscal config
-    const tenant = await db.tenant.findUnique({
-      where: { id: tenantId },
+    const org = await db.org.findUnique({
+      where: { id: orgId },
       select: { fiscalYearStart: true },
     });
 
@@ -180,7 +180,7 @@ export async function GET(req: NextRequest) {
 
     // 10. Load saved secondary review entries (status + comment)
     const secondaryEntries = await db.oPSPReviewEntry.findMany({
-      where: { tenantId, opspId: opsp.id, horizon, period: "secondary" },
+      where: { orgId, opspId: opsp.id, horizon, period: "secondary" },
       select: { rowIndex: true, comment: true },
     });
     const secondaryEntryMap = new Map<number, { status: string | null; text: string }>();
@@ -215,7 +215,7 @@ export async function GET(req: NextRequest) {
         year,
         quarter,
         horizon,
-        fiscalYearStart: tenant?.fiscalYearStart ?? 1,
+        fiscalYearStart: org?.fiscalYearStart ?? 1,
       },
     });
   } catch (error: unknown) {
@@ -234,8 +234,8 @@ export async function POST(req: NextRequest) {
   try {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
-    const { tenantId, userId } = auth;
-    const blocked = await gateModuleApi("quikscale", "opsp.review", tenantId);
+    const { orgId, userId } = auth;
+    const blocked = await gateModuleApi("quikscale", "opsp.review", orgId);
     if (blocked) return blocked;
 
     const parsed = opspReviewSaveSchema.safeParse(await req.json());
@@ -247,7 +247,7 @@ export async function POST(req: NextRequest) {
     // 1. Verify OPSP exists
     const opsp = await db.oPSPData.findUnique({
       where: {
-        tenantId_userId_year_quarter: { tenantId, userId, year: yearNum, quarter },
+        orgId_userId_year_quarter: { orgId, userId, year: yearNum, quarter },
       },
       select: { id: true },
     });
@@ -264,8 +264,8 @@ export async function POST(req: NextRequest) {
       entries.map((entry) =>
         db.oPSPReviewEntry.upsert({
           where: {
-            tenantId_opspId_horizon_rowIndex_period: {
-              tenantId,
+            orgId_opspId_horizon_rowIndex_period: {
+              orgId,
               opspId: opsp.id,
               horizon,
               rowIndex,
@@ -279,7 +279,7 @@ export async function POST(req: NextRequest) {
             updatedBy: userId,
           },
           create: {
-            tenantId,
+            orgId,
             opspId: opsp.id,
             userId,
             horizon,
@@ -297,7 +297,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Audit log
     await writeAuditLog({
-      tenantId,
+      orgId,
       actorId: userId,
       action: "UPDATE",
       entityType: "Review",
@@ -360,7 +360,7 @@ function getPeriodKeys(horizon: string, targetYears: number = 5): string[] {
  * OPSP review entries. Returns { achieved, target } sums across m1/m2/m3.
  */
 async function getQuarterCumulativeForCategory(
-  tenantId: string,
+  orgId: string,
   opspId: string,
   category: string,
   sourceRows: Record<string, unknown>[],
@@ -375,7 +375,7 @@ async function getQuarterCumulativeForCategory(
 
   const entries = await db.oPSPReviewEntry.findMany({
     where: {
-      tenantId,
+      orgId,
       opspId,
       horizon: "quarter",
       rowIndex: rowIdx,
@@ -413,7 +413,7 @@ async function getQuarterCumulativeForCategory(
  * yearly cumulative data. Mutates the `rows` array in-place.
  */
 async function populateCascadeData(
-  tenantId: string,
+  orgId: string,
   userId: string,
   year: number,
   rows: { rowIndex: number; category: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; gap: number | null; achievedPct: number | null; comment: string | null; autoPopulated?: boolean }> }[],
@@ -428,7 +428,7 @@ async function populateCascadeData(
 
     // Load all 4 quarter OPSPs for this user+year
     const quarterOpsps = await db.oPSPData.findMany({
-      where: { tenantId, userId, year, quarter: { in: quarters }, status: "finalized" },
+      where: { orgId, userId, year, quarter: { in: quarters }, status: "finalized" },
       select: { id: true, quarter: true, actionsQtr: true },
     });
 
@@ -447,7 +447,7 @@ async function populateCascadeData(
         );
 
         const cum = await getQuarterCumulativeForCategory(
-          tenantId,
+          orgId,
           qOpsp.id,
           row.category,
           sourceRows,
@@ -480,7 +480,7 @@ async function populateCascadeData(
 
         // Load all quarter OPSPs for this year
         const quarterOpsps = await db.oPSPData.findMany({
-          where: { tenantId, userId, year: targetYear, quarter: { in: quarters }, status: "finalized" },
+          where: { orgId, userId, year: targetYear, quarter: { in: quarters }, status: "finalized" },
           select: { id: true, quarter: true, actionsQtr: true },
         });
 
@@ -495,7 +495,7 @@ async function populateCascadeData(
           );
 
           const cum = await getQuarterCumulativeForCategory(
-            tenantId,
+            orgId,
             qOpsp.id,
             row.category,
             sourceRows,

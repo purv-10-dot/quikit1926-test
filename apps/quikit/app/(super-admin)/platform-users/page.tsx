@@ -37,7 +37,7 @@ export default function PlatformUsersPage() {
   // UX-8: persist filters to URL query so deep links and browser back/forward
   // preserve the filter state. Read initial values from the URL once.
   const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
-  const [tenantId, setTenantId] = useState<string>(() => searchParams.get("tenantId") ?? "");
+  const [orgId, setOrgId] = useState<string>(() => searchParams.get("orgId") ?? "");
   const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [tenantsLoaded, setTenantsLoaded] = useState(false);
 
@@ -48,13 +48,13 @@ export default function PlatformUsersPage() {
   useEffect(() => {
     const qs = new URLSearchParams();
     if (search) qs.set("q", search);
-    if (tenantId) qs.set("tenantId", tenantId);
+    if (orgId) qs.set("orgId", orgId);
     const qsStr = qs.toString();
     router.replace(qsStr ? `/platform-users?${qsStr}` : "/platform-users");
-  }, [search, tenantId, router]);
+  }, [search, orgId, router]);
 
   // Lazy-load the tenant list: only fetch when the picker is first opened OR
-  // when a tenantId is set via URL / external means. Saves ~1 HTTP call per
+  // when a orgId is set via URL / external means. Saves ~1 HTTP call per
   // /platform-users visit for the common case (no tenant filter).
   const ensureTenantsLoaded = useCallback(() => {
     if (tenantsLoaded) return;
@@ -74,12 +74,12 @@ export default function PlatformUsersPage() {
       .catch(() => {});
   }, [tenantsLoaded]);
 
-  // If the page was deep-linked with ?tenantId=<id>, eagerly load the tenant
+  // If the page was deep-linked with ?orgId=<id>, eagerly load the tenant
   // list so the picker can render the tenant's display name instead of an
   // opaque ID. Without this, the lazy-load path only triggers on picker click.
   useEffect(() => {
-    if (tenantId && !tenantsLoaded) ensureTenantsLoaded();
-  }, [tenantId, tenantsLoaded, ensureTenantsLoaded]);
+    if (orgId && !tenantsLoaded) ensureTenantsLoaded();
+  }, [orgId, tenantsLoaded, ensureTenantsLoaded]);
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -105,7 +105,7 @@ export default function PlatformUsersPage() {
   const fetchUsers = useCallback(() => {
     setLoading(true);
     const qs = new URLSearchParams({ page: String(page), limit: "20", search });
-    if (tenantId) qs.set("tenantId", tenantId);
+    if (orgId) qs.set("orgId", orgId);
     fetch(`/api/super/users?${qs.toString()}`)
       .then((r) => r.json())
       .then((j) => {
@@ -117,7 +117,7 @@ export default function PlatformUsersPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [page, search, tenantId]);
+  }, [page, search, orgId]);
 
   useEffect(() => {
     fetchUsers();
@@ -126,7 +126,7 @@ export default function PlatformUsersPage() {
   // Reset page to 1 when filters change
   useEffect(() => {
     setPage(1);
-  }, [search, tenantId]);
+  }, [search, orgId]);
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -288,15 +288,15 @@ export default function PlatformUsersPage() {
         <div className="w-64" onClick={ensureTenantsLoaded} onFocus={ensureTenantsLoaded}>
           <TenantPicker
             tenants={tenants}
-            value={tenantId || null}
-            onChange={(id) => setTenantId(id)}
+            value={orgId || null}
+            onChange={(id) => setOrgId(id)}
             placeholder="All tenants"
           />
         </div>
-        {tenantId && (
+        {orgId && (
           <button
             type="button"
-            onClick={() => setTenantId("")}
+            onClick={() => setOrgId("")}
             className="text-xs text-gray-500 hover:text-gray-700 underline"
           >
             Show all tenants

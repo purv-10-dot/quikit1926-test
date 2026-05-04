@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { internalReturnCreateSchema } from "@/lib/schemas/procurement-3b";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const returns = await db.cnInternalReturn.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     include: {
       issue: { select: { id: true, issueNumber: true } },
       project: { select: { id: true, name: true } },
@@ -19,11 +19,11 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: returns });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = internalReturnCreateSchema.parse(body);
   const issue = await db.cnMaterialIssue.findFirst({
-    where: { id: input.issueId, tenantId, deletedAt: null },
+    where: { id: input.issueId, orgId, deletedAt: null },
     select: { id: true, status: true, projectId: true, locationId: true },
   });
   if (!issue) return NextResponse.json({ success: false, error: "Issue not found" }, { status: 400 });
@@ -33,12 +33,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   if (issue.projectId !== input.projectId || issue.locationId !== input.locationId) {
     return NextResponse.json({ success: false, error: "Project/Location must match source issue" }, { status: 400 });
   }
-  const dup = await db.cnInternalReturn.findFirst({ where: { tenantId, returnNumber: input.returnNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnInternalReturn.findFirst({ where: { orgId, returnNumber: input.returnNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Return number '${input.returnNumber}' already exists` }, { status: 409 });
 
   const ret = await db.cnInternalReturn.create({
     data: {
-      tenantId,
+      orgId,
       returnNumber: input.returnNumber,
       issueId: input.issueId,
       projectId: input.projectId,

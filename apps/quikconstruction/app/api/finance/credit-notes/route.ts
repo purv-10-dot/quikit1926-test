@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { creditNoteSchema } from "@/lib/schemas/finance";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const customerId = req.nextUrl.searchParams.get("customerId") || undefined;
   const list = await db.cnCreditNote.findMany({
-    where: { tenantId, deletedAt: null, ...(customerId ? { customerId } : {}) },
+    where: { orgId, deletedAt: null, ...(customerId ? { customerId } : {}) },
     include: {
       customer: { select: { id: true, name: true, code: true } },
       invoice: { select: { id: true, invoiceNumber: true } },
@@ -27,18 +27,18 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
  * capped at total) and set note.status="applied". Otherwise the note stays
  * "issued" for manual allocation later.
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = creditNoteSchema.parse(await req.json());
-  const dup = await db.cnCreditNote.findFirst({ where: { tenantId, noteNumber: input.noteNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnCreditNote.findFirst({ where: { orgId, noteNumber: input.noteNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Credit note '${input.noteNumber}' already exists` }, { status: 409 });
 
-  const customer = await db.cnCustomer.findFirst({ where: { id: input.customerId, tenantId }, select: { id: true } });
+  const customer = await db.cnCustomer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true } });
   if (!customer) return NextResponse.json({ success: false, error: "Customer not found" }, { status: 400 });
 
   let invoiceId: string | null = null;
   if (input.invoiceId) {
     const inv = await db.cnClientInvoice.findFirst({
-      where: { id: input.invoiceId, tenantId, customerId: input.customerId, deletedAt: null },
+      where: { id: input.invoiceId, orgId, customerId: input.customerId, deletedAt: null },
       select: { id: true, total: true, paidAmount: true, status: true },
     });
     if (!inv) return NextResponse.json({ success: false, error: "Invoice not found or customer mismatch" }, { status: 400 });
@@ -51,7 +51,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const result = await db.$transaction(async (tx) => {
     const note = await tx.cnCreditNote.create({
       data: {
-        tenantId,
+        orgId,
         noteNumber: input.noteNumber,
         customerId: input.customerId,
         invoiceId,
@@ -70,7 +70,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
       const status = newPaid >= total - 0.01 ? "paid" : "partial";
       await tx.cnClientInvoice.update({ where: { id: invoiceId }, data: { paidAmount: newPaid, status } });
     }
-    await logAudit({ tenantId, userId, actionType: "create", entityType: "cnCreditNote", entityId: note.id, entityRef: note.noteNumber, newValues: note, tx });
+    await logAudit({ orgId, userId, actionType: "create", entityType: "cnCreditNote", entityId: note.id, entityRef: note.noteNumber, newValues: note, tx });
     return note;
   });
 

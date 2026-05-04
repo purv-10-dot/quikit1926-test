@@ -1,27 +1,27 @@
 import { createMiddleware } from "@quikit/auth/middleware";
 
 /**
- * QuikIT gateway middleware.
- *
- * ONLY enforces login (authenticated session required for non-public pages).
- * Does NOT enforce tenantId — the gateway serves login, org selection, and
- * the app launcher, all of which work without a selected org.
- *
- * Individual apps (QuikScale, Admin) enforce tenantId in their own middleware.
+ * Launcher (3000) + OAuth IdP. When NEXT_PUBLIC_AUTH_URL points at `apps/auth` (3004),
+ * `/login` is NOT public — unauthenticated traffic is sent to central credentials login only.
+ * Org picker stays on this host (`/select-org`), not on the auth service.
  */
+const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL?.replace(/\/$/, "");
+
+const launcherPublicRoutes = [
+  "/select-org",
+  "/api/oauth/authorize",
+  "/api/oauth/token",
+  "/api/oauth/userinfo",
+  "/api/oauth/jwks",
+  "/.well-known/openid-configuration",
+];
+
 export const middleware = createMiddleware({
   loginRoute: "/login",
-  // NO selectOrgRoute — don't redirect to /select-org for missing tenantId
+  selectOrgRoute: "/select-org",
   postLoginRoute: "/apps",
-  publicRoutes: [
-    "/login",
-    "/select-org",
-    "/api/oauth/authorize",
-    "/api/oauth/token",
-    "/api/oauth/userinfo",
-    "/api/oauth/jwks",
-    "/.well-known/openid-configuration",
-  ],
+  publicRoutes: AUTH_URL ? launcherPublicRoutes : ["/login", ...launcherPublicRoutes],
+  centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
 });
 
 export const config = {

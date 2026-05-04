@@ -18,11 +18,11 @@ const SEVERITY_BADGE: Record<string, string> = {
 
 export default async function RisksPage({ params }: { params: { id: string } }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const signals = await db.vCDealSignal.findMany({
-    where: { tenantId, dealId: params.id },
+    where: { orgId, dealId: params.id },
     orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
     select: {
       id: true,

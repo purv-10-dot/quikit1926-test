@@ -16,7 +16,7 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asSuperAdmin() {
-  setSession({ id: SUPER_ADMIN, tenantId: "any", role: "super_admin" });
+  setSession({ id: SUPER_ADMIN, orgId: "any", role: "super_admin" });
   mockDb.user.findUnique.mockResolvedValue({
     id: SUPER_ADMIN,
     isSuperAdmin: true,
@@ -39,7 +39,7 @@ describe("POST /api/super/orgs/bulk — auth", () => {
   });
 
   it("returns 403 for non-super-admin", async () => {
-    setSession({ id: "regular", tenantId: "t1", role: "member" });
+    setSession({ id: "regular", orgId: "t1", role: "member" });
     mockDb.user.findUnique.mockResolvedValue({ id: "regular", isSuperAdmin: false } as any);
     const res = await POST(buildPOST({ action: "suspend", ids: ["t1"] }));
     expect(res.status).toBe(403);
@@ -86,7 +86,7 @@ describe("POST /api/super/orgs/bulk — happy path", () => {
   beforeEach(asSuperAdmin);
 
   it("suspends multiple orgs", async () => {
-    mockDb.tenant.updateMany.mockResolvedValue({ count: 3 } as any);
+    mockDb.org.updateMany.mockResolvedValue({ count: 3 } as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     const res = await POST(buildPOST({ action: "suspend", ids: ["t1", "t2", "t3"] }));
@@ -95,7 +95,7 @@ describe("POST /api/super/orgs/bulk — happy path", () => {
     expect(body.success).toBe(true);
     expect(body.message).toContain("3");
 
-    expect(mockDb.tenant.updateMany).toHaveBeenCalledWith(
+    expect(mockDb.org.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: { in: ["t1", "t2", "t3"] } },
         data: { status: "suspended" },
@@ -104,14 +104,14 @@ describe("POST /api/super/orgs/bulk — happy path", () => {
   });
 
   it("activates multiple orgs", async () => {
-    mockDb.tenant.updateMany.mockResolvedValue({ count: 2 } as any);
+    mockDb.org.updateMany.mockResolvedValue({ count: 2 } as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     const res = await POST(buildPOST({ action: "activate", ids: ["t1", "t2"] }));
     const body = await res.json();
     expect(body.success).toBe(true);
 
-    expect(mockDb.tenant.updateMany).toHaveBeenCalledWith(
+    expect(mockDb.org.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { status: "active" },
       })

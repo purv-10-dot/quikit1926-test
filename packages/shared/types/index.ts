@@ -9,7 +9,7 @@ export type AppSession = Session & {
 };
 
 export interface TenantContext {
-  tenantId: string;
+  orgId: string;
   userId: string;
   userRole: string;
   user?: {

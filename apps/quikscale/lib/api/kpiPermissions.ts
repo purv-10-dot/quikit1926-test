@@ -26,10 +26,10 @@ type KPIForPermission = {
  */
 export async function canEditKPI(
   userId: string,
-  tenantId: string,
+  orgId: string,
   kpi: KPIForPermission,
 ): Promise<boolean> {
-  if (!userId || !tenantId || !kpi) return false;
+  if (!userId || !orgId || !kpi) return false;
 
   // 1. Creator always wins
   if (kpi.createdBy === userId) return true;
@@ -43,8 +43,8 @@ export async function canEditKPI(
   }
 
   // 4. Admin role on this tenant
-  const membership = await db.membership.findFirst({
-    where: { userId, tenantId, status: "active" },
+  const membership = await db.orgMember.findFirst({
+    where: { userId, orgId, status: "active" },
     select: { role: true },
   });
   if (membership) {
@@ -55,7 +55,7 @@ export async function canEditKPI(
   // 5. Team head (team-level KPIs)
   if (kpi.kpiLevel === "team" && kpi.teamId) {
     const team = await db.team.findFirst({
-      where: { id: kpi.teamId, tenantId },
+      where: { id: kpi.teamId, orgId },
       select: { headId: true },
     });
     if (team && team.headId === userId) return true;

@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { vendorCreateSchema } from "@/lib/schemas/masters";
 
-const withTenantAuth = withTenantAuthForModule("masters");
+const withOrgAuth = withOrgAuthForModule("masters");
 
 // GET /api/masters/vendors
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const vendors = await db.cnVendor.findMany({
     where: {
-      tenantId,
+      orgId,
       deletedAt: includeDeleted ? { not: null } : null,
       ...(status ? { status } : {}),
     },
@@ -21,12 +21,12 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
 });
 
 // POST /api/masters/vendors
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = vendorCreateSchema.parse(body);
   // Enforce per-tenant unique code at the app layer with a friendlier error
   const existing = await db.cnVendor.findFirst({
-    where: { tenantId, code: input.code, deletedAt: null },
+    where: { orgId, code: input.code, deletedAt: null },
     select: { id: true },
   });
   if (existing) {
@@ -38,7 +38,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const vendor = await db.cnVendor.create({
     data: {
       ...input,
-      tenantId,
+      orgId,
       createdBy: userId,
     },
   });

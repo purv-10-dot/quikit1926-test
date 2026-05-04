@@ -30,7 +30,7 @@ interface App {
   status: string;
 }
 
-export function ImpersonatePanel({ tenantId, members }: { tenantId: string; members: Member[] }) {
+export function ImpersonatePanel({ orgId, members }: { orgId: string; members: Member[] }) {
   const [apps, setApps] = useState<App[]>([]);
   const [targetUserId, setTargetUserId] = useState("");
   const [targetAppSlug, setTargetAppSlug] = useState("");
@@ -68,7 +68,7 @@ export function ImpersonatePanel({ tenantId, members }: { tenantId: string; memb
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           targetUserId,
-          targetTenantId: tenantId,
+          targetOrgId: orgId,
           targetAppSlug,
           reason: reason.trim() || undefined,
         }),
@@ -90,7 +90,7 @@ export function ImpersonatePanel({ tenantId, members }: { tenantId: string; memb
       <header className="px-5 py-4 border-b border-amber-200/60 flex items-center gap-3">
         <Eye className="h-5 w-5 text-amber-700" />
         <div>
-          <h2 className="font-semibold text-gray-900">View as tenant user</h2>
+          <h2 className="font-semibold text-gray-900">View as organization user</h2>
           <p className="text-xs text-gray-600">
             Opens the target app signed in as this user. Every action is audited. Session expires after 2 hours.
           </p>

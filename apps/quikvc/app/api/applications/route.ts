@@ -12,13 +12,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { fullApplicationSchema } from "@/lib/schemas/applicationSchema";
 import { scoreDeal } from "@/lib/ai/prompts/score-deal";
 import { detectFinancialSignals } from "@/lib/risk/auto-detect";
 
-export const POST = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(
+  async ({ orgId, userId }, req: NextRequest) => {
     const parsed = fullApplicationSchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -30,7 +30,7 @@ export const POST = withTenantAuth(
 
     // Resolve vertical
     const vertical = await db.vCVertical.findUnique({
-      where: { tenantId_slug: { tenantId, slug: data.verticalSlug } },
+      where: { orgId_slug: { orgId, slug: data.verticalSlug } },
     });
     if (!vertical) {
       return NextResponse.json(
@@ -45,7 +45,7 @@ export const POST = withTenantAuth(
     const result = await db.$transaction(async (tx) => {
       const application = await tx.vCApplication.create({
         data: {
-          tenantId,
+          orgId,
           founderId: userId,
           verticalId: vertical.id,
           startupName: data.startupName,
@@ -79,7 +79,7 @@ export const POST = withTenantAuth(
 
       const deal = await tx.vCDeal.create({
         data: {
-          tenantId,
+          orgId,
           applicationId: application.id,
           verticalId: vertical.id,
           currentStage: "intake",
@@ -91,7 +91,7 @@ export const POST = withTenantAuth(
 
       await tx.vCTimelineEvent.create({
         data: {
-          tenantId,
+          orgId,
           dealId: deal.id,
           type: "stage-advanced",
           actorId: userId,
@@ -109,7 +109,7 @@ export const POST = withTenantAuth(
     // swallowed: a failed scoring call shouldn't reject a valid application.
     try {
       const criteria = await db.vCScoringCriterion.findMany({
-        where: { tenantId, verticalId: vertical.id },
+        where: { orgId, verticalId: vertical.id },
         select: { slug: true, name: true, description: true, weight: true },
         orderBy: { sortOrder: "asc" },
       });
@@ -133,15 +133,15 @@ export const POST = withTenantAuth(
         ...scored.scores.map((s) =>
           db.vCDealScore.upsert({
             where: {
-              tenantId_dealId_criterionSlug: {
-                tenantId,
+              orgId_dealId_criterionSlug: {
+                orgId,
                 dealId: result.dealId,
                 criterionSlug: s.slug,
               },
             },
             update: { aiScore: s.score },
             create: {
-              tenantId,
+              orgId,
               dealId: result.dealId,
               criterionSlug: s.slug,
               aiScore: s.score,
@@ -156,7 +156,7 @@ export const POST = withTenantAuth(
         }),
         db.vCTimelineEvent.create({
           data: {
-            tenantId,
+            orgId,
             dealId: result.dealId,
             type: "score-updated",
             summary: `AI scored deal ${scored.composite}/100`,
@@ -187,7 +187,7 @@ export const POST = withTenantAuth(
       if (signals.length > 0) {
         await db.vCDealSignal.createMany({
           data: signals.map((s) => ({
-            tenantId,
+            orgId,
             dealId: result.dealId,
             severity: s.severity,
             source: "financial",

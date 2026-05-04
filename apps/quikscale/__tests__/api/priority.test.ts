@@ -23,11 +23,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -58,8 +58,8 @@ describe("GET /api/priority — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -98,7 +98,7 @@ describe("GET /api/priority — happy path", () => {
     // Verify tenant isolation in the where clause
     expect(mockDb.priority.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: TENANT }),
+        where: expect.objectContaining({ orgId: TENANT }),
       }),
     );
   });
@@ -117,8 +117,8 @@ describe("POST /api/priority — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -243,7 +243,7 @@ describe("POST /api/priority — happy path", () => {
     expect(mockDb.priorityWeeklyStatus.createMany).not.toHaveBeenCalled();
   });
 
-  it("stores tenantId and createdBy from the session", async () => {
+  it("stores orgId and createdBy from the session", async () => {
     mockDb.priority.create.mockResolvedValue({
       id: "new-p2",
       name: "Ship v2",
@@ -256,7 +256,7 @@ describe("POST /api/priority — happy path", () => {
     await POST(buildPOST(validBody), { params: {} } as any);
 
     const createArg = (mockDb.priority.create as any).mock.calls[0][0];
-    expect(createArg.data.tenantId).toBe(TENANT);
+    expect(createArg.data.orgId).toBe(TENANT);
     expect(createArg.data.createdBy).toBe(USER);
   });
 });

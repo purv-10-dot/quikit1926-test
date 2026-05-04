@@ -13,7 +13,7 @@ export type AuditAction =
 export type AuditEntityType = "Membership" | "Invitation" | "User" | "Tenant";
 
 export interface AuditLogInput {
-  tenantId: string;
+  orgId: string;
   actorId: string;
   action: AuditAction;
   entityType: AuditEntityType;
@@ -38,7 +38,7 @@ export async function writeAuditLog(input: AuditLogInput): Promise<void> {
   try {
     await db.auditLog.create({
       data: {
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         actorId: input.actorId,
         action: input.action,
         entityType: input.entityType,

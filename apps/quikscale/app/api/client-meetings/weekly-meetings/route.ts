@@ -1,21 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.weeklyMeeting");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
 /**
  * GET /api/client-meetings/weekly-meetings?clientId=&from=&to=
  * Ordered newest first; soft-deleted hidden.
  */
-export const GET = withTenantAuth(async ({ tenantId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
   const url = new URL(request.url);
   const clientId = url.searchParams.get("clientId") ?? undefined;
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
 
-  const where: Record<string, unknown> = { tenantId, deletedAt: null };
+  const where: Record<string, unknown> = { orgId, deletedAt: null };
   if (clientId) where.clientId = clientId;
   if (from || to) {
     const range: Record<string, Date> = {};
@@ -85,7 +85,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 });
 
 /** POST — create weekly meeting with absence + dashboardNA links + per-member scores. */
-export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
   const parsed = createWeeklyMeetingSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json(
@@ -98,7 +98,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
   const d = parsed.data;
 
   const client = await db.client.findFirst({
-    where: { id: d.clientId, tenantId, deletedAt: null },
+    where: { id: d.clientId, orgId, deletedAt: null },
   });
   if (!client)
     return NextResponse.json(
@@ -118,7 +118,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
 
   const created = await db.clientWeeklyMeeting.create({
     data: {
-      tenantId,
+      orgId,
       clientId: d.clientId,
       meetingDate: new Date(d.meetingDate),
       callStatus: d.callStatus,
@@ -162,7 +162,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
 
   await db.clientWeeklyMeetingLog.create({
     data: {
-      tenantId,
+      orgId,
       meetingId: created.id,
       action: "CREATE",
       newValue: JSON.stringify({

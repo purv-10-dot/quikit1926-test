@@ -28,12 +28,12 @@ export default async function InvestorLayout({
 }) {
   // Hardened: redirects to /login when no session. The portal reveals
   // private commitment + payment data, so no anonymous access.
-  const { userId, tenantId } = await requireSession();
+  const { userId, orgId } = await requireSession();
 
   // Portal gate — bounce non-investor roles. Internal staff (analyst,
   // partner, fund-admin) shouldn't see the investor portal because the
   // pages query by VCInvestor.userId and would fail / show stranger data.
-  const role = await getVCRole(userId, tenantId);
+  const role = await getVCRole(userId, orgId);
   const portal = portalForRole(role ?? undefined);
   if (portal !== "investor") {
     redirect(homePathForPortal(portal));

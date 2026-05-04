@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, FUND_ADMIN_ROLES } from "@/lib/rbac";
 
 const postSchema = z.object({
@@ -26,9 +26,9 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80);
 }
 
-export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
+export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   const verticalId = req.nextUrl.searchParams.get("verticalId");
-  const where: Record<string, string> = { tenantId };
+  const where: Record<string, string> = { orgId };
   if (verticalId) where.verticalId = verticalId;
 
   const items = await db.vCScoringCriterion.findMany({
@@ -38,8 +38,8 @@ export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
   return NextResponse.json({ success: true, data: items });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), FUND_ADMIN_ROLES);
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = denyIfNotInRoles(await getVCRole(userId, orgId), FUND_ADMIN_ROLES);
   if (denied) return denied;
 
   const parsed = postSchema.safeParse(await req.json());
@@ -51,7 +51,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   }
 
   const vertical = await db.vCVertical.findFirst({
-    where: { id: parsed.data.verticalId, tenantId },
+    where: { id: parsed.data.verticalId, orgId },
     select: { id: true },
   });
   if (!vertical) {
@@ -62,7 +62,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   const existing = await db.vCScoringCriterion.findUnique({
     where: {
-      tenantId_verticalId_slug: { tenantId, verticalId: vertical.id, slug },
+      orgId_verticalId_slug: { orgId, verticalId: vertical.id, slug },
     },
     select: { id: true },
   });
@@ -71,13 +71,13 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   }
 
   const max = await db.vCScoringCriterion.aggregate({
-    where: { tenantId, verticalId: vertical.id },
+    where: { orgId, verticalId: vertical.id },
     _max: { sortOrder: true },
   });
 
   const created = await db.vCScoringCriterion.create({
     data: {
-      tenantId,
+      orgId,
       verticalId: vertical.id,
       slug,
       name: parsed.data.name,

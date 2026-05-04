@@ -8,12 +8,12 @@ import { db } from "@/lib/db";
 
 export default async function NotificationsPage() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
-  if (!tenantId || !userId) notFound();
+  if (!orgId || !userId) notFound();
 
   const items = await db.vCNotification.findMany({
-    where: { tenantId, userId },
+    where: { orgId, userId },
     orderBy: { createdAt: "desc" },
     take: 200,
     select: { id: true, type: true, title: true, body: true, href: true, readAt: true, createdAt: true },

@@ -17,7 +17,7 @@ QuikIT/
 ├── apps/
 │   ├── _template/           Skeleton for new apps (copy + rename via scripts/onboard-dev.sh)
 │   ├── quikit/              Launcher (port 3000) — landing, app picker, SSO
-│   ├── quikscale/           KPI / OPSP / Priority / WWW (port 3004)
+│   ├── quikscale/           KPI / OPSP / Priority / WWW (port 3002)
 │   └── admin/               Tenant admin portal (port 3005)
 ├── packages/
 │   ├── auth/                NextAuth wrappers, middleware factory, session types
@@ -66,7 +66,7 @@ npm run dev                # turbo dev — runs all apps in parallel
 App-specific dev:
 
 ```bash
-npm run dev:quikscale      # quikscale on :3004
+npm run dev:quikscale      # quikscale on :3002
 npm run dev:admin          # admin on :3005
 ```
 

@@ -14,11 +14,11 @@ const USER = "user-admin-001";
 const TENANT = "tenant-001";
 
 function asAuthedAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -38,11 +38,11 @@ describe("GET /api/dashboard/stats", () => {
   });
 
   it("returns 403 when user is not admin", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "employee" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    setSession({ id: USER, orgId: TENANT, role: "employee" });
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "employee",
       status: "active",
     } as any);
@@ -54,7 +54,7 @@ describe("GET /api/dashboard/stats", () => {
   it("returns dashboard stats (happy path)", async () => {
     asAuthedAdmin();
 
-    mockDb.membership.count
+    mockDb.orgMember.count
       .mockResolvedValueOnce(15) // memberCount (active)
       .mockResolvedValueOnce(3); // pendingInvites (invited)
     mockDb.team.count.mockResolvedValue(4);
@@ -73,26 +73,26 @@ describe("GET /api/dashboard/stats", () => {
     expect(body.data.appCount).toBe(2);
   });
 
-  it("filters counts by tenantId (tenant isolation)", async () => {
+  it("filters counts by orgId (tenant isolation)", async () => {
     asAuthedAdmin();
 
-    mockDb.membership.count.mockResolvedValue(0);
+    mockDb.orgMember.count.mockResolvedValue(0);
     mockDb.team.count.mockResolvedValue(0);
     (mockDb.userAppAccess.groupBy as any).mockResolvedValue([] as any);
 
     await GET(req());
 
-    // Check membership.count calls include tenantId
-    for (const call of mockDb.membership.count.mock.calls) {
-      expect((call[0] as any).where.tenantId).toBe(TENANT);
+    // Check membership.count calls include orgId
+    for (const call of mockDb.orgMember.count.mock.calls) {
+      expect((call[0] as any).where.orgId).toBe(TENANT);
     }
 
-    // Check team.count call includes tenantId
+    // Check team.count call includes orgId
     const teamCountCall = mockDb.team.count.mock.calls[0]?.[0] as any;
-    expect(teamCountCall.where.tenantId).toBe(TENANT);
+    expect(teamCountCall.where.orgId).toBe(TENANT);
 
-    // Check userAppAccess.groupBy call includes tenantId
+    // Check userAppAccess.groupBy call includes orgId
     const groupByCall = (mockDb.userAppAccess.groupBy as any).mock.calls[0]?.[0] as any;
-    expect(groupByCall.where.tenantId).toBe(TENANT);
+    expect(groupByCall.where.orgId).toBe(TENANT);
   });
 });

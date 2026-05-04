@@ -10,15 +10,15 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { analyzeTranscript } from "@/lib/ai/prompts/analyze-transcript";
 
 const bodySchema = z.object({
   rawText: z.string().min(50, "Transcript too short").max(150_000, "Transcript too long"),
 });
 
-export const POST = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+export const POST = withOrgAuth(
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const parsed = bodySchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -28,7 +28,7 @@ export const POST = withTenantAuth(
     }
 
     const meeting = await db.vCMeeting.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       include: {
         deal: {
           select: { id: true, application: { select: { startupName: true } } },
@@ -54,7 +54,7 @@ export const POST = withTenantAuth(
         status: "analysed",
       },
       create: {
-        tenantId,
+        orgId,
         meetingId: meeting.id,
         rawText: parsed.data.rawText,
         analysis: analysis as unknown as object,
@@ -73,7 +73,7 @@ export const POST = withTenantAuth(
     if (!isStub && analysis.redFlags.length > 0) {
       await db.vCDealSignal.createMany({
         data: analysis.redFlags.map((f) => ({
-          tenantId,
+          orgId,
           dealId: meeting.deal.id,
           severity: f.severity,
           source: "transcript",
@@ -88,7 +88,7 @@ export const POST = withTenantAuth(
 
     await db.vCTimelineEvent.create({
       data: {
-        tenantId,
+        orgId,
         dealId: meeting.deal.id,
         type: "transcript-analysed",
         actorId: userId,

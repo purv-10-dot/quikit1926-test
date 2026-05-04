@@ -12,11 +12,11 @@ function buildRequest(qs: string = ""): NextRequest {
 }
 
 function asAuthedAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -35,8 +35,8 @@ describe("GET /api/kpi — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildRequest(), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -58,7 +58,7 @@ describe("GET /api/kpi — happy path", () => {
     expect(body.data.kpis).toEqual([]);
   });
 
-  it("filters by tenantId on every query", async () => {
+  it("filters by orgId on every query", async () => {
     mockDb.kPI.count.mockResolvedValue(0);
     mockDb.kPI.findMany.mockResolvedValue([]);
     mockDb.user.findMany.mockResolvedValue([]);
@@ -66,10 +66,10 @@ describe("GET /api/kpi — happy path", () => {
     await GET(buildRequest(), { params: {} } as any);
 
     const findManyCall = mockDb.kPI.findMany.mock.calls[0]?.[0] as any;
-    expect(findManyCall.where.tenantId).toBe(TENANT);
+    expect(findManyCall.where.orgId).toBe(TENANT);
 
     const countCall = mockDb.kPI.count.mock.calls[0]?.[0] as any;
-    expect(countCall.where.tenantId).toBe(TENANT);
+    expect(countCall.where.orgId).toBe(TENANT);
   });
 
   it("respects pagination query params", async () => {
@@ -107,7 +107,7 @@ describe("GET /api/kpi — happy path", () => {
     await GET(buildRequest(), { params: {} } as any);
 
     const call = mockDb.kPI.findMany.mock.calls[0]?.[0] as any;
-    expect(call.where.tenantId).toBe(TENANT);
+    expect(call.where.orgId).toBe(TENANT);
     // deletedAt filtering is handled by the Prisma soft-delete middleware
     // in packages/database/index.ts — not in the route handler
   });

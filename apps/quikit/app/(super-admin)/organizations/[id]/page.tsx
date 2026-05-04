@@ -396,13 +396,13 @@ export default function OrgDetailPage() {
 
       {/* SA Phase B/C/D panels */}
       <div className="mt-6 space-y-6">
-        <HealthPanel tenantId={orgId} />
+        <HealthPanel orgId={orgId} />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <AppAccessPanel tenantId={orgId} />
-          <BillingPanel tenantId={orgId} />
+          <AppAccessPanel orgId={orgId} />
+          <BillingPanel orgId={orgId} />
         </div>
-        <ImpersonatePanel tenantId={orgId} members={org.users} />
-        <AnalyticsPanel tenantId={orgId} />
+        <ImpersonatePanel orgId={orgId} members={org.users} />
+        <AnalyticsPanel orgId={orgId} />
       </div>
 
       {/* Add Member slide-in panel */}

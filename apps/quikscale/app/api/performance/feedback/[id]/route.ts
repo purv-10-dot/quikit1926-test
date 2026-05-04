@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.feedback");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.feedback");
 
 type Params = { id: string };
 
@@ -13,10 +13,10 @@ type Params = { id: string };
  * by the subject, while still letting senders retract something they
  * regret posting.
  */
-export const DELETE = withTenantAuth<Params>(
-  async ({ tenantId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<Params>(
+  async ({ orgId, userId }, _req, { params }) => {
     const existing = await db.feedbackEntry.findFirst({
-      where: { id: params.id, tenantId, fromUserId: userId },
+      where: { id: params.id, orgId, fromUserId: userId },
       select: { id: true },
     });
     if (!existing) {

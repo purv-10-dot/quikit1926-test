@@ -4,7 +4,7 @@ import { test, expect } from "@playwright/test";
  * Impersonation round-trip — API-level.
  *
  * We can't full-E2E the cross-origin redirect in this harness without
- * also running apps/quikscale on port 3004. What we CAN cover cheaply:
+ * also running apps/quikscale on port 3002. What we CAN cover cheaply:
  *   - POST /api/super/impersonate/start returns a redirectUrl when a
  *     super admin is logged in
  *   - Rate-limit 429 when the per-super-admin cap is exceeded
@@ -30,7 +30,7 @@ async function loginAs(page: import("@playwright/test").Page, email: string) {
 
 test("impersonate:start rejects unauthenticated", async ({ request }) => {
   const res = await request.post("/api/super/impersonate/start", {
-    data: { targetUserId: "x", targetTenantId: "x", targetAppSlug: "quikscale" },
+    data: { targetUserId: "x", targetOrgId: "x", targetAppSlug: "quikscale" },
   });
   expect(res.status()).toBeGreaterThanOrEqual(401);
   expect(res.status()).toBeLessThan(500);
@@ -40,7 +40,7 @@ test("impersonate:start rejects non-super-admin user", async ({ page, request })
   await loginAs(page, REGULAR_EMAIL);
   // Re-use the page's session cookie via request context
   const res = await request.post("/api/super/impersonate/start", {
-    data: { targetUserId: "x", targetTenantId: "x", targetAppSlug: "quikscale" },
+    data: { targetUserId: "x", targetOrgId: "x", targetAppSlug: "quikscale" },
   });
   // Regular admin should get 401/403, not 200
   expect(res.status()).toBeGreaterThanOrEqual(401);
@@ -52,7 +52,7 @@ test("impersonate:start returns 400/404 for unknown targets", async ({ page, req
   const res = await request.post("/api/super/impersonate/start", {
     data: {
       targetUserId: "clxxxxxxxxxxxxxxxxxxxxxx",
-      targetTenantId: "clyyyyyyyyyyyyyyyyyyyyyy",
+      targetOrgId: "clyyyyyyyyyyyyyyyyyyyyyy",
       targetAppSlug: "quikscale",
     },
   });

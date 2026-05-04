@@ -23,11 +23,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -55,8 +55,8 @@ describe("GET /api/org/teams — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -101,7 +101,7 @@ describe("GET /api/org/teams — happy path", () => {
     // Verify tenant isolation
     expect(mockDb.team.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: TENANT }),
+        where: expect.objectContaining({ orgId: TENANT }),
       }),
     );
   });
@@ -120,8 +120,8 @@ describe("POST /api/org/teams — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -158,7 +158,7 @@ describe("POST /api/org/teams — duplicate name", () => {
     mockDb.team.findFirst.mockResolvedValue({
       id: "existing-t1",
       name: "Engineering",
-      tenantId: TENANT,
+      orgId: TENANT,
     } as any);
 
     const res = await POST(buildPOST(validBody), { params: {} } as any);
@@ -188,7 +188,7 @@ describe("POST /api/org/teams — happy path", () => {
       slug: "engineering-abc123",
       createdAt: new Date(),
       createdBy: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
     };
     mockDb.team.create.mockResolvedValue(createdTeam as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
@@ -203,7 +203,7 @@ describe("POST /api/org/teams — happy path", () => {
     // Verify slug was generated (contains base name in lowercase)
     const createArg = (mockDb.team.create as any).mock.calls[0][0];
     expect(createArg.data.slug).toMatch(/^engineering-/);
-    expect(createArg.data.tenantId).toBe(TENANT);
+    expect(createArg.data.orgId).toBe(TENANT);
     expect(createArg.data.createdBy).toBe(USER);
 
     // Verify audit log
@@ -224,7 +224,7 @@ describe("POST /api/org/teams — happy path", () => {
       slug: "design-abc123",
       createdAt: new Date(),
       createdBy: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
     };
     mockDb.team.create.mockResolvedValue(createdTeam as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);

@@ -35,7 +35,7 @@ export type AuditAction =
   | "sourced.score";
 
 export interface AuditInput {
-  tenantId: string;
+  orgId: string;
   userId: string | null;
   action: AuditAction;
   resource?: string;
@@ -48,7 +48,7 @@ export async function audit(input: AuditInput): Promise<void> {
   try {
     await db.vCAuditLog.create({
       data: {
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         userId: input.userId,
         action: input.action,
         resource: input.resource,

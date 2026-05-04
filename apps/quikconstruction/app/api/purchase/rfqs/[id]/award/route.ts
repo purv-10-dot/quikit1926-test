@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { z } from "zod";
 
-const withTenantAuth = withTenantAuthForModule("purchase");
+const withOrgAuth = withOrgAuthForModule("purchase");
 
 const awardSchema = z.object({
   vendorId: z.string().min(1),
@@ -16,9 +16,9 @@ const awardSchema = z.object({
  * Marks ONE vendor as awarded on the RFQ (and captures their quoted amount).
  * Flips RFQ status → awarded. Other vendors' rows stay (isAwarded=false).
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const rfq = await db.cnRFQ.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: { vendors: true },
   });
   if (!rfq) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });

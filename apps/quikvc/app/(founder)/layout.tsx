@@ -23,12 +23,12 @@ export default async function FounderLayout({
   children: React.ReactNode;
 }) {
   // Hardened: redirects to /login when no session.
-  const { userId, tenantId } = await requireSession();
+  const { userId, orgId } = await requireSession();
 
   // Portal gate — bounce non-founder roles to their own portal home so
   // an analyst or investor can't view the founder portal with their
   // session, which would render confusing / empty data.
-  const role = await getVCRole(userId, tenantId);
+  const role = await getVCRole(userId, orgId);
   const portal = portalForRole(role ?? undefined);
   if (portal !== "founder") {
     redirect(homePathForPortal(portal));

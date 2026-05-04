@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { billCreateSchema } from "@/lib/schemas/finance";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const vendorId = req.nextUrl.searchParams.get("vendorId") || undefined;
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const list = await db.cnVendorBill.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null, ...(vendorId ? { vendorId } : {}), ...(status ? { status } : {}) },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null, ...(vendorId ? { vendorId } : {}), ...(status ? { status } : {}) },
     include: {
       vendor: { select: { id: true, name: true, code: true } },
       project: { select: { id: true, name: true, code: true } },
@@ -22,16 +22,16 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = billCreateSchema.parse(await req.json());
-  const dup = await db.cnVendorBill.findFirst({ where: { tenantId, billNumber: input.billNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnVendorBill.findFirst({ where: { orgId, billNumber: input.billNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Bill '${input.billNumber}' already exists` }, { status: 409 });
-  const vendor = await db.cnVendor.findFirst({ where: { id: input.vendorId, tenantId }, select: { id: true } });
+  const vendor = await db.cnVendor.findFirst({ where: { id: input.vendorId, orgId }, select: { id: true } });
   if (!vendor) return NextResponse.json({ success: false, error: "Vendor not found" }, { status: 400 });
 
   const bill = await db.cnVendorBill.create({
     data: {
-      tenantId,
+      orgId,
       billNumber: input.billNumber,
       vendorId: input.vendorId,
       projectId: input.projectId ?? null,
@@ -67,6 +67,6 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
       } : {}),
     },
   });
-  await logAudit({ tenantId, userId, actionType: "create", entityType: "cnVendorBill", entityId: bill.id, entityRef: bill.billNumber, newValues: { billNumber: bill.billNumber, total: bill.total, vendorId: bill.vendorId } });
+  await logAudit({ orgId, userId, actionType: "create", entityType: "cnVendorBill", entityId: bill.id, entityRef: bill.billNumber, newValues: { billNumber: bill.billNumber, total: bill.total, vendorId: bill.vendorId } });
   return NextResponse.json({ success: true, data: bill }, { status: 201 });
 });

@@ -4,7 +4,7 @@
  * Call from any server route after a key event:
  *
  *   await notify({
- *     tenantId, userIds, type: "allocation",
+ *     orgId, userIds, type: "allocation",
  *     title: "Capital allocated", body: "...", href: "/deals/abc",
  *   });
  *
@@ -32,7 +32,7 @@ export type NotificationType =
   | "sourced-opportunity";
 
 export interface NotifyInput {
-  tenantId: string;
+  orgId: string;
   /// Recipient user ids — duplicates are de-duped
   userIds: string[];
   type: NotificationType;
@@ -62,7 +62,7 @@ export async function notify(input: NotifyInput): Promise<void> {
   try {
     await db.vCNotification.createMany({
       data: recipients.map((userId) => ({
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         userId,
         type: input.type,
         title: input.title,
@@ -79,13 +79,13 @@ export async function notify(input: NotifyInput): Promise<void> {
   if (!emailEnabled()) return;
 
   try {
-    const [users, tenant] = await Promise.all([
+    const [users, org] = await Promise.all([
       db.user.findMany({
         where: { id: { in: recipients } },
         select: { id: true, email: true, firstName: true },
       }),
-      db.tenant.findUnique({
-        where: { id: input.tenantId },
+      db.org.findUnique({
+        where: { id: input.orgId },
         select: { name: true },
       }),
     ]);
@@ -110,7 +110,7 @@ export async function notify(input: NotifyInput): Promise<void> {
               body: input.body,
               href: input.href,
               recipientName: u.firstName ?? undefined,
-              tenantName: tenant?.name ?? "QuikVC",
+              tenantName: org?.name ?? "QuikVC",
               appUrl,
             }),
           }),
@@ -127,16 +127,16 @@ export async function notify(input: NotifyInput): Promise<void> {
  * Use sparingly — fan-out cost grows with team size.
  */
 export async function notifyRole(
-  tenantId: string,
+  orgId: string,
   role: string,
-  payload: Omit<NotifyInput, "tenantId" | "userIds">,
+  payload: Omit<NotifyInput, "orgId" | "userIds">,
 ): Promise<void> {
-  const members = await db.membership.findMany({
-    where: { tenantId, role },
+  const members = await db.orgMember.findMany({
+    where: { orgId, role },
     select: { userId: true },
   });
   await notify({
-    tenantId,
+    orgId,
     userIds: members.map((m) => m.userId),
     ...payload,
   });

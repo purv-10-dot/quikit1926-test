@@ -9,25 +9,25 @@ import { getDevAwareSession } from "@/lib/dev-session";
 import { db } from "@/lib/db";
 
 export interface InvestorContext {
-  tenantId: string;
+  orgId: string;
   investorId: string;
   investorName: string;
 }
 
 export async function getCurrentInvestor(): Promise<InvestorContext | null> {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
-  if (!tenantId) return null;
+  if (!orgId) return null;
 
   // Real wiring: match by userId
   if (userId) {
     const inv = await db.vCInvestor.findFirst({
-      where: { tenantId, userId },
+      where: { orgId, userId },
       select: { id: true, name: true },
     });
     if (inv) {
-      return { tenantId, investorId: inv.id, investorName: inv.name };
+      return { orgId, investorId: inv.id, investorName: inv.name };
     }
   }
 
@@ -38,12 +38,12 @@ export async function getCurrentInvestor(): Promise<InvestorContext | null> {
   const bypass = bypassFlag === "1" || bypassFlag === "true" || bypassFlag === "yes";
   if (bypass) {
     const inv = await db.vCInvestor.findFirst({
-      where: { tenantId },
+      where: { orgId },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });
     if (inv) {
-      return { tenantId, investorId: inv.id, investorName: inv.name };
+      return { orgId, investorId: inv.id, investorName: inv.name };
     }
   }
 

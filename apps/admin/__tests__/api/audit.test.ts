@@ -13,11 +13,11 @@ function buildRequest(method: string, url: string): NextRequest {
 }
 
 function asAuthedAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m-admin",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -41,7 +41,7 @@ describe("GET /api/audit", () => {
     mockDb.auditLog.findMany.mockResolvedValue([
       {
         id: "a1",
-        tenantId: TENANT,
+        orgId: TENANT,
         action: "INVITED",
         entityType: "Membership",
         entityId: "m1",
@@ -88,7 +88,7 @@ describe("GET /api/audit", () => {
     expect(mockDb.auditLog.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          tenantId: TENANT,
+          orgId: TENANT,
           action: "REVOKED",
           entityType: "Membership",
           createdAt: expect.objectContaining({ gte: expect.any(Date) }),

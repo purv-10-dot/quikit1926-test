@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { kpiNoteSchema } from "@/lib/schemas/kpiSchema";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("kpi");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("kpi");
 
 type RouteParams = { id: string };
 
-export const GET = withTenantAuth<RouteParams>(async ({ tenantId }, _req, { params }) => {
+export const GET = withOrgAuth<RouteParams>(async ({ orgId }, _req, { params }) => {
   const kpi = await db.kPI.findUnique({
     where: { id: params.id },
-    select: { tenantId: true },
+    select: { orgId: true },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
-  if (kpi.tenantId !== tenantId)
+  if (kpi.orgId !== orgId)
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   const notes = await db.kPINote.findMany({
@@ -31,19 +31,19 @@ export const GET = withTenantAuth<RouteParams>(async ({ tenantId }, _req, { para
   return NextResponse.json({ success: true, data: notes });
 }, { fallbackErrorMessage: "Failed to fetch notes" });
 
-export const POST = withTenantAuth<RouteParams>(async ({ tenantId, userId }, req, { params }) => {
+export const POST = withOrgAuth<RouteParams>(async ({ orgId, userId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({
     where: { id: params.id },
-    select: { tenantId: true },
+    select: { orgId: true },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
-  if (kpi.tenantId !== tenantId)
+  if (kpi.orgId !== orgId)
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   const validated = kpiNoteSchema.parse(await req.json());
 
   const note = await db.kPINote.create({
-    data: { kpiId: params.id, tenantId, content: validated.content, authorId: userId },
+    data: { kpiId: params.id, orgId, content: validated.content, authorId: userId },
     select: {
       id: true,
       content: true,

@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { notify } from "@/lib/notifications";
 import { getVCRole, denyIfNotInRoles, CAPITAL_OPS_ROLES } from "@/lib/rbac";
 
@@ -23,8 +23,8 @@ const postSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), CAPITAL_OPS_ROLES);
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = denyIfNotInRoles(await getVCRole(userId, orgId), CAPITAL_OPS_ROLES);
   if (denied) return denied;
 
   const parsed = postSchema.safeParse(await req.json());
@@ -38,7 +38,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   const amountPaise = BigInt(Math.round(amountLakhs * 10_000_000));
 
   const schedule = await db.vCRepaymentSchedule.findFirst({
-    where: { id: scheduleId, tenantId },
+    where: { id: scheduleId, orgId },
     select: {
       id: true, dealId: true, investorId: true,
       totalExpected: true, totalPaid: true, status: true,
@@ -51,7 +51,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   const result = await db.$transaction(async (tx) => {
     const created = await tx.vCRepaymentPayment.create({
       data: {
-        tenantId,
+        orgId,
         scheduleId,
         investorId: schedule.investorId,
         amount: amountPaise,
@@ -74,7 +74,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
     await tx.vCTimelineEvent.create({
       data: {
-        tenantId,
+        orgId,
         dealId: schedule.dealId,
         type: "repayment-payment",
         actorId: userId,
@@ -94,7 +94,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   }))?.userId;
   if (investorUserId) {
     await notify({
-      tenantId,
+      orgId,
       userIds: [investorUserId],
       type: "repayment-payment",
       title: `Repayment received: ₹${amountLakhs.toLocaleString("en-IN")}L`,

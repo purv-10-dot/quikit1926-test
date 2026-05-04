@@ -12,15 +12,15 @@ import { getVCRole, CAPITAL_OPS_ROLES } from "@/lib/rbac";
 
 export default async function RepaymentsPage({ params }: { params: { id: string } }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
-  if (!tenantId || !userId) notFound();
+  if (!orgId || !userId) notFound();
 
-  const viewerRole = await getVCRole(userId, tenantId);
+  const viewerRole = await getVCRole(userId, orgId);
   const canManage = viewerRole !== null && CAPITAL_OPS_ROLES.includes(viewerRole);
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     select: {
       id: true,
       application: { select: { startupName: true, loanType: true, tenureMonths: true } },
@@ -33,7 +33,7 @@ export default async function RepaymentsPage({ params }: { params: { id: string 
   if (!deal) notFound();
 
   const schedules = await db.vCRepaymentSchedule.findMany({
-    where: { tenantId, dealId: deal.id },
+    where: { orgId, dealId: deal.id },
     include: {
       investor: { select: { id: true, name: true } },
       payments: { orderBy: { paidAt: "desc" } },

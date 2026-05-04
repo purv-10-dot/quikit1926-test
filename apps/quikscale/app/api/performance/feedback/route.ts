@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.feedback");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.feedback");
 import {
   createFeedbackSchema,
   listFeedbackParamsSchema,
@@ -18,8 +18,8 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
  * Default (no filters) returns feedback where the current user is EITHER
  * the sender or receiver. Admin-style lookups via explicit filters.
  */
-export const GET = withTenantAuth(
-  async ({ tenantId, userId }, request) => {
+export const GET = withOrgAuth(
+  async ({ orgId, userId }, request) => {
     const parsed = listFeedbackParamsSchema.safeParse({
       toUserId: request.nextUrl.searchParams.get("toUserId") ?? undefined,
       fromUserId: request.nextUrl.searchParams.get("fromUserId") ?? undefined,
@@ -42,7 +42,7 @@ export const GET = withTenantAuth(
     const { toUserId, fromUserId, category, visibility, from, to, page, pageSize } =
       parsed.data;
 
-    const where: Record<string, unknown> = { tenantId };
+    const where: Record<string, unknown> = { orgId };
     if (category) where.category = category;
     if (visibility) where.visibility = visibility;
     if (from || to) {
@@ -102,11 +102,11 @@ export const GET = withTenantAuth(
 /**
  * POST /api/performance/feedback — drop feedback about another user.
  */
-export const POST = withTenantAuth(
-  async ({ tenantId, userId }, request) => {
+export const POST = withOrgAuth(
+  async ({ orgId, userId }, request) => {
     const rl = rateLimit({
       routeKey: "feedback:create",
-      clientKey: `${tenantId}:${userId}`,
+      clientKey: `${orgId}:${userId}`,
       limit: LIMITS.mutation.limit,
       windowMs: LIMITS.mutation.windowMs,
     });
@@ -140,8 +140,8 @@ export const POST = withTenantAuth(
     }
 
     // Verify recipient is an active member
-    const recipientOk = await db.membership.findFirst({
-      where: { tenantId, userId: input.toUserId, status: "active" },
+    const recipientOk = await db.orgMember.findFirst({
+      where: { orgId, userId: input.toUserId, status: "active" },
       select: { id: true },
     });
     if (!recipientOk) {
@@ -153,7 +153,7 @@ export const POST = withTenantAuth(
 
     const entry = await db.feedbackEntry.create({
       data: {
-        tenantId,
+        orgId,
         fromUserId: userId,
         toUserId: input.toUserId,
         category: input.category,

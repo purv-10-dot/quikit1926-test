@@ -1,27 +1,27 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { itemGroupCreateSchema } from "@/lib/schemas/masters";
 
-const withTenantAuth = withTenantAuthForModule("masters");
+const withOrgAuth = withOrgAuthForModule("masters");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const groups = await db.cnItemGroup.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     orderBy: [{ depth: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
   });
   return NextResponse.json({ success: true, data: groups });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = itemGroupCreateSchema.parse(body);
   // Compute depth from parent chain
   let depth = 0;
   if (input.parentId) {
     const parent = await db.cnItemGroup.findFirst({
-      where: { id: input.parentId, tenantId },
+      where: { id: input.parentId, orgId },
       select: { depth: true },
     });
     if (!parent) {
@@ -33,7 +33,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
     }
   }
   const group = await db.cnItemGroup.create({
-    data: { ...input, depth, tenantId, createdBy: userId },
+    data: { ...input, depth, orgId, createdBy: userId },
   });
   return NextResponse.json({ success: true, data: group }, { status: 201 });
 });

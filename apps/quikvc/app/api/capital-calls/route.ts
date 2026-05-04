@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { CAPITAL_OPS_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
@@ -29,16 +29,16 @@ const postSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
+export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   const dealId = req.nextUrl.searchParams.get("dealId");
   const investorId = req.nextUrl.searchParams.get("investorId");
 
   // For dealId queries, join through allocations
-  const where: Record<string, unknown> = { tenantId };
+  const where: Record<string, unknown> = { orgId };
   if (investorId) where.investorId = investorId;
   if (dealId) {
     const allocations = await db.vCDealAllocation.findMany({
-      where: { tenantId, dealId },
+      where: { orgId, dealId },
       select: { id: true },
     });
     where.allocationId = { in: allocations.map((a) => a.id) };
@@ -64,8 +64,8 @@ export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
   });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = await requireRoleOrAudit(userId, tenantId, CAPITAL_OPS_ROLES, {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = await requireRoleOrAudit(userId, orgId, CAPITAL_OPS_ROLES, {
     action: "allocation.create", // Reuse existing audit action — capital call is the issuance side
     req,
   });
@@ -84,12 +84,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   // Validate investor + allocation belong to this tenant
   const [investor, allocation] = await Promise.all([
     db.vCInvestor.findFirst({
-      where: { id: investorId, tenantId },
+      where: { id: investorId, orgId },
       select: { id: true, name: true, userId: true },
     }),
     allocationId
       ? db.vCDealAllocation.findFirst({
-          where: { id: allocationId, tenantId, investorId, dealId },
+          where: { id: allocationId, orgId, investorId, dealId },
           select: { id: true },
         })
       : Promise.resolve(null),
@@ -106,7 +106,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   const created = await db.vCCapitalCall.create({
     data: {
-      tenantId,
+      orgId,
       investorId,
       allocationId: allocationId ?? null,
       amount: amountPaise,
@@ -121,7 +121,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   });
 
   await audit({
-    tenantId,
+    orgId,
     userId,
     action: "allocation.create",
     resource: created.id,
@@ -131,7 +131,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   await db.vCTimelineEvent.create({
     data: {
-      tenantId,
+      orgId,
       dealId,
       type: "capital-call-issued",
       actorId: userId,
@@ -143,7 +143,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   if (investor.userId) {
     await notify({
-      tenantId,
+      orgId,
       userIds: [investor.userId],
       type: "allocation",
       title: `Capital call: ₹${amountLakhs.toLocaleString("en-IN")}L`,

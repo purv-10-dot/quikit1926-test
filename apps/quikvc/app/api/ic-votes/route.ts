@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, IC_VOTING_ROLES } from "@/lib/rbac";
 
 const bodySchema = z.object({
@@ -22,8 +22,8 @@ const bodySchema = z.object({
   conditions: z.string().max(2000).optional(),
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), IC_VOTING_ROLES);
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = denyIfNotInRoles(await getVCRole(userId, orgId), IC_VOTING_ROLES);
   if (denied) return denied;
 
   const parsed = bodySchema.safeParse(await req.json());
@@ -36,7 +36,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   const { memoId, decision, rationale, conditions } = parsed.data;
 
   const memo = await db.vCICMemo.findFirst({
-    where: { id: memoId, tenantId },
+    where: { id: memoId, orgId },
     select: { id: true, dealId: true, status: true },
   });
   if (!memo) {
@@ -53,12 +53,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   await db.vCICVote.upsert({
     where: { memoId_voterId: { memoId, voterId: userId } },
     update: { decision, rationale: rationale ?? null, conditions: conditions ?? null },
-    create: { tenantId, memoId, voterId: userId, decision, rationale: rationale ?? null, conditions: conditions ?? null },
+    create: { orgId, memoId, voterId: userId, decision, rationale: rationale ?? null, conditions: conditions ?? null },
   });
 
   await db.vCTimelineEvent.create({
     data: {
-      tenantId,
+      orgId,
       dealId: memo.dealId,
       type: "ic-vote-cast",
       actorId: userId,

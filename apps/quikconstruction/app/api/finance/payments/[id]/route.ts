@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ tenantId }, _req, ctx: { params: { id: string } }) => {
+export const GET = withOrgAuth(async ({ orgId }, _req, ctx: { params: { id: string } }) => {
   const p = await db.cnVendorPayment.findFirst({
-    where: { id: ctx.params.id, tenantId },
+    where: { id: ctx.params.id, orgId },
     include: {
       vendor: true,
       allocations: { include: { bill: { select: { id: true, billNumber: true, total: true, paidAmount: true, status: true } } } },

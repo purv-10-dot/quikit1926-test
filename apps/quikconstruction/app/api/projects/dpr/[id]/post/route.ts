@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
 /**
  * POST /api/projects/dpr/[id]/post
@@ -17,9 +17,9 @@ const withTenantAuth = withTenantAuthForModule("projects");
  * If materials is empty, this is still a valid "lock" operation — it seals
  * the labour/activity log but writes no stock rows.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const dpr = await db.cnDPR.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: { materials: true, project: { select: { id: true } } },
   });
   if (!dpr) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -36,7 +36,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   for (const m of dpr.materials) {
     const agg = await db.cnStockLedger.aggregate({
       where: {
-        tenantId,
+        orgId,
         projectId: dpr.projectId,
         locationId: dpr.consumptionLocationId!,
         itemId: m.itemId,
@@ -51,7 +51,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
     // Moving avg rate = total inventory value / total inventory qty at this location
     // Simplified: latest inbound rate would also work. Use total-value / qty-in approximation.
     const avgAgg = await db.cnStockLedger.aggregate({
-      where: { tenantId, projectId: dpr.projectId, locationId: dpr.consumptionLocationId!, itemId: m.itemId, qtyIn: { gt: 0 } },
+      where: { orgId, projectId: dpr.projectId, locationId: dpr.consumptionLocationId!, itemId: m.itemId, qtyIn: { gt: 0 } },
       _sum: { qtyIn: true, amount: true },
     });
     const totalIn = Number(avgAgg._sum.qtyIn ?? 0);
@@ -76,7 +76,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
         });
         await tx.cnStockLedger.create({
           data: {
-            tenantId,
+            orgId,
             projectId: dpr.projectId,
             locationId: dpr.consumptionLocationId!,
             itemId: m.itemId,
@@ -103,6 +103,6 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
     return NextResponse.json({ success: false, error: `Transaction failed: ${msg}` }, { status: 500 });
   }
 
-  await logAudit({ tenantId, userId, actionType: "post", entityType: "cnDPR", entityId: dpr.id, oldValues: { status: "draft" }, newValues: { status: "posted", materialsPosted: dpr.materials.length } });
+  await logAudit({ orgId, userId, actionType: "post", entityType: "cnDPR", entityId: dpr.id, oldValues: { status: "draft" }, newValues: { status: "posted", materialsPosted: dpr.materials.length } });
   return NextResponse.json({ success: true, data: { id: dpr.id, status: "posted", postedAt, materialsPosted: dpr.materials.length } });
 });

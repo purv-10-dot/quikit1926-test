@@ -23,9 +23,9 @@ interface DealCard {
   fundingAsk: bigint | null;
 }
 
-async function loadDeals(tenantId: string): Promise<DealCard[]> {
+async function loadDeals(orgId: string): Promise<DealCard[]> {
   const rows = await db.vCDeal.findMany({
-    where: { tenantId },
+    where: { orgId },
     select: {
       id: true,
       currentStage: true,
@@ -54,8 +54,8 @@ async function loadDeals(tenantId: string): Promise<DealCard[]> {
 
 export default async function DealsPipelinePage() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  const deals = tenantId ? await loadDeals(tenantId) : [];
+  const orgId = session?.user?.orgId;
+  const deals = orgId ? await loadDeals(orgId) : [];
 
   return (
     <div className="px-6 py-6 space-y-5">

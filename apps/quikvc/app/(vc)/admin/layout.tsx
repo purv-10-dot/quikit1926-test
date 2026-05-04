@@ -10,10 +10,10 @@ import { getVCRole, FUND_ADMIN_ROLES } from "@/lib/rbac";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
 
-  if (!tenantId || !userId) {
+  if (!orgId || !userId) {
     return (
       <div className="px-6 py-12 max-w-2xl mx-auto text-center">
         <p className="text-sm text-gray-500">Sign in required.</p>
@@ -21,7 +21,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     );
   }
 
-  const role = await getVCRole(userId, tenantId);
+  const role = await getVCRole(userId, orgId);
   if (!role || !FUND_ADMIN_ROLES.includes(role)) {
     return (
       <div className="px-6 py-12 max-w-2xl mx-auto text-center space-y-3">

@@ -25,17 +25,17 @@ function jsonReq(url: string, method: string, body: unknown = {}): NextRequest {
 }
 
 function mockMembershipRole(role: string | null) {
-  // getVCRole() uses findUnique(where: { tenantId_userId })
-  // getTenantId()  uses findFirst(where: { userId, tenantId, status: "active" })
-  // Mock both so the route can resolve tenantId AND read role.
+  // getVCRole() uses findUnique(where: { orgId_userId })
+  // getTenantId()  uses findFirst(where: { userId, orgId, status: "active" })
+  // Mock both so the route can resolve orgId AND read role.
   if (role === null) {
-    mockDb.membership.findUnique.mockResolvedValue(null);
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findUnique.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
   } else {
     const m = {
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role,
       status: "active",
       teamId: null,
@@ -47,8 +47,8 @@ function mockMembershipRole(role: string | null) {
       updatedAt: new Date(),
       createdBy: null,
     };
-    mockDb.membership.findUnique.mockResolvedValue(m as never);
-    mockDb.membership.findFirst.mockResolvedValue(m as never);
+    mockDb.orgMember.findUnique.mockResolvedValue(m as never);
+    mockDb.orgMember.findFirst.mockResolvedValue(m as never);
   }
   // Skip per-app access gate (app row missing → don't block, per createGetTenantId)
   mockDb.app.findUnique.mockResolvedValue(null);
@@ -70,7 +70,7 @@ describe("POST /api/verticals", () => {
   });
 
   it("403 when role is analyst", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("analyst");
     const { POST } = await import("@/app/api/verticals/route");
     const res = await POST(jsonReq("/api/verticals", "POST", { name: "AgriTech" }), { params: {} as never });
@@ -78,7 +78,7 @@ describe("POST /api/verticals", () => {
   });
 
   it("201 when role is fund-admin", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("fund-admin");
     mockDb.vCVertical.findUnique.mockResolvedValue(null);
     mockDb.vCVertical.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } } as never);
@@ -100,7 +100,7 @@ describe("PUT /api/fund-profile", () => {
   });
 
   it("403 when role is partner (not fund-admin)", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("partner");
     const { PUT } = await import("@/app/api/fund-profile/route");
     const res = await PUT(jsonReq("/api/fund-profile", "PUT", {}), { params: {} as never });
@@ -109,7 +109,7 @@ describe("PUT /api/fund-profile", () => {
     expect(mockDb.vCAuditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          tenantId: TENANT,
+          orgId: TENANT,
           userId: USER,
           action: "rbac.deny",
           outcome: "denied",
@@ -119,9 +119,9 @@ describe("PUT /api/fund-profile", () => {
   });
 
   it("200 when role is fund-admin + audit success row written", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("fund-admin");
-    mockDb.vCFundProfile.upsert.mockResolvedValue({ id: "fp1", tenantId: TENANT } as never);
+    mockDb.vCFundProfile.upsert.mockResolvedValue({ id: "fp1", orgId: TENANT } as never);
     const { PUT } = await import("@/app/api/fund-profile/route");
     const res = await PUT(jsonReq("/api/fund-profile", "PUT", { fundName: "Fund II" }), { params: {} as never });
     expect(res.status).toBe(200);
@@ -147,7 +147,7 @@ describe("POST /api/ic-votes/settle", () => {
   });
 
   it("403 when role is ic-member (cannot settle, only vote)", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("ic-member");
     const { POST } = await import("@/app/api/ic-votes/settle/route");
     const res = await POST(jsonReq("/api/ic-votes/settle", "POST", { memoId: "m1" }), { params: {} as never });
@@ -155,7 +155,7 @@ describe("POST /api/ic-votes/settle", () => {
   });
 
   it("403 when role is analyst", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("analyst");
     const { POST } = await import("@/app/api/ic-votes/settle/route");
     const res = await POST(jsonReq("/api/ic-votes/settle", "POST", { memoId: "m1" }), { params: {} as never });
@@ -174,7 +174,7 @@ describe("POST /api/allocations", () => {
   });
 
   it("403 when role is analyst", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("analyst");
     const { POST } = await import("@/app/api/allocations/route");
     const res = await POST(
@@ -185,7 +185,7 @@ describe("POST /api/allocations", () => {
   });
 
   it("403 when role is ic-member", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("ic-member");
     const { POST } = await import("@/app/api/allocations/route");
     const res = await POST(
@@ -207,7 +207,7 @@ describe("POST /api/term-sheets/[id]", () => {
   });
 
   it("403 when role is analyst", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("analyst");
     const { POST } = await import("@/app/api/term-sheets/[id]/route");
     const res = await POST(jsonReq("/api/term-sheets/d1", "POST"), { params: { id: "d1" } });
@@ -226,7 +226,7 @@ describe("POST /api/ic-votes", () => {
   });
 
   it("403 when role is analyst (cannot vote)", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("analyst");
     const { POST } = await import("@/app/api/ic-votes/route");
     const res = await POST(
@@ -237,7 +237,7 @@ describe("POST /api/ic-votes", () => {
   });
 
   it("403 when role is founder", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("founder");
     const { POST } = await import("@/app/api/ic-votes/route");
     const res = await POST(
@@ -261,7 +261,7 @@ describe("POST /api/sourced-opportunities", () => {
   });
 
   it("403 when role is investor (no portfolio write access)", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("investor");
     const { POST } = await import("@/app/api/sourced-opportunities/route");
     const res = await POST(jsonReq("/api/sourced-opportunities", "POST", { startupName: "Acme" }), {
@@ -271,7 +271,7 @@ describe("POST /api/sourced-opportunities", () => {
   });
 
   it("201 when role is analyst", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("analyst");
     mockDb.vCSourcedOpportunity.createMany.mockResolvedValue({ count: 1 } as never);
     const { POST } = await import("@/app/api/sourced-opportunities/route");
@@ -296,7 +296,7 @@ describe("POST /api/deals/[id]/advance", () => {
   }
 
   it("403 when analyst tries to advance to ic-review", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("analyst");
     mockOpenDealAtStage("partner-review");
     const { POST } = await import("@/app/api/deals/[id]/advance/route");
@@ -307,7 +307,7 @@ describe("POST /api/deals/[id]/advance", () => {
   });
 
   it("200 when partner advances to ic-review", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("partner");
     mockOpenDealAtStage("partner-review");
     mockDb.$transaction.mockResolvedValue([{}, {}] as never);
@@ -325,7 +325,7 @@ describe("POST /api/deals/[id]/advance", () => {
   });
 
   it("200 when analyst advances to research (mid-stage)", async () => {
-    setSession({ id: USER, tenantId: TENANT });
+    setSession({ id: USER, orgId: TENANT });
     mockMembershipRole("analyst");
     mockOpenDealAtStage("discovery-call");
     mockDb.$transaction.mockResolvedValue([{}, {}] as never);

@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.goals");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.goals");
 import { validationError } from "@/lib/api/validationError";
 import { updateGoalSchema } from "@/lib/schemas/goalSchema";
 
 type Params = { id: string };
 
-export const GET = withTenantAuth<Params>(
-  async ({ tenantId }, _req, { params }) => {
+export const GET = withOrgAuth<Params>(
+  async ({ orgId }, _req, { params }) => {
     const goal = await db.goal.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       include: {
         owner: {
           select: { id: true, firstName: true, lastName: true, email: true },
@@ -32,10 +32,10 @@ export const GET = withTenantAuth<Params>(
   { fallbackErrorMessage: "Failed to fetch goal" },
 );
 
-export const PUT = withTenantAuth<Params>(
-  async ({ tenantId }, request, { params }) => {
+export const PUT = withOrgAuth<Params>(
+  async ({ orgId }, request, { params }) => {
     const existing = await db.goal.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true, targetValue: true, currentValue: true },
     });
     if (!existing) {
@@ -96,10 +96,10 @@ export const PUT = withTenantAuth<Params>(
   { fallbackErrorMessage: "Failed to update goal" },
 );
 
-export const DELETE = withTenantAuth<Params>(
-  async ({ tenantId }, _req, { params }) => {
+export const DELETE = withOrgAuth<Params>(
+  async ({ orgId }, _req, { params }) => {
     const existing = await db.goal.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true },
     });
     if (!existing) {

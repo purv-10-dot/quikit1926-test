@@ -25,7 +25,7 @@
 
 import { execSync } from "node:child_process";
 
-const ALL_APPS = ["quikit", "quikscale", "admin", "quikvc", "quikconstruction"];
+const ALL_APPS = ["quikit", "quikscale", "admin", "quikvc", "quikconstruction", "auth"];
 
 function run(cmd) {
   return execSync(cmd, { encoding: "utf8" }).trim();

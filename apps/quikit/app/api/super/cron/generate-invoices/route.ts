@@ -6,7 +6,7 @@
  *   2. Creates a pending Invoice for the just-ended month
  *   3. Phase B UI lets a super admin "Mark paid" / "Mark failed" via two buttons
  *
- * Idempotent by (tenantId, periodStart): re-running for the same month won't
+ * Idempotent by (orgId, periodStart): re-running for the same month won't
  * duplicate invoices.
  *
  * This is NOT real billing — no Stripe, no tax, no proration. Its purpose is
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   const periodEnd = firstOfMonthUTC(now); // exclusive end = start of current month
 
   try {
-    const tenants = await db.tenant.findMany({
+    const tenants = await db.org.findMany({
       where: { status: "active" },
       select: { id: true, plan: true, name: true },
     });
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
 
       // Idempotency: check for existing invoice in this period
       const existing = await db.invoice.findFirst({
-        where: { tenantId: t.id, periodStart, periodEnd },
+        where: { orgId: t.id, periodStart, periodEnd },
         select: { id: true },
       });
       if (existing) {
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
 
       await db.invoice.create({
         data: {
-          tenantId: t.id,
+          orgId: t.id,
           planSlug: t.plan,
           amountCents: plan.priceMonthly,
           currency: plan.currency,

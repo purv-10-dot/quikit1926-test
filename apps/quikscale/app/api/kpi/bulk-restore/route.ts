@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("kpi");
+const withOrgAuth = withOrgAuthForModule("kpi");
 
 // POST /api/kpi/bulk-restore  body: { ids: string[] }
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json().catch(() => ({}));
   const ids: string[] = Array.isArray(body?.ids) ? body.ids.filter((x: unknown) => typeof x === "string") : [];
   if (ids.length === 0) {
@@ -14,12 +14,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   }
 
   const { count } = await db.kPI.updateMany({
-    where: { id: { in: ids }, tenantId, deletedAt: { not: null } },
+    where: { id: { in: ids }, orgId, deletedAt: { not: null } },
     data: { deletedAt: null },
   });
 
   await writeAuditLog({
-    tenantId, actorId: userId, action: "RESTORE",
+    orgId, actorId: userId, action: "RESTORE",
     entityType: "KPI", entityId: ids.join(","), newValues: { count, ids },
   });
 

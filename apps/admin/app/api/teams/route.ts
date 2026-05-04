@@ -6,8 +6,8 @@ import { db } from "@/lib/db";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { slugify } from "@/lib/utils";
 
-export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
-  const blocked = await gateModuleApi("admin", "teams", tenantId);
+export const GET = withAdminAuth(async ({ orgId }, request: NextRequest) => {
+  const blocked = await gateModuleApi("admin", "teams", orgId);
   if (blocked) return blocked as NextResponse;
 
   // Pagination
@@ -18,7 +18,7 @@ export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
 
   const [teams, total] = await Promise.all([
     db.team.findMany({
-      where: { tenantId },
+      where: { orgId },
       include: {
         userTeams: {
           include: {
@@ -34,7 +34,7 @@ export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
       skip,
       take: limit,
     }),
-    db.team.count({ where: { tenantId } }),
+    db.team.count({ where: { orgId } }),
   ]);
 
   // Resolve head names
@@ -79,8 +79,8 @@ export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
   });
 });
 
-export const POST = withAdminAuth(async ({ tenantId, userId }, request: NextRequest) => {
-  const blocked = await gateModuleApi("admin", "teams", tenantId);
+export const POST = withAdminAuth(async ({ orgId, userId }, request: NextRequest) => {
+  const blocked = await gateModuleApi("admin", "teams", orgId);
   if (blocked) return blocked as NextResponse;
   const body = await request.json();
 
@@ -97,7 +97,7 @@ export const POST = withAdminAuth(async ({ tenantId, userId }, request: NextRequ
   // Check unique name per tenant
   const existing = await db.team.findFirst({
     where: {
-      tenantId,
+      orgId,
       name: { equals: name, mode: "insensitive" },
     },
   });
@@ -114,7 +114,7 @@ export const POST = withAdminAuth(async ({ tenantId, userId }, request: NextRequ
 
   const team = await db.team.create({
     data: {
-      tenantId,
+      orgId,
       name,
       description,
       slug,

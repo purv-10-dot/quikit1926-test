@@ -19,8 +19,8 @@ async function bodyOf(res: Response) {
   return res.json();
 }
 
-const ADMIN = { id: "admin-1", email: "admin@test.com", tenantId: "tenant-1" };
-const MEMBER = { id: "member-1", email: "m@test.com", tenantId: "tenant-1" };
+const ADMIN = { id: "admin-1", email: "admin@test.com", orgId: "tenant-1" };
+const MEMBER = { id: "member-1", email: "m@test.com", orgId: "tenant-1" };
 
 /* ─── Tests ───────────────────────────────────────────────────────────────── */
 
@@ -35,7 +35,7 @@ describe("POST /api/apps/enable — bulk access grant", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when session has no tenantId", async () => {
+  it("returns 403 when session has no orgId", async () => {
     setSession({ id: "u-1" });
     const res = await POST(makeRequest({ appId: "app-1" }));
     expect(res.status).toBe(403);
@@ -44,7 +44,7 @@ describe("POST /api/apps/enable — bulk access grant", () => {
 
   it("returns 403 for non-admin member", async () => {
     setSession(MEMBER);
-    mockDb.membership.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
 
     const res = await POST(makeRequest({ appId: "app-1" }));
     expect(res.status).toBe(403);
@@ -53,7 +53,7 @@ describe("POST /api/apps/enable — bulk access grant", () => {
 
   it("returns 400 when appId missing", async () => {
     setSession(ADMIN);
-    mockDb.membership.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
 
     const res = await POST(makeRequest({}));
     expect(res.status).toBe(400);
@@ -61,7 +61,7 @@ describe("POST /api/apps/enable — bulk access grant", () => {
 
   it("returns 404 when app does not exist", async () => {
     setSession(ADMIN);
-    mockDb.membership.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
     mockDb.app.findUnique.mockResolvedValue(null);
 
     const res = await POST(makeRequest({ appId: "missing" }));
@@ -70,13 +70,13 @@ describe("POST /api/apps/enable — bulk access grant", () => {
 
   it("bulk-grants access in a single createMany call", async () => {
     setSession(ADMIN);
-    mockDb.membership.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
     mockDb.app.findUnique.mockResolvedValue({ id: "app-1" } as never);
 
     const members = Array.from({ length: 500 }, (_, i) => ({
       userId: `u-${i}`,
     }));
-    mockDb.membership.findMany.mockResolvedValue(members as never);
+    mockDb.orgMember.findMany.mockResolvedValue(members as never);
     mockDb.userAppAccess.createMany.mockResolvedValue({ count: 500 } as never);
 
     const res = await POST(makeRequest({ appId: "app-1" }));
@@ -101,7 +101,7 @@ describe("POST /api/apps/enable — bulk access grant", () => {
     expect(callData).toHaveLength(500);
     expect(callData[0]).toEqual({
       userId: "u-0",
-      tenantId: "tenant-1",
+      orgId: "tenant-1",
       appId: "app-1",
       role: "member",
       grantedBy: ADMIN.id,
@@ -114,13 +114,13 @@ describe("POST /api/apps/enable — bulk access grant", () => {
 
   it("reports partial grants when some members already have access", async () => {
     setSession(ADMIN);
-    mockDb.membership.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
     mockDb.app.findUnique.mockResolvedValue({ id: "app-1" } as never);
 
     const members = Array.from({ length: 10 }, (_, i) => ({
       userId: `u-${i}`,
     }));
-    mockDb.membership.findMany.mockResolvedValue(members as never);
+    mockDb.orgMember.findMany.mockResolvedValue(members as never);
     // 7 new, 3 already had access (skipDuplicates skipped them)
     mockDb.userAppAccess.createMany.mockResolvedValue({ count: 7 } as never);
 
@@ -137,9 +137,9 @@ describe("POST /api/apps/enable — bulk access grant", () => {
 
   it("handles empty-tenant gracefully without crashing", async () => {
     setSession(ADMIN);
-    mockDb.membership.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
     mockDb.app.findUnique.mockResolvedValue({ id: "app-1" } as never);
-    mockDb.membership.findMany.mockResolvedValue([]);
+    mockDb.orgMember.findMany.mockResolvedValue([]);
     mockDb.userAppAccess.createMany.mockResolvedValue({ count: 0 } as never);
 
     const res = await POST(makeRequest({ appId: "app-1" }));
@@ -155,9 +155,9 @@ describe("POST /api/apps/enable — bulk access grant", () => {
 
   it("is idempotent — second call on same tenant/app grants 0 new", async () => {
     setSession(ADMIN);
-    mockDb.membership.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
     mockDb.app.findUnique.mockResolvedValue({ id: "app-1" } as never);
-    mockDb.membership.findMany.mockResolvedValue([
+    mockDb.orgMember.findMany.mockResolvedValue([
       { userId: "u-1" },
       { userId: "u-2" },
     ] as never);

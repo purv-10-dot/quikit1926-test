@@ -15,15 +15,15 @@ import { getVCRole, PARTNER_ROLES } from "@/lib/rbac";
 
 export default async function PartnerReviewPage({ params }: { params: { id: string } }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
-  if (!tenantId || !userId) notFound();
+  if (!orgId || !userId) notFound();
 
-  const viewerRole = await getVCRole(userId, tenantId);
+  const viewerRole = await getVCRole(userId, orgId);
   const canDecide = viewerRole !== null && PARTNER_ROLES.includes(viewerRole);
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     include: {
       application: { select: { startupName: true, description: true, fundingAsk: true, loanType: true } },
       vertical: { select: { name: true } },

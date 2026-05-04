@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { dprCreateSchema } from "@/lib/schemas/projects";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const dateFrom = req.nextUrl.searchParams.get("dateFrom") || undefined;
   const dateTo = req.nextUrl.searchParams.get("dateTo") || undefined;
   const list = await db.cnDPR.findMany({
     where: {
-      tenantId,
+      orgId,
       deletedAt: includeDeleted ? { not: null } : null,
       ...(projectId ? { projectId } : {}),
       ...(dateFrom || dateTo
@@ -28,14 +28,14 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = dprCreateSchema.parse(body);
-  const project = await db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } });
+  const project = await db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } });
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
-  // Enforce @@unique([tenantId, projectId, dprDate]) — friendlier error
+  // Enforce @@unique([orgId, projectId, dprDate]) — friendlier error
   const existing = await db.cnDPR.findFirst({
-    where: { tenantId, projectId: input.projectId, dprDate: new Date(input.dprDate), deletedAt: null },
+    where: { orgId, projectId: input.projectId, dprDate: new Date(input.dprDate), deletedAt: null },
     select: { id: true },
   });
   if (existing) {
@@ -47,7 +47,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const dpr = await db.cnDPR.create({
     data: {
-      tenantId,
+      orgId,
       projectId: input.projectId,
       dprDate: new Date(input.dprDate),
       weather: input.weather,

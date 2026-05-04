@@ -9,7 +9,7 @@ import { useOnceEffect } from "@/lib/hooks/useOnceEffect";
 import { Activity, CheckCircle2, AlertTriangle, AlertCircle, Users, Zap, Clock } from "lucide-react";
 
 interface HealthData {
-  tenant: { id: string; name: string; slug: string; plan: string; status: string; createdAt: string };
+  org: { id: string; name: string; slug: string; plan: string; status: string; createdAt: string };
   healthScore: number;
   signals: {
     memberCount: number;
@@ -39,16 +39,16 @@ function scoreColor(score: number) {
   return { bg: "bg-red-50", text: "text-red-700", ring: "ring-red-500" };
 }
 
-export function HealthPanel({ tenantId }: { tenantId: string }) {
+export function HealthPanel({ orgId }: { orgId: string }) {
   const [data, setData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useOnceEffect(() => {
-    fetch(`/api/super/tenant-health/${tenantId}`)
+    fetch(`/api/super/org-health/${orgId}`)
       .then((r) => r.json())
       .then((j) => j.success && setData(j.data))
       .finally(() => setLoading(false));
-  }, [tenantId]);
+  }, [orgId]);
 
   if (loading) return <div className="text-gray-400 text-sm">Loading health...</div>;
   if (!data) return null;
@@ -61,7 +61,7 @@ export function HealthPanel({ tenantId }: { tenantId: string }) {
       <header className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Activity className="h-5 w-5 text-gray-500" />
-          <h2 className="font-semibold text-gray-900">Tenant health</h2>
+          <h2 className="font-semibold text-gray-900">Organization health</h2>
         </div>
         <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg ${sc.bg} ring-1 ${sc.ring}/20`}>
           <span className={`text-xs font-semibold ${sc.text}`}>Score</span>

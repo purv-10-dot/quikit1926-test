@@ -3,25 +3,25 @@ import { db } from "@/lib/db";
 import { opspUpsertSchema, opspFinalizeSchema } from "@/lib/schemas/opspSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("opsp");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("opsp");
 
 /* ── GET: load OPSP data for current user + year + quarter ── */
-export const GET = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const { searchParams } = req.nextUrl;
   const year    = parseInt(searchParams.get("year") ?? String(new Date().getFullYear()));
   const quarter = searchParams.get("quarter") ?? "Q1";
 
   // Fetch fiscalYearStart from tenant
-  const tenant = await db.tenant.findUnique({
-    where: { id: tenantId },
+  const org = await db.org.findUnique({
+    where: { id: orgId },
     select: { fiscalYearStart: true },
   });
 
   const data = await db.oPSPData.findUnique({
     where: {
-      tenantId_userId_year_quarter: {
-        tenantId,
+      orgId_userId_year_quarter: {
+        orgId,
         userId,
         year,
         quarter,
@@ -32,12 +32,12 @@ export const GET = withTenantAuth(async ({ tenantId, userId }, req) => {
   return NextResponse.json({
     success: true,
     data: data ?? null,
-    fiscalYearStart: tenant?.fiscalYearStart ?? 1,
+    fiscalYearStart: org?.fiscalYearStart ?? 1,
   });
 });
 
 /* ── PUT: upsert (autosave) ── */
-export const PUT = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const PUT = withOrgAuth(async ({ orgId, userId }, req) => {
   const parsed = opspUpsertSchema.safeParse(await req.json());
   if (!parsed.success) return validationError(parsed, "Invalid OPSP payload");
   const { year, quarter, ...fields } = parsed.data;
@@ -45,8 +45,8 @@ export const PUT = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const data = await db.oPSPData.upsert({
     where: {
-      tenantId_userId_year_quarter: {
-        tenantId,
+      orgId_userId_year_quarter: {
+        orgId,
         userId,
         year: yearNum,
         quarter,
@@ -57,7 +57,7 @@ export const PUT = withTenantAuth(async ({ tenantId, userId }, req) => {
       updatedBy: userId,
     },
     create: {
-      tenantId,
+      orgId,
       userId,
       year: yearNum,
       quarter,
@@ -67,7 +67,7 @@ export const PUT = withTenantAuth(async ({ tenantId, userId }, req) => {
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "UPDATE",
     entityType: "OPSPData",
@@ -79,7 +79,7 @@ export const PUT = withTenantAuth(async ({ tenantId, userId }, req) => {
 });
 
 /* ── POST: finalize ── */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const parsedFinalize = opspFinalizeSchema.safeParse(await req.json());
   if (!parsedFinalize.success) return validationError(parsedFinalize, "Invalid OPSP payload");
   const { year, quarter } = parsedFinalize.data;
@@ -89,7 +89,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   // not be downgraded back to "finalized" if Finalize is clicked again.
   const result = await db.oPSPData.updateMany({
     where: {
-      tenantId,
+      orgId,
       userId,
       year: yearNum,
       quarter,
@@ -99,11 +99,11 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "UPDATE",
     entityType: "OPSPData",
-    entityId: `${tenantId}:${userId}:${yearNum}:${quarter}`,
+    entityId: `${orgId}:${userId}:${yearNum}:${quarter}`,
     changes: ["status:finalized"],
     reason: "OPSP finalized",
   });

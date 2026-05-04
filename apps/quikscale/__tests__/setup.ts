@@ -14,7 +14,7 @@ import { _clearLocalCache } from "@quikit/auth/cache";
 
 export type TestUser = {
   id: string;
-  tenantId: string;
+  orgId: string;
   // Role strings match the repo's ROLES constant from @quikit/shared
   role: "super_admin" | "admin" | "executive" | "manager" | "employee" | "coach" | "owner" | "member";
   email?: string;

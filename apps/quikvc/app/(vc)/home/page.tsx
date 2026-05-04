@@ -20,7 +20,7 @@ import { STAGE_LABEL, type StageId } from "@/lib/pipeline";
 import { cn } from "@/lib/utils";
 
 export default async function VCHomePage() {
-  const { tenantId } = await requireSession();
+  const { orgId } = await requireSession();
 
   const since48h = new Date(Date.now() + 48 * 3600_000);
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600_000);
@@ -36,17 +36,17 @@ export default async function VCHomePage() {
     upcomingMeetings,
     dailyBrief,
   ] = await Promise.all([
-    db.vCDeal.count({ where: { tenantId, closedStatus: "open" } }),
+    db.vCDeal.count({ where: { orgId, closedStatus: "open" } }),
 
     db.vCDeal.aggregate({
-      where: { tenantId, closedStatus: "open", aiScore: { not: null } },
+      where: { orgId, closedStatus: "open", aiScore: { not: null } },
       _avg: { aiScore: true },
     }),
 
     // Frozen memos that haven't been settled (still in ic-review stage)
     db.vCICMemo.count({
       where: {
-        tenantId,
+        orgId,
         status: "frozen",
         deal: { currentStage: "ic-review" },
       },
@@ -54,7 +54,7 @@ export default async function VCHomePage() {
 
     db.vCMeeting.count({
       where: {
-        tenantId,
+        orgId,
         type: "ic-review",
         status: "scheduled",
         scheduledAt: { lte: since48h, gte: new Date() },
@@ -62,7 +62,7 @@ export default async function VCHomePage() {
     }),
 
     db.vCDealAllocation.aggregate({
-      where: { tenantId },
+      where: { orgId },
       _sum: { amount: true },
     }),
 
@@ -70,7 +70,7 @@ export default async function VCHomePage() {
     // sitting in ic-review with frozen memo, > 7 days since update].
     db.vCDeal.findMany({
       where: {
-        tenantId,
+        orgId,
         closedStatus: "open",
         OR: [
           { signals: { some: { severity: "red", status: { not: "resolved" } } } },
@@ -99,7 +99,7 @@ export default async function VCHomePage() {
 
     db.vCMeeting.findMany({
       where: {
-        tenantId,
+        orgId,
         status: "scheduled",
         scheduledAt: { gte: new Date() },
       },
@@ -113,7 +113,7 @@ export default async function VCHomePage() {
     }),
 
     db.vCTimelineEvent.findFirst({
-      where: { tenantId, type: "ai-daily-summary" },
+      where: { orgId, type: "ai-daily-summary" },
       orderBy: { createdAt: "desc" },
       select: { summary: true, createdAt: true },
     }),

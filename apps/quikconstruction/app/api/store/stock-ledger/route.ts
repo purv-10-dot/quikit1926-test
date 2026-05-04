@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * GET /api/store/stock-ledger?projectId&locationId&itemId
@@ -13,7 +13,7 @@ const withTenantAuth = withTenantAuthForModule("store");
  *   2. itemId + projectId + locationId → full ledger with row-by-row running
  *      balance (for drill-down / audit view).
  */
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const locationId = req.nextUrl.searchParams.get("locationId") || undefined;
   const itemId = req.nextUrl.searchParams.get("itemId") || undefined;
@@ -21,7 +21,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
 
   if (drilldown) {
     const rows = await db.cnStockLedger.findMany({
-      where: { tenantId, projectId, locationId, itemId },
+      where: { orgId, projectId, locationId, itemId },
       orderBy: { transactionDate: "asc" },
       include: {
         item: { select: { code: true, name: true } },
@@ -40,7 +40,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   const rows = await db.cnStockLedger.groupBy({
     by: ["projectId", "locationId", "itemId", "uomId"],
     where: {
-      tenantId,
+      orgId,
       ...(projectId ? { projectId } : {}),
       ...(locationId ? { locationId } : {}),
     },

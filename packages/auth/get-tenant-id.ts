@@ -3,15 +3,15 @@ import { getServerSession } from "next-auth";
 import { type NextAuthOptions } from "next-auth";
 import { getOrSet } from "./cache";
 
-export interface GetTenantIdConfig {
+export interface GetOrgIdConfig {
   appSlug?: string;
 }
 
 /**
- * Resolves the active tenantId for a user.
+ * Resolves the active orgId for a user.
  *
  * Hot path on every authenticated API call. NextAuth's JWT already carries
- * `session.user.tenantId`, but we also defensively re-validate that the
+ * `session.user.orgId`, but we also defensively re-validate that the
  * membership row is still active (and, if config.appSlug is set, that the
  * user has UserAppAccess for that app). Both lookups are cached for 60s
  * to keep the per-request overhead at ~zero.
@@ -20,21 +20,21 @@ export interface GetTenantIdConfig {
  * a minute. For instant revocation, call `invalidate(...)` from the
  * mutation that toggles status.
  */
-export function createGetTenantId(authOptions: NextAuthOptions, config: GetTenantIdConfig = {}) {
-  return async function getTenantId(userId: string): Promise<string | null> {
+export function createGetOrgId(authOptions: NextAuthOptions, config: GetOrgIdConfig = {}) {
+  return async function getOrgId(userId: string): Promise<string | null> {
     const session = await getServerSession(authOptions);
-    const tenantId = session?.user?.tenantId;
+    const orgId = session?.user?.orgId;
 
-    if (tenantId) {
+    if (orgId) {
       // Cache the membership re-validation. Stale cached "active" for up to
       // 60s after admin deactivates is acceptable — we trust the JWT for the
       // identity claim and just sanity-check the row exists & is active.
       const ok = await getOrSet<boolean>(
-        `membership:${userId}:${tenantId}`,
+        `membership:${userId}:${orgId}`,
         60,
         async () => {
-          const membership = await db.membership.findFirst({
-            where: { userId, tenantId, status: "active" },
+          const membership = await db.orgMember.findFirst({
+            where: { userId, orgId, status: "active" },
             select: { id: true },
           });
           return !!membership;
@@ -45,13 +45,13 @@ export function createGetTenantId(authOptions: NextAuthOptions, config: GetTenan
       // Per-app access gate (only when caller passed appSlug).
       if (config.appSlug) {
         const hasAccess = await getOrSet<boolean>(
-          `appAccess:${userId}:${tenantId}:${config.appSlug}`,
+          `appAccess:${userId}:${orgId}:${config.appSlug}`,
           60,
           async () => {
             const app = await db.app.findUnique({ where: { slug: config.appSlug }, select: { id: true } });
             if (!app) return true; // unknown app → don't block; upstream will 404
             const access = await db.userAppAccess.findUnique({
-              where: { userId_tenantId_appId: { userId, tenantId, appId: app.id } },
+              where: { userId_orgId_appId: { userId, orgId, appId: app.id } },
             });
             return !!access;
           },
@@ -59,7 +59,7 @@ export function createGetTenantId(authOptions: NextAuthOptions, config: GetTenan
         if (!hasAccess) return null;
       }
 
-      return tenantId;
+      return orgId;
     }
 
     // No tenant on session yet — pick the user's first active membership
@@ -69,13 +69,19 @@ export function createGetTenantId(authOptions: NextAuthOptions, config: GetTenan
       `firstActiveTenant:${userId}`,
       60,
       async () => {
-        const membership = await db.membership.findFirst({
+        const membership = await db.orgMember.findFirst({
           where: { userId, status: "active" },
           orderBy: { createdAt: "asc" },
-          select: { tenantId: true },
+          select: { orgId: true },
         });
-        return membership?.tenantId ?? null;
+        return membership?.orgId ?? null;
       },
     );
   };
 }
+
+// Backwards-compat alias for app code that hasn't migrated to createGetOrgId
+// yet. Prefer createGetOrgId in new code; this alias is part of the v4
+// rename (tenantId → orgId) and will be removed in a future cleanup.
+export type GetTenantIdConfig = GetOrgIdConfig;
+export const createGetTenantId = createGetOrgId;

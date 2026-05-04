@@ -37,9 +37,19 @@ ALTER TABLE IF EXISTS public."Goal" SET SCHEMA app_quikscale;
 ALTER TABLE IF EXISTS public."OneOnOne" SET SCHEMA app_quikscale;
 ALTER TABLE IF EXISTS public."FeedbackEntry" SET SCHEMA app_quikscale;
 
--- Quikscale enums
-ALTER TYPE IF EXISTS public."ClientMeetingFlag" SET SCHEMA app_quikscale;
-ALTER TYPE IF EXISTS public."ClientMeetingStatus" SET SCHEMA app_quikscale;
+-- Quikscale enums (PostgreSQL has no ALTER TYPE IF EXISTS)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+             WHERE n.nspname = 'public' AND t.typname = 'ClientMeetingFlag') THEN
+    ALTER TYPE public."ClientMeetingFlag" SET SCHEMA app_quikscale;
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+             WHERE n.nspname = 'public' AND t.typname = 'ClientMeetingStatus') THEN
+    ALTER TYPE public."ClientMeetingStatus" SET SCHEMA app_quikscale;
+  END IF;
+END $$;
 
 -- Quikconstruction tables
 ALTER TABLE IF EXISTS public."CnCompany" SET SCHEMA app_quikconstruction;

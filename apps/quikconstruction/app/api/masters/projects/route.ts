@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { projectCreateSchema } from "@/lib/schemas/masters-phase2";
 
-const withTenantAuth = withTenantAuthForModule("masters");
+const withOrgAuth = withOrgAuthForModule("masters");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const projects = await db.cnProject.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     include: {
       company: { select: { id: true, name: true } },
       client: { select: { id: true, name: true } },
@@ -18,12 +18,12 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: projects });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = projectCreateSchema.parse(body);
   // FK validation
   const company = await db.cnCompany.findFirst({
-    where: { id: input.companyId, tenantId },
+    where: { id: input.companyId, orgId },
     select: { id: true },
   });
   if (!company) {
@@ -31,7 +31,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   }
   if (input.clientId) {
     const client = await db.cnCustomer.findFirst({
-      where: { id: input.clientId, tenantId },
+      where: { id: input.clientId, orgId },
       select: { id: true },
     });
     if (!client) {
@@ -39,7 +39,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
     }
   }
   const conflict = await db.cnProject.findFirst({
-    where: { tenantId, code: input.code, deletedAt: null },
+    where: { orgId, code: input.code, deletedAt: null },
     select: { id: true },
   });
   if (conflict) {
@@ -54,7 +54,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
       ...(input.startDate ? { startDate: new Date(input.startDate) } : {}),
       ...(input.expectedEndDate ? { expectedEndDate: new Date(input.expectedEndDate) } : {}),
       ...(input.actualEndDate ? { actualEndDate: new Date(input.actualEndDate) } : {}),
-      tenantId,
+      orgId,
       createdBy: userId,
     },
   });

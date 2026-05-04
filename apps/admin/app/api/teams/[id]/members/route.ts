@@ -9,12 +9,12 @@ const userIdSchema = z.object({
   userId: z.string().uuid("userId must be a valid UUID"),
 });
 
-export const POST = withAdminAuth<{ id: string }>(async ({ tenantId }, request: NextRequest, { params }) => {
-  const blocked = await gateModuleApi("admin", "teams", tenantId);
+export const POST = withAdminAuth<{ id: string }>(async ({ orgId }, request: NextRequest, { params }) => {
+  const blocked = await gateModuleApi("admin", "teams", orgId);
   if (blocked) return blocked as NextResponse;
   const teamId = params.id;
 
-  const team = await db.team.findFirst({ where: { id: teamId, tenantId } });
+  const team = await db.team.findFirst({ where: { id: teamId, orgId } });
   if (!team) {
     return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
   }
@@ -30,8 +30,8 @@ export const POST = withAdminAuth<{ id: string }>(async ({ tenantId }, request: 
   const { userId } = parsed.data;
 
   // Verify user has membership in this tenant
-  const membership = await db.membership.findFirst({
-    where: { userId, tenantId, status: "active" },
+  const membership = await db.orgMember.findFirst({
+    where: { userId, orgId, status: "active" },
   });
   if (!membership) {
     return NextResponse.json(
@@ -42,16 +42,16 @@ export const POST = withAdminAuth<{ id: string }>(async ({ tenantId }, request: 
 
   // Create UserTeam (skipDuplicates equivalent via upsert)
   await db.userTeam.upsert({
-    where: { tenantId_userId_teamId: { tenantId, userId, teamId } },
-    create: { tenantId, userId, teamId },
+    where: { orgId_userId_teamId: { orgId, userId, teamId } },
+    create: { orgId, userId, teamId },
     update: {},
   });
 
   return NextResponse.json({ success: true, message: "Member added to team" });
 });
 
-export const DELETE = withAdminAuth<{ id: string }>(async ({ tenantId }, request: NextRequest, { params }) => {
-  const blocked = await gateModuleApi("admin", "teams", tenantId);
+export const DELETE = withAdminAuth<{ id: string }>(async ({ orgId }, request: NextRequest, { params }) => {
+  const blocked = await gateModuleApi("admin", "teams", orgId);
   if (blocked) return blocked as NextResponse;
   const teamId = params.id;
 
@@ -66,7 +66,7 @@ export const DELETE = withAdminAuth<{ id: string }>(async ({ tenantId }, request
   const { userId } = delParsed.data;
 
   await db.userTeam.deleteMany({
-    where: { tenantId, userId, teamId },
+    where: { orgId, userId, teamId },
   });
 
   return NextResponse.json({ success: true, message: "Member removed from team" });

@@ -9,11 +9,11 @@ import VerticalsClient from "./verticals-client";
 
 export default async function VerticalsAdminPage() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const verticals = await db.vCVertical.findMany({
-    where: { tenantId },
+    where: { orgId },
     orderBy: { sortOrder: "asc" },
     include: { _count: { select: { scoringCriteria: true, deals: true } } },
   });

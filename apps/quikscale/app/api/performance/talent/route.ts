@@ -1,25 +1,25 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.talent");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.talent");
 import { talentAssessmentSchema } from "@/lib/schemas/talentSchema";
 
-export const GET = withTenantAuth(async ({ tenantId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
-    const where = { tenantId };
+    const where = { orgId };
 
     // Fetch paginated members with performance data
     const [members, total] = await Promise.all([
-      db.membership.findMany({
+      db.orgMember.findMany({
         where,
         include: {
           user: {
             include: {
-              kpisOwned: { where: { tenantId } },
-              prioritiesOwned: { where: { tenantId } },
+              kpisOwned: { where: { orgId } },
+              prioritiesOwned: { where: { orgId } },
               talentAssessed: {
-                where: { tenantId },
+                where: { orgId },
                 orderBy: { createdAt: "desc" },
                 take: 1,
                 include: { assessor: { select: { id: true, firstName: true, lastName: true } } },
@@ -31,7 +31,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
         skip,
         take,
       }),
-      db.membership.count({ where }),
+      db.orgMember.count({ where }),
     ]);
 
     // Legacy team-meeting attendance removed in Client Meetings rewrite.
@@ -118,7 +118,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
     return NextResponse.json(paginatedResponse(people, total, page, limit));
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId: actorId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
     const body = await req.json();
     const parsed = talentAssessmentSchema.safeParse(body);
     if (!parsed.success) {
@@ -134,15 +134,15 @@ export const POST = withTenantAuth(async ({ tenantId, userId: actorId }, req) =>
 
     const assessment = await db.talentAssessment.upsert({
       where: {
-        tenantId_userId_quarter_year: {
-          tenantId,
+        orgId_userId_quarter_year: {
+          orgId,
           userId,
           quarter,
           year,
         },
       },
       create: {
-        tenantId,
+        orgId,
         userId,
         assessorId: actorId,
         potential,

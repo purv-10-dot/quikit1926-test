@@ -19,7 +19,7 @@ const TENANT_SLUG = "valleynxt";
 async function main() {
   console.log("🌱 QuikVC demo data seeding (rich layer)...\n");
 
-  const tenant = await db.tenant.findUnique({
+  const tenant = await db.org.findUnique({
     where: { slug: TENANT_SLUG },
     select: { id: true },
   });

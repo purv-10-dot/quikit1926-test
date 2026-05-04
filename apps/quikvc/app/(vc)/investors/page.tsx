@@ -25,11 +25,11 @@ const KYC_BADGE: Record<string, string> = {
 
 export default async function InvestorsPage() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) return null;
+  const orgId = session?.user?.orgId;
+  if (!orgId) return null;
 
   const investors = await db.vCInvestor.findMany({
-    where: { tenantId },
+    where: { orgId },
     orderBy: { createdAt: "desc" },
     include: {
       commitments: { select: { totalAmount: true, status: true } },

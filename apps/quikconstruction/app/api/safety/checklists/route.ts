@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("safety");
+const withOrgAuth = withOrgAuthForModule("safety");
 
 const createSchema = z.object({
   templateName: z.string().min(1),
@@ -14,23 +14,23 @@ const createSchema = z.object({
   remarks: z.string().optional().nullable(),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const list = await db.cnSafetyChecklist.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     include: { project: { select: { id: true, name: true, code: true } } },
     orderBy: { checklistDate: "desc" },
   });
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = createSchema.parse(await req.json());
   const fails = input.items.filter(i => !i.ok).length;
   const overallStatus = fails === 0 ? "pass" : fails === input.items.length ? "fail" : "partial";
   const c = await db.cnSafetyChecklist.create({
     data: {
-      tenantId,
+      orgId,
       templateName: input.templateName,
       checklistDate: new Date(input.checklistDate),
       projectId: input.projectId ?? null,

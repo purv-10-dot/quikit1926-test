@@ -17,15 +17,15 @@ const ADMIN_MIN_LEVEL = ROLE_HIERARCHY[ROLES.ADMIN];
  */
 export async function canEditKPIOwnerWeekly(
   actorUserId: string,
-  tenantId: string,
+  orgId: string,
   kpiId: string,
   targetOwnerUserId: string
 ): Promise<boolean> {
-  if (!actorUserId || !tenantId || !kpiId || !targetOwnerUserId) return false;
+  if (!actorUserId || !orgId || !kpiId || !targetOwnerUserId) return false;
 
   // 1. Admin-level role check via Membership
-  const membership = await db.membership.findFirst({
-    where: { userId: actorUserId, tenantId, status: "active" },
+  const membership = await db.orgMember.findFirst({
+    where: { userId: actorUserId, orgId, status: "active" },
     select: { role: true },
   });
   if (membership) {
@@ -36,9 +36,9 @@ export async function canEditKPIOwnerWeekly(
   // 2. Load the KPI — need kpiLevel, owner, teamId, ownerIds
   const kpi = await db.kPI.findUnique({
     where: { id: kpiId },
-    select: { tenantId: true, kpiLevel: true, owner: true, teamId: true, ownerIds: true },
+    select: { orgId: true, kpiLevel: true, owner: true, teamId: true, ownerIds: true },
   });
-  if (!kpi || kpi.tenantId !== tenantId) return false;
+  if (!kpi || kpi.orgId !== orgId) return false;
 
   if (kpi.kpiLevel === "individual") {
     // Actor must be the KPI owner AND the targetOwnerUserId must be the same.
@@ -55,7 +55,7 @@ export async function canEditKPIOwnerWeekly(
   // Team head check
   if (kpi.teamId) {
     const team = await db.team.findFirst({
-      where: { id: kpi.teamId, tenantId },
+      where: { id: kpi.teamId, orgId },
       select: { headId: true },
     });
     if (team?.headId === actorUserId) return true;

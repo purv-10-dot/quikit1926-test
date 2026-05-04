@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.goals");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.goals");
 import {
   createGoalSchema,
   listGoalsParamsSchema,
@@ -13,8 +13,8 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
  * GET /api/performance/goals
  * Filters: ownerId / quarter / year / status / parentGoalId
  */
-export const GET = withTenantAuth(
-  async ({ tenantId }, request) => {
+export const GET = withOrgAuth(
+  async ({ orgId }, request) => {
     const parsed = listGoalsParamsSchema.safeParse({
       ownerId: request.nextUrl.searchParams.get("ownerId") ?? undefined,
       quarter: request.nextUrl.searchParams.get("quarter") ?? undefined,
@@ -28,7 +28,7 @@ export const GET = withTenantAuth(
     const { ownerId, quarter, year, status, parentGoalId, page, pageSize } =
       parsed.data;
 
-    const where: Record<string, unknown> = { tenantId };
+    const where: Record<string, unknown> = { orgId };
     if (ownerId) where.ownerId = ownerId;
     if (quarter) where.quarter = quarter;
     if (year) where.year = year;
@@ -78,11 +78,11 @@ export const GET = withTenantAuth(
 /**
  * POST /api/performance/goals
  */
-export const POST = withTenantAuth(
-  async ({ tenantId, userId }, request) => {
+export const POST = withOrgAuth(
+  async ({ orgId, userId }, request) => {
     const rl = rateLimit({
       routeKey: "goal:create",
-      clientKey: `${tenantId}:${userId}`,
+      clientKey: `${orgId}:${userId}`,
       limit: LIMITS.mutation.limit,
       windowMs: LIMITS.mutation.windowMs,
     });
@@ -101,8 +101,8 @@ export const POST = withTenantAuth(
     const input = parsed.data;
 
     // Verify owner is a member of this tenant
-    const ownerMembership = await db.membership.findFirst({
-      where: { tenantId, userId: input.ownerId, status: "active" },
+    const ownerMembership = await db.orgMember.findFirst({
+      where: { orgId, userId: input.ownerId, status: "active" },
       select: { id: true },
     });
     if (!ownerMembership) {
@@ -115,7 +115,7 @@ export const POST = withTenantAuth(
     // If parentGoalId given, verify it's in the same tenant
     if (input.parentGoalId) {
       const parent = await db.goal.findFirst({
-        where: { id: input.parentGoalId, tenantId },
+        where: { id: input.parentGoalId, orgId },
         select: { id: true },
       });
       if (!parent) {
@@ -138,7 +138,7 @@ export const POST = withTenantAuth(
 
     const goal = await db.goal.create({
       data: {
-        tenantId,
+        orgId,
         ownerId: input.ownerId,
         parentGoalId: input.parentGoalId ?? null,
         title: input.title,

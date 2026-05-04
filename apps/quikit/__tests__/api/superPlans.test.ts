@@ -68,7 +68,7 @@ describe("GET /api/super/plans", () => {
       },
     ];
     mockDb.plan.findMany.mockResolvedValue(plans as never);
-    (mockDb.tenant.groupBy as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue(
+    (mockDb.org.groupBy as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue(
       [{ plan: "startup", _count: { plan: 3 } }],
     );
 
@@ -281,7 +281,7 @@ describe("DELETE /api/super/plans/[id]", () => {
     setSession(SUPER_ADMIN);
     const existing = { id: "plan-1", slug: "startup", name: "Startup" };
     mockDb.plan.findUnique.mockResolvedValue(existing as never);
-    mockDb.tenant.count.mockResolvedValue(0 as never);
+    mockDb.org.count.mockResolvedValue(0 as never);
     mockDb.plan.delete.mockResolvedValue(existing as never);
 
     const res = await DELETE(

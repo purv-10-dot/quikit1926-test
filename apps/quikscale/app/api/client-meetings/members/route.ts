@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createClientMemberSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.members");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.members");
 
 /**
  * GET /api/client-meetings/members
  *   ?includeDeleted=true → return ONLY soft-deleted rows (trash view)
  */
-export const GET = withTenantAuth(async ({ tenantId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
   const rows = await db.clientMember.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     orderBy: { createdAt: "asc" },
     select: {
       id: true, name: true, email: true,
@@ -55,7 +55,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 });
 
 /** POST — create. Any tenant member. */
-export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
   const parsed = createClientMemberSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json({ success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 });
@@ -63,16 +63,16 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
   const { name, email } = parsed.data;
 
   // Block duplicate emails within tenant.
-  const existing = await db.clientMember.findFirst({ where: { tenantId, email, deletedAt: null } });
+  const existing = await db.clientMember.findFirst({ where: { orgId, email, deletedAt: null } });
   if (existing)
     return NextResponse.json({ success: false, error: "A member with that email already exists" }, { status: 409 });
 
   const created = await db.clientMember.create({
-    data: { tenantId, name, email, createdBy: userId },
+    data: { orgId, name, email, createdBy: userId },
   });
 
   await writeAuditLog({
-    tenantId, actorId: userId, action: "CREATE",
+    orgId, actorId: userId, action: "CREATE",
     entityType: "ClientMember", entityId: created.id,
     newValues: { name: created.name, email: created.email },
   });

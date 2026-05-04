@@ -9,19 +9,19 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { suggestComparables } from "@/lib/ai/prompts/suggest-comparables";
 
 const bodySchema = z.object({ dealId: z.string().min(1) });
 
-export const POST = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   const parsed = bodySchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json({ success: false, error: "Missing dealId" }, { status: 400 });
   }
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: parsed.data.dealId, tenantId },
+    where: { id: parsed.data.dealId, orgId },
     select: {
       vertical: { select: { name: true } },
       application: { select: { startupName: true, description: true } },

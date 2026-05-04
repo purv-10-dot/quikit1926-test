@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * POST /api/store/stock-transfer/[id]/post
@@ -14,9 +14,9 @@ const withTenantAuth = withTenantAuthForModule("store");
  * Only valid if source has sufficient stock. Both ledger rows share the same
  * transactionRefId so reconciliation reports can pair them.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const tr = await db.cnStockTransfer.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },
   });
   if (!tr) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -26,7 +26,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   const insufficient: Array<{ itemId: string; available: number; requested: number }> = [];
   for (const line of tr.lines) {
     const agg = await db.cnStockLedger.aggregate({
-      where: { tenantId, projectId: tr.projectId, locationId: tr.fromLocationId, itemId: line.itemId },
+      where: { orgId, projectId: tr.projectId, locationId: tr.fromLocationId, itemId: line.itemId },
       _sum: { qtyIn: true, qtyOut: true },
     });
     const available = Number(agg._sum.qtyIn ?? 0) - Number(agg._sum.qtyOut ?? 0);
@@ -45,7 +45,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
         // OUT at source
         await tx.cnStockLedger.create({
           data: {
-            tenantId,
+            orgId,
             projectId: tr.projectId,
             locationId: tr.fromLocationId,
             itemId: line.itemId,
@@ -64,7 +64,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
         // IN at destination (same refId so they pair up)
         await tx.cnStockLedger.create({
           data: {
-            tenantId,
+            orgId,
             projectId: tr.projectId,
             locationId: tr.toLocationId,
             itemId: line.itemId,

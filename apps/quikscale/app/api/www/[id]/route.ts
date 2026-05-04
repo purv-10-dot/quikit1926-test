@@ -3,14 +3,14 @@ import { db } from "@/lib/db";
 import { updateWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { canEditWWW } from "@/lib/api/wwwPermissions";
-const withTenantAuth = withTenantAuthForModule("www");
+const withOrgAuth = withOrgAuthForModule("www");
 
-export const PUT = withTenantAuth<{ id: string }>(
-  async ({ tenantId, userId }, request, { params }) => {
+export const PUT = withOrgAuth<{ id: string }>(
+  async ({ orgId, userId }, request, { params }) => {
     const existing = await db.wWWItem.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true, createdBy: true, who: true },
     });
     if (!existing) {
@@ -21,7 +21,7 @@ export const PUT = withTenantAuth<{ id: string }>(
     }
 
     // Permission: creator, assignee, admin-level role, or super-admin only
-    const allowed = await canEditWWW(userId, tenantId, {
+    const allowed = await canEditWWW(userId, orgId, {
       createdBy: existing.createdBy,
       who: existing.who,
     });
@@ -80,7 +80,7 @@ export const PUT = withTenantAuth<{ id: string }>(
     };
 
     await writeAuditLog({
-      tenantId,
+      orgId,
       actorId: userId,
       action: "UPDATE",
       entityType: "WWWItem",
@@ -93,10 +93,10 @@ export const PUT = withTenantAuth<{ id: string }>(
   { fallbackErrorMessage: "Failed to update WWW item" },
 );
 
-export const DELETE = withTenantAuth<{ id: string }>(
-  async ({ tenantId, userId }, _request, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(
+  async ({ orgId, userId }, _request, { params }) => {
     const existing = await db.wWWItem.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true, createdBy: true, who: true },
     });
     if (!existing) {
@@ -107,7 +107,7 @@ export const DELETE = withTenantAuth<{ id: string }>(
     }
 
     // Permission: creator, assignee, admin-level role, or super-admin only
-    const allowed = await canEditWWW(userId, tenantId, {
+    const allowed = await canEditWWW(userId, orgId, {
       createdBy: existing.createdBy,
       who: existing.who,
     });
@@ -125,7 +125,7 @@ export const DELETE = withTenantAuth<{ id: string }>(
     });
 
     await writeAuditLog({
-      tenantId,
+      orgId,
       actorId: userId,
       action: "DELETE",
       entityType: "WWWItem",

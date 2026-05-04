@@ -4,8 +4,8 @@ import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 
-export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
-  const blocked = await gateModuleApi("admin", "settings", tenantId);
+export const GET = withAdminAuth(async ({ orgId }, request: NextRequest) => {
+  const blocked = await gateModuleApi("admin", "settings", orgId);
   if (blocked) return blocked as NextResponse;
 
   const { searchParams } = new URL(request.url);
@@ -19,7 +19,7 @@ export const GET = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
-  const where: Record<string, unknown> = { tenantId };
+  const where: Record<string, unknown> = { orgId };
   if (action) where.action = action;
   if (entityType) where.entityType = entityType;
   if (actorId) where.actorId = actorId;

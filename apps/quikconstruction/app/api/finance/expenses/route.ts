@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
 const expenseSchema = z.object({
   expenseNumber: z.string().min(1).max(50),
@@ -18,24 +18,24 @@ const expenseSchema = z.object({
   remarks: z.string().optional().nullable(),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const list = await db.cnExpense.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null, ...(projectId ? { projectId } : {}) },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null, ...(projectId ? { projectId } : {}) },
     include: { project: { select: { id: true, name: true, code: true } } },
     orderBy: { expenseDate: "desc" },
   });
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = expenseSchema.parse(await req.json());
-  const dup = await db.cnExpense.findFirst({ where: { tenantId, expenseNumber: input.expenseNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnExpense.findFirst({ where: { orgId, expenseNumber: input.expenseNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Expense '${input.expenseNumber}' already exists` }, { status: 409 });
   const e = await db.cnExpense.create({
     data: {
-      tenantId,
+      orgId,
       expenseNumber: input.expenseNumber,
       expenseDate: new Date(input.expenseDate),
       projectId: input.projectId ?? null,

@@ -22,10 +22,10 @@ export default async function AuditLogPage({
   searchParams: { outcome?: string; action?: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
-  const where: Record<string, unknown> = { tenantId };
+  const where: Record<string, unknown> = { orgId };
   if (searchParams.outcome) where.outcome = searchParams.outcome;
   if (searchParams.action) where.action = searchParams.action;
 
@@ -37,7 +37,7 @@ export default async function AuditLogPage({
     }),
     db.vCAuditLog.groupBy({
       by: ["outcome"],
-      where: { tenantId },
+      where: { orgId },
       _count: { _all: true },
     }),
   ]);

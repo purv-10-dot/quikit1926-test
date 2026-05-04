@@ -35,8 +35,8 @@ async function computeOverview() {
       tenantsNeverLoggedIn,
       mostActiveTenants,
     ] = await Promise.all([
-      db.tenant.count(),
-      db.tenant.count({ where: { status: "active" } }),
+      db.org.count(),
+      db.org.count({ where: { status: "active" } }),
       db.user.count(),
       db.app.count({ where: { status: "active" } }),
       // latest 1 probe per app
@@ -59,7 +59,7 @@ async function computeOverview() {
         where: { periodStart: { gte: startOfPrevMonth, lt: startOfMonth } },
         select: { amountCents: true, status: true },
       }),
-      db.tenant.findMany({
+      db.org.findMany({
         where: {
           status: "active",
           users: { none: { user: { lastSignInAt: { not: null } } } },
@@ -68,8 +68,8 @@ async function computeOverview() {
         take: 20,
       }),
       db.sessionEvent.groupBy({
-        by: ["tenantId"],
-        where: { event: "login", createdAt: { gte: thirtyDaysAgo }, tenantId: { not: null } },
+        by: ["orgId"],
+        where: { event: "login", createdAt: { gte: thirtyDaysAgo }, orgId: { not: null } },
         _count: { userId: true },
         orderBy: { _count: { userId: "desc" } },
         take: 5,
@@ -153,7 +153,7 @@ async function computeOverview() {
       },
       engagement: {
         dailyTrend, // [{date, activeUsers}]
-        mostActiveTenantIds: mostActiveTenants.map((t) => ({ tenantId: t.tenantId, sessionCount: t._count.userId })),
+        mostActiveOrgIds: mostActiveTenants.map((t) => ({ orgId: t.orgId, sessionCount: t._count.userId })),
         inactiveTenants: tenantsNeverLoggedIn.slice(0, 10).map((t) => ({ id: t.id, name: t.name, createdAt: t.createdAt.toISOString() })),
       },
       revenue: {

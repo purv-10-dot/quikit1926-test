@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, FUND_ADMIN_ROLES } from "@/lib/rbac";
 
 const postSchema = z.object({
@@ -18,9 +18,9 @@ const postSchema = z.object({
   vintageYear: z.number().int().min(2000).max(2100).optional(),
 });
 
-export const POST = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), FUND_ADMIN_ROLES);
+export const POST = withOrgAuth(
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = denyIfNotInRoles(await getVCRole(userId, orgId), FUND_ADMIN_ROLES);
     if (denied) return denied;
 
     const parsed = postSchema.safeParse(await req.json());
@@ -31,7 +31,7 @@ export const POST = withTenantAuth(
       );
     }
     const investor = await db.vCInvestor.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true },
     });
     if (!investor) {
@@ -39,7 +39,7 @@ export const POST = withTenantAuth(
     }
     const commitment = await db.vCCommitment.create({
       data: {
-        tenantId,
+        orgId,
         investorId: investor.id,
         type: parsed.data.type,
         totalAmount: BigInt(parsed.data.amountLakhs) * BigInt(10_000_000),

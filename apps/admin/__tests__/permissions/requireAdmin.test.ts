@@ -25,9 +25,9 @@ describe("requireAdmin", () => {
     }
   });
 
-  it("returns 400 error when no tenantId in session", async () => {
-    // Session without tenantId
-    setSession({ id: USER, tenantId: "", role: "admin" });
+  it("returns 400 error when no orgId in session", async () => {
+    // Session without orgId
+    setSession({ id: USER, orgId: "", role: "admin" });
 
     const result = await requireAdmin();
     expect("error" in result).toBe(true);
@@ -39,8 +39,8 @@ describe("requireAdmin", () => {
   });
 
   it("returns 403 error when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
 
     const result = await requireAdmin();
     expect("error" in result).toBe(true);
@@ -52,11 +52,11 @@ describe("requireAdmin", () => {
   });
 
   it("returns 403 error when user role is below admin", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "employee" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    setSession({ id: USER, orgId: TENANT, role: "employee" });
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "employee",
       status: "active",
     } as any);
@@ -71,11 +71,11 @@ describe("requireAdmin", () => {
   });
 
   it("returns 403 error for manager role (below admin threshold)", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "manager" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    setSession({ id: USER, orgId: TENANT, role: "manager" });
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "manager",
       status: "active",
     } as any);
@@ -88,11 +88,11 @@ describe("requireAdmin", () => {
   });
 
   it("returns auth context when user is admin", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
@@ -100,17 +100,17 @@ describe("requireAdmin", () => {
     const result = await requireAdmin();
     expect("error" in result && result.error).toBeFalsy();
     expect(result).toHaveProperty("userId", USER);
-    expect(result).toHaveProperty("tenantId", TENANT);
+    expect(result).toHaveProperty("orgId", TENANT);
     expect(result).toHaveProperty("session");
     expect(result).toHaveProperty("membership");
   });
 
   it("returns auth context when user is super_admin (above admin)", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "super_admin" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    setSession({ id: USER, orgId: TENANT, role: "super_admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "super_admin",
       status: "active",
     } as any);
@@ -118,6 +118,6 @@ describe("requireAdmin", () => {
     const result = await requireAdmin();
     expect("error" in result && result.error).toBeFalsy();
     expect(result).toHaveProperty("userId", USER);
-    expect(result).toHaveProperty("tenantId", TENANT);
+    expect(result).toHaveProperty("orgId", TENANT);
   });
 });

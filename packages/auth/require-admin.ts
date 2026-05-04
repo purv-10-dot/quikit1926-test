@@ -15,18 +15,18 @@ export function createRequireAdmin(authOptions: NextAuthOptions) {
       return { error: NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 }) };
     }
 
-    const tenantId = session.user.tenantId;
-    if (!tenantId) {
-      console.warn("[auth:requireAdmin] Denied: no tenantId for user", session.user.id);
+    const orgId = session.user.orgId;
+    if (!orgId) {
+      console.warn("[auth:requireAdmin] Denied: no orgId for user", session.user.id);
       return { error: NextResponse.json({ success: false, error: "No organisation selected" }, { status: 400 }) };
     }
 
-    const membership = await db.membership.findFirst({
-      where: { userId: session.user.id, tenantId, status: "active" },
+    const membership = await db.orgMember.findFirst({
+      where: { userId: session.user.id, orgId, status: "active" },
     });
 
     if (!membership) {
-      console.warn("[auth:requireAdmin] Denied: no active membership", { userId: session.user.id, tenantId });
+      console.warn("[auth:requireAdmin] Denied: no active membership", { userId: session.user.id, orgId });
       return { error: NextResponse.json({ success: false, error: "No active membership" }, { status: 403 }) };
     }
 
@@ -36,6 +36,6 @@ export function createRequireAdmin(authOptions: NextAuthOptions) {
       return { error: NextResponse.json({ success: false, error: "Admin access required" }, { status: 403 }) };
     }
 
-    return { session, userId: session.user.id, tenantId, membership };
+    return { session, userId: session.user.id, orgId, membership };
   };
 }

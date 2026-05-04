@@ -24,11 +24,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -41,7 +41,7 @@ function asAdmin() {
 function mockOPSP(overrides: Record<string, unknown> = {}) {
   return {
     id: OPSP_ID,
-    tenantId: TENANT,
+    orgId: TENANT,
     userId: USER,
     year: 2026,
     quarter: "Q1",
@@ -79,11 +79,11 @@ describe("GET /api/opsp/review — auth", () => {
   });
 
   it("returns 403 when no active admin membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "member" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    mockDb.orgMember.findFirst.mockResolvedValue({
       role: "employee",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "active",
     } as any);
     const res = await GET(buildGET());
@@ -112,7 +112,7 @@ describe("GET /api/opsp/review — happy path", () => {
   it("returns quarter (actions) rows with no review entries", async () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(mockOPSP() as any);
     mockDb.oPSPReviewEntry.findMany.mockResolvedValue([]);
-    mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
+    mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
     expect(res.status).toBe(200);
@@ -140,7 +140,7 @@ describe("GET /api/opsp/review — happy path", () => {
         updatedAt: new Date(),
       },
     ] as any);
-    mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
+    mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
     const body = await res.json();
@@ -152,7 +152,7 @@ describe("GET /api/opsp/review — happy path", () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(mockOPSP() as any);
     mockDb.oPSPReviewEntry.findMany.mockResolvedValue([]);
     mockDb.oPSPData.findMany.mockResolvedValue([]); // no quarter OPSPs for cascade
-    mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
+    mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=yearly"));
     const body = await res.json();
@@ -164,7 +164,7 @@ describe("GET /api/opsp/review — happy path", () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(mockOPSP() as any);
     mockDb.oPSPReviewEntry.findMany.mockResolvedValue([]);
     mockDb.oPSPData.findMany.mockResolvedValue([]); // no quarter OPSPs for cascade
-    mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
+    mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=3to5year"));
     const body = await res.json();
@@ -329,8 +329,8 @@ describe("POST /api/opsp/review — happy path", () => {
     );
 
     const call = mockDb.oPSPReviewEntry.upsert.mock.calls[0]?.[0] as any;
-    expect(call.where.tenantId_opspId_horizon_rowIndex_period.tenantId).toBe(TENANT);
-    expect(call.create.tenantId).toBe(TENANT);
+    expect(call.where.orgId_opspId_horizon_rowIndex_period.orgId).toBe(TENANT);
+    expect(call.create.orgId).toBe(TENANT);
     expect(call.create.userId).toBe(USER);
   });
 
@@ -352,6 +352,6 @@ describe("POST /api/opsp/review — happy path", () => {
     expect(mockDb.auditLog.create).toHaveBeenCalledTimes(1);
     const logCall = mockDb.auditLog.create.mock.calls[0]?.[0] as any;
     expect(logCall.data.entityType).toBe("Review");
-    expect(logCall.data.tenantId).toBe(TENANT);
+    expect(logCall.data.orgId).toBe(TENANT);
   });
 });

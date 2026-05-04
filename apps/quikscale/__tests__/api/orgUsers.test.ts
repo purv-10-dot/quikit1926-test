@@ -23,9 +23,9 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
-    id: "m1", userId: USER, tenantId: TENANT, role: "admin", status: "active",
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
+    id: "m1", userId: USER, orgId: TENANT, role: "admin", status: "active",
   } as any);
 }
 
@@ -45,8 +45,8 @@ describe("GET /api/org/users — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), routeCtx);
     expect(res.status).toBe(403);
   });
@@ -59,12 +59,12 @@ describe("GET /api/org/users — auth", () => {
 describe("GET /api/org/users — authorized", () => {
   beforeEach(asAdmin);
 
-  it("calls findMany with tenantId filter", async () => {
-    mockDb.membership.findMany.mockResolvedValue([]);
+  it("calls findMany with orgId filter", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
 
     const res = await GET(buildGET(), routeCtx);
     // Even if the response transforms fail, the query should have been called
-    expect(mockDb.membership.findMany).toHaveBeenCalled();
+    expect(mockDb.orgMember.findMany).toHaveBeenCalled();
   });
 });
 

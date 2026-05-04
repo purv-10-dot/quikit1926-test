@@ -33,7 +33,7 @@ interface Data {
   totals: { totalDollars: string; paidDollars: string; failedDollars: string; pendingDollars: string };
 }
 
-export function BillingPanel({ tenantId }: { tenantId: string }) {
+export function BillingPanel({ orgId }: { orgId: string }) {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<Set<string>>(new Set());
@@ -42,7 +42,7 @@ export function BillingPanel({ tenantId }: { tenantId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const r = await fetch(`/api/super/invoices/${tenantId}`);
+      const r = await fetch(`/api/super/invoices/${orgId}`);
       const j = await r.json();
       if (j.success) setData(j.data);
     } finally {
@@ -52,12 +52,12 @@ export function BillingPanel({ tenantId }: { tenantId: string }) {
 
   useOnceEffect(() => {
     load();
-  }, [tenantId]);
+  }, [orgId]);
 
   async function resolve(invoiceId: string, outcome: "paid" | "failed") {
     setPending((s) => new Set(s).add(invoiceId));
     try {
-      await fetch(`/api/super/invoices/${tenantId}/${invoiceId}/pay`, {
+      await fetch(`/api/super/invoices/${orgId}/${invoiceId}/pay`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ outcome }),
@@ -75,7 +75,7 @@ export function BillingPanel({ tenantId }: { tenantId: string }) {
   async function generateManual() {
     setGenerating(true);
     try {
-      const r = await fetch(`/api/super/invoices/${tenantId}`, {
+      const r = await fetch(`/api/super/invoices/${orgId}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({}),

@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("analytics.individual");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("analytics.individual");
 
-export const GET = withTenantAuth<{ userId: string }>(async ({ tenantId }, _req, { params }) => {
+export const GET = withOrgAuth<{ userId: string }>(async ({ orgId }, _req, { params }) => {
   const target = await db.user.findUnique({
     where: { id: params.userId },
     include: {
-      kpisOwned: { where: { tenantId }, include: { weeklyValues: true } },
-      prioritiesOwned: { where: { tenantId }, include: { weeklyStatuses: true } },
-      memberships: { where: { tenantId }, include: { team: true } },
+      kpisOwned: { where: { orgId }, include: { weeklyValues: true } },
+      prioritiesOwned: { where: { orgId }, include: { weeklyStatuses: true } },
+      memberships: { where: { orgId }, include: { team: true } },
       reviewsReceived: {
-        where: { tenantId },
+        where: { orgId },
         include: { reviewer: { select: { id: true, firstName: true, lastName: true } } },
         orderBy: { createdAt: "desc" },
       },

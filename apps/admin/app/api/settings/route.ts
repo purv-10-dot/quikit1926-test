@@ -5,12 +5,12 @@ import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { updateSettingsSchema } from "@/lib/schemas/settingsSchema";
 
-export const GET = withAdminAuth(async ({ tenantId }) => {
-  const blocked = await gateModuleApi("admin", "settings", tenantId);
+export const GET = withAdminAuth(async ({ orgId }) => {
+  const blocked = await gateModuleApi("admin", "settings", orgId);
   if (blocked) return blocked as NextResponse;
 
-  const tenant = await db.tenant.findUnique({
-    where: { id: tenantId },
+  const tenant = await db.org.findUnique({
+    where: { id: orgId },
     select: {
       id: true,
       name: true,
@@ -36,8 +36,8 @@ export const GET = withAdminAuth(async ({ tenantId }) => {
   return NextResponse.json({ success: true, data: tenant });
 });
 
-export const PATCH = withAdminAuth(async ({ tenantId }, request: NextRequest) => {
-  const blocked = await gateModuleApi("admin", "settings", tenantId);
+export const PATCH = withAdminAuth(async ({ orgId }, request: NextRequest) => {
+  const blocked = await gateModuleApi("admin", "settings", orgId);
   if (blocked) return blocked as NextResponse;
 
   const body = await request.json();
@@ -51,8 +51,8 @@ export const PATCH = withAdminAuth(async ({ tenantId }, request: NextRequest) =>
 
   const data = parsed.data;
 
-  const updated = await db.tenant.update({
-    where: { id: tenantId },
+  const updated = await db.org.update({
+    where: { id: orgId },
     data,
   });
 

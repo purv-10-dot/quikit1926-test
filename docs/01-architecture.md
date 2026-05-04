@@ -19,7 +19,7 @@ QuikIT/
 ├── apps/
 │   ├── _template/        # scaffold for new apps (you copy this)
 │   ├── quikit/           # launcher (route prefix /, port 3000)
-│   ├── quikscale/        # KPI / OPSP / Priority / WWW (port 3004)
+│   ├── quikscale/        # KPI / OPSP / Priority / WWW (port 3002)
 │   ├── admin/            # tenant admin portal (port 3005)
 │   └── <your-app>/       # YOUR app (port 3010+)
 ├── packages/

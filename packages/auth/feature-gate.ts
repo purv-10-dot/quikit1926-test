@@ -2,11 +2,11 @@
  * FF-1 feature gate helpers — L3 enforcement for per-tenant module flags.
  *
  * Three shapes of gate:
- *   1. `getDisabledModules(tenantId, appSlug)` — raw query, request-deduped
+ *   1. `getDisabledModules(orgId, appSlug)` — raw query, request-deduped
  *      via React.cache. Use when you need the set for rendering (sidebar).
  *   2. `gateModuleRoute(appSlug, moduleKey, authOptions)` — call inside a
  *      server-component layout.tsx. Redirects to /dashboard if disabled.
- *   3. `gateModuleApi(appSlug, moduleKey, tenantId)` — call at the top of a
+ *   3. `gateModuleApi(appSlug, moduleKey, orgId)` — call at the top of a
  *      route handler. Returns a `Response` (404) if disabled, or null.
  *
  * The cascade rule ("parent disabled ⇒ children disabled") is applied by
@@ -37,20 +37,20 @@ const cache: <T extends (...args: never[]) => unknown>(fn: T) => T =
 
 /**
  * Returns the set of moduleKeys that are EXPLICITLY disabled for the given
- * (tenantId, appSlug) pair. Absence of a key means the module is enabled
+ * (orgId, appSlug) pair. Absence of a key means the module is enabled
  * (sparse storage — the default).
  *
  * Deduped per-request via React.cache — sidebar + layout gates + page
  * components all share the same result within a single render pass.
  */
 export const getDisabledModules = cache(
-  async (tenantId: string, appSlug: string): Promise<Set<string>> => {
+  async (orgId: string, appSlug: string): Promise<Set<string>> => {
     try {
       // Disabled modules rarely change (admin toggles them in Settings →
       // Configurations). 30s TTL keeps the FF gate fast without making a
       // disable take "minutes" to roll out across instances.
       const arr = await getOrSet<string[]>(
-        `disabledModules:${tenantId}:${appSlug}`,
+        `disabledModules:${orgId}:${appSlug}`,
         30,
         async () => {
           const app = await db.app.findUnique({
@@ -59,7 +59,7 @@ export const getDisabledModules = cache(
           });
           if (!app) return [];
           const rows = await db.appModuleFlag.findMany({
-            where: { tenantId, appId: app.id, enabled: false },
+            where: { orgId, appId: app.id, enabled: false },
             select: { moduleKey: true },
           });
           if (!Array.isArray(rows)) return [];
@@ -97,11 +97,11 @@ export async function gateModuleRoute(
   authOptions: NextAuthOptions,
 ): Promise<void> {
   const session = await getServerSession(authOptions);
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) {
+  const orgId = session?.user?.orgId;
+  if (!orgId) {
     redirect("/select-org");
   }
-  const disabled = await getDisabledModules(tenantId, appSlug);
+  const disabled = await getDisabledModules(orgId, appSlug);
   if (!isModuleEnabled(moduleKey, disabled)) {
     redirect(`/dashboard?feature_disabled=${encodeURIComponent(moduleKey)}`);
   }
@@ -109,32 +109,32 @@ export async function gateModuleRoute(
 
 /**
  * API route gate. Call after you've verified the session and resolved the
- * tenantId; returns a 404 `NextResponse` if the module is disabled, or
+ * orgId; returns a 404 `NextResponse` if the module is disabled, or
  * `null` to let you continue.
  *
  * Usage:
  *   // apps/quikscale/app/api/kpi/route.ts
  *   const session = await getServerSession(authOptions);
- *   if (!session?.user?.tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
- *   const blocked = await gateModuleApi("quikscale", "kpi", session.user.tenantId);
+ *   if (!session?.user?.orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+ *   const blocked = await gateModuleApi("quikscale", "kpi", session.user.orgId);
  *   if (blocked) return blocked;
  *   // ... rest of handler ...
  */
 export async function gateModuleApi(
   appSlug: string,
   moduleKey: string,
-  tenantId: string,
+  orgId: string,
 ): Promise<Response | null> {
   // SA-A.6: hard gate check runs FIRST. If the tenant's app access is revoked,
   // no module-level logic matters.
-  const appBlocked = await isTenantAppBlocked(tenantId, appSlug);
+  const appBlocked = await isTenantAppBlocked(orgId, appSlug);
   if (appBlocked) {
     return NextResponse.json(
       { success: false, error: "App access blocked for this tenant" },
       { status: 403 },
     );
   }
-  const disabled = await getDisabledModules(tenantId, appSlug);
+  const disabled = await getDisabledModules(orgId, appSlug);
   if (!isModuleEnabled(moduleKey, disabled)) {
     return NextResponse.json(
       { success: false, error: "Not found" },
@@ -157,16 +157,16 @@ export async function gateModuleApi(
  * ───────────────────────────────────────────────────────────────────────── */
 
 /**
- * True if the (tenantId, appSlug) pair has been explicitly blocked by a super
+ * True if the (orgId, appSlug) pair has been explicitly blocked by a super
  * admin. Request-deduped via React.cache so a single render / handler pass
  * hits the DB at most once.
  */
 export const isTenantAppBlocked = cache(
-  async (tenantId: string, appSlug: string): Promise<boolean> => {
+  async (orgId: string, appSlug: string): Promise<boolean> => {
     try {
       // SA-A.6 hard gate — toggled by super admins, super rare. 60s TTL is fine.
       return await getOrSet<boolean>(
-        `tenantAppBlocked:${tenantId}:${appSlug}`,
+        `tenantAppBlocked:${orgId}:${appSlug}`,
         60,
         async () => {
           const app = await db.app.findUnique({
@@ -174,8 +174,8 @@ export const isTenantAppBlocked = cache(
             select: { id: true },
           });
           if (!app) return false;
-          const access = await db.tenantAppAccess.findUnique({
-            where: { tenantId_appId: { tenantId, appId: app.id } },
+          const access = await db.orgAppAccess.findUnique({
+            where: { orgId_appId: { orgId, appId: app.id } },
             select: { enabled: true },
           });
           if (!access) return false;
@@ -208,11 +208,11 @@ export async function gateTenantAppRoute(
   authOptions: NextAuthOptions,
 ): Promise<void> {
   const session = await getServerSession(authOptions);
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) {
+  const orgId = session?.user?.orgId;
+  if (!orgId) {
     redirect("/select-org");
   }
-  const blocked = await isTenantAppBlocked(tenantId, appSlug);
+  const blocked = await isTenantAppBlocked(orgId, appSlug);
   if (blocked) {
     // Bounce back to the launcher's apps page with a flag so it can render
     // a "you no longer have access" notice.

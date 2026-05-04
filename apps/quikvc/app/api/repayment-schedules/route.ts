@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { generateEmiSchedule, rbfTarget } from "@/lib/repayment/schedule";
 import { getVCRole, denyIfNotInRoles, CAPITAL_OPS_ROLES } from "@/lib/rbac";
 
@@ -24,11 +24,11 @@ const postSchema = z.object({
   multiple: z.number().positive().max(10).optional(),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
+export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   const dealId = req.nextUrl.searchParams.get("dealId");
   const investorId = req.nextUrl.searchParams.get("investorId");
 
-  const where: Record<string, string> = { tenantId };
+  const where: Record<string, string> = { orgId };
   if (dealId) where.dealId = dealId;
   if (investorId) where.investorId = investorId;
 
@@ -52,8 +52,8 @@ export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
   });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), CAPITAL_OPS_ROLES);
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = denyIfNotInRoles(await getVCRole(userId, orgId), CAPITAL_OPS_ROLES);
   if (denied) return denied;
 
   const parsed = postSchema.safeParse(await req.json());
@@ -67,7 +67,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   // Confirm allocation exists in this tenant
   const allocation = await db.vCDealAllocation.findFirst({
-    where: { tenantId, dealId, investorId },
+    where: { orgId, dealId, investorId },
     select: { id: true, amount: true },
   });
   if (!allocation) {
@@ -79,7 +79,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   // Reject duplicate active schedule
   const existing = await db.vCRepaymentSchedule.findFirst({
-    where: { tenantId, dealId, investorId, status: "active" },
+    where: { orgId, dealId, investorId, status: "active" },
     select: { id: true },
   });
   if (existing) {
@@ -122,7 +122,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   const created = await db.vCRepaymentSchedule.create({
     data: {
-      tenantId,
+      orgId,
       dealId,
       investorId,
       type,
@@ -137,7 +137,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   await db.vCTimelineEvent.create({
     data: {
-      tenantId,
+      orgId,
       dealId,
       type: "repayment-schedule-created",
       actorId: userId,

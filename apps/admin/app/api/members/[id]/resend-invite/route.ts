@@ -7,13 +7,13 @@ import { ROLE_LABELS } from "@/lib/constants";
 import { writeAuditLog } from "@/lib/audit";
 import crypto from "crypto";
 
-export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inviterId }, request: NextRequest, { params }) => {
-  const blocked = await gateModuleApi("admin", "members", tenantId);
+export const POST = withAdminAuth<{ id: string }>(async ({ orgId, userId: inviterId }, request: NextRequest, { params }) => {
+  const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
-  const membership = await db.membership.findFirst({
-    where: { id: membershipId, tenantId, status: "invited" },
+  const membership = await db.orgMember.findFirst({
+    where: { id: membershipId, orgId, status: "invited" },
     include: { user: { select: { email: true } } },
   });
 
@@ -26,7 +26,7 @@ export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inv
 
   const newToken = crypto.randomUUID();
 
-  await db.membership.update({
+  await db.orgMember.update({
     where: { id: membershipId },
     data: {
       invitationToken: newToken,
@@ -34,9 +34,9 @@ export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inv
     },
   });
 
-  const [tenant, inviter] = await Promise.all([
-    db.tenant.findUnique({
-      where: { id: tenantId },
+  const [org, inviter] = await Promise.all([
+    db.org.findUnique({
+      where: { id: orgId },
       select: { name: true, logoUrl: true, brandColor: true },
     }),
     db.user.findUnique({ where: { id: inviterId }, select: { firstName: true, lastName: true } }),
@@ -44,9 +44,9 @@ export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inv
 
   await sendInvitationEmail({
     to: membership.user.email,
-    orgName: tenant?.name || "Organisation",
-    orgLogoUrl: tenant?.logoUrl ?? null,
-    orgBrandColor: tenant?.brandColor ?? null,
+    orgName: org?.name || "Organisation",
+    orgLogoUrl: org?.logoUrl ?? null,
+    orgBrandColor: org?.brandColor ?? null,
     inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}` : "An admin",
     role: ROLE_LABELS[membership.role] || membership.role,
     token: newToken,
@@ -54,7 +54,7 @@ export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inv
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: inviterId,
     action: "RESENT",
     entityType: "Membership",

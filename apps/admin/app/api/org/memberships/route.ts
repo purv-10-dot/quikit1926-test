@@ -12,10 +12,10 @@ export async function GET() {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const memberships = await db.membership.findMany({
+  const memberships = await db.orgMember.findMany({
     where: { userId: session.user.id, status: "active" },
     include: {
-      tenant: {
+      org: {
         select: {
           id: true,
           name: true,
@@ -39,13 +39,13 @@ export async function GET() {
     })
     .map((m) => ({
       membershipId: m.id,
-      tenantId: m.tenant.id,
-      name: m.tenant.name,
-      slug: m.tenant.slug,
-      description: m.tenant.description,
-      logoUrl: m.tenant.logoUrl,
-      brandColor: m.tenant.brandColor,
-      plan: m.tenant.plan,
+      orgId: m.org.id,
+      name: m.org.name,
+      slug: m.org.slug,
+      description: m.org.description,
+      logoUrl: m.org.logoUrl,
+      brandColor: m.org.brandColor,
+      plan: m.org.plan,
       role: m.role,
       status: m.status,
     }));

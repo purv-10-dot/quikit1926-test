@@ -25,11 +25,11 @@ export default async function SourcingPage({
   searchParams: { status?: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const statusFilter = searchParams.status;
-  const where: Record<string, string> = { tenantId };
+  const where: Record<string, string> = { orgId };
   if (statusFilter) where.status = statusFilter;
 
   const items = await db.vCSourcedOpportunity.findMany({
@@ -41,7 +41,7 @@ export default async function SourcingPage({
 
   const counts = await db.vCSourcedOpportunity.groupBy({
     by: ["status"],
-    where: { tenantId },
+    where: { orgId },
     _count: { _all: true },
   });
   const countByStatus = Object.fromEntries(counts.map((c) => [c.status, c._count._all]));

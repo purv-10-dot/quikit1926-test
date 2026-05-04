@@ -13,14 +13,14 @@ import { getVCRole, CAPITAL_OPS_ROLES } from "@/lib/rbac";
 import CapitalCallsClient from "./capital-calls-client";
 
 export default async function CapitalCallsPage({ params }: { params: { id: string } }) {
-  const { userId, tenantId } = await requireSession();
-  if (!tenantId) notFound();
+  const { userId, orgId } = await requireSession();
+  if (!orgId) notFound();
 
-  const role = await getVCRole(userId, tenantId);
+  const role = await getVCRole(userId, orgId);
   const canManage = role !== null && CAPITAL_OPS_ROLES.includes(role);
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     select: {
       id: true,
       application: { select: { startupName: true } },
@@ -36,7 +36,7 @@ export default async function CapitalCallsPage({ params }: { params: { id: strin
   const allocationIds = deal.allocations.map((a) => a.id);
   const calls = allocationIds.length
     ? await db.vCCapitalCall.findMany({
-        where: { tenantId, allocationId: { in: allocationIds } },
+        where: { orgId, allocationId: { in: allocationIds } },
         include: {
           investor: { select: { id: true, name: true } },
           payments: { orderBy: { paidAt: "desc" } },

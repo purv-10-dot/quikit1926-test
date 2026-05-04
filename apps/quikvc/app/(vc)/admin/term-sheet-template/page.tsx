@@ -12,11 +12,11 @@ import TermSheetTemplateEditor from "./editor-client";
 
 export default async function TermSheetTemplatePage() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const tpl = await db.vCTermSheetTemplate.findFirst({
-    where: { tenantId },
+    where: { orgId },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, bodyHtml: true, updatedAt: true },
   });

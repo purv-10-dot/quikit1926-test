@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("orgSetup.teams");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("orgSetup.teams");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
 // GET /api/org/teams — all teams with member count and head info
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
-  const where = { tenantId };
+  const where = { orgId };
 
   const [teams, total] = await Promise.all([
     db.team.findMany({
@@ -62,10 +62,10 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
 }, { fallbackErrorMessage: "Failed to fetch teams" });
 
 // POST /api/org/teams — create team
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const rl = rateLimit({
     routeKey: "team:create",
-    clientKey: `${tenantId}:${userId}`,
+    clientKey: `${orgId}:${userId}`,
     limit: LIMITS.mutation.limit,
     windowMs: LIMITS.mutation.windowMs,
   });
@@ -85,7 +85,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const { name, description, color, headId } = parsed.data;
 
   const existing = await db.team.findFirst({
-    where: { tenantId, name: { equals: name.trim(), mode: "insensitive" } },
+    where: { orgId, name: { equals: name.trim(), mode: "insensitive" } },
   });
   if (existing)
     return NextResponse.json({ success: false, error: `A team named "${existing.name}" already exists` }, { status: 409 });
@@ -95,7 +95,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const team = await db.team.create({
     data: {
-      tenantId,
+      orgId,
       name:        name.trim(),
       description: description?.trim() || null,
       color:       color || "#0066cc",
@@ -106,7 +106,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "CREATE",
     entityType: "Team",

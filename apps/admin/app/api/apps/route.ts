@@ -3,8 +3,8 @@ import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 
-export const GET = withAdminAuth(async ({ tenantId }) => {
-  const blocked = await gateModuleApi("admin", "apps", tenantId);
+export const GET = withAdminAuth(async ({ orgId }) => {
+  const blocked = await gateModuleApi("admin", "apps", orgId);
   if (blocked) return blocked as NextResponse;
 
   const apps = await db.app.findMany({
@@ -14,7 +14,7 @@ export const GET = withAdminAuth(async ({ tenantId }) => {
   // Get access counts per app for this tenant
   const accessCounts = await db.userAppAccess.groupBy({
     by: ["appId"],
-    where: { tenantId },
+    where: { orgId },
     _count: { userId: true },
   });
 

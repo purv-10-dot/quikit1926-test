@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * POST /api/store/grn/[id]/post
@@ -21,9 +21,9 @@ const withTenantAuth = withTenantAuthForModule("store");
  * If any step fails, the whole transaction rolls back. Re-posting a posted
  * GRN is a no-op (returns 409).
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const grn = await db.cnGoodsReceiptNote.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: {
       lines: true,
       po: { include: { lines: true } },
@@ -49,7 +49,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
         if (Number(line.acceptedQty) <= 0) continue;
         await tx.cnStockLedger.create({
           data: {
-            tenantId,
+            orgId,
             projectId: grn.projectId,
             locationId: grn.locationId,
             itemId: line.itemId,
@@ -108,6 +108,6 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
     return NextResponse.json({ success: false, error: `Transaction failed: ${msg}` }, { status: 500 });
   }
 
-  await logAudit({ tenantId, userId, actionType: "post", entityType: "cnGoodsReceiptNote", entityId: grn.id, entityRef: grn.grnNumber, oldValues: { status: "draft" }, newValues: { status: "posted" } });
+  await logAudit({ orgId, userId, actionType: "post", entityType: "cnGoodsReceiptNote", entityId: grn.id, entityRef: grn.grnNumber, oldValues: { status: "draft" }, newValues: { status: "posted" } });
   return NextResponse.json({ success: true, data: { id: grn.id, status: "posted", postedAt } });
 });

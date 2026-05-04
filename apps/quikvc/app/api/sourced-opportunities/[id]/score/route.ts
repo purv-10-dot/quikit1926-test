@@ -9,17 +9,17 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { scoreThesisFit } from "@/lib/ai/prompts/thesis-fit";
 import { getVCRole, denyIfNotInRoles, ANALYST_ROLES } from "@/lib/rbac";
 
-export const POST = withTenantAuth(
-  async ({ tenantId, userId }, _req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), ANALYST_ROLES);
+export const POST = withOrgAuth(
+  async ({ orgId, userId }, _req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = denyIfNotInRoles(await getVCRole(userId, orgId), ANALYST_ROLES);
     if (denied) return denied;
 
     const opp = await db.vCSourcedOpportunity.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true, startupName: true, pitch: true, website: true, verticalId: true },
     });
     if (!opp) {
@@ -27,7 +27,7 @@ export const POST = withTenantAuth(
     }
 
     const verticals = await db.vCVertical.findMany({
-      where: { tenantId, enabled: true },
+      where: { orgId, enabled: true },
       orderBy: { sortOrder: "asc" },
       select: { id: true, name: true, description: true },
     });

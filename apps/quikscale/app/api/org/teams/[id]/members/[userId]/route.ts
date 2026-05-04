@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("orgSetup.teams");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("orgSetup.teams");
 
 type RouteParams = { id: string; userId: string };
 
@@ -15,11 +15,11 @@ type RouteParams = { id: string; userId: string };
  *   - Does NOT delete or deactivate the Membership itself — the user is
  *     still part of the organisation, just not this team.
  */
-export const DELETE = withTenantAuth<RouteParams>(
-  async ({ tenantId }, _request, { params }) => {
+export const DELETE = withOrgAuth<RouteParams>(
+  async ({ orgId }, _request, { params }) => {
     // Verify team belongs to this tenant
     const team = await db.team.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
     });
     if (!team) {
       return NextResponse.json(
@@ -29,8 +29,8 @@ export const DELETE = withTenantAuth<RouteParams>(
     }
 
     // Find the target user's membership in this tenant
-    const membership = await db.membership.findFirst({
-      where: { tenantId, userId: params.userId, status: "active" },
+    const membership = await db.orgMember.findFirst({
+      where: { orgId, userId: params.userId, status: "active" },
       select: { id: true, teamId: true },
     });
     if (!membership) {
@@ -43,7 +43,7 @@ export const DELETE = withTenantAuth<RouteParams>(
     // Clear Membership.teamId only if it currently points to THIS team.
     // Preserves a different primary-team assignment if one exists.
     if (membership.teamId === params.id) {
-      await db.membership.update({
+      await db.orgMember.update({
         where: { id: membership.id },
         data: { teamId: null },
       });
@@ -51,7 +51,7 @@ export const DELETE = withTenantAuth<RouteParams>(
 
     // Drop the UserTeam row (no-op if it doesn't exist)
     await db.userTeam.deleteMany({
-      where: { tenantId, userId: params.userId, teamId: params.id },
+      where: { orgId, userId: params.userId, teamId: params.id },
     });
 
     return NextResponse.json({ success: true });

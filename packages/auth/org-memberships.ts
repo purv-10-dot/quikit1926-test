@@ -7,7 +7,7 @@
  * shows tenants where QuikVC is enabled (rather than every tenant the
  * user belongs to, including QuikScale-only ones).
  *
- * Same pattern as `createGetTenantId` / `createRequireAdmin`: each app
+ * Same pattern as `createGetOrgId` / `createRequireAdmin`: each app
  * instantiates the factory at the top of its route file and exports the
  * resulting handler.
  */
@@ -24,7 +24,7 @@ export interface OrgMembershipsConfig {
 
 export interface OrgInfo {
   membershipId: string;
-  tenantId: string;
+  orgId: string;
   name: string;
   slug: string;
   description: string | null;
@@ -62,23 +62,30 @@ export function createOrgMembershipsHandler(
       appId = app?.id ?? null;
     }
 
-    const memberships = await db.membership.findMany({
+    const memberships = await db.orgMember.findMany({
       where: {
         userId,
-        // Only include tenants where this user has access to the requested
-        // app (skipped when appSlug isn't set or app row isn't found).
-        ...(appId
-          ? {
-              tenant: {
+        // Only show orgs the user is actively a member of.
+        status: "active",
+        // Only show orgs that aren't suspended/disabled — a suspended org
+        // shouldn't appear in the launcher dropdown or anywhere else for
+        // the end user. Super-admins manage suspended orgs through the
+        // super-admin portal, not the user-level launcher.
+        org: {
+          status: "active",
+          // Optionally also filter to orgs where user has access to a
+          // specific app (skipped when appSlug isn't set / app row missing).
+          ...(appId
+            ? {
                 userAppAccess: {
                   some: { userId, appId },
                 },
-              },
-            }
-          : {}),
+              }
+            : {}),
+        },
       },
       include: {
-        tenant: {
+        org: {
           select: {
             id: true,
             name: true,
@@ -96,13 +103,13 @@ export function createOrgMembershipsHandler(
 
     const orgs: OrgInfo[] = memberships.map((m) => ({
       membershipId: m.id,
-      tenantId: m.tenant.id,
-      name: m.tenant.name,
-      slug: m.tenant.slug,
-      description: m.tenant.description,
-      logoUrl: m.tenant.logoUrl,
-      brandColor: m.tenant.brandColor,
-      plan: m.tenant.plan,
+      orgId: m.org.id,
+      name: m.org.name,
+      slug: m.org.slug,
+      description: m.org.description,
+      logoUrl: m.org.logoUrl,
+      brandColor: m.org.brandColor,
+      plan: m.org.plan,
       role: m.role,
       status: m.status,
       invitedAt: m.invitedAt,

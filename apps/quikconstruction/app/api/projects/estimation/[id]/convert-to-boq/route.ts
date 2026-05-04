@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { z } from "zod";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
 const schema = z.object({
   boqNumber: z.string().min(1).max(50),
@@ -16,9 +16,9 @@ const schema = z.object({
  * Creates a BOQ from this estimation. Clones item tree preserving hierarchy.
  * Marks estimation as converted + links to the new BOQ.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const est = await db.cnEstimation.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: { items: { orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }] } },
   });
   if (!est) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -29,7 +29,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   const body = await req.json();
   const input = schema.parse(body);
   const dup = await db.cnBOQ.findFirst({
-    where: { tenantId, boqNumber: input.boqNumber, deletedAt: null },
+    where: { orgId, boqNumber: input.boqNumber, deletedAt: null },
     select: { id: true },
   });
   if (dup) return NextResponse.json({ success: false, error: `BOQ '${input.boqNumber}' already exists` }, { status: 409 });
@@ -37,7 +37,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   const boq = await db.$transaction(async (tx) => {
     const created = await tx.cnBOQ.create({
       data: {
-        tenantId,
+        orgId,
         projectId: est.projectId,
         boqNumber: input.boqNumber,
         boqDate: new Date(input.boqDate),

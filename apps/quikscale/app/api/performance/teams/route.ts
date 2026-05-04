@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("analytics.teams");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("analytics.teams");
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
     const teams = await db.team.findMany({
-      where: { tenantId },
+      where: { orgId },
       include: {
         members: {
           include: {
             user: {
               include: {
-                kpisOwned: { where: { tenantId } },
-                prioritiesOwned: { where: { tenantId } },
+                kpisOwned: { where: { orgId } },
+                prioritiesOwned: { where: { orgId } },
               }
             }
           }

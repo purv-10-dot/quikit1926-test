@@ -14,7 +14,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (auth, _req: NextReq
     if (!plan) {
       return NextResponse.json({ success: false, error: "Plan not found" }, { status: 404 });
     }
-    const tenantCount = await db.tenant.count({ where: { plan: plan.slug } });
+    const tenantCount = await db.org.count({ where: { plan: plan.slug } });
     return NextResponse.json({ success: true, data: { ...plan, tenantCount } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to load plan";
@@ -76,7 +76,7 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async (auth, _req: Next
       return NextResponse.json({ success: false, error: "Plan not found" }, { status: 404 });
     }
 
-    const inUse = await db.tenant.count({ where: { plan: plan.slug } });
+    const inUse = await db.org.count({ where: { plan: plan.slug } });
     if (inUse > 0) {
       return NextResponse.json(
         { success: false, error: `Plan is still assigned to ${inUse} tenant${inUse === 1 ? "" : "s"}. Reassign before deleting.` },

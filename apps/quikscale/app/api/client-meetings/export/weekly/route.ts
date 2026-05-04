@@ -1,24 +1,24 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { calculateWeeklyMonthlyStats, previousMonths } from "@/lib/services/clientMeetingsMath";
 import { applyPctFill, applyHeader, workbookToBuffer } from "@/lib/exports/clientMeetingsExcel";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.dashboard");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
 
 /**
  * POST /api/client-meetings/export/weekly
  * Body: { clientId, monthsBack? }
  * Returns: xlsx blob with 9 metric rows (spec §7.10) × months + Total Avg.
  */
-export const POST = withTenantAuth(async ({ tenantId }, request) => {
+export const POST = withOrgAuth(async ({ orgId }, request) => {
   const body = await request.json();
   const clientId: string = body.clientId;
   const monthsBack: number = body.monthsBack ?? 6;
   if (!clientId) return NextResponse.json({ success: false, error: "clientId required" }, { status: 400 });
 
-  const client = await db.client.findFirst({ where: { id: clientId, tenantId, deletedAt: null } });
+  const client = await db.client.findFirst({ where: { id: clientId, orgId, deletedAt: null } });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
 
   const months = previousMonths(new Date(), monthsBack);
@@ -26,7 +26,7 @@ export const POST = withTenantAuth(async ({ tenantId }, request) => {
   const toEnd = new Date(Date.UTC(months[months.length - 1].year, months[months.length - 1].month + 1, 0, 23, 59, 59, 999));
 
   const meetings = await db.clientWeeklyMeeting.findMany({
-    where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
+    where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
     include: { absentMembers: true, dashboardNAMembers: true },
   });
   const stats = calculateWeeklyMonthlyStats(

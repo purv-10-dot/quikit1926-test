@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { miCreateSchema } from "@/lib/schemas/procurement";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const issues = await db.cnMaterialIssue.findMany({
     where: {
-      tenantId,
+      orgId,
       deletedAt: includeDeleted ? { not: null } : null,
       ...(status ? { status } : {}),
     },
@@ -27,19 +27,19 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
  * POST /api/store/material-issue — create MI as DRAFT.
  * No stock effect until POST /material-issue/[id]/post.
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = miCreateSchema.parse(body);
 
   const [project, location] = await Promise.all([
-    db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } }),
-    db.cnLocation.findFirst({ where: { id: input.locationId, tenantId }, select: { id: true } }),
+    db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } }),
+    db.cnLocation.findFirst({ where: { id: input.locationId, orgId }, select: { id: true } }),
   ]);
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
   if (!location) return NextResponse.json({ success: false, error: "Location not found" }, { status: 400 });
 
   const dup = await db.cnMaterialIssue.findFirst({
-    where: { tenantId, issueNumber: input.issueNumber, deletedAt: null },
+    where: { orgId, issueNumber: input.issueNumber, deletedAt: null },
     select: { id: true },
   });
   if (dup) {
@@ -51,7 +51,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const issue = await db.cnMaterialIssue.create({
     data: {
-      tenantId,
+      orgId,
       issueNumber: input.issueNumber,
       projectId: input.projectId,
       locationId: input.locationId,

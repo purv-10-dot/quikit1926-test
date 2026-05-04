@@ -1,21 +1,21 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("analytics.individual");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("analytics.individual");
 
-export const GET = withTenantAuth(async ({ tenantId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
-    const where = { tenantId };
+    const where = { orgId };
 
     const [members, total] = await Promise.all([
-      db.membership.findMany({
+      db.orgMember.findMany({
         where,
         include: {
           user: {
             include: {
-              kpisOwned: { where: { tenantId }, include: { weeklyValues: true } },
-              prioritiesOwned: { where: { tenantId }, include: { weeklyStatuses: true } },
+              kpisOwned: { where: { orgId }, include: { weeklyValues: true } },
+              prioritiesOwned: { where: { orgId }, include: { weeklyStatuses: true } },
             }
           },
           team: true,
@@ -23,7 +23,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
         skip,
         take,
       }),
-      db.membership.count({ where }),
+      db.orgMember.count({ where }),
     ]);
 
     // Only load meetings whose attendees include the paginated user set —

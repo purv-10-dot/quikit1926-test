@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.dailyHuddle");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
 
 /**
  * GET /api/client-meetings/daily-huddles
@@ -13,14 +13,14 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.dailyHuddle");
  * Returns rows with creator/updater name + initials + absence-member
  * ids (both legacy User-based and new ClientMember-based).
  */
-export const GET = withTenantAuth(async ({ tenantId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
   const url = new URL(request.url);
   const clientId       = url.searchParams.get("clientId") ?? undefined;
   const from           = url.searchParams.get("from");
   const to             = url.searchParams.get("to");
   const includeDeleted = url.searchParams.get("includeDeleted") === "true";
 
-  const where: Record<string, unknown> = { tenantId, deletedAt: includeDeleted ? { not: null } : null };
+  const where: Record<string, unknown> = { orgId, deletedAt: includeDeleted ? { not: null } : null };
   if (clientId) where.clientId = clientId;
   if (from || to) {
     const r: Record<string, Date> = {};
@@ -85,13 +85,13 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 });
 
 /** POST — create a daily huddle. Any active tenant member may call. */
-export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
   const parsed = createDailyHuddleSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json({ success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 });
   const d = parsed.data;
 
-  const client = await db.client.findFirst({ where: { id: d.clientId, tenantId, deletedAt: null } });
+  const client = await db.client.findFirst({ where: { id: d.clientId, orgId, deletedAt: null } });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
 
   if (d.actualStartTime && d.actualEndTime && d.actualEndTime <= d.actualStartTime)
@@ -101,7 +101,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
 
   const created = await db.clientDailyHuddle.create({
     data: {
-      tenantId, clientId: d.clientId,
+      orgId, clientId: d.clientId,
       meetingDate: new Date(d.meetingDate),
       callStatus: d.callStatus,
       actualStartTime: d.actualStartTime ?? null,
@@ -121,7 +121,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
   });
 
   await writeAuditLog({
-    tenantId, actorId: userId, action: "CREATE",
+    orgId, actorId: userId, action: "CREATE",
     entityType: "DailyHuddle", entityId: created.id,
     newValues: {
       clientId: d.clientId,

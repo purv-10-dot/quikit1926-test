@@ -10,10 +10,10 @@ export default async function InvestorRepaymentsPage() {
   if (!ctx) {
     return <div className="px-6 py-12 text-center text-sm text-gray-500">No investor profile found.</div>;
   }
-  const { tenantId, investorId } = ctx;
+  const { orgId, investorId } = ctx;
 
   const schedules = await db.vCRepaymentSchedule.findMany({
-    where: { tenantId, investorId },
+    where: { orgId, investorId },
     include: {
       payments: { orderBy: { paidAt: "desc" } },
     },
@@ -24,7 +24,7 @@ export default async function InvestorRepaymentsPage() {
   const dealIds = Array.from(new Set(schedules.map((s) => s.dealId)));
   const deals = dealIds.length
     ? await db.vCDeal.findMany({
-        where: { tenantId, id: { in: dealIds } },
+        where: { orgId, id: { in: dealIds } },
         select: { id: true, application: { select: { startupName: true } } },
       })
     : [];

@@ -14,7 +14,7 @@
 
 const NOISE_KEYS = new Set([
   "id",
-  "tenantId",
+  "orgId",
   "createdAt",
   "updatedAt",
   "createdBy",

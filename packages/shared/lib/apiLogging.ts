@@ -2,7 +2,7 @@
  * SA-A.2 — API call logging for super admin analytics.
  *
  * Fire-and-forget writes to the ApiCall table. Designed to be called from
- * auth wrappers (withTenantAuth, requireAdmin) so every API route is captured
+ * auth wrappers (withOrgAuth, requireAdmin) so every API route is captured
  * without per-route instrumentation.
  *
  * Failures NEVER propagate — logging must not break a request. Writes are
@@ -43,7 +43,7 @@ export function normalizePathPattern(path: string): string {
 }
 
 export interface LogApiCallParams {
-  tenantId?: string | null;
+  orgId?: string | null;
   userId?: string | null;
   appSlug: string;
   method: string;
@@ -68,7 +68,7 @@ export async function logApiCall(params: LogApiCallParams): Promise<void> {
   try {
     await db.apiCall.create({
       data: {
-        tenantId: params.tenantId ?? null,
+        orgId: params.orgId ?? null,
         userId: params.userId ?? null,
         appSlug: params.appSlug,
         method: params.method,

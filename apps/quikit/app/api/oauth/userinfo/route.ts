@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       revoked: false,
       expiresAt: { gt: new Date() },
     },
-    select: { userId: true, tenantId: true, scopes: true },
+    select: { userId: true, orgId: true, scopes: true },
   });
 
   if (!tokenRecord) {
@@ -56,10 +56,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: {
       userId: user.id,
-      tenantId: tokenRecord.tenantId,
+      orgId: tokenRecord.orgId,
       status: "active",
     },
     select: { role: true },
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     given_name: user.firstName,
     family_name: user.lastName,
     picture: user.avatar,
-    tenant_id: tokenRecord.tenantId,
+    tenant_id: tokenRecord.orgId,
     role: membership?.role ?? "member",
   });
 }

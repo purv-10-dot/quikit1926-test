@@ -19,7 +19,7 @@ export const GET = withSuperAdminAuth(async () => {
       orderBy: [{ sortOrder: "asc" }, { priceMonthly: "asc" }],
     });
     // Tenant counts per plan, for "plan in use" info
-    const tenantCounts = await db.tenant.groupBy({
+    const tenantCounts = await db.org.groupBy({
       by: ["plan"],
       _count: { plan: true },
     });

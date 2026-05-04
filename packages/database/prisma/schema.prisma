@@ -20,13 +20,12 @@ datasource db {
   // when pointing at the same URL as DATABASE_URL (a pooler-less Postgres is
   // its own direct URL).
   directUrl = env("DATABASE_URL_DIRECT")
-  // Schema-per-app layout (Pattern A from the architecture brainstorm):
-  //   public                  — identity, platform glue, cross-app FKs land here
-  //   app_quikscale           — KPI / Priority / WWW / OPSP / Client Meetings
-  //   app_quikconstruction    — Cn* construction-ERP tables
-  //   app_quikvc              — VC OS: deals, scoring, IC memos, capital
-  // admin and quikit have no app-private state — they read from public only.
-  schemas   = ["public", "app_quikscale", "app_quikconstruction", "app_quikvc"]
+  // v4 (QuikIT-Database-Architecture-v4-EN.md): one DB, schema boundaries.
+  //   auth                    — User, Account, Session, VerificationToken (central auth)
+  //   quikit                  — App, Org, OrgMember, UserAppAccess, OrgAppAccess, OAuth IdP
+  //   public                  — shared glue (teams, session events, billing, …)
+  //   app_quikscale | app_quikconstruction | app_quikvc — business-app data
+  schemas   = ["auth", "quikit", "public", "app_quikscale", "app_quikconstruction", "app_quikvc"]
 }
 
 // ============================================================================
@@ -42,6 +41,11 @@ model App {
   baseUrl     String // "https://quikscale.vercel.app" or "/" for self
   status      String  @default("active") // active | coming_soon | disabled
 
+  /// When true, only OrgMembers with role super_admin/org_admin (or User.isSuperAdmin)
+  /// can see/launch this app from the org's tile grid. Set on Admin Portal and
+  /// any future ops/billing surface. Default false for product apps.
+  requiresOrgAdmin Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -49,11 +53,11 @@ model App {
   oauthClient  OAuthClient?
   moduleFlags  AppModuleFlag[]
   healthChecks AppHealthCheck[]
-  tenantAccess TenantAppAccess[]
+  tenantAccess OrgAppAccess[]
 
   @@index([slug])
   @@index([status])
-  @@schema("public")
+  @@schema("quikit")
 }
 
 // ============================================================================
@@ -65,7 +69,7 @@ model OAuthClient {
   appId        String   @unique
   clientId     String   @unique // "quikscale", "admin", etc.
   clientSecret String // bcrypt-hashed
-  redirectUris String[] // ["http://localhost:3004/api/auth/callback/quikit"]
+  redirectUris String[] // e.g. ["http://localhost:3002/api/auth/callback/quikit"]
   scopes       String[] @default(["openid", "profile", "email", "tenant"])
   grantTypes   String[] @default(["authorization_code", "refresh_token"])
 
@@ -75,7 +79,7 @@ model OAuthClient {
   app App @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
-  @@schema("public")
+  @@schema("quikit")
 }
 
 model OAuthCode {
@@ -83,7 +87,7 @@ model OAuthCode {
   code                String   @unique
   clientId            String
   userId              String
-  tenantId            String
+  orgId            String
   scopes              String[]
   codeChallenge       String? // PKCE S256 challenge
   codeChallengeMethod String? // "S256"
@@ -95,7 +99,7 @@ model OAuthCode {
 
   @@index([code])
   @@index([expiresAt])
-  @@schema("public")
+  @@schema("quikit")
 }
 
 model OAuthRefreshToken {
@@ -104,7 +108,7 @@ model OAuthRefreshToken {
   accessToken String?  @unique
   clientId    String
   userId      String
-  tenantId    String
+  orgId    String
   scopes      String[]
   expiresAt   DateTime
   revoked     Boolean  @default(false)
@@ -114,13 +118,13 @@ model OAuthRefreshToken {
   @@index([token])
   @@index([accessToken])
   @@index([userId, clientId])
-  @@schema("public")
+  @@schema("quikit")
 }
 
 model UserAppAccess {
   id       String @id @default(cuid())
   userId   String
-  tenantId String
+  orgId String
   appId    String
   role     String @default("member") // viewer | member | admin
 
@@ -128,21 +132,21 @@ model UserAppAccess {
   grantedAt DateTime @default(now())
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, tenantId, appId])
+  @@unique([userId, orgId, appId])
   @@index([userId])
-  @@index([tenantId])
+  @@index([orgId])
   @@index([appId])
-  @@schema("public")
+  @@schema("quikit")
 }
 
 // ============================================================================
 // CORE MULTI-TENANT TABLES
 // ============================================================================
 
-model Tenant {
+model Org {
   id          String  @id @default(cuid())
   name        String
   slug        String  @unique
@@ -167,7 +171,7 @@ model Tenant {
   updatedAt DateTime @updatedAt
   createdBy String?
 
-  users                   Membership[]
+  users                   OrgMember[]
   userAppAccess           UserAppAccess[]
   teams                   Team[]
   userTeams               UserTeam[]
@@ -197,7 +201,7 @@ model Tenant {
   oneOnOnes               OneOnOne[]
   feedbackEntries         FeedbackEntry[]
   sessionEvents           SessionEvent[]
-  tenantAppAccess         TenantAppAccess[]
+  tenantAppAccess         OrgAppAccess[]
   invoices                Invoice[]
 
   // QuikConstruction module — back-relations (additions per phase)
@@ -302,7 +306,7 @@ model Tenant {
 
   @@index([slug])
   @@index([status])
-  @@schema("public")
+  @@schema("quikit")
 }
 
 model User {
@@ -334,9 +338,10 @@ model User {
   priorityColWidths  String?
   wwwColWidths       String?
 
-  accounts    Account[]
-  sessions    Session[]
-  memberships Membership[]
+  accounts             Account[]
+  sessions             Session[]
+  verificationTokens   VerificationToken[]
+  memberships          OrgMember[]
   appAccess   UserAppAccess[]
 
   createdAt    DateTime  @default(now())
@@ -369,7 +374,7 @@ model User {
   weeklyDashboardNAs    ClientWeeklyMeetingDashboardNA[]
 
   @@index([email])
-  @@schema("public")
+  @@schema("auth")
 }
 
 model Account {
@@ -387,7 +392,7 @@ model Account {
 
   @@unique([provider, providerAccountId])
   @@index([userId])
-  @@schema("public")
+  @@schema("auth")
 }
 
 model Session {
@@ -400,12 +405,28 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@schema("public")
+  @@schema("auth")
 }
 
-model Membership {
+/// Email verification + password reset tokens for the central auth app (`apps/auth`).
+model VerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  type      String // "email_verify" | "password_reset" | "org_invite"
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@schema("auth")
+}
+
+model OrgMember {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   userId   String
   role     String
 
@@ -421,36 +442,36 @@ model Membership {
   updatedAt DateTime @updatedAt
   createdBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   team   Team?  @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
-  @@unique([tenantId, userId])
-  @@index([tenantId])
+  @@unique([orgId, userId])
+  @@index([orgId])
   @@index([userId])
   @@index([userId, status])
-  @@index([userId, tenantId, status])
+  @@index([userId, orgId, status])
   @@index([teamId])
   @@index([role])
-  @@index([tenantId, role])
-  @@schema("public")
+  @@index([orgId, role])
+  @@schema("quikit")
 }
 
 // ── User ↔ Team many-to-many (a user can belong to multiple teams) ──────────
 
 model UserTeam {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
   userId    String
   teamId    String
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, userId, teamId])
-  @@index([tenantId])
+  @@unique([orgId, userId, teamId])
+  @@index([orgId])
   @@index([userId])
   @@index([teamId])
   @@schema("public")
@@ -462,7 +483,7 @@ model UserTeam {
 
 model Team {
   id          String  @id @default(cuid())
-  tenantId    String
+  orgId    String
   name        String
   description String?
   slug        String
@@ -477,8 +498,8 @@ model Team {
   createdBy String?
   deletedAt DateTime?
 
-  tenant                  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  members                 Membership[]
+  org                  Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members                 OrgMember[]
   userTeams               UserTeam[]
   kpis                    KPI[]
   priorities              Priority[]
@@ -486,8 +507,8 @@ model Team {
   childTeams              Team[]                   @relation("TeamHierarchy")
   accountabilityFunctions AccountabilityFunction[]
 
-  @@unique([tenantId, slug])
-  @@index([tenantId])
+  @@unique([orgId, slug])
+  @@index([orgId])
   @@index([parentTeamId])
   @@index([deletedAt])
   @@schema("public")
@@ -495,7 +516,7 @@ model Team {
 
 model AccountabilityFunction {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   name        String
   description String?
@@ -507,14 +528,14 @@ model AccountabilityFunction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant         Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org         Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   team           Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   assignedTo     User?                    @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
   childFunctions AccountabilityFunction[] @relation("FunctionHierarchy")
   parentFunction AccountabilityFunction?  @relation("FunctionHierarchy", fields: [parentFunctionId], references: [id], onDelete: SetNull)
 
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@index([assignedToUserId])
   @@schema("app_quikscale")
 }
@@ -525,7 +546,7 @@ model AccountabilityFunction {
 
 model KPI {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   name               String
   description        String?
@@ -577,7 +598,7 @@ model KPI {
   createdBy String
   updatedBy String?
 
-  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org       Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner_user   User?            @relation("KPIOwner", fields: [owner], references: [id])
   team         Team?            @relation(fields: [teamId], references: [id], onDelete: SetNull)
   parentKPI    KPI?             @relation("KPICascade", fields: [parentKPIId], references: [id], onDelete: SetNull)
@@ -586,9 +607,9 @@ model KPI {
   notes        KPINote[]
   logs         KPILog[]
 
-  @@index([tenantId])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, kpiLevel, deletedAt])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, kpiLevel, deletedAt])
   @@index([owner])
   @@index([teamId])
   @@index([kpiLevel])
@@ -601,7 +622,7 @@ model KPI {
 
 model KPIWeeklyValue {
   id       String  @id @default(cuid())
-  tenantId String
+  orgId String
   kpiId    String
   // Phase 2: userId attributes this weekly value to a specific user.
   //   - Individual KPI: always set to kpi.owner (enforced by API + backfilled for existing rows)
@@ -621,7 +642,7 @@ model KPIWeeklyValue {
   kpi KPI @relation(fields: [kpiId], references: [id], onDelete: Cascade)
 
   @@unique([kpiId, userId, weekNumber])
-  @@index([tenantId])
+  @@index([orgId])
   @@index([kpiId])
   @@index([userId])
   @@schema("app_quikscale")
@@ -629,7 +650,7 @@ model KPIWeeklyValue {
 
 model KPINote {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   kpiId    String
 
   content  String @db.Text
@@ -641,7 +662,7 @@ model KPINote {
   kpi    KPI  @relation(fields: [kpiId], references: [id], onDelete: Cascade)
   author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([kpiId])
   @@index([authorId])
   @@schema("app_quikscale")
@@ -649,7 +670,7 @@ model KPINote {
 
 model KPILog {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   kpiId    String
 
   action    String
@@ -662,7 +683,7 @@ model KPILog {
 
   kpi KPI @relation(fields: [kpiId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([kpiId])
   @@index([createdAt])
   @@index([kpiId, createdAt])
@@ -675,7 +696,7 @@ model KPILog {
 
 model Priority {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   name        String
   description String?
@@ -697,18 +718,18 @@ model Priority {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org         Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner_user     User?                  @relation("PriorityOwner", fields: [owner], references: [id])
   team           Team?                  @relation(fields: [teamId], references: [id], onDelete: SetNull)
   weeklyStatuses PriorityWeeklyStatus[]
 
-  @@index([tenantId])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, year, quarter, deletedAt])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
+  @@index([orgId, year, quarter, deletedAt])
   @@index([owner])
   @@index([teamId])
   @@index([quarter, year])
-  @@index([tenantId, owner])
+  @@index([orgId, owner])
   @@index([deletedAt])
   @@schema("app_quikscale")
 }
@@ -738,7 +759,7 @@ model PriorityWeeklyStatus {
 
 model WWWItem {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   who  String
   what String
@@ -760,17 +781,17 @@ model WWWItem {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org       Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   revisionLogs WWWRevisionLog[]
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([who])
   @@index([when])
   @@index([status])
   @@index([createdAt])
-  @@index([tenantId, who])
-  @@index([tenantId, deletedAt])
-  @@index([tenantId, status, deletedAt])
+  @@index([orgId, who])
+  @@index([orgId, deletedAt])
+  @@index([orgId, status, deletedAt])
   @@index([deletedAt])
   @@schema("app_quikscale")
 }
@@ -799,7 +820,7 @@ model WWWRevisionLog {
 
 model CategoryMaster {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   name        String
   // Lowercased+trimmed mirror of `name` for case-insensitive uniqueness.
@@ -813,13 +834,13 @@ model CategoryMaster {
   updatedAt DateTime @updatedAt
   createdBy String
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  // Uniqueness: (tenantId, lowercased name, dataType, currency)
+  // Uniqueness: (orgId, lowercased name, dataType, currency)
   // Two rows with the same case-insensitive name can coexist only if their
   // (dataType, currency) tuple differs. "Revenue (Number)" and "Revenue (Currency/USD)" OK.
-  @@unique([tenantId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
-  @@index([tenantId])
+  @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
+  @@index([orgId])
   @@index([dataType])
   @@schema("app_quikscale")
 }
@@ -860,7 +881,7 @@ enum ClientMeetingStatus {
 
 model Client {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   name        String
   description String?   @db.Text
@@ -881,16 +902,16 @@ model Client {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   memberships    ClientMembership[]
   /// Client's external team members (from ClientMember entity — spec §2 multiplelookup).
   teamMembers    ClientTeamMember[]
   dailyHuddles   ClientDailyHuddle[]
   weeklyMeetings ClientWeeklyMeeting[]
 
-  @@unique([tenantId, name])
-  @@index([tenantId])
-  @@index([tenantId, isActive])
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@index([orgId, isActive])
   @@index([deletedAt])
   @@schema("app_quikscale")
 }
@@ -901,7 +922,7 @@ model Client {
 model ClientTeamMember {
   clientId       String
   clientMemberId String
-  tenantId       String
+  orgId       String
   createdAt      DateTime @default(now())
 
   client Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -909,13 +930,13 @@ model ClientTeamMember {
 
   @@id([clientId, clientMemberId])
   @@index([clientMemberId])
-  @@index([tenantId])
+  @@index([orgId])
   @@schema("app_quikscale")
 }
 
 model ClientMembership {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   clientId String
   userId   String
 
@@ -929,7 +950,7 @@ model ClientMembership {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([clientId, userId])
-  @@index([tenantId])
+  @@index([orgId])
   @@index([clientId])
   @@index([userId])
   @@schema("app_quikscale")
@@ -943,7 +964,7 @@ model ClientMembership {
 /// from these records instead of (or in addition to) tenant Users.
 model ClientMember {
   id        String    @id @default(cuid())
-  tenantId  String
+  orgId  String
   name      String
   email     String
   createdAt DateTime  @default(now())
@@ -952,22 +973,22 @@ model ClientMember {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant            Tenant                               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org            Org                               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   clientLinks       ClientTeamMember[]
   dailyAbsences     ClientDailyHuddleTeamAbsence[]
   weeklyAbsences    ClientWeeklyMeetingTeamAbsence[]
   weeklyDashboardNA ClientWeeklyMeetingTeamDashboardNA[]
   weeklyScores      ClientWeeklyMemberScore[]
 
-  @@index([tenantId])
-  @@index([tenantId, deletedAt])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
   @@index([email])
   @@schema("app_quikscale")
 }
 
 model ClientDailyHuddle {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   clientId String
 
   meetingDate DateTime
@@ -997,15 +1018,15 @@ model ClientDailyHuddle {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant            Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org            Org                         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   client            Client                         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   /// Legacy tenant-User-based absence (kept for older dashboard math).
   absentMembers     ClientDailyHuddleAbsence[]
   /// New external-roster absences — picked from ClientMember.
   absentTeamMembers ClientDailyHuddleTeamAbsence[]
 
-  @@index([tenantId])
-  @@index([tenantId, deletedAt])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])
   @@index([clientId, meetingDate])
@@ -1042,7 +1063,7 @@ model ClientDailyHuddleTeamAbsence {
 
 model ClientWeeklyMeeting {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   clientId String
 
   meetingDate DateTime
@@ -1081,7 +1102,7 @@ model ClientWeeklyMeeting {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant                 Tenant                               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org                 Org                               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   client                 Client                               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   absentMembers          ClientWeeklyMeetingAbsence[]
   absentTeamMembers      ClientWeeklyMeetingTeamAbsence[]
@@ -1090,8 +1111,8 @@ model ClientWeeklyMeeting {
   memberScores           ClientWeeklyMemberScore[]
   logs                   ClientWeeklyMeetingLog[]
 
-  @@index([tenantId])
-  @@index([tenantId, deletedAt])
+  @@index([orgId])
+  @@index([orgId, deletedAt])
   @@index([clientId])
   @@index([meetingDate])
   @@index([clientId, meetingDate])
@@ -1156,7 +1177,7 @@ model ClientWeeklyMeetingTeamDashboardNA {
 /// One row per CREATE / UPDATE field-level change / DELETE / RESTORE.
 model ClientWeeklyMeetingLog {
   id        String @id @default(cuid())
-  tenantId  String
+  orgId  String
   meetingId String
 
   action    String
@@ -1169,7 +1190,7 @@ model ClientWeeklyMeetingLog {
 
   meeting ClientWeeklyMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([meetingId])
   @@index([createdAt])
   @@index([meetingId, createdAt])
@@ -1211,7 +1232,7 @@ model ClientWeeklyMemberScore {
 
 model OPSPData {
   id          String @id @default(cuid())
-  tenantId    String
+  orgId    String
   userId      String
   year        Int
   quarter     String // Q1 | Q2 | Q3 | Q4
@@ -1280,11 +1301,11 @@ model OPSPData {
 
   reviewEntries OPSPReviewEntry[]
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, userId, year, quarter])
-  @@index([tenantId])
+  @@unique([orgId, userId, year, quarter])
+  @@index([orgId])
   @@index([userId])
   @@index([year, quarter])
   @@schema("app_quikscale")
@@ -1296,7 +1317,7 @@ model OPSPData {
 
 model OPSPReviewEntry {
   id            String   @id @default(cuid())
-  tenantId      String
+  orgId      String
   opspId        String
   userId        String // who entered/last updated this value
   horizon       String // "quarter" | "yearly" | "3to5year"
@@ -1311,12 +1332,12 @@ model OPSPReviewEntry {
   updatedAt DateTime @updatedAt
   updatedBy String?
 
-  tenant Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   opsp   OPSPData @relation(fields: [opspId], references: [id], onDelete: Cascade)
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, opspId, horizon, rowIndex, period])
-  @@index([tenantId])
+  @@unique([orgId, opspId, horizon, rowIndex, period])
+  @@index([orgId])
   @@index([opspId])
   @@index([userId])
   @@schema("app_quikscale")
@@ -1324,7 +1345,7 @@ model OPSPReviewEntry {
 
 model OPSPDocument {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   year          Int
   versionNumber Int    @default(1)
@@ -1340,10 +1361,10 @@ model OPSPDocument {
   createdBy String
   updatedBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, year, versionNumber])
-  @@index([tenantId])
+  @@unique([orgId, year, versionNumber])
+  @@index([orgId])
   @@index([status])
   @@schema("app_quikscale")
 }
@@ -1375,7 +1396,7 @@ model OPSPSection {
 
 model OPSPPlan {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   userId   String @unique
 
   relationships_long String? @db.Text
@@ -1399,11 +1420,11 @@ model OPSPPlan {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, userId])
-  @@index([tenantId])
+  @@unique([orgId, userId])
+  @@index([orgId])
   @@schema("app_quikscale")
 }
 
@@ -1413,7 +1434,7 @@ model OPSPPlan {
 
 model HabitAssessment {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   assessmentDate DateTime
   quarter        String
@@ -1439,13 +1460,13 @@ model HabitAssessment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([quarter, year])
   @@index([assessmentDate])
   // Per-tenant quarterly dashboard. Applied CONCURRENTLY — P1-3.
-  @@index([tenantId, quarter, year])
+  @@index([orgId, quarter, year])
   @@schema("app_quikscale")
 }
 
@@ -1455,7 +1476,7 @@ model HabitAssessment {
 
 model Notification {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   userId   String
 
   title   String
@@ -1472,20 +1493,20 @@ model Notification {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([userId])
   @@index([read])
-  // Inbox unread query: WHERE tenantId=? AND userId=? AND read=false
+  // Inbox unread query: WHERE orgId=? AND userId=? AND read=false
   // Applied as CREATE INDEX CONCURRENTLY — see P1-3 migration.
-  @@index([tenantId, userId, read])
+  @@index([orgId, userId, read])
   @@schema("public")
 }
 
 model AuditLog {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   action     String
   entityType String
@@ -1504,19 +1525,19 @@ model AuditLog {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([entityType, entityId])
   @@index([actorId])
   @@index([createdAt])
-  @@index([tenantId, createdAt])
+  @@index([orgId, createdAt])
   @@schema("public")
 }
 
 model FeatureFlag {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   name        String
   description String?
@@ -1529,10 +1550,10 @@ model FeatureFlag {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, key])
-  @@index([tenantId])
+  @@unique([orgId, key])
+  @@index([orgId])
   @@schema("public")
 }
 
@@ -1542,7 +1563,7 @@ model FeatureFlag {
 
 model QuarterSetting {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
   fiscalYear Int
   quarter    String // Q1 | Q2 | Q3 | Q4
   startDate  DateTime
@@ -1556,10 +1577,10 @@ model QuarterSetting {
   updatedAt DateTime @updatedAt
   createdBy String
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, fiscalYear, quarter])
-  @@index([tenantId])
+  @@unique([orgId, fiscalYear, quarter])
+  @@index([orgId])
   @@index([fiscalYear])
   @@index([status])
   @@schema("app_quikscale")
@@ -1571,7 +1592,7 @@ model QuarterSetting {
 
 model PerformanceReview {
   id         String @id @default(cuid())
-  tenantId   String
+  orgId   String
   reviewerId String
   revieweeId String
   quarter    String
@@ -1592,14 +1613,14 @@ model PerformanceReview {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   reviewer User   @relation("ReviewsGiven", fields: [reviewerId], references: [id])
   reviewee User   @relation("ReviewsReceived", fields: [revieweeId], references: [id])
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([revieweeId])
   // Per-reviewee history & period aggregates. Applied CONCURRENTLY — P1-3.
-  @@index([tenantId, revieweeId, year, quarter])
+  @@index([orgId, revieweeId, year, quarter])
   @@schema("app_quikscale")
 }
 
@@ -1609,7 +1630,7 @@ model PerformanceReview {
 
 model TalentAssessment {
   id         String @id @default(cuid())
-  tenantId   String
+  orgId   String
   userId     String
   assessorId String
 
@@ -1626,12 +1647,12 @@ model TalentAssessment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user     User   @relation("TalentAssessed", fields: [userId], references: [id])
   assessor User   @relation("TalentAssessor", fields: [assessorId], references: [id])
 
-  @@unique([tenantId, userId, quarter, year])
-  @@index([tenantId])
+  @@unique([orgId, userId, quarter, year])
+  @@index([orgId])
   @@index([userId])
   @@schema("app_quikscale")
 }
@@ -1642,7 +1663,7 @@ model TalentAssessment {
 
 model Goal {
   id           String  @id @default(cuid())
-  tenantId     String
+  orgId     String
   ownerId      String // the person the goal belongs to
   parentGoalId String? // optional hierarchy (company → team → individual)
 
@@ -1668,14 +1689,14 @@ model Goal {
   createdBy   String
   completedAt DateTime?
 
-  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org     Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner      User   @relation("GoalOwner", fields: [ownerId], references: [id])
   parentGoal Goal?  @relation("GoalHierarchy", fields: [parentGoalId], references: [id], onDelete: SetNull)
   childGoals Goal[] @relation("GoalHierarchy")
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([ownerId])
-  @@index([tenantId, year, quarter])
+  @@index([orgId, year, quarter])
   @@index([parentGoalId])
   @@schema("app_quikscale")
 }
@@ -1686,7 +1707,7 @@ model Goal {
 
 model OneOnOne {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   managerId String
   reportId  String
@@ -1705,11 +1726,11 @@ model OneOnOne {
   updatedAt   DateTime  @updatedAt
   createdBy   String
 
-  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   manager User   @relation("OneOnOneManager", fields: [managerId], references: [id])
   report  User   @relation("OneOnOneReport", fields: [reportId], references: [id])
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([managerId])
   @@index([reportId])
   @@index([scheduledAt])
@@ -1722,7 +1743,7 @@ model OneOnOne {
 
 model FeedbackEntry {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
 
   fromUserId String
   toUserId   String
@@ -1737,14 +1758,14 @@ model FeedbackEntry {
 
   createdAt DateTime @default(now())
 
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   fromUser User   @relation("FeedbackFrom", fields: [fromUserId], references: [id])
   toUser   User   @relation("FeedbackTo", fields: [toUserId], references: [id])
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([toUserId])
   @@index([fromUserId])
-  @@index([tenantId, toUserId, createdAt])
+  @@index([orgId, toUserId, createdAt])
   @@schema("app_quikscale")
 }
 
@@ -1762,7 +1783,7 @@ model FeedbackEntry {
 
 model AppModuleFlag {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
   appId     String
   moduleKey String // e.g. "kpi", "kpi.teams", "opsp.review"
   enabled   Boolean  @default(false) // only stored when disabled; kept for future flexibility
@@ -1770,11 +1791,11 @@ model AppModuleFlag {
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, appId, moduleKey])
-  @@index([tenantId, appId])
+  @@unique([orgId, appId, moduleKey])
+  @@index([orgId, appId])
   @@schema("public")
 }
 
@@ -1790,7 +1811,7 @@ model AppModuleFlag {
 /// into ApiCallHourlyRollup for long-term trend analysis.
 model ApiCall {
   id          String   @id @default(cuid())
-  tenantId    String? // null for pre-auth calls (login, OAuth flow)
+  orgId    String? // null for pre-auth calls (login, OAuth flow)
   userId      String?
   appSlug     String // "quikit" | "quikscale" | "admin"
   method      String // GET | POST | PUT | PATCH | DELETE
@@ -1802,7 +1823,7 @@ model ApiCall {
   userAgent   String?  @db.Text
   createdAt   DateTime @default(now())
 
-  @@index([tenantId, createdAt])
+  @@index([orgId, createdAt])
   @@index([appSlug, createdAt])
   @@index([createdAt]) // retention cleanup
   @@index([userId, createdAt])
@@ -1813,7 +1834,7 @@ model ApiCall {
 /// analytics older than a few hours. Populated by /api/super/cron/rollup-api-calls.
 model ApiCallHourlyRollup {
   id              String   @id @default(cuid())
-  tenantId        String?
+  orgId        String?
   appSlug         String
   hourBucket      DateTime // truncated to the hour (UTC)
   method          String
@@ -1826,8 +1847,8 @@ model ApiCallHourlyRollup {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  @@unique([tenantId, appSlug, hourBucket, method, pathPattern, statusClass])
-  @@index([tenantId, hourBucket])
+  @@unique([orgId, appSlug, hourBucket, method, pathPattern, statusClass])
+  @@index([orgId, hourBucket])
   @@index([appSlug, hourBucket])
   @@index([hourBucket])
   @@schema("public")
@@ -1855,7 +1876,7 @@ model AppHealthCheck {
 /// Appended to on login, logout, and (future) impersonation start/end.
 model SessionEvent {
   id        String   @id @default(cuid())
-  tenantId  String? // null during pre-org-selection flow
+  orgId  String? // null during pre-org-selection flow
   userId    String
   event     String // "login" | "logout" | "impersonation_start" | "impersonation_end"
   appSlug   String? // which app the user signed into (for cross-app DAU)
@@ -1863,10 +1884,10 @@ model SessionEvent {
   userAgent String?  @db.Text
   createdAt DateTime @default(now())
 
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org? @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, createdAt])
+  @@index([orgId, createdAt])
   @@index([userId, createdAt])
   @@index([createdAt])
   @@index([event, createdAt])
@@ -1874,13 +1895,13 @@ model SessionEvent {
 }
 
 /// Platform-wide announcement banner shown to tenants. Managed via super admin
-/// broadcast UI. Empty targetTenantIds = all tenants; empty targetAppSlugs = all apps.
+/// broadcast UI. Empty targetOrgIds = all tenants; empty targetAppSlugs = all apps.
 model BroadcastAnnouncement {
   id              String    @id @default(cuid())
   title           String
   body            String    @db.Text
   severity        String    @default("info") // "info" | "warning" | "critical"
-  targetTenantIds String[]
+  targetOrgIds String[]
   targetAppSlugs  String[]
   startsAt        DateTime  @default(now())
   endsAt          DateTime?
@@ -1912,9 +1933,9 @@ model BroadcastDismissal {
 /// Hard gate: if enabled=false the tenant cannot access this app at all,
 /// regardless of AppModuleFlag state. Evaluated first in the auth/route flow.
 /// Sparse: row exists only when explicitly toggled off (default = enabled).
-model TenantAppAccess {
+model OrgAppAccess {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
   appId     String
   enabled   Boolean  @default(true)
   reason    String? // optional reason shown to tenant (e.g. "trial expired")
@@ -1922,13 +1943,13 @@ model TenantAppAccess {
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, appId])
-  @@index([tenantId])
+  @@unique([orgId, appId])
+  @@index([orgId])
   @@index([appId])
-  @@schema("public")
+  @@schema("quikit")
 }
 
 /// Plan definitions as data (replaces the current hardcoded "startup|growth|enterprise"
@@ -1969,7 +1990,7 @@ model Impersonation {
   /// User who initiated the impersonation (a platform super admin).
   superAdminId   String
   /// The tenant whose app is being accessed.
-  targetTenantId String
+  targetOrgId String
   /// The user whose identity will be assumed (usually an org admin).
   targetUserId   String
   /// Which app to land in after token exchange ("quikscale" | "admin").
@@ -1988,7 +2009,7 @@ model Impersonation {
   createdAt      DateTime  @default(now())
 
   @@index([superAdminId, createdAt])
-  @@index([targetTenantId, createdAt])
+  @@index([targetOrgId, createdAt])
   @@index([targetUserId, createdAt])
   @@index([expiresAt])
   @@schema("public")
@@ -2004,10 +2025,10 @@ model PlatformAlert {
   severity       String    @default("warning") // "info" | "warning" | "critical"
   title          String
   message        String    @db.Text
-  /// Free-form identifier for the alert subject (appId, tenantId, etc) — used
+  /// Free-form identifier for the alert subject (appId, orgId, etc) — used
   /// for dedupe so the same condition doesn't fire twice.
   subjectKey     String
-  /// Optional link for click-through ("/organizations/<tenantId>")
+  /// Optional link for click-through ("/organizations/<orgId>")
   link           String?
   data           Json? // raw metrics that triggered the alert
   firstSeenAt    DateTime  @default(now())
@@ -2029,7 +2050,7 @@ model PlatformAlert {
 /// externalId column is there for future integration.
 model Invoice {
   id          String    @id @default(cuid())
-  tenantId    String
+  orgId    String
   planSlug    String // snapshot of plan at invoice time (history-safe)
   amountCents Int
   currency    String    @default("USD")
@@ -2043,10 +2064,10 @@ model Invoice {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, createdAt])
-  @@index([tenantId, status])
+  @@index([orgId, createdAt])
+  @@index([orgId, status])
   @@index([status])
   @@index([periodEnd])
   @@schema("public")
@@ -2057,14 +2078,14 @@ model Invoice {
 // ----------------------------------------------------------------------------
 // Construction ERP models ported from the standalone QuikConstruction app.
 // Convention: keep the `Cn` prefix on every model to signal ownership (the
-// construction module); `tenantId` is the ONLY tenant scope (we drop the
+// construction module); `orgId` is the ONLY tenant scope (we drop the
 // standalone app's `orgId` — QuikIT has one tenant scope, not two).
 // See docs/engineering/QUIKCONSTRUCTION_MIGRATION.md for the full plan.
 // ============================================================================
 
 model CnCompany {
   id        String  @id @default(cuid())
-  tenantId  String
+  orgId  String
   name      String
   legalName String
   gstin     String
@@ -2086,20 +2107,20 @@ model CnCompany {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   banks    CnBank[]
   finYears CnFinancialYear[]
   projects CnProject[]
 
-  @@index([tenantId])
-  @@index([tenantId, gstin])
+  @@index([orgId])
+  @@index([orgId, gstin])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnVendor {
   id               String  @id @default(cuid())
-  tenantId         String
+  orgId         String
   code             String
   name             String
   legalName        String?
@@ -2125,7 +2146,7 @@ model CnVendor {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org      Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   pos         CnPurchaseOrder[]
   grns        CnGoodsReceiptNote[]
   goodReturns CnGoodReturn[]
@@ -2134,16 +2155,16 @@ model CnVendor {
   payments    CnVendorPayment[]
   debitNotes  CnDebitNote[]
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
-  @@index([tenantId, name])
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@index([orgId, name])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnCustomer {
   id            String  @id @default(cuid())
-  tenantId      String
+  orgId      String
   code          String
   name          String
   contactPerson String?
@@ -2161,21 +2182,21 @@ model CnCustomer {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org      Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   projects    CnProject[]
   invoices    CnClientInvoice[]
   receipts    CnClientReceipt[]
   creditNotes CnCreditNote[]
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnContractor {
   id             String  @id @default(cuid())
-  tenantId       String
+  orgId       String
   code           String
   name           String
   legalName      String?
@@ -2197,18 +2218,18 @@ model CnContractor {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org     Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   workOrders CnWorkOrder[]
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnUOM {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   code     String
   name     String
   status   String @default("active")
@@ -2219,7 +2240,7 @@ model CnUOM {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org              Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   items               CnItem[]
   prLines             CnPurchaseRequisitionLine[]
   poLines             CnPurchaseOrderLine[]
@@ -2245,15 +2266,15 @@ model CnUOM {
   invoiceLines        CnClientInvoiceLine[]
   billLines           CnVendorBillLine[]
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnItemGroup {
   id        String  @id @default(cuid())
-  tenantId  String
+  orgId  String
   name      String
   parentId  String?
   depth     Int     @default(0)
@@ -2266,12 +2287,12 @@ model CnItemGroup {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   parent   CnItemGroup?  @relation("CnItemGroupHierarchy", fields: [parentId], references: [id])
   children CnItemGroup[] @relation("CnItemGroupHierarchy")
   items    CnItem[]
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([parentId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -2279,7 +2300,7 @@ model CnItemGroup {
 
 model CnItem {
   id            String   @id @default(cuid())
-  tenantId      String
+  orgId      String
   code          String
   name          String
   description   String?
@@ -2298,7 +2319,7 @@ model CnItem {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant              Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org              Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   group               CnItemGroup                 @relation(fields: [groupId], references: [id])
   uom                 CnUOM                       @relation(fields: [uomId], references: [id])
   // Phase 3 back-relations
@@ -2324,9 +2345,9 @@ model CnItem {
   // Phase 9
   qcDefects           CnQCDefect[]
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
-  @@index([tenantId, groupId])
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@index([orgId, groupId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
@@ -2335,7 +2356,7 @@ model CnItem {
 
 model CnBank {
   id          String  @id @default(cuid())
-  tenantId    String
+  orgId    String
   companyId   String
   bankName    String
   branchName  String?
@@ -2350,19 +2371,19 @@ model CnBank {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company CnCompany @relation(fields: [companyId], references: [id])
 
-  @@unique([tenantId, accountNo])
-  @@index([tenantId])
-  @@index([tenantId, companyId])
+  @@unique([orgId, accountNo])
+  @@index([orgId])
+  @@index([orgId, companyId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnDepartment {
   id         String  @id @default(cuid())
-  tenantId   String
+  orgId   String
   code       String
   name       String
   headUserId String?
@@ -2374,18 +2395,18 @@ model CnDepartment {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org    Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   employees CnEmployee[]
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnWorkCategory {
   id          String  @id @default(cuid())
-  tenantId    String
+  orgId    String
   name        String
   description String?
   status      String  @default("active")
@@ -2396,17 +2417,17 @@ model CnWorkCategory {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org     Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   workOrders CnWorkOrder[]
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnCostCenter {
   id        String  @id @default(cuid())
-  tenantId  String
+  orgId  String
   code      String
   name      String
   projectId String?
@@ -2418,17 +2439,17 @@ model CnCostCenter {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnLocation {
   id        String  @id @default(cuid())
-  tenantId  String
+  orgId  String
   code      String
   name      String
   type      String // site | warehouse | head_office | yard
@@ -2445,7 +2466,7 @@ model CnLocation {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant               Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org               Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project              CnProject?              @relation(fields: [projectId], references: [id])
   // Phase 3 back-relations
   deliveryForPOs       CnPurchaseOrder[]
@@ -2463,16 +2484,16 @@ model CnLocation {
   // Phase 6
   dprsConsumingHere    CnDPR[]                 @relation("DprConsumptionLocation")
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
-  @@index([tenantId, type])
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@index([orgId, type])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnGSTCode {
   id          String  @id @default(cuid())
-  tenantId    String
+  orgId    String
   code        String
   description String
   rate        Decimal @db.Decimal(5, 2)
@@ -2487,17 +2508,17 @@ model CnGSTCode {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnTDSCode {
   id              String   @id @default(cuid())
-  tenantId        String
+  orgId        String
   section         String
   description     String
   rate            Decimal  @db.Decimal(5, 2)
@@ -2510,17 +2531,17 @@ model CnTDSCode {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, section])
-  @@index([tenantId])
+  @@unique([orgId, section])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnTermsCondition {
   id           String  @id @default(cuid())
-  tenantId     String
+  orgId     String
   title        String
   body         String
   applicableTo String // po | wo | rfq | general
@@ -2533,17 +2554,17 @@ model CnTermsCondition {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
-  @@index([tenantId, applicableTo])
+  @@index([orgId])
+  @@index([orgId, applicableTo])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnFinancialYear {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
   companyId String
   label     String
   startDate DateTime
@@ -2557,19 +2578,19 @@ model CnFinancialYear {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company CnCompany @relation(fields: [companyId], references: [id])
 
-  @@unique([tenantId, companyId, label])
-  @@index([tenantId])
-  @@index([tenantId, companyId])
+  @@unique([orgId, companyId, label])
+  @@index([orgId])
+  @@index([orgId, companyId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnProject {
   id               String    @id @default(cuid())
-  tenantId         String
+  orgId         String
   code             String
   name             String
   description      String?
@@ -2591,7 +2612,7 @@ model CnProject {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant               Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org               Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company              CnCompany               @relation(fields: [companyId], references: [id])
   client               CnCustomer?             @relation(fields: [clientId], references: [id])
   locations            CnLocation[]
@@ -2631,16 +2652,16 @@ model CnProject {
   // Phase 14
   expenses             CnExpense[]
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
-  @@index([tenantId, companyId])
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@index([orgId, companyId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnMachinery {
   id             String  @id @default(cuid())
-  tenantId       String
+  orgId       String
   code           String
   name           String
   type           String
@@ -2659,18 +2680,18 @@ model CnMachinery {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org     Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   dieselLogs CnDieselLog[]
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnAsset {
   id            String    @id @default(cuid())
-  tenantId      String
+  orgId      String
   code          String
   name          String
   category      String?
@@ -2686,10 +2707,10 @@ model CnAsset {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, code])
-  @@index([tenantId])
+  @@unique([orgId, code])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
@@ -2705,7 +2726,7 @@ model CnAsset {
 
 model CnPurchaseRequisition {
   id            String    @id @default(cuid())
-  tenantId      String
+  orgId      String
   prNumber      String
   projectId     String
   requestedById String
@@ -2720,13 +2741,13 @@ model CnPurchaseRequisition {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject                   @relation(fields: [projectId], references: [id])
   lines   CnPurchaseRequisitionLine[]
   pos     CnPurchaseOrder[]
 
-  @@unique([tenantId, prNumber])
-  @@index([tenantId])
+  @@unique([orgId, prNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
@@ -2756,7 +2777,7 @@ model CnPurchaseRequisitionLine {
 
 model CnPurchaseOrder {
   id                 String    @id @default(cuid())
-  tenantId           String
+  orgId           String
   poNumber           String
   projectId          String
   vendorId           String
@@ -2778,7 +2799,7 @@ model CnPurchaseOrder {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant           Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org           Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project          CnProject              @relation(fields: [projectId], references: [id])
   vendor           CnVendor               @relation(fields: [vendorId], references: [id])
   pr               CnPurchaseRequisition? @relation(fields: [prId], references: [id])
@@ -2787,8 +2808,8 @@ model CnPurchaseOrder {
   grns             CnGoodsReceiptNote[]
   bills            CnVendorBill[]
 
-  @@unique([tenantId, poNumber])
-  @@index([tenantId])
+  @@unique([orgId, poNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([vendorId])
   @@index([status])
@@ -2823,7 +2844,7 @@ model CnPurchaseOrderLine {
 
 model CnGoodsReceiptNote {
   id                  String    @id @default(cuid())
-  tenantId            String
+  orgId            String
   grnNumber           String
   poId                String
   projectId           String
@@ -2847,7 +2868,7 @@ model CnGoodsReceiptNote {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org        Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   po            CnPurchaseOrder  @relation(fields: [poId], references: [id])
   project       CnProject        @relation(fields: [projectId], references: [id])
   vendor        CnVendor         @relation(fields: [vendorId], references: [id])
@@ -2857,8 +2878,8 @@ model CnGoodsReceiptNote {
   bill          CnVendorBill?
   qcInspections CnQCInspection[]
 
-  @@unique([tenantId, grnNumber])
-  @@index([tenantId])
+  @@unique([orgId, grnNumber])
+  @@index([orgId])
   @@index([poId])
   @@index([projectId])
   @@index([status])
@@ -2892,7 +2913,7 @@ model CnGRNLine {
 
 model CnStockLedger {
   id                   String   @id @default(cuid())
-  tenantId             String
+  orgId             String
   projectId            String
   locationId           String
   itemId               String
@@ -2909,14 +2930,14 @@ model CnStockLedger {
   createdAt DateTime @default(now())
   createdBy String
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project  CnProject  @relation(fields: [projectId], references: [id])
   location CnLocation @relation(fields: [locationId], references: [id])
   item     CnItem     @relation(fields: [itemId], references: [id])
   uom      CnUOM      @relation(fields: [uomId], references: [id])
 
-  @@index([tenantId])
-  @@index([tenantId, projectId, locationId, itemId])
+  @@index([orgId])
+  @@index([orgId, projectId, locationId, itemId])
   @@index([itemId])
   @@index([transactionRefId])
   @@schema("app_quikconstruction")
@@ -2924,7 +2945,7 @@ model CnStockLedger {
 
 model CnMaterialIssue {
   id          String   @id @default(cuid())
-  tenantId    String
+  orgId    String
   issueNumber String
   projectId   String
   locationId  String
@@ -2942,14 +2963,14 @@ model CnMaterialIssue {
   postedAt  DateTime?
   postedBy  String?
 
-  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org          Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project         CnProject             @relation(fields: [projectId], references: [id])
   location        CnLocation            @relation(fields: [locationId], references: [id])
   lines           CnMaterialIssueLine[]
   internalReturns CnInternalReturn[]
 
-  @@unique([tenantId, issueNumber])
-  @@index([tenantId])
+  @@unique([orgId, issueNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
@@ -2985,7 +3006,7 @@ model CnMaterialIssueLine {
 
 model CnPurchaseIndent {
   id            String    @id @default(cuid())
-  tenantId      String
+  orgId      String
   indentNumber  String
   prId          String?
   projectId     String
@@ -3001,12 +3022,12 @@ model CnPurchaseIndent {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject              @relation(fields: [projectId], references: [id])
   lines   CnPurchaseIndentLine[]
 
-  @@unique([tenantId, indentNumber])
-  @@index([tenantId])
+  @@unique([orgId, indentNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
@@ -3033,7 +3054,7 @@ model CnPurchaseIndentLine {
 
 model CnRFQ {
   id          String    @id @default(cuid())
-  tenantId    String
+  orgId    String
   rfqNumber   String
   indentId    String?
   projectId   String
@@ -3048,13 +3069,13 @@ model CnRFQ {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject     @relation(fields: [projectId], references: [id])
   lines   CnRFQLine[]
   vendors CnRFQVendor[]
 
-  @@unique([tenantId, rfqNumber])
-  @@index([tenantId])
+  @@unique([orgId, rfqNumber])
+  @@index([orgId])
   @@index([status])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -3094,7 +3115,7 @@ model CnRFQVendor {
 
 model CnGatePass {
   id              String   @id @default(cuid())
-  tenantId        String
+  orgId        String
   gatePassNumber  String
   projectId       String
   locationId      String
@@ -3115,12 +3136,12 @@ model CnGatePass {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project  CnProject  @relation(fields: [projectId], references: [id])
   location CnLocation @relation(fields: [locationId], references: [id])
 
-  @@unique([tenantId, gatePassNumber])
-  @@index([tenantId])
+  @@unique([orgId, gatePassNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -3128,7 +3149,7 @@ model CnGatePass {
 
 model CnGoodReturn {
   id           String    @id @default(cuid())
-  tenantId     String
+  orgId     String
   returnNumber String
   grnId        String
   projectId    String
@@ -3146,15 +3167,15 @@ model CnGoodReturn {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
   grn      CnGoodsReceiptNote @relation(fields: [grnId], references: [id])
   project  CnProject          @relation(fields: [projectId], references: [id])
   vendor   CnVendor           @relation(fields: [vendorId], references: [id])
   location CnLocation         @relation(fields: [locationId], references: [id])
   lines    CnGoodReturnLine[]
 
-  @@unique([tenantId, returnNumber])
-  @@index([tenantId])
+  @@unique([orgId, returnNumber])
+  @@index([orgId])
   @@index([grnId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -3180,7 +3201,7 @@ model CnGoodReturnLine {
 
 model CnInternalReturn {
   id           String    @id @default(cuid())
-  tenantId     String
+  orgId     String
   returnNumber String
   issueId      String
   projectId    String
@@ -3198,14 +3219,14 @@ model CnInternalReturn {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   issue    CnMaterialIssue        @relation(fields: [issueId], references: [id])
   project  CnProject              @relation(fields: [projectId], references: [id])
   location CnLocation             @relation(fields: [locationId], references: [id])
   lines    CnInternalReturnLine[]
 
-  @@unique([tenantId, returnNumber])
-  @@index([tenantId])
+  @@unique([orgId, returnNumber])
+  @@index([orgId])
   @@index([issueId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -3231,7 +3252,7 @@ model CnInternalReturnLine {
 
 model CnStockTransfer {
   id             String    @id @default(cuid())
-  tenantId       String
+  orgId       String
   transferNumber String
   projectId      String
   fromLocationId String
@@ -3248,14 +3269,14 @@ model CnStockTransfer {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org       Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project      CnProject             @relation(fields: [projectId], references: [id])
   fromLocation CnLocation            @relation("TransferFrom", fields: [fromLocationId], references: [id])
   toLocation   CnLocation            @relation("TransferTo", fields: [toLocationId], references: [id])
   lines        CnStockTransferLine[]
 
-  @@unique([tenantId, transferNumber])
-  @@index([tenantId])
+  @@unique([orgId, transferNumber])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
@@ -3280,7 +3301,7 @@ model CnStockTransferLine {
 
 model CnStockReconciliation {
   id                   String    @id @default(cuid())
-  tenantId             String
+  orgId             String
   reconciliationNumber String
   projectId            String
   locationId           String
@@ -3296,13 +3317,13 @@ model CnStockReconciliation {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project  CnProject                   @relation(fields: [projectId], references: [id])
   location CnLocation                  @relation(fields: [locationId], references: [id])
   lines    CnStockReconciliationLine[]
 
-  @@unique([tenantId, reconciliationNumber])
-  @@index([tenantId])
+  @@unique([orgId, reconciliationNumber])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
@@ -3330,7 +3351,7 @@ model CnStockReconciliationLine {
 
 model CnDieselLog {
   id             String   @id @default(cuid())
-  tenantId       String
+  orgId       String
   logNumber      String
   projectId      String
   locationId     String
@@ -3351,13 +3372,13 @@ model CnDieselLog {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org    Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project   CnProject    @relation(fields: [projectId], references: [id])
   location  CnLocation   @relation(fields: [locationId], references: [id])
   machinery CnMachinery? @relation(fields: [machineryId], references: [id])
 
-  @@unique([tenantId, logNumber])
-  @@index([tenantId])
+  @@unique([orgId, logNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -3376,7 +3397,7 @@ model CnDieselLog {
 
 model CnBOQ {
   id        String    @id @default(cuid())
-  tenantId  String
+  orgId  String
   projectId String
   boqNumber String
   boqDate   DateTime
@@ -3395,14 +3416,14 @@ model CnBOQ {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org          Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project         CnProject      @relation(fields: [projectId], references: [id])
   items           CnBOQItem[]
   rabs            CnRAB[]
   fromEstimations CnEstimation[] @relation("EstimationToBoq")
 
-  @@unique([tenantId, boqNumber])
-  @@index([tenantId])
+  @@unique([orgId, boqNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
@@ -3449,7 +3470,7 @@ model CnBOQItem {
 
 model CnDPR {
   id                    String    @id @default(cuid())
-  tenantId              String
+  orgId              String
   projectId             String
   dprDate               DateTime
   weather               String?
@@ -3468,14 +3489,14 @@ model CnDPR {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org    Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project   CnProject       @relation(fields: [projectId], references: [id])
   location  CnLocation?     @relation("DprConsumptionLocation", fields: [consumptionLocationId], references: [id])
   lines     CnDPRLine[]
   materials CnDPRMaterial[]
 
-  @@unique([tenantId, projectId, dprDate])
-  @@index([tenantId])
+  @@unique([orgId, projectId, dprDate])
+  @@index([orgId])
   @@index([projectId])
   @@index([dprDate])
   @@index([status])
@@ -3534,7 +3555,7 @@ model CnDPRLine {
 
 model CnHindrance {
   id            String    @id @default(cuid())
-  tenantId      String
+  orgId      String
   projectId     String
   hindranceDate DateTime
   category      String // weather | permit | material_shortage | design_change | labour | equipment | external | other
@@ -3553,10 +3574,10 @@ model CnHindrance {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject @relation(fields: [projectId], references: [id])
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
@@ -3569,7 +3590,7 @@ model CnHindrance {
 
 model CnEstimation {
   id               String   @id @default(cuid())
-  tenantId         String
+  orgId         String
   projectId        String
   estimationNumber String
   estimationDate   DateTime
@@ -3587,13 +3608,13 @@ model CnEstimation {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org       Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project      CnProject          @relation(fields: [projectId], references: [id])
   convertedBoq CnBOQ?             @relation("EstimationToBoq", fields: [convertedBoqId], references: [id])
   items        CnEstimationItem[]
 
-  @@unique([tenantId, estimationNumber])
-  @@index([tenantId])
+  @@unique([orgId, estimationNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
@@ -3628,7 +3649,7 @@ model CnEstimationItem {
 
 model CnWorkOrder {
   id               String    @id @default(cuid())
-  tenantId         String
+  orgId         String
   woNumber         String
   projectId        String
   contractorId     String
@@ -3652,14 +3673,14 @@ model CnWorkOrder {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org       Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project      CnProject         @relation(fields: [projectId], references: [id])
   contractor   CnContractor      @relation(fields: [contractorId], references: [id])
   workCategory CnWorkCategory?   @relation(fields: [workCategoryId], references: [id])
   lines        CnWorkOrderLine[]
 
-  @@unique([tenantId, woNumber])
-  @@index([tenantId])
+  @@unique([orgId, woNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([contractorId])
   @@index([status])
@@ -3692,7 +3713,7 @@ model CnWorkOrderLine {
 
 model CnRAB {
   id                String    @id @default(cuid())
-  tenantId          String
+  orgId          String
   rabNumber         String
   projectId         String
   boqId             String
@@ -3718,15 +3739,15 @@ model CnRAB {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project  CnProject         @relation(fields: [projectId], references: [id])
   boq      CnBOQ             @relation(fields: [boqId], references: [id])
   lines    CnRABLine[]
   invoices CnClientInvoice[]
 
-  @@unique([tenantId, rabNumber])
+  @@unique([orgId, rabNumber])
   @@unique([projectId, billSeqNo])
-  @@index([tenantId])
+  @@index([orgId])
   @@index([projectId])
   @@index([boqId])
   @@index([status])
@@ -3764,7 +3785,7 @@ model CnRABLine {
 
 model CnClientInvoice {
   id            String    @id @default(cuid())
-  tenantId      String
+  orgId      String
   invoiceNumber String
   customerId    String
   projectId     String?
@@ -3790,7 +3811,7 @@ model CnClientInvoice {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org      Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer    CnCustomer                  @relation(fields: [customerId], references: [id])
   project     CnProject?                  @relation(fields: [projectId], references: [id])
   rab         CnRAB?                      @relation(fields: [rabId], references: [id])
@@ -3798,8 +3819,8 @@ model CnClientInvoice {
   lines       CnClientInvoiceLine[]
   creditNotes CnCreditNote[]
 
-  @@unique([tenantId, invoiceNumber])
-  @@index([tenantId])
+  @@unique([orgId, invoiceNumber])
+  @@index([orgId])
   @@index([customerId])
   @@index([projectId])
   @@index([rabId])
@@ -3810,7 +3831,7 @@ model CnClientInvoice {
 
 model CnClientReceipt {
   id              String   @id @default(cuid())
-  tenantId        String
+  orgId        String
   receiptNumber   String
   customerId      String
   receiptDate     DateTime
@@ -3826,12 +3847,12 @@ model CnClientReceipt {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org      Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer    CnCustomer                  @relation(fields: [customerId], references: [id])
   allocations CnClientReceiptAllocation[]
 
-  @@unique([tenantId, receiptNumber])
-  @@index([tenantId])
+  @@unique([orgId, receiptNumber])
+  @@index([orgId])
   @@index([customerId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -3853,7 +3874,7 @@ model CnClientReceiptAllocation {
 
 model CnVendorBill {
   id                  String    @id @default(cuid())
-  tenantId            String
+  orgId            String
   billNumber          String // internal bill #
   vendorId            String
   projectId           String?
@@ -3881,7 +3902,7 @@ model CnVendorBill {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org      Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vendor      CnVendor                    @relation(fields: [vendorId], references: [id])
   project     CnProject?                  @relation(fields: [projectId], references: [id])
   grn         CnGoodsReceiptNote?         @relation(fields: [grnId], references: [id])
@@ -3890,9 +3911,9 @@ model CnVendorBill {
   lines       CnVendorBillLine[]
   debitNotes  CnDebitNote[]
 
-  @@unique([tenantId, billNumber])
+  @@unique([orgId, billNumber])
   @@unique([grnId])
-  @@index([tenantId])
+  @@index([orgId])
   @@index([vendorId])
   @@index([projectId])
   @@index([status])
@@ -3902,7 +3923,7 @@ model CnVendorBill {
 
 model CnVendorPayment {
   id              String   @id @default(cuid())
-  tenantId        String
+  orgId        String
   paymentNumber   String
   vendorId        String
   paymentDate     DateTime
@@ -3918,12 +3939,12 @@ model CnVendorPayment {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org      Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vendor      CnVendor                    @relation(fields: [vendorId], references: [id])
   allocations CnVendorPaymentAllocation[]
 
-  @@unique([tenantId, paymentNumber])
-  @@index([tenantId])
+  @@unique([orgId, paymentNumber])
+  @@index([orgId])
   @@index([vendorId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -3947,7 +3968,7 @@ model CnVendorPaymentAllocation {
 
 model CnEmployee {
   id           String    @id @default(cuid())
-  tenantId     String
+  orgId     String
   empCode      String
   firstName    String
   lastName     String?
@@ -3969,20 +3990,20 @@ model CnEmployee {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org       Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   department   CnDepartment?   @relation(fields: [departmentId], references: [id])
   attendances  CnAttendance[]
   payrollLines CnPayrollLine[]
 
-  @@unique([tenantId, empCode])
-  @@index([tenantId])
+  @@unique([orgId, empCode])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnAttendance {
   id          String   @id @default(cuid())
-  tenantId    String
+  orgId    String
   employeeId  String
   projectId   String?
   date        DateTime
@@ -3995,19 +4016,19 @@ model CnAttendance {
   updatedAt DateTime @updatedAt
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   employee CnEmployee @relation(fields: [employeeId], references: [id])
   project  CnProject? @relation(fields: [projectId], references: [id])
 
-  @@unique([tenantId, employeeId, date])
-  @@index([tenantId])
+  @@unique([orgId, employeeId, date])
+  @@index([orgId])
   @@index([date])
   @@schema("app_quikconstruction")
 }
 
 model CnPayroll {
   id          String    @id @default(cuid())
-  tenantId    String
+  orgId    String
   runNumber   String
   periodStart DateTime
   periodEnd   DateTime
@@ -4024,11 +4045,11 @@ model CnPayroll {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   lines  CnPayrollLine[]
 
-  @@unique([tenantId, runNumber])
-  @@index([tenantId])
+  @@unique([orgId, runNumber])
+  @@index([orgId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
@@ -4056,7 +4077,7 @@ model CnPayrollLine {
 
 model CnApprovalRule {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
   name       String
   docType    String // pr | po | rab | vendor_bill | payroll | other
   /// Threshold: approval required if doc total >= this amount (null = always).
@@ -4070,17 +4091,17 @@ model CnApprovalRule {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
-  @@index([tenantId, docType])
+  @@index([orgId])
+  @@index([orgId, docType])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
 
 model CnApprovalRequest {
   id          String    @id @default(cuid())
-  tenantId    String
+  orgId    String
   docType     String
   docId       String
   docRef      String // human-readable identifier (doc number)
@@ -4094,9 +4115,9 @@ model CnApprovalRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([approverId, status])
   @@index([docType, docId])
   @@schema("app_quikconstruction")
@@ -4106,7 +4127,7 @@ model CnApprovalRequest {
 
 model CnQCInspection {
   id               String   @id @default(cuid())
-  tenantId         String
+  orgId         String
   inspectionNumber String
   grnId            String?
   projectId        String?
@@ -4121,13 +4142,13 @@ model CnQCInspection {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   grn     CnGoodsReceiptNote? @relation(fields: [grnId], references: [id])
   project CnProject?          @relation(fields: [projectId], references: [id])
   defects CnQCDefect[]
 
-  @@unique([tenantId, inspectionNumber])
-  @@index([tenantId])
+  @@unique([orgId, inspectionNumber])
+  @@index([orgId])
   @@index([grnId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -4153,7 +4174,7 @@ model CnQCDefect {
 
 model CnSafetyIncident {
   id             String    @id @default(cuid())
-  tenantId       String
+  orgId       String
   projectId      String?
   incidentNumber String
   incidentDate   DateTime
@@ -4172,11 +4193,11 @@ model CnSafetyIncident {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject? @relation(fields: [projectId], references: [id])
 
-  @@unique([tenantId, incidentNumber])
-  @@index([tenantId])
+  @@unique([orgId, incidentNumber])
+  @@index([orgId])
   @@index([status])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -4184,7 +4205,7 @@ model CnSafetyIncident {
 
 model CnSafetyChecklist {
   id            String   @id @default(cuid())
-  tenantId      String
+  orgId      String
   projectId     String?
   templateName  String // e.g. "Daily site safety walk"
   checklistDate DateTime
@@ -4200,10 +4221,10 @@ model CnSafetyChecklist {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject? @relation(fields: [projectId], references: [id])
 
-  @@index([tenantId])
+  @@index([orgId])
   @@index([checklistDate])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -4213,22 +4234,22 @@ model CnSafetyChecklist {
 
 model CnDocument {
   id          String @id @default(cuid())
-  tenantId    String
+  orgId    String
   refType     String // project | po | grn | rab | invoice | bill | incident | dpr | other
   refId       String
   fileName    String
   mimeType    String
   sizeBytes   Int
-  /// Path relative to DOCS_ROOT (e.g. "tenantId/uuid-file.pdf"). Local disk MVP.
+  /// Path relative to DOCS_ROOT (e.g. "orgId/uuid-file.pdf"). Local disk MVP.
   storagePath String
   uploadedBy  String
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, refType, refId])
+  @@index([orgId, refType, refId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
 }
@@ -4237,7 +4258,7 @@ model CnDocument {
 
 model CnExpense {
   id            String   @id @default(cuid())
-  tenantId      String
+  orgId      String
   expenseNumber String
   expenseDate   DateTime
   projectId     String?
@@ -4256,11 +4277,11 @@ model CnExpense {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject? @relation(fields: [projectId], references: [id])
 
-  @@unique([tenantId, expenseNumber])
-  @@index([tenantId])
+  @@unique([orgId, expenseNumber])
+  @@index([orgId])
   @@index([projectId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -4316,7 +4337,7 @@ model CnVendorBillLine {
 /// (in which case it is applied to that invoice on issue) or standalone.
 model CnCreditNote {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
   noteNumber String
   customerId String
   invoiceId  String?
@@ -4332,12 +4353,12 @@ model CnCreditNote {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer CnCustomer       @relation(fields: [customerId], references: [id])
   invoice  CnClientInvoice? @relation(fields: [invoiceId], references: [id])
 
-  @@unique([tenantId, noteNumber])
-  @@index([tenantId])
+  @@unique([orgId, noteNumber])
+  @@index([orgId])
   @@index([customerId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -4347,7 +4368,7 @@ model CnCreditNote {
 /// (e.g. returned goods, pricing dispute).
 model CnDebitNote {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
   noteNumber String
   vendorId   String
   billId     String?
@@ -4363,12 +4384,12 @@ model CnDebitNote {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vendor CnVendor      @relation(fields: [vendorId], references: [id])
   bill   CnVendorBill? @relation(fields: [billId], references: [id])
 
-  @@unique([tenantId, noteNumber])
-  @@index([tenantId])
+  @@unique([orgId, noteNumber])
+  @@index([orgId])
   @@index([vendorId])
   @@index([deletedAt])
   @@schema("app_quikconstruction")
@@ -4379,7 +4400,7 @@ model CnDebitNote {
 /// `logAudit()` is opt-in. Future work to wire it broadly.
 model CnAuditLog {
   id         String  @id @default(cuid())
-  tenantId   String
+  orgId   String
   userId     String
   actionType String // create | update | delete | status_change | post | approve | …
   entityType String // cnRAB | cnClientInvoice | cnVendorBill | …
@@ -4391,10 +4412,10 @@ model CnAuditLog {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, entityType, entityId])
-  @@index([tenantId, createdAt])
+  @@index([orgId, entityType, entityId])
+  @@index([orgId, createdAt])
   @@schema("app_quikconstruction")
 }
 
@@ -4403,17 +4424,17 @@ model CnAuditLog {
 /// `Date.now().slice(-6)` can duplicate.
 model CnNumberSequence {
   id        String   @id @default(cuid())
-  tenantId  String
+  orgId  String
   prefix    String // e.g. PR | PO | GRN | RAB | INV | BILL | RCP | PAY | CN | DN | EXP | PAY | INS | INC
   /// Financial year, e.g. "FY2526". Optional — if absent, counter is not FY-scoped.
   fyKey     String?
   counter   Int      @default(0)
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, prefix, fyKey])
-  @@index([tenantId])
+  @@unique([orgId, prefix, fyKey])
+  @@index([orgId])
   @@schema("app_quikconstruction")
 }
 
@@ -4426,7 +4447,7 @@ model CnNumberSequence {
 // foundation — 6 models: tenant config + deal core + audit).
 //
 // Conventions (mirror app_quikscale):
-//   - Every tenant-scoped model has tenantId String + @@index([tenantId])
+//   - Every tenant-scoped model has orgId String + @@index([orgId])
 //   - createdAt / updatedAt / createdBy / updatedBy on every model
 //   - Cascade delete from Tenant
 //   - JSON columns for variable-shape data (signals, answers, evidence)
@@ -4441,7 +4462,7 @@ model CnNumberSequence {
 /// Holds VC-specific settings that don't apply to QuikScale tenants.
 model VCFundProfile {
   id             String  @id @default(cuid())
-  tenantId       String  @unique
+  orgId       String  @unique
   /// Display name for the fund (shown in Fund switcher; v1 = single-fund per tenant)
   fundName       String
   /// Currency code for capital amounts (ISO 4217). Defaults to INR for India.
@@ -4464,7 +4485,7 @@ model VCFundProfile {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@schema("app_quikvc")
 }
@@ -4474,7 +4495,7 @@ model VCFundProfile {
 /// Logistics & SupplyChain, ConsumerInternet & E-commerce, DeepTech & AI).
 model VCVertical {
   id          String  @id @default(cuid())
-  tenantId    String
+  orgId    String
   /// Stable slug (kebab-case) — used in URLs and as scoring criteria foreign key
   slug        String
   name        String
@@ -4488,14 +4509,14 @@ model VCVertical {
   createdBy String?
   updatedBy String?
 
-  tenant               Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org               Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   scoringCriteria      VCScoringCriterion[]
   applications         VCApplication[]
   deals                VCDeal[]
   sourcedOpportunities VCSourcedOpportunity[]
 
-  @@unique([tenantId, slug])
-  @@index([tenantId])
+  @@unique([orgId, slug])
+  @@index([orgId])
   @@schema("app_quikvc")
 }
 
@@ -4503,7 +4524,7 @@ model VCVertical {
 /// Used by Claude scoring + analyst override workflow.
 model VCScoringCriterion {
   id          String  @id @default(cuid())
-  tenantId    String
+  orgId    String
   verticalId  String
   /// Stable slug — referenced by DealScore rows
   slug        String
@@ -4518,11 +4539,11 @@ model VCScoringCriterion {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vertical VCVertical @relation(fields: [verticalId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, verticalId, slug])
-  @@index([tenantId, verticalId])
+  @@unique([orgId, verticalId, slug])
+  @@index([orgId, verticalId])
   @@schema("app_quikvc")
 }
 
@@ -4530,7 +4551,7 @@ model VCScoringCriterion {
 /// submit; auto-creates a linked VCDeal at Intake stage.
 model VCApplication {
   id           String  @id @default(cuid())
-  tenantId     String
+  orgId     String
   /// User ID of the founder (Membership in this tenant with role = "founder")
   founderId    String
   verticalId   String
@@ -4562,13 +4583,13 @@ model VCApplication {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vertical VCVertical @relation(fields: [verticalId], references: [id], onDelete: Restrict)
   deal     VCDeal? // 1:1 — created automatically on submit
 
-  @@index([tenantId])
-  @@index([tenantId, founderId])
-  @@index([tenantId, status])
+  @@index([orgId])
+  @@index([orgId, founderId])
+  @@index([orgId, status])
   @@schema("app_quikvc")
 }
 
@@ -4576,7 +4597,7 @@ model VCApplication {
 /// Sprint 1: holds enough state to render Pipeline + Deal Overview.
 model VCDeal {
   id              String  @id @default(cuid())
-  tenantId        String
+  orgId        String
   applicationId   String  @unique
   verticalId      String
   /// One of the 9 canonical stages: intake | onboarding | doc-collection |
@@ -4605,7 +4626,7 @@ model VCDeal {
   createdBy String?
   updatedBy String?
 
-  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   application    VCApplication         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   vertical       VCVertical            @relation(fields: [verticalId], references: [id], onDelete: Restrict)
   timelineEvents VCTimelineEvent[]
@@ -4619,10 +4640,10 @@ model VCDeal {
   allocations    VCDealAllocation[]
   termSheet      VCTermSheet?
 
-  @@index([tenantId])
-  @@index([tenantId, currentStage])
-  @@index([tenantId, verticalId])
-  @@index([tenantId, analystId])
+  @@index([orgId])
+  @@index([orgId, currentStage])
+  @@index([orgId, verticalId])
+  @@index([orgId, analystId])
   @@schema("app_quikvc")
 }
 
@@ -4634,7 +4655,7 @@ model VCDeal {
 /// scoped per deal and rendered in the Deal Overview / Workbench timeline tab.
 model VCTimelineEvent {
   id         String  @id @default(cuid())
-  tenantId   String
+  orgId   String
   dealId     String
   /// Event type — extensible enum string for now. See architecture brief §6.
   /// Examples: stage-advanced | doc-uploaded | doc-rejected | score-updated |
@@ -4651,11 +4672,11 @@ model VCTimelineEvent {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, dealId, createdAt])
-  @@index([tenantId, type])
+  @@index([orgId, dealId, createdAt])
+  @@index([orgId, type])
   @@schema("app_quikvc")
 }
 
@@ -4668,7 +4689,7 @@ model VCTimelineEvent {
 /// tracks the VC team's review state visible to the founder in real time.
 model VCDealDocument {
   id           String  @id @default(cuid())
-  tenantId     String
+  orgId     String
   dealId       String
   /// Document category (slug from VCDocumentRequirement when those land in
   /// Sprint 5; for now a free-text slug like "pitch-deck" / "financials" /
@@ -4696,11 +4717,11 @@ model VCDealDocument {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, dealId])
-  @@index([tenantId, status])
+  @@index([orgId, dealId])
+  @@index([orgId, status])
   @@schema("app_quikvc")
 }
 
@@ -4709,7 +4730,7 @@ model VCDealDocument {
 /// (so the analyst surfaces unanswered questions easily).
 model VCDealQuestion {
   id           String    @id @default(cuid())
-  tenantId     String
+  orgId     String
   dealId       String
   /// Analyst (Membership ID) who posted the question
   askedById    String
@@ -4728,10 +4749,10 @@ model VCDealQuestion {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, dealId, status])
+  @@index([orgId, dealId, status])
   @@schema("app_quikvc")
 }
 
@@ -4739,7 +4760,7 @@ model VCDealQuestion {
 /// extends with score history, override justification fields, AI confidence.
 model VCDealScore {
   id             String  @id @default(cuid())
-  tenantId       String
+  orgId       String
   dealId         String
   /// References VCScoringCriterion.slug (not FK because criteria can be
   /// renamed / disabled and we want to keep score history)
@@ -4756,11 +4777,11 @@ model VCDealScore {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, dealId, criterionSlug])
-  @@index([tenantId, dealId])
+  @@unique([orgId, dealId, criterionSlug])
+  @@index([orgId, dealId])
   @@schema("app_quikvc")
 }
 
@@ -4773,7 +4794,7 @@ model VCDealScore {
 /// transcript-detected (when Sprint 3b ships meeting transcripts).
 model VCDealSignal {
   id          String  @id @default(cuid())
-  tenantId    String
+  orgId    String
   dealId      String
   /// Severity: "red" | "amber" | "green"
   severity    String
@@ -4795,11 +4816,11 @@ model VCDealSignal {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, dealId, status])
-  @@index([tenantId, severity])
+  @@index([orgId, dealId, status])
+  @@index([orgId, severity])
   @@schema("app_quikvc")
 }
 
@@ -4808,7 +4829,7 @@ model VCDealSignal {
 /// to the IC review artifact and stops further edits.
 model VCICMemo {
   id               String  @id @default(cuid())
-  tenantId         String
+  orgId         String
   dealId           String  @unique
   /// Status: "draft" | "under-review" | "frozen"
   status           String  @default("draft")
@@ -4820,13 +4841,13 @@ model VCICMemo {
   createdBy String?
   updatedBy String?
 
-  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org         Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal           VCDeal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
   versions       VCICMemoVersion[] @relation("MemoVersions")
   currentVersion VCICMemoVersion?  @relation("CurrentMemoVersion", fields: [currentVersionId], references: [id])
   votes          VCICVote[]
 
-  @@index([tenantId])
+  @@index([orgId])
   @@schema("app_quikvc")
 }
 
@@ -4834,7 +4855,7 @@ model VCICMemo {
 /// flexibility (rich text per section + metadata).
 model VCICMemoVersion {
   id         String  @id @default(cuid())
-  tenantId   String
+  orgId   String
   memoId     String
   /// Sequential version number per memo (1, 2, 3, …)
   version    Int
@@ -4850,12 +4871,12 @@ model VCICMemoVersion {
   createdAt DateTime @default(now())
   createdBy String?
 
-  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org         Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   memo           VCICMemo  @relation("MemoVersions", fields: [memoId], references: [id], onDelete: Cascade)
   currentForMemo VCICMemo? @relation("CurrentMemoVersion")
 
   @@unique([memoId, version])
-  @@index([tenantId, memoId])
+  @@index([orgId, memoId])
   @@schema("app_quikvc")
 }
 
@@ -4864,7 +4885,7 @@ model VCICMemoVersion {
 /// the deal's vertical + description.
 model VCComparableCompany {
   id                String  @id @default(cuid())
-  tenantId          String
+  orgId          String
   dealId            String
   name              String
   sector            String?
@@ -4884,10 +4905,10 @@ model VCComparableCompany {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, dealId])
+  @@index([orgId, dealId])
   @@schema("app_quikvc")
 }
 
@@ -4895,7 +4916,7 @@ model VCComparableCompany {
 /// Sprint 3a: just CRUD; Sprint 3b adds transcript paste + Claude analysis.
 model VCMeeting {
   id              String    @id @default(cuid())
-  tenantId        String
+  orgId        String
   dealId          String
   title           String
   /// Scheduled or actual start time
@@ -4908,7 +4929,7 @@ model VCMeeting {
   type            String    @default("discovery-call")
   /// Status: "scheduled" | "completed" | "cancelled"
   status          String    @default("scheduled")
-  /// JSON array of participant Membership IDs + names + roles
+  /// JSON array of participant OrgMember IDs + names + roles
   participants    Json?
   /// Analyst pre-meeting notes
   agenda          String?   @db.Text
@@ -4918,12 +4939,12 @@ model VCMeeting {
   createdBy String?
   updatedBy String?
 
-  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org     Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal       VCDeal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
   transcript VCMeetingTranscript?
 
-  @@index([tenantId, dealId])
-  @@index([tenantId, status])
+  @@index([orgId, dealId])
+  @@index([orgId, status])
   @@schema("app_quikvc")
 }
 
@@ -4931,7 +4952,7 @@ model VCMeeting {
 /// because transcripts can be large (db.Text) and aren't always present.
 model VCMeetingTranscript {
   id         String @id @default(cuid())
-  tenantId   String
+  orgId   String
   meetingId  String @unique
   /// Raw pasted transcript text
   rawText    String @db.Text
@@ -4946,10 +4967,10 @@ model VCMeetingTranscript {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org  Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   meeting VCMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([orgId])
   @@schema("app_quikvc")
 }
 
@@ -4962,9 +4983,9 @@ model VCMeetingTranscript {
 /// to UX blueprint W14: approve / conditional-approve / reject / abstain.
 model VCICVote {
   id         String  @id @default(cuid())
-  tenantId   String
+  orgId   String
   memoId     String
-  voterId    String // Membership user id with canVoteIC=true
+  voterId    String // OrgMember user id with canVoteIC=true
   /// Decision: "approve" | "conditional-approve" | "reject" | "abstain"
   decision   String
   /// Rationale shown to peers (per VCFundProfile.icVisibility)
@@ -4975,19 +4996,19 @@ model VCICVote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   memo   VCICMemo @relation(fields: [memoId], references: [id], onDelete: Cascade)
 
   /// Voters cast at most one vote per memo (re-cast updates this row).
   @@unique([memoId, voterId])
-  @@index([tenantId, memoId])
+  @@index([orgId, memoId])
   @@schema("app_quikvc")
 }
 
 /// Investor record per tenant — LP, HNI, or angel.
 model VCInvestor {
   id           String  @id @default(cuid())
-  tenantId     String
+  orgId     String
   /// Display name (firm or individual)
   name         String
   /// Type: "lp" | "hni" | "angel"
@@ -5008,15 +5029,15 @@ model VCInvestor {
   createdBy String?
   updatedBy String?
 
-  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org             Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   commitments        VCCommitment[]
   capitalCalls       VCCapitalCall[]
   allocations        VCDealAllocation[]
   repaymentSchedules VCRepaymentSchedule[]
   repaymentPayments  VCRepaymentPayment[]
 
-  @@index([tenantId])
-  @@index([tenantId, type])
+  @@index([orgId])
+  @@index([orgId, type])
   @@schema("app_quikvc")
 }
 
@@ -5024,7 +5045,7 @@ model VCInvestor {
 /// OR scheduled (callable in tranches via VCCommitmentSchedule child rows).
 model VCCommitment {
   id          String @id @default(cuid())
-  tenantId    String
+  orgId    String
   investorId  String
   /// Type: "one-shot" | "scheduled"
   type        String @default("one-shot")
@@ -5042,10 +5063,10 @@ model VCCommitment {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   investor VCInvestor @relation(fields: [investorId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, investorId])
+  @@index([orgId, investorId])
   @@schema("app_quikvc")
 }
 
@@ -5054,7 +5075,7 @@ model VCCommitment {
 /// issued → paid (or overdue/defaulted on miss).
 model VCCapitalCall {
   id           String    @id @default(cuid())
-  tenantId     String
+  orgId     String
   investorId   String
   /// Optional link to the allocation that triggered this call
   allocationId String?
@@ -5074,19 +5095,19 @@ model VCCapitalCall {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   investor VCInvestor             @relation(fields: [investorId], references: [id], onDelete: Cascade)
   payments VCCapitalCallPayment[]
 
-  @@index([tenantId, investorId, status])
-  @@index([tenantId, dueDate])
+  @@index([orgId, investorId, status])
+  @@index([orgId, dueDate])
   @@schema("app_quikvc")
 }
 
 /// Payment received against a capital call. Supports partial payments.
 model VCCapitalCallPayment {
   id            String   @id @default(cuid())
-  tenantId      String
+  orgId      String
   capitalCallId String
   amount        BigInt
   paidAt        DateTime
@@ -5096,10 +5117,10 @@ model VCCapitalCallPayment {
   createdAt DateTime @default(now())
   createdBy String?
 
-  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org      Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   capitalCall VCCapitalCall @relation(fields: [capitalCallId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, capitalCallId])
+  @@index([orgId, capitalCallId])
   @@schema("app_quikvc")
 }
 
@@ -5107,7 +5128,7 @@ model VCCapitalCallPayment {
 /// Rolls into VCDeal.allocatedAmount (denormalized for fast queries).
 model VCDealAllocation {
   id          String    @id @default(cuid())
-  tenantId    String
+  orgId    String
   dealId      String
   investorId  String
   /// Amount allocated in paise
@@ -5122,13 +5143,13 @@ model VCDealAllocation {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal     VCDeal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
   investor VCInvestor @relation(fields: [investorId], references: [id], onDelete: Restrict)
 
   @@unique([dealId, investorId])
-  @@index([tenantId, dealId])
-  @@index([tenantId, investorId])
+  @@index([orgId, dealId])
+  @@index([orgId, investorId])
   @@schema("app_quikvc")
 }
 
@@ -5138,7 +5159,7 @@ model VCDealAllocation {
 ///   - "rbf": revenue-based — payments recorded as % of monthly revenue
 model VCRepaymentSchedule {
   id            String @id @default(cuid())
-  tenantId      String
+  orgId      String
   dealId        String
   investorId    String
   /// Type: "emi" | "equity-exit" | "rbf"
@@ -5158,19 +5179,19 @@ model VCRepaymentSchedule {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   investor VCInvestor           @relation(fields: [investorId], references: [id], onDelete: Restrict)
   payments VCRepaymentPayment[]
 
-  @@index([tenantId, dealId])
-  @@index([tenantId, investorId])
+  @@index([orgId, dealId])
+  @@index([orgId, investorId])
   @@schema("app_quikvc")
 }
 
 /// Repayment payment received from the startup back to investors.
 model VCRepaymentPayment {
   id         String   @id @default(cuid())
-  tenantId   String
+  orgId   String
   scheduleId String
   investorId String
   amount     BigInt
@@ -5183,12 +5204,12 @@ model VCRepaymentPayment {
   createdAt DateTime @default(now())
   createdBy String?
 
-  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   schedule VCRepaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   investor VCInvestor          @relation(fields: [investorId], references: [id], onDelete: Restrict)
 
-  @@index([tenantId, scheduleId])
-  @@index([tenantId, investorId, paidAt])
+  @@index([orgId, scheduleId])
+  @@index([orgId, investorId, paidAt])
   @@schema("app_quikvc")
 }
 
@@ -5197,7 +5218,7 @@ model VCRepaymentPayment {
 /// Only Fund Admin edits this. v1 supports a single template per tenant.
 model VCTermSheetTemplate {
   id       String @id @default(cuid())
-  tenantId String
+  orgId String
   name     String @default("Default Term Sheet")
   /// Rich-text body with {{startup.name}} / {{deal.fundingAsk}} etc.
   bodyHtml String @db.Text
@@ -5207,10 +5228,10 @@ model VCTermSheetTemplate {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, name])
-  @@index([tenantId])
+  @@unique([orgId, name])
+  @@index([orgId])
   @@schema("app_quikvc")
 }
 
@@ -5218,7 +5239,7 @@ model VCTermSheetTemplate {
 /// referenced via the rendered HTML in renderedBodyHtml + version counter.
 model VCTermSheet {
   id               String    @id @default(cuid())
-  tenantId         String
+  orgId         String
   dealId           String    @unique
   /// Sequential version (1, 2, 3, …) — increments on every regen
   version          Int       @default(1)
@@ -5234,10 +5255,10 @@ model VCTermSheet {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([orgId])
   @@schema("app_quikvc")
 }
 
@@ -5246,7 +5267,7 @@ model VCTermSheet {
 /// Converts → VCApplication + VCDeal once analyst clicks "Convert to deal".
 model VCSourcedOpportunity {
   id                     String  @id @default(cuid())
-  tenantId               String
+  orgId               String
   /// Source: "manual" | "csv" | "email" | "referral"
   source                 String  @default("manual")
   /// Free-form startup name
@@ -5278,11 +5299,11 @@ model VCSourcedOpportunity {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org   Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vertical VCVertical? @relation(fields: [verticalId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId, status])
-  @@index([tenantId, createdAt])
+  @@index([orgId, status])
+  @@index([orgId, createdAt])
   @@schema("app_quikvc")
 }
 
@@ -5291,7 +5312,7 @@ model VCSourcedOpportunity {
 /// Email is sent in parallel via Resend; this row tracks the in-app feed.
 model VCNotification {
   id       String    @id @default(cuid())
-  tenantId String
+  orgId String
   /// Recipient User.id
   userId   String
   /// Event type: "allocation" | "repayment-schedule" | "repayment-payment"
@@ -5309,10 +5330,10 @@ model VCNotification {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, userId, readAt])
-  @@index([tenantId, userId, createdAt])
+  @@index([orgId, userId, readAt])
+  @@index([orgId, userId, createdAt])
   @@schema("app_quikvc")
 }
 
@@ -5325,7 +5346,7 @@ model VCNotification {
 /// a periodic cleanup job (Sprint 6 — currently keeps everything).
 model VCAuditLog {
   id        String  @id @default(cuid())
-  tenantId  String
+  orgId  String
   /// Actor user id (may be null for system / cron jobs)
   userId    String?
   /// Action: "rbac.deny" | "allocation.create" | "ic.settle" | "term-sheet.generate" |
@@ -5345,11 +5366,11 @@ model VCAuditLog {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, createdAt])
-  @@index([tenantId, action, createdAt])
-  @@index([tenantId, userId, createdAt])
-  @@index([tenantId, outcome, createdAt])
+  @@index([orgId, createdAt])
+  @@index([orgId, action, createdAt])
+  @@index([orgId, userId, createdAt])
+  @@index([orgId, outcome, createdAt])
   @@schema("app_quikvc")
 }

@@ -11,11 +11,11 @@ import ScoringCriteriaClient from "./scoring-client";
 
 export default async function ScoringCriteriaAdminPage() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const verticals = await db.vCVertical.findMany({
-    where: { tenantId, enabled: true },
+    where: { orgId, enabled: true },
     orderBy: { sortOrder: "asc" },
     include: {
       scoringCriteria: { orderBy: { sortOrder: "asc" } },

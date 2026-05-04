@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateReviewSchema } from "@/lib/schemas/reviewSchema";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.reviews");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.reviews");
 
-export const GET = withTenantAuth<{ reviewId: string }>(
-  async ({ tenantId }, _req, { params }) => {
+export const GET = withOrgAuth<{ reviewId: string }>(
+  async ({ orgId }, _req, { params }) => {
     // Tenant-scoped lookup: never cross-tenant
     const review = await db.performanceReview.findFirst({
-      where: { id: params.reviewId, tenantId },
+      where: { id: params.reviewId, orgId },
       include: {
         reviewer: true,
         reviewee: {
@@ -30,8 +30,8 @@ export const GET = withTenantAuth<{ reviewId: string }>(
   },
 );
 
-export const PUT = withTenantAuth<{ reviewId: string }>(
-  async ({ tenantId }, req, { params }) => {
+export const PUT = withOrgAuth<{ reviewId: string }>(
+  async ({ orgId }, req, { params }) => {
     const parsed = updateReviewSchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -46,7 +46,7 @@ export const PUT = withTenantAuth<{ reviewId: string }>(
 
     // Verify the review belongs to the caller's tenant before updating
     const existing = await db.performanceReview.findFirst({
-      where: { id: params.reviewId, tenantId },
+      where: { id: params.reviewId, orgId },
       select: { id: true },
     });
     if (!existing) {

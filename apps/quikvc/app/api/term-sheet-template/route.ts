@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { DEFAULT_TEMPLATE_HTML } from "@/lib/term-sheet/render";
 import { FUND_ADMIN_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
@@ -18,9 +18,9 @@ const putSchema = z.object({
   name: z.string().max(120).optional(),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const tpl = await db.vCTermSheetTemplate.findFirst({
-    where: { tenantId },
+    where: { orgId },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, bodyHtml: true, updatedAt: true },
   });
@@ -30,8 +30,8 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
   });
 });
 
-export const PUT = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = await requireRoleOrAudit(userId, tenantId, FUND_ADMIN_ROLES, {
+export const PUT = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = await requireRoleOrAudit(userId, orgId, FUND_ADMIN_ROLES, {
     action: "term-sheet-template.update",
     req,
   });
@@ -47,7 +47,7 @@ export const PUT = withTenantAuth(async ({ tenantId, userId }, req: NextRequest)
   const name = parsed.data.name ?? "Default Term Sheet";
 
   const existing = await db.vCTermSheetTemplate.findFirst({
-    where: { tenantId, name },
+    where: { orgId, name },
   });
   if (existing) {
     await db.vCTermSheetTemplate.update({
@@ -57,7 +57,7 @@ export const PUT = withTenantAuth(async ({ tenantId, userId }, req: NextRequest)
   } else {
     await db.vCTermSheetTemplate.create({
       data: {
-        tenantId,
+        orgId,
         name,
         bodyHtml: parsed.data.bodyHtml,
         createdBy: userId,
@@ -66,7 +66,7 @@ export const PUT = withTenantAuth(async ({ tenantId, userId }, req: NextRequest)
     });
   }
   await audit({
-    tenantId,
+    orgId,
     userId,
     action: "term-sheet-template.update",
     metadata: { name, bytes: parsed.data.bodyHtml.length },

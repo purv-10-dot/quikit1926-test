@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     const { membershipId, action } = parsed.data;
 
     // Verify the membership belongs to this user and is pending
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { id: membershipId, userId: session.user.id, status: "pending" },
     });
 
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "accept") {
-      await db.membership.update({
+      await db.orgMember.update({
         where: { id: membershipId },
         data: { status: "active", acceptedAt: new Date() },
       });
@@ -50,16 +50,16 @@ export async function POST(request: NextRequest) {
       for (const app of activeApps) {
         await db.userAppAccess.upsert({
           where: {
-            userId_tenantId_appId: {
+            userId_orgId_appId: {
               userId: session.user.id,
-              tenantId: membership.tenantId,
+              orgId: membership.orgId,
               appId: app.id,
             },
           },
           update: {},
           create: {
             userId: session.user.id,
-            tenantId: membership.tenantId,
+            orgId: membership.orgId,
             appId: app.id,
             role: "member",
           },
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Decline — mark as declined
-    await db.membership.update({
+    await db.orgMember.update({
       where: { id: membershipId },
       data: { status: "declined" },
     });

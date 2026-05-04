@@ -19,14 +19,14 @@ export function isAllowedMime(m: string) { return ALLOWED_MIME.has(m); }
 export const MAX_FILE_BYTES = MAX_BYTES;
 
 /**
- * Write a multipart File to disk under DOCS_ROOT/<tenantId>/<uuid>-<safeName>.
+ * Write a multipart File to disk under DOCS_ROOT/<orgId>/<uuid>-<safeName>.
  * Returns the relative storagePath + size.
  */
-export async function saveUpload(tenantId: string, file: File): Promise<{ storagePath: string; sizeBytes: number; safeName: string; }> {
+export async function saveUpload(orgId: string, file: File): Promise<{ storagePath: string; sizeBytes: number; safeName: string; }> {
   if (file.size > MAX_BYTES) throw new Error(`File too large (${(file.size / 1048576).toFixed(1)}MB > 25MB limit)`);
   if (!isAllowedMime(file.type)) throw new Error(`File type not allowed: ${file.type}`);
 
-  const tenantDir = path.join(DOCS_ROOT, tenantId);
+  const tenantDir = path.join(DOCS_ROOT, orgId);
   await fs.mkdir(tenantDir, { recursive: true });
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
   const storageName = `${randomUUID()}-${safeName}`;
@@ -35,7 +35,7 @@ export async function saveUpload(tenantId: string, file: File): Promise<{ storag
   const buf = Buffer.from(await file.arrayBuffer());
   await fs.writeFile(abs, buf);
 
-  return { storagePath: `${tenantId}/${storageName}`, sizeBytes: file.size, safeName };
+  return { storagePath: `${orgId}/${storageName}`, sizeBytes: file.size, safeName };
 }
 
 export function resolveStoragePath(relative: string): string {

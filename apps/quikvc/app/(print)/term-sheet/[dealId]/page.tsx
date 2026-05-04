@@ -33,8 +33,8 @@ export default async function TermSheetPrintPage({
   params: { dealId: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const [ts, fundProfile] = await Promise.all([
     db.vCTermSheet.findUnique({
@@ -42,7 +42,7 @@ export default async function TermSheetPrintPage({
       select: { version: true, renderedBodyHtml: true, updatedAt: true },
     }),
     db.vCFundProfile.findUnique({
-      where: { tenantId },
+      where: { orgId },
       select: { fundName: true },
     }),
   ]);

@@ -3,6 +3,11 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { db } from "@quikit/database";
 import { rateLimitAsync } from "@quikit/shared/rateLimit";
 import bcrypt from "bcryptjs";
+import {
+  createAuthSession,
+  revokeAuthSession,
+  touchAuthSession,
+} from "./session-store";
 
 export interface AuthConfig {
   signInPage: string;
@@ -14,7 +19,7 @@ interface AuthUser {
   email: string | null;
   name?: string | null;
   isSuperAdmin?: boolean;
-  tenantId?: string;
+  orgId?: string;
   membershipRole?: string;
 }
 
@@ -142,15 +147,42 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           token.id = user.id;
           token.email = user.email;
           token.isSuperAdmin = (user as AuthUser).isSuperAdmin ?? false;
+          token.sessionId = await createAuthSession(user.id, 30 * 24 * 60 * 60);
+          token.sessionTouchedAt = Date.now();
+
+          // Auto-select first active org on initial sign-in so the user is
+          // dropped straight onto the launcher (/apps) without an interstitial
+          // /select-org step. Multi-org users can still switch orgs from the
+          // launcher header — /select-org is reachable on demand, not forced.
+          const firstMembership = await db.orgMember.findFirst({
+            where: { userId: user.id, status: "active" },
+            orderBy: { createdAt: "asc" },
+            select: { orgId: true, role: true },
+          });
+          if (firstMembership) {
+            token.orgId = firstMembership.orgId;
+            token.membershipRole = firstMembership.role;
+            token.membershipCheckedAt = Date.now();
+          }
+        }
+
+        const SESSION_TOUCH_INTERVAL = 5 * 60 * 1000;
+        if (
+          token.sessionId &&
+          (!token.sessionTouchedAt ||
+            Date.now() - (token.sessionTouchedAt as number) > SESSION_TOUCH_INTERVAL)
+        ) {
+          await touchAuthSession(String(token.sessionId), 30 * 24 * 60 * 60);
+          token.sessionTouchedAt = Date.now();
         }
 
         if (trigger === "update" && session) {
-          if (session.tenantId === null) {
-            token.tenantId = undefined;
+          if (session.orgId === null) {
+            token.orgId = undefined;
             token.membershipRole = undefined;
             token.membershipCheckedAt = undefined;
-          } else if (session.tenantId) {
-            token.tenantId = session.tenantId;
+          } else if (session.orgId) {
+            token.orgId = session.orgId;
             token.membershipRole = session.membershipRole;
             token.membershipCheckedAt = Date.now();
           }
@@ -159,21 +191,21 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
         // Re-validate membership every 5 minutes
         const RECHECK_INTERVAL = 5 * 60 * 1000;
         if (
-          token.tenantId &&
+          token.orgId &&
           token.id &&
           (!token.membershipCheckedAt ||
             Date.now() - (token.membershipCheckedAt as number) > RECHECK_INTERVAL)
         ) {
-          const membership = await db.membership.findFirst({
+          const membership = await db.orgMember.findFirst({
             where: {
               userId: token.id as string,
-              tenantId: token.tenantId as string,
+              orgId: token.orgId as string,
               status: "active",
             },
           });
 
           if (!membership) {
-            token.tenantId = undefined;
+            token.orgId = undefined;
             token.membershipRole = undefined;
             token.membershipCheckedAt = undefined;
             token.membershipInvalid = true;
@@ -191,7 +223,7 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           ...session.user,
           id: token.id as string,
           email: token.email as string,
-          tenantId: token.tenantId as string | undefined,
+          orgId: token.orgId as string | undefined,
           membershipRole: token.membershipRole as string | undefined,
           membershipInvalid: token.membershipInvalid as boolean | undefined,
           isSuperAdmin: token.isSuperAdmin as boolean | undefined,
@@ -206,14 +238,14 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           data: { lastSignInAt: new Date() },
         });
         // SA-A.5: record a SessionEvent for analytics.
-        // tenantId is not yet known at signIn (org selection happens after),
-        // so we log with tenantId=null and a follow-up session event can be
+        // orgId is not yet known at signIn (org selection happens after),
+        // so we log with orgId=null and a follow-up session event can be
         // emitted by the app's own layout/middleware once a tenant is active.
         try {
           await db.sessionEvent.create({
             data: {
               userId: user.id!,
-              tenantId: null,
+              orgId: null,
               event: "login",
               appSlug: "quikit",
             },
@@ -224,11 +256,15 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
       },
       async signOut({ token }) {
         if (!token?.id) return;
+        const sessionId = token.sessionId as string | undefined;
+        if (sessionId) {
+          await revokeAuthSession(sessionId);
+        }
         try {
           await db.sessionEvent.create({
             data: {
               userId: token.id as string,
-              tenantId: (token.tenantId as string | undefined) ?? null,
+              orgId: (token.orgId as string | undefined) ?? null,
               event: "logout",
               appSlug: "quikit",
             },
@@ -298,7 +334,7 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
             id: profile.sub,
             email: profile.email,
             name: profile.name,
-            tenantId: profile.tenant_id,
+            orgId: profile.tenant_id,
             membershipRole: profile.role,
           };
         },
@@ -373,7 +409,7 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
         if (user) {
           token.id = user.id;
           token.email = user.email;
-          token.tenantId = (user as AuthUser).tenantId;
+          token.orgId = (user as AuthUser).orgId;
           token.membershipRole = (user as AuthUser).membershipRole;
           token.isSuperAdmin = false; // Apps don't inherit super admin status
         }
@@ -401,7 +437,7 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
           ...session.user,
           id: token.id as string,
           email: token.email as string,
-          tenantId: token.tenantId as string | undefined,
+          orgId: token.orgId as string | undefined,
           membershipRole: token.membershipRole as string | undefined,
           isSuperAdmin: false,
           impersonating: token.impersonating,

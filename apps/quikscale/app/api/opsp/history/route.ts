@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("opsp.history");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("opsp.history");
 
 /**
  * GET /api/opsp/history?year=2026
@@ -9,19 +9,19 @@ const withTenantAuth = withTenantAuthForModule("opsp.history");
  * Returns all OPSP records for the logged-in user's tenant for the given
  * fiscal year, plus available fiscal years and tenant fiscal config.
  */
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
-  const tenant = await db.tenant.findUnique({
-    where: { id: tenantId },
+export const GET = withOrgAuth(async ({ orgId }, req) => {
+  const org = await db.org.findUnique({
+    where: { id: orgId },
     select: { fiscalYearStart: true },
   });
-  const fiscalYearStart = tenant?.fiscalYearStart ?? 1;
+  const fiscalYearStart = org?.fiscalYearStart ?? 1;
 
   const yearParam = req.nextUrl.searchParams.get("year");
   const year = yearParam ? parseInt(yearParam) : null;
 
   // Fetch all distinct years that have OPSP data for this tenant
   const allYearsRaw = await db.oPSPData.findMany({
-    where: { tenantId },
+    where: { orgId },
     select: { year: true },
     distinct: ["year"],
     orderBy: { year: "desc" },
@@ -29,7 +29,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   const availableYears = allYearsRaw.map(r => r.year);
 
   // Fetch OPSPs for the requested year (all users in the tenant)
-  const where: Record<string, unknown> = { tenantId };
+  const where: Record<string, unknown> = { orgId };
   if (year) where.year = year;
 
   const opsps = await db.oPSPData.findMany({
@@ -53,7 +53,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   // Also check if quarters are initialized for this fiscal year
   const quarterSettings = year
     ? await db.quarterSetting.findMany({
-        where: { tenantId, fiscalYear: year },
+        where: { orgId, fiscalYear: year },
         select: { quarter: true },
       })
     : [];

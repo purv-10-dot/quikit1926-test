@@ -23,11 +23,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -57,8 +57,8 @@ describe("GET /api/www — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -85,7 +85,7 @@ describe("GET /api/www — happy path", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
     };
     mockDb.wWWItem.findMany.mockResolvedValue([mockItem] as any);
     mockDb.wWWItem.count.mockResolvedValue(1);
@@ -102,7 +102,7 @@ describe("GET /api/www — happy path", () => {
     // Verify tenant isolation
     expect(mockDb.wWWItem.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: TENANT }),
+        where: expect.objectContaining({ orgId: TENANT }),
       }),
     );
   });
@@ -121,8 +121,8 @@ describe("POST /api/www — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -174,7 +174,7 @@ describe("POST /api/www — happy path", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
     };
     mockDb.wWWItem.create.mockResolvedValue(createdItem as any);
     mockDb.user.findUnique.mockResolvedValue({
@@ -198,7 +198,7 @@ describe("POST /api/www — happy path", () => {
     expect(auditArg.data.entityType).toBe("WWWItem");
   });
 
-  it("stores tenantId and createdBy from the session", async () => {
+  it("stores orgId and createdBy from the session", async () => {
     mockDb.wWWItem.create.mockResolvedValue({
       id: "new-w2",
       who: USER,
@@ -212,7 +212,7 @@ describe("POST /api/www — happy path", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
     } as any);
     mockDb.user.findUnique.mockResolvedValue(null);
     mockDb.auditLog.create.mockResolvedValue({} as any);
@@ -220,7 +220,7 @@ describe("POST /api/www — happy path", () => {
     await POST(buildPOST(validBody), { params: {} } as any);
 
     const createArg = (mockDb.wWWItem.create as any).mock.calls[0][0];
-    expect(createArg.data.tenantId).toBe(TENANT);
+    expect(createArg.data.orgId).toBe(TENANT);
     expect(createArg.data.createdBy).toBe(USER);
   });
 });

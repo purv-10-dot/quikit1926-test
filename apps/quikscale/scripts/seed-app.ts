@@ -30,7 +30,7 @@ async function main() {
   console.log(`App upserted: ${app.name} (${app.id})`);
 
   // 2. Grant access to all active memberships
-  const memberships = await db.membership.findMany({
+  const memberships = await db.orgMember.findMany({
     where: { status: "active" },
   });
 
@@ -38,16 +38,16 @@ async function main() {
   for (const m of memberships) {
     await db.userAppAccess.upsert({
       where: {
-        userId_tenantId_appId: {
+        userId_orgId_appId: {
           userId: m.userId,
-          tenantId: m.tenantId,
+          orgId: m.orgId,
           appId: app.id,
         },
       },
       update: {},
       create: {
         userId: m.userId,
-        tenantId: m.tenantId,
+        orgId: m.orgId,
         appId: app.id,
         role: m.role === "admin" ? "admin" : "member",
       },

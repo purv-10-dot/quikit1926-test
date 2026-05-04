@@ -12,7 +12,7 @@ vi.mock("@/lib/email", () => ({
   sendOrgSuspendedEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { GET, POST } from "@/app/api/super/tenant-app-access/[tenantId]/route";
+import { GET, POST } from "@/app/api/super/org-app-access/[orgId]/route";
 
 function makeRequest(url: string, init?: RequestInit) {
   return new NextRequest(new URL(url, "http://localhost:3006"), init as never);
@@ -24,11 +24,11 @@ async function bodyOf(res: Response) {
 
 const SUPER_ADMIN = { id: "sa-1", email: "super@test.com", isSuperAdmin: true };
 const REGULAR_USER = { id: "user-1", email: "user@test.com", isSuperAdmin: false };
-const PARAMS = { params: { tenantId: "tenant-1" } };
+const PARAMS = { params: { orgId: "tenant-1" } };
 
-// ─── GET /api/super/tenant-app-access/[tenantId] ─────────────────────────────
+// ─── GET /api/super/org-app-access/[orgId] ─────────────────────────────
 
-describe("GET /api/super/tenant-app-access/[tenantId]", () => {
+describe("GET /api/super/org-app-access/[orgId]", () => {
   beforeEach(() => {
     resetMockDb();
   });
@@ -36,7 +36,7 @@ describe("GET /api/super/tenant-app-access/[tenantId]", () => {
   it("returns 401 without session", async () => {
     setSession(null);
     const res = await GET(
-      makeRequest("http://localhost:3006/api/super/tenant-app-access/tenant-1"),
+      makeRequest("http://localhost:3006/api/super/org-app-access/tenant-1"),
       PARAMS,
     );
     expect(res.status).toBe(401);
@@ -45,7 +45,7 @@ describe("GET /api/super/tenant-app-access/[tenantId]", () => {
   it("returns 403 for non-super-admin", async () => {
     setSession(REGULAR_USER);
     const res = await GET(
-      makeRequest("http://localhost:3006/api/super/tenant-app-access/tenant-1"),
+      makeRequest("http://localhost:3006/api/super/org-app-access/tenant-1"),
       PARAMS,
     );
     expect(res.status).toBe(403);
@@ -53,7 +53,7 @@ describe("GET /api/super/tenant-app-access/[tenantId]", () => {
 
   it("returns app access list on success", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({
+    mockDb.org.findUnique.mockResolvedValue({
       id: "tenant-1",
       name: "Acme",
       slug: "acme",
@@ -67,10 +67,10 @@ describe("GET /api/super/tenant-app-access/[tenantId]", () => {
         iconUrl: null,
       },
     ] as never);
-    mockDb.tenantAppAccess.findMany.mockResolvedValue([] as never);
+    mockDb.orgAppAccess.findMany.mockResolvedValue([] as never);
 
     const res = await GET(
-      makeRequest("http://localhost:3006/api/super/tenant-app-access/tenant-1"),
+      makeRequest("http://localhost:3006/api/super/org-app-access/tenant-1"),
       PARAMS,
     );
     expect(res.status).toBe(200);
@@ -81,9 +81,9 @@ describe("GET /api/super/tenant-app-access/[tenantId]", () => {
   });
 });
 
-// ─── POST /api/super/tenant-app-access/[tenantId] ────────────────────────────
+// ─── POST /api/super/org-app-access/[orgId] ────────────────────────────
 
-describe("POST /api/super/tenant-app-access/[tenantId]", () => {
+describe("POST /api/super/org-app-access/[orgId]", () => {
   beforeEach(() => {
     resetMockDb();
   });
@@ -91,7 +91,7 @@ describe("POST /api/super/tenant-app-access/[tenantId]", () => {
   it("returns 403 for non-super-admin", async () => {
     setSession(REGULAR_USER);
     const res = await POST(
-      makeRequest("http://localhost:3006/api/super/tenant-app-access/tenant-1", {
+      makeRequest("http://localhost:3006/api/super/org-app-access/tenant-1", {
         method: "POST",
         body: JSON.stringify({ appId: "app-1", enabled: false }),
       }),
@@ -103,7 +103,7 @@ describe("POST /api/super/tenant-app-access/[tenantId]", () => {
   it("returns 400 for invalid body (missing appId/enabled)", async () => {
     setSession(SUPER_ADMIN);
     const res = await POST(
-      makeRequest("http://localhost:3006/api/super/tenant-app-access/tenant-1", {
+      makeRequest("http://localhost:3006/api/super/org-app-access/tenant-1", {
         method: "POST",
         body: JSON.stringify({}),
       }),
@@ -116,16 +116,16 @@ describe("POST /api/super/tenant-app-access/[tenantId]", () => {
 
   it("enables access and returns 200 (deletes sparse row)", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({ id: "tenant-1", name: "Acme" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "tenant-1", name: "Acme" } as never);
     mockDb.app.findUnique.mockResolvedValue({
       id: "app-1",
       slug: "quikscale",
       name: "QuikScale",
     } as never);
-    mockDb.tenantAppAccess.findUnique.mockResolvedValue(null as never);
+    mockDb.orgAppAccess.findUnique.mockResolvedValue(null as never);
 
     const res = await POST(
-      makeRequest("http://localhost:3006/api/super/tenant-app-access/tenant-1", {
+      makeRequest("http://localhost:3006/api/super/org-app-access/tenant-1", {
         method: "POST",
         body: JSON.stringify({ appId: "app-1", enabled: true }),
       }),
@@ -139,15 +139,15 @@ describe("POST /api/super/tenant-app-access/[tenantId]", () => {
 
   it("blocks access (enabled=false) and returns 200 via upsert", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({ id: "tenant-1", name: "Acme" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "tenant-1", name: "Acme" } as never);
     mockDb.app.findUnique.mockResolvedValue({
       id: "app-1",
       slug: "quikscale",
       name: "QuikScale",
     } as never);
-    mockDb.tenantAppAccess.findUnique.mockResolvedValue(null as never);
+    mockDb.orgAppAccess.findUnique.mockResolvedValue(null as never);
     const now = new Date();
-    mockDb.tenantAppAccess.upsert.mockResolvedValue({
+    mockDb.orgAppAccess.upsert.mockResolvedValue({
       id: "taa-1",
       enabled: false,
       reason: "billing",
@@ -155,7 +155,7 @@ describe("POST /api/super/tenant-app-access/[tenantId]", () => {
     } as never);
 
     const res = await POST(
-      makeRequest("http://localhost:3006/api/super/tenant-app-access/tenant-1", {
+      makeRequest("http://localhost:3006/api/super/org-app-access/tenant-1", {
         method: "POST",
         body: JSON.stringify({ appId: "app-1", enabled: false, reason: "billing" }),
       }),

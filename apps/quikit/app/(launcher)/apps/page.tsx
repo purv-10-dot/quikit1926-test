@@ -60,7 +60,7 @@ interface AppInfo {
 }
 
 interface OrgInfo {
-  tenantId: string;
+  orgId: string;
   name: string;
   slug: string;
   role: string;
@@ -117,12 +117,12 @@ export default function AppLauncherPage() {
           const active = j.data.filter((o: { status: string }) => o.status === "active");
           setOrgs(active);
           // Auto-select first org (or the one from session)
-          const sessionTenantId = session?.user?.tenantId;
-          const match = active.find((o: OrgInfo) => o.tenantId === sessionTenantId);
+          const sessionOrgId = session?.user?.orgId;
+          const match = active.find((o: OrgInfo) => o.orgId === sessionOrgId);
           setSelectedOrg(match ?? active[0] ?? null);
           // Update session if needed
-          if (active[0] && !sessionTenantId) {
-            selectOrgInSession(active[0].tenantId, active[0].role);
+          if (active[0] && !sessionOrgId) {
+            selectOrgInSession(active[0].orgId, active[0].role);
           }
         }
       })
@@ -130,24 +130,27 @@ export default function AppLauncherPage() {
       .finally(() => setLoadingOrgs(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load apps whenever selectedOrg changes
+  // Load apps whenever selectedOrg changes. Pass orgId as query param so the
+  // API doesn't depend on the JWT cookie (NextAuth's session.update from the
+  // dropdown is async — cookie may not be re-issued by the time this fires).
   useEffect(() => {
+    if (!selectedOrg?.orgId) return;
     setLoadingApps(true);
-    fetch("/api/apps/launcher")
+    fetch(`/api/apps/launcher?orgId=${encodeURIComponent(selectedOrg.orgId)}`)
       .then((r) => r.json())
       .then((j) => { if (j.success) setApps(j.data); })
       .catch(() => {})
       .finally(() => setLoadingApps(false));
-  }, [selectedOrg?.tenantId]);
+  }, [selectedOrg?.orgId]);
 
-  async function selectOrgInSession(tenantId: string, role: string) {
+  async function selectOrgInSession(orgId: string, role: string) {
     try {
       await fetch("/api/org/select", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId }),
+        body: JSON.stringify({ orgId }),
       });
-      await update({ tenantId, membershipRole: role });
+      await update({ orgId, membershipRole: role });
     } catch {
       // Session update is best-effort
     }
@@ -156,7 +159,7 @@ export default function AppLauncherPage() {
   async function switchOrg(org: OrgInfo) {
     setSelectedOrg(org);
     setOrgDropdownOpen(false);
-    await selectOrgInSession(org.tenantId, org.role);
+    await selectOrgInSession(org.orgId, org.role);
   }
 
   function handleLaunch(app: AppInfo) {
@@ -172,8 +175,10 @@ export default function AppLauncherPage() {
 
   return (
     <SpotlightBackground>
-      {/* Header — dark glass-on-spotlight */}
-      <header className="bg-zinc-950/40 backdrop-blur-md border-b border-white/5">
+      {/* Header — dark glass-on-spotlight. relative z-50 so dropdown menus inside
+          the header stack above the main app-grid (FlipCards create their own
+          stacking context via transform). */}
+      <header className="relative z-50 bg-zinc-950/40 backdrop-blur-md border-b border-white/5">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-5">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3">
@@ -214,10 +219,10 @@ export default function AppLauncherPage() {
                       <div className="absolute right-0 top-full mt-1 z-[1000] bg-zinc-900/95 border border-white/10 backdrop-blur-md rounded-xl shadow-2xl w-64 py-1">
                         {orgs.map((org) => (
                           <button
-                            key={org.tenantId}
+                            key={org.orgId}
                             onClick={() => switchOrg(org)}
                             className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors ${
-                              selectedOrg?.tenantId === org.tenantId ? "bg-indigo-500/10" : ""
+                              selectedOrg?.orgId === org.orgId ? "bg-indigo-500/10" : ""
                             }`}
                           >
                             <Building2 className="h-4 w-4 text-zinc-400 flex-shrink-0" />
@@ -225,7 +230,7 @@ export default function AppLauncherPage() {
                               <p className="text-sm font-medium text-zinc-100 truncate">{org.name}</p>
                               <p className="text-[10px] text-zinc-500 uppercase">{org.role} · {org.plan}</p>
                             </div>
-                            {selectedOrg?.tenantId === org.tenantId && (
+                            {selectedOrg?.orgId === org.orgId && (
                               <CheckCircle2 className="h-4 w-4 text-indigo-400 flex-shrink-0" />
                             )}
                           </button>

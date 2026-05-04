@@ -21,7 +21,7 @@ const nextConfig = {
 
   experimental: {
     serverActions: {
-      allowedOrigins: ["localhost:3004"],
+      allowedOrigins: ["localhost:3002"],
     },
     // Phase 4: Enable optimized package imports for heavy deps
     optimizePackageImports: ["lucide-react", "@tanstack/react-query"],

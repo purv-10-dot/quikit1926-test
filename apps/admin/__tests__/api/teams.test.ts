@@ -25,11 +25,11 @@ function buildRequest(method: string, url: string, body?: object): NextRequest {
 const routeContext = { params: { id: TEAM_ID } };
 
 function asAuthedAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -93,7 +93,7 @@ describe("GET /api/teams (list)", () => {
     expect(body.data[0].headName).toBe("Head Person");
   });
 
-  it("filters by tenantId (tenant isolation)", async () => {
+  it("filters by orgId (tenant isolation)", async () => {
     asAuthedAdmin();
 
     mockDb.team.findMany.mockResolvedValue([]);
@@ -103,7 +103,7 @@ describe("GET /api/teams (list)", () => {
     await LIST(buildRequest("GET", "/api/teams"));
 
     const findManyCall = mockDb.team.findMany.mock.calls[0]?.[0] as any;
-    expect(findManyCall.where.tenantId).toBe(TENANT);
+    expect(findManyCall.where.orgId).toBe(TENANT);
   });
 });
 
@@ -149,7 +149,7 @@ describe("POST /api/teams", () => {
     const now = new Date();
     mockDb.team.create.mockResolvedValue({
       id: "t-new",
-      tenantId: TENANT,
+      orgId: TENANT,
       name: "New Team",
       description: null,
       slug: "new-team-123",
@@ -250,7 +250,7 @@ describe("PATCH /api/teams/[id]", () => {
     mockDb.team.findFirst.mockResolvedValue({
       id: TEAM_ID,
       name: "Engineering",
-      tenantId: TENANT,
+      orgId: TENANT,
     } as any);
 
     const res = await PATCH(
@@ -270,14 +270,14 @@ describe("PATCH /api/teams/[id]", () => {
       .mockResolvedValueOnce({
         id: TEAM_ID,
         name: "Engineering",
-        tenantId: TENANT,
+        orgId: TENANT,
       } as any)
       .mockResolvedValueOnce(null); // no duplicate name
 
     mockDb.team.update.mockResolvedValue({
       id: TEAM_ID,
       name: "Engineering v2",
-      tenantId: TENANT,
+      orgId: TENANT,
     } as any);
 
     const res = await PATCH(
@@ -318,7 +318,7 @@ describe("DELETE /api/teams/[id]", () => {
     asAuthedAdmin();
     mockDb.team.findFirst.mockResolvedValue({
       id: TEAM_ID,
-      tenantId: TENANT,
+      orgId: TENANT,
       _count: { userTeams: 3, childTeams: 2 },
     } as any);
 
@@ -335,11 +335,11 @@ describe("DELETE /api/teams/[id]", () => {
     asAuthedAdmin();
     mockDb.team.findFirst.mockResolvedValue({
       id: TEAM_ID,
-      tenantId: TENANT,
+      orgId: TENANT,
       _count: { userTeams: 1, childTeams: 0 },
     } as any);
     mockDb.userTeam.deleteMany.mockResolvedValue({ count: 1 } as any);
-    mockDb.membership.updateMany.mockResolvedValue({ count: 0 } as any);
+    mockDb.orgMember.updateMany.mockResolvedValue({ count: 0 } as any);
     mockDb.team.delete.mockResolvedValue({ id: TEAM_ID } as any);
 
     const res = await DELETE(

@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { companyCreateSchema } from "@/lib/schemas/masters";
 
-const withTenantAuth = withTenantAuthForModule("masters");
+const withOrgAuth = withOrgAuthForModule("masters");
 
 // GET /api/masters/companies — list tenant's companies (active only by default)
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const companies = await db.cnCompany.findMany({
     where: {
-      tenantId,
+      orgId,
       deletedAt: includeDeleted ? { not: null } : null,
     },
     orderBy: { name: "asc" },
@@ -19,13 +19,13 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
 });
 
 // POST /api/masters/companies — create
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = companyCreateSchema.parse(body);
   const company = await db.cnCompany.create({
     data: {
       ...input,
-      tenantId,
+      orgId,
       createdBy: userId,
     },
   });
