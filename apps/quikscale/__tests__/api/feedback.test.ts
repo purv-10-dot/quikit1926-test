@@ -24,11 +24,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -59,7 +59,7 @@ describe("GET /api/performance/feedback — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(403);
@@ -99,7 +99,7 @@ describe("GET /api/performance/feedback — happy path", () => {
     // Verify tenant isolation
     expect(mockDb.feedbackEntry.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: TENANT }),
+        where: expect.objectContaining({ orgId: TENANT }),
       }),
     );
   });
@@ -130,7 +130,7 @@ describe("POST /api/performance/feedback — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST(validBody), { params: {} as any });
     expect(res.status).toBe(403);
@@ -203,7 +203,7 @@ describe("POST /api/performance/feedback — recipient membership", () => {
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
@@ -228,7 +228,7 @@ describe("POST /api/performance/feedback — happy path", () => {
     mockDb.membership.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);

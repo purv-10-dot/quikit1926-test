@@ -5,12 +5,12 @@ import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { updateTeamSchema } from "@/lib/schemas/teamSchema";
 
-export const GET = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
-  const blocked = await gateModuleApi("admin", "teams", tenantId);
+export const GET = withAdminAuth<{ id: string }>(async ({ orgId }, _request, { params }) => {
+  const blocked = await gateModuleApi("admin", "teams", orgId);
   if (blocked) return blocked as NextResponse;
 
   const team = await db.team.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     include: {
       userTeams: {
         include: {
@@ -66,12 +66,12 @@ export const GET = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, 
   });
 });
 
-export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request: NextRequest, { params }) => {
-  const blocked = await gateModuleApi("admin", "teams", tenantId);
+export const PATCH = withAdminAuth<{ id: string }>(async ({ orgId }, request: NextRequest, { params }) => {
+  const blocked = await gateModuleApi("admin", "teams", orgId);
   if (blocked) return blocked as NextResponse;
 
   const team = await db.team.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
   });
 
   if (!team) {
@@ -93,7 +93,7 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request:
   if (name && name.toLowerCase() !== team.name.toLowerCase()) {
     const existing = await db.team.findFirst({
       where: {
-        tenantId,
+        orgId,
         name: { equals: name, mode: "insensitive" },
         id: { not: team.id },
       },
@@ -129,12 +129,12 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request:
   return NextResponse.json({ success: true, data: updated });
 });
 
-export const DELETE = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
-  const blocked = await gateModuleApi("admin", "teams", tenantId);
+export const DELETE = withAdminAuth<{ id: string }>(async ({ orgId }, _request, { params }) => {
+  const blocked = await gateModuleApi("admin", "teams", orgId);
   if (blocked) return blocked as NextResponse;
 
   const team = await db.team.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     include: { _count: { select: { userTeams: true, childTeams: true } } },
   });
 
@@ -150,9 +150,9 @@ export const DELETE = withAdminAuth<{ id: string }>(async ({ tenantId }, _reques
   }
 
   // Remove team member associations, then delete team
-  await db.userTeam.deleteMany({ where: { teamId: params.id, tenantId } });
+  await db.userTeam.deleteMany({ where: { teamId: params.id, orgId } });
   await db.membership.updateMany({
-    where: { teamId: params.id, tenantId },
+    where: { teamId: params.id, orgId },
     data: { teamId: null },
   });
   await db.team.delete({ where: { id: params.id } });

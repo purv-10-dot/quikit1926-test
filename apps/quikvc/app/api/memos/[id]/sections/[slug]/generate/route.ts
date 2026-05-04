@@ -17,7 +17,7 @@ import {
 
 export const POST = withTenantAuth(
   async (
-    { tenantId },
+    { orgId },
     _req: NextRequest,
     { params }: { params: { id: string; slug: string } },
   ) => {
@@ -32,7 +32,7 @@ export const POST = withTenantAuth(
     }
 
     const deal = await db.vCDeal.findFirst({
-      where: { id: dealId, tenantId },
+      where: { id: dealId, orgId },
       include: {
         application: {
           select: {
@@ -58,7 +58,7 @@ export const POST = withTenantAuth(
 
     // Resolve criterion names for the scores prompt section
     const criteria = await db.vCScoringCriterion.findMany({
-      where: { tenantId, verticalId: deal.verticalId },
+      where: { orgId, verticalId: deal.verticalId },
       select: { slug: true, name: true },
     });
     const slugToName = Object.fromEntries(criteria.map((c) => [c.slug, c.name]));

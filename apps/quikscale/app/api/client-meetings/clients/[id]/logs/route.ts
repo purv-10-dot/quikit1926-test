@@ -5,12 +5,12 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("clientMeetings.clients");
 
 /** GET /api/client-meetings/clients/[id]/logs — audit history for one Client. */
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
-  const client = await db.client.findFirst({ where: { id: params.id, tenantId }, select: { id: true } });
+export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+  const client = await db.client.findFirst({ where: { id: params.id, orgId }, select: { id: true } });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
 
   const logs = await db.auditLog.findMany({
-    where: { tenantId, entityType: "Client", entityId: params.id },
+    where: { orgId, entityType: "Client", entityId: params.id },
     orderBy: { createdAt: "desc" },
     select: { id: true, action: true, oldValues: true, newValues: true, actorId: true, reason: true, createdAt: true },
   });

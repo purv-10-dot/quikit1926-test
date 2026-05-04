@@ -1,5 +1,5 @@
 /**
- * Smoke tests — GET /api/super/analytics/tenant/[tenantId]
+ * Smoke tests — GET /api/super/analytics/tenant/[orgId]
  * Auth matrix, 404 on missing tenant, happy-path shape assertion.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -16,7 +16,7 @@ vi.mock("@/lib/email", () => ({
   sendOrgSuspendedEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { GET } from "@/app/api/super/analytics/tenant/[tenantId]/route";
+import { GET } from "@/app/api/super/analytics/tenant/[orgId]/route";
 
 function makeRequest() {
   return new NextRequest(
@@ -30,9 +30,9 @@ async function bodyOf(res: Response) {
 
 const SUPER_ADMIN = { id: "sa-1", email: "super@test.com", isSuperAdmin: true };
 const REGULAR_USER = { id: "user-1", email: "user@test.com", isSuperAdmin: false };
-const PARAMS = { params: { tenantId: "t-1" } };
+const PARAMS = { params: { orgId: "t-1" } };
 
-describe("GET /api/super/analytics/tenant/[tenantId]", () => {
+describe("GET /api/super/analytics/tenant/[orgId]", () => {
   beforeEach(() => {
     resetMockDb();
   });

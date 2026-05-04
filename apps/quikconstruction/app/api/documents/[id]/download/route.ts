@@ -5,8 +5,8 @@ import { readUpload } from "@/lib/storage";
 
 const withTenantAuth = withTenantAuthForModule("documents");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
-  const doc = await db.cnDocument.findFirst({ where: { id: params.id, tenantId, deletedAt: null } });
+export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+  const doc = await db.cnDocument.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
   if (!doc) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   try {
     const buf = await readUpload(doc.storagePath);

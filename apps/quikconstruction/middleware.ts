@@ -1,14 +1,16 @@
 import { createMiddleware } from "@quikit/auth/middleware";
 
 /**
- * QuikConstruction middleware — same pattern as admin app.
- * When QUIKIT_URL + client creds are set, auth runs in OAuth2-client mode
- * (session bridged from QuikIT launcher); otherwise falls back to direct
- * credentials login against the shared User table.
+ * QuikConstruction — OAuth client or central auth URL when configured.
  */
+const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
+
 export const middleware = createMiddleware({
   loginRoute: "/login",
+  selectOrgRoute: "/select-org",
   publicRoutes: ["/login", "/select-org"],
+  centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
+  centralSelectOrgUrl: AUTH_URL ? `${AUTH_URL}/select-org` : undefined,
 });
 
 export const config = {

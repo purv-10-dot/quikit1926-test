@@ -10,11 +10,11 @@ const withTenantAuth = withTenantAuthForModule("finance");
  * into a client invoice. Snapshots customer from project.clientId. RAB must be
  * status=approved (or paid) and not already invoiced.
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req, ctx: { params: { rabId: string } }) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req, ctx: { params: { rabId: string } }) => {
   const input = invoiceFromRabSchema.parse(await req.json());
 
   const rab = await db.cnRAB.findFirst({
-    where: { id: ctx.params.rabId, tenantId, deletedAt: null },
+    where: { id: ctx.params.rabId, orgId, deletedAt: null },
     include: { project: { select: { id: true, clientId: true } }, invoices: { select: { id: true }, where: { deletedAt: null } } },
   });
   if (!rab) return NextResponse.json({ success: false, error: "RAB not found" }, { status: 404 });
@@ -28,12 +28,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req, ctx: { para
     return NextResponse.json({ success: false, error: "Project has no client set" }, { status: 400 });
   }
 
-  const dup = await db.cnClientInvoice.findFirst({ where: { tenantId, invoiceNumber: input.invoiceNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnClientInvoice.findFirst({ where: { orgId, invoiceNumber: input.invoiceNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Invoice '${input.invoiceNumber}' already exists` }, { status: 409 });
 
   const invoice = await db.cnClientInvoice.create({
     data: {
-      tenantId,
+      orgId,
       invoiceNumber: input.invoiceNumber,
       customerId: rab.project.clientId,
       projectId: rab.projectId,

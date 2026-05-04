@@ -11,7 +11,7 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.weeklyMeeting");
  * the Update tab (image 1).
  */
 export const PATCH = withTenantAuth<{ id: string; userId: string }>(
-  async ({ tenantId, userId: actorId }, request, { params }) => {
+  async ({ orgId, userId: actorId }, request, { params }) => {
     const parsed = updateMemberScoreSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -24,7 +24,7 @@ export const PATCH = withTenantAuth<{ id: string; userId: string }>(
     }
 
     const meeting = await db.clientWeeklyMeeting.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, orgId, deletedAt: null },
       select: { id: true },
     });
     if (!meeting) {
@@ -69,7 +69,7 @@ export const PATCH = withTenantAuth<{ id: string; userId: string }>(
 
     await db.clientWeeklyMeetingLog.create({
       data: {
-        tenantId,
+        orgId,
         meetingId: params.id,
         action: "SCORE_UPDATE",
         newValue: JSON.stringify({

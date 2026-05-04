@@ -12,7 +12,7 @@ export type TestUser = {
   email?: string;
   name?: string;
   isSuperAdmin?: boolean;
-  tenantId?: string;
+  orgId?: string;
   role?: string;
 };
 

@@ -43,7 +43,7 @@ export function normalizePathPattern(path: string): string {
 }
 
 export interface LogApiCallParams {
-  tenantId?: string | null;
+  orgId?: string | null;
   userId?: string | null;
   appSlug: string;
   method: string;
@@ -68,7 +68,7 @@ export async function logApiCall(params: LogApiCallParams): Promise<void> {
   try {
     await db.apiCall.create({
       data: {
-        tenantId: params.tenantId ?? null,
+        orgId: params.orgId ?? null,
         userId: params.userId ?? null,
         appSlug: params.appSlug,
         method: params.method,

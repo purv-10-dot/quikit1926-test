@@ -22,11 +22,11 @@ function buildPATCH(path: string, body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -48,7 +48,7 @@ describe("GET /api/settings/company — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await CompanyGET(buildGET("company"), { params: {} as any });
     expect(res.status).toBe(403);
@@ -149,7 +149,7 @@ describe("GET /api/settings/profile — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await ProfileGET(buildGET("profile"), { params: {} as any });
     expect(res.status).toBe(403);
@@ -179,7 +179,7 @@ describe("GET /api/settings/profile — happy path", () => {
     mockDb.membership.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);

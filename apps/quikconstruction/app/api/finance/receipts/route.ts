@@ -5,11 +5,11 @@ import { receiptCreateSchema } from "@/lib/schemas/finance";
 
 const withTenantAuth = withTenantAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const customerId = req.nextUrl.searchParams.get("customerId") || undefined;
   const list = await db.cnClientReceipt.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null, ...(customerId ? { customerId } : {}) },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null, ...(customerId ? { customerId } : {}) },
     include: {
       customer: { select: { id: true, name: true, code: true } },
       _count: { select: { allocations: true } },
@@ -29,13 +29,13 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
  *   4. Create receipt + allocations
  *   5. For each invoice: increment paidAmount, update status (partial/paid)
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const input = receiptCreateSchema.parse(await req.json());
 
-  const dup = await db.cnClientReceipt.findFirst({ where: { tenantId, receiptNumber: input.receiptNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnClientReceipt.findFirst({ where: { orgId, receiptNumber: input.receiptNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Receipt '${input.receiptNumber}' already exists` }, { status: 409 });
 
-  const customer = await db.cnCustomer.findFirst({ where: { id: input.customerId, tenantId }, select: { id: true } });
+  const customer = await db.cnCustomer.findFirst({ where: { id: input.customerId, orgId }, select: { id: true } });
   if (!customer) return NextResponse.json({ success: false, error: "Customer not found" }, { status: 400 });
 
   const allocTotal = input.allocations.reduce((s, a) => s + a.amount, 0);
@@ -47,7 +47,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
     // Validate invoices
     for (const a of input.allocations) {
       const inv = await tx.cnClientInvoice.findFirst({
-        where: { id: a.invoiceId, tenantId, customerId: input.customerId, deletedAt: null },
+        where: { id: a.invoiceId, orgId, customerId: input.customerId, deletedAt: null },
         select: { id: true, total: true, paidAmount: true, status: true },
       });
       if (!inv) throw new Error(`Invoice ${a.invoiceId} not found or customer mismatch`);
@@ -58,7 +58,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
     const receipt = await tx.cnClientReceipt.create({
       data: {
-        tenantId,
+        orgId,
         receiptNumber: input.receiptNumber,
         customerId: input.customerId,
         receiptDate: new Date(input.receiptDate),

@@ -69,7 +69,7 @@ export function createSessionGuard(config: SessionGuardConfig = {}) {
         if (!data.valid) { await handleInvalid(data.reason); return; }
         const updated = await update();
         if (updated?.user?.membershipInvalid) await handleInvalid("deactivated");
-        else if (updated && !updated.user?.tenantId) router.push("/select-org");
+        else if (updated && !updated.user?.orgId) router.push("/select-org");
       }
       intervalRef.current = setInterval(poll, jitteredInterval());
       return () => { if (intervalRef.current) clearInterval(intervalRef.current); };

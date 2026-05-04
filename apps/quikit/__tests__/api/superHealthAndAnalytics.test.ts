@@ -12,7 +12,7 @@ vi.mock("@/lib/email", () => ({
   sendOrgSuspendedEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { GET as HEALTH_GET } from "@/app/api/super/tenant-health/[tenantId]/route";
+import { GET as HEALTH_GET } from "@/app/api/super/tenant-health/[orgId]/route";
 import { GET as OVERVIEW_GET } from "@/app/api/super/analytics/overview/route";
 
 function makeRequest(url: string) {
@@ -25,11 +25,11 @@ async function bodyOf(res: Response) {
 
 const SUPER_ADMIN = { id: "sa-1", email: "super@test.com", isSuperAdmin: true };
 const REGULAR_USER = { id: "user-1", email: "user@test.com", isSuperAdmin: false };
-const HEALTH_PARAMS = { params: { tenantId: "tenant-1" } };
+const HEALTH_PARAMS = { params: { orgId: "tenant-1" } };
 
-// ─── GET /api/super/tenant-health/[tenantId] ─────────────────────────────────
+// ─── GET /api/super/tenant-health/[orgId] ─────────────────────────────────
 
-describe("GET /api/super/tenant-health/[tenantId]", () => {
+describe("GET /api/super/tenant-health/[orgId]", () => {
   beforeEach(() => {
     resetMockDb();
   });
@@ -166,7 +166,7 @@ describe("GET /api/super/analytics/overview", () => {
     mockDb.tenant.findMany.mockResolvedValue([] as never);
     (mockDb.sessionEvent.groupBy as unknown as {
       mockResolvedValue: (v: unknown) => void;
-    }).mockResolvedValue([{ tenantId: "tenant-1", _count: { userId: 5 } }]);
+    }).mockResolvedValue([{ orgId: "tenant-1", _count: { userId: 5 } }]);
 
     const res = await OVERVIEW_GET(
       makeRequest("http://localhost:3006/api/super/analytics/overview"),

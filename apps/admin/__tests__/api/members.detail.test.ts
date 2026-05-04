@@ -20,11 +20,11 @@ function buildRequest(method: string, url: string, body?: object): NextRequest {
 const routeContext = { params: { id: MEMBER_ID } };
 
 function asAuthedAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -55,7 +55,7 @@ describe("GET /api/members/[id]", () => {
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
@@ -79,14 +79,14 @@ describe("GET /api/members/[id]", () => {
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
       .mockResolvedValueOnce({
         id: MEMBER_ID,
         userId: "u2",
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "employee",
         status: "active",
         customPermissions: {},
@@ -147,7 +147,7 @@ describe("PATCH /api/members/[id]", () => {
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
@@ -166,14 +166,14 @@ describe("PATCH /api/members/[id]", () => {
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
       .mockResolvedValueOnce({
         id: MEMBER_ID,
         userId: "u2",
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "employee",
         status: "active",
       } as any);
@@ -191,14 +191,14 @@ describe("PATCH /api/members/[id]", () => {
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
       .mockResolvedValueOnce({
         id: MEMBER_ID,
         userId: "u2",
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "employee",
         status: "active",
       } as any);
@@ -238,7 +238,7 @@ describe("DELETE /api/members/[id]", () => {
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
@@ -257,14 +257,14 @@ describe("DELETE /api/members/[id]", () => {
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
       .mockResolvedValueOnce({
         id: MEMBER_ID,
         userId: "u2",
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "employee",
         status: "active",
       } as any);

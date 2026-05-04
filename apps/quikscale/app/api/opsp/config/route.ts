@@ -13,16 +13,16 @@ const withTenantAuth = withTenantAuthForModule("opsp");
  * - hasSetup: whether any OPSP record exists (wizard completed)
  * - fiscalYearStart: tenant setting
  */
-export const GET = withTenantAuth(async ({ tenantId, userId }) => {
+export const GET = withTenantAuth(async ({ orgId, userId }) => {
   const tenant = await db.tenant.findUnique({
-    where: { id: tenantId },
+    where: { id: orgId },
     select: { fiscalYearStart: true },
   });
   const fiscalYearStart = tenant?.fiscalYearStart ?? 1;
 
   // Find the earliest OPSP record for this user in this tenant
   const earliest = await db.oPSPData.findFirst({
-    where: { tenantId, userId },
+    where: { orgId, userId },
     orderBy: [{ year: "asc" }, { quarter: "asc" }],
     select: { year: true, quarter: true, targetYears: true },
   });
@@ -48,7 +48,7 @@ export const GET = withTenantAuth(async ({ tenantId, userId }) => {
   // List of "{year}:{quarter}" keys that have been review-submitted.
   // Drives the quarter unlock logic in the OPSP create page.
   const reviewed = await db.oPSPData.findMany({
-    where: { tenantId, userId, status: "reviewed" },
+    where: { orgId, userId, status: "reviewed" },
     select: { year: true, quarter: true },
   });
   const reviewedQuarters = reviewed.map((r) => `${r.year}:${r.quarter}`);

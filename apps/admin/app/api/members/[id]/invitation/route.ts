@@ -5,14 +5,14 @@ import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 
 export const DELETE = withAdminAuth<{ id: string }>(
-  async ({ tenantId, userId: actorId }, request: NextRequest, { params }) => {
-    const blocked = await gateModuleApi("admin", "members", tenantId);
+  async ({ orgId, userId: actorId }, request: NextRequest, { params }) => {
+    const blocked = await gateModuleApi("admin", "members", orgId);
     if (blocked) return blocked as NextResponse;
 
     const membershipId = params.id;
 
     const membership = await db.membership.findFirst({
-      where: { id: membershipId, tenantId, status: "invited" },
+      where: { id: membershipId, orgId, status: "invited" },
       include: { user: { select: { email: true } } },
     });
 
@@ -26,7 +26,7 @@ export const DELETE = withAdminAuth<{ id: string }>(
     await db.membership.delete({ where: { id: membershipId } });
 
     await writeAuditLog({
-      tenantId,
+      orgId,
       actorId,
       action: "REVOKED",
       entityType: "Membership",

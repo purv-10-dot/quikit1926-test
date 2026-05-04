@@ -5,12 +5,12 @@ import { financialYearCreateSchema } from "@/lib/schemas/masters-phase2";
 
 const withTenantAuth = withTenantAuthForModule("masters");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const companyId = req.nextUrl.searchParams.get("companyId") || undefined;
   const years = await db.cnFinancialYear.findMany({
     where: {
-      tenantId,
+      orgId,
       deletedAt: includeDeleted ? { not: null } : null,
       ...(companyId ? { companyId } : {}),
     },
@@ -20,18 +20,18 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: years });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = financialYearCreateSchema.parse(body);
   const company = await db.cnCompany.findFirst({
-    where: { id: input.companyId, tenantId },
+    where: { id: input.companyId, orgId },
     select: { id: true },
   });
   if (!company) {
     return NextResponse.json({ success: false, error: "Company not found" }, { status: 400 });
   }
   const conflict = await db.cnFinancialYear.findFirst({
-    where: { tenantId, companyId: input.companyId, label: input.label, deletedAt: null },
+    where: { orgId, companyId: input.companyId, label: input.label, deletedAt: null },
     select: { id: true },
   });
   if (conflict) {
@@ -44,7 +44,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const created = await db.$transaction(async (tx) => {
     if (input.isCurrent) {
       await tx.cnFinancialYear.updateMany({
-        where: { tenantId, companyId: input.companyId, isCurrent: true },
+        where: { orgId, companyId: input.companyId, isCurrent: true },
         data: { isCurrent: false },
       });
     }
@@ -53,7 +53,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
         ...input,
         startDate: new Date(input.startDate),
         endDate: new Date(input.endDate),
-        tenantId,
+        orgId,
         createdBy: userId,
       },
     });

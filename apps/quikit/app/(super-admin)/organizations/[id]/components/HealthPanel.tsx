@@ -39,16 +39,16 @@ function scoreColor(score: number) {
   return { bg: "bg-red-50", text: "text-red-700", ring: "ring-red-500" };
 }
 
-export function HealthPanel({ tenantId }: { tenantId: string }) {
+export function HealthPanel({ orgId }: { orgId: string }) {
   const [data, setData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useOnceEffect(() => {
-    fetch(`/api/super/tenant-health/${tenantId}`)
+    fetch(`/api/super/tenant-health/${orgId}`)
       .then((r) => r.json())
       .then((j) => j.success && setData(j.data))
       .finally(() => setLoading(false));
-  }, [tenantId]);
+  }, [orgId]);
 
   if (loading) return <div className="text-gray-400 text-sm">Loading health...</div>;
   if (!data) return null;

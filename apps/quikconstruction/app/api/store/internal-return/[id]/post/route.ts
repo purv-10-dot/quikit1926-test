@@ -9,9 +9,9 @@ const withTenantAuth = withTenantAuthForModule("store");
  * location. No upstream balance check needed — adding to stock can't go
  * negative. transactionType = "return_internal".
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const ret = await db.cnInternalReturn.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },
   });
   if (!ret) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -23,7 +23,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
       for (const line of ret.lines) {
         await tx.cnStockLedger.create({
           data: {
-            tenantId,
+            orgId,
             projectId: ret.projectId,
             locationId: ret.locationId,
             itemId: line.itemId,

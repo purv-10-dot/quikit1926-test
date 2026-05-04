@@ -28,3 +28,4 @@ packages/database/.env.tmp
 #   ~/Desktop/...  → Category C: external shareables (kits, zips, exports)
 # ────────────────────────────────────────────────────────────────────────────
 /_internal/
+graphify-out/

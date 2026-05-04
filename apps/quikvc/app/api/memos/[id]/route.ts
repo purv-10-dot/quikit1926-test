@@ -27,7 +27,7 @@ const patchSchema = z.object({
 });
 
 export const GET = withTenantAuth(
-  async ({ tenantId }, _req: NextRequest, { params }: { params: { id: string } }) => {
+  async ({ orgId }, _req: NextRequest, { params }: { params: { id: string } }) => {
     const dealId = params.id;
     const memo = await db.vCICMemo.findUnique({
       where: { dealId },
@@ -57,14 +57,14 @@ export const GET = withTenantAuth(
     }
 
     // tenant scoping check
-    if (memo.tenantId !== tenantId) {
+    if (memo.orgId !== orgId) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
 
     const sections = (memo.currentVersion?.sections as unknown as MemoSection[]) ?? [];
 
     const versionList = await db.vCICMemoVersion.findMany({
-      where: { memoId: memo.id, tenantId },
+      where: { memoId: memo.id, orgId },
       select: { id: true, version: true, source: true, changeNote: true, createdAt: true },
       orderBy: { version: "desc" },
       take: 20,
@@ -84,7 +84,7 @@ export const GET = withTenantAuth(
 );
 
 export const PATCH = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const dealId = params.id;
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -94,7 +94,7 @@ export const PATCH = withTenantAuth(
       );
     }
 
-    const deal = await db.vCDeal.findFirst({ where: { id: dealId, tenantId } });
+    const deal = await db.vCDeal.findFirst({ where: { id: dealId, orgId } });
     if (!deal) return NextResponse.json({ success: false, error: "Deal not found" }, { status: 404 });
 
     const sectionsPayload: MemoSectionsPayload = { sections: parsed.data.sections };
@@ -104,7 +104,7 @@ export const PATCH = withTenantAuth(
       let memo = await tx.vCICMemo.findUnique({ where: { dealId } });
       if (!memo) {
         memo = await tx.vCICMemo.create({
-          data: { tenantId, dealId, status: "draft", createdBy: userId, updatedBy: userId },
+          data: { orgId, dealId, status: "draft", createdBy: userId, updatedBy: userId },
         });
       }
       if (memo.status === "frozen") {
@@ -121,7 +121,7 @@ export const PATCH = withTenantAuth(
 
       const created = await tx.vCICMemoVersion.create({
         data: {
-          tenantId,
+          orgId,
           memoId: memo.id,
           version: nextVersion,
           sections: sectionsPayload.sections as unknown as object,
@@ -138,7 +138,7 @@ export const PATCH = withTenantAuth(
 
       await tx.vCTimelineEvent.create({
         data: {
-          tenantId,
+          orgId,
           dealId,
           type: "memo-saved",
           actorId: userId,

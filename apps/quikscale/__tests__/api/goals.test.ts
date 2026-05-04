@@ -25,11 +25,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -60,7 +60,7 @@ describe("GET /api/performance/goals — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(403);
@@ -107,7 +107,7 @@ describe("GET /api/performance/goals — happy path", () => {
     // Verify tenant isolation
     expect(mockDb.goal.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: TENANT }),
+        where: expect.objectContaining({ orgId: TENANT }),
       }),
     );
   });
@@ -124,7 +124,7 @@ describe("POST /api/performance/goals — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST(validBody), { params: {} as any });
     expect(res.status).toBe(403);
@@ -181,7 +181,7 @@ describe("POST /api/performance/goals — owner membership", () => {
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "admin",
         status: "active",
       } as any)
@@ -206,7 +206,7 @@ describe("POST /api/performance/goals — parentGoalId validation", () => {
     mockDb.membership.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
@@ -235,7 +235,7 @@ describe("POST /api/performance/goals — happy path", () => {
     mockDb.membership.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
@@ -262,7 +262,7 @@ describe("POST /api/performance/goals — happy path", () => {
     mockDb.membership.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
@@ -284,7 +284,7 @@ describe("POST /api/performance/goals — happy path", () => {
 
     const createArg = (mockDb.goal.create as any).mock.calls[0][0];
     expect(createArg.data.progressPercent).toBe(50);
-    expect(createArg.data.tenantId).toBe(TENANT);
+    expect(createArg.data.orgId).toBe(TENANT);
     expect(createArg.data.createdBy).toBe(USER);
   });
 });

@@ -131,7 +131,7 @@ describe("POST /api/super/orgs/[id]/members", () => {
     mockDb.membership.findUnique.mockResolvedValue(null as never);
     mockDb.membership.upsert.mockResolvedValue({
       id: "m-new",
-      tenantId: "t-1",
+      orgId: "t-1",
       userId: "u-new",
       role: "member",
       status: "active",
@@ -155,7 +155,7 @@ describe("POST /api/super/orgs/[id]/members", () => {
       expect.objectContaining({
         action: "add_member",
         entityType: "membership",
-        tenantId: "t-1",
+        orgId: "t-1",
       }),
     );
     expect(sendMemberAddedEmail).toHaveBeenCalledWith({
@@ -178,7 +178,7 @@ describe("POST /api/super/orgs/[id]/members", () => {
     } as never);
     mockDb.membership.upsert.mockResolvedValue({
       id: "m-old",
-      tenantId: "t-1",
+      orgId: "t-1",
       userId: "u-existing",
       role: "admin",
       status: "active",

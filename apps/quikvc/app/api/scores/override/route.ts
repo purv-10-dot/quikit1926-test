@@ -20,7 +20,7 @@ const bodySchema = z.object({
   reason: z.string().max(2000).optional(),
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
   const parsed = bodySchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -39,7 +39,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   }
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: dealId, tenantId },
+    where: { id: dealId, orgId },
     select: { id: true, verticalId: true },
   });
   if (!deal) {
@@ -48,7 +48,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   await db.vCDealScore.upsert({
     where: {
-      tenantId_dealId_criterionSlug: { tenantId, dealId, criterionSlug },
+      orgId_dealId_criterionSlug: { orgId, dealId, criterionSlug },
     },
     update: {
       analystScore,
@@ -56,7 +56,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
       updatedBy: userId,
     },
     create: {
-      tenantId,
+      orgId,
       dealId,
       criterionSlug,
       aiScore: null,
@@ -70,11 +70,11 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   // Recompute composite — analystScore wins per row, falls back to aiScore.
   const [scores, criteria] = await Promise.all([
     db.vCDealScore.findMany({
-      where: { tenantId, dealId },
+      where: { orgId, dealId },
       select: { criterionSlug: true, aiScore: true, analystScore: true },
     }),
     db.vCScoringCriterion.findMany({
-      where: { tenantId, verticalId: deal.verticalId },
+      where: { orgId, verticalId: deal.verticalId },
       select: { slug: true, weight: true },
     }),
   ]);
@@ -107,7 +107,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
     }),
     db.vCTimelineEvent.create({
       data: {
-        tenantId,
+        orgId,
         dealId,
         type: "score-overridden",
         actorId: userId,

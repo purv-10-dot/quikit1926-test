@@ -15,13 +15,13 @@ export async function GET() {
     if (!session?.user?.id) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    const tenantId = await getTenantId(session.user.id);
-    if (!tenantId) {
+    const orgId = await getTenantId(session.user.id);
+    if (!orgId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
     const flags = await db.featureFlag.findMany({
-      where: { tenantId },
+      where: { orgId },
       select: { id: true, key: true, name: true, enabled: true, value: true },
     });
 
@@ -37,7 +37,7 @@ export async function PATCH(request: NextRequest) {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
 
-    const { tenantId } = auth;
+    const { orgId } = auth;
 
     const body = await request.json();
     const parsed = updateConfigurationsSchema.safeParse(body);
@@ -48,9 +48,9 @@ export async function PATCH(request: NextRequest) {
     const results = await Promise.all(
       parsed.data.flags.map((flag) =>
         db.featureFlag.upsert({
-          where: { tenantId_key: { tenantId, key: flag.key } },
+          where: { orgId_key: { orgId, key: flag.key } },
           create: {
-            tenantId,
+            orgId,
             key: flag.key,
             name: flag.key.replace(/_/g, " "),
             enabled: flag.enabled ?? false,

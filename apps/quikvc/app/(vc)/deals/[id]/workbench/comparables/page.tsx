@@ -13,11 +13,11 @@ export default async function ComparablesPage({
   params: { id: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const comps = await db.vCComparableCompany.findMany({
-    where: { tenantId, dealId: params.id },
+    where: { orgId, dealId: params.id },
     orderBy: [{ pinnedAsBenchmark: "desc" }, { createdAt: "desc" }],
     select: {
       id: true, name: true, sector: true, source: true, reason: true,

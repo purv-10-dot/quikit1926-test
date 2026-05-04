@@ -4,9 +4,9 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 
 const withTenantAuth = withTenantAuthForModule("purchase");
 
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const po = await db.cnPurchaseOrder.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     select: { id: true, status: true },
   });
   if (!po) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });

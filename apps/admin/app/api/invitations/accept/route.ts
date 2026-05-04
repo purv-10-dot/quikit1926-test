@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
   });
 
   await writeAuditLog({
-    tenantId: membership.tenantId,
+    orgId: membership.orgId,
     actorId: membership.user.id,
     action: "ACCEPTED",
     entityType: "Membership",
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
     await db.userAppAccess.createMany({
       data: activeApps.map((app) => ({
         userId: membership.user.id,
-        tenantId: membership.tenantId,
+        orgId: membership.orgId,
         appId: app.id,
         role: "member",
         grantedBy: membership.createdBy,

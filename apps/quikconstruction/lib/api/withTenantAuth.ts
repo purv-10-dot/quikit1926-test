@@ -9,7 +9,7 @@ import { logApiCall } from "@quikit/shared/apiLogging";
 /**
  * withTenantAuth — lifted from apps/quikscale and scoped to `quikconstruction`.
  *
- * Provides: session check → tenantId resolution → optional module feature gate
+ * Provides: session check → orgId resolution → optional module feature gate
  * → try/catch with friendly 500 → fire-and-forget API call log.
  *
  * Use the curried `withTenantAuthForModule("masters")` at the top of each
@@ -18,7 +18,7 @@ import { logApiCall } from "@quikit/shared/apiLogging";
 export interface TenantAuthContext {
   session: Session;
   userId: string;
-  tenantId: string;
+  orgId: string;
 }
 
 export interface WithTenantAuthOptions {
@@ -36,7 +36,7 @@ export function withTenantAuth<Params = Record<string, never>>(
 ) {
   return async (req: NextRequest, routeCtx: { params: Params }): Promise<NextResponse> => {
     const startedAt = Date.now();
-    let tenantIdForLog: string | null = null;
+    let orgIdForLog: string | null = null;
     let userIdForLog: string | null = null;
     let response: NextResponse;
     try {
@@ -45,25 +45,25 @@ export function withTenantAuth<Params = Record<string, never>>(
         response = NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
       } else {
         userIdForLog = session.user.id;
-        const tenantId = await getTenantId(session.user.id);
-        if (!tenantId) {
+        const orgId = await getTenantId(session.user.id);
+        if (!orgId) {
           response = NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
         } else {
-          tenantIdForLog = tenantId;
+          orgIdForLog = orgId;
           if (options.moduleKey) {
-            const blocked = await gateModuleApi("quikconstruction", options.moduleKey, tenantId);
+            const blocked = await gateModuleApi("quikconstruction", options.moduleKey, orgId);
             if (blocked) {
               response = blocked as NextResponse;
             } else {
               response = await handler(
-                { session, userId: session.user.id, tenantId },
+                { session, userId: session.user.id, orgId },
                 req,
                 routeCtx ?? ({ params: {} as Params }),
               );
             }
           } else {
             response = await handler(
-              { session, userId: session.user.id, tenantId },
+              { session, userId: session.user.id, orgId },
               req,
               routeCtx ?? ({ params: {} as Params }),
             );
@@ -78,7 +78,7 @@ export function withTenantAuth<Params = Record<string, never>>(
     }
 
     void logApiCall({
-      tenantId: tenantIdForLog,
+      orgId: orgIdForLog,
       userId: userIdForLog,
       appSlug: "quikconstruction",
       method: req.method,

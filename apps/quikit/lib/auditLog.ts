@@ -5,7 +5,7 @@ interface AuditEntry {
   entityType: string;
   entityId: string;
   actorId: string;
-  tenantId?: string;
+  orgId?: string;
   oldValues?: string;
   newValues?: string;
 }
@@ -22,7 +22,7 @@ export function logAudit(entry: AuditEntry): void {
         entityType: entry.entityType,
         entityId: entry.entityId,
         actorId: entry.actorId,
-        tenantId: entry.tenantId || "platform",
+        orgId: entry.orgId || "platform",
         oldValues: entry.oldValues ?? null,
         newValues: entry.newValues ?? null,
       },

@@ -21,34 +21,34 @@ describe("getTenantId factory", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when session has tenantId but user has no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  it("returns null when session has orgId but user has no active membership", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     expect(await getTenantId(USER)).toBeNull();
   });
 
-  it("returns the session tenantId when user has an active membership in that tenant", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  it("returns the session orgId when user has an active membership in that tenant", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
     expect(await getTenantId(USER)).toBe(TENANT);
   });
 
-  it("falls back to user's first membership when session has no tenantId", async () => {
-    setSession({ id: USER, tenantId: "", role: "admin" });
+  it("falls back to user's first membership when session has no orgId", async () => {
+    setSession({ id: USER, orgId: "", role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue({
-      tenantId: "fallback-tenant",
+      orgId: "fallback-tenant",
     } as any);
     expect(await getTenantId(USER)).toBe("fallback-tenant");
   });
 
   it("returns null when user has no memberships at all", async () => {
-    setSession({ id: USER, tenantId: "", role: "employee" });
+    setSession({ id: USER, orgId: "", role: "employee" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     expect(await getTenantId(USER)).toBeNull();
   });

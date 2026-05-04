@@ -36,19 +36,19 @@ const commitSchema = z.object({
   rows: z.array(rowSchema).min(1),
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = commitSchema.parse(body);
 
-  const project = await db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } });
+  const project = await db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } });
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
 
-  const dup = await db.cnBOQ.findFirst({ where: { tenantId, boqNumber: input.boqNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnBOQ.findFirst({ where: { orgId, boqNumber: input.boqNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `BOQ '${input.boqNumber}' already exists` }, { status: 409 });
 
   // Resolve UOM codes
   const uomCodes = [...new Set(input.rows.map(r => r.uomCode).filter(Boolean) as string[])];
-  const uoms = await db.cnUOM.findMany({ where: { tenantId, code: { in: uomCodes } }, select: { id: true, code: true } });
+  const uoms = await db.cnUOM.findMany({ where: { orgId, code: { in: uomCodes } }, select: { id: true, code: true } });
   const uomByCode = new Map(uoms.map(u => [u.code, u.id]));
   const missingUoms = uomCodes.filter(c => !uomByCode.has(c));
   if (missingUoms.length > 0) {
@@ -69,7 +69,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const boq = await db.$transaction(async (tx) => {
     const created = await tx.cnBOQ.create({
       data: {
-        tenantId, projectId: input.projectId,
+        orgId, projectId: input.projectId,
         boqNumber: input.boqNumber,
         boqDate: new Date(input.boqDate),
         currency: input.currency,

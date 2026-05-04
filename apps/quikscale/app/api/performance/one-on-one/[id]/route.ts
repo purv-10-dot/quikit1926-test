@@ -7,11 +7,11 @@ import { updateOneOnOneSchema } from "@/lib/schemas/oneOnOneSchema";
 type Params = { id: string };
 
 export const GET = withTenantAuth<Params>(
-  async ({ tenantId, userId }, _req, { params }) => {
+  async ({ orgId, userId }, _req, { params }) => {
     const session = await db.oneOnOne.findFirst({
       where: {
         id: params.id,
-        tenantId,
+        orgId,
         // Visible to both manager and report
         OR: [{ managerId: userId }, { reportId: userId }],
       },
@@ -36,11 +36,11 @@ export const GET = withTenantAuth<Params>(
 );
 
 export const PUT = withTenantAuth<Params>(
-  async ({ tenantId, userId }, request, { params }) => {
+  async ({ orgId, userId }, request, { params }) => {
     const existing = await db.oneOnOne.findFirst({
       where: {
         id: params.id,
-        tenantId,
+        orgId,
         OR: [{ managerId: userId }, { reportId: userId }],
       },
       select: { id: true },
@@ -95,11 +95,11 @@ export const PUT = withTenantAuth<Params>(
 );
 
 export const DELETE = withTenantAuth<Params>(
-  async ({ tenantId, userId }, _req, { params }) => {
+  async ({ orgId, userId }, _req, { params }) => {
     const existing = await db.oneOnOne.findFirst({
       where: {
         id: params.id,
-        tenantId,
+        orgId,
         OR: [{ managerId: userId }, { reportId: userId }],
       },
       select: { id: true },

@@ -21,7 +21,7 @@ export type NotifyEvent =
 
 export interface NotifyPayload {
   event: NotifyEvent;
-  tenantId: string;
+  orgId: string;
   toUserId?: string;       // resolve to email via User table
   toEmail?: string;        // direct email
   subject: string;
@@ -44,7 +44,7 @@ export async function notify(payload: NotifyPayload): Promise<boolean> {
       subject: payload.subject,
       body: payload.body,
       event: payload.event,
-      tenantId: payload.tenantId,
+      orgId: payload.orgId,
       metadata: payload.metadata,
     });
     return true;
@@ -63,7 +63,7 @@ async function sendEmail(args: {
   subject: string;
   body: string;
   event: string;
-  tenantId: string;
+  orgId: string;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
   // STUB — prints to server log only. Swap this body when wiring a provider:
@@ -78,7 +78,7 @@ async function sendEmail(args: {
     return;
   }
   console.info("[notify:stub] would-send", {
-    tenantId: args.tenantId,
+    orgId: args.orgId,
     event: args.event,
     to: args.to,
     subject: args.subject,

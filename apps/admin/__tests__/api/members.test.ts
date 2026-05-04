@@ -23,11 +23,11 @@ function buildRequest(method: string, url: string, body?: object): NextRequest {
 }
 
 function asAuthedAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -50,7 +50,7 @@ describe("GET /api/members", () => {
   });
 
   it("returns 403 when user has no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
 
     const res = await GET(buildRequest("GET", "/api/members"));
@@ -58,11 +58,11 @@ describe("GET /api/members", () => {
   });
 
   it("returns 403 when user is not admin", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "employee" });
+    setSession({ id: USER, orgId: TENANT, role: "employee" });
     mockDb.membership.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "employee",
       status: "active",
     } as any);
@@ -79,7 +79,7 @@ describe("GET /api/members", () => {
       {
         id: "m2",
         userId: "u2",
-        tenantId: TENANT,
+        orgId: TENANT,
         role: "employee",
         status: "active",
         invitedAt: now,
@@ -107,7 +107,7 @@ describe("GET /api/members", () => {
     expect(body.meta.total).toBe(1);
   });
 
-  it("filters by tenantId (tenant isolation)", async () => {
+  it("filters by orgId (tenant isolation)", async () => {
     asAuthedAdmin();
 
     mockDb.membership.findMany.mockResolvedValue([]);
@@ -116,10 +116,10 @@ describe("GET /api/members", () => {
     await GET(buildRequest("GET", "/api/members"));
 
     const findManyCall = mockDb.membership.findMany.mock.calls[0]?.[0] as any;
-    expect(findManyCall.where.tenantId).toBe(TENANT);
+    expect(findManyCall.where.orgId).toBe(TENANT);
 
     const countCall = mockDb.membership.count.mock.calls[0]?.[0] as any;
-    expect(countCall.where.tenantId).toBe(TENANT);
+    expect(countCall.where.orgId).toBe(TENANT);
   });
 
   it("respects pagination params", async () => {
@@ -198,7 +198,7 @@ describe("POST /api/members", () => {
     mockDb.user.findUnique.mockResolvedValue({ id: "u2", email: "existing@test.com" } as any);
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m2",
-      tenantId: TENANT,
+      orgId: TENANT,
       userId: "u2",
       status: "active",
     } as any);
@@ -242,7 +242,7 @@ describe("POST /api/members", () => {
     mockDb.user.findUnique.mockResolvedValue({ id: "u2", email: "pending@test.com" } as any);
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m2",
-      tenantId: TENANT,
+      orgId: TENANT,
       userId: "u2",
       status: "invited",
     } as any);
@@ -397,7 +397,7 @@ describe("POST /api/members", () => {
           action: "INVITED",
           entityType: "Membership",
           entityId: "m-audit",
-          tenantId: TENANT,
+          orgId: TENANT,
           actorId: USER,
         }),
       })

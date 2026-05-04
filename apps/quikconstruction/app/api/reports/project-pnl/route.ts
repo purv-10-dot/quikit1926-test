@@ -20,33 +20,33 @@ const withTenantAuth = withTenantAuthForModule("reports");
  *   Allocate `basicAmount × daysPerProject / totalPaidDays` to each project.
  *   Attendance rows with null projectId → not allocated to any project.
  */
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const [projects, invoices, bills, consumption, expenses, finalizedPayrolls] = await Promise.all([
     db.cnProject.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { orgId, deletedAt: null },
       select: { id: true, code: true, name: true, status: true, projectValue: true },
       orderBy: { code: "asc" },
     }),
     db.cnClientInvoice.findMany({
-      where: { tenantId, deletedAt: null, status: { not: "cancelled" } },
+      where: { orgId, deletedAt: null, status: { not: "cancelled" } },
       select: { projectId: true, total: true, paidAmount: true },
     }),
     db.cnVendorBill.findMany({
-      where: { tenantId, deletedAt: null, status: { not: "cancelled" } },
+      where: { orgId, deletedAt: null, status: { not: "cancelled" } },
       select: { projectId: true, total: true, paidAmount: true },
     }),
     db.cnStockLedger.groupBy({
       by: ["projectId"],
-      where: { tenantId, transactionType: "dpr_consumption" },
+      where: { orgId, transactionType: "dpr_consumption" },
       _sum: { amount: true },
     }),
     db.cnExpense.groupBy({
       by: ["projectId"],
-      where: { tenantId, deletedAt: null, status: { not: "cancelled" } },
+      where: { orgId, deletedAt: null, status: { not: "cancelled" } },
       _sum: { amount: true },
     }),
     db.cnPayroll.findMany({
-      where: { tenantId, deletedAt: null, status: { in: ["finalized", "paid"] } },
+      where: { orgId, deletedAt: null, status: { in: ["finalized", "paid"] } },
       select: { id: true, periodStart: true, periodEnd: true, lines: { select: { employeeId: true, basicAmount: true } } },
     }),
   ]);
@@ -57,7 +57,7 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
     const empIds = payroll.lines.map(l => l.employeeId);
     const attendance = await db.cnAttendance.findMany({
       where: {
-        tenantId,
+        orgId,
         employeeId: { in: empIds },
         date: { gte: payroll.periodStart, lte: payroll.periodEnd },
         status: { in: ["P", "HD"] },

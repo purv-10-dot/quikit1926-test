@@ -9,7 +9,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
 // GET /api/www — list all WWWItems for tenant
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const search = searchParams.get("search") || undefined;
   const status = searchParams.get("status") || undefined;
@@ -18,7 +18,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
 
   const includeDeleted = searchParams.get("includeDeleted") === "true";
-  const where: Record<string, unknown> = { tenantId };
+  const where: Record<string, unknown> = { orgId };
   where.deletedAt = includeDeleted ? { not: null } : null;
   if (status) where.status = status;
   if (search) {
@@ -73,10 +73,10 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
 });
 
 // POST /api/www — create a WWWItem
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const rl = rateLimit({
     routeKey: "www:create",
-    clientKey: `${tenantId}:${userId}`,
+    clientKey: `${orgId}:${userId}`,
     limit: LIMITS.mutation.limit,
     windowMs: LIMITS.mutation.windowMs,
   });
@@ -94,7 +94,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const item = await db.wWWItem.create({
     data: {
-      tenantId,
+      orgId,
       who,
       what,
       when: new Date(when),
@@ -123,7 +123,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   };
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "CREATE",
     entityType: "WWWItem",

@@ -9,7 +9,7 @@ import { cacheOrCompute } from "@quikit/shared/redisCache";
  *
  * Returns the set of disabled moduleKeys for the current user's tenant on
  * THIS app (hard-coded to "admin"). Used by the sidebar to filter the
- * nav tree. Cached in Redis for 5 minutes per (tenantId, appSlug).
+ * nav tree. Cached in Redis for 5 minutes per (orgId, appSlug).
  *
  * Response: { success: true, data: { appSlug, disabledKeys: string[] } }
  */
@@ -18,17 +18,17 @@ const CACHE_TTL = 300; // 5 minutes
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    const tenantId = session?.user?.tenantId;
-    if (!tenantId) {
+    const orgId = session?.user?.orgId;
+    if (!orgId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 401 },
       );
     }
 
-    const cacheKey = `ff:me:admin:${tenantId}`;
+    const cacheKey = `ff:me:admin:${orgId}`;
     const disabledKeys = await cacheOrCompute(cacheKey, CACHE_TTL, async () => {
-      const disabled = await getDisabledModules(tenantId, "admin");
+      const disabled = await getDisabledModules(orgId, "admin");
       return Array.from(disabled);
     });
 

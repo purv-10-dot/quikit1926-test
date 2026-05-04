@@ -16,17 +16,17 @@ const ADMIN_MIN_LEVEL = ROLE_HIERARCHY[ROLES.ADMIN];
  */
 export async function canEditWWW(
   userId: string,
-  tenantId: string,
+  orgId: string,
   item: { createdBy: string; who: string },
 ): Promise<boolean> {
-  if (!userId || !tenantId || !item) return false;
+  if (!userId || !orgId || !item) return false;
 
   // 1. Creator or assignee
   if (item.createdBy === userId || item.who === userId) return true;
 
   // 2. Admin-level role via Membership
   const membership = await db.membership.findFirst({
-    where: { userId, tenantId, status: "active" },
+    where: { userId, orgId, status: "active" },
     select: { role: true },
   });
   if (membership) {

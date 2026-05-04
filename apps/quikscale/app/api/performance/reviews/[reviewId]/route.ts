@@ -5,10 +5,10 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("people.reviews");
 
 export const GET = withTenantAuth<{ reviewId: string }>(
-  async ({ tenantId }, _req, { params }) => {
+  async ({ orgId }, _req, { params }) => {
     // Tenant-scoped lookup: never cross-tenant
     const review = await db.performanceReview.findFirst({
-      where: { id: params.reviewId, tenantId },
+      where: { id: params.reviewId, orgId },
       include: {
         reviewer: true,
         reviewee: {
@@ -31,7 +31,7 @@ export const GET = withTenantAuth<{ reviewId: string }>(
 );
 
 export const PUT = withTenantAuth<{ reviewId: string }>(
-  async ({ tenantId }, req, { params }) => {
+  async ({ orgId }, req, { params }) => {
     const parsed = updateReviewSchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -46,7 +46,7 @@ export const PUT = withTenantAuth<{ reviewId: string }>(
 
     // Verify the review belongs to the caller's tenant before updating
     const existing = await db.performanceReview.findFirst({
-      where: { id: params.reviewId, tenantId },
+      where: { id: params.reviewId, orgId },
       select: { id: true },
     });
     if (!existing) {

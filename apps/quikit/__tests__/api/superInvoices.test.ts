@@ -15,8 +15,8 @@ vi.mock("@/lib/email", () => ({
 import {
   GET as LIST_INVOICES,
   POST as CREATE_INVOICE,
-} from "@/app/api/super/invoices/[tenantId]/route";
-import { POST as PAY_INVOICE } from "@/app/api/super/invoices/[tenantId]/[invoiceId]/pay/route";
+} from "@/app/api/super/invoices/[orgId]/route";
+import { POST as PAY_INVOICE } from "@/app/api/super/invoices/[orgId]/[invoiceId]/pay/route";
 
 function makeRequest(url: string, init?: RequestInit) {
   return new NextRequest(new URL(url, "http://localhost:3006"), init as never);
@@ -28,12 +28,12 @@ async function bodyOf(res: Response) {
 
 const SUPER_ADMIN = { id: "sa-1", email: "super@test.com", isSuperAdmin: true };
 const REGULAR_USER = { id: "user-1", email: "user@test.com", isSuperAdmin: false };
-const LIST_PARAMS = { params: { tenantId: "tenant-1" } };
-const PAY_PARAMS = { params: { tenantId: "tenant-1", invoiceId: "inv-1" } };
+const LIST_PARAMS = { params: { orgId: "tenant-1" } };
+const PAY_PARAMS = { params: { orgId: "tenant-1", invoiceId: "inv-1" } };
 
-// ─── GET /api/super/invoices/[tenantId] ──────────────────────────────────────
+// ─── GET /api/super/invoices/[orgId] ──────────────────────────────────────
 
-describe("GET /api/super/invoices/[tenantId]", () => {
+describe("GET /api/super/invoices/[orgId]", () => {
   beforeEach(() => {
     resetMockDb();
   });
@@ -78,7 +78,7 @@ describe("GET /api/super/invoices/[tenantId]", () => {
     mockDb.invoice.findMany.mockResolvedValue([
       {
         id: "inv-1",
-        tenantId: "tenant-1",
+        orgId: "tenant-1",
         planSlug: "startup",
         amountCents: 4900,
         currency: "USD",
@@ -105,9 +105,9 @@ describe("GET /api/super/invoices/[tenantId]", () => {
   });
 });
 
-// ─── POST /api/super/invoices/[tenantId] ─────────────────────────────────────
+// ─── POST /api/super/invoices/[orgId] ─────────────────────────────────────
 
-describe("POST /api/super/invoices/[tenantId]", () => {
+describe("POST /api/super/invoices/[orgId]", () => {
   beforeEach(() => {
     resetMockDb();
   });
@@ -150,7 +150,7 @@ describe("POST /api/super/invoices/[tenantId]", () => {
     } as never);
     mockDb.invoice.create.mockResolvedValue({
       id: "inv-new",
-      tenantId: "tenant-1",
+      orgId: "tenant-1",
       planSlug: "startup",
       amountCents: 4900,
       status: "pending",
@@ -170,9 +170,9 @@ describe("POST /api/super/invoices/[tenantId]", () => {
   });
 });
 
-// ─── POST /api/super/invoices/[tenantId]/[invoiceId]/pay ─────────────────────
+// ─── POST /api/super/invoices/[orgId]/[invoiceId]/pay ─────────────────────
 
-describe("POST /api/super/invoices/[tenantId]/[invoiceId]/pay", () => {
+describe("POST /api/super/invoices/[orgId]/[invoiceId]/pay", () => {
   beforeEach(() => {
     resetMockDb();
   });
@@ -195,7 +195,7 @@ describe("POST /api/super/invoices/[tenantId]/[invoiceId]/pay", () => {
     setSession(SUPER_ADMIN);
     mockDb.invoice.findFirst.mockResolvedValue({
       id: "inv-1",
-      tenantId: "tenant-1",
+      orgId: "tenant-1",
       status: "pending",
       notes: null,
     } as never);
@@ -214,13 +214,13 @@ describe("POST /api/super/invoices/[tenantId]/[invoiceId]/pay", () => {
     setSession(SUPER_ADMIN);
     mockDb.invoice.findFirst.mockResolvedValue({
       id: "inv-1",
-      tenantId: "tenant-1",
+      orgId: "tenant-1",
       status: "pending",
       notes: null,
     } as never);
     mockDb.invoice.update.mockResolvedValue({
       id: "inv-1",
-      tenantId: "tenant-1",
+      orgId: "tenant-1",
       status: "paid",
     } as never);
 

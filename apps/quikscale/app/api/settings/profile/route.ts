@@ -4,7 +4,7 @@ import { updateProfileSchema } from "@/lib/schemas/settingsSchema";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 export const GET = withTenantAuth(
-  async ({ tenantId, userId }) => {
+  async ({ orgId, userId }) => {
     const user = await db.user.findUnique({
       where: { id: userId },
       select: {
@@ -29,7 +29,7 @@ export const GET = withTenantAuth(
     }
 
     const membership = await db.membership.findFirst({
-      where: { userId, tenantId, status: "active" },
+      where: { userId, orgId, status: "active" },
       select: { role: true },
     });
 

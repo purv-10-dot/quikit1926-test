@@ -68,8 +68,8 @@ async function computeOverview() {
         take: 20,
       }),
       db.sessionEvent.groupBy({
-        by: ["tenantId"],
-        where: { event: "login", createdAt: { gte: thirtyDaysAgo }, tenantId: { not: null } },
+        by: ["orgId"],
+        where: { event: "login", createdAt: { gte: thirtyDaysAgo }, orgId: { not: null } },
         _count: { userId: true },
         orderBy: { _count: { userId: "desc" } },
         take: 5,
@@ -153,7 +153,7 @@ async function computeOverview() {
       },
       engagement: {
         dailyTrend, // [{date, activeUsers}]
-        mostActiveTenantIds: mostActiveTenants.map((t) => ({ tenantId: t.tenantId, sessionCount: t._count.userId })),
+        mostActiveOrgIds: mostActiveTenants.map((t) => ({ orgId: t.orgId, sessionCount: t._count.userId })),
         inactiveTenants: tenantsNeverLoggedIn.slice(0, 10).map((t) => ({ id: t.id, name: t.name, createdAt: t.createdAt.toISOString() })),
       },
       revenue: {

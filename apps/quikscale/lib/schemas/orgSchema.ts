@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /** POST /api/org/select — switch active tenant for the current user. */
 export const selectOrgSchema = z.object({
-  tenantId: z.string().min(1, "tenantId is required"),
+  orgId: z.string().min(1, "orgId is required"),
 });
 
 /** POST /api/org/invitations — accept/decline a pending invitation. */

@@ -12,11 +12,11 @@ function buildGET(qs = ""): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -40,7 +40,7 @@ describe("GET /api/users — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(403);
@@ -71,14 +71,14 @@ describe("GET /api/users — happy path", () => {
     expect(body.meta.total).toBe(2);
   });
 
-  it("filters by tenantId and active status", async () => {
+  it("filters by orgId and active status", async () => {
     mockDb.membership.findMany.mockResolvedValue([]);
     mockDb.membership.count.mockResolvedValue(0);
 
     await GET(buildGET(), { params: {} as any });
 
     const call = mockDb.membership.findMany.mock.calls[0]?.[0] as any;
-    expect(call.where.tenantId).toBe(TENANT);
+    expect(call.where.orgId).toBe(TENANT);
     expect(call.where.status).toBe("active");
   });
 

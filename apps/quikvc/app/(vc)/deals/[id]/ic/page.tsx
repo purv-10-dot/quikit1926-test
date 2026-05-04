@@ -20,12 +20,12 @@ export default async function ICReviewPage({
   params: { id: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
-  if (!tenantId || !userId) notFound();
+  if (!orgId || !userId) notFound();
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     include: {
       application: { select: { startupName: true } },
       vertical: { select: { name: true } },
@@ -45,7 +45,7 @@ export default async function ICReviewPage({
   });
 
   const fundProfile = await db.vCFundProfile.findUnique({
-    where: { tenantId },
+    where: { orgId },
     select: { icVotingMode: true, icQuorum: true, icThreshold: true },
   });
 
@@ -59,7 +59,7 @@ export default async function ICReviewPage({
     : [];
   const voterMap = Object.fromEntries(voters.map((u) => [u.id, u]));
 
-  const viewerRole = await getVCRole(userId, tenantId);
+  const viewerRole = await getVCRole(userId, orgId);
   const canVote = viewerRole !== null && IC_VOTING_ROLES.includes(viewerRole);
   const canSettle = viewerRole !== null && PARTNER_ROLES.includes(viewerRole);
 

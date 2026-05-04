@@ -20,9 +20,9 @@ const setMaterialsSchema = z.object({
  * plan for a draft/submitted DPR. No ledger impact. Posting writes the
  * ledger separately.
  */
-export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const input = setMaterialsSchema.parse(await req.json());
-  const dpr = await db.cnDPR.findFirst({ where: { id: params.id, tenantId, deletedAt: null }, select: { id: true, status: true } });
+  const dpr = await db.cnDPR.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, status: true } });
   if (!dpr) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (dpr.status === "posted") return NextResponse.json({ success: false, error: "DPR is posted; materials are immutable" }, { status: 409 });
 

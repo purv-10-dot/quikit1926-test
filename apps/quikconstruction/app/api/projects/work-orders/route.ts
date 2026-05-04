@@ -5,14 +5,14 @@ import { woCreateSchema } from "@/lib/schemas/projects-4b";
 
 const withTenantAuth = withTenantAuthForModule("projects");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const contractorId = req.nextUrl.searchParams.get("contractorId") || undefined;
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const list = await db.cnWorkOrder.findMany({
     where: {
-      tenantId,
+      orgId,
       deletedAt: includeDeleted ? { not: null } : null,
       ...(projectId ? { projectId } : {}),
       ...(contractorId ? { contractorId } : {}),
@@ -28,18 +28,18 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = woCreateSchema.parse(body);
 
   const [project, contractor] = await Promise.all([
-    db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } }),
-    db.cnContractor.findFirst({ where: { id: input.contractorId, tenantId }, select: { id: true } }),
+    db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } }),
+    db.cnContractor.findFirst({ where: { id: input.contractorId, orgId }, select: { id: true } }),
   ]);
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
   if (!contractor) return NextResponse.json({ success: false, error: "Contractor not found" }, { status: 400 });
 
-  const dup = await db.cnWorkOrder.findFirst({ where: { tenantId, woNumber: input.woNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnWorkOrder.findFirst({ where: { orgId, woNumber: input.woNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `WO '${input.woNumber}' already exists` }, { status: 409 });
 
   let subtotal = 0, taxAmount = 0;
@@ -64,7 +64,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const wo = await db.cnWorkOrder.create({
     data: {
-      tenantId,
+      orgId,
       woNumber: input.woNumber,
       projectId: input.projectId,
       contractorId: input.contractorId,

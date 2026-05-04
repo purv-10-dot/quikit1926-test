@@ -7,12 +7,12 @@ import { validationError } from "@/lib/api/validationError";
 import { createCategorySchema } from "@/lib/schemas/categorySchema";
 
 // GET /api/categories — list all categories for tenant
-export const GET = withTenantAuth(async ({ tenantId }, request) => {
+export const GET = withTenantAuth(async ({ orgId }, request) => {
   const search = request.nextUrl.searchParams.get("search") || undefined;
   const dataType = request.nextUrl.searchParams.get("dataType") || undefined;
   const { page, limit, skip, take } = parsePagination(request);
 
-  const where: Record<string, unknown> = { tenantId };
+  const where: Record<string, unknown> = { orgId };
   if (dataType) where.dataType = dataType;
   if (search) where.name = { contains: search, mode: "insensitive" };
 
@@ -30,9 +30,9 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 }, { fallbackErrorMessage: "Failed to fetch categories" });
 
 // POST /api/categories — create a new category
-// Duplicate rule: (tenantId, lowercased name, dataType, currency) must be unique.
+// Duplicate rule: (orgId, lowercased name, dataType, currency) must be unique.
 // A P2002 from Prisma surfaces as a friendly 409.
-export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, request) => {
   const parsed = createCategorySchema.safeParse(await request.json());
   if (!parsed.success) return validationError(parsed);
   const { name, dataType, currency, description } = parsed.data;
@@ -43,7 +43,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, request) => {
   try {
     const item = await db.categoryMaster.create({
       data: {
-        tenantId,
+        orgId,
         name: trimmedName,
         nameKey: trimmedName.toLowerCase(),
         dataType,

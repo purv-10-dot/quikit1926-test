@@ -12,17 +12,17 @@ const withTenantAuth = withTenantAuthForModule("reports");
  *   - grnOnTimePct — GRN date <= PO deliveryDate
  *   - qualityAcceptPct — accepted GRN lines / total GRN lines
  */
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const vendors = await db.cnVendor.findMany({
-    where: { tenantId, deletedAt: null },
+    where: { orgId, deletedAt: null },
     select: { id: true, code: true, name: true, rating: true },
   });
 
   const [pos, grns, grnLines] = await Promise.all([
-    db.cnPurchaseOrder.findMany({ where: { tenantId, deletedAt: null }, select: { vendorId: true, totalAmount: true, deliveryDate: true, id: true, grns: { select: { id: true, grnDate: true } } } }),
-    db.cnGoodsReceiptNote.findMany({ where: { tenantId, deletedAt: null, status: "posted" }, select: { vendorId: true, poId: true, grnDate: true, lines: { select: { amount: true, qualityStatus: true } } } }),
+    db.cnPurchaseOrder.findMany({ where: { orgId, deletedAt: null }, select: { vendorId: true, totalAmount: true, deliveryDate: true, id: true, grns: { select: { id: true, grnDate: true } } } }),
+    db.cnGoodsReceiptNote.findMany({ where: { orgId, deletedAt: null, status: "posted" }, select: { vendorId: true, poId: true, grnDate: true, lines: { select: { amount: true, qualityStatus: true } } } }),
     db.cnGRNLine.findMany({
-      where: { grn: { tenantId, deletedAt: null, status: "posted" } },
+      where: { grn: { orgId, deletedAt: null, status: "posted" } },
       select: { qualityStatus: true, grn: { select: { vendorId: true } } },
     }),
   ]);

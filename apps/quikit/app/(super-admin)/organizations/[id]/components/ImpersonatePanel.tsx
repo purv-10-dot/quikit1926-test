@@ -30,7 +30,7 @@ interface App {
   status: string;
 }
 
-export function ImpersonatePanel({ tenantId, members }: { tenantId: string; members: Member[] }) {
+export function ImpersonatePanel({ orgId, members }: { orgId: string; members: Member[] }) {
   const [apps, setApps] = useState<App[]>([]);
   const [targetUserId, setTargetUserId] = useState("");
   const [targetAppSlug, setTargetAppSlug] = useState("");
@@ -68,7 +68,7 @@ export function ImpersonatePanel({ tenantId, members }: { tenantId: string; memb
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           targetUserId,
-          targetTenantId: tenantId,
+          targetOrgId: orgId,
           targetAppSlug,
           reason: reason.trim() || undefined,
         }),

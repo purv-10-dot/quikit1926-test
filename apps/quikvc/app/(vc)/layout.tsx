@@ -27,15 +27,15 @@ const ALL_NAV_ITEMS = [
 export default async function VCLayout({ children }: { children: React.ReactNode }) {
   // Hardened: redirects to /login when no session. Demo bypass requires
   // QUIKVC_DEV_BYPASS=1 (see lib/dev-session.ts).
-  const { userId, tenantId } = await requireSession();
+  const { userId, orgId } = await requireSession();
   const [role, tenant, fundProfile] = await Promise.all([
-    getVCRole(userId, tenantId),
+    getVCRole(userId, orgId),
     db.tenant.findUnique({
-      where: { id: tenantId },
+      where: { id: orgId },
       select: { name: true },
     }),
     db.vCFundProfile.findUnique({
-      where: { tenantId },
+      where: { orgId },
       select: { fundName: true },
     }),
   ]);

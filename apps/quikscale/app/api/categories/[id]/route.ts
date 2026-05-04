@@ -8,9 +8,9 @@ import { updateCategorySchema } from "@/lib/schemas/categorySchema";
 type RouteParams = { id: string };
 
 // PUT /api/categories/[id] — update a category
-// Enforces the same (tenantId, nameKey, dataType, currency) uniqueness as create.
-export const PUT = withTenantAuth<RouteParams>(async ({ tenantId }, request, { params }) => {
-  const existing = await db.categoryMaster.findFirst({ where: { id: params.id, tenantId } });
+// Enforces the same (orgId, nameKey, dataType, currency) uniqueness as create.
+export const PUT = withTenantAuth<RouteParams>(async ({ orgId }, request, { params }) => {
+  const existing = await db.categoryMaster.findFirst({ where: { id: params.id, orgId } });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
   const parsed = updateCategorySchema.safeParse(await request.json());
@@ -48,8 +48,8 @@ export const PUT = withTenantAuth<RouteParams>(async ({ tenantId }, request, { p
 }, { fallbackErrorMessage: "Failed to update category" });
 
 // DELETE /api/categories/[id] — delete a category
-export const DELETE = withTenantAuth<RouteParams>(async ({ tenantId }, _request, { params }) => {
-  const existing = await db.categoryMaster.findFirst({ where: { id: params.id, tenantId } });
+export const DELETE = withTenantAuth<RouteParams>(async ({ orgId }, _request, { params }) => {
+  const existing = await db.categoryMaster.findFirst({ where: { id: params.id, orgId } });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
   await db.categoryMaster.delete({ where: { id: params.id } });

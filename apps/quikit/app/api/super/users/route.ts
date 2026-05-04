@@ -16,7 +16,7 @@ export const GET = withSuperAdminAuth(async (_auth, request: NextRequest) => {
     const { searchParams } = request.nextUrl;
     const pagination = parsePaginationParams(searchParams);
     const search = searchParams.get("search") || "";
-    const tenantId = searchParams.get("tenantId") || "";
+    const orgId = searchParams.get("orgId") || "";
 
     // Build filter clauses
     const clauses: Record<string, unknown>[] = [];
@@ -29,9 +29,9 @@ export const GET = withSuperAdminAuth(async (_auth, request: NextRequest) => {
         ],
       });
     }
-    if (tenantId) {
+    if (orgId) {
       // Only users that are members of this tenant
-      clauses.push({ memberships: { some: { tenantId, status: "active" } } });
+      clauses.push({ memberships: { some: { orgId, status: "active" } } });
     }
     const where = clauses.length === 0 ? {} : clauses.length === 1 ? clauses[0] : { AND: clauses };
 

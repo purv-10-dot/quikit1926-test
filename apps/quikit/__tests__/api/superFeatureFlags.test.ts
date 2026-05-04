@@ -39,7 +39,7 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
   it("returns 401 without session", async () => {
     setSession(null);
     const res = await GET(
-      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?tenantId=t-1"),
+      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?orgId=t-1"),
       PARAMS,
     );
     expect(res.status).toBe(401);
@@ -48,7 +48,7 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
   it("returns 403 for non-super-admin", async () => {
     setSession(REGULAR_USER);
     const res = await GET(
-      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?tenantId=t-1"),
+      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?orgId=t-1"),
       PARAMS,
     );
     expect(res.status).toBe(403);
@@ -57,7 +57,7 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
   it("returns 404 when appSlug is not in the registry", async () => {
     setSession(SUPER_ADMIN);
     const res = await GET(
-      makeRequest("http://localhost:3006/api/super/feature-flags/bogus?tenantId=t-1"),
+      makeRequest("http://localhost:3006/api/super/feature-flags/bogus?orgId=t-1"),
       { params: { appSlug: "bogus" } },
     );
     expect(res.status).toBe(404);
@@ -65,7 +65,7 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
     expect(body.error).toBe("Unknown app");
   });
 
-  it("returns 400 when tenantId query param is missing", async () => {
+  it("returns 400 when orgId query param is missing", async () => {
     setSession(SUPER_ADMIN);
     const res = await GET(
       makeRequest("http://localhost:3006/api/super/feature-flags/quikscale"),
@@ -73,7 +73,7 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
     );
     expect(res.status).toBe(400);
     const body = await bodyOf(res);
-    expect(body.error).toBe("tenantId query param required");
+    expect(body.error).toBe("orgId query param required");
   });
 
   it("returns 404 when app is not registered in database", async () => {
@@ -81,7 +81,7 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
     mockDb.app.findUnique.mockResolvedValue(null as never);
 
     const res = await GET(
-      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?tenantId=t-1"),
+      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?orgId=t-1"),
       PARAMS,
     );
     expect(res.status).toBe(404);
@@ -98,7 +98,7 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
     ] as never);
 
     const res = await GET(
-      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?tenantId=t-1"),
+      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?orgId=t-1"),
       PARAMS,
     );
     expect(res.status).toBe(200);
@@ -106,7 +106,7 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
     expect(body.success).toBe(true);
     expect(body.data).toMatchObject({
       appSlug: "quikscale",
-      tenantId: "t-1",
+      orgId: "t-1",
       disabledKeys: ["people.talent", "opsp.review"],
     });
   });
@@ -117,7 +117,7 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
     mockDb.appModuleFlag.findMany.mockResolvedValue([] as never);
 
     const res = await GET(
-      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?tenantId=t-1"),
+      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?orgId=t-1"),
       PARAMS,
     );
     expect(res.status).toBe(200);

@@ -6,9 +6,9 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.weeklyMeeting");
 
 /** GET /api/client-meetings/weekly-meetings/[id]/logs — audit trail */
 export const GET = withTenantAuth<{ id: string }>(
-  async ({ tenantId }, _req, { params }) => {
+  async ({ orgId }, _req, { params }) => {
     const meeting = await db.clientWeeklyMeeting.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true },
     });
     if (!meeting) {

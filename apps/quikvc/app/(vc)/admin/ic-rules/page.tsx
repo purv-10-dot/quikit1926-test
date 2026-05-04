@@ -9,11 +9,11 @@ import ICRulesClient from "./ic-rules-client";
 
 export default async function ICRulesAdminPage() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const profile = await db.vCFundProfile.findUnique({
-    where: { tenantId },
+    where: { orgId },
   });
 
   return (

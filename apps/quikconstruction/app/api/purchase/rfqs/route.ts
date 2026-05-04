@@ -5,10 +5,10 @@ import { rfqCreateSchema } from "@/lib/schemas/procurement-3b";
 
 const withTenantAuth = withTenantAuthForModule("purchase");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const list = await db.cnRFQ.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     include: {
       project: { select: { id: true, name: true } },
       lines: { include: { item: true, uom: true } },
@@ -19,22 +19,22 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = rfqCreateSchema.parse(body);
-  const project = await db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } });
+  const project = await db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } });
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
   // Validate vendors
-  const vendorCount = await db.cnVendor.count({ where: { id: { in: input.vendorIds }, tenantId } });
+  const vendorCount = await db.cnVendor.count({ where: { id: { in: input.vendorIds }, orgId } });
   if (vendorCount !== input.vendorIds.length) {
     return NextResponse.json({ success: false, error: "One or more vendors not found in tenant" }, { status: 400 });
   }
-  const dup = await db.cnRFQ.findFirst({ where: { tenantId, rfqNumber: input.rfqNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnRFQ.findFirst({ where: { orgId, rfqNumber: input.rfqNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `RFQ number '${input.rfqNumber}' already exists` }, { status: 409 });
 
   const rfq = await db.cnRFQ.create({
     data: {
-      tenantId,
+      orgId,
       rfqNumber: input.rfqNumber,
       indentId: input.indentId ?? null,
       projectId: input.projectId,

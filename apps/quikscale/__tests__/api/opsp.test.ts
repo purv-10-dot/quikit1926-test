@@ -29,12 +29,12 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAuthed() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   // withTenantAuth calls getTenantId which calls membership.findFirst
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as never);
@@ -63,7 +63,7 @@ describe("GET /api/opsp — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), params);
     expect(res.status).toBe(403);
@@ -111,7 +111,7 @@ describe("PUT /api/opsp — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await PUT(buildPUT({ year: 2026, quarter: "Q1" }), params);
     expect(res.status).toBe(403);
@@ -170,7 +170,7 @@ describe("POST /api/opsp (finalize) — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST({ year: 2026, quarter: "Q1" }), params);
     expect(res.status).toBe(403);

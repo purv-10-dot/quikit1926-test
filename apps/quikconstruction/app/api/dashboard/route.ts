@@ -16,7 +16,7 @@ const withTenantAuth = withTenantAuthForModule("dashboard");
  *   incidents  : 5 most-recent open safety incidents
  *   stockLow   : 10 lowest positive balances (as-of now) across project/location/item
  */
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - 7);
@@ -35,37 +35,37 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
     recentRabs,
     openIncidents,
   ] = await Promise.all([
-    db.cnProject.count({ where: { tenantId, deletedAt: null, status: "active" } }),
+    db.cnProject.count({ where: { orgId, deletedAt: null, status: "active" } }),
     db.cnClientInvoice.aggregate({
-      where: { tenantId, deletedAt: null, status: { not: "cancelled" }, invoiceDate: { gte: monthStart } },
+      where: { orgId, deletedAt: null, status: { not: "cancelled" }, invoiceDate: { gte: monthStart } },
       _sum: { total: true },
     }),
     db.cnClientInvoice.findMany({
-      where: { tenantId, deletedAt: null, status: { not: "cancelled" } },
+      where: { orgId, deletedAt: null, status: { not: "cancelled" } },
       select: { id: true, invoiceNumber: true, total: true, paidAmount: true, dueDate: true, invoiceDate: true, status: true, customer: { select: { name: true } } },
     }),
     db.cnVendorBill.findMany({
-      where: { tenantId, deletedAt: null, status: { not: "cancelled" } },
+      where: { orgId, deletedAt: null, status: { not: "cancelled" } },
       select: { id: true, billNumber: true, total: true, paidAmount: true, dueDate: true, billDate: true, status: true, vendor: { select: { name: true } } },
     }),
-    db.cnPurchaseRequisition.count({ where: { tenantId, deletedAt: null, status: { in: ["draft", "submitted"] } } }),
-    db.cnGoodsReceiptNote.count({ where: { tenantId, deletedAt: null, grnDate: { gte: monthStart } } }),
-    db.cnDPR.count({ where: { tenantId, deletedAt: null, dprDate: { gte: weekStart } } }),
-    db.cnSafetyIncident.count({ where: { tenantId, deletedAt: null, status: { in: ["open", "investigating"] } } }),
+    db.cnPurchaseRequisition.count({ where: { orgId, deletedAt: null, status: { in: ["draft", "submitted"] } } }),
+    db.cnGoodsReceiptNote.count({ where: { orgId, deletedAt: null, grnDate: { gte: monthStart } } }),
+    db.cnDPR.count({ where: { orgId, deletedAt: null, dprDate: { gte: weekStart } } }),
+    db.cnSafetyIncident.count({ where: { orgId, deletedAt: null, status: { in: ["open", "investigating"] } } }),
     db.cnDPR.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { orgId, deletedAt: null },
       select: { id: true, dprDate: true, status: true, project: { select: { name: true, code: true } }, _count: { select: { lines: true, materials: true } } },
       orderBy: { dprDate: "desc" },
       take: 5,
     }),
     db.cnRAB.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { orgId, deletedAt: null },
       select: { id: true, rabNumber: true, rabDate: true, status: true, total: true, project: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
       take: 5,
     }),
     db.cnSafetyIncident.findMany({
-      where: { tenantId, deletedAt: null, status: { in: ["open", "investigating"] } },
+      where: { orgId, deletedAt: null, status: { in: ["open", "investigating"] } },
       select: { id: true, incidentNumber: true, incidentDate: true, severity: true, category: true, title: true, project: { select: { name: true } } },
       orderBy: { incidentDate: "desc" },
       take: 5,
@@ -102,7 +102,7 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
   // Stock low-balance — per (project, location, item) compute running balance, show lowest 10 positive
   const ledger = await db.cnStockLedger.groupBy({
     by: ["projectId", "locationId", "itemId"],
-    where: { tenantId },
+    where: { orgId },
     _sum: { qtyIn: true, qtyOut: true },
   });
   const positive = ledger.map(r => ({

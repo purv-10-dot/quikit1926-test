@@ -12,27 +12,27 @@ import { logApiCall } from "@quikit/shared/apiLogging";
 export interface TenantAuthContext {
   session: Session;
   userId: string;
-  tenantId: string;
+  orgId: string;
 }
 
 /**
- * Higher-order wrapper that runs the standard auth + tenantId + error-handling
+ * Higher-order wrapper that runs the standard auth + orgId + error-handling
  * boilerplate around a route handler.
  *
  * Replaces the ~8 lines repeated across 35+ route files:
  *   - session check  → 401
- *   - tenantId check → 403
+ *   - orgId check → 403
  *   - try/catch      → 500 with `toErrorMessage`
  *
  * Usage:
- *   export const GET = withTenantAuth(async ({ tenantId }, req) => {
- *     const data = await db.kpi.findMany({ where: { tenantId } });
+ *   export const GET = withTenantAuth(async ({ orgId }, req) => {
+ *     const data = await db.kpi.findMany({ where: { orgId } });
  *     return NextResponse.json({ success: true, data });
  *   });
  *
  *   // Dynamic route segments still work — pass them through as `params`:
  *   export const GET = withTenantAuth<{ id: string }>(
- *     async ({ tenantId }, req, { params }) => { ... }
+ *     async ({ orgId }, req, { params }) => { ... }
  *   );
  */
 export interface WithTenantAuthOptions {
@@ -57,7 +57,7 @@ export function withTenantAuth<Params = Record<string, never>>(
 ) {
   return async (req: NextRequest, routeCtx: { params: Params }): Promise<NextResponse> => {
     const startedAt = Date.now();
-    let tenantIdForLog: string | null = null;
+    let orgIdForLog: string | null = null;
     let userIdForLog: string | null = null;
     let response: NextResponse;
     try {
@@ -66,25 +66,25 @@ export function withTenantAuth<Params = Record<string, never>>(
         response = NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
       } else {
         userIdForLog = session.user.id;
-        const tenantId = await getTenantId(session.user.id);
-        if (!tenantId) {
+        const orgId = await getTenantId(session.user.id);
+        if (!orgId) {
           response = NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
         } else {
-          tenantIdForLog = tenantId;
+          orgIdForLog = orgId;
           if (options.moduleKey) {
-            const blocked = await gateModuleApi("quikscale", options.moduleKey, tenantId);
+            const blocked = await gateModuleApi("quikscale", options.moduleKey, orgId);
             if (blocked) {
               response = blocked as NextResponse;
             } else {
               response = await handler(
-                { session, userId: session.user.id, tenantId },
+                { session, userId: session.user.id, orgId },
                 req,
                 routeCtx ?? ({ params: {} as Params })
               );
             }
           } else {
             response = await handler(
-              { session, userId: session.user.id, tenantId },
+              { session, userId: session.user.id, orgId },
               req,
               routeCtx ?? ({ params: {} as Params })
             );
@@ -100,7 +100,7 @@ export function withTenantAuth<Params = Record<string, never>>(
 
     // SA-A.2: fire-and-forget API call log. Never blocks the response.
     void logApiCall({
-      tenantId: tenantIdForLog,
+      orgId: orgIdForLog,
       userId: userIdForLog,
       appSlug: "quikscale",
       method: req.method,
@@ -122,8 +122,8 @@ export function withTenantAuth<Params = Record<string, never>>(
  *
  *   import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
  *   const withTenantAuth = withTenantAuthForModule("kpi");
- *   export const GET = withTenantAuth(async ({ tenantId }, req) => { ... });
- *   export const POST = withTenantAuth(async ({ tenantId }, req) => { ... });
+ *   export const GET = withTenantAuth(async ({ orgId }, req) => { ... });
+ *   export const POST = withTenantAuth(async ({ orgId }, req) => { ... });
  *
  * Any existing options (e.g. `fallbackErrorMessage`) still work — moduleKey
  * is merged in as a default but can be overridden per-call.

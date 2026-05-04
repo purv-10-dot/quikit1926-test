@@ -17,9 +17,9 @@ import { PARTNER_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 
 export const GET = withTenantAuth(
-  async ({ tenantId }, _req: NextRequest, { params }: { params: { id: string } }) => {
+  async ({ orgId }, _req: NextRequest, { params }: { params: { id: string } }) => {
     const ts = await db.vCTermSheet.findFirst({
-      where: { tenantId, dealId: params.id },
+      where: { orgId, dealId: params.id },
       select: {
         id: true, version: true, status: true,
         renderedBodyHtml: true, sentAt: true, signedAt: true, updatedAt: true,
@@ -33,8 +33,8 @@ export const GET = withTenantAuth(
 );
 
 export const POST = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = await requireRoleOrAudit(userId, tenantId, PARTNER_ROLES, {
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = await requireRoleOrAudit(userId, orgId, PARTNER_ROLES, {
       action: "term-sheet.generate",
       resource: params.id,
       req,
@@ -43,7 +43,7 @@ export const POST = withTenantAuth(
 
     const dealId = params.id;
     const deal = await db.vCDeal.findFirst({
-      where: { id: dealId, tenantId },
+      where: { id: dealId, orgId },
       include: {
         application: {
           select: { startupName: true, contactName: true, contactEmail: true, fundingAsk: true, loanType: true, tenureMonths: true, purpose: true },
@@ -56,12 +56,12 @@ export const POST = withTenantAuth(
 
     const [template, fundProfile] = await Promise.all([
       db.vCTermSheetTemplate.findFirst({
-        where: { tenantId },
+        where: { orgId },
         orderBy: { createdAt: "desc" },
         select: { bodyHtml: true },
       }),
       db.vCFundProfile.findUnique({
-        where: { tenantId },
+        where: { orgId },
         select: { fundName: true },
       }),
     ]);
@@ -101,7 +101,7 @@ export const POST = withTenantAuth(
         updatedBy: userId,
       },
       create: {
-        tenantId,
+        orgId,
         dealId,
         version: nextVersion,
         renderedBodyHtml: rendered,
@@ -114,7 +114,7 @@ export const POST = withTenantAuth(
 
     await db.vCTimelineEvent.create({
       data: {
-        tenantId,
+        orgId,
         dealId,
         type: "term-sheet-generated",
         actorId: userId,
@@ -124,7 +124,7 @@ export const POST = withTenantAuth(
     });
 
     await audit({
-      tenantId,
+      orgId,
       userId,
       action: "term-sheet.generate",
       resource: dealId,
@@ -132,7 +132,7 @@ export const POST = withTenantAuth(
       req,
     });
 
-    await notifyRole(tenantId, "partner", {
+    await notifyRole(orgId, "partner", {
       type: "term-sheet-generated",
       title: `Term sheet v${nextVersion} generated`,
       body: `${deal.application.startupName}`,

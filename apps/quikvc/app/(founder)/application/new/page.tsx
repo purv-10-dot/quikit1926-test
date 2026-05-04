@@ -13,10 +13,10 @@ import { getDevAwareSession } from "@/lib/dev-session";
 
 async function loadVerticals() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) return [];
+  const orgId = session?.user?.orgId;
+  if (!orgId) return [];
   return db.vCVertical.findMany({
-    where: { tenantId, enabled: true },
+    where: { orgId, enabled: true },
     select: { slug: true, name: true },
     orderBy: { sortOrder: "asc" },
   });

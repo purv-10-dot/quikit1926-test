@@ -14,9 +14,9 @@ type Params = { id: string };
  * regret posting.
  */
 export const DELETE = withTenantAuth<Params>(
-  async ({ tenantId, userId }, _req, { params }) => {
+  async ({ orgId, userId }, _req, { params }) => {
     const existing = await db.feedbackEntry.findFirst({
-      where: { id: params.id, tenantId, fromUserId: userId },
+      where: { id: params.id, orgId, fromUserId: userId },
       select: { id: true },
     });
     if (!existing) {

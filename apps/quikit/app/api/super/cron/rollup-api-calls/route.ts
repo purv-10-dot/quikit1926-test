@@ -2,7 +2,7 @@
  * SA-A.3 — Hourly ApiCall → ApiCallHourlyRollup aggregation.
  *
  * Runs hourly. For each complete hour in the previous 24 hours that is not
- * already aggregated, groups raw ApiCall rows by (tenantId, appSlug, method,
+ * already aggregated, groups raw ApiCall rows by (orgId, appSlug, method,
  * pathPattern, statusClass) and upserts into ApiCallHourlyRollup.
  *
  * Idempotent: re-running over the same window produces the same rollup
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const raws = await db.apiCall.findMany({
       where: { createdAt: { gte: start, lt: endExclusive } },
       select: {
-        tenantId: true,
+        orgId: true,
         appSlug: true,
         method: true,
         pathPattern: true,
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
     // Group in memory — keyed by the rollup's unique tuple.
     type BucketKey = string;
     interface Bucket {
-      tenantId: string | null;
+      orgId: string | null;
       appSlug: string;
       hourBucket: Date;
       method: string;
@@ -77,9 +77,9 @@ export async function GET(req: NextRequest) {
     for (const r of raws) {
       const hourBucket = truncateToHour(r.createdAt);
       const statusClass = statusClassOf(r.statusCode);
-      // Map null tenantId to sentinel so the compound unique is well-defined.
-      const bucketTenantId = r.tenantId ?? GLOBAL_SENTINEL;
-      const key = `${bucketTenantId}|${r.appSlug}|${hourBucket.toISOString()}|${r.method}|${r.pathPattern}|${statusClass}`;
+      // Map null orgId to sentinel so the compound unique is well-defined.
+      const bucketOrgId = r.orgId ?? GLOBAL_SENTINEL;
+      const key = `${bucketOrgId}|${r.appSlug}|${hourBucket.toISOString()}|${r.method}|${r.pathPattern}|${statusClass}`;
       const b = buckets.get(key);
       const isError = r.statusCode >= 400;
       if (b) {
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
         if (r.durationMs > b.maxDurationMs) b.maxDurationMs = r.durationMs;
       } else {
         buckets.set(key, {
-          tenantId: bucketTenantId,
+          orgId: bucketOrgId,
           appSlug: r.appSlug,
           hourBucket,
           method: r.method,
@@ -103,16 +103,16 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Upsert each bucket. tenantId is guaranteed non-null here — rows with
-    // null source tenantId were mapped to the "_global_" sentinel above so
+    // Upsert each bucket. orgId is guaranteed non-null here — rows with
+    // null source orgId were mapped to the "_global_" sentinel above so
     // the compound @@unique works correctly.
     let upserted = 0;
     for (const b of buckets.values()) {
-      if (!b.tenantId) continue; // defensive
+      if (!b.orgId) continue; // defensive
       await db.apiCallHourlyRollup.upsert({
         where: {
-          tenantId_appSlug_hourBucket_method_pathPattern_statusClass: {
-            tenantId: b.tenantId,
+          orgId_appSlug_hourBucket_method_pathPattern_statusClass: {
+            orgId: b.orgId,
             appSlug: b.appSlug,
             hourBucket: b.hourBucket,
             method: b.method,
@@ -127,7 +127,7 @@ export async function GET(req: NextRequest) {
           maxDurationMs: b.maxDurationMs,
         },
         create: {
-          tenantId: b.tenantId,
+          orgId: b.orgId,
           appSlug: b.appSlug,
           hourBucket: b.hourBucket,
           method: b.method,

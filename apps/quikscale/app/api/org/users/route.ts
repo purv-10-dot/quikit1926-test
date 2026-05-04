@@ -42,17 +42,17 @@ function buildUserResponse(m: MembershipWithTeams) {
   };
 }
 
-const USER_TEAMS_INCLUDE = (tenantId: string) => ({
+const USER_TEAMS_INCLUDE = (orgId: string) => ({
   userTeams: {
-    where: { tenantId },
+    where: { orgId },
     include: { team: { select: { id: true, name: true } } },
   },
 });
 
 // GET /api/org/users
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
-  const where = { tenantId };
+  const where = { orgId };
 
   const [memberships, total] = await Promise.all([
     db.membership.findMany({
@@ -61,7 +61,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
         user: {
           select: {
             id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
-            userTeams: { where: { tenantId }, include: { team: { select: { id: true, name: true } } } },
+            userTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
           },
         },
       },
@@ -76,7 +76,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
 }, { fallbackErrorMessage: "Failed to fetch users" });
 
 // POST /api/org/users
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const parsed = createOrgUserSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -92,13 +92,13 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   if (existingUser) {
     const existingMembership = await db.membership.findUnique({
-      where: { tenantId_userId: { tenantId, userId: existingUser.id } },
+      where: { orgId_userId: { orgId, userId: existingUser.id } },
     });
     if (existingMembership)
       return NextResponse.json({ success: false, error: "This user is already a member of the organisation" }, { status: 409 });
 
     await db.membership.create({
-      data: { tenantId, userId: existingUser.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
+      data: { orgId, userId: existingUser.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
     });
     newUserId = existingUser.id;
   } else {
@@ -107,26 +107,26 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
       data: { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim().toLowerCase(), password: hashedPassword },
     });
     await db.membership.create({
-      data: { tenantId, userId: user.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
+      data: { orgId, userId: user.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
     });
     newUserId = user.id;
   }
 
   for (const teamId of resolvedTeamIds) {
     await db.userTeam.upsert({
-      where:  { tenantId_userId_teamId: { tenantId, userId: newUserId, teamId } },
+      where:  { orgId_userId_teamId: { orgId, userId: newUserId, teamId } },
       update: {},
-      create: { tenantId, userId: newUserId, teamId },
+      create: { orgId, userId: newUserId, teamId },
     });
   }
 
   const membership = await db.membership.findUnique({
-    where: { tenantId_userId: { tenantId, userId: newUserId } },
+    where: { orgId_userId: { orgId, userId: newUserId } },
     include: {
       user: {
         select: {
           id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
-          userTeams: { where: { tenantId }, include: { team: { select: { id: true, name: true } } } },
+          userTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
         },
       },
     },

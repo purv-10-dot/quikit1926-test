@@ -14,7 +14,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const params = {
     page: parseInt(searchParams.get("page") || "1"),
@@ -33,7 +33,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   const validated = kpiListParamsSchema.parse(params);
 
   const includeDeleted = searchParams.get("includeDeleted") === "true";
-  const where: any = { tenantId };
+  const where: any = { orgId };
   // Trash toggle: by default return only active (not soft-deleted). When
   // ?includeDeleted=true, return ONLY soft-deleted records for the trash view.
   where.deletedAt = includeDeleted ? { not: null } : null;
@@ -51,7 +51,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   if (validated.teamId) {
     if (validated.kpiLevel === "individual") {
       const members = await db.membership.findMany({
-        where: { tenantId, teamId: validated.teamId, status: "active" },
+        where: { orgId, teamId: validated.teamId, status: "active" },
         select: { userId: true },
       });
       const memberIds = members.map((m) => m.userId);
@@ -61,7 +61,7 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
       where.teamId = validated.teamId;
     } else {
       const members = await db.membership.findMany({
-        where: { tenantId, teamId: validated.teamId, status: "active" },
+        where: { orgId, teamId: validated.teamId, status: "active" },
         select: { userId: true },
       });
       const memberIds = members.map((m) => m.userId);
@@ -208,11 +208,11 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
 });
 
 // POST /api/kpi - Create KPI
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   // Rate limit: 30 KPI writes / minute per user (prevents bulk-insert abuse)
   const rl = rateLimit({
     routeKey: "kpi:create",
-    clientKey: `${tenantId}:${userId}`,
+    clientKey: `${orgId}:${userId}`,
     limit: LIMITS.kpiWrite.limit,
     windowMs: LIMITS.kpiWrite.windowMs,
   });
@@ -228,9 +228,9 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   // ── Past-week add enforcement ──
   // When add_past_week_data is disabled, reject non-zero targets for weeks before current week
-  const { canAddPastWeek } = await getPastWeekFlags(tenantId);
+  const { canAddPastWeek } = await getPastWeekFlags(orgId);
   if (!canAddPastWeek && validated.weeklyTargets && validated.quarter && validated.year) {
-    const currentWeek = await getCurrentFiscalWeekFromDB(tenantId, validated.year, validated.quarter);
+    const currentWeek = await getCurrentFiscalWeekFromDB(orgId, validated.year, validated.quarter);
     for (const [weekStr, val] of Object.entries(validated.weeklyTargets)) {
       const week = parseInt(weekStr, 10);
       if (week < currentWeek && val && val !== 0) {
@@ -250,7 +250,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   // Cross-row validation — extracted to @/lib/api/kpiCreateValidation
   if (isTeamLevel) {
     const err = await validateTeamKPICreate({
-      tenantId,
+      orgId,
       actorUserId: userId,
       teamId: validated.teamId,
       ownerIds: validated.ownerIds,
@@ -259,19 +259,19 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
     if (err) return err;
   } else {
     const err = await validateIndividualKPICreate({
-      tenantId,
+      orgId,
       owner: validated.owner,
       teamId: validated.teamId,
     });
     if (err) return err;
   }
 
-  const parentErr = await validateParentKPI(validated.parentKPIId, tenantId);
+  const parentErr = await validateParentKPI(validated.parentKPIId, orgId);
   if (parentErr) return parentErr;
 
   const kpi = await db.kPI.create({
     data: {
-      tenantId,
+      orgId,
       name: validated.name,
       description: validated.description,
       kpiLevel: isTeamLevel ? "team" : "individual",
@@ -328,7 +328,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   });
 
   await db.kPILog.create({
-    data: { tenantId, kpiId: kpi.id, action: "CREATE", newValue: JSON.stringify(kpi), changedBy: userId },
+    data: { orgId, kpiId: kpi.id, action: "CREATE", newValue: JSON.stringify(kpi), changedBy: userId },
   });
 
   return NextResponse.json({ success: true, data: kpi, message: "KPI created successfully" }, { status: 201 });

@@ -46,9 +46,9 @@ export const ANALYST_ROLES: VCRole[] = ["analyst", "partner", "fund-admin", "adm
  * Read the user's VC role for this tenant from Membership.
  * Returns null if no active membership.
  */
-export async function getVCRole(userId: string, tenantId: string): Promise<VCRole | null> {
+export async function getVCRole(userId: string, orgId: string): Promise<VCRole | null> {
   const m = await db.membership.findUnique({
-    where: { tenantId_userId: { tenantId, userId } },
+    where: { orgId_userId: { orgId, userId } },
     select: { role: true, status: true },
   });
   if (!m || m.status !== "active") return null;
@@ -60,7 +60,7 @@ export async function getVCRole(userId: string, tenantId: string): Promise<VCRol
  * Returns null when allowed (caller continues).
  *
  * Usage inside a withTenantAuth handler:
- *   const role = await getVCRole(userId, tenantId);
+ *   const role = await getVCRole(userId, orgId);
  *   const denied = denyIfNotInRoles(role, FUND_ADMIN_ROLES);
  *   if (denied) return denied;
  */
@@ -86,10 +86,10 @@ export function denyIfNotInRoles(
  */
 export async function requireVCRole(
   userId: string,
-  tenantId: string,
+  orgId: string,
   allowed: VCRole[],
 ): Promise<{ role: VCRole } | NextResponse> {
-  const role = await getVCRole(userId, tenantId);
+  const role = await getVCRole(userId, orgId);
   const denied = denyIfNotInRoles(role, allowed);
   if (denied) return denied;
   return { role: role as VCRole };
@@ -103,7 +103,7 @@ export async function requireVCRole(
  *
  * Use this at the top of any privileged route handler:
  *
- *   const denied = await requireRoleOrAudit(userId, tenantId, FUND_ADMIN_ROLES, {
+ *   const denied = await requireRoleOrAudit(userId, orgId, FUND_ADMIN_ROLES, {
  *     action: "vertical.update",
  *     resource: params.id,
  *     req,
@@ -112,15 +112,15 @@ export async function requireVCRole(
  */
 export async function requireRoleOrAudit(
   userId: string,
-  tenantId: string,
+  orgId: string,
   allowed: VCRole[],
   ctx: { action: AuditAction; resource?: string; req?: NextRequest },
 ): Promise<NextResponse | null> {
-  const role = await getVCRole(userId, tenantId);
+  const role = await getVCRole(userId, orgId);
   const denied = denyIfNotInRoles(role, allowed);
   if (denied) {
     await audit({
-      tenantId,
+      orgId,
       userId,
       action: "rbac.deny",
       resource: ctx.resource,

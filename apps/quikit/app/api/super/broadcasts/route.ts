@@ -40,8 +40,8 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
     const title = typeof body.title === "string" ? body.title.trim() : "";
     const bodyText = typeof body.body === "string" ? body.body.trim() : "";
     const severity = VALID_SEVERITY.has(body.severity) ? body.severity : "info";
-    const targetTenantIds = Array.isArray(body.targetTenantIds)
-      ? body.targetTenantIds.filter((s: unknown) => typeof s === "string")
+    const targetOrgIds = Array.isArray(body.targetOrgIds)
+      ? body.targetOrgIds.filter((s: unknown) => typeof s === "string")
       : [];
     const targetAppSlugs = Array.isArray(body.targetAppSlugs)
       ? body.targetAppSlugs.filter((s: unknown) => typeof s === "string")
@@ -64,7 +64,7 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
         title,
         body: bodyText,
         severity,
-        targetTenantIds,
+        targetOrgIds,
         targetAppSlugs,
         startsAt,
         endsAt,
@@ -77,7 +77,7 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
       action: "CREATE",
       entityType: "BroadcastAnnouncement",
       entityId: created.id,
-      newValues: JSON.stringify({ title, severity, targetTenantIds: targetTenantIds.length, targetAppSlugs: targetAppSlugs.length }),
+      newValues: JSON.stringify({ title, severity, targetOrgIds: targetOrgIds.length, targetAppSlugs: targetAppSlugs.length }),
     });
 
     return NextResponse.json({ success: true, data: created }, { status: 201 });

@@ -22,9 +22,9 @@ const postSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const investors = await db.vCInvestor.findMany({
-    where: { tenantId },
+    where: { orgId },
     orderBy: { createdAt: "desc" },
     select: {
       id: true, name: true, type: true, kycStatus: true,
@@ -35,8 +35,8 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
   return NextResponse.json({ success: true, data: investors });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), FUND_ADMIN_ROLES);
+export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = denyIfNotInRoles(await getVCRole(userId, orgId), FUND_ADMIN_ROLES);
   if (denied) return denied;
 
   const parsed = postSchema.safeParse(await req.json());
@@ -49,7 +49,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   const data = parsed.data;
   const investor = await db.vCInvestor.create({
     data: {
-      tenantId,
+      orgId,
       name: data.name,
       type: data.type,
       email: data.email || null,

@@ -23,7 +23,7 @@ import { canManageTeamKPI } from "@/lib/api/teamKPIPermissions";
 type ValidationResult = NextResponse | null;
 
 export interface TeamKPIValidationInput {
-  tenantId: string;
+  orgId: string;
   actorUserId: string;
   teamId: string | null | undefined;
   ownerIds: string[] | null | undefined;
@@ -37,7 +37,7 @@ export interface TeamKPIValidationInput {
 export async function validateTeamKPICreate(
   input: TeamKPIValidationInput
 ): Promise<ValidationResult> {
-  const { tenantId, actorUserId, teamId, ownerIds: rawOwnerIds, ownerContributions } = input;
+  const { orgId, actorUserId, teamId, ownerIds: rawOwnerIds, ownerContributions } = input;
 
   if (!teamId) {
     return NextResponse.json(
@@ -47,14 +47,14 @@ export async function validateTeamKPICreate(
   }
 
   const team = await db.team.findUnique({ where: { id: teamId } });
-  if (!team || team.tenantId !== tenantId) {
+  if (!team || team.orgId !== orgId) {
     return NextResponse.json(
       { success: false, error: "Team not found" },
       { status: 404 }
     );
   }
 
-  const allowed = await canManageTeamKPI(actorUserId, tenantId, teamId);
+  const allowed = await canManageTeamKPI(actorUserId, orgId, teamId);
   if (!allowed) {
     return NextResponse.json(
       { success: false, error: "You must be a team head or admin to create KPIs for this team." },
@@ -72,7 +72,7 @@ export async function validateTeamKPICreate(
 
   // All ownerIds must be active members of this team
   const memberships = await db.membership.findMany({
-    where: { tenantId, teamId, userId: { in: ownerIds }, status: "active" },
+    where: { orgId, teamId, userId: { in: ownerIds }, status: "active" },
     select: { userId: true },
   });
   const validIds = new Set(memberships.map((m) => m.userId));
@@ -105,7 +105,7 @@ export async function validateTeamKPICreate(
 }
 
 export interface IndividualKPIValidationInput {
-  tenantId: string;
+  orgId: string;
   owner: string | null | undefined;
   teamId: string | null | undefined;
 }
@@ -116,7 +116,7 @@ export interface IndividualKPIValidationInput {
 export async function validateIndividualKPICreate(
   input: IndividualKPIValidationInput
 ): Promise<ValidationResult> {
-  const { tenantId, owner, teamId } = input;
+  const { orgId, owner, teamId } = input;
 
   if (!owner) {
     return NextResponse.json(
@@ -135,7 +135,7 @@ export async function validateIndividualKPICreate(
 
   if (teamId) {
     const team = await db.team.findUnique({ where: { id: teamId } });
-    if (!team || team.tenantId !== tenantId) {
+    if (!team || team.orgId !== orgId) {
       return NextResponse.json(
         { success: false, error: "Team not found" },
         { status: 404 }
@@ -151,12 +151,12 @@ export async function validateIndividualKPICreate(
  */
 export async function validateParentKPI(
   parentKPIId: string | null | undefined,
-  tenantId: string
+  orgId: string
 ): Promise<ValidationResult> {
   if (!parentKPIId) return null;
 
   const parentKPI = await db.kPI.findUnique({ where: { id: parentKPIId } });
-  if (!parentKPI || parentKPI.tenantId !== tenantId) {
+  if (!parentKPI || parentKPI.orgId !== orgId) {
     return NextResponse.json(
       { success: false, error: "Parent KPI not found" },
       { status: 404 }

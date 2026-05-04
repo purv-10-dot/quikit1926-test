@@ -5,14 +5,14 @@ import type { Prisma } from "@prisma/client";
  * Atomic per-tenant sequential number generator.
  *
  * Usage:
- *   const num = await nextNumber({ tenantId, prefix: "INV", fy: "FY2526" });
+ *   const num = await nextNumber({ orgId, prefix: "INV", fy: "FY2526" });
  *   // "INV/FY2526/000042"
  *
  * Uses upsert + raw increment to avoid TOCTOU. Call inside a tx where
  * possible (pass `tx`) so the number is rolled back if the parent write fails.
  */
 export async function nextNumber(args: {
-  tenantId: string;
+  orgId: string;
   prefix: string;
   fy?: string | null;
   pad?: number;
@@ -28,8 +28,8 @@ export async function nextNumber(args: {
   const client = args.tx ?? db;
 
   const row = await client.cnNumberSequence.upsert({
-    where: { tenantId_prefix_fyKey: { tenantId: args.tenantId, prefix: args.prefix, fyKey: fyForStorage } },
-    create: { tenantId: args.tenantId, prefix: args.prefix, fyKey: fyForStorage, counter: 1 },
+    where: { orgId_prefix_fyKey: { orgId: args.orgId, prefix: args.prefix, fyKey: fyForStorage } },
+    create: { orgId: args.orgId, prefix: args.prefix, fyKey: fyForStorage, counter: 1 },
     update: { counter: { increment: 1 } },
   });
 

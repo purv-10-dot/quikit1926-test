@@ -7,13 +7,13 @@ import { ROLE_LABELS } from "@/lib/constants";
 import { writeAuditLog } from "@/lib/audit";
 import crypto from "crypto";
 
-export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inviterId }, request: NextRequest, { params }) => {
-  const blocked = await gateModuleApi("admin", "members", tenantId);
+export const POST = withAdminAuth<{ id: string }>(async ({ orgId, userId: inviterId }, request: NextRequest, { params }) => {
+  const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({
-    where: { id: membershipId, tenantId, status: "invited" },
+    where: { id: membershipId, orgId, status: "invited" },
     include: { user: { select: { email: true } } },
   });
 
@@ -36,7 +36,7 @@ export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inv
 
   const [tenant, inviter] = await Promise.all([
     db.tenant.findUnique({
-      where: { id: tenantId },
+      where: { id: orgId },
       select: { name: true, logoUrl: true, brandColor: true },
     }),
     db.user.findUnique({ where: { id: inviterId }, select: { firstName: true, lastName: true } }),
@@ -54,7 +54,7 @@ export const POST = withAdminAuth<{ id: string }>(async ({ tenantId, userId: inv
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: inviterId,
     action: "RESENT",
     entityType: "Membership",

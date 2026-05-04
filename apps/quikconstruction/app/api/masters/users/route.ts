@@ -8,9 +8,9 @@ const withTenantAuth = withTenantAuthForModule("masters");
  * GET /api/masters/users — tenant members for picker components.
  * Returns only active memberships; excludes soft-deleted users.
  */
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const memberships = await db.membership.findMany({
-    where: { tenantId, status: "active" },
+    where: { orgId, status: "active" },
     select: {
       role: true,
       user: { select: { id: true, email: true, firstName: true, lastName: true } },

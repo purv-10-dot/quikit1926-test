@@ -13,11 +13,11 @@ function buildRequest(method: string, url: string): NextRequest {
 }
 
 function asAuthedAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m-admin",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -41,7 +41,7 @@ describe("DELETE /api/members/[id]/invitation", () => {
     mockDb.membership.findFirst.mockResolvedValueOnce({
       id: "m-admin",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
@@ -59,13 +59,13 @@ describe("DELETE /api/members/[id]/invitation", () => {
     mockDb.membership.findFirst.mockResolvedValueOnce({
       id: "m-admin",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
     mockDb.membership.findFirst.mockResolvedValueOnce({
       id: "m-target",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       role: "employee",
       user: { email: "pending@test.com" },
@@ -89,7 +89,7 @@ describe("DELETE /api/members/[id]/invitation", () => {
           action: "REVOKED",
           entityType: "Membership",
           entityId: "m-target",
-          tenantId: TENANT,
+          orgId: TENANT,
           actorId: USER,
         }),
       })
@@ -101,7 +101,7 @@ describe("DELETE /api/members/[id]/invitation", () => {
     mockDb.membership.findFirst.mockResolvedValueOnce({
       id: "m-admin",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "admin",
       status: "active",
     } as any);
@@ -115,6 +115,6 @@ describe("DELETE /api/members/[id]/invitation", () => {
       (c: any[]) => c[0]?.where?.id === "m-other-tenant"
     );
     expect(call).toBeDefined();
-    expect(call?.[0]?.where?.tenantId).toBe(TENANT);
+    expect(call?.[0]?.where?.orgId).toBe(TENANT);
   });
 });

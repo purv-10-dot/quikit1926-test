@@ -16,7 +16,7 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asSuperAdmin() {
-  setSession({ id: SUPER_ADMIN, tenantId: "any", role: "super_admin" });
+  setSession({ id: SUPER_ADMIN, orgId: "any", role: "super_admin" });
   mockDb.user.findUnique.mockResolvedValue({
     id: SUPER_ADMIN,
     isSuperAdmin: true,
@@ -39,7 +39,7 @@ describe("POST /api/super/orgs/bulk — auth", () => {
   });
 
   it("returns 403 for non-super-admin", async () => {
-    setSession({ id: "regular", tenantId: "t1", role: "member" });
+    setSession({ id: "regular", orgId: "t1", role: "member" });
     mockDb.user.findUnique.mockResolvedValue({ id: "regular", isSuperAdmin: false } as any);
     const res = await POST(buildPOST({ action: "suspend", ids: ["t1"] }));
     expect(res.status).toBe(403);

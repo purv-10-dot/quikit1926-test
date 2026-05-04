@@ -9,9 +9,9 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 const withTenantAuth = withTenantAuthForModule("clientMeetings.clients");
 
 /** GET /api/client-meetings/clients/[id] — detail including team-member list. */
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
+export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const row = await db.client.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: {
       teamMembers: { include: { member: { select: { id: true, name: true, email: true } } } },
       memberships: {
@@ -49,14 +49,14 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   try {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
-    const { tenantId, userId } = auth as { tenantId: string; userId: string };
+    const { orgId, userId } = auth as { orgId: string; userId: string };
 
     const parsed = updateClientSchema.safeParse(await request.json());
     if (!parsed.success)
       return NextResponse.json({ success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 });
 
     const existing = await db.client.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, orgId, deletedAt: null },
       include: { teamMembers: true },
     });
     if (!existing) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
@@ -65,7 +65,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     if (d.teamMemberIds !== undefined && d.teamMemberIds.length) {
       const validIds = await db.clientMember.findMany({
-        where: { id: { in: d.teamMemberIds }, tenantId, deletedAt: null },
+        where: { id: { in: d.teamMemberIds }, orgId, deletedAt: null },
         select: { id: true },
       });
       if (validIds.length !== d.teamMemberIds.length)
@@ -102,7 +102,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         await tx.clientTeamMember.deleteMany({ where: { clientId: params.id } });
         if (d.teamMemberIds.length > 0) {
           await tx.clientTeamMember.createMany({
-            data: d.teamMemberIds.map(cmId => ({ clientId: params.id, clientMemberId: cmId, tenantId })),
+            data: d.teamMemberIds.map(cmId => ({ clientId: params.id, clientMemberId: cmId, orgId })),
           });
         }
       }
@@ -125,7 +125,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     });
     if (changes.length) {
       await writeAuditLog({
-        tenantId, actorId: userId, action: "UPDATE",
+        orgId, actorId: userId, action: "UPDATE",
         entityType: "Client", entityId: params.id,
         oldValues: oldSnapshot, newValues: newSnapshot, changes,
       });
@@ -142,14 +142,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   try {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
-    const { tenantId, userId } = auth as { tenantId: string; userId: string };
+    const { orgId, userId } = auth as { orgId: string; userId: string };
 
-    const existing = await db.client.findFirst({ where: { id: params.id, tenantId, deletedAt: null } });
+    const existing = await db.client.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
     if (!existing) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
 
     await db.client.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
     await writeAuditLog({
-      tenantId, actorId: userId, action: "DELETE",
+      orgId, actorId: userId, action: "DELETE",
       entityType: "Client", entityId: params.id,
       oldValues: { name: existing.name, isActive: existing.isActive },
     });

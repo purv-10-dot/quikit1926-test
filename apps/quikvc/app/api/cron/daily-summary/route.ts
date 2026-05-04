@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
   }
 
   const results: {
-    tenantId: string;
+    orgId: string;
     tenantName: string;
     isStub: boolean;
     emailsSent: number;
@@ -86,21 +86,21 @@ export async function GET(req: NextRequest) {
       highlights,
       anchorDeal,
     ] = await Promise.all([
-      db.vCDeal.count({ where: { tenantId: t.id, closedStatus: "open" } }),
-      db.vCDealQuestion.count({ where: { tenantId: t.id, status: "open" } }),
+      db.vCDeal.count({ where: { orgId: t.id, closedStatus: "open" } }),
+      db.vCDealQuestion.count({ where: { orgId: t.id, status: "open" } }),
       db.vCDealDocument.count({
-        where: { tenantId: t.id, status: "under-review", createdAt: { gte: since } },
+        where: { orgId: t.id, status: "under-review", createdAt: { gte: since } },
       }),
       db.vCDealSignal.count({
-        where: { tenantId: t.id, severity: "red", status: { not: "resolved" } },
+        where: { orgId: t.id, severity: "red", status: { not: "resolved" } },
       }),
       db.vCDealSignal.count({
-        where: { tenantId: t.id, severity: "amber", status: { not: "resolved" } },
+        where: { orgId: t.id, severity: "amber", status: { not: "resolved" } },
       }),
-      db.vCDeal.count({ where: { tenantId: t.id, createdAt: { gte: since } } }),
+      db.vCDeal.count({ where: { orgId: t.id, createdAt: { gte: since } } }),
       db.vCTimelineEvent.findMany({
         where: {
-          tenantId: t.id,
+          orgId: t.id,
           createdAt: { gte: since },
           type: { in: ["stage-advanced", "memo-frozen", "transcript-analysed", "score-overridden"] },
         },
@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
         take: 5,
       }),
       db.vCDeal.findFirst({
-        where: { tenantId: t.id, closedStatus: "open" },
+        where: { orgId: t.id, closedStatus: "open" },
         select: { id: true },
         orderBy: { updatedAt: "desc" },
       }),
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
     if (anchorDeal) {
       await db.vCTimelineEvent.create({
         data: {
-          tenantId: t.id,
+          orgId: t.id,
           dealId: anchorDeal.id,
           type: "ai-daily-summary",
           actorId: null,
@@ -154,7 +154,7 @@ export async function GET(req: NextRequest) {
     if (!summary.isStub && emailEnabled()) {
       const recipients = await db.membership.findMany({
         where: {
-          tenantId: t.id,
+          orgId: t.id,
           status: "active",
           role: { in: ["partner", "analyst", "fund-admin"] },
         },
@@ -190,7 +190,7 @@ export async function GET(req: NextRequest) {
     }
 
     results.push({
-      tenantId: t.id,
+      orgId: t.id,
       tenantName: t.name,
       isStub: summary.isStub,
       emailsSent,

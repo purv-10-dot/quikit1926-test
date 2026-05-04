@@ -4,10 +4,10 @@ import { db } from "@/lib/db";
  * Server-side feature flag lookup for past-week data rules.
  * Reads the `FeatureFlag` table for the given tenant.
  */
-export async function getPastWeekFlags(tenantId: string) {
+export async function getPastWeekFlags(orgId: string) {
   const flags = await db.featureFlag.findMany({
     where: {
-      tenantId,
+      orgId,
       key: { in: ["add_past_week_data", "edit_past_week_data"] },
     },
     select: { key: true, enabled: true },
@@ -27,12 +27,12 @@ export async function getPastWeekFlags(tenantId: string) {
  * Math.min(13, ...) if past the end.
  */
 export async function getCurrentFiscalWeekFromDB(
-  tenantId: string,
+  orgId: string,
   year: number,
   quarter: string,
 ): Promise<number> {
   const q = await db.quarterSetting.findFirst({
-    where: { tenantId, fiscalYear: year, quarter },
+    where: { orgId, fiscalYear: year, quarter },
     select: { startDate: true, endDate: true },
   });
 

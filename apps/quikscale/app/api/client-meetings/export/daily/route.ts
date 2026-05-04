@@ -12,13 +12,13 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.dashboard");
  * Body: { clientId, monthsBack? }
  * Returns: xlsx blob with 6 metric rows × N month columns + Total Avg.
  */
-export const POST = withTenantAuth(async ({ tenantId }, request) => {
+export const POST = withTenantAuth(async ({ orgId }, request) => {
   const body = await request.json();
   const clientId: string = body.clientId;
   const monthsBack: number = body.monthsBack ?? 6;
   if (!clientId) return NextResponse.json({ success: false, error: "clientId required" }, { status: 400 });
 
-  const client = await db.client.findFirst({ where: { id: clientId, tenantId, deletedAt: null } });
+  const client = await db.client.findFirst({ where: { id: clientId, orgId, deletedAt: null } });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
 
   const months = previousMonths(new Date(), monthsBack);
@@ -26,7 +26,7 @@ export const POST = withTenantAuth(async ({ tenantId }, request) => {
   const toEnd = new Date(Date.UTC(months[months.length - 1].year, months[months.length - 1].month + 1, 0, 23, 59, 59, 999));
 
   const huddles = await db.clientDailyHuddle.findMany({
-    where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
+    where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
     include: { absentMembers: true },
   });
   const stats = calculateDailyMonthlyStats(

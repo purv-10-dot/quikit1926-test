@@ -9,11 +9,11 @@ import { getVCRole, PARTNER_ROLES } from "@/lib/rbac";
 
 export default async function TermSheetPage({ params }: { params: { id: string } }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
-  if (!tenantId || !userId) notFound();
+  if (!orgId || !userId) notFound();
 
-  const viewerRole = await getVCRole(userId, tenantId);
+  const viewerRole = await getVCRole(userId, orgId);
   const canGenerate = viewerRole !== null && PARTNER_ROLES.includes(viewerRole);
 
   const ts = await db.vCTermSheet.findUnique({

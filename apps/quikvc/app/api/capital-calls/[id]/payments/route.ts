@@ -23,8 +23,8 @@ const postSchema = z.object({
 });
 
 export const POST = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = await requireRoleOrAudit(userId, tenantId, CAPITAL_OPS_ROLES, {
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = await requireRoleOrAudit(userId, orgId, CAPITAL_OPS_ROLES, {
       action: "allocation.create",
       resource: params.id,
       req,
@@ -42,7 +42,7 @@ export const POST = withTenantAuth(
     const amountPaise = BigInt(Math.round(amountLakhs * 10_000_000));
 
     const call = await db.vCCapitalCall.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true, amount: true, paidAmount: true, status: true, allocationId: true, investorId: true },
     });
     if (!call) {
@@ -52,7 +52,7 @@ export const POST = withTenantAuth(
     const result = await db.$transaction(async (tx) => {
       const payment = await tx.vCCapitalCallPayment.create({
         data: {
-          tenantId,
+          orgId,
           capitalCallId: call.id,
           amount: amountPaise,
           paidAt: paidAt ? new Date(paidAt) : new Date(),
@@ -76,7 +76,7 @@ export const POST = withTenantAuth(
     });
 
     await audit({
-      tenantId,
+      orgId,
       userId,
       action: "allocation.create",
       resource: call.id,

@@ -137,9 +137,22 @@ interface SignInComponentProps {
   brandName?: string;
   /** Path to redirect after successful sign-in (default: "/select-org") */
   redirectPath?: string;
+  /** Optional absolute/relative URL that overrides redirectPath (usually from ?callbackUrl=) */
+  callbackUrl?: string | null;
+  /** Inline banner message shown above the form (e.g. session_expired reason) */
+  initialError?: string | null;
+  /** When true, use window.location.assign for navigation (hard nav). Default true to avoid session flicker. */
+  hardNavigate?: boolean;
 }
 
-export const SignInComponent = ({ logo, brandName = "QuikIT", redirectPath = "/select-org" }: SignInComponentProps) => {
+export const SignInComponent = ({
+  logo,
+  brandName = "QuikIT",
+  redirectPath = "/select-org",
+  callbackUrl,
+  initialError,
+  hardNavigate = true,
+}: SignInComponentProps) => {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -147,6 +160,7 @@ export const SignInComponent = ({ logo, brandName = "QuikIT", redirectPath = "/s
   const [authStep, setAuthStep] = useState<"email" | "password">("email");
   const [modalStatus, setModalStatus] = useState<"closed" | "loading" | "error" | "success">("closed");
   const [modalErrorMessage, setModalErrorMessage] = useState("");
+  const [banner, setBanner] = useState<string | null>(initialError ?? null);
   const confettiRef = useRef<ConfettiRef>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
@@ -175,7 +189,14 @@ export const SignInComponent = ({ logo, brandName = "QuikIT", redirectPath = "/s
       if (result?.ok) {
         fireConfetti();
         setModalStatus("success");
-        setTimeout(() => router.push(redirectPath), 1400);
+        const target = callbackUrl || redirectPath;
+        setTimeout(() => {
+          if (hardNavigate) {
+            window.location.assign(target);
+          } else {
+            router.push(target);
+          }
+        }, 1400);
       } else {
         setModalErrorMessage(result?.error === "Invalid credentials" ? "Invalid email or password." : "Sign in failed. Please try again.");
         setModalStatus("error");
@@ -418,6 +439,20 @@ export const SignInComponent = ({ logo, brandName = "QuikIT", redirectPath = "/s
         </div>
 
         <div className="relative z-10 w-full max-w-[360px]">
+          {banner && (
+            <div className="mb-6 flex items-start gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-300" />
+              <span className="flex-1">{banner}</span>
+              <button
+                type="button"
+                onClick={() => setBanner(null)}
+                className="text-red-300/70 hover:text-red-200 transition-colors flex-shrink-0"
+                aria-label="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <AnimatePresence mode="wait">
             {authStep === "email" ? (
               <motion.div key="email-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}

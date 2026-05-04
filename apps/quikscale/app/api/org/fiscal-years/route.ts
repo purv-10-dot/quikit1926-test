@@ -17,9 +17,9 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 // license row. The endpoint itself is tenant-scoped and read-only.
 const withTenantAuth = withTenantAuthForModule("kpi");
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const rows = await db.quarterSetting.findMany({
-    where: { tenantId },
+    where: { orgId },
     select: { fiscalYear: true, quarter: true },
     orderBy: [{ fiscalYear: "desc" }, { quarter: "asc" }],
   });

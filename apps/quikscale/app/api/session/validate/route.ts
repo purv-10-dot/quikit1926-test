@@ -35,8 +35,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ valid: false, reason: "unauthenticated" });
   }
 
-  const tenantId = session.user.tenantId;
-  if (!tenantId) {
+  const orgId = session.user.orgId;
+  if (!orgId) {
     return NextResponse.json({ valid: true, hasTenant: false });
   }
 
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   const membership = await db.membership.findFirst({
     where: {
       userId: session.user.id,
-      tenantId,
+      orgId,
       status: "active",
     },
   });
@@ -61,9 +61,9 @@ export async function GET(request: NextRequest) {
   if (app) {
     const appAccess = await db.userAppAccess.findUnique({
       where: {
-        userId_tenantId_appId: {
+        userId_orgId_appId: {
           userId: session.user.id,
-          tenantId,
+          orgId,
           appId: app.id,
         },
       },

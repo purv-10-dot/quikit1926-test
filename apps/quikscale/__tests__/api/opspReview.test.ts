@@ -24,11 +24,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -41,7 +41,7 @@ function asAdmin() {
 function mockOPSP(overrides: Record<string, unknown> = {}) {
   return {
     id: OPSP_ID,
-    tenantId: TENANT,
+    orgId: TENANT,
     userId: USER,
     year: 2026,
     quarter: "Q1",
@@ -79,11 +79,11 @@ describe("GET /api/opsp/review — auth", () => {
   });
 
   it("returns 403 when no active admin membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "member" });
+    setSession({ id: USER, orgId: TENANT, role: "member" });
     mockDb.membership.findFirst.mockResolvedValue({
       role: "employee",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "active",
     } as any);
     const res = await GET(buildGET());
@@ -329,8 +329,8 @@ describe("POST /api/opsp/review — happy path", () => {
     );
 
     const call = mockDb.oPSPReviewEntry.upsert.mock.calls[0]?.[0] as any;
-    expect(call.where.tenantId_opspId_horizon_rowIndex_period.tenantId).toBe(TENANT);
-    expect(call.create.tenantId).toBe(TENANT);
+    expect(call.where.orgId_opspId_horizon_rowIndex_period.orgId).toBe(TENANT);
+    expect(call.create.orgId).toBe(TENANT);
     expect(call.create.userId).toBe(USER);
   });
 
@@ -352,6 +352,6 @@ describe("POST /api/opsp/review — happy path", () => {
     expect(mockDb.auditLog.create).toHaveBeenCalledTimes(1);
     const logCall = mockDb.auditLog.create.mock.calls[0]?.[0] as any;
     expect(logCall.data.entityType).toBe("Review");
-    expect(logCall.data.tenantId).toBe(TENANT);
+    expect(logCall.data.orgId).toBe(TENANT);
   });
 });

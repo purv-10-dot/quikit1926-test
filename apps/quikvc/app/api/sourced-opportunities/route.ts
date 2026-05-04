@@ -29,9 +29,9 @@ const postSchema = z.union([
   z.object({ items: z.array(itemSchema).min(1).max(500) }),
 ]);
 
-export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
+export const GET = withTenantAuth(async ({ orgId }, req: NextRequest) => {
   const status = req.nextUrl.searchParams.get("status");
-  const where: Record<string, string> = { tenantId };
+  const where: Record<string, string> = { orgId };
   if (status) where.status = status;
 
   const items = await db.vCSourcedOpportunity.findMany({
@@ -50,8 +50,8 @@ export const GET = withTenantAuth(async ({ tenantId }, req: NextRequest) => {
   });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), ANALYST_ROLES);
+export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = denyIfNotInRoles(await getVCRole(userId, orgId), ANALYST_ROLES);
   if (denied) return denied;
 
   const json = await req.json();
@@ -67,7 +67,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   const created = await db.vCSourcedOpportunity.createMany({
     data: items.map((it) => ({
-      tenantId,
+      orgId,
       source: it.source ?? "manual",
       startupName: it.startupName,
       contactName: it.contactName,

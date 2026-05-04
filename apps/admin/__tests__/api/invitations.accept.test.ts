@@ -46,7 +46,7 @@ describe("GET /api/invitations/accept", () => {
     const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitationToken: "tok",
       invitedAt: eightDaysAgo,
@@ -66,7 +66,7 @@ describe("GET /api/invitations/accept", () => {
   it("returns 400 when invitation already accepted", async () => {
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "active",
       invitationToken: "tok",
       invitedAt: new Date(),
@@ -84,7 +84,7 @@ describe("GET /api/invitations/accept", () => {
   it("returns invitation details for valid token (needsPassword=true)", async () => {
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitationToken: "tok",
       invitedAt: new Date(),
@@ -109,7 +109,7 @@ describe("POST /api/invitations/accept", () => {
   it("activates membership and writes ACCEPTED audit log", async () => {
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitedAt: new Date(),
       createdBy: "admin-1",
@@ -145,7 +145,7 @@ describe("POST /api/invitations/accept", () => {
   it("rejects short password (<10 chars)", async () => {
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitedAt: new Date(),
       user: { id: "u1", password: null },
@@ -165,7 +165,7 @@ describe("POST /api/invitations/accept", () => {
   it("rejects password missing a digit", async () => {
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitedAt: new Date(),
       user: { id: "u1", password: null },
@@ -185,7 +185,7 @@ describe("POST /api/invitations/accept", () => {
   it("rejects password missing a symbol", async () => {
     mockDb.membership.findUnique.mockResolvedValue({
       id: "m1",
-      tenantId: TENANT,
+      orgId: TENANT,
       status: "invited",
       invitedAt: new Date(),
       user: { id: "u1", password: null },

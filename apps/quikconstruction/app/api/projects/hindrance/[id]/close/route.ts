@@ -9,8 +9,8 @@ const withTenantAuth = withTenantAuthForModule("projects");
  * open → resolved/closed. If no endDate on the hindrance yet, caller provides
  * one so daysImpacted can be computed.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
-  const h = await db.cnHindrance.findFirst({ where: { id: params.id, tenantId, deletedAt: null } });
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+  const h = await db.cnHindrance.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
   if (!h) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (h.status === "closed" || h.status === "resolved") {
     return NextResponse.json({ success: false, error: `Already ${h.status}` }, { status: 409 });

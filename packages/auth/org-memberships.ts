@@ -7,7 +7,7 @@
  * shows tenants where QuikVC is enabled (rather than every tenant the
  * user belongs to, including QuikScale-only ones).
  *
- * Same pattern as `createGetTenantId` / `createRequireAdmin`: each app
+ * Same pattern as `createGetOrgId` / `createRequireAdmin`: each app
  * instantiates the factory at the top of its route file and exports the
  * resulting handler.
  */
@@ -24,7 +24,7 @@ export interface OrgMembershipsConfig {
 
 export interface OrgInfo {
   membershipId: string;
-  tenantId: string;
+  orgId: string;
   name: string;
   slug: string;
   description: string | null;
@@ -96,7 +96,7 @@ export function createOrgMembershipsHandler(
 
     const orgs: OrgInfo[] = memberships.map((m) => ({
       membershipId: m.id,
-      tenantId: m.tenant.id,
+      orgId: m.tenant.id,
       name: m.tenant.name,
       slug: m.tenant.slug,
       description: m.tenant.description,

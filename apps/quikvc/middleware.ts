@@ -5,7 +5,7 @@ import { createMiddleware } from "@quikit/auth/middleware";
 /**
  * QuikVC middleware.
  *
- * SSO via @quikit/auth — tenantId comes from the QuikIT OAuth token.
+ * SSO via @quikit/auth — orgId comes from the QuikIT OAuth token.
  * Unauthenticated users are bounced to /login which auto-triggers signIn("quikit").
  *
  * Dev escape hatch: set QUIKVC_DEV_BYPASS=1 in .env.local to skip the
@@ -14,10 +14,14 @@ import { createMiddleware } from "@quikit/auth/middleware";
  * opt-in (was previously enabled for any non-production env, which is too
  * loose for preview / staging deployments).
  */
+const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
+
 const realMiddleware = createMiddleware({
   loginRoute: "/login",
   selectOrgRoute: "/select-org",
   publicRoutes: ["/login", "/select-org", "/invitations"],
+  centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
+  centralSelectOrgUrl: AUTH_URL ? `${AUTH_URL}/select-org` : undefined,
 });
 
 function isDevBypassEnabled(): boolean {

@@ -17,11 +17,11 @@ export default async function ScorecardPage({
   params: { id: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     select: {
       id: true,
       verticalId: true,
@@ -40,7 +40,7 @@ export default async function ScorecardPage({
   if (!deal) notFound();
 
   const criteria = await db.vCScoringCriterion.findMany({
-    where: { tenantId, verticalId: deal.verticalId },
+    where: { orgId, verticalId: deal.verticalId },
     select: { slug: true, name: true, description: true, weight: true },
     orderBy: { sortOrder: "asc" },
   });

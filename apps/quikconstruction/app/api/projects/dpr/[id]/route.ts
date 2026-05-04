@@ -4,9 +4,9 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 
 const withTenantAuth = withTenantAuthForModule("projects");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
+export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const dpr = await db.cnDPR.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     include: {
       project: { select: { id: true, name: true, code: true } },
       location: { select: { id: true, name: true, code: true } },
@@ -18,8 +18,8 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { p
   return NextResponse.json({ success: true, data: dpr });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
-  const dpr = await db.cnDPR.findFirst({ where: { id: params.id, tenantId, deletedAt: null }, select: { id: true, status: true } });
+export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+  const dpr = await db.cnDPR.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, status: true } });
   if (!dpr) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (dpr.status === "posted") {
     return NextResponse.json({ success: false, error: "Posted DPR is immutable" }, { status: 400 });

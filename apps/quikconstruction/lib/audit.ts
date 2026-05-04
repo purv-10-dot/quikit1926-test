@@ -8,7 +8,7 @@ import type { Prisma } from "@prisma/client";
  * commits atomically with the business write.
  */
 export async function logAudit(args: {
-  tenantId: string;
+  orgId: string;
   userId: string;
   actionType: "create" | "update" | "delete" | "status_change" | "post" | "approve" | "reject" | "finalize" | string;
   entityType: string;
@@ -23,7 +23,7 @@ export async function logAudit(args: {
   try {
     await client.cnAuditLog.create({
       data: {
-        tenantId: args.tenantId,
+        orgId: args.orgId,
         userId: args.userId,
         actionType: args.actionType,
         entityType: args.entityType,

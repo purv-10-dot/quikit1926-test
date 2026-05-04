@@ -20,10 +20,10 @@ const REQUIRED_CATEGORIES = [
 
 export default async function FounderDocumentsPage() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
 
-  if (!tenantId || !userId) {
+  if (!orgId || !userId) {
     return (
       <div className="px-4 py-5 text-sm text-gray-500">
         You need to sign in to view documents.
@@ -33,7 +33,7 @@ export default async function FounderDocumentsPage() {
 
   // Find the founder's most recent application (Sprint 2 assumes 1 active per founder)
   const application = await db.vCApplication.findFirst({
-    where: { tenantId, founderId: userId },
+    where: { orgId, founderId: userId },
     orderBy: { createdAt: "desc" },
     select: { id: true, deal: { select: { id: true, currentStage: true } } },
   });
@@ -51,7 +51,7 @@ export default async function FounderDocumentsPage() {
   }
 
   const docs = await db.vCDealDocument.findMany({
-    where: { tenantId, dealId: application.deal.id },
+    where: { orgId, dealId: application.deal.id },
     orderBy: { createdAt: "desc" },
     select: {
       id: true, category: true, filename: true, mimeType: true,

@@ -50,16 +50,16 @@ export async function POST(request: NextRequest) {
       for (const app of activeApps) {
         await db.userAppAccess.upsert({
           where: {
-            userId_tenantId_appId: {
+            userId_orgId_appId: {
               userId: session.user.id,
-              tenantId: membership.tenantId,
+              orgId: membership.orgId,
               appId: app.id,
             },
           },
           update: {},
           create: {
             userId: session.user.id,
-            tenantId: membership.tenantId,
+            orgId: membership.orgId,
             appId: app.id,
             role: "member",
           },

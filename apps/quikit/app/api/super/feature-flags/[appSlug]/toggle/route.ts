@@ -9,7 +9,7 @@ import { invalidate } from "@quikit/shared/redisCache";
 
 /**
  * POST /api/super/feature-flags/[appSlug]/toggle
- * Body: { tenantId: string, moduleKey: string, enabled: boolean }
+ * Body: { orgId: string, moduleKey: string, enabled: boolean }
  *
  * Sparse storage:
  *   - enabled: true  → DELETE the row (or no-op if not present).
@@ -17,11 +17,11 @@ import { invalidate } from "@quikit/shared/redisCache";
  *
  * Writes an AuditLog entry on every successful change.
  *
- * Response: { success: true, data: { tenantId, moduleKey, enabled } }
+ * Response: { success: true, data: { orgId, moduleKey, enabled } }
  */
 
 const bodySchema = z.object({
-  tenantId: z.string().min(1),
+  orgId: z.string().min(1),
   moduleKey: z.string().min(1).max(200),
   enabled: z.boolean(),
 });
@@ -46,7 +46,7 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
         { status: 400 },
       );
     }
-    const { tenantId, moduleKey, enabled } = parsed.data;
+    const { orgId, moduleKey, enabled } = parsed.data;
 
     // Sanity: the moduleKey must exist in the registry for this app. We
     // still write/delete even if not — future registry edits would orphan
@@ -70,7 +70,7 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
 
     // Verify the target tenant exists (useful 404 rather than FK violation).
     const tenant = await db.tenant.findUnique({
-      where: { id: tenantId },
+      where: { id: orgId },
       select: { id: true, name: true },
     });
     if (!tenant) {
@@ -83,16 +83,16 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
     if (enabled) {
       // Delete the "disabled" override if it exists; default = enabled.
       await db.appModuleFlag.deleteMany({
-        where: { tenantId, appId: app.id, moduleKey },
+        where: { orgId, appId: app.id, moduleKey },
       });
     } else {
       // Upsert a disabled-row.
       await db.appModuleFlag.upsert({
         where: {
-          tenantId_appId_moduleKey: { tenantId, appId: app.id, moduleKey },
+          orgId_appId_moduleKey: { orgId, appId: app.id, moduleKey },
         },
         create: {
-          tenantId,
+          orgId,
           appId: app.id,
           moduleKey,
           enabled: false,
@@ -110,7 +110,7 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
       entityType: "AppModuleFlag",
       entityId: `${appSlug}/${moduleKey}`,
       actorId,
-      tenantId,
+      orgId,
       newValues: JSON.stringify({ appSlug, moduleKey, enabled, tenantName: tenant.name }),
     });
 
@@ -118,11 +118,11 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
     // /api/feature-flags/me fetch from that app returns fresh state.
     // Without this, the 5-min Redis TTL makes toggles appear "stuck"
     // in the target app's sidebar for up to 5 minutes.
-    await invalidate(`ff:me:${appSlug}:${tenantId}`);
+    await invalidate(`ff:me:${appSlug}:${orgId}`);
 
     return NextResponse.json({
       success: true,
-      data: { tenantId, moduleKey, enabled },
+      data: { orgId, moduleKey, enabled },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";

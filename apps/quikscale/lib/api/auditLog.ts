@@ -9,7 +9,7 @@
  *
  * Usage:
  *   await writeAuditLog({
- *     tenantId,
+ *     orgId,
  *     actorId: session.user.id,
  *     action: "CREATE",
  *     entityType: "Priority",
@@ -43,7 +43,7 @@ export type AuditEntityType =
   | "Impersonation";
 
 export interface AuditLogInput {
-  tenantId: string;
+  orgId: string;
   actorId: string;
   action: AuditAction;
   entityType: AuditEntityType;
@@ -91,7 +91,7 @@ export async function writeAuditLog(input: AuditLogInput): Promise<void> {
     const changes = input.changes ?? diffKeys(input.oldValues, input.newValues);
     await db.auditLog.create({
       data: {
-        tenantId: input.tenantId,
+        orgId: input.orgId,
         actorId: input.actorId,
         actorRole: input.actorRole ?? null,
         action: input.action,

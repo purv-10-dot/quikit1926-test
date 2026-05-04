@@ -12,18 +12,18 @@ const ruleSchema = z.object({
   approverId: z.string().min(1),
 });
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const list = await db.cnApprovalRule.findMany({
-    where: { tenantId, deletedAt: null },
+    where: { orgId, deletedAt: null },
     orderBy: [{ docType: "asc" }, { minAmount: "asc" }],
   });
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const input = ruleSchema.parse(await req.json());
   const rule = await db.cnApprovalRule.create({
-    data: { tenantId, ...input, minAmount: input.minAmount ?? null, createdBy: userId },
+    data: { orgId, ...input, minAmount: input.minAmount ?? null, createdBy: userId },
   });
   return NextResponse.json({ success: true, data: rule }, { status: 201 });
 });

@@ -10,14 +10,14 @@ import QuestionsClient from "./questions-client";
 
 export default async function FounderQuestionsPage() {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
-  if (!tenantId || !userId) {
+  if (!orgId || !userId) {
     return <div className="px-4 py-5 text-sm text-gray-500">Sign in required.</div>;
   }
 
   const application = await db.vCApplication.findFirst({
-    where: { tenantId, founderId: userId },
+    where: { orgId, founderId: userId },
     orderBy: { createdAt: "desc" },
     select: { deal: { select: { id: true } } },
   });
@@ -33,7 +33,7 @@ export default async function FounderQuestionsPage() {
   }
 
   const questions = await db.vCDealQuestion.findMany({
-    where: { tenantId, dealId: application.deal.id },
+    where: { orgId, dealId: application.deal.id },
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     select: {
       id: true, question: true, answer: true, status: true,

@@ -8,9 +8,9 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 
 
 // PUT /api/org/users/[id]
-export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const membership = await db.membership.findUnique({
-    where: { tenantId_userId: { tenantId, userId: params.id } },
+    where: { orgId_userId: { orgId, userId: params.id } },
   });
   if (!membership)
     return NextResponse.json({ success: false, error: "User not found in this organisation" }, { status: 404 });
@@ -43,34 +43,34 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
 
   if (Object.keys(membershipUpdates).length > 0) {
     await db.membership.update({
-      where: { tenantId_userId: { tenantId, userId: params.id } },
+      where: { orgId_userId: { orgId, userId: params.id } },
       data: membershipUpdates,
     });
   }
 
   // Replace UserTeam records if teamIds supplied
   if (resolvedTeamIds !== undefined) {
-    await db.userTeam.deleteMany({ where: { tenantId, userId: params.id } });
+    await db.userTeam.deleteMany({ where: { orgId, userId: params.id } });
     for (const teamId of resolvedTeamIds) {
-      await db.userTeam.create({ data: { tenantId, userId: params.id, teamId } });
+      await db.userTeam.create({ data: { orgId, userId: params.id, teamId } });
     }
   }
 
   // Return updated membership with teams
   const updated = await db.membership.findUnique({
-    where: { tenantId_userId: { tenantId, userId: params.id } },
+    where: { orgId_userId: { orgId, userId: params.id } },
     include: {
       user: {
         select: {
           id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
-          userTeams: { where: { tenantId }, include: { team: { select: { id: true, name: true } } } },
+          userTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
         },
       },
     },
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "UPDATE",
     entityType: "User",
@@ -104,17 +104,17 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
 }, { fallbackErrorMessage: "Failed to update user" });
 
 // DELETE /api/org/users/[id] — deactivate membership
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   if (params.id === userId)
     return NextResponse.json({ success: false, error: "You cannot remove yourself" }, { status: 400 });
 
   await db.membership.update({
-    where: { tenantId_userId: { tenantId, userId: params.id } },
+    where: { orgId_userId: { orgId, userId: params.id } },
     data:  { status: "inactive" },
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "DELETE",
     entityType: "User",

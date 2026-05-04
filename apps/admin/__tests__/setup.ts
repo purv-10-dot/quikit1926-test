@@ -8,7 +8,7 @@ import { _clearLocalCache } from "@quikit/auth/cache";
 // ---------------------------------------------------------------------------
 export type TestUser = {
   id: string;
-  tenantId: string;
+  orgId: string;
   role: "owner" | "admin" | "member" | "super_admin" | "executive" | "manager" | "employee" | "coach";
   email?: string;
   name?: string;
@@ -76,7 +76,7 @@ vi.spyOn(console, "warn").mockImplementation(() => {});
 // ---------------------------------------------------------------------------
 beforeEach(() => {
   _state.user = null;
-  // Clear the @quikit/auth in-memory LRU between tests so cached tenantId /
+  // Clear the @quikit/auth in-memory LRU between tests so cached orgId /
   // membership state from a prior test doesn't leak into the next one.
   _clearLocalCache();
 });

@@ -5,11 +5,11 @@ const withTenantAuth = withTenantAuthForModule("kpi");
 
 // GET /api/kpi/[id]/logs - Get audit logs for a KPI
 export const GET = withTenantAuth<{ id: string }>(
-  async ({ tenantId }, _request, { params }) => {
+  async ({ orgId }, _request, { params }) => {
     // Check KPI exists and belongs to tenant
     const kpi = await db.kPI.findUnique({
       where: { id: params.id },
-      select: { tenantId: true },
+      select: { orgId: true },
     });
 
     if (!kpi) {
@@ -19,7 +19,7 @@ export const GET = withTenantAuth<{ id: string }>(
       );
     }
 
-    if (kpi.tenantId !== tenantId) {
+    if (kpi.orgId !== orgId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
         { status: 403 },

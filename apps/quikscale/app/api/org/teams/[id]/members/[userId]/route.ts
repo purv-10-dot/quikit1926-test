@@ -16,10 +16,10 @@ type RouteParams = { id: string; userId: string };
  *     still part of the organisation, just not this team.
  */
 export const DELETE = withTenantAuth<RouteParams>(
-  async ({ tenantId }, _request, { params }) => {
+  async ({ orgId }, _request, { params }) => {
     // Verify team belongs to this tenant
     const team = await db.team.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
     });
     if (!team) {
       return NextResponse.json(
@@ -30,7 +30,7 @@ export const DELETE = withTenantAuth<RouteParams>(
 
     // Find the target user's membership in this tenant
     const membership = await db.membership.findFirst({
-      where: { tenantId, userId: params.userId, status: "active" },
+      where: { orgId, userId: params.userId, status: "active" },
       select: { id: true, teamId: true },
     });
     if (!membership) {
@@ -51,7 +51,7 @@ export const DELETE = withTenantAuth<RouteParams>(
 
     // Drop the UserTeam row (no-op if it doesn't exist)
     await db.userTeam.deleteMany({
-      where: { tenantId, userId: params.userId, teamId: params.id },
+      where: { orgId, userId: params.userId, teamId: params.id },
     });
 
     return NextResponse.json({ success: true });

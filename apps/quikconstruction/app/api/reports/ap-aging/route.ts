@@ -4,10 +4,10 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 
 const withTenantAuth = withTenantAuthForModule("reports");
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const today = new Date();
   const bills = await db.cnVendorBill.findMany({
-    where: { tenantId, deletedAt: null, status: { not: "cancelled" } },
+    where: { orgId, deletedAt: null, status: { not: "cancelled" } },
     select: { id: true, billNumber: true, vendorId: true, total: true, paidAmount: true, billDate: true, dueDate: true, status: true, vendor: { select: { name: true } } },
   });
   const buckets = { current: 0, d30: 0, d60: 0, d90: 0, over90: 0 };

@@ -71,17 +71,17 @@ export async function GET(request: NextRequest) {
   }
 
   const userId = session.user.id;
-  let tenantId = session.user.tenantId;
+  let orgId = session.user.orgId;
 
-  if (!tenantId) {
+  if (!orgId) {
     // User hasn't selected an org yet — try to auto-select their first membership
     const membership = await db.membership.findFirst({
       where: { userId, status: "active" },
-      select: { tenantId: true, role: true },
+      select: { orgId: true, role: true },
       orderBy: { createdAt: "asc" },
     });
     if (membership) {
-      tenantId = membership.tenantId;
+      orgId = membership.orgId;
     } else {
       // No membership at all → redirect to app launcher
       const currentUrl = request.nextUrl.toString();
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
   });
   if (app) {
     const access = await db.userAppAccess.findFirst({
-      where: { userId, tenantId, appId: app.id },
+      where: { userId, orgId, appId: app.id },
     });
     if (!access) {
       const errorUrl = new URL(redirectUri);
@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
       code,
       clientId,
       userId,
-      tenantId,
+      orgId,
       scopes,
       codeChallenge: codeChallenge ?? null,
       codeChallengeMethod: codeChallenge ? codeChallengeMethod : null,

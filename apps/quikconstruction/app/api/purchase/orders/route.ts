@@ -17,14 +17,14 @@ function computeTotals(lines: Array<{ orderedQty: number; unitRate: number; gstR
   return { subtotal, taxAmount, totalAmount: subtotal + taxAmount };
 }
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const vendorId = req.nextUrl.searchParams.get("vendorId") || undefined;
   const pos = await db.cnPurchaseOrder.findMany({
     where: {
-      tenantId,
+      orgId,
       deletedAt: includeDeleted ? { not: null } : null,
       ...(status ? { status } : {}),
       ...(projectId ? { projectId } : {}),
@@ -39,21 +39,21 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: pos });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = poCreateSchema.parse(body);
 
   // Validate FKs
   const [project, vendor] = await Promise.all([
-    db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } }),
-    db.cnVendor.findFirst({ where: { id: input.vendorId, tenantId }, select: { id: true } }),
+    db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } }),
+    db.cnVendor.findFirst({ where: { id: input.vendorId, orgId }, select: { id: true } }),
   ]);
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
   if (!vendor) return NextResponse.json({ success: false, error: "Vendor not found" }, { status: 400 });
 
   if (input.prId) {
     const pr = await db.cnPurchaseRequisition.findFirst({
-      where: { id: input.prId, tenantId, status: { in: ["approved", "submitted"] } },
+      where: { id: input.prId, orgId, status: { in: ["approved", "submitted"] } },
       select: { id: true },
     });
     if (!pr) {
@@ -65,7 +65,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   }
 
   const dup = await db.cnPurchaseOrder.findFirst({
-    where: { tenantId, poNumber: input.poNumber, deletedAt: null },
+    where: { orgId, poNumber: input.poNumber, deletedAt: null },
     select: { id: true },
   });
   if (dup) {
@@ -80,7 +80,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const po = await db.$transaction(async (tx) => {
     const created = await tx.cnPurchaseOrder.create({
       data: {
-        tenantId,
+        orgId,
         poNumber: input.poNumber,
         projectId: input.projectId,
         vendorId: input.vendorId,

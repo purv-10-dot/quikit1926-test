@@ -4,10 +4,10 @@
  * Every route that uses this wrapper:
  *   - Short-circuits with 401/403 if the caller isn't an admin
  *   - Logs a row in ApiCall after the response (fire-and-forget)
- *   - Captures tenantId + userId from the auth result so analytics can slice by tenant
+ *   - Captures orgId + userId from the auth result so analytics can slice by tenant
  *
  * Migration path: replace `requireAdmin()` inside a route body with
- * `withAdminAuth(async ({ tenantId, userId }, req, ctx) => { ... })`
+ * `withAdminAuth(async ({ orgId, userId }, req, ctx) => { ... })`
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,7 +16,7 @@ import { logApiCall } from "@quikit/shared/apiLogging";
 
 export interface AdminAuthContext {
   userId: string;
-  tenantId: string;
+  orgId: string;
 }
 
 type Handler<Params> = (
@@ -28,7 +28,7 @@ type Handler<Params> = (
 export function withAdminAuth<Params = Record<string, never>>(handler: Handler<Params>) {
   return async (req: NextRequest, ctx?: { params: Params }): Promise<NextResponse> => {
     const startedAt = Date.now();
-    let tenantIdForLog: string | null = null;
+    let orgIdForLog: string | null = null;
     let userIdForLog: string | null = null;
     let response: NextResponse;
 
@@ -37,10 +37,10 @@ export function withAdminAuth<Params = Record<string, never>>(handler: Handler<P
       if ("error" in auth && auth.error) {
         response = auth.error;
       } else {
-        tenantIdForLog = auth.tenantId;
+        orgIdForLog = auth.orgId;
         userIdForLog = auth.userId;
         response = await handler(
-          { userId: auth.userId, tenantId: auth.tenantId },
+          { userId: auth.userId, orgId: auth.orgId },
           req,
           ctx ?? ({ params: {} as Params }),
         );
@@ -53,7 +53,7 @@ export function withAdminAuth<Params = Record<string, never>>(handler: Handler<P
     }
 
     void logApiCall({
-      tenantId: tenantIdForLog,
+      orgId: orgIdForLog,
       userId: userIdForLog,
       appSlug: "admin",
       method: req.method,

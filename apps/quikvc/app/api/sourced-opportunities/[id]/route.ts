@@ -25,9 +25,9 @@ const patchSchema = z.object({
 });
 
 export const GET = withTenantAuth(
-  async ({ tenantId }, _req: NextRequest, { params }: { params: { id: string } }) => {
+  async ({ orgId }, _req: NextRequest, { params }: { params: { id: string } }) => {
     const item = await db.vCSourcedOpportunity.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       include: { vertical: { select: { id: true, name: true } } },
     });
     if (!item) {
@@ -41,8 +41,8 @@ export const GET = withTenantAuth(
 );
 
 export const PATCH = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), ANALYST_ROLES);
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = denyIfNotInRoles(await getVCRole(userId, orgId), ANALYST_ROLES);
     if (denied) return denied;
 
     const parsed = patchSchema.safeParse(await req.json());
@@ -53,7 +53,7 @@ export const PATCH = withTenantAuth(
       );
     }
     const item = await db.vCSourcedOpportunity.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true },
     });
     if (!item) {

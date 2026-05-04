@@ -5,18 +5,18 @@ import { financialYearUpdateSchema } from "@/lib/schemas/masters-phase2";
 
 const withTenantAuth = withTenantAuthForModule("masters");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
+export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const year = await db.cnFinancialYear.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     include: { company: { select: { id: true, name: true } } },
   });
   if (!year) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: year });
 });
 
-export const PATCH = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const PATCH = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existing = await db.cnFinancialYear.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     select: { id: true, companyId: true },
   });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -26,7 +26,7 @@ export const PATCH = withTenantAuth<{ id: string }>(async ({ tenantId, userId },
   const updated = await db.$transaction(async (tx) => {
     if (input.isCurrent === true) {
       await tx.cnFinancialYear.updateMany({
-        where: { tenantId, companyId: existing.companyId, isCurrent: true, NOT: { id: params.id } },
+        where: { orgId, companyId: existing.companyId, isCurrent: true, NOT: { id: params.id } },
         data: { isCurrent: false },
       });
     }
@@ -43,9 +43,9 @@ export const PATCH = withTenantAuth<{ id: string }>(async ({ tenantId, userId },
   return NextResponse.json({ success: true, data: updated });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.cnFinancialYear.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     select: { id: true },
   });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });

@@ -26,9 +26,9 @@ const convertSchema = z.object({
  * PO lines using the `lineRates` array to set unit rate + GST. Flips RFQ
  * status to keep history, doesn't delete. Atomic.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const rfq = await db.cnRFQ.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: {
       lines: true,
       vendors: true,
@@ -63,7 +63,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   }
 
   const dup = await db.cnPurchaseOrder.findFirst({
-    where: { tenantId, poNumber: input.poNumber, deletedAt: null },
+    where: { orgId, poNumber: input.poNumber, deletedAt: null },
     select: { id: true },
   });
   if (dup) {
@@ -100,7 +100,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
 
     const created = await tx.cnPurchaseOrder.create({
       data: {
-        tenantId,
+        orgId,
         poNumber: input.poNumber,
         projectId: rfq.projectId,
         vendorId: awarded.vendorId,

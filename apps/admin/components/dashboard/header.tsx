@@ -32,7 +32,7 @@ export function Header() {
   }
 
   async function handleSwitchOrg() {
-    await updateSession({ tenantId: null });
+    await updateSession({ orgId: null });
     router.push("/select-org");
   }
 

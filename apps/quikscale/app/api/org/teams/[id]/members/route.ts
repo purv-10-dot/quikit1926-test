@@ -17,10 +17,10 @@ import { addTeamMembersSchema } from "@/lib/schemas/teamMembersSchema";
  * Responds with { success, data: { added, skipped, skippedUserIds } }
  * so the client can report partial failures.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { params }) => {
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
   // Verify team belongs to this tenant and isn't soft-deleted
   const team = await db.team.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
   });
   if (!team) {
     return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
@@ -38,7 +38,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { p
 
   // Fetch the candidate memberships in one query to minimise round trips
   const candidates = await db.membership.findMany({
-    where: { tenantId, userId: { in: userIds }, status: "active" },
+    where: { orgId, userId: { in: userIds }, status: "active" },
     select: { id: true, userId: true, teamId: true },
   });
   const candidateByUser = new Map(candidates.map((m) => [m.userId, m]));
@@ -67,10 +67,10 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { p
     // Multi-team tracking (join table) — upsert so repeated adds are safe
     await db.userTeam.upsert({
       where: {
-        tenantId_userId_teamId: { tenantId, userId, teamId: params.id },
+        orgId_userId_teamId: { orgId, userId, teamId: params.id },
       },
       update: {},
-      create: { tenantId, userId, teamId: params.id },
+      create: { orgId, userId, teamId: params.id },
     });
 
     added++;

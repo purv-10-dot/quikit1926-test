@@ -13,15 +13,15 @@ import { getVCRole, CAPITAL_OPS_ROLES } from "@/lib/rbac";
 
 export default async function FundingPage({ params }: { params: { id: string } }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
   const userId = session?.user?.id;
-  if (!tenantId || !userId) notFound();
+  if (!orgId || !userId) notFound();
 
-  const viewerRole = await getVCRole(userId, tenantId);
+  const viewerRole = await getVCRole(userId, orgId);
   const canAllocate = viewerRole !== null && CAPITAL_OPS_ROLES.includes(viewerRole);
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     select: {
       id: true,
       allocatedAmount: true,
@@ -36,7 +36,7 @@ export default async function FundingPage({ params }: { params: { id: string } }
 
   // Investors with available balance for the picker
   const investors = await db.vCInvestor.findMany({
-    where: { tenantId },
+    where: { orgId },
     include: {
       commitments: { select: { totalAmount: true } },
       allocations: { select: { amount: true } },

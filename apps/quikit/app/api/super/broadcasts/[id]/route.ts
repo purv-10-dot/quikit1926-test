@@ -24,7 +24,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async (auth, req: NextRe
     if (typeof body.title === "string") updates.title = body.title.trim();
     if (typeof body.body === "string") updates.body = body.body;
     if (["info", "warning", "critical"].includes(body.severity)) updates.severity = body.severity;
-    if (Array.isArray(body.targetTenantIds)) updates.targetTenantIds = body.targetTenantIds;
+    if (Array.isArray(body.targetOrgIds)) updates.targetOrgIds = body.targetOrgIds;
     if (Array.isArray(body.targetAppSlugs)) updates.targetAppSlugs = body.targetAppSlugs;
     if (body.startsAt) updates.startsAt = new Date(body.startsAt);
     if (body.endsAt === null) updates.endsAt = null;

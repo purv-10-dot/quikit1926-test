@@ -17,10 +17,10 @@ const q = z.object({
  * Front-end forms should call this when opening "New <Doc>" to prefill the
  * number field, replacing the `Date.now().toString().slice(-6)` pattern.
  */
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const params = q.parse(Object.fromEntries(req.nextUrl.searchParams));
   const number = await nextNumber({
-    tenantId,
+    orgId,
     prefix: params.prefix.toUpperCase(),
     fy: params.useFy === "true" ? fyKey() : null,
   });

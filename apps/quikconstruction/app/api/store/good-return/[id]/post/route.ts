@@ -11,9 +11,9 @@ const withTenantAuth = withTenantAuthForModule("store");
  * so qtyOut decrements the ledger balance for that item at that location.
  * Pre-checks current balance >= returnQty to prevent negative stock after post.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const ret = await db.cnGoodReturn.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },
   });
   if (!ret) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -23,7 +23,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   const insufficient: Array<{ itemId: string; available: number; requested: number }> = [];
   for (const line of ret.lines) {
     const agg = await db.cnStockLedger.aggregate({
-      where: { tenantId, projectId: ret.projectId, locationId: ret.locationId, itemId: line.itemId },
+      where: { orgId, projectId: ret.projectId, locationId: ret.locationId, itemId: line.itemId },
       _sum: { qtyIn: true, qtyOut: true },
     });
     const available = Number(agg._sum.qtyIn ?? 0) - Number(agg._sum.qtyOut ?? 0);
@@ -41,7 +41,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
       for (const line of ret.lines) {
         await tx.cnStockLedger.create({
           data: {
-            tenantId,
+            orgId,
             projectId: ret.projectId,
             locationId: ret.locationId,
             itemId: line.itemId,

@@ -21,7 +21,7 @@ import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 
 export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { params }) => {
   try {
-    const tenantId = params.id;
+    const orgId = params.id;
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -31,7 +31,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
 
     // Preflight: verify tenant exists
     const tenant = await db.tenant.findUnique({
-      where: { id: tenantId },
+      where: { id: orgId },
       include: {
         _count: { select: { users: true, teams: true, userAppAccess: true } },
         users: {
@@ -70,49 +70,49 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
       moduleFlags,
       appAccess,
     ] = await Promise.all([
-      db.membership.count({ where: { tenantId, status: "active" } }),
+      db.membership.count({ where: { orgId, status: "active" } }),
       db.sessionEvent.findMany({
-        where: { tenantId, event: "login", createdAt: { gte: sevenDaysAgo } },
+        where: { orgId, event: "login", createdAt: { gte: sevenDaysAgo } },
         select: { userId: true },
         distinct: ["userId"],
       }).then((rows) => rows.length),
       db.sessionEvent.findFirst({
-        where: { tenantId, event: "login" },
+        where: { orgId, event: "login" },
         orderBy: { createdAt: "desc" },
         select: { createdAt: true, userId: true },
       }),
-      db.kPI.count({ where: { tenantId } }),
+      db.kPI.count({ where: { orgId } }),
       db.kPIWeeklyValue.count({
-        where: { kpi: { tenantId }, updatedAt: { gte: startOfWeek } },
+        where: { kpi: { orgId }, updatedAt: { gte: startOfWeek } },
       }),
-      db.appModuleFlag.count({ where: { tenantId, enabled: false } }),
-      db.tenantAppAccess.count({ where: { tenantId, enabled: false } }),
+      db.appModuleFlag.count({ where: { orgId, enabled: false } }),
+      db.tenantAppAccess.count({ where: { orgId, enabled: false } }),
       db.invoice.findFirst({
-        where: { tenantId },
+        where: { orgId },
         orderBy: { periodStart: "desc" },
         select: { status: true, amountCents: true, currency: true, periodStart: true, paidAt: true, failedAt: true },
       }),
-      db.apiCall.count({ where: { tenantId, createdAt: { gte: sevenDaysAgo } } }),
-      db.sessionEvent.count({ where: { tenantId, event: "login", createdAt: { gte: thirtyDaysAgo } } }),
+      db.apiCall.count({ where: { orgId, createdAt: { gte: sevenDaysAgo } } }),
+      db.sessionEvent.count({ where: { orgId, event: "login", createdAt: { gte: thirtyDaysAgo } } }),
       db.app.findMany({
         select: { id: true, slug: true, name: true, status: true, iconUrl: true },
         orderBy: { name: "asc" },
       }),
       db.tenantAppAccess.findMany({
-        where: { tenantId },
+        where: { orgId },
         select: { appId: true, enabled: true, reason: true, updatedAt: true, updatedBy: true },
       }),
       db.invoice.findMany({
-        where: { tenantId },
+        where: { orgId },
         orderBy: { periodStart: "desc" },
         take: 24,
       }),
       db.sessionEvent.findMany({
-        where: { tenantId, event: "login", createdAt: { gte: thirtyDaysAgo } },
+        where: { orgId, event: "login", createdAt: { gte: thirtyDaysAgo } },
         select: { userId: true, createdAt: true },
       }),
       db.apiCallHourlyRollup.findMany({
-        where: { tenantId, NOT: { tenantId: "_global_" }, hourBucket: { gte: thirtyDaysAgo } },
+        where: { orgId, NOT: { orgId: "_global_" }, hourBucket: { gte: thirtyDaysAgo } },
         select: {
           hourBucket: true,
           pathPattern: true,
@@ -124,11 +124,11 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
         },
       }),
       db.appModuleFlag.findMany({
-        where: { tenantId, enabled: false },
+        where: { orgId, enabled: false },
         include: { app: { select: { slug: true } } },
       }),
       db.tenantAppAccess.findMany({
-        where: { tenantId, enabled: false },
+        where: { orgId, enabled: false },
         include: { app: { select: { slug: true, name: true } } },
       }),
     ]);

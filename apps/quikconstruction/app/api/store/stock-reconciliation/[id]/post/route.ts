@@ -11,9 +11,9 @@ const withTenantAuth = withTenantAuthForModule("store");
  *   adjustmentQty = 0 → skip (no ledger row needed)
  * transactionType = "reconciliation_adj".
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const rec = await db.cnStockReconciliation.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },
   });
   if (!rec) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -25,7 +25,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
     const adj = Number(line.adjustmentQty);
     if (adj < 0) {
       const agg = await db.cnStockLedger.aggregate({
-        where: { tenantId, projectId: rec.projectId, locationId: rec.locationId, itemId: line.itemId },
+        where: { orgId, projectId: rec.projectId, locationId: rec.locationId, itemId: line.itemId },
         _sum: { qtyIn: true, qtyOut: true },
       });
       const available = Number(agg._sum.qtyIn ?? 0) - Number(agg._sum.qtyOut ?? 0);
@@ -46,7 +46,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
         if (adj === 0) continue;
         await tx.cnStockLedger.create({
           data: {
-            tenantId,
+            orgId,
             projectId: rec.projectId,
             locationId: rec.locationId,
             itemId: line.itemId,

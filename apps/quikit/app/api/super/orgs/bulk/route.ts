@@ -48,7 +48,7 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
         entityType: "tenant",
         entityId: id,
         actorId: userId,
-        tenantId: id,
+        orgId: id,
         newValues: JSON.stringify({ status: newStatus }),
       });
     }

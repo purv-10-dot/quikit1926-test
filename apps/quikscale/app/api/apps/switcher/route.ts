@@ -17,16 +17,16 @@ export async function GET() {
   }
 
   const userId = session.user.id;
-  let tenantId = session.user.tenantId;
+  let orgId = session.user.orgId;
 
-  // Fall back to first active membership if tenantId not in session
-  if (!tenantId) {
+  // Fall back to first active membership if orgId not in session
+  if (!orgId) {
     const membership = await db.membership.findFirst({
       where: { userId, status: "active" },
-      select: { tenantId: true },
+      select: { orgId: true },
       orderBy: { createdAt: "asc" },
     });
-    tenantId = membership?.tenantId ?? undefined;
+    orgId = membership?.orgId ?? undefined;
   }
 
   // Get all active apps
@@ -45,9 +45,9 @@ export async function GET() {
   });
 
   // Get user's app access records
-  const accessRecords = tenantId
+  const accessRecords = orgId
     ? await db.userAppAccess.findMany({
-        where: { userId, tenantId },
+        where: { userId, orgId },
         select: { appId: true },
       })
     : [];

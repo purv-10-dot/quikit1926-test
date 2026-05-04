@@ -3,23 +3,23 @@ import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 
-export const GET = withAdminAuth(async ({ tenantId }) => {
-  const blocked = await gateModuleApi("admin", "overview", tenantId);
+export const GET = withAdminAuth(async ({ orgId }) => {
+  const blocked = await gateModuleApi("admin", "overview", orgId);
   if (blocked) return blocked as NextResponse;
 
   const [memberCount, teamCount, pendingInvites, appCount] = await Promise.all([
     db.membership.count({
-      where: { tenantId, status: "active" },
+      where: { orgId, status: "active" },
     }),
     db.team.count({
-      where: { tenantId },
+      where: { orgId },
     }),
     db.membership.count({
-      where: { tenantId, status: "invited" },
+      where: { orgId, status: "invited" },
     }),
     db.userAppAccess.groupBy({
       by: ["appId"],
-      where: { tenantId },
+      where: { orgId },
     }).then((groups) => groups.length),
   ]);
 

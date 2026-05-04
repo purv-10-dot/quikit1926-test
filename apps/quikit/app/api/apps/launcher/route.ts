@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
  * Returns all apps in the registry with an `installed` flag indicating
  * whether the current user's org has access. Used by the App Launcher page.
  *
- * Handles the case where tenantId is NOT in the JWT session yet
+ * Handles the case where orgId is NOT in the JWT session yet
  * (user just logged in but hasn't selected an org, OR the session
  * update from select-org didn't persist). Falls back to looking up
  * the user's first active membership.
@@ -22,15 +22,15 @@ export async function GET() {
 
   const userId = session.user.id;
 
-  // Try to get tenantId from session, or fall back to the user's first active membership
-  let tenantId = session.user.tenantId;
-  if (!tenantId) {
+  // Try to get orgId from session, or fall back to the user's first active membership
+  let orgId = session.user.orgId;
+  if (!orgId) {
     const membership = await db.membership.findFirst({
       where: { userId, status: "active" },
-      select: { tenantId: true },
+      select: { orgId: true },
       orderBy: { createdAt: "asc" },
     });
-    tenantId = membership?.tenantId ?? undefined;
+    orgId = membership?.orgId ?? undefined;
   }
 
   // Get all active apps
@@ -49,9 +49,9 @@ export async function GET() {
   });
 
   // Get this user's app access records
-  const accessRecords = tenantId
+  const accessRecords = orgId
     ? await db.userAppAccess.findMany({
-        where: { userId, tenantId },
+        where: { userId, orgId },
         select: { appId: true, role: true },
       })
     : ([] as { appId: string; role: string }[]);

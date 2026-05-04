@@ -10,9 +10,9 @@ const withTenantAuth = withTenantAuthForModule("priority");
 
 // POST /api/priority/[id]/weekly — upsert a weekly status
 export const POST = withTenantAuth<{ id: string }>(
-  async ({ tenantId, userId }, request, { params }) => {
+  async ({ orgId, userId }, request, { params }) => {
     const priority = await db.priority.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { quarter: true, year: true },
     });
     if (!priority) {
@@ -35,10 +35,10 @@ export const POST = withTenantAuth<{ id: string }>(
     const { weekNumber, status, notes } = parsed.data;
 
     // ── Past-week edit enforcement ──
-    const { canEditPastWeek } = await getPastWeekFlags(tenantId);
+    const { canEditPastWeek } = await getPastWeekFlags(orgId);
     if (!canEditPastWeek && priority.quarter && priority.year) {
       const currentWeek = await getCurrentFiscalWeekFromDB(
-        tenantId,
+        orgId,
         priority.year,
         priority.quarter,
       );

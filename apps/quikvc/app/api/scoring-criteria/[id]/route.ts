@@ -16,8 +16,8 @@ const patchSchema = z.object({
 });
 
 export const PATCH = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), FUND_ADMIN_ROLES);
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = denyIfNotInRoles(await getVCRole(userId, orgId), FUND_ADMIN_ROLES);
     if (denied) return denied;
 
     const parsed = patchSchema.safeParse(await req.json());
@@ -28,7 +28,7 @@ export const PATCH = withTenantAuth(
       );
     }
     const c = await db.vCScoringCriterion.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true },
     });
     if (!c) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -41,12 +41,12 @@ export const PATCH = withTenantAuth(
 );
 
 export const DELETE = withTenantAuth(
-  async ({ tenantId, userId }, _req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), FUND_ADMIN_ROLES);
+  async ({ orgId, userId }, _req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = denyIfNotInRoles(await getVCRole(userId, orgId), FUND_ADMIN_ROLES);
     if (denied) return denied;
 
     const c = await db.vCScoringCriterion.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true },
     });
     if (!c) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });

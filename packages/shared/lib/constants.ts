@@ -37,6 +37,29 @@ export const MEMBERSHIP_STATUS = {
 
 export type MembershipStatus = (typeof MEMBERSHIP_STATUS)[keyof typeof MEMBERSHIP_STATUS];
 
+// ── v4 role split ──────────────────────────────────────────────────────────
+// MEMBERSHIP_ROLES live on OrgMember.role (org-wide authority).
+// Per-app authority lives on UserAppAccess.role (app-scoped, value depends
+// on the app's domain — fetch from app schema).
+//
+// Migration plan: legacy ROLES (super_admin/admin/executive/manager/employee/
+// coach) remain for backwards-compat with existing app code. New code should
+// use MEMBERSHIP_ROLES + the app-specific AppRole values.
+
+export const MEMBERSHIP_ROLES = {
+  ORG_ADMIN: "org_admin",
+  APP_ADMIN: "app_admin",
+  MEMBER: "member",
+} as const;
+
+export type MembershipRole = (typeof MEMBERSHIP_ROLES)[keyof typeof MEMBERSHIP_ROLES];
+
+export const MEMBERSHIP_ROLE_LABELS: Record<MembershipRole, string> = {
+  [MEMBERSHIP_ROLES.ORG_ADMIN]: "Org Admin",
+  [MEMBERSHIP_ROLES.APP_ADMIN]: "App Admin",
+  [MEMBERSHIP_ROLES.MEMBER]: "Member",
+};
+
 // ── Domain status const-enums ──────────────────────────────────────────────
 // These are TypeScript const objects (not Prisma enums) so they share the
 // exact string literals used in the database without requiring a schema

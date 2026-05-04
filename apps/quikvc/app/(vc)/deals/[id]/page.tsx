@@ -20,11 +20,11 @@ export default async function DealOverviewPage({
   params: { id: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     include: {
       vertical: { select: { name: true } },
       application: {

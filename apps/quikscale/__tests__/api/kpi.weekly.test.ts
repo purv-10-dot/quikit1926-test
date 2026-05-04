@@ -23,14 +23,14 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
-    id: "m1", userId: USER, tenantId: TENANT, role: "admin", status: "active",
+    id: "m1", userId: USER, orgId: TENANT, role: "admin", status: "active",
   } as any);
 }
 
 const fakeKPI = {
-  tenantId: TENANT,
+  orgId: TENANT,
   qtdGoal: 100,
   target: 100,
   status: "active",
@@ -55,7 +55,7 @@ describe("GET /api/kpi/[id]/weekly — auth", () => {
   });
 
   it("403 no membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: { id: KPI_ID } });
     expect(res.status).toBe(403);
@@ -72,13 +72,13 @@ describe("GET /api/kpi/[id]/weekly — tenant scope", () => {
   });
 
   it("403 when KPI belongs to another tenant", async () => {
-    mockDb.kPI.findUnique.mockResolvedValue({ tenantId: "other-tenant" } as any);
+    mockDb.kPI.findUnique.mockResolvedValue({ orgId: "other-tenant" } as any);
     const res = await GET(buildGET(), { params: { id: KPI_ID } });
     expect(res.status).toBe(403);
   });
 
   it("200 returns weekly values", async () => {
-    mockDb.kPI.findUnique.mockResolvedValue({ tenantId: TENANT } as any);
+    mockDb.kPI.findUnique.mockResolvedValue({ orgId: TENANT } as any);
     mockDb.kPIWeeklyValue.findMany.mockResolvedValue([
       { id: "wv1", userId: USER, weekNumber: 1, value: 10, notes: null, createdAt: new Date(), updatedAt: new Date() },
     ] as any);
@@ -165,7 +165,7 @@ describe("POST /api/kpi/[id]/weekly — individual KPI happy path", () => {
 
     const logArg = (mockDb.kPILog.create as any).mock.calls[0][0];
     expect(logArg.data.action).toBe("UPDATE_WEEKLY");
-    expect(logArg.data.tenantId).toBe(TENANT);
+    expect(logArg.data.orgId).toBe(TENANT);
     expect(logArg.data.kpiId).toBe(KPI_ID);
   });
 });

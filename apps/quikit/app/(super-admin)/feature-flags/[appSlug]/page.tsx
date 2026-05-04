@@ -29,7 +29,7 @@ export default function AppFeatureFlagsPage() {
   const [loadingTenants, setLoadingTenants] = useState(true);
 
   // Selected tenant + its disabled-set
-  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
   const [disabledKeys, setDisabledKeys] = useState<Set<string>>(new Set());
   const [loadingFlags, setLoadingFlags] = useState(false);
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
@@ -68,7 +68,7 @@ export default function AppFeatureFlagsPage() {
     setSaveError(null);
     try {
       const r = await fetch(
-        `/api/super/feature-flags/${appSlug}?tenantId=${encodeURIComponent(tid)}`,
+        `/api/super/feature-flags/${appSlug}?orgId=${encodeURIComponent(tid)}`,
       );
       const j = await r.json();
       if (j.success) {
@@ -84,13 +84,13 @@ export default function AppFeatureFlagsPage() {
   }, [appSlug]);
 
   useEffect(() => {
-    if (tenantId) loadFlags(tenantId);
+    if (orgId) loadFlags(orgId);
     else setDisabledKeys(new Set());
-  }, [tenantId, loadFlags]);
+  }, [orgId, loadFlags]);
 
   /* Toggle — optimistic: update local state, call API, roll back on error */
   const handleToggle = useCallback(async (moduleKey: string, nextEnabled: boolean) => {
-    if (!tenantId) return;
+    if (!orgId) return;
     setPendingKeys((p) => { const n = new Set(p); n.add(moduleKey); return n; });
     // Optimistic update
     setDisabledKeys((prev) => {
@@ -104,7 +104,7 @@ export default function AppFeatureFlagsPage() {
       const r = await fetch(`/api/super/feature-flags/${appSlug}/toggle`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, moduleKey, enabled: nextEnabled }),
+        body: JSON.stringify({ orgId, moduleKey, enabled: nextEnabled }),
       });
       const j = await r.json();
       if (!r.ok || !j.success) {
@@ -122,7 +122,7 @@ export default function AppFeatureFlagsPage() {
     } finally {
       setPendingKeys((p) => { const n = new Set(p); n.delete(moduleKey); return n; });
     }
-  }, [appSlug, tenantId]);
+  }, [appSlug, orgId]);
 
   if (!appConfig) {
     return (
@@ -135,7 +135,7 @@ export default function AppFeatureFlagsPage() {
     );
   }
 
-  const selectedTenant = tenants.find((t) => t.id === tenantId);
+  const selectedTenant = tenants.find((t) => t.id === orgId);
 
   return (
     <div className="p-6 max-w-4xl">
@@ -158,8 +158,8 @@ export default function AppFeatureFlagsPage() {
         </label>
         <TenantPicker
           tenants={tenants}
-          value={tenantId}
-          onChange={setTenantId}
+          value={orgId}
+          onChange={setOrgId}
           loading={loadingTenants}
           placeholder={loadingTenants ? "Loading tenants…" : "Pick a tenant to configure…"}
         />
@@ -174,18 +174,18 @@ export default function AppFeatureFlagsPage() {
       )}
 
       {/* Module tree (empty state until tenant is selected) */}
-      {!tenantId && (
+      {!orgId && (
         <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center text-sm text-gray-500">
           Select a tenant above to view its module toggles. Absent toggles mean
           the module is enabled by default.
         </div>
       )}
 
-      {tenantId && loadingFlags && (
+      {orgId && loadingFlags && (
         <div className="text-sm text-gray-400 py-6 text-center">Loading flags…</div>
       )}
 
-      {tenantId && !loadingFlags && (
+      {orgId && !loadingFlags && (
         <>
           <div className="mb-3 text-xs text-gray-500">
             Showing {appConfig.modules.length} modules for{" "}

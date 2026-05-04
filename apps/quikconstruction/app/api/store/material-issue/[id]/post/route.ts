@@ -12,9 +12,9 @@ const withTenantAuth = withTenantAuthForModule("store");
  * single transaction. Validates running balance per item+location before
  * issuing to prevent negative stock.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const issue = await db.cnMaterialIssue.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },
   });
   if (!issue) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -33,7 +33,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   for (const line of issue.lines) {
     const agg = await db.cnStockLedger.aggregate({
       where: {
-        tenantId,
+        orgId,
         projectId: issue.projectId,
         locationId: issue.locationId,
         itemId: line.itemId,
@@ -63,7 +63,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
       for (const line of issue.lines) {
         await tx.cnStockLedger.create({
           data: {
-            tenantId,
+            orgId,
             projectId: issue.projectId,
             locationId: issue.locationId,
             itemId: line.itemId,
@@ -90,6 +90,6 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
     return NextResponse.json({ success: false, error: `Transaction failed: ${msg}` }, { status: 500 });
   }
 
-  await logAudit({ tenantId, userId, actionType: "post", entityType: "cnMaterialIssue", entityId: issue.id, entityRef: issue.issueNumber, oldValues: { status: "draft" }, newValues: { status: "posted" } });
+  await logAudit({ orgId, userId, actionType: "post", entityType: "cnMaterialIssue", entityId: issue.id, entityRef: issue.issueNumber, oldValues: { status: "draft" }, newValues: { status: "posted" } });
   return NextResponse.json({ success: true, data: { id: issue.id, status: "posted", postedAt } });
 });

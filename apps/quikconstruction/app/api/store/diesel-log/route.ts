@@ -5,10 +5,10 @@ import { dieselCreateSchema } from "@/lib/schemas/procurement-3b";
 
 const withTenantAuth = withTenantAuthForModule("store");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const list = await db.cnDieselLog.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     include: {
       project: { select: { id: true, name: true } },
       location: { select: { id: true, name: true } },
@@ -19,18 +19,18 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = dieselCreateSchema.parse(body);
   const dup = await db.cnDieselLog.findFirst({
-    where: { tenantId, logNumber: input.logNumber, deletedAt: null },
+    where: { orgId, logNumber: input.logNumber, deletedAt: null },
     select: { id: true },
   });
   if (dup) return NextResponse.json({ success: false, error: `Log number '${input.logNumber}' already exists` }, { status: 409 });
 
   const log = await db.cnDieselLog.create({
     data: {
-      tenantId,
+      orgId,
       ...input,
       logDate: new Date(input.logDate),
       amount: input.amount ?? (input.unitRate ? input.fuelQty * input.unitRate : null),

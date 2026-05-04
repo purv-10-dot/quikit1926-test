@@ -23,7 +23,7 @@ const PRIORITY_SELECT = {
   updatedAt: true,
   createdBy: true,
   updatedBy: true,
-  tenantId: true,
+  orgId: true,
   owner_user: { select: { id: true, firstName: true, lastName: true } },
   team: { select: { id: true, name: true } },
   weeklyStatuses: {
@@ -32,27 +32,27 @@ const PRIORITY_SELECT = {
   },
 };
 
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
+export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const priority = await db.priority.findFirst({
     where: { id: params.id },
     select: PRIORITY_SELECT,
   });
   if (!priority) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
-  if (priority.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+  if (priority.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   return NextResponse.json({ success: true, data: priority });
 });
 
-export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existing = await db.priority.findUnique({
     where: { id: params.id },
-    select: { tenantId: true, createdBy: true, owner: true },
+    select: { orgId: true, createdBy: true, owner: true },
   });
   if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
-  if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+  if (existing.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   // Edit permission: creator, assignee, admin, or super-admin
-  const canEdit = await canEditPriority(userId, tenantId, {
+  const canEdit = await canEditPriority(userId, orgId, {
     createdBy: existing.createdBy,
     owner: existing.owner,
   });
@@ -91,7 +91,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "UPDATE",
     entityType: "Priority",
@@ -102,16 +102,16 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
   return NextResponse.json({ success: true, data: updated });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.priority.findUnique({
     where: { id: params.id },
-    select: { tenantId: true, createdBy: true, owner: true },
+    select: { orgId: true, createdBy: true, owner: true },
   });
   if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
-  if (existing.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+  if (existing.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   // Edit permission: creator, assignee, admin, or super-admin
-  const canEdit = await canEditPriority(userId, tenantId, {
+  const canEdit = await canEditPriority(userId, orgId, {
     createdBy: existing.createdBy,
     owner: existing.owner,
   });
@@ -129,7 +129,7 @@ export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "DELETE",
     entityType: "Priority",

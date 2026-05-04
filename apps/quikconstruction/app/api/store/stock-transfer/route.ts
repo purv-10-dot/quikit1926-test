@@ -5,10 +5,10 @@ import { transferCreateSchema } from "@/lib/schemas/procurement-3b";
 
 const withTenantAuth = withTenantAuthForModule("store");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const transfers = await db.cnStockTransfer.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     include: {
       project: { select: { id: true, name: true } },
       fromLocation: { select: { id: true, name: true } },
@@ -19,22 +19,22 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: transfers });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = transferCreateSchema.parse(body);
   // Both locations must belong to tenant
   const [from, to] = await Promise.all([
-    db.cnLocation.findFirst({ where: { id: input.fromLocationId, tenantId }, select: { id: true } }),
-    db.cnLocation.findFirst({ where: { id: input.toLocationId, tenantId }, select: { id: true } }),
+    db.cnLocation.findFirst({ where: { id: input.fromLocationId, orgId }, select: { id: true } }),
+    db.cnLocation.findFirst({ where: { id: input.toLocationId, orgId }, select: { id: true } }),
   ]);
   if (!from) return NextResponse.json({ success: false, error: "Source location not found" }, { status: 400 });
   if (!to) return NextResponse.json({ success: false, error: "Destination location not found" }, { status: 400 });
-  const dup = await db.cnStockTransfer.findFirst({ where: { tenantId, transferNumber: input.transferNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnStockTransfer.findFirst({ where: { orgId, transferNumber: input.transferNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Transfer number '${input.transferNumber}' already exists` }, { status: 409 });
 
   const tr = await db.cnStockTransfer.create({
     data: {
-      tenantId,
+      orgId,
       transferNumber: input.transferNumber,
       projectId: input.projectId,
       fromLocationId: input.fromLocationId,

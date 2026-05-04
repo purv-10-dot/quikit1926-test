@@ -3,14 +3,14 @@ import { db } from "@/lib/db";
 import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("analytics.trends");
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const currentYear = new Date().getFullYear();
   const years = [currentYear - 1, currentYear];
   const quarters = ["Q1", "Q2", "Q3", "Q4"];
 
-  const kpis = await db.kPI.findMany({ where: { tenantId } });
+  const kpis = await db.kPI.findMany({ where: { orgId } });
   const priorities = await db.priority.findMany({
-    where: { tenantId },
+    where: { orgId },
     include: { weeklyStatuses: true },
   });
 
@@ -50,7 +50,7 @@ export const GET = withTenantAuth(async ({ tenantId }) => {
   const currentQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
   const qLabel = `Q${currentQuarter}`;
   const currentQKpis = await db.kPI.findMany({
-    where: { tenantId, year: currentYear, quarter: qLabel },
+    where: { orgId, year: currentYear, quarter: qLabel },
     include: { weeklyValues: true },
   });
 

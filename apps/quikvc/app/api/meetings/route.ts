@@ -16,7 +16,7 @@ const postSchema = z.object({
   agenda: z.string().max(4000).optional(),
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
   const parsed = postSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -25,12 +25,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
     );
   }
   const data = parsed.data;
-  const deal = await db.vCDeal.findFirst({ where: { id: data.dealId, tenantId } });
+  const deal = await db.vCDeal.findFirst({ where: { id: data.dealId, orgId } });
   if (!deal) return NextResponse.json({ success: false, error: "Deal not found" }, { status: 404 });
 
   const meeting = await db.vCMeeting.create({
     data: {
-      tenantId,
+      orgId,
       dealId: data.dealId,
       title: data.title,
       type: data.type,
@@ -46,7 +46,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   await db.vCTimelineEvent.create({
     data: {
-      tenantId,
+      orgId,
       dealId: data.dealId,
       type: "meeting-scheduled",
       actorId: userId,

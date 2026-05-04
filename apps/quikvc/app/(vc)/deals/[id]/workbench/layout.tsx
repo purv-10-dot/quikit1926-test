@@ -35,11 +35,11 @@ export default async function WorkbenchLayout({
   params: { id: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const deal = await db.vCDeal.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     select: {
       id: true, currentStage: true, aiScore: true, analystScore: true,
       docCompleteness: true,
@@ -54,16 +54,16 @@ export default async function WorkbenchLayout({
   // Right panel data — small queries, run in parallel
   const [openSignals, openQuestions, recentEvents, latestMemo] = await Promise.all([
     db.vCDealSignal.findMany({
-      where: { tenantId, dealId: deal.id, status: { not: "resolved" } },
+      where: { orgId, dealId: deal.id, status: { not: "resolved" } },
       orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
       select: { id: true, severity: true, title: true },
       take: 5,
     }),
     db.vCDealQuestion.count({
-      where: { tenantId, dealId: deal.id, status: "open" },
+      where: { orgId, dealId: deal.id, status: "open" },
     }),
     db.vCTimelineEvent.findMany({
-      where: { tenantId, dealId: deal.id },
+      where: { orgId, dealId: deal.id },
       orderBy: { createdAt: "desc" },
       select: { id: true, type: true, summary: true, createdAt: true },
       take: 5,

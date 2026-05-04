@@ -6,20 +6,20 @@ const withTenantAuth = withTenantAuthForModule("www");
 // GET /api/www/[id]/logs — change history for a WWW item (read-only)
 // Source: AuditLog rows where entityType=WWWItem and entityId=id
 export const GET = withTenantAuth<{ id: string }>(
-  async ({ tenantId }, _request, { params }) => {
+  async ({ orgId }, _request, { params }) => {
     const item = await db.wWWItem.findUnique({
       where: { id: params.id },
-      select: { tenantId: true },
+      select: { orgId: true },
     });
     if (!item) {
       return NextResponse.json({ success: false, error: "WWW item not found" }, { status: 404 });
     }
-    if (item.tenantId !== tenantId) {
+    if (item.orgId !== orgId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
     }
 
     const logs = await db.auditLog.findMany({
-      where: { tenantId, entityType: "WWWItem", entityId: params.id },
+      where: { orgId, entityType: "WWWItem", entityId: params.id },
       select: {
         id: true,
         action: true,

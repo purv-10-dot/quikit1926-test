@@ -14,7 +14,7 @@ import crypto from "crypto";
  */
 export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUserId }, request: NextRequest, { params }) => {
   try {
-    const tenantId = params.id;
+    const orgId = params.id;
     const body = await request.json();
     const { email, firstName, lastName, role, password } = body;
 
@@ -35,7 +35,7 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
 
     // Verify org and look up user in parallel
     const [tenant, existingUser] = await Promise.all([
-      db.tenant.findUnique({ where: { id: tenantId }, select: { id: true, name: true } }),
+      db.tenant.findUnique({ where: { id: orgId }, select: { id: true, name: true } }),
       db.user.findUnique({ where: { email } }),
     ]);
 
@@ -65,7 +65,7 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
 
     // Check if membership already exists
     const existing = await db.membership.findUnique({
-      where: { tenantId_userId: { tenantId, userId: user.id } },
+      where: { orgId_userId: { orgId, userId: user.id } },
     });
 
     if (existing && existing.status === "active") {
@@ -77,9 +77,9 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
 
     // Create or reactivate membership
     const membership = await db.membership.upsert({
-      where: { tenantId_userId: { tenantId, userId: user.id } },
+      where: { orgId_userId: { orgId, userId: user.id } },
       create: {
-        tenantId,
+        orgId,
         userId: user.id,
         role,
         status: "active",
@@ -101,7 +101,7 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
       entityType: "membership",
       entityId: membership.id,
       actorId: adminUserId,
-      tenantId,
+      orgId,
       newValues: JSON.stringify({ email, role, userId: user.id }),
     });
 

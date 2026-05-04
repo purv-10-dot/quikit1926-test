@@ -5,13 +5,13 @@ import { grnCreateSchema } from "@/lib/schemas/procurement";
 
 const withTenantAuth = withTenantAuthForModule("store");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const poId = req.nextUrl.searchParams.get("poId") || undefined;
   const grns = await db.cnGoodsReceiptNote.findMany({
     where: {
-      tenantId,
+      orgId,
       deletedAt: includeDeleted ? { not: null } : null,
       ...(status ? { status } : {}),
       ...(poId ? { poId } : {}),
@@ -36,13 +36,13 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
  * typos in qty/rate can be fixed while draft, but once posted the GRN is
  * immutable and the ledger row is created.
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = grnCreateSchema.parse(body);
 
   // Validate FKs + PO status
   const po = await db.cnPurchaseOrder.findFirst({
-    where: { id: input.poId, tenantId, deletedAt: null },
+    where: { id: input.poId, orgId, deletedAt: null },
     select: { id: true, status: true, vendorId: true, projectId: true, lines: { select: { id: true, orderedQty: true, receivedQty: true, pendingQty: true, itemId: true } } },
   });
   if (!po) return NextResponse.json({ success: false, error: "PO not found" }, { status: 400 });
@@ -87,7 +87,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   }
 
   const dup = await db.cnGoodsReceiptNote.findFirst({
-    where: { tenantId, grnNumber: input.grnNumber, deletedAt: null },
+    where: { orgId, grnNumber: input.grnNumber, deletedAt: null },
     select: { id: true },
   });
   if (dup) {
@@ -99,7 +99,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
   const grn = await db.cnGoodsReceiptNote.create({
     data: {
-      tenantId,
+      orgId,
       grnNumber: input.grnNumber,
       poId: input.poId,
       projectId: input.projectId,

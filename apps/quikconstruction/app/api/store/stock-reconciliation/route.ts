@@ -5,28 +5,28 @@ import { reconCreateSchema } from "@/lib/schemas/procurement-3b";
 
 const withTenantAuth = withTenantAuthForModule("store");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const rows = await db.cnStockReconciliation.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     include: { project: { select: { id: true, name: true } }, location: { select: { id: true, name: true } } },
     orderBy: { reconciliationDate: "desc" },
   });
   return NextResponse.json({ success: true, data: rows });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = reconCreateSchema.parse(body);
   const dup = await db.cnStockReconciliation.findFirst({
-    where: { tenantId, reconciliationNumber: input.reconciliationNumber, deletedAt: null },
+    where: { orgId, reconciliationNumber: input.reconciliationNumber, deletedAt: null },
     select: { id: true },
   });
   if (dup) return NextResponse.json({ success: false, error: `Reconciliation number '${input.reconciliationNumber}' already exists` }, { status: 409 });
 
   const rec = await db.cnStockReconciliation.create({
     data: {
-      tenantId,
+      orgId,
       reconciliationNumber: input.reconciliationNumber,
       projectId: input.projectId,
       locationId: input.locationId,

@@ -14,12 +14,12 @@ import { withTenantAuth } from "@/lib/api/withTenantAuth";
 import { getVCRole, denyIfNotInRoles, ANALYST_ROLES } from "@/lib/rbac";
 
 export const POST = withTenantAuth(
-  async ({ tenantId, userId }, _req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), ANALYST_ROLES);
+  async ({ orgId, userId }, _req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = denyIfNotInRoles(await getVCRole(userId, orgId), ANALYST_ROLES);
     if (denied) return denied;
 
     const opp = await db.vCSourcedOpportunity.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
     });
     if (!opp) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -56,7 +56,7 @@ export const POST = withTenantAuth(
           lastName: opp.contactName?.split(" ").slice(1).join(" ") || "—",
           memberships: {
             create: {
-              tenantId,
+              orgId,
               role: "founder",
             },
           },
@@ -67,16 +67,16 @@ export const POST = withTenantAuth(
     } else {
       // Ensure founder membership exists for this tenant
       await db.membership.upsert({
-        where: { tenantId_userId: { tenantId, userId: founder.id } },
+        where: { orgId_userId: { orgId, userId: founder.id } },
         update: {},
-        create: { userId: founder.id, tenantId, role: "founder" },
+        create: { userId: founder.id, orgId, role: "founder" },
       });
     }
 
     const result = await db.$transaction(async (tx) => {
       const application = await tx.vCApplication.create({
         data: {
-          tenantId,
+          orgId,
           founderId: founder.id,
           verticalId: opp.verticalId!,
           startupName: opp.startupName,
@@ -94,7 +94,7 @@ export const POST = withTenantAuth(
 
       const deal = await tx.vCDeal.create({
         data: {
-          tenantId,
+          orgId,
           applicationId: application.id,
           verticalId: opp.verticalId!,
           currentStage: "intake",
@@ -115,7 +115,7 @@ export const POST = withTenantAuth(
 
       await tx.vCTimelineEvent.create({
         data: {
-          tenantId,
+          orgId,
           dealId: deal.id,
           type: "deal-created-from-sourcing",
           actorId: userId,

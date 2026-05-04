@@ -13,16 +13,16 @@ export default async function SourcedOpportunityDetailPage({
   params: { id: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const [opp, verticals] = await Promise.all([
     db.vCSourcedOpportunity.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       include: { vertical: { select: { id: true, name: true } } },
     }),
     db.vCVertical.findMany({
-      where: { tenantId, enabled: true },
+      where: { orgId, enabled: true },
       orderBy: { sortOrder: "asc" },
       select: { id: true, name: true },
     }),

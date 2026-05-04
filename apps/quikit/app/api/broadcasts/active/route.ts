@@ -3,7 +3,7 @@
  *
  * Returns a list of BroadcastAnnouncement rows that:
  *   - Are in their time window (startsAt <= now <= endsAt || endsAt null)
- *   - Target this tenant (or are platform-wide — empty targetTenantIds)
+ *   - Target this tenant (or are platform-wide — empty targetOrgIds)
  *   - Optionally target this app slug (or are cross-app — empty targetAppSlugs)
  *   - Have NOT been dismissed by this user
  *
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data: [] });
     }
     const userId = session.user.id;
-    const tenantId = session.user.tenantId ?? null;
+    const orgId = session.user.orgId ?? null;
     const appSlug = req.nextUrl.searchParams.get("app");
 
     const now = new Date();
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     // Filter targeting + dismissals in memory — at current scale this is
     // cheaper than adding a complex SQL join.
     const applicable = all.filter((a) => {
-      if (a.targetTenantIds.length > 0 && (!tenantId || !a.targetTenantIds.includes(tenantId))) {
+      if (a.targetOrgIds.length > 0 && (!orgId || !a.targetOrgIds.includes(orgId))) {
         return false;
       }
       if (appSlug && a.targetAppSlugs.length > 0 && !a.targetAppSlugs.includes(appSlug)) {

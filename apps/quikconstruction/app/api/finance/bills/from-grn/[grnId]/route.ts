@@ -10,18 +10,18 @@ const withTenantAuth = withTenantAuthForModule("finance");
  * vendor bill. Totals copied from GRN lines. GRN must be status=posted and
  * not already billed (enforced by CnVendorBill.grnId @@unique).
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req, ctx: { params: { grnId: string } }) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req, ctx: { params: { grnId: string } }) => {
   const input = billFromGrnSchema.parse(await req.json());
 
   const grn = await db.cnGoodsReceiptNote.findFirst({
-    where: { id: ctx.params.grnId, tenantId, deletedAt: null },
+    where: { id: ctx.params.grnId, orgId, deletedAt: null },
     include: { lines: { select: { acceptedQty: true, unitRate: true, amount: true } }, bill: { select: { id: true } } },
   });
   if (!grn) return NextResponse.json({ success: false, error: "GRN not found" }, { status: 404 });
   if (grn.status !== "posted") return NextResponse.json({ success: false, error: "GRN must be posted before billing" }, { status: 400 });
   if (grn.bill) return NextResponse.json({ success: false, error: "GRN already billed" }, { status: 409 });
 
-  const dup = await db.cnVendorBill.findFirst({ where: { tenantId, billNumber: input.billNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnVendorBill.findFirst({ where: { orgId, billNumber: input.billNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Bill '${input.billNumber}' already exists` }, { status: 409 });
 
   // Sum accepted × rate from GRN lines (taxAmount = 0 in this MVP; extend to pull GST from PO lines later)
@@ -31,7 +31,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req, ctx: { para
 
   const bill = await db.cnVendorBill.create({
     data: {
-      tenantId,
+      orgId,
       billNumber: input.billNumber,
       vendorId: grn.vendorId,
       projectId: grn.projectId,

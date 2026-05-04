@@ -8,9 +8,9 @@ import { updateGoalSchema } from "@/lib/schemas/goalSchema";
 type Params = { id: string };
 
 export const GET = withTenantAuth<Params>(
-  async ({ tenantId }, _req, { params }) => {
+  async ({ orgId }, _req, { params }) => {
     const goal = await db.goal.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       include: {
         owner: {
           select: { id: true, firstName: true, lastName: true, email: true },
@@ -33,9 +33,9 @@ export const GET = withTenantAuth<Params>(
 );
 
 export const PUT = withTenantAuth<Params>(
-  async ({ tenantId }, request, { params }) => {
+  async ({ orgId }, request, { params }) => {
     const existing = await db.goal.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true, targetValue: true, currentValue: true },
     });
     if (!existing) {
@@ -97,9 +97,9 @@ export const PUT = withTenantAuth<Params>(
 );
 
 export const DELETE = withTenantAuth<Params>(
-  async ({ tenantId }, _req, { params }) => {
+  async ({ orgId }, _req, { params }) => {
     const existing = await db.goal.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true },
     });
     if (!existing) {

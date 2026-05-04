@@ -5,11 +5,11 @@ import { rabCreateSchema } from "@/lib/schemas/projects-4b";
 
 const withTenantAuth = withTenantAuthForModule("projects");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const list = await db.cnRAB.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null, ...(projectId ? { projectId } : {}) },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null, ...(projectId ? { projectId } : {}) },
     include: {
       project: { select: { id: true, name: true, code: true } },
       boq: { select: { id: true, boqNumber: true } },
@@ -34,13 +34,13 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
  *
  * billSeqNo auto-allocated as (max prior on project) + 1.
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = rabCreateSchema.parse(body);
 
   const [project, boq] = await Promise.all([
-    db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } }),
-    db.cnBOQ.findFirst({ where: { id: input.boqId, tenantId, projectId: input.projectId }, include: { items: true } }),
+    db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } }),
+    db.cnBOQ.findFirst({ where: { id: input.boqId, orgId, projectId: input.projectId }, include: { items: true } }),
   ]);
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
   if (!boq) return NextResponse.json({ success: false, error: "BOQ not found for this project" }, { status: 400 });
@@ -48,12 +48,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Source BOQ must be locked before billing against it" }, { status: 400 });
   }
 
-  const dup = await db.cnRAB.findFirst({ where: { tenantId, rabNumber: input.rabNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnRAB.findFirst({ where: { orgId, rabNumber: input.rabNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `RAB '${input.rabNumber}' already exists` }, { status: 409 });
 
   // Allocate billSeqNo
   const lastSeq = await db.cnRAB.aggregate({
-    where: { projectId: input.projectId, tenantId, deletedAt: null },
+    where: { projectId: input.projectId, orgId, deletedAt: null },
     _max: { billSeqNo: true },
   });
   const billSeqNo = (lastSeq._max.billSeqNo ?? 0) + 1;
@@ -76,7 +76,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
     const priorAgg = await db.cnRABLine.aggregate({
       where: {
         boqItemId: l.boqItemId,
-        rab: { tenantId, projectId: input.projectId, status: { in: ["draft", "submitted", "approved", "paid"] } },
+        rab: { orgId, projectId: input.projectId, status: { in: ["draft", "submitted", "approved", "paid"] } },
       },
       _sum: { currentPeriodQty: true },
     });
@@ -115,14 +115,14 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const taxTotal = prepared.reduce((s, p) => s + p.taxAmount, 0);
   const priorBilledAmount = 0; // simplified; full rollup from all prior RAB totals would be better
   const priorAmountAgg = await db.cnRAB.aggregate({
-    where: { tenantId, projectId: input.projectId, deletedAt: null, status: { in: ["approved", "paid"] } },
+    where: { orgId, projectId: input.projectId, deletedAt: null, status: { in: ["approved", "paid"] } },
     _sum: { currentBillAmount: true },
   });
   const prior = Number(priorAmountAgg._sum.currentBillAmount ?? 0);
 
   const rab = await db.cnRAB.create({
     data: {
-      tenantId,
+      orgId,
       projectId: input.projectId,
       boqId: input.boqId,
       rabNumber: input.rabNumber,

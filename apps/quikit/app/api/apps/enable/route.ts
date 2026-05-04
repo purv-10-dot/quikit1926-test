@@ -18,14 +18,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const tenantId = session.user.tenantId;
-  if (!tenantId) {
+  const orgId = session.user.orgId;
+  if (!orgId) {
     return NextResponse.json({ success: false, error: "No org selected" }, { status: 403 });
   }
 
   // Check admin role
   const membership = await db.membership.findFirst({
-    where: { userId: session.user.id, tenantId, status: "active" },
+    where: { userId: session.user.id, orgId, status: "active" },
     select: { role: true },
   });
   if (!membership || !["admin", "super_admin", "owner"].includes(membership.role)) {
@@ -45,13 +45,13 @@ export async function POST(request: NextRequest) {
 
   // Get all active members of this tenant (userId only — all we insert)
   const members = await db.membership.findMany({
-    where: { tenantId, status: "active" },
+    where: { orgId, status: "active" },
     select: { userId: true },
   });
 
   // Bulk-create access rows; ON CONFLICT DO NOTHING via skipDuplicates.
   // `count` is the number of *new* rows inserted (i.e., members who didn't
-  // already have access). Relies on the @@unique([userId, tenantId, appId])
+  // already have access). Relies on the @@unique([userId, orgId, appId])
   // constraint on UserAppAccess to detect duplicates.
   //
   // Replaces a loop that did N lookups + N creates per enable call (up to
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   const { count: granted } = await db.userAppAccess.createMany({
     data: members.map((m) => ({
       userId: m.userId,
-      tenantId,
+      orgId,
       appId,
       role: "member",
       grantedBy: session.user.id,

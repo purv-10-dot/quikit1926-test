@@ -6,7 +6,7 @@
  *   - Pending actions: missing docs (status=missing), open Q&A awaiting answer
  *   - Activity timeline: VCTimelineEvent rows with visibility "founder"
  *
- * Founders only see THEIR OWN data — query is scoped by tenantId AND
+ * Founders only see THEIR OWN data — query is scoped by orgId AND
  * founderId. There's no "see all applications" path here; if a founder
  * has multiple applications they only see the most recent (rare in v1).
  */
@@ -22,12 +22,12 @@ import {
 import { cn } from "@/lib/utils";
 
 export default async function FounderDashboardPage() {
-  const { userId, tenantId } = await requireSession();
-  if (!tenantId || !userId) notFound();
+  const { userId, orgId } = await requireSession();
+  if (!orgId || !userId) notFound();
 
   // Most recent application by this founder
   const application = await db.vCApplication.findFirst({
-    where: { tenantId, founderId: userId },
+    where: { orgId, founderId: userId },
     include: {
       deal: {
         select: {
@@ -75,14 +75,14 @@ export default async function FounderDashboardPage() {
   const [missingDocs, openQuestions, recentEvents] = await Promise.all([
     dealId
       ? db.vCDealDocument.findMany({
-          where: { tenantId, dealId, status: "missing" },
+          where: { orgId, dealId, status: "missing" },
           select: { id: true, category: true },
           orderBy: { createdAt: "desc" },
         })
       : Promise.resolve([] as { id: string; category: string }[]),
     dealId
       ? db.vCDealQuestion.findMany({
-          where: { tenantId, dealId, status: "open" },
+          where: { orgId, dealId, status: "open" },
           select: { id: true, question: true, createdAt: true },
           orderBy: { createdAt: "desc" },
           take: 5,
@@ -90,7 +90,7 @@ export default async function FounderDashboardPage() {
       : Promise.resolve([] as { id: string; question: string; createdAt: Date }[]),
     dealId
       ? db.vCTimelineEvent.findMany({
-          where: { tenantId, dealId, visibility: { in: ["founder", "investor"] } },
+          where: { orgId, dealId, visibility: { in: ["founder", "investor"] } },
           select: { id: true, type: true, summary: true, createdAt: true },
           orderBy: { createdAt: "desc" },
           take: 10,

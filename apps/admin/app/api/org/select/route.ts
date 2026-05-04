@@ -12,15 +12,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const { tenantId } = await request.json();
-  if (!tenantId) {
-    return NextResponse.json({ success: false, error: "tenantId is required" }, { status: 400 });
+  const { orgId } = await request.json();
+  if (!orgId) {
+    return NextResponse.json({ success: false, error: "orgId is required" }, { status: 400 });
   }
 
   const membership = await db.membership.findFirst({
     where: {
       userId: session.user.id,
-      tenantId,
+      orgId,
       status: "active",
     },
   });
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     success: true,
     data: {
-      tenantId: membership.tenantId,
+      orgId: membership.orgId,
       membershipRole: membership.role,
     },
   });

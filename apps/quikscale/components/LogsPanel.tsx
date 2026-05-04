@@ -48,7 +48,7 @@ export interface LogsPanelProps {
 //   2. Auto-computed fields that change on every save (noise)
 //   3. Nested objects / arrays that don't serialize cleanly in a diff row
 const DEFAULT_SKIP_FIELDS = new Set([
-  "updatedAt", "createdAt", "updatedBy", "id", "tenantId", "createdBy",
+  "updatedAt", "createdAt", "updatedBy", "id", "orgId", "createdBy",
   "deletedAt",
   // KPI auto-computed
   "currentWeekValue", "progressPercent", "qtdAchieved", "healthStatus",

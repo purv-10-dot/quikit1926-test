@@ -5,11 +5,11 @@ import { paymentCreateSchema } from "@/lib/schemas/finance";
 
 const withTenantAuth = withTenantAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const vendorId = req.nextUrl.searchParams.get("vendorId") || undefined;
   const list = await db.cnVendorPayment.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null, ...(vendorId ? { vendorId } : {}) },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null, ...(vendorId ? { vendorId } : {}) },
     include: {
       vendor: { select: { id: true, name: true, code: true } },
       _count: { select: { allocations: true } },
@@ -24,13 +24,13 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
  * Same pattern as client receipts, but against CnVendorBill. Bills must be
  * status ∈ {approved, partial} to accept payment.
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const input = paymentCreateSchema.parse(await req.json());
 
-  const dup = await db.cnVendorPayment.findFirst({ where: { tenantId, paymentNumber: input.paymentNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnVendorPayment.findFirst({ where: { orgId, paymentNumber: input.paymentNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Payment '${input.paymentNumber}' already exists` }, { status: 409 });
 
-  const vendor = await db.cnVendor.findFirst({ where: { id: input.vendorId, tenantId }, select: { id: true } });
+  const vendor = await db.cnVendor.findFirst({ where: { id: input.vendorId, orgId }, select: { id: true } });
   if (!vendor) return NextResponse.json({ success: false, error: "Vendor not found" }, { status: 400 });
 
   const allocTotal = input.allocations.reduce((s, a) => s + a.amount, 0);
@@ -41,7 +41,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const result = await db.$transaction(async (tx) => {
     for (const a of input.allocations) {
       const bill = await tx.cnVendorBill.findFirst({
-        where: { id: a.billId, tenantId, vendorId: input.vendorId, deletedAt: null },
+        where: { id: a.billId, orgId, vendorId: input.vendorId, deletedAt: null },
         select: { id: true, total: true, paidAmount: true, status: true },
       });
       if (!bill) throw new Error(`Bill ${a.billId} not found or vendor mismatch`);
@@ -52,7 +52,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
 
     const payment = await tx.cnVendorPayment.create({
       data: {
-        tenantId,
+        orgId,
         paymentNumber: input.paymentNumber,
         vendorId: input.vendorId,
         paymentDate: new Date(input.paymentDate),

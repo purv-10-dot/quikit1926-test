@@ -23,8 +23,8 @@ const postSchema = z.object({
   amountLakhs: z.number().int().positive().max(10_000_000),
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = await requireRoleOrAudit(userId, tenantId, CAPITAL_OPS_ROLES, {
+export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = await requireRoleOrAudit(userId, orgId, CAPITAL_OPS_ROLES, {
     action: "allocation.create",
     req,
   });
@@ -42,9 +42,9 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   // Verify deal + investor in tenant
   const [deal, investor] = await Promise.all([
-    db.vCDeal.findFirst({ where: { id: dealId, tenantId }, select: { id: true } }),
+    db.vCDeal.findFirst({ where: { id: dealId, orgId }, select: { id: true } }),
     db.vCInvestor.findFirst({
-      where: { id: investorId, tenantId },
+      where: { id: investorId, orgId },
       include: {
         commitments: { select: { totalAmount: true } },
         allocations: { select: { amount: true } },
@@ -78,7 +78,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
       where: { dealId_investorId: { dealId, investorId } },
       update: { amount: amountPaise, status: "confirmed", updatedBy: userId },
       create: {
-        tenantId,
+        orgId,
         dealId,
         investorId,
         amount: amountPaise,
@@ -102,7 +102,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
     await tx.vCTimelineEvent.create({
       data: {
-        tenantId,
+        orgId,
         dealId,
         type: "capital-allocated",
         actorId: userId,
@@ -117,7 +117,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   // Audit success
   await audit({
-    tenantId,
+    orgId,
     userId,
     action: "allocation.create",
     resource: dealId,
@@ -132,7 +132,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   }))?.userId;
   if (investorUserId) {
     await notify({
-      tenantId,
+      orgId,
       userIds: [investorUserId],
       type: "allocation",
       title: `₹${amountLakhs}L allocated to a deal`,

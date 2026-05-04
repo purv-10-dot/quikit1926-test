@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
   // 5. Persist
   const created = await db.vCSourcedOpportunity.create({
     data: {
-      tenantId: tenant.id,
+      orgId: tenant.id,
       source: "email",
       status: "new",
       startupName: opp.startupName,

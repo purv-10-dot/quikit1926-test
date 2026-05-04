@@ -9,7 +9,7 @@ describe("writeAuditLog", () => {
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     await writeAuditLog({
-      tenantId: "t1",
+      orgId: "t1",
       actorId: "u1",
       action: "CREATE",
       entityType: "Priority",
@@ -19,7 +19,7 @@ describe("writeAuditLog", () => {
 
     expect(mockDb.auditLog.create).toHaveBeenCalledOnce();
     const arg = mockDb.auditLog.create.mock.calls[0]![0] as any;
-    expect(arg.data.tenantId).toBe("t1");
+    expect(arg.data.orgId).toBe("t1");
     expect(arg.data.actorId).toBe("u1");
     expect(arg.data.action).toBe("CREATE");
     expect(arg.data.entityType).toBe("Priority");
@@ -31,7 +31,7 @@ describe("writeAuditLog", () => {
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     await writeAuditLog({
-      tenantId: "t1",
+      orgId: "t1",
       actorId: "u1",
       action: "UPDATE",
       entityType: "Team",
@@ -50,7 +50,7 @@ describe("writeAuditLog", () => {
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     await writeAuditLog({
-      tenantId: "t1",
+      orgId: "t1",
       actorId: "u1",
       action: "UPDATE",
       entityType: "OPSPData",
@@ -66,7 +66,7 @@ describe("writeAuditLog", () => {
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     await writeAuditLog({
-      tenantId: "t1",
+      orgId: "t1",
       actorId: "u1",
       action: "CREATE",
       entityType: "WWWItem",
@@ -85,7 +85,7 @@ describe("writeAuditLog", () => {
     // Should resolve, not throw
     await expect(
       writeAuditLog({
-        tenantId: "t1",
+        orgId: "t1",
         actorId: "u1",
         action: "DELETE",
         entityType: "Team",
@@ -98,7 +98,7 @@ describe("writeAuditLog", () => {
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     await writeAuditLog({
-      tenantId: "t1",
+      orgId: "t1",
       actorId: "u1",
       action: "DELETE",
       entityType: "Priority",
@@ -115,7 +115,7 @@ describe("writeAuditLog", () => {
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     await writeAuditLog({
-      tenantId: "t1",
+      orgId: "t1",
       actorId: "u1",
       action: "UPDATE",
       entityType: "User",

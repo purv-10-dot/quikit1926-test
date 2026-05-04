@@ -5,11 +5,11 @@ import { boqCreateSchema } from "@/lib/schemas/projects";
 
 const withTenantAuth = withTenantAuthForModule("projects");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const list = await db.cnBOQ.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null, ...(projectId ? { projectId } : {}) },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null, ...(projectId ? { projectId } : {}) },
     include: {
       project: { select: { id: true, name: true, code: true } },
       _count: { select: { items: true } },
@@ -30,12 +30,12 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
  *
  * Totals (subtotal, tax, total) are computed server-side.
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = boqCreateSchema.parse(body);
-  const project = await db.cnProject.findFirst({ where: { id: input.projectId, tenantId }, select: { id: true } });
+  const project = await db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } });
   if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
-  const dup = await db.cnBOQ.findFirst({ where: { tenantId, boqNumber: input.boqNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnBOQ.findFirst({ where: { orgId, boqNumber: input.boqNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `BOQ '${input.boqNumber}' already exists` }, { status: 409 });
 
   // Compute totals
@@ -51,7 +51,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   const boq = await db.$transaction(async (tx) => {
     const created = await tx.cnBOQ.create({
       data: {
-        tenantId,
+        orgId,
         boqNumber: input.boqNumber,
         projectId: input.projectId,
         boqDate: new Date(input.boqDate),

@@ -15,10 +15,10 @@ const requestSchema = z.object({
   comment: z.string().optional().nullable(),
 });
 
-export const GET = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const GET = withTenantAuth(async ({ orgId, userId }, req) => {
   const inbox = req.nextUrl.searchParams.get("inbox") === "true";
   const status = req.nextUrl.searchParams.get("status") || undefined;
-  const where: Record<string, unknown> = { tenantId };
+  const where: Record<string, unknown> = { orgId };
   if (inbox) where.approverId = userId;
   if (status) where.status = status;
   const list = await db.cnApprovalRequest.findMany({
@@ -28,11 +28,11 @@ export const GET = withTenantAuth(async ({ tenantId, userId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const input = requestSchema.parse(await req.json());
   const reqRow = await db.cnApprovalRequest.create({
     data: {
-      tenantId,
+      orgId,
       docType: input.docType,
       docId: input.docId,
       docRef: input.docRef,
@@ -45,6 +45,6 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   });
   // Fire-and-forget notification to approver
   const tpl = buildApprovalRequestedEmail({ docType: input.docType, docRef: input.docRef, amount: input.amount ?? null, requester: userId });
-  void notify({ event: "approval.requested", tenantId, toUserId: input.approverId, subject: tpl.subject, body: tpl.body, metadata: { docType: input.docType, docId: input.docId } });
+  void notify({ event: "approval.requested", orgId, toUserId: input.approverId, subject: tpl.subject, body: tpl.body, metadata: { docType: input.docType, docId: input.docId } });
   return NextResponse.json({ success: true, data: reqRow }, { status: 201 });
 });

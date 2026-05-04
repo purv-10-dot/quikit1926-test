@@ -13,11 +13,11 @@ function buildGET(qs = "year=2026&quarter=Q1"): NextRequest {
 }
 
 function asAuthedMember() {
-  setSession({ id: USER, tenantId: TENANT, role: "employee" });
+  setSession({ id: USER, orgId: TENANT, role: "employee" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "employee",
     status: "active",
   } as any);
@@ -46,7 +46,7 @@ describe("GET /api/dashboard/summary — auth", () => {
   });
 
   it("returns 403 when the user has no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "employee" });
+    setSession({ id: USER, orgId: TENANT, role: "employee" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(403);
@@ -91,7 +91,7 @@ describe("GET /api/dashboard/summary — happy path", () => {
     expect(body.data.users).toEqual([]);
   });
 
-  it("scopes every query by tenantId", async () => {
+  it("scopes every query by orgId", async () => {
     stubEmptyDb();
     await GET(buildGET(), { params: {} } as any);
 
@@ -99,17 +99,17 @@ describe("GET /api/dashboard/summary — happy path", () => {
     const kpiCalls = mockDb.kPI.findMany.mock.calls;
     expect(kpiCalls.length).toBe(2);
     for (const call of kpiCalls) {
-      expect((call[0] as any).where.tenantId).toBe(TENANT);
+      expect((call[0] as any).where.orgId).toBe(TENANT);
       expect((call[0] as any).where.year).toBe(2026);
       expect((call[0] as any).where.quarter).toBe("Q1");
     }
     const levels = kpiCalls.map((c) => (c[0] as any).where.kpiLevel).sort();
     expect(levels).toEqual(["individual", "team"]);
 
-    expect((mockDb.priority.findMany.mock.calls[0]?.[0] as any).where.tenantId).toBe(TENANT);
-    expect((mockDb.wWWItem.findMany.mock.calls[0]?.[0] as any).where.tenantId).toBe(TENANT);
-    expect((mockDb.team.findMany.mock.calls[0]?.[0] as any).where.tenantId).toBe(TENANT);
-    expect((mockDb.membership.findMany.mock.calls[0]?.[0] as any).where.tenantId).toBe(TENANT);
+    expect((mockDb.priority.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
+    expect((mockDb.wWWItem.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
+    expect((mockDb.team.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
+    expect((mockDb.membership.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
   });
 
   it("caps each KPI list at 100 rows", async () => {
@@ -160,7 +160,7 @@ describe("GET /api/dashboard/summary — happy path", () => {
     mockDb.wWWItem.findMany.mockResolvedValue([
       {
         id: "w1",
-        tenantId: TENANT,
+        orgId: TENANT,
         who: USER,
         what: "Ship it",
         when: now,

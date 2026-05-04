@@ -19,15 +19,15 @@ export default async function InvestorDashboardPage() {
     );
   }
 
-  const { tenantId, investorId, investorName } = ctx;
+  const { orgId, investorId, investorName } = ctx;
 
   const [commitments, allocations, repaymentSchedules] = await Promise.all([
     db.vCCommitment.findMany({
-      where: { tenantId, investorId },
+      where: { orgId, investorId },
       select: { totalAmount: true, status: true },
     }),
     db.vCDealAllocation.findMany({
-      where: { tenantId, investorId },
+      where: { orgId, investorId },
       include: {
         deal: {
           select: {
@@ -40,7 +40,7 @@ export default async function InvestorDashboardPage() {
       orderBy: { createdAt: "desc" },
     }),
     db.vCRepaymentSchedule.findMany({
-      where: { tenantId, investorId },
+      where: { orgId, investorId },
       select: { totalExpected: true, totalPaid: true, status: true },
     }),
   ]);

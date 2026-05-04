@@ -16,7 +16,7 @@ import { useSession } from "next-auth/react";
 import { Building2, ChevronDown, CheckCircle2 } from "lucide-react";
 
 interface OrgInfo {
-  tenantId: string;
+  orgId: string;
   name: string;
   slug: string;
   role: string;
@@ -52,7 +52,7 @@ export default function OrgSwitcher({
   const [switching, setSwitching] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  const currentTenantId = session?.user?.tenantId;
+  const currentTenantId = session?.user?.orgId;
 
   useEffect(() => {
     fetch("/api/org/memberships")
@@ -76,19 +76,19 @@ export default function OrgSwitcher({
   }, [open]);
 
   async function switchTo(org: OrgInfo) {
-    setSwitching(org.tenantId);
+    setSwitching(org.orgId);
     try {
       const r = await fetch("/api/org/select", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId: org.tenantId }),
+        body: JSON.stringify({ orgId: org.orgId }),
       });
       const j = await r.json();
       if (!j.success) {
         setSwitching(null);
         return;
       }
-      await update({ tenantId: org.tenantId, membershipRole: org.role });
+      await update({ orgId: org.orgId, membershipRole: org.role });
       // Role-aware redirect — same logic as /select-org. The OrgSwitcher
       // lives in the (vc) layout so most callers land on /home, but a
       // tenant where this user is a founder/investor should route there.
@@ -108,7 +108,7 @@ export default function OrgSwitcher({
     );
   }
 
-  const current = orgs.find((o) => o.tenantId === currentTenantId);
+  const current = orgs.find((o) => o.orgId === currentTenantId);
 
   return (
     <div className="relative" ref={wrapRef}>
@@ -131,12 +131,12 @@ export default function OrgSwitcher({
           </p>
           {orgs.map((org) => (
             <button
-              key={org.tenantId}
+              key={org.orgId}
               type="button"
               disabled={switching !== null}
               onClick={() => switchTo(org)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 disabled:opacity-50 ${
-                org.tenantId === currentTenantId ? "bg-slate-50" : ""
+                org.orgId === currentTenantId ? "bg-slate-50" : ""
               }`}
             >
               <Building2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
@@ -146,10 +146,10 @@ export default function OrgSwitcher({
                   {org.role} · {org.plan}
                 </p>
               </div>
-              {org.tenantId === currentTenantId && (
+              {org.orgId === currentTenantId && (
                 <CheckCircle2 className="h-4 w-4 text-slate-700 flex-shrink-0" />
               )}
-              {switching === org.tenantId && (
+              {switching === org.orgId && (
                 <span className="text-[10px] text-gray-400">Switching…</span>
               )}
             </button>

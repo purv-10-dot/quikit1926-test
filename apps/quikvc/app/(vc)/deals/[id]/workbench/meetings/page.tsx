@@ -12,11 +12,11 @@ import MeetingsClient from "./meetings-client";
 
 export default async function MeetingsPage({ params }: { params: { id: string } }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const meetings = await db.vCMeeting.findMany({
-    where: { tenantId, dealId: params.id },
+    where: { orgId, dealId: params.id },
     orderBy: [{ scheduledAt: "desc" }, { createdAt: "desc" }],
     include: {
       transcript: {

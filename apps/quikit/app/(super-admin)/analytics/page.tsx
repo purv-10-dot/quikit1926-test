@@ -35,7 +35,7 @@ interface Overview {
   api: { calls7d: number; errors7d: number; errorRatePct: number };
   engagement: {
     dailyTrend: { date: string; activeUsers: number }[];
-    mostActiveTenantIds: { tenantId: string; sessionCount: number }[];
+    mostActiveOrgIds: { orgId: string; sessionCount: number }[];
     inactiveTenants: { id: string; name: string; createdAt: string }[];
   };
   revenue: {
@@ -367,17 +367,17 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <section className="rounded-2xl bg-white/70 backdrop-blur-sm border border-white/60 p-6 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900 mb-4">Most active tenants</h2>
-          {data.engagement.mostActiveTenantIds.length === 0 ? (
+          {data.engagement.mostActiveOrgIds.length === 0 ? (
             <p className="text-sm text-slate-400">No tenant activity yet.</p>
           ) : (
             <ul className="space-y-3">
-              {data.engagement.mostActiveTenantIds.map((t, i) => (
-                <li key={t.tenantId} className="flex items-center gap-3 text-sm">
+              {data.engagement.mostActiveOrgIds.map((t, i) => (
+                <li key={t.orgId} className="flex items-center gap-3 text-sm">
                   <div className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold tabular-nums flex-shrink-0">
                     {i + 1}
                   </div>
-                  <Link href={`/organizations/${t.tenantId}`} className="text-slate-700 hover:text-amber-700 truncate flex-1">
-                    {t.tenantId}
+                  <Link href={`/organizations/${t.orgId}`} className="text-slate-700 hover:text-amber-700 truncate flex-1">
+                    {t.orgId}
                   </Link>
                   <span className="text-slate-600 tabular-nums text-xs">{t.sessionCount} sessions</span>
                 </li>

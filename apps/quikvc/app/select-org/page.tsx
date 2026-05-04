@@ -3,7 +3,7 @@
 /**
  * Select Org — /select-org
  *
- * Bounced here by the platform middleware when the JWT lacks a tenantId,
+ * Bounced here by the platform middleware when the JWT lacks a orgId,
  * or visited explicitly via the in-app org switcher. Calls the shared
  * /api/org/memberships (filtered to QuikVC) — auto-selects when there's
  * one tenant, picker when there are multiple.
@@ -25,7 +25,7 @@ import { useSession } from "next-auth/react";
 import { Building2, CheckCircle2 } from "lucide-react";
 
 interface OrgInfo {
-  tenantId: string;
+  orgId: string;
   name: string;
   slug: string;
   role: string;
@@ -79,7 +79,7 @@ export default function SelectOrgPage() {
       const r = await fetch("/api/org/select", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId: org.tenantId }),
+        body: JSON.stringify({ orgId: org.orgId }),
       });
       const j = await r.json();
       if (!j.success) {
@@ -88,7 +88,7 @@ export default function SelectOrgPage() {
         return;
       }
       // Persist into the JWT so downstream withTenantAuth calls see it.
-      await update({ tenantId: org.tenantId, membershipRole: org.role });
+      await update({ orgId: org.orgId, membershipRole: org.role });
       // Hard navigation to ensure server components re-fetch session.
       window.location.href = landingPathForRole(org.role);
     } catch (err) {
@@ -148,7 +148,7 @@ export default function SelectOrgPage() {
         <div className="space-y-3">
           {orgs.map((org) => (
             <button
-              key={org.tenantId}
+              key={org.orgId}
               onClick={() => selectOrg(org)}
               className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl hover:border-slate-400 hover:shadow-md transition-all text-left"
             >

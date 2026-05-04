@@ -48,7 +48,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
   it("returns 401 without session", async () => {
     setSession(null);
     const res = await POST(
-      postReq({ tenantId: "t-1", moduleKey: "people.talent", enabled: false }),
+      postReq({ orgId: "t-1", moduleKey: "people.talent", enabled: false }),
       PARAMS,
     );
     expect(res.status).toBe(401);
@@ -57,7 +57,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
   it("returns 403 for non-super-admin", async () => {
     setSession(REGULAR_USER);
     const res = await POST(
-      postReq({ tenantId: "t-1", moduleKey: "people.talent", enabled: false }),
+      postReq({ orgId: "t-1", moduleKey: "people.talent", enabled: false }),
       PARAMS,
     );
     expect(res.status).toBe(403);
@@ -66,7 +66,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
   it("returns 404 for unknown appSlug", async () => {
     setSession(SUPER_ADMIN);
     const res = await POST(
-      postReq({ tenantId: "t-1", moduleKey: "foo", enabled: false }),
+      postReq({ orgId: "t-1", moduleKey: "foo", enabled: false }),
       { params: { appSlug: "bogus" } },
     );
     expect(res.status).toBe(404);
@@ -74,7 +74,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
     expect(body.error).toBe("Unknown app");
   });
 
-  it("returns 400 for invalid body (missing tenantId)", async () => {
+  it("returns 400 for invalid body (missing orgId)", async () => {
     setSession(SUPER_ADMIN);
     const res = await POST(
       postReq({ moduleKey: "people.talent", enabled: false }),
@@ -88,7 +88,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
   it("returns 400 for invalid body (enabled not boolean)", async () => {
     setSession(SUPER_ADMIN);
     const res = await POST(
-      postReq({ tenantId: "t-1", moduleKey: "people.talent", enabled: "no" }),
+      postReq({ orgId: "t-1", moduleKey: "people.talent", enabled: "no" }),
       PARAMS,
     );
     expect(res.status).toBe(400);
@@ -99,7 +99,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
     mockDb.app.findUnique.mockResolvedValue(null as never);
 
     const res = await POST(
-      postReq({ tenantId: "t-1", moduleKey: "people.talent", enabled: false }),
+      postReq({ orgId: "t-1", moduleKey: "people.talent", enabled: false }),
       PARAMS,
     );
     expect(res.status).toBe(404);
@@ -113,7 +113,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
     mockDb.tenant.findUnique.mockResolvedValue(null as never);
 
     const res = await POST(
-      postReq({ tenantId: "t-missing", moduleKey: "people.talent", enabled: false }),
+      postReq({ orgId: "t-missing", moduleKey: "people.talent", enabled: false }),
       PARAMS,
     );
     expect(res.status).toBe(404);
@@ -128,14 +128,14 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
     mockDb.appModuleFlag.upsert.mockResolvedValue({} as never);
 
     const res = await POST(
-      postReq({ tenantId: "t-1", moduleKey: "people.talent", enabled: false }),
+      postReq({ orgId: "t-1", moduleKey: "people.talent", enabled: false }),
       PARAMS,
     );
     expect(res.status).toBe(200);
     const body = await bodyOf(res);
     expect(body.success).toBe(true);
     expect(body.data).toEqual({
-      tenantId: "t-1",
+      orgId: "t-1",
       moduleKey: "people.talent",
       enabled: false,
     });
@@ -148,7 +148,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
         action: "feature_flag_disabled",
         entityType: "AppModuleFlag",
         entityId: "quikscale/people.talent",
-        tenantId: "t-1",
+        orgId: "t-1",
       }),
     );
   });
@@ -160,7 +160,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
     mockDb.appModuleFlag.deleteMany.mockResolvedValue({ count: 1 } as never);
 
     const res = await POST(
-      postReq({ tenantId: "t-1", moduleKey: "people.talent", enabled: true }),
+      postReq({ orgId: "t-1", moduleKey: "people.talent", enabled: true }),
       PARAMS,
     );
     expect(res.status).toBe(200);

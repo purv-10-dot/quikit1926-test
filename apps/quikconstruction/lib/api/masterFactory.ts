@@ -65,11 +65,11 @@ function modelFn(name: PrismaModelName) {
 export function createListRoutes(config: ListRoutesConfig) {
   const withTenantAuth = withTenantAuthForModule("masters");
 
-  const GET = withTenantAuth(async ({ tenantId }, req) => {
+  const GET = withTenantAuth(async ({ orgId }, req) => {
     const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
     const rows = await modelFn(config.model).findMany({
       where: {
-        tenantId,
+        orgId,
         deletedAt: includeDeleted ? { not: null } : null,
       },
       orderBy: config.orderBy,
@@ -78,7 +78,7 @@ export function createListRoutes(config: ListRoutesConfig) {
     return NextResponse.json({ success: true, data: rows });
   });
 
-  const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+  const POST = withTenantAuth(async ({ orgId, userId }, req) => {
     const body = await req.json();
     const input = config.createSchema.parse(body);
 
@@ -86,7 +86,7 @@ export function createListRoutes(config: ListRoutesConfig) {
       const uniqueValue = (input as Record<string, unknown>)[config.uniqueBy];
       if (typeof uniqueValue === "string" && uniqueValue) {
         const existing = await modelFn(config.model).findFirst({
-          where: { tenantId, [config.uniqueBy]: uniqueValue, deletedAt: null },
+          where: { orgId, [config.uniqueBy]: uniqueValue, deletedAt: null },
           select: { id: true },
         });
         if (existing) {
@@ -99,7 +99,7 @@ export function createListRoutes(config: ListRoutesConfig) {
     }
 
     const row = await modelFn(config.model).create({
-      data: { ...(input as object), tenantId, createdBy: userId },
+      data: { ...(input as object), orgId, createdBy: userId },
     });
     return NextResponse.json({ success: true, data: row }, { status: 201 });
   });
@@ -117,9 +117,9 @@ interface IdRoutesConfig {
 export function createIdRoutes(config: IdRoutesConfig) {
   const withTenantAuth = withTenantAuthForModule("masters");
 
-  const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
+  const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
     const row = await modelFn(config.model).findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
     });
     if (!row) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -127,9 +127,9 @@ export function createIdRoutes(config: IdRoutesConfig) {
     return NextResponse.json({ success: true, data: row });
   });
 
-  const PATCH = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+  const PATCH = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
     const existing = await modelFn(config.model).findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: config.uniqueBy ? { id: true, [config.uniqueBy]: true } : { id: true },
     });
     if (!existing) {
@@ -144,7 +144,7 @@ export function createIdRoutes(config: IdRoutesConfig) {
       if (typeof nextValue === "string" && nextValue !== currentValue) {
         const conflict = await modelFn(config.model).findFirst({
           where: {
-            tenantId,
+            orgId,
             [config.uniqueBy]: nextValue,
             deletedAt: null,
             NOT: { id: params.id },
@@ -167,9 +167,9 @@ export function createIdRoutes(config: IdRoutesConfig) {
     return NextResponse.json({ success: true, data: updated });
   });
 
-  const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+  const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
     const existing = await modelFn(config.model).findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, orgId, deletedAt: null },
       select: { id: true },
     });
     if (!existing) {

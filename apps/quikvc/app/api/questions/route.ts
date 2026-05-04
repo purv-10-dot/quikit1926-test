@@ -22,7 +22,7 @@ const patchSchema = z.object({
   answer: z.string().min(1).max(5000),
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
   const parsed = postSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -33,7 +33,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   const { dealId, question } = parsed.data;
 
   // Confirm deal belongs to caller's tenant
-  const deal = await db.vCDeal.findFirst({ where: { id: dealId, tenantId } });
+  const deal = await db.vCDeal.findFirst({ where: { id: dealId, orgId } });
   if (!deal) {
     return NextResponse.json({ success: false, error: "Deal not found" }, { status: 404 });
   }
@@ -41,7 +41,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   const [q] = await db.$transaction([
     db.vCDealQuestion.create({
       data: {
-        tenantId,
+        orgId,
         dealId,
         askedById: userId,
         question,
@@ -53,7 +53,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
     }),
     db.vCTimelineEvent.create({
       data: {
-        tenantId,
+        orgId,
         dealId,
         type: "question-asked",
         actorId: userId,
@@ -66,7 +66,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   return NextResponse.json({ success: true, data: q }, { status: 201 });
 });
 
-export const PATCH = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const PATCH = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
   const parsed = patchSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -77,7 +77,7 @@ export const PATCH = withTenantAuth(async ({ tenantId, userId }, req: NextReques
   const { questionId, answer } = parsed.data;
 
   const existing = await db.vCDealQuestion.findFirst({
-    where: { id: questionId, tenantId },
+    where: { id: questionId, orgId },
     select: { id: true, dealId: true, status: true },
   });
   if (!existing) {
@@ -104,7 +104,7 @@ export const PATCH = withTenantAuth(async ({ tenantId, userId }, req: NextReques
     }),
     db.vCTimelineEvent.create({
       data: {
-        tenantId,
+        orgId,
         dealId: existing.dealId,
         type: "question-answered",
         actorId: userId,

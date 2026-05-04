@@ -1,10 +1,10 @@
 /**
  * Page-level session guard.
  *
- *   const { tenantId, userId, session } = await requireSession();
+ *   const { orgId, userId, session } = await requireSession();
  *
  * Behaviour:
- *   - real NextAuth session present → returns { session, tenantId, userId }
+ *   - real NextAuth session present → returns { session, orgId, userId }
  *   - no session, dev bypass enabled (QUIKVC_DEV_BYPASS=1) → demo session
  *   - no session in any other environment → redirect to /login?callbackUrl=…
  *
@@ -18,16 +18,16 @@ import { getDevAwareSession } from "@/lib/dev-session";
 
 export interface PageSessionContext {
   session: Session;
-  tenantId: string;
+  orgId: string;
   userId: string;
 }
 
 export async function requireSession(): Promise<PageSessionContext> {
   const session = await getDevAwareSession();
   const userId = session?.user?.id;
-  const tenantId = session?.user?.tenantId;
+  const orgId = session?.user?.orgId;
 
-  if (!session || !userId || !tenantId) {
+  if (!session || !userId || !orgId) {
     // Build callbackUrl so the user lands back where they were after login.
     let callback = "/";
     try {
@@ -40,5 +40,5 @@ export async function requireSession(): Promise<PageSessionContext> {
     redirect(`/login?callbackUrl=${encodeURIComponent(callback)}`);
   }
 
-  return { session, tenantId, userId };
+  return { session, orgId, userId };
 }

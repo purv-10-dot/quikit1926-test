@@ -110,7 +110,7 @@ export async function GET(
     }
 
     const membership = await db.membership.findFirst({
-      where: { userId: imp.targetUserId, tenantId: imp.targetTenantId, status: "active" },
+      where: { userId: imp.targetUserId, orgId: imp.targetOrgId, status: "active" },
       select: { role: true },
     });
     if (!membership) {
@@ -129,7 +129,7 @@ export async function GET(
     const jwtPayload = {
       id: targetUser.id,
       email: targetUser.email,
-      tenantId: imp.targetTenantId,
+      orgId: imp.targetOrgId,
       membershipRole: membership.role,
       isSuperAdmin: false,
       impersonating: true,
@@ -152,7 +152,7 @@ export async function GET(
       }),
       db.sessionEvent.create({
         data: {
-          tenantId: imp.targetTenantId,
+          orgId: imp.targetOrgId,
           userId: imp.targetUserId,
           event: "impersonation_start",
           appSlug: "quikscale",
@@ -165,7 +165,7 @@ export async function GET(
     // Audit on the tenant side for visibility by tenant admins (with
     // actorId = superAdminId so it's clear who did it).
     writeAuditLog({
-      tenantId: imp.targetTenantId,
+      orgId: imp.targetOrgId,
       actorId: imp.superAdminId,
       action: "UPDATE",
       entityType: "Impersonation",

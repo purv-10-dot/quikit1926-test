@@ -13,12 +13,12 @@ function req(path: string, init?: RequestInit): NextRequest {
   return new NextRequest(`http://localhost${path}`, init as any);
 }
 
-function asAdminIn(tenantId: string) {
-  setSession({ id: USER, tenantId, role: "admin" });
+function asAdminIn(orgId: string) {
+  setSession({ id: USER, orgId, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId,
+    orgId,
     role: "admin",
     status: "active",
   } as any);
@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 describe("tenant isolation — GET /api/kpi", () => {
-  it("scopes list queries to the caller's tenantId, never another", async () => {
+  it("scopes list queries to the caller's orgId, never another", async () => {
     asAdminIn(MY_TENANT);
     mockDb.kPI.count.mockResolvedValue(0);
     mockDb.kPI.findMany.mockResolvedValue([]);
@@ -41,17 +41,17 @@ describe("tenant isolation — GET /api/kpi", () => {
 
     // Every Prisma call must filter by MY_TENANT only.
     for (const call of mockDb.kPI.findMany.mock.calls) {
-      expect((call[0] as any).where.tenantId).toBe(MY_TENANT);
-      expect((call[0] as any).where.tenantId).not.toBe(OTHER_TENANT);
+      expect((call[0] as any).where.orgId).toBe(MY_TENANT);
+      expect((call[0] as any).where.orgId).not.toBe(OTHER_TENANT);
     }
     for (const call of mockDb.kPI.count.mock.calls) {
-      expect((call[0] as any).where.tenantId).toBe(MY_TENANT);
+      expect((call[0] as any).where.orgId).toBe(MY_TENANT);
     }
   });
 
-  it("a user with no membership in the requested tenantId gets 403", async () => {
+  it("a user with no membership in the requested orgId gets 403", async () => {
     // Session says MY_TENANT but no active membership is returned
-    setSession({ id: USER, tenantId: MY_TENANT, role: "admin" });
+    setSession({ id: USER, orgId: MY_TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
 
     const res = await GET(req("/api/kpi"), { params: {} } as any);
@@ -60,13 +60,13 @@ describe("tenant isolation — GET /api/kpi", () => {
 });
 
 describe("tenant isolation — POST /api/kpi", () => {
-  it("never persists a KPI with a different tenantId than the caller's", async () => {
+  it("never persists a KPI with a different orgId than the caller's", async () => {
     asAdminIn(MY_TENANT);
     mockDb.user.findUnique.mockResolvedValue({ id: OWNER } as any);
     mockDb.kPI.create.mockResolvedValue({
       id: "new",
       name: "X",
-      tenantId: MY_TENANT,
+      orgId: MY_TENANT,
     } as any);
     mockDb.kPILog.create.mockResolvedValue({} as any);
 
@@ -87,7 +87,7 @@ describe("tenant isolation — POST /api/kpi", () => {
     // Verify the create call was scoped to MY_TENANT, not whatever the body
     // might have tried to inject (it shouldn't even be allowed to inject one).
     const createCall = mockDb.kPI.create.mock.calls[0][0];
-    expect((createCall as any).data.tenantId).toBe(MY_TENANT);
+    expect((createCall as any).data.orgId).toBe(MY_TENANT);
   });
 
   it("kpiLog write is also scoped to caller tenant", async () => {
@@ -111,6 +111,6 @@ describe("tenant isolation — POST /api/kpi", () => {
     }), { params: {} } as any);
 
     const logCall = mockDb.kPILog.create.mock.calls[0][0];
-    expect((logCall as any).data.tenantId).toBe(MY_TENANT);
+    expect((logCall as any).data.orgId).toBe(MY_TENANT);
   });
 });

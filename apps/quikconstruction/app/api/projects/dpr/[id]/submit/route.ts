@@ -4,8 +4,8 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 
 const withTenantAuth = withTenantAuthForModule("projects");
 
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
-  const dpr = await db.cnDPR.findFirst({ where: { id: params.id, tenantId, deletedAt: null }, select: { id: true, status: true } });
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+  const dpr = await db.cnDPR.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, status: true } });
   if (!dpr) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (dpr.status === "submitted") return NextResponse.json({ success: false, error: "Already submitted" }, { status: 409 });
   const updated = await db.cnDPR.update({

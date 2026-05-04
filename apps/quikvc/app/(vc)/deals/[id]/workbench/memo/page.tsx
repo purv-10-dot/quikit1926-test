@@ -17,8 +17,8 @@ export default async function MemoPage({
   params: { id: string };
 }) {
   const session = await getDevAwareSession();
-  const tenantId = session?.user?.tenantId;
-  if (!tenantId) notFound();
+  const orgId = session?.user?.orgId;
+  if (!orgId) notFound();
 
   const memo = await db.vCICMemo.findUnique({
     where: { dealId: params.id },
@@ -45,7 +45,7 @@ export default async function MemoPage({
 
   const versionList = memo
     ? await db.vCICMemoVersion.findMany({
-        where: { memoId: memo.id, tenantId },
+        where: { memoId: memo.id, orgId },
         select: { id: true, version: true, source: true, changeNote: true, createdAt: true },
         orderBy: { version: "desc" },
         take: 10,

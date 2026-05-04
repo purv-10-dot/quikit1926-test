@@ -18,7 +18,7 @@ interface AuditEntry {
   entityType: string;
   entityId: string;
   actorId: string;
-  tenantId: string | null;
+  orgId: string | null;
   oldValues: string | null;
   newValues: string | null;
   createdAt: string;

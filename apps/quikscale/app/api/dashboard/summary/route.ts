@@ -74,9 +74,9 @@ const querySchema = z.object({
 
 type RawKPI = Awaited<ReturnType<typeof fetchKpis>>[number];
 
-async function fetchKpis(tenantId: string, year: number, quarter: string, kpiLevel: "individual" | "team") {
+async function fetchKpis(orgId: string, year: number, quarter: string, kpiLevel: "individual" | "team") {
   return db.kPI.findMany({
-    where: { tenantId, year, quarter, kpiLevel },
+    where: { orgId, year, quarter, kpiLevel },
     select: KPI_SELECT,
     orderBy: { createdAt: "desc" },
     take: KPI_CAP,
@@ -144,7 +144,7 @@ function enrichKpis(
 // Consolidated dashboard payload — replaces 6 separate client queries
 // (individual KPIs, team KPIs, priorities, WWW items, teams, users) with
 // a single server round-trip using Promise.all.
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const parsed = querySchema.safeParse({
     year: req.nextUrl.searchParams.get("year"),
     quarter: req.nextUrl.searchParams.get("quarter"),
@@ -158,24 +158,24 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   const { year, quarter } = parsed.data;
 
   const [individualKpisRaw, teamKpisRaw, priorities, wwwItemsRaw, teams, memberships] = await Promise.all([
-    fetchKpis(tenantId, year, quarter, "individual"),
-    fetchKpis(tenantId, year, quarter, "team"),
+    fetchKpis(orgId, year, quarter, "individual"),
+    fetchKpis(orgId, year, quarter, "team"),
     db.priority.findMany({
-      where: { tenantId, year, quarter },
+      where: { orgId, year, quarter },
       select: PRIORITY_SELECT,
       orderBy: { createdAt: "asc" },
     }),
     db.wWWItem.findMany({
-      where: { tenantId },
+      where: { orgId },
       orderBy: { createdAt: "asc" },
     }),
     db.team.findMany({
-      where: { tenantId },
+      where: { orgId },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
     db.membership.findMany({
-      where: { tenantId, status: "active" },
+      where: { orgId, status: "active" },
       select: {
         user: { select: { id: true, firstName: true, lastName: true, email: true } },
       },

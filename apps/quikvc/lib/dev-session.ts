@@ -65,7 +65,7 @@ async function buildDemoSession(role: string): Promise<Session | null> {
   const member = tenant.users[0]
     ?? (await (async () => {
       const any = await db.membership.findFirst({
-        where: { tenantId: tenant.id, status: "active" },
+        where: { orgId: tenant.id, status: "active" },
         select: { role: true, user: { select: { id: true, email: true, firstName: true, lastName: true } } },
       });
       return any ? { user: any.user } : null;
@@ -77,7 +77,7 @@ async function buildDemoSession(role: string): Promise<Session | null> {
       id: member.user.id,
       email: member.user.email,
       name: `${member.user.firstName} ${member.user.lastName}`,
-      tenantId: tenant.id,
+      orgId: tenant.id,
       membershipRole: role,
       isSuperAdmin: false,
     },

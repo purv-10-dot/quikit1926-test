@@ -19,9 +19,9 @@ const patchSchema = z.object({
  * BOQ items. Owner BOQ must belong to the tenant. Fields are orthogonal to
  * the BOQ's locked status — schedules can be revised post-lock.
  */
-export const PATCH = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { params }) => {
+export const PATCH = withTenantAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
   const input = patchSchema.parse(await req.json());
-  const boq = await db.cnBOQ.findFirst({ where: { id: params.id, tenantId, deletedAt: null }, select: { id: true, items: { select: { id: true } } } });
+  const boq = await db.cnBOQ.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, items: { select: { id: true } } } });
   if (!boq) return NextResponse.json({ success: false, error: "BOQ not found" }, { status: 404 });
   const validIds = new Set(boq.items.map(i => i.id));
   await db.$transaction(input.updates.filter(u => validIds.has(u.itemId)).map(u =>

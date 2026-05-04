@@ -7,16 +7,16 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
   if ("error" in auth && auth.error) return auth.error;
-  const { tenantId, userId } = auth as { tenantId: string; userId: string };
+  const { orgId, userId } = auth as { orgId: string; userId: string };
 
   const existing = await db.client.findFirst({
-    where: { id: params.id, tenantId, deletedAt: { not: null } },
+    where: { id: params.id, orgId, deletedAt: { not: null } },
   });
   if (!existing) return NextResponse.json({ success: false, error: "Client not found in trash" }, { status: 404 });
 
   await db.client.update({ where: { id: params.id }, data: { deletedAt: null, updatedBy: userId } });
   await writeAuditLog({
-    tenantId, actorId: userId, action: "RESTORE",
+    orgId, actorId: userId, action: "RESTORE",
     entityType: "Client", entityId: params.id,
     newValues: { name: existing.name },
   });

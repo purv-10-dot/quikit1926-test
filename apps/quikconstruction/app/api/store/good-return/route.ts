@@ -5,11 +5,11 @@ import { goodReturnCreateSchema } from "@/lib/schemas/procurement-3b";
 
 const withTenantAuth = withTenantAuthForModule("store");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const returns = await db.cnGoodReturn.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null, ...(status ? { status } : {}) },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null, ...(status ? { status } : {}) },
     include: {
       grn: { select: { id: true, grnNumber: true } },
       project: { select: { id: true, name: true } },
@@ -21,11 +21,11 @@ export const GET = withTenantAuth(async ({ tenantId }, req) => {
   return NextResponse.json({ success: true, data: returns });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = goodReturnCreateSchema.parse(body);
   const grn = await db.cnGoodsReceiptNote.findFirst({
-    where: { id: input.grnId, tenantId, deletedAt: null },
+    where: { id: input.grnId, orgId, deletedAt: null },
     select: { id: true, status: true, vendorId: true, projectId: true, locationId: true },
   });
   if (!grn) return NextResponse.json({ success: false, error: "GRN not found" }, { status: 400 });
@@ -35,12 +35,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   if (grn.vendorId !== input.vendorId || grn.projectId !== input.projectId || grn.locationId !== input.locationId) {
     return NextResponse.json({ success: false, error: "Vendor/Project/Location must match source GRN" }, { status: 400 });
   }
-  const dup = await db.cnGoodReturn.findFirst({ where: { tenantId, returnNumber: input.returnNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnGoodReturn.findFirst({ where: { orgId, returnNumber: input.returnNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Return number '${input.returnNumber}' already exists` }, { status: 409 });
 
   const ret = await db.cnGoodReturn.create({
     data: {
-      tenantId,
+      orgId,
       returnNumber: input.returnNumber,
       grnId: input.grnId,
       projectId: input.projectId,

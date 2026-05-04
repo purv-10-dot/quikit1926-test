@@ -6,9 +6,9 @@ import { updateWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
 const withTenantAuth = withTenantAuthForModule("clientMeetings.weeklyMeeting");
 
 export const GET = withTenantAuth<{ id: string }>(
-  async ({ tenantId }, _req, { params }) => {
+  async ({ orgId }, _req, { params }) => {
     const row = await db.clientWeeklyMeeting.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, orgId, deletedAt: null },
       include: {
         client: { select: { id: true, name: true } },
         absentMembers: true,
@@ -52,7 +52,7 @@ export const GET = withTenantAuth<{ id: string }>(
 
 /** PUT — replaces absence + dashboardNA links atomically. */
 export const PUT = withTenantAuth<{ id: string }>(
-  async ({ tenantId, userId }, request, { params }) => {
+  async ({ orgId, userId }, request, { params }) => {
     const parsed = updateWeeklyMeetingSchema.safeParse(await request.json());
     if (!parsed.success)
       return NextResponse.json(
@@ -65,7 +65,7 @@ export const PUT = withTenantAuth<{ id: string }>(
     const d = parsed.data;
 
     const existing = await db.clientWeeklyMeeting.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, orgId, deletedAt: null },
     });
     if (!existing)
       return NextResponse.json(
@@ -192,7 +192,7 @@ export const PUT = withTenantAuth<{ id: string }>(
     });
     await db.clientWeeklyMeetingLog.create({
       data: {
-        tenantId,
+        orgId,
         meetingId: params.id,
         action: "UPDATE",
         oldValue: oldSnapshot,
@@ -209,9 +209,9 @@ export const PUT = withTenantAuth<{ id: string }>(
 );
 
 export const DELETE = withTenantAuth<{ id: string }>(
-  async ({ tenantId, userId }, _req, { params }) => {
+  async ({ orgId, userId }, _req, { params }) => {
     const existing = await db.clientWeeklyMeeting.findFirst({
-      where: { id: params.id, tenantId, deletedAt: null },
+      where: { id: params.id, orgId, deletedAt: null },
     });
     if (!existing)
       return NextResponse.json(
@@ -224,7 +224,7 @@ export const DELETE = withTenantAuth<{ id: string }>(
     });
     await db.clientWeeklyMeetingLog.create({
       data: {
-        tenantId,
+        orgId,
         meetingId: params.id,
         action: "DELETE",
         oldValue: JSON.stringify({

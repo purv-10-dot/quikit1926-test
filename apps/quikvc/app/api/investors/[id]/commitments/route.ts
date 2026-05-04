@@ -19,8 +19,8 @@ const postSchema = z.object({
 });
 
 export const POST = withTenantAuth(
-  async ({ tenantId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
-    const denied = denyIfNotInRoles(await getVCRole(userId, tenantId), FUND_ADMIN_ROLES);
+  async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
+    const denied = denyIfNotInRoles(await getVCRole(userId, orgId), FUND_ADMIN_ROLES);
     if (denied) return denied;
 
     const parsed = postSchema.safeParse(await req.json());
@@ -31,7 +31,7 @@ export const POST = withTenantAuth(
       );
     }
     const investor = await db.vCInvestor.findFirst({
-      where: { id: params.id, tenantId },
+      where: { id: params.id, orgId },
       select: { id: true },
     });
     if (!investor) {
@@ -39,7 +39,7 @@ export const POST = withTenantAuth(
     }
     const commitment = await db.vCCommitment.create({
       data: {
-        tenantId,
+        orgId,
         investorId: investor.id,
         type: parsed.data.type,
         totalAmount: BigInt(parsed.data.amountLakhs) * BigInt(10_000_000),

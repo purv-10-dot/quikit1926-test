@@ -9,13 +9,13 @@ import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
-export const GET = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const GET = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
   const unreadOnly = req.nextUrl.searchParams.get("unreadOnly") === "true";
   const limit = Math.min(100, parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10));
 
   const where = unreadOnly
-    ? { tenantId, userId, readAt: null }
-    : { tenantId, userId };
+    ? { orgId, userId, readAt: null }
+    : { orgId, userId };
 
   const [items, unreadCount] = await Promise.all([
     db.vCNotification.findMany({
@@ -24,7 +24,7 @@ export const GET = withTenantAuth(async ({ tenantId, userId }, req: NextRequest)
       take: limit,
       select: { id: true, type: true, title: true, body: true, href: true, readAt: true, createdAt: true },
     }),
-    db.vCNotification.count({ where: { tenantId, userId, readAt: null } }),
+    db.vCNotification.count({ where: { orgId, userId, readAt: null } }),
   ]);
 
   return NextResponse.json({ success: true, data: { items, unreadCount } });

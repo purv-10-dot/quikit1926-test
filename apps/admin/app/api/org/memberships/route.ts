@@ -39,7 +39,7 @@ export async function GET() {
     })
     .map((m) => ({
       membershipId: m.id,
-      tenantId: m.tenant.id,
+      orgId: m.tenant.id,
       name: m.tenant.name,
       slug: m.tenant.slug,
       description: m.tenant.description,

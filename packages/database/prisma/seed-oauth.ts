@@ -36,7 +36,24 @@ function resolveAppUrl(envName: string, devFallback: string): string {
   return devFallback;
 }
 
-const QUIKSCALE_BASE = resolveAppUrl("QUIKSCALE_URL", "http://localhost:3004"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+/**
+ * Resolve an OAuth client secret. Required in production (no default).
+ * In dev, falls back to a deterministic placeholder so local seeding works
+ * without env setup, but the placeholder is clearly marked.
+ */
+function resolveClientSecret(envName: string, devFallback: string): string {
+  const v = process.env[envName];
+  if (v) return v;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      `[seed-oauth] ${envName} is required when NODE_ENV=production. ` +
+        `Refusing to seed a placeholder OAuth client secret in production.`,
+    );
+  }
+  return devFallback;
+}
+
+const QUIKSCALE_BASE = resolveAppUrl("QUIKSCALE_URL", "http://localhost:3002"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKCONSTRUCTION_BASE = resolveAppUrl("QUIKCONSTRUCTION_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
@@ -51,7 +68,7 @@ const APPS = [
     status: "active",
     oauth: {
       clientId: "quikscale",
-      clientSecretPlain: "quikscale-dev-secret-change-in-prod",
+      clientSecretPlain: resolveClientSecret("QUIKSCALE_OAUTH_CLIENT_SECRET", "quikscale-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKSCALE_BASE}/api/auth/callback/quikit`,
       ],
@@ -67,7 +84,7 @@ const APPS = [
     status: "active",
     oauth: {
       clientId: "admin",
-      clientSecretPlain: "admin-dev-secret-change-in-prod",
+      clientSecretPlain: resolveClientSecret("ADMIN_OAUTH_CLIENT_SECRET", "admin-dev-secret-change-in-prod"),
       redirectUris: [
         `${ADMIN_BASE}/api/auth/callback/quikit`,
       ],
@@ -83,7 +100,7 @@ const APPS = [
     status: "active",
     oauth: {
       clientId: "quikconstruction",
-      clientSecretPlain: "quikconstruction-dev-secret-change-in-prod",
+      clientSecretPlain: resolveClientSecret("QUIKCONSTRUCTION_OAUTH_CLIENT_SECRET", "quikconstruction-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKCONSTRUCTION_BASE}/api/auth/callback/quikit`,
       ],
@@ -99,7 +116,7 @@ const APPS = [
     status: "active",
     oauth: {
       clientId: "quikvc",
-      clientSecretPlain: "quikvc-dev-secret-change-in-prod",
+      clientSecretPlain: resolveClientSecret("QUIKVC_OAUTH_CLIENT_SECRET", "quikvc-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKVC_BASE}/api/auth/callback/quikit`,
       ],
@@ -162,27 +179,23 @@ async function main() {
       console.log(`  ✅ OAuth client created: ${appDef.oauth.clientId}`);
     }
 
-    console.log(`     Secret (plain, for .env): ${appDef.oauth.clientSecretPlain}`);
+    console.log(`     Secret (plain, for .env): ${appDef.oauth.clientSecretPlain.length > 0 ? "[set]" : "[unset]"}  (${appDef.oauth.clientSecretPlain.startsWith("change-in-prod") || appDef.oauth.clientSecretPlain.endsWith("change-in-prod") ? "DEV PLACEHOLDER — rotate before prod" : "from env"})`);
     console.log(`     Redirect URIs: ${appDef.oauth.redirectUris.join(", ")}\n`);
   }
 
-  console.log("🎉 Done! Add these to your app .env.local files:");
+  console.log("🎉 Done! For each app, set in its .env.local:");
   const quikitUrlDev = "http://" + "localhost:3000"; // prod-safety-allow: printed dev instructions
   console.log(`
-# apps/quikscale/.env.local
 QUIKIT_URL="${quikitUrlDev}"
-QUIKIT_CLIENT_ID="quikscale"
-QUIKIT_CLIENT_SECRET="quikscale-dev-secret-change-in-prod"
+QUIKIT_CLIENT_ID="<app-slug>"
+QUIKIT_CLIENT_SECRET="<value-from-secrets-vault>"
 
-# apps/admin/.env.local
-QUIKIT_URL="${quikitUrlDev}"
-QUIKIT_CLIENT_ID="admin"
-QUIKIT_CLIENT_SECRET="admin-dev-secret-change-in-prod"
-
-# apps/quikvc/.env.local
-QUIKIT_URL="${quikitUrlDev}"
-QUIKIT_CLIENT_ID="quikvc"
-QUIKIT_CLIENT_SECRET="quikvc-dev-secret-change-in-prod"
+For the source of truth on secret values, see ~/Desktop/QuikIT-Secrets/ (vault).
+Generate fresh secrets with:  openssl rand -base64 32
+Then re-run this seed with the env vars set:
+  QUIKSCALE_OAUTH_CLIENT_SECRET=... ADMIN_OAUTH_CLIENT_SECRET=... \\
+  QUIKCONSTRUCTION_OAUTH_CLIENT_SECRET=... QUIKVC_OAUTH_CLIENT_SECRET=... \\
+  npx tsx prisma/seed-oauth.ts
 `);
 }
 

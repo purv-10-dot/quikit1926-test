@@ -15,7 +15,7 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.dashboard");
  * scores + a per-member Total row. Finishes with an overall "Total Average of
  * All Members" row (spec §7.9).
  */
-export const POST = withTenantAuth(async ({ tenantId }, request) => {
+export const POST = withTenantAuth(async ({ orgId }, request) => {
   const body = await request.json();
   const clientId: string = body.clientId;
   const year: number = parseInt(body.year, 10);
@@ -24,7 +24,7 @@ export const POST = withTenantAuth(async ({ tenantId }, request) => {
     return NextResponse.json({ success: false, error: "clientId, year, month required" }, { status: 400 });
 
   const client = await db.client.findFirst({
-    where: { id: clientId, tenantId, deletedAt: null },
+    where: { id: clientId, orgId, deletedAt: null },
     include: {
       memberships: { where: { deletedAt: null }, include: { user: { select: { id: true, firstName: true, lastName: true } } } },
     },
@@ -36,7 +36,7 @@ export const POST = withTenantAuth(async ({ tenantId }, request) => {
   const toEnd = new Date(Date.UTC(year, monthIdx + 1, 0, 23, 59, 59, 999));
 
   const meetings = await db.clientWeeklyMeeting.findMany({
-    where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
+    where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
     include: { absentMembers: true, dashboardNAMembers: true },
     orderBy: { meetingDate: "asc" },
   });

@@ -5,13 +5,13 @@ import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
 import { updateMemberSchema } from "@/lib/schemas/memberSchema";
 
-export const GET = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
-  const blocked = await gateModuleApi("admin", "members", tenantId);
+export const GET = withAdminAuth<{ id: string }>(async ({ orgId }, _request, { params }) => {
+  const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({
-    where: { id: membershipId, tenantId },
+    where: { id: membershipId, orgId },
     include: {
       user: {
         select: {
@@ -35,12 +35,12 @@ export const GET = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, 
   }
 
   const userTeams = await db.userTeam.findMany({
-    where: { tenantId, userId: membership.userId },
+    where: { orgId, userId: membership.userId },
     include: { team: { select: { id: true, name: true, color: true } } },
   });
 
   const appAccess = await db.userAppAccess.findMany({
-    where: { tenantId, userId: membership.userId },
+    where: { orgId, userId: membership.userId },
     include: { app: { select: { id: true, name: true, slug: true, iconUrl: true } } },
   });
 
@@ -76,13 +76,13 @@ export const GET = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, 
   });
 });
 
-export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request: NextRequest, { params }) => {
-  const blocked = await gateModuleApi("admin", "members", tenantId);
+export const PATCH = withAdminAuth<{ id: string }>(async ({ orgId }, request: NextRequest, { params }) => {
+  const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({
-    where: { id: membershipId, tenantId },
+    where: { id: membershipId, orgId },
   });
 
   if (!membership) {
@@ -118,7 +118,7 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request:
     // Validate all teamIds belong to this tenant
     if (teamIds.length > 0) {
       const validTeams = await db.team.findMany({
-        where: { id: { in: teamIds }, tenantId },
+        where: { id: { in: teamIds }, orgId },
         select: { id: true },
       });
       const validTeamIds = new Set(validTeams.map((t) => t.id));
@@ -134,13 +134,13 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request:
     // Atomic delete + create in a transaction
     await db.$transaction([
       db.userTeam.deleteMany({
-        where: { tenantId, userId: membership.userId },
+        where: { orgId, userId: membership.userId },
       }),
       ...(teamIds.length > 0
         ? [
             db.userTeam.createMany({
               data: teamIds.map((teamId: string) => ({
-                tenantId,
+                orgId,
                 userId: membership.userId,
                 teamId,
               })),
@@ -156,13 +156,13 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ tenantId }, request:
   });
 });
 
-export const DELETE = withAdminAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
-  const blocked = await gateModuleApi("admin", "members", tenantId);
+export const DELETE = withAdminAuth<{ id: string }>(async ({ orgId }, _request, { params }) => {
+  const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
   const membership = await db.membership.findFirst({
-    where: { id: membershipId, tenantId },
+    where: { id: membershipId, orgId },
   });
 
   if (!membership) {

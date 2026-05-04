@@ -2,7 +2,7 @@
  * Shared factory for `POST /api/org/select` route handlers.
  *
  * Validates that the current user has an active Membership for the
- * requested tenantId, optionally that the user has access to the requested
+ * requested orgId, optionally that the user has access to the requested
  * app (when `appSlug` is configured), and returns the role so the client
  * can update the JWT via `useSession().update()`.
  *
@@ -22,7 +22,7 @@ export interface OrgSelectConfig {
 }
 
 const bodySchema = z.object({
-  tenantId: z.string().min(1, "tenantId is required"),
+  orgId: z.string().min(1, "orgId is required"),
 });
 
 export function createOrgSelectHandler(
@@ -48,13 +48,13 @@ export function createOrgSelectHandler(
         { status: 400 },
       );
     }
-    const { tenantId } = parsed.data;
+    const { orgId } = parsed.data;
     const userId = session.user.id;
 
     // 1. Active membership in this tenant
     const membership = await db.membership.findFirst({
-      where: { userId, tenantId, status: "active" },
-      select: { tenantId: true, role: true },
+      where: { userId, orgId, status: "active" },
+      select: { orgId: true, role: true },
     });
     if (!membership) {
       return NextResponse.json(
@@ -71,7 +71,7 @@ export function createOrgSelectHandler(
       });
       if (app) {
         const access = await db.userAppAccess.findUnique({
-          where: { userId_tenantId_appId: { userId, tenantId, appId: app.id } },
+          where: { userId_orgId_appId: { userId, orgId, appId: app.id } },
           select: { id: true },
         });
         if (!access) {
@@ -91,7 +91,7 @@ export function createOrgSelectHandler(
 
     return NextResponse.json({
       success: true,
-      data: { tenantId: membership.tenantId, membershipRole: membership.role },
+      data: { orgId: membership.orgId, membershipRole: membership.role },
     });
   };
 }

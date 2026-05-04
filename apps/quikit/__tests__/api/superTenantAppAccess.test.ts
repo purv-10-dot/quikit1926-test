@@ -12,7 +12,7 @@ vi.mock("@/lib/email", () => ({
   sendOrgSuspendedEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { GET, POST } from "@/app/api/super/tenant-app-access/[tenantId]/route";
+import { GET, POST } from "@/app/api/super/tenant-app-access/[orgId]/route";
 
 function makeRequest(url: string, init?: RequestInit) {
   return new NextRequest(new URL(url, "http://localhost:3006"), init as never);
@@ -24,11 +24,11 @@ async function bodyOf(res: Response) {
 
 const SUPER_ADMIN = { id: "sa-1", email: "super@test.com", isSuperAdmin: true };
 const REGULAR_USER = { id: "user-1", email: "user@test.com", isSuperAdmin: false };
-const PARAMS = { params: { tenantId: "tenant-1" } };
+const PARAMS = { params: { orgId: "tenant-1" } };
 
-// ─── GET /api/super/tenant-app-access/[tenantId] ─────────────────────────────
+// ─── GET /api/super/tenant-app-access/[orgId] ─────────────────────────────
 
-describe("GET /api/super/tenant-app-access/[tenantId]", () => {
+describe("GET /api/super/tenant-app-access/[orgId]", () => {
   beforeEach(() => {
     resetMockDb();
   });
@@ -81,9 +81,9 @@ describe("GET /api/super/tenant-app-access/[tenantId]", () => {
   });
 });
 
-// ─── POST /api/super/tenant-app-access/[tenantId] ────────────────────────────
+// ─── POST /api/super/tenant-app-access/[orgId] ────────────────────────────
 
-describe("POST /api/super/tenant-app-access/[tenantId]", () => {
+describe("POST /api/super/tenant-app-access/[orgId]", () => {
   beforeEach(() => {
     resetMockDb();
   });

@@ -20,11 +20,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -48,7 +48,7 @@ describe("GET /api/categories — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(403);
@@ -64,8 +64,8 @@ describe("GET /api/categories — happy path", () => {
 
   it("returns paginated categories for tenant", async () => {
     const items = [
-      { id: "c1", name: "Revenue", dataType: "Currency", tenantId: TENANT },
-      { id: "c2", name: "Count", dataType: "Number", tenantId: TENANT },
+      { id: "c1", name: "Revenue", dataType: "Currency", orgId: TENANT },
+      { id: "c2", name: "Count", dataType: "Number", orgId: TENANT },
     ];
     mockDb.categoryMaster.findMany.mockResolvedValue(items as any);
     mockDb.categoryMaster.count.mockResolvedValue(2);
@@ -78,14 +78,14 @@ describe("GET /api/categories — happy path", () => {
     expect(body.meta.total).toBe(2);
   });
 
-  it("filters by tenantId on queries", async () => {
+  it("filters by orgId on queries", async () => {
     mockDb.categoryMaster.findMany.mockResolvedValue([]);
     mockDb.categoryMaster.count.mockResolvedValue(0);
 
     await GET(buildGET(), { params: {} as any });
 
     const findCall = mockDb.categoryMaster.findMany.mock.calls[0]?.[0] as any;
-    expect(findCall.where.tenantId).toBe(TENANT);
+    expect(findCall.where.orgId).toBe(TENANT);
   });
 
   it("applies search filter", async () => {
@@ -120,7 +120,7 @@ describe("POST /api/categories — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST({ name: "Test", dataType: "Number" }), { params: {} as any });
     expect(res.status).toBe(403);
@@ -155,7 +155,7 @@ describe("POST /api/categories — happy path", () => {
   beforeEach(asAdmin);
 
   it("creates category and returns 201", async () => {
-    const created = { id: "c1", name: "Revenue", dataType: "Currency", tenantId: TENANT };
+    const created = { id: "c1", name: "Revenue", dataType: "Currency", orgId: TENANT };
     mockDb.categoryMaster.create.mockResolvedValue(created as any);
 
     const res = await POST(
@@ -177,7 +177,7 @@ describe("POST /api/categories — happy path", () => {
     );
 
     const call = mockDb.categoryMaster.create.mock.calls[0]?.[0] as any;
-    expect(call.data.tenantId).toBe(TENANT);
+    expect(call.data.orgId).toBe(TENANT);
     expect(call.data.createdBy).toBe(USER);
   });
 

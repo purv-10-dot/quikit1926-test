@@ -8,11 +8,11 @@ const withTenantAuth = withTenantAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { params }) => {
+export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({
     where: { id: params.id },
     select: {
-      id: true, tenantId: true, name: true, description: true, kpiLevel: true, owner: true,
+      id: true, orgId: true, name: true, description: true, kpiLevel: true, owner: true,
       ownerIds: true, ownerContributions: true,
       teamId: true, parentKPIId: true, quarter: true, year: true,
       measurementUnit: true, target: true, quarterlyGoal: true, qtdGoal: true,
@@ -27,18 +27,18 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { pa
   });
 
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
-  if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+  if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   return NextResponse.json({ success: true, data: kpi });
 }, { fallbackErrorMessage: "Failed to fetch KPI" });
 
-export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existingKPI = await db.kPI.findUnique({ where: { id: params.id } });
   if (!existingKPI) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
-  if (existingKPI.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+  if (existingKPI.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   // Edit permission: creator, owner/assignee, team head, admin, or super-admin
-  const canEdit = await canEditKPI(userId, tenantId, {
+  const canEdit = await canEditKPI(userId, orgId, {
     kpiLevel: existingKPI.kpiLevel,
     createdBy: existingKPI.createdBy,
     owner: existingKPI.owner,
@@ -76,7 +76,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
         return NextResponse.json({ success: false, error: "At least one KPI owner is required for team KPIs" }, { status: 400 });
       }
       const memberships = await db.membership.findMany({
-        where: { tenantId, teamId: effectiveTeamId, userId: { in: ownerIds }, status: "active" },
+        where: { orgId, teamId: effectiveTeamId, userId: { in: ownerIds }, status: "active" },
         select: { userId: true },
       });
       const validIds = new Set(memberships.map((m) => m.userId));
@@ -109,9 +109,9 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
   // ── Past-week edit enforcement (weekly target breakdown) ──
   // When edit_past_week_data is disabled, reject changes to past-week targets
   if (validated.weeklyTargets && existingKPI.quarter && existingKPI.year) {
-    const { canEditPastWeek } = await getPastWeekFlags(tenantId);
+    const { canEditPastWeek } = await getPastWeekFlags(orgId);
     if (!canEditPastWeek) {
-      const currentWeek = await getCurrentFiscalWeekFromDB(tenantId, existingKPI.year, existingKPI.quarter);
+      const currentWeek = await getCurrentFiscalWeekFromDB(orgId, existingKPI.year, existingKPI.quarter);
       const oldTargets = (existingKPI.weeklyTargets as Record<string, number> | null) || {};
       const newTargets = validated.weeklyTargets as Record<string, number>;
       for (const [weekStr, newVal] of Object.entries(newTargets)) {
@@ -197,19 +197,19 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
   });
 
   await db.kPILog.create({
-    data: { tenantId, kpiId: params.id, action: "UPDATE", oldValue, newValue: JSON.stringify(updatedKPI), changedBy: userId },
+    data: { orgId, kpiId: params.id, action: "UPDATE", oldValue, newValue: JSON.stringify(updatedKPI), changedBy: userId },
   });
 
   return NextResponse.json({ success: true, data: updatedKPI, message: "KPI updated successfully" });
 }, { fallbackErrorMessage: "Failed to update KPI" });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({ where: { id: params.id } });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
-  if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+  if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   // Edit permission: creator, owner/assignee, team head, admin, or super-admin
-  const canEdit = await canEditKPI(userId, tenantId, {
+  const canEdit = await canEditKPI(userId, orgId, {
     kpiLevel: kpi.kpiLevel,
     createdBy: kpi.createdBy,
     owner: kpi.owner,
@@ -226,7 +226,7 @@ export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }
   const oldValue = JSON.stringify(kpi);
   await db.kPI.update({ where: { id: params.id }, data: { deletedAt: new Date() } });
 
-  await db.kPILog.create({ data: { tenantId, kpiId: params.id, action: "DELETE", oldValue, changedBy: userId } });
+  await db.kPILog.create({ data: { orgId, kpiId: params.id, action: "DELETE", oldValue, changedBy: userId } });
 
   return NextResponse.json({ success: true, message: "KPI deleted successfully" });
 }, { fallbackErrorMessage: "Failed to delete KPI" });

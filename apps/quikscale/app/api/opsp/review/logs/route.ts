@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
   try {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
-    const { tenantId } = auth;
-    const blocked = await gateModuleApi("quikscale", "opsp.review", tenantId);
+    const { orgId } = auth;
+    const blocked = await gateModuleApi("quikscale", "opsp.review", orgId);
     if (blocked) return blocked;
 
     const { searchParams } = req.nextUrl;
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     // Build a search filter for audit logs matching this review context
     const logs = await db.auditLog.findMany({
       where: {
-        tenantId,
+        orgId,
         entityType: "Review",
         entityId: opspId,
         // Filter by horizon+rowIndex in the changes array or reason field

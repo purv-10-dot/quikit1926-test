@@ -86,7 +86,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async ({ userId }, reque
       entityType: "tenant",
       entityId: id,
       actorId: userId,
-      tenantId: id,
+      orgId: id,
       oldValues: JSON.stringify({ name: existing.name, plan: existing.plan, status: existing.status }),
       newValues: JSON.stringify(updateData),
     });
@@ -123,14 +123,14 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async ({ userId }, _req
       entityType: "tenant",
       entityId: id,
       actorId: userId,
-      tenantId: id,
+      orgId: id,
       oldValues: JSON.stringify({ status: existing.status }),
       newValues: JSON.stringify({ status: "suspended" }),
     });
 
     // Fire-and-forget: notify org admins about suspension
     db.membership.findMany({
-      where: { tenantId: id, role: { in: ["owner", "admin"] }, status: "active" },
+      where: { orgId: id, role: { in: ["owner", "admin"] }, status: "active" },
       include: { user: { select: { email: true } } },
     }).then((members) => {
       for (const m of members) {

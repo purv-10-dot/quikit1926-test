@@ -16,7 +16,7 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.dashboard");
  *
  * Returns up to 6 months of monthly aggregates + overall totals.
  */
-export const GET = withTenantAuth(async ({ tenantId }, request) => {
+export const GET = withTenantAuth(async ({ orgId }, request) => {
   const url = new URL(request.url);
   const clientId = url.searchParams.get("clientId");
   const mode = (url.searchParams.get("mode") ?? "daily") as "daily" | "weekly";
@@ -27,7 +27,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
     return NextResponse.json({ success: false, error: "clientId required" }, { status: 400 });
 
   const client = await db.client.findFirst({
-    where: { id: clientId, tenantId, deletedAt: null },
+    where: { id: clientId, orgId, deletedAt: null },
     include: {
       teamMembers: {
         include: { member: { select: { id: true, name: true, email: true, deletedAt: true } } },
@@ -49,7 +49,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
 
   if (mode === "daily") {
     const huddles = await db.clientDailyHuddle.findMany({
-      where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
+      where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
       include: { absentMembers: true, absentTeamMembers: true },
     });
     monthlyStats = calculateDailyMonthlyStats(
@@ -78,7 +78,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
     );
   } else {
     const meetings = await db.clientWeeklyMeeting.findMany({
-      where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
+      where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
       include: {
         absentMembers: true, absentTeamMembers: true,
         dashboardNAMembers: true, dashboardNATeamMembers: true,
@@ -140,7 +140,7 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
     const tm = client.teamMembers.find(t => t.member.id === punchUserId);
     if (tm && !tm.member.deletedAt) {
       const meetings = await db.clientWeeklyMeeting.findMany({
-        where: { tenantId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
+        where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
         include: {
           absentMembers: true,
           dashboardNAMembers: true,

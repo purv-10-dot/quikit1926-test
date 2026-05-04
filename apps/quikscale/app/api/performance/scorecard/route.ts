@@ -3,13 +3,13 @@ import { db } from "@/lib/db";
 import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("analytics.scorecard");
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
     const [kpis, priorities, wwwItems, teams, members] = await Promise.all([
-      db.kPI.findMany({ where: { tenantId }, include: { weeklyValues: true } }),
-      db.priority.findMany({ where: { tenantId }, include: { weeklyStatuses: true } }),
-      db.wWWItem.findMany({ where: { tenantId } }),
-      db.team.findMany({ where: { tenantId } }),
-      db.membership.findMany({ where: { tenantId }, include: { user: true } }),
+      db.kPI.findMany({ where: { orgId }, include: { weeklyValues: true } }),
+      db.priority.findMany({ where: { orgId }, include: { weeklyStatuses: true } }),
+      db.wWWItem.findMany({ where: { orgId } }),
+      db.team.findMany({ where: { orgId } }),
+      db.membership.findMany({ where: { orgId }, include: { user: true } }),
     ]);
     // Legacy team-meeting attendance was part of this scorecard. The new
     // Client Meetings module tracks meeting-level stats per-client, not

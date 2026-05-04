@@ -1,12 +1,11 @@
 /**
- * Hot-read cache used by the auth chain (`getTenantId`, `getDisabledModules`,
+ * Hot-read cache used by the auth chain (`getOrgId`, `getDisabledModules`,
  * `isTenantAppBlocked`).
  *
  * Layered:
  *   1. **In-memory LRU** — first stop. Per-process, instant. Always on.
- *   2. **Upstash Redis (REST)** — second stop. Shared across serverless
- *      instances. Active only when both UPSTASH_REDIS_REST_URL and
- *      UPSTASH_REDIS_REST_TOKEN env vars are present.
+ *   2. **Shared Redis** — second stop via `@quikit/redis`. Shared across
+ *      serverless instances when REDIS_URL is configured.
  *
  * Cache strategy: short TTLs (15–60s) for everything membership/permission
  * shaped. The cost of a stale cache hit is "user has access for up to 60s
@@ -16,6 +15,8 @@
  * Note: `getOrSet` always falls open on cache failure (returns the loader's
  * fresh value) — a broken cache must not break auth.
  */
+
+import { cacheDel, cacheGet, cacheSet, getRedis } from "@quikit/redis";
 
 interface CacheEntry<T> { value: T; expiresAt: number; }
 
@@ -49,52 +50,32 @@ function localSet<T>(key: string, value: T, ttlSeconds: number) {
 
 function localDelete(key: string) { localStore.delete(key); }
 
-/* ─── Upstash REST adapter ──────────────────────────────────────────────────── */
+/* ─── Shared Redis adapter ──────────────────────────────────────────────────── */
 
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-const UPSTASH_ENABLED = !!(UPSTASH_URL && UPSTASH_TOKEN);
-
-async function upstashGet<T>(key: string): Promise<T | undefined> {
-  if (!UPSTASH_ENABLED) return undefined;
+async function redisGet<T>(key: string): Promise<T | undefined> {
   try {
-    const res = await fetch(`${UPSTASH_URL}/get/${encodeURIComponent(key)}`, {
-      headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
-      cache: "no-store",
-    });
-    if (!res.ok) return undefined;
-    const body = await res.json() as { result: string | null };
-    if (body.result == null) return undefined;
-    return JSON.parse(body.result) as T;
+    const raw = await cacheGet(key);
+    if (raw == null) return undefined;
+    return JSON.parse(raw) as T;
   } catch {
     return undefined;
   }
 }
 
-async function upstashSet<T>(key: string, value: T, ttlSeconds: number) {
-  if (!UPSTASH_ENABLED) return;
+async function redisSet<T>(key: string, value: T, ttlSeconds: number) {
   try {
-    await fetch(
-      `${UPSTASH_URL}/set/${encodeURIComponent(key)}?EX=${ttlSeconds}`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${UPSTASH_TOKEN}`, "Content-Type": "application/json" },
-        body: JSON.stringify(JSON.stringify(value)),
-      },
-    );
+    await cacheSet(key, JSON.stringify(value), ttlSeconds);
   } catch {
     // Best-effort: cache writes never block.
   }
 }
 
-async function upstashDelete(key: string) {
-  if (!UPSTASH_ENABLED) return;
+async function redisDelete(key: string) {
   try {
-    await fetch(`${UPSTASH_URL}/del/${encodeURIComponent(key)}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
-    });
-  } catch { /* swallow */ }
+    await cacheDel(key);
+  } catch {
+    // Swallow
+  }
 }
 
 /* ─── Public API ────────────────────────────────────────────────────────────── */
@@ -104,7 +85,7 @@ async function upstashDelete(key: string) {
  * its return value is written to both layers so the next call is hot.
  *
  * @param key  unique cache key (callers should prefix by domain to avoid clashes)
- * @param ttl  TTL in seconds; the in-memory store and Upstash both honour it
+ * @param ttl  TTL in seconds; the in-memory store and Redis both honour it
  * @param loader function that produces the value when caches miss
  */
 export async function getOrSet<T>(
@@ -116,8 +97,8 @@ export async function getOrSet<T>(
   const local = localGet<T>(key);
   if (local !== undefined) return local;
 
-  // Layer 2: Upstash.
-  const remote = await upstashGet<T>(key);
+  // Layer 2: shared Redis.
+  const remote = await redisGet<T>(key);
   if (remote !== undefined) {
     // Backfill the local layer so subsequent calls in this process skip the network.
     localSet(key, remote, ttlSeconds);
@@ -128,17 +109,17 @@ export async function getOrSet<T>(
   const fresh = await loader();
   localSet(key, fresh, ttlSeconds);
   // Fire-and-forget the upstream write; we already have the value.
-  void upstashSet(key, fresh, ttlSeconds);
+  void redisSet(key, fresh, ttlSeconds);
   return fresh;
 }
 
 /** Manual invalidation — use after a mutation that changes cached state. */
 export async function invalidate(key: string): Promise<void> {
   localDelete(key);
-  await upstashDelete(key);
+  await redisDelete(key);
 }
 
 /** Test / dev helper — wipe the in-memory layer. */
 export function _clearLocalCache() { localStore.clear(); }
 
-export const isUpstashEnabled = () => UPSTASH_ENABLED;
+export const isRedisCacheEnabled = () => Boolean(getRedis());

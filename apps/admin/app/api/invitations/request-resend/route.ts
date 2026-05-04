@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   const recent = await db.notification.findFirst({
     where: {
       userId: membership.createdBy,
-      tenantId: membership.tenantId,
+      orgId: membership.orgId,
       relatedEntityType: "Membership",
       relatedEntityId: membership.id,
       type: "invitation_resend_requested",
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   const fullName = `${membership.user.firstName} ${membership.user.lastName}`.trim();
   await db.notification.create({
     data: {
-      tenantId: membership.tenantId,
+      orgId: membership.orgId,
       userId: membership.createdBy,
       title: "Invitation resend requested",
       message: `${fullName} (${membership.user.email}) tried to accept their invitation to ${membership.tenant.name} but the link has expired. Open Members and click Resend to issue a fresh invite.`,

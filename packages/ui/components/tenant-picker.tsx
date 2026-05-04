@@ -17,7 +17,7 @@ export interface TenantPickerProps {
   tenants: TenantOption[];
   /** Selected tenant id, or null if nothing selected yet. */
   value: string | null;
-  onChange: (tenantId: string) => void;
+  onChange: (orgId: string) => void;
   /** Called as the user types, so callers can server-side filter. Optional. */
   onSearchChange?: (query: string) => void;
   /** Show a loading state (waiting for tenants to load). */

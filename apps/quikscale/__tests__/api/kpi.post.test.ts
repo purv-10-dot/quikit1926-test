@@ -23,12 +23,12 @@ function buildRequest(body: unknown): NextRequest {
 
 /** Default stubs: authenticated admin in TENANT, feature flags OFF, no data. */
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
-  // getTenantId: session has tenantId → verifies via membership findFirst
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
+  // getTenantId: session has orgId → verifies via membership findFirst
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -73,7 +73,7 @@ describe("POST /api/kpi — auth", () => {
   });
 
   it("returns 403 when authenticated but no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await POST(buildRequest(baseIndividual), { params: {} } as any);
     expect(res.status).toBe(403);
@@ -168,11 +168,11 @@ describe("POST /api/kpi — individual happy path", () => {
 describe("POST /api/kpi — team KPI permission", () => {
   beforeEach(() => {
     // Non-admin membership (so canManageTeamKPI must check team head)
-    setSession({ id: USER, tenantId: TENANT, role: "member" });
+    setSession({ id: USER, orgId: TENANT, role: "member" });
     mockDb.membership.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
-      tenantId: TENANT,
+      orgId: TENANT,
       role: "employee",
       status: "active",
     } as any);
@@ -180,7 +180,7 @@ describe("POST /api/kpi — team KPI permission", () => {
     // Team exists in tenant
     mockDb.team.findUnique.mockResolvedValue({
       id: TEAM,
-      tenantId: TENANT,
+      orgId: TENANT,
       headId: "someone-else",
     } as any);
   });
@@ -208,7 +208,7 @@ describe("POST /api/kpi — team KPI happy path", () => {
     // Team exists in tenant
     mockDb.team.findUnique.mockResolvedValue({
       id: TEAM,
-      tenantId: TENANT,
+      orgId: TENANT,
       headId: "head-user",
     } as any);
     // All owners are active members of the team
@@ -234,7 +234,7 @@ describe("POST /api/kpi — team KPI happy path", () => {
   it("returns 400 when an owner is not a team member", async () => {
     mockDb.team.findUnique.mockResolvedValue({
       id: TEAM,
-      tenantId: TENANT,
+      orgId: TENANT,
       headId: "head-user",
     } as any);
     // Only USER is in the team — OTHER is missing

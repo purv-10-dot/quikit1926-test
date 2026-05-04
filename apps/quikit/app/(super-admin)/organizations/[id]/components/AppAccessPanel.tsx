@@ -24,7 +24,7 @@ interface AppRow {
   updatedAt: string | null;
 }
 
-export function AppAccessPanel({ tenantId }: { tenantId: string }) {
+export function AppAccessPanel({ orgId }: { orgId: string }) {
   const [apps, setApps] = useState<AppRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<Set<string>>(new Set());
@@ -34,7 +34,7 @@ export function AppAccessPanel({ tenantId }: { tenantId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const r = await fetch(`/api/super/tenant-app-access/${tenantId}`);
+      const r = await fetch(`/api/super/tenant-app-access/${orgId}`);
       const j = await r.json();
       if (j.success) setApps(j.data.apps);
     } finally {
@@ -44,14 +44,14 @@ export function AppAccessPanel({ tenantId }: { tenantId: string }) {
 
   useOnceEffect(() => {
     load();
-  }, [tenantId]);
+  }, [orgId]);
 
   async function toggle(appId: string, next: boolean, reasonText?: string) {
     setPending((s) => new Set(s).add(appId));
     // optimistic
     setApps((prev) => prev.map((a) => (a.appId === appId ? { ...a, enabled: next, reason: next ? null : reasonText ?? null } : a)));
     try {
-      const r = await fetch(`/api/super/tenant-app-access/${tenantId}`, {
+      const r = await fetch(`/api/super/tenant-app-access/${orgId}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ appId, enabled: next, reason: reasonText }),

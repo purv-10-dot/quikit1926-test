@@ -12,7 +12,7 @@
  *   - tenant_inactive — tenants with no login in last 30 days
  *
  * Design:
- *   - Alerts dedupe by (rule, subjectKey) — subjectKey = appId, tenantId, etc.
+ *   - Alerts dedupe by (rule, subjectKey) — subjectKey = appId, orgId, etc.
  *   - When the condition is still true, we update lastSeenAt.
  *   - When the condition is false (app is back up, invoice now paid, etc.),
  *     we set resolvedAt on any matching open alert.
@@ -245,14 +245,14 @@ export async function GET(req: NextRequest) {
       });
       const active = new Set<string>();
       for (const inv of failed) {
-        active.add(inv.tenantId);
+        active.add(inv.orgId);
         const outcome = await upsertAndNotify({
           rule: "payment_failed",
-          subjectKey: inv.tenantId,
+          subjectKey: inv.orgId,
           severity: "warning",
           title: `Payment failed: ${inv.tenant.name}`,
           message: `$${(inv.amountCents / 100).toFixed(2)} ${inv.currency} (${inv.planSlug})`,
-          link: `/organizations/${inv.tenantId}`,
+          link: `/organizations/${inv.orgId}`,
           data: { invoiceId: inv.id, amountCents: inv.amountCents },
         });
         summary.payment_failed[outcome] += 1;
@@ -272,7 +272,7 @@ export async function GET(req: NextRequest) {
         // Only flag if the tenant was created > 30 days ago (ignore brand-new orgs)
         if (t.createdAt > thirtyDaysAgo) continue;
         const lastLogin = await db.sessionEvent.findFirst({
-          where: { tenantId: t.id, event: "login" },
+          where: { orgId: t.id, event: "login" },
           orderBy: { createdAt: "desc" },
           select: { createdAt: true },
         });

@@ -50,15 +50,15 @@ export async function GET(request: NextRequest) {
     if (!membership)
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
 
-    const tenantId = membership.tenantId;
-    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", tenantId);
+    const orgId = membership.orgId;
+    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", orgId);
     if (blocked) return blocked;
 
     const yearParam = request.nextUrl.searchParams.get("year");
 
     // Get all available fiscal years
     const allYearsRaw = await db.quarterSetting.findMany({
-      where:    { tenantId },
+      where:    { orgId },
       select:   { fiscalYear: true },
       distinct: ["fiscalYear"],
       orderBy:  { fiscalYear: "desc" },
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     let futureYearAvailable: number | null = null;
 
     const futureFlag = await db.featureFlag.findFirst({
-      where: { tenantId, key: "enable_future_quarters" },
+      where: { orgId, key: "enable_future_quarters" },
       select: { enabled: true },
     });
     const futureEnabled = futureFlag?.enabled ?? false;
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch quarters (filtered by year if provided)
-    const where: Record<string, unknown> = { tenantId };
+    const where: Record<string, unknown> = { orgId };
     if (yearParam) where.fiscalYear = parseInt(yearParam, 10);
 
     const rows = await db.quarterSetting.findMany({
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
     // modal to pre-fill the next FY's start date as latestEnd + 1 so users
     // don't have to remember where the previous FY ended.
     const latestRow = await db.quarterSetting.findFirst({
-      where: { tenantId },
+      where: { orgId },
       orderBy: { endDate: "desc" },
       select: { endDate: true },
     });
@@ -140,8 +140,8 @@ export async function POST(request: NextRequest) {
     if (!membership)
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
 
-    const { tenantId } = membership;
-    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", tenantId);
+    const { orgId } = membership;
+    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", orgId);
     if (blocked) return blocked;
 
     const fiscalStartMonth = membership.tenant.fiscalYearStart ?? 4;
@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
 
     if (fiscalYear > currentFY) {
       const futureFlag = await db.featureFlag.findFirst({
-        where: { tenantId, key: "enable_future_quarters" },
+        where: { orgId, key: "enable_future_quarters" },
         select: { enabled: true },
       });
       if (!futureFlag?.enabled) {
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
 
     // Check if quarters already exist for this FY
     const existing = await db.quarterSetting.findMany({
-      where: { tenantId, fiscalYear },
+      where: { orgId, fiscalYear },
     });
     if (existing.length > 0)
       return NextResponse.json(
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
     // previous FY's Q4 end).
     if (fyStartDate) {
       const latest = await db.quarterSetting.findFirst({
-        where: { tenantId },
+        where: { orgId },
         orderBy: { endDate: "desc" },
         select: { endDate: true, fiscalYear: true, quarter: true },
       });
@@ -219,7 +219,7 @@ export async function POST(request: NextRequest) {
       quarterDates.map(q =>
         db.quarterSetting.create({
           data: {
-            tenantId,
+            orgId,
             fiscalYear,
             quarter:   q.quarter,
             startDate: q.startDate,
@@ -267,8 +267,8 @@ export async function DELETE(request: NextRequest) {
     if (!membership)
       return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
 
-    const { tenantId } = membership;
-    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", tenantId);
+    const { orgId } = membership;
+    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", orgId);
     if (blocked) return blocked;
 
     const yearParam = request.nextUrl.searchParams.get("year");
@@ -279,7 +279,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid fiscal year" }, { status: 400 });
 
     const result = await db.quarterSetting.deleteMany({
-      where: { tenantId, fiscalYear },
+      where: { orgId, fiscalYear },
     });
 
     if (result.count === 0)

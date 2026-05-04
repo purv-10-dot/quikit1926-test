@@ -18,8 +18,8 @@ export async function POST(req: NextRequest) {
   try {
     const auth = await requireAdmin();
     if ("error" in auth && auth.error) return auth.error;
-    const { tenantId, userId } = auth;
-    const blocked = await gateModuleApi("quikscale", "opsp.review", tenantId);
+    const { orgId, userId } = auth;
+    const blocked = await gateModuleApi("quikscale", "opsp.review", orgId);
     if (blocked) return blocked;
 
     const parsed = opspReviewSecondarySaveSchema.safeParse(await req.json());
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     // 1. Verify OPSP exists
     const opsp = await db.oPSPData.findUnique({
       where: {
-        tenantId_userId_year_quarter: { tenantId, userId, year: yearNum, quarter },
+        orgId_userId_year_quarter: { orgId, userId, year: yearNum, quarter },
       },
       select: { id: true },
     });
@@ -46,8 +46,8 @@ export async function POST(req: NextRequest) {
     // 2. Upsert the secondary entry (period="secondary", status stored in comment as JSON prefix)
     const savedEntry = await db.oPSPReviewEntry.upsert({
       where: {
-        tenantId_opspId_horizon_rowIndex_period: {
-          tenantId,
+        orgId_opspId_horizon_rowIndex_period: {
+          orgId,
           opspId: opsp.id,
           horizon,
           rowIndex,
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
         updatedBy: userId,
       },
       create: {
-        tenantId,
+        orgId,
         opspId: opsp.id,
         userId,
         horizon,
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Audit log
     await writeAuditLog({
-      tenantId,
+      orgId,
       actorId: userId,
       action: "UPDATE",
       entityType: "Review",

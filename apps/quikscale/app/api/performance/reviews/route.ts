@@ -6,9 +6,9 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("people.reviews");
 
 export const GET = withTenantAuth(
-  async ({ tenantId }, request) => {
+  async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
-    const where = { tenantId };
+    const where = { orgId };
 
     const [reviews, total] = await Promise.all([
       db.performanceReview.findMany({
@@ -34,7 +34,7 @@ export const GET = withTenantAuth(
 );
 
 export const POST = withTenantAuth(
-  async ({ tenantId, userId }, request) => {
+  async ({ orgId, userId }, request) => {
     const parsed = createReviewSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -62,7 +62,7 @@ export const POST = withTenantAuth(
 
     const review = await db.performanceReview.create({
       data: {
-        tenantId,
+        orgId,
         reviewerId: userId,
         revieweeId,
         quarter,

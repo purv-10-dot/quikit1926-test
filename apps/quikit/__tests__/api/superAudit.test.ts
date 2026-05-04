@@ -60,7 +60,7 @@ describe("GET /api/super/audit", () => {
         entityType: "tenant",
         entityId: "t-1",
         actorId: "sa-1",
-        tenantId: "platform",
+        orgId: "platform",
         createdAt: new Date(),
       },
       {
@@ -69,7 +69,7 @@ describe("GET /api/super/audit", () => {
         entityType: "user",
         entityId: "u-1",
         actorId: "sa-1",
-        tenantId: "platform",
+        orgId: "platform",
         createdAt: new Date(),
       },
     ];

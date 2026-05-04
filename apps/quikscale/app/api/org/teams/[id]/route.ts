@@ -7,8 +7,8 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 
 
 // PUT /api/org/teams/[id] — update team
-export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
-  const existing = await db.team.findFirst({ where: { id: params.id, tenantId } });
+export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+  const existing = await db.team.findFirst({ where: { id: params.id, orgId } });
   if (!existing)
     return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
 
@@ -22,7 +22,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
   // Check name uniqueness if name is being changed
   if (name?.trim() && name.trim().toLowerCase() !== existing.name.toLowerCase()) {
     const dup = await db.team.findFirst({
-      where: { tenantId, name: { equals: name.trim(), mode: "insensitive" }, id: { not: params.id } },
+      where: { orgId, name: { equals: name.trim(), mode: "insensitive" }, id: { not: params.id } },
     });
     if (dup)
       return NextResponse.json({ success: false, error: `A team named "${dup.name}" already exists` }, { status: 409 });
@@ -39,7 +39,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "UPDATE",
     entityType: "Team",
@@ -79,8 +79,8 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, r
 }, { fallbackErrorMessage: "Failed to update team" });
 
 // DELETE /api/org/teams/[id] — delete team
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
-  const existing = await db.team.findFirst({ where: { id: params.id, tenantId } });
+export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+  const existing = await db.team.findFirst({ where: { id: params.id, orgId } });
   if (!existing)
     return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
 
@@ -92,7 +92,7 @@ export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "DELETE",
     entityType: "Team",

@@ -17,7 +17,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
  *   - if reportId filter → admin-style lookup for that report
  */
 export const GET = withTenantAuth(
-  async ({ tenantId, userId }, request) => {
+  async ({ orgId, userId }, request) => {
     const parsed = listOneOnOnesParamsSchema.safeParse({
       managerId: request.nextUrl.searchParams.get("managerId") ?? undefined,
       reportId: request.nextUrl.searchParams.get("reportId") ?? undefined,
@@ -37,7 +37,7 @@ export const GET = withTenantAuth(
     }
     const { managerId, reportId, from, to, page, pageSize } = parsed.data;
 
-    const where: Record<string, unknown> = { tenantId };
+    const where: Record<string, unknown> = { orgId };
     if (managerId) where.managerId = managerId;
     if (reportId) where.reportId = reportId;
     if (!managerId && !reportId) {
@@ -90,10 +90,10 @@ export const GET = withTenantAuth(
  * POST /api/performance/one-on-one — schedule a new session.
  */
 export const POST = withTenantAuth(
-  async ({ tenantId, userId }, request) => {
+  async ({ orgId, userId }, request) => {
     const rl = rateLimit({
       routeKey: "one-on-one:create",
-      clientKey: `${tenantId}:${userId}`,
+      clientKey: `${orgId}:${userId}`,
       limit: LIMITS.mutation.limit,
       windowMs: LIMITS.mutation.windowMs,
     });
@@ -132,7 +132,7 @@ export const POST = withTenantAuth(
     // Verify both users are active members of this tenant
     const validCount = await db.membership.count({
       where: {
-        tenantId,
+        orgId,
         userId: { in: [input.managerId, input.reportId] },
         status: "active",
       },
@@ -149,7 +149,7 @@ export const POST = withTenantAuth(
 
     const session = await db.oneOnOne.create({
       data: {
-        tenantId,
+        orgId,
         managerId: input.managerId,
         reportId: input.reportId,
         scheduledAt: new Date(input.scheduledAt),

@@ -16,14 +16,14 @@ const ADMIN_MIN_LEVEL = ROLE_HIERARCHY[ROLES.ADMIN];
  */
 export async function canManageTeamKPI(
   userId: string,
-  tenantId: string,
+  orgId: string,
   teamId: string
 ): Promise<boolean> {
-  if (!userId || !tenantId || !teamId) return false;
+  if (!userId || !orgId || !teamId) return false;
 
   // 1. Admin-level role check via Membership
   const membership = await db.membership.findFirst({
-    where: { userId, tenantId, status: "active" },
+    where: { userId, orgId, status: "active" },
     select: { role: true },
   });
   if (membership) {
@@ -33,7 +33,7 @@ export async function canManageTeamKPI(
 
   // 2. Team head check
   const team = await db.team.findFirst({
-    where: { id: teamId, tenantId },
+    where: { id: teamId, orgId },
     select: { headId: true },
   });
   return !!team && team.headId === userId;

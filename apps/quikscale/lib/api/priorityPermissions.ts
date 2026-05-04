@@ -16,17 +16,17 @@ const ADMIN_MIN_LEVEL = ROLE_HIERARCHY[ROLES.ADMIN];
  */
 export async function canEditPriority(
   userId: string,
-  tenantId: string,
+  orgId: string,
   priority: { createdBy: string; owner: string },
 ): Promise<boolean> {
-  if (!userId || !tenantId || !priority) return false;
+  if (!userId || !orgId || !priority) return false;
 
   // 1. Creator or assignee
   if (priority.createdBy === userId || priority.owner === userId) return true;
 
   // 2. Admin role
   const membership = await db.membership.findFirst({
-    where: { userId, tenantId, status: "active" },
+    where: { userId, orgId, status: "active" },
     select: { role: true },
   });
   if (membership) {

@@ -1,6 +1,6 @@
 export type WWWItem = {
   id: string;
-  tenantId: string;
+  orgId: string;
   who: string;
   what: string;
   when: string;

@@ -4,9 +4,9 @@ import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("analytics.individual");
 
-export const GET = withTenantAuth(async ({ tenantId }, request) => {
+export const GET = withTenantAuth(async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
-    const where = { tenantId };
+    const where = { orgId };
 
     const [members, total] = await Promise.all([
       db.membership.findMany({
@@ -14,8 +14,8 @@ export const GET = withTenantAuth(async ({ tenantId }, request) => {
         include: {
           user: {
             include: {
-              kpisOwned: { where: { tenantId }, include: { weeklyValues: true } },
-              prioritiesOwned: { where: { tenantId }, include: { weeklyStatuses: true } },
+              kpisOwned: { where: { orgId }, include: { weeklyValues: true } },
+              prioritiesOwned: { where: { orgId }, include: { weeklyStatuses: true } },
             }
           },
           team: true,

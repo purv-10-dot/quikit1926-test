@@ -19,8 +19,8 @@ async function bodyOf(res: Response) {
   return res.json();
 }
 
-const ADMIN = { id: "admin-1", email: "admin@test.com", tenantId: "tenant-1" };
-const MEMBER = { id: "member-1", email: "m@test.com", tenantId: "tenant-1" };
+const ADMIN = { id: "admin-1", email: "admin@test.com", orgId: "tenant-1" };
+const MEMBER = { id: "member-1", email: "m@test.com", orgId: "tenant-1" };
 
 /* ─── Tests ───────────────────────────────────────────────────────────────── */
 
@@ -35,7 +35,7 @@ describe("POST /api/apps/enable — bulk access grant", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns 403 when session has no tenantId", async () => {
+  it("returns 403 when session has no orgId", async () => {
     setSession({ id: "u-1" });
     const res = await POST(makeRequest({ appId: "app-1" }));
     expect(res.status).toBe(403);
@@ -101,7 +101,7 @@ describe("POST /api/apps/enable — bulk access grant", () => {
     expect(callData).toHaveLength(500);
     expect(callData[0]).toEqual({
       userId: "u-0",
-      tenantId: "tenant-1",
+      orgId: "tenant-1",
       appId: "app-1",
       role: "member",
       grantedBy: ADMIN.id,

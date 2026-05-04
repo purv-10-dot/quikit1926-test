@@ -4,12 +4,12 @@ import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 export const GET = withTenantAuth(
-  async ({ tenantId }, request) => {
+  async ({ orgId }, request) => {
     const teamId = request.nextUrl.searchParams.get("teamId");
     const { page, limit, skip, take } = parsePagination(request);
 
     const where = {
-      tenantId,
+      orgId,
       status: "active",
       ...(teamId ? { teamId } : {}),
     };

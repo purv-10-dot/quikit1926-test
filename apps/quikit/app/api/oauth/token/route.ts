@@ -218,7 +218,7 @@ async function handleAuthCodeExchange(
   const membership = await db.membership.findFirst({
     where: {
       userId: authCode.userId,
-      tenantId: authCode.tenantId,
+      orgId: authCode.orgId,
       status: "active",
     },
     select: { role: true },
@@ -231,7 +231,7 @@ async function handleAuthCodeExchange(
       sub: user.id,
       email: user.email,
       name: `${user.firstName} ${user.lastName}`,
-      tenant_id: authCode.tenantId,
+      tenant_id: authCode.orgId,
       role: membership?.role ?? "member",
     },
     clientId,
@@ -244,7 +244,7 @@ async function handleAuthCodeExchange(
       accessToken,
       clientId,
       userId: authCode.userId,
-      tenantId: authCode.tenantId,
+      orgId: authCode.orgId,
       scopes: authCode.scopes,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
     },
@@ -301,7 +301,7 @@ async function handleRefreshToken(
   const membership = await db.membership.findFirst({
     where: {
       userId: stored.userId,
-      tenantId: stored.tenantId,
+      orgId: stored.orgId,
       status: "active",
     },
     select: { role: true },
@@ -314,7 +314,7 @@ async function handleRefreshToken(
       sub: user.id,
       email: user.email,
       name: `${user.firstName} ${user.lastName}`,
-      tenant_id: stored.tenantId,
+      tenant_id: stored.orgId,
       role: membership?.role ?? "member",
     },
     clientId,
@@ -326,7 +326,7 @@ async function handleRefreshToken(
       accessToken: newAccessToken,
       clientId,
       userId: stored.userId,
-      tenantId: stored.tenantId,
+      orgId: stored.orgId,
       scopes: stored.scopes,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     },

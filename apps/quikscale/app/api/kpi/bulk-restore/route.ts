@@ -6,7 +6,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 const withTenantAuth = withTenantAuthForModule("kpi");
 
 // POST /api/kpi/bulk-restore  body: { ids: string[] }
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const body = await req.json().catch(() => ({}));
   const ids: string[] = Array.isArray(body?.ids) ? body.ids.filter((x: unknown) => typeof x === "string") : [];
   if (ids.length === 0) {
@@ -14,12 +14,12 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
   }
 
   const { count } = await db.kPI.updateMany({
-    where: { id: { in: ids }, tenantId, deletedAt: { not: null } },
+    where: { id: { in: ids }, orgId, deletedAt: { not: null } },
     data: { deletedAt: null },
   });
 
   await writeAuditLog({
-    tenantId, actorId: userId, action: "RESTORE",
+    orgId, actorId: userId, action: "RESTORE",
     entityType: "KPI", entityId: ids.join(","), newValues: { count, ids },
   });
 

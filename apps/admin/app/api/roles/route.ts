@@ -52,14 +52,14 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   ],
 };
 
-export const GET = withAdminAuth(async ({ tenantId }) => {
-  const blocked = await gateModuleApi("admin", "roles", tenantId);
+export const GET = withAdminAuth(async ({ orgId }) => {
+  const blocked = await gateModuleApi("admin", "roles", orgId);
   if (blocked) return blocked as NextResponse;
 
   // Get member counts per role for this tenant
   const roleCounts = await db.membership.groupBy({
     by: ["role"],
-    where: { tenantId, status: "active" },
+    where: { orgId, status: "active" },
     _count: { userId: true },
   });
 

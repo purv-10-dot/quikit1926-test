@@ -3,9 +3,9 @@ import { db } from "@/lib/db";
 import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 const withTenantAuth = withTenantAuthForModule("kpi");
 
-export const GET = withTenantAuth(async ({ tenantId }) => {
+export const GET = withTenantAuth(async ({ orgId }) => {
   const rows = await db.kPI.findMany({
-    where: { tenantId },
+    where: { orgId },
     select: { year: true },
     distinct: ["year"],
     orderBy: { year: "desc" },

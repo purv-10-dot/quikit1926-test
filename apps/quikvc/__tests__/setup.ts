@@ -19,7 +19,7 @@ import { _clearLocalCache } from "@quikit/auth/cache";
 
 export type TestUser = {
   id: string;
-  tenantId: string;
+  orgId: string;
   email?: string;
   name?: string;
   membershipRole?: string;

@@ -4,9 +4,9 @@ import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
 
 const withTenantAuth = withTenantAuthForModule("purchase");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { params }) => {
+export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const po = await db.cnPurchaseOrder.findFirst({
-    where: { id: params.id, tenantId },
+    where: { id: params.id, orgId },
     include: {
       project: { select: { id: true, name: true } },
       vendor: { select: { id: true, name: true } },
@@ -25,9 +25,9 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, _req, { p
   return NextResponse.json({ success: true, data: po });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.cnPurchaseOrder.findFirst({
-    where: { id: params.id, tenantId, deletedAt: null },
+    where: { id: params.id, orgId, deletedAt: null },
     select: { id: true, status: true },
   });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });

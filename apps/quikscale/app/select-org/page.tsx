@@ -5,7 +5,7 @@
  *
  * Loads user's memberships, auto-selects if only one,
  * shows a picker if multiple. Updates the session with
- * the chosen tenantId + role, then navigates to /dashboard.
+ * the chosen orgId + role, then navigates to /dashboard.
  */
 
 import { useState, useEffect } from "react";
@@ -13,7 +13,7 @@ import { useSession } from "next-auth/react";
 import { Building2, CheckCircle2 } from "lucide-react";
 
 interface OrgInfo {
-  tenantId: string;
+  orgId: string;
   name: string;
   slug: string;
   role: string;
@@ -51,9 +51,9 @@ export default function SelectOrgPage() {
       await fetch("/api/org/select", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId: org.tenantId }),
+        body: JSON.stringify({ orgId: org.orgId }),
       });
-      await update({ tenantId: org.tenantId, membershipRole: org.role });
+      await update({ orgId: org.orgId, membershipRole: org.role });
       window.location.href = "/dashboard";
     } catch {
       setSelecting(false);
@@ -97,7 +97,7 @@ export default function SelectOrgPage() {
         <div className="space-y-3">
           {orgs.map((org) => (
             <button
-              key={org.tenantId}
+              key={org.orgId}
               onClick={() => selectOrg(org)}
               className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-xl hover:border-indigo-300 hover:shadow-md transition-all text-left"
             >

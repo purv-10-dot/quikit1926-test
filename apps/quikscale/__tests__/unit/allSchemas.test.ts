@@ -61,8 +61,8 @@ describe("opspSchema", () => {
 /* ── orgSchema ── */
 
 describe("orgSchema", () => {
-  it("selectOrg requires tenantId", () => {
-    expect(selectOrgSchema.safeParse({ tenantId: "t1" }).success).toBe(true);
+  it("selectOrg requires orgId", () => {
+    expect(selectOrgSchema.safeParse({ orgId: "t1" }).success).toBe(true);
     expect(selectOrgSchema.safeParse({}).success).toBe(false);
   });
   it("invitationAction requires membershipId + action", () => {

@@ -23,10 +23,10 @@ function calcHealthStatus(progress: number, status: string): string {
  *
  * The GET /api/kpi (list) endpoint handles aggregation automatically for table display.
  */
-export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { params }) => {
-  const kpi = await db.kPI.findUnique({ where: { id: params.id }, select: { tenantId: true } });
+export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
+  const kpi = await db.kPI.findUnique({ where: { id: params.id }, select: { orgId: true } });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
-  if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+  if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   const weeklyValues = await db.kPIWeeklyValue.findMany({
     where: { kpiId: params.id },
@@ -56,17 +56,17 @@ export const GET = withTenantAuth<{ id: string }>(async ({ tenantId }, req, { pa
  * On success, re-aggregates qtdAchieved as the SUM of all weekly values for the KPI
  * and recomputes progressPercent + healthStatus.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, req, { params }) => {
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({
     where: { id: params.id },
     select: {
-      tenantId: true, qtdGoal: true, target: true, status: true,
+      orgId: true, qtdGoal: true, target: true, status: true,
       quarter: true, year: true,
       kpiLevel: true, owner: true, ownerIds: true,
     },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
-  if (kpi.tenantId !== tenantId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+  if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   const body = await req.json();
   const validated = weeklyValueSchema.parse(body);
@@ -91,7 +91,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   }
 
   // Permission check
-  const allowed = await canEditKPIOwnerWeekly(userId, tenantId, params.id, targetUserId);
+  const allowed = await canEditKPIOwnerWeekly(userId, orgId, params.id, targetUserId);
   if (!allowed) {
     return NextResponse.json(
       { success: false, error: "You do not have permission to edit this weekly value." },
@@ -100,9 +100,9 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   }
 
   // ── Past-week edit enforcement ──
-  const { canEditPastWeek } = await getPastWeekFlags(tenantId);
+  const { canEditPastWeek } = await getPastWeekFlags(orgId);
   if (!canEditPastWeek && kpi.quarter && kpi.year) {
-    const currentWeek = await getCurrentFiscalWeekFromDB(tenantId, kpi.year, kpi.quarter);
+    const currentWeek = await getCurrentFiscalWeekFromDB(orgId, kpi.year, kpi.quarter);
     if (validated.weekNumber < currentWeek) {
       return NextResponse.json(
         {
@@ -130,7 +130,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
     weeklyValue = await db.kPIWeeklyValue.create({
       data: {
         kpiId: params.id,
-        tenantId,
+        orgId,
         userId: targetUserId,
         weekNumber: validated.weekNumber,
         value: validated.value,
@@ -162,7 +162,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
 
   await db.kPILog.create({
     data: {
-      tenantId,
+      orgId,
       kpiId: params.id,
       action: "UPDATE_WEEKLY",
       newValue: JSON.stringify(weeklyValue),

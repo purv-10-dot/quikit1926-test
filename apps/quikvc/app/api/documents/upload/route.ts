@@ -36,7 +36,7 @@ const ALLOWED_MIME = new Set([
 
 const MAX_BYTES = 4_500_000; // ~4.5 MB — Vercel API route body limit
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
   const formData = await req.formData();
   const file = formData.get("file");
   const dealId = String(formData.get("dealId") ?? "");
@@ -69,15 +69,15 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   // Authorize: caller must be in this tenant's deal (founder or VC team)
   const deal = await db.vCDeal.findFirst({
-    where: { id: dealId, tenantId },
+    where: { id: dealId, orgId },
     select: { id: true, application: { select: { founderId: true } } },
   });
   if (!deal) {
     return NextResponse.json({ success: false, error: "Deal not found" }, { status: 404 });
   }
 
-  // Upload to Vercel Blob (path: tenantId/dealId/timestamp-filename)
-  const stamped = `${tenantId}/${dealId}/${Date.now()}-${file.name}`;
+  // Upload to Vercel Blob (path: orgId/dealId/timestamp-filename)
+  const stamped = `${orgId}/${dealId}/${Date.now()}-${file.name}`;
   const blob = await put(stamped, file, {
     access: "public",
     contentType: file.type,
@@ -86,13 +86,13 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   // Compute next version number
   const existing = await db.vCDealDocument.count({
-    where: { tenantId, dealId, category },
+    where: { orgId, dealId, category },
   });
 
   // Persist record
   const doc = await db.vCDealDocument.create({
     data: {
-      tenantId,
+      orgId,
       dealId,
       category,
       filename: file.name,
@@ -118,7 +118,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   // Timeline event (visible to founder)
   await db.vCTimelineEvent.create({
     data: {
-      tenantId,
+      orgId,
       dealId,
       type: "doc-uploaded",
       actorId: userId,

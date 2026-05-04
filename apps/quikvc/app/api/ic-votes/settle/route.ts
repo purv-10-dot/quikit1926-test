@@ -22,8 +22,8 @@ import { audit } from "@/lib/audit";
 
 const bodySchema = z.object({ memoId: z.string().min(1) });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
-  const denied = await requireRoleOrAudit(userId, tenantId, PARTNER_ROLES, {
+export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+  const denied = await requireRoleOrAudit(userId, orgId, PARTNER_ROLES, {
     action: "ic.settle",
     req,
   });
@@ -35,7 +35,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   }
 
   const memo = await db.vCICMemo.findFirst({
-    where: { id: parsed.data.memoId, tenantId },
+    where: { id: parsed.data.memoId, orgId },
     include: {
       votes: { select: { decision: true, voterId: true } },
       deal: { select: { id: true, currentStage: true } },
@@ -44,7 +44,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   if (!memo) return NextResponse.json({ success: false, error: "Memo not found" }, { status: 404 });
 
   const fundProfile = await db.vCFundProfile.findUnique({
-    where: { tenantId },
+    where: { orgId },
     select: { icVotingMode: true, icQuorum: true, icThreshold: true },
   });
   const mode = fundProfile?.icVotingMode ?? "single";
@@ -116,7 +116,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
     }),
     db.vCTimelineEvent.create({
       data: {
-        tenantId,
+        orgId,
         dealId: memo.deal.id,
         type: "ic-decision",
         actorId: userId,
@@ -129,7 +129,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   // Audit success
   await audit({
-    tenantId,
+    orgId,
     userId,
     action: "ic.settle",
     resource: memo.deal.id,
@@ -139,13 +139,13 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
 
   // Notify partners + analysts of the outcome
   await Promise.all([
-    notifyRole(tenantId, "partner", {
+    notifyRole(orgId, "partner", {
       type: "vote-settled",
       title: `IC settled: ${outcome.toUpperCase()}`,
       body: reason,
       href: `/deals/${memo.deal.id}/ic`,
     }),
-    notifyRole(tenantId, "analyst", {
+    notifyRole(orgId, "analyst", {
       type: "vote-settled",
       title: `IC settled: ${outcome.toUpperCase()}`,
       body: reason,

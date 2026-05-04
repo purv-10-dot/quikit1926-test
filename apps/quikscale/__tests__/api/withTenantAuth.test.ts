@@ -12,11 +12,11 @@ function buildRequest(path = "http://localhost/api/test"): NextRequest {
 }
 
 function asAuthed() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -40,7 +40,7 @@ describe("withTenantAuth", () => {
   });
 
   it("returns 403 when authenticated but no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
 
     const handler = withTenantAuth(async () =>
@@ -52,17 +52,17 @@ describe("withTenantAuth", () => {
     expect(body.error).toMatch(/membership/i);
   });
 
-  it("passes tenantId and userId to the inner handler on success", async () => {
+  it("passes orgId and userId to the inner handler on success", async () => {
     asAuthed();
-    const seen: { tenantId?: string; userId?: string } = {};
-    const handler = withTenantAuth(async ({ tenantId, userId }) => {
-      seen.tenantId = tenantId;
+    const seen: { orgId?: string; userId?: string } = {};
+    const handler = withTenantAuth(async ({ orgId, userId }) => {
+      seen.orgId = orgId;
       seen.userId = userId;
       return NextResponse.json({ success: true, data: "ok" });
     });
     const res = await handler(buildRequest(), { params: {} });
     expect(res.status).toBe(200);
-    expect(seen.tenantId).toBe(TENANT);
+    expect(seen.orgId).toBe(TENANT);
     expect(seen.userId).toBe(USER);
   });
 

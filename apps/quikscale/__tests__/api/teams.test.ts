@@ -20,11 +20,11 @@ function buildPOST(body: unknown): NextRequest {
 }
 
 function asAdmin() {
-  setSession({ id: USER, tenantId: TENANT, role: "admin" });
+  setSession({ id: USER, orgId: TENANT, role: "admin" });
   mockDb.membership.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
-    tenantId: TENANT,
+    orgId: TENANT,
     role: "admin",
     status: "active",
   } as any);
@@ -48,7 +48,7 @@ describe("GET /api/teams — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(403);
@@ -78,14 +78,14 @@ describe("GET /api/teams — happy path", () => {
     expect(body.meta.total).toBe(2);
   });
 
-  it("filters by tenantId (soft delete handled by middleware)", async () => {
+  it("filters by orgId (soft delete handled by middleware)", async () => {
     mockDb.team.findMany.mockResolvedValue([]);
     mockDb.team.count.mockResolvedValue(0);
 
     await GET(buildGET(), { params: {} as any });
 
     const call = mockDb.team.findMany.mock.calls[0]?.[0] as any;
-    expect(call.where.tenantId).toBe(TENANT);
+    expect(call.where.orgId).toBe(TENANT);
     // deletedAt filtering is handled by the Prisma soft-delete middleware
   });
 });
@@ -101,7 +101,7 @@ describe("POST /api/teams — auth", () => {
   });
 
   it("returns 403 when no active membership", async () => {
-    setSession({ id: USER, tenantId: TENANT, role: "admin" });
+    setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.membership.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST({ name: "New Team" }), { params: {} as any });
     expect(res.status).toBe(403);
@@ -166,7 +166,7 @@ describe("POST /api/teams — happy path", () => {
     await POST(buildPOST({ name: "Ops" }), { params: {} as any });
 
     const call = mockDb.team.create.mock.calls[0]?.[0] as any;
-    expect(call.data.tenantId).toBe(TENANT);
+    expect(call.data.orgId).toBe(TENANT);
     expect(call.data.name).toBe("Ops");
   });
 });

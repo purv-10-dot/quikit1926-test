@@ -51,7 +51,7 @@ describe("getPastWeekFlags", () => {
     await getPastWeekFlags(TENANT);
     expect(mockDb.featureFlag.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ tenantId: TENANT }),
+        where: expect.objectContaining({ orgId: TENANT }),
       }),
     );
   });
@@ -90,7 +90,7 @@ describe("getCurrentFiscalWeekFromDB", () => {
     expect(mockDb.quarterSetting.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          tenantId: TENANT,
+          orgId: TENANT,
           fiscalYear: 2026,
           quarter: "Q2",
         }),

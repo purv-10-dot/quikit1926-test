@@ -22,7 +22,7 @@ const withTenantAuth = withTenantAuthForModule("opsp");
  *
  * Body: { year, quarter }
  */
-export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
   const body = await req.json().catch(() => ({}));
   const year = typeof body.year === "number" ? body.year : parseInt(body.year);
   const quarter = String(body.quarter ?? "");
@@ -32,7 +32,7 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   }
 
   const opsp = await db.oPSPData.findUnique({
-    where: { tenantId_userId_year_quarter: { tenantId, userId, year, quarter } },
+    where: { orgId_userId_year_quarter: { orgId, userId, year, quarter } },
     select: { id: true, status: true },
   });
   if (!opsp) {
@@ -51,11 +51,11 @@ export const POST = withTenantAuth(async ({ tenantId, userId }, req: NextRequest
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "UPDATE",
     entityType: "OPSPData",
-    entityId: `${tenantId}:${userId}:${year}:${quarter}`,
+    entityId: `${orgId}:${userId}:${year}:${quarter}`,
     changes: ["status:reviewed"],
     reason: "OPSP review submitted",
   });

@@ -5,13 +5,13 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 
 const withTenantAuth = withTenantAuthForModule("priority");
 
-export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, _req, { params }) => {
+export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const { id } = params;
   if (!id) {
     return NextResponse.json({ success: false, error: "Missing id" }, { status: 400 });
   }
 
-  const existing = await db.priority.findFirst({ where: { id, tenantId } });
+  const existing = await db.priority.findFirst({ where: { id, orgId } });
   if (!existing) {
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
@@ -26,7 +26,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ tenantId, userId }, 
   });
 
   await writeAuditLog({
-    tenantId,
+    orgId,
     actorId: userId,
     action: "RESTORE",
     entityType: "Priority",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { verifyTokenRemote } from "./verify-token-remote";
 
 export interface MiddlewareConfig {
   loginRoute: string;
@@ -8,6 +9,8 @@ export interface MiddlewareConfig {
   publicRoutes: string[];
   superAdminRoutes?: string[];
   requireSuperAdmin?: boolean;
+  /** Block non-admin members (org admins + super admins only). Uses JWT orgId + membershipRole. */
+  requireAdmin?: boolean;
   /** Absolute URL to central login (e.g., "http://localhost:3004/login").
    *  When set, unauthenticated users are redirected here instead of a local login page. */
   centralLoginUrl?: string;
@@ -16,9 +19,27 @@ export interface MiddlewareConfig {
   /** Route to redirect authenticated users hitting /login when no callbackUrl is set.
    *  Defaults to selectOrgRoute, then "/dashboard". */
   postLoginRoute?: string;
+  /** Validate JWT remotely against the central auth service (Redis-backed).
+   *  Defaults to true when `centralLoginUrl` is set and INTERNAL_SECRET exists. */
+  enforceRemoteSessionValidation?: boolean;
 }
 
+const ADMIN_ROLES = new Set(["admin", "super_admin"]);
+
 export function createMiddleware(config: MiddlewareConfig) {
+  const shouldRemoteValidate =
+    config.enforceRemoteSessionValidation ??
+    Boolean(config.centralLoginUrl && process.env.INTERNAL_SECRET);
+
+  let authBaseUrl: string | undefined;
+  if (config.centralLoginUrl) {
+    try {
+      authBaseUrl = new URL(config.centralLoginUrl).origin;
+    } catch {
+      authBaseUrl = undefined;
+    }
+  }
+
   return async function middleware(request: NextRequest) {
     // Redirect loop detection: if we've redirected 3+ times, break the loop
     const redirectCount = parseInt(request.cookies.get("_redirect_count")?.value || "0", 10);
@@ -44,6 +65,30 @@ export function createMiddleware(config: MiddlewareConfig) {
       ? pathname.startsWith(config.selectOrgRoute)
       : false;
     const isSuperAdminRoute = config.superAdminRoutes?.some((r) => pathname.startsWith(r)) ?? false;
+
+    // If we're running behind a central auth service, validate the cookie/token
+    // against auth's /api/verify-token on protected routes. That endpoint now
+    // uses verifyJWT() + Redis session lookup, so TTL expiry / revoke instantly
+    // invalidates access across sibling apps.
+    if (
+      token &&
+      shouldRemoteValidate &&
+      !isPublicRoute &&
+      !isLoginRoute &&
+      authBaseUrl
+    ) {
+      const remote = await verifyTokenRemote({
+        authUrl: authBaseUrl,
+        internalSecret: process.env.INTERNAL_SECRET,
+        cookie: request.headers.get("cookie") ?? undefined,
+      });
+      if (!remote.valid && !remote.error) {
+        const loginTarget = config.centralLoginUrl
+          ? `${config.centralLoginUrl}?reason=session_expired`
+          : new URL(`${config.loginRoute}?reason=session_expired`, request.url).toString();
+        return safeRedirect(loginTarget);
+      }
+    }
 
     // Unauthenticated users → central login or local login
     if (!token && !isPublicRoute) {
@@ -79,6 +124,21 @@ export function createMiddleware(config: MiddlewareConfig) {
       return safeRedirect(loginTarget);
     }
 
+    // Org-level admin portal: members without admin role bounce to login with reason.
+    if (
+      config.requireAdmin &&
+      token &&
+      token.orgId &&
+      !token.isSuperAdmin &&
+      !ADMIN_ROLES.has(String(token.membershipRole ?? "")) &&
+      !isLoginRoute
+    ) {
+      const loginTarget = config.centralLoginUrl
+        ? `${config.centralLoginUrl}?reason=unauthorized`
+        : new URL(`${config.loginRoute}?reason=unauthorized`, request.url).toString();
+      return safeRedirect(loginTarget);
+    }
+
     // If the JWT callback detected that membership was revoked, force re-selection
     if (token && token.membershipInvalid && !isSelectOrgRoute && !isPublicRoute && !isLoginRoute) {
       if (config.centralSelectOrgUrl) {
@@ -90,7 +150,7 @@ export function createMiddleware(config: MiddlewareConfig) {
     }
 
     // Org selection enforcement
-    if (token && !token.tenantId && !isSelectOrgRoute && !isPublicRoute) {
+    if (token && !token.orgId && !isSelectOrgRoute && !isPublicRoute) {
       if (isSuperAdminRoute && token.isSuperAdmin) {
         return NextResponse.next();
       }

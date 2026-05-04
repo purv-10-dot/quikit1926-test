@@ -22,8 +22,8 @@ function serializeQuarter(
 }
 
 // PUT /api/org/quarters/[id] — only Q1 start date can be changed, recalculates all quarters
-export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId }, request, { params }) => {
-    const existing = await db.quarterSetting.findFirst({ where: { id: params.id, tenantId } });
+export const PUT = withTenantAuth<{ id: string }>(async ({ orgId }, request, { params }) => {
+    const existing = await db.quarterSetting.findFirst({ where: { id: params.id, orgId } });
     if (!existing)
       return NextResponse.json({ success: false, error: "Quarter not found" }, { status: 404 });
 
@@ -73,7 +73,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId }, request, 
 
     // Get all 4 quarters for this FY
     const allQuarters = await db.quarterSetting.findMany({
-      where: { tenantId, fiscalYear: existing.fiscalYear },
+      where: { orgId, fiscalYear: existing.fiscalYear },
       orderBy: { quarter: "asc" },
     });
 
@@ -94,7 +94,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId }, request, 
 
     // Fetch all updated quarters
     const updatedAll = await db.quarterSetting.findMany({
-      where: { tenantId, fiscalYear: existing.fiscalYear },
+      where: { orgId, fiscalYear: existing.fiscalYear },
       orderBy: { quarter: "asc" },
     });
 
@@ -112,8 +112,8 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ tenantId }, request, 
 }, { fallbackErrorMessage: "Failed to update quarter" });
 
 // DELETE /api/org/quarters/[id]
-export const DELETE = withTenantAuth<{ id: string }>(async ({ tenantId }, _request, { params }) => {
-    const existing = await db.quarterSetting.findFirst({ where: { id: params.id, tenantId } });
+export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId }, _request, { params }) => {
+    const existing = await db.quarterSetting.findFirst({ where: { id: params.id, orgId } });
     if (!existing)
       return NextResponse.json({ success: false, error: "Quarter not found" }, { status: 404 });
 

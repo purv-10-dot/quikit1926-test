@@ -5,23 +5,23 @@ import { employeeSchema } from "@/lib/schemas/hrms";
 
 const withTenantAuth = withTenantAuthForModule("hrms");
 
-export const GET = withTenantAuth(async ({ tenantId }, req) => {
+export const GET = withTenantAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const list = await db.cnEmployee.findMany({
-    where: { tenantId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     include: { department: { select: { id: true, name: true, code: true } } },
     orderBy: { empCode: "asc" },
   });
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ tenantId, userId }, req) => {
+export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   const input = employeeSchema.parse(await req.json());
-  const dup = await db.cnEmployee.findFirst({ where: { tenantId, empCode: input.empCode, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnEmployee.findFirst({ where: { orgId, empCode: input.empCode, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Emp code '${input.empCode}' already exists` }, { status: 409 });
   const emp = await db.cnEmployee.create({
     data: {
-      tenantId,
+      orgId,
       ...input,
       email: input.email || null,
       joinDate: input.joinDate ? new Date(input.joinDate) : null,
