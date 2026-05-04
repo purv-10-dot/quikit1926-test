@@ -48,7 +48,10 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: Next
         name: app.name,
         iconUrl: app.iconUrl,
         appStatus: app.status,
-        enabled: access ? access.enabled : true,
+        // Default-OFF: an org sees an app only if super-admin has explicitly
+        // toggled it on (presence of an OrgAppAccess row with enabled:true).
+        // No row = app hidden from this org.
+        enabled: access ? access.enabled : false,
         reason: access?.reason ?? null,
         updatedAt: access?.updatedAt?.toISOString() ?? null,
       };
@@ -86,8 +89,10 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
       select: { id: true, enabled: true, reason: true },
     });
 
-    // Sparse storage: when toggling back to enabled (default), just delete the row.
-    if (enabled === true) {
+    // Sparse storage with DEFAULT-OFF semantics:
+    //   - enabled=false → DELETE row (revert to default-off, the absence state)
+    //   - enabled=true  → UPSERT row with enabled:true (explicit grant)
+    if (enabled === false) {
       if (existing) {
         await db.orgAppAccess.delete({ where: { id: existing.id } });
       }
@@ -97,20 +102,20 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
         action: "UPDATE",
         entityType: "TenantAppAccess",
         entityId: `${orgId}:${appId}`,
-        newValues: JSON.stringify({ enabled: true, reason: null }),
+        newValues: JSON.stringify({ enabled: false, reason: null }),
         oldValues: existing ? JSON.stringify({ enabled: existing.enabled, reason: existing.reason }) : undefined,
       });
       return NextResponse.json({
         success: true,
-        data: { appId, enabled: true, reason: null, updatedAt: new Date().toISOString() },
+        data: { appId, enabled: false, reason: null, updatedAt: new Date().toISOString() },
       });
     }
 
-    // Blocking (enabled = false): upsert a sparse row.
+    // Granting access (enabled = true): upsert a sparse row.
     const row = await db.orgAppAccess.upsert({
       where: { orgId_appId: { orgId, appId } },
-      update: { enabled: false, reason, updatedBy: auth.userId },
-      create: { orgId, appId, enabled: false, reason, updatedBy: auth.userId },
+      update: { enabled: true, reason, updatedBy: auth.userId },
+      create: { orgId, appId, enabled: true, reason, updatedBy: auth.userId },
       select: { id: true, enabled: true, reason: true, updatedAt: true },
     });
 
@@ -120,7 +125,7 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
       action: "UPDATE",
       entityType: "TenantAppAccess",
       entityId: `${orgId}:${appId}`,
-      newValues: JSON.stringify({ enabled: false, reason }),
+      newValues: JSON.stringify({ enabled: true, reason }),
       oldValues: existing ? JSON.stringify({ enabled: existing.enabled, reason: existing.reason }) : undefined,
     });
 

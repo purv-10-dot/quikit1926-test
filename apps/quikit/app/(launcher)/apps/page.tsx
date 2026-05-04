@@ -130,10 +130,13 @@ export default function AppLauncherPage() {
       .finally(() => setLoadingOrgs(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load apps whenever selectedOrg changes
+  // Load apps whenever selectedOrg changes. Pass orgId as query param so the
+  // API doesn't depend on the JWT cookie (NextAuth's session.update from the
+  // dropdown is async — cookie may not be re-issued by the time this fires).
   useEffect(() => {
+    if (!selectedOrg?.orgId) return;
     setLoadingApps(true);
-    fetch("/api/apps/launcher")
+    fetch(`/api/apps/launcher?orgId=${encodeURIComponent(selectedOrg.orgId)}`)
       .then((r) => r.json())
       .then((j) => { if (j.success) setApps(j.data); })
       .catch(() => {})
@@ -172,8 +175,10 @@ export default function AppLauncherPage() {
 
   return (
     <SpotlightBackground>
-      {/* Header — dark glass-on-spotlight */}
-      <header className="bg-zinc-950/40 backdrop-blur-md border-b border-white/5">
+      {/* Header — dark glass-on-spotlight. relative z-50 so dropdown menus inside
+          the header stack above the main app-grid (FlipCards create their own
+          stacking context via transform). */}
+      <header className="relative z-50 bg-zinc-950/40 backdrop-blur-md border-b border-white/5">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-5">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3">

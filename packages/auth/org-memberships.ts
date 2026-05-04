@@ -65,17 +65,24 @@ export function createOrgMembershipsHandler(
     const memberships = await db.orgMember.findMany({
       where: {
         userId,
-        // Only include tenants where this user has access to the requested
-        // app (skipped when appSlug isn't set or app row isn't found).
-        ...(appId
-          ? {
-              org: {
+        // Only show orgs the user is actively a member of.
+        status: "active",
+        // Only show orgs that aren't suspended/disabled — a suspended org
+        // shouldn't appear in the launcher dropdown or anywhere else for
+        // the end user. Super-admins manage suspended orgs through the
+        // super-admin portal, not the user-level launcher.
+        org: {
+          status: "active",
+          // Optionally also filter to orgs where user has access to a
+          // specific app (skipped when appSlug isn't set / app row missing).
+          ...(appId
+            ? {
                 userAppAccess: {
                   some: { userId, appId },
                 },
-              },
-            }
-          : {}),
+              }
+            : {}),
+        },
       },
       include: {
         org: {
