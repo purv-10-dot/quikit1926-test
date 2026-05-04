@@ -56,7 +56,7 @@ describe("GET /api/super/analytics/org/[orgId]", () => {
     const res = await GET(makeRequest(), PARAMS);
     expect(res.status).toBe(404);
     const body = await bodyOf(res);
-    expect(body.error).toContain("Tenant not found");
+    expect(body.error).toContain("Organization not found");
   });
 
   it("returns analytics data shape on happy path", async () => {

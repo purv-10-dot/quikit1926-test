@@ -1,5 +1,5 @@
 /**
- * SA-B.1 — Super-admin per-tenant app access control.
+ * SA-B.1 — Super-admin per-organization app access control.
  *
  * GET  /api/super/org-app-access/:orgId
  *   Returns the tenant's access status for each registered app:
@@ -20,12 +20,12 @@ import { logAudit } from "@/lib/auditLog";
 export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: NextRequest, { params }) => {
   try {
     const { orgId } = params;
-    const tenant = await db.org.findUnique({
+    const org = await db.org.findUnique({
       where: { id: orgId },
       select: { id: true, name: true, slug: true },
     });
-    if (!tenant) {
-      return NextResponse.json({ success: false, error: "Tenant not found" }, { status: 404 });
+    if (!org) {
+      return NextResponse.json({ success: false, error: "Organization not found" }, { status: 404 });
     }
 
     const [apps, accessRows] = await Promise.all([
@@ -54,9 +54,9 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: Next
       };
     });
 
-    return NextResponse.json({ success: true, data: { tenant, apps: data } });
+    return NextResponse.json({ success: true, data: { org, apps: data } });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to load tenant app access";
+    const message = error instanceof Error ? error.message : "Failed to load organization app access";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 });
@@ -73,12 +73,12 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
       return NextResponse.json({ success: false, error: "appId and enabled are required" }, { status: 400 });
     }
 
-    const [tenant, app] = await Promise.all([
+    const [org, app] = await Promise.all([
       db.org.findUnique({ where: { id: orgId }, select: { id: true, name: true } }),
       db.app.findUnique({ where: { id: appId }, select: { id: true, slug: true, name: true } }),
     ]);
-    if (!tenant || !app) {
-      return NextResponse.json({ success: false, error: "Unknown tenant or app" }, { status: 404 });
+    if (!org || !app) {
+      return NextResponse.json({ success: false, error: "Unknown organization or app" }, { status: 404 });
     }
 
     const existing = await db.orgAppAccess.findUnique({
@@ -129,7 +129,7 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
       data: { appId, enabled: row.enabled, reason: row.reason, updatedAt: row.updatedAt.toISOString() },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to update tenant app access";
+    const message = error instanceof Error ? error.message : "Failed to update organization app access";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 });

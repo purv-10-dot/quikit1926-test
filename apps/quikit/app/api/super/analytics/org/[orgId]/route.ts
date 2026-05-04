@@ -1,9 +1,9 @@
 /**
- * SA-C.2 — Per-tenant analytics.
+ * SA-C.2 — Per-org analytics.
  *
- * Returns trendlines and usage breakdowns for one tenant, pulled from
+ * Returns trendlines and usage breakdowns for one org, pulled from
  * SessionEvent + ApiCallHourlyRollup. Drives the analytics tab on the
- * tenant detail page.
+ * org detail page.
  */
 
 import { NextResponse } from "next/server";
@@ -16,18 +16,18 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (_auth, _req, { p
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const tenant = await db.org.findUnique({
+    const org = await db.org.findUnique({
       where: { id: orgId },
       select: { id: true, name: true, plan: true, createdAt: true },
     });
-    if (!tenant) return NextResponse.json({ success: false, error: "Tenant not found" }, { status: 404 });
+    if (!org) return NextResponse.json({ success: false, error: "Organization not found" }, { status: 404 });
 
     const [sessionEvents, rollups, appAccess, moduleFlags, kpiCount, invoices] = await Promise.all([
       db.sessionEvent.findMany({
         where: { orgId, event: "login", createdAt: { gte: thirtyDaysAgo } },
         select: { userId: true, createdAt: true },
       }),
-      // Exclude the _global_ sentinel from per-tenant views
+      // Exclude the _global_ sentinel from per-org views
       db.apiCallHourlyRollup.findMany({
         where: { orgId, NOT: { orgId: "_global_" }, hourBucket: { gte: thirtyDaysAgo } },
         select: {
@@ -100,7 +100,7 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (_auth, _req, { p
     return NextResponse.json({
       success: true,
       data: {
-        tenant,
+        org,
         windowDays: 30,
         dauTrend: dailyTrend,
         api: {
@@ -129,7 +129,7 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (_auth, _req, { p
       },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to load tenant analytics";
+    const message = error instanceof Error ? error.message : "Failed to load org analytics";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 });

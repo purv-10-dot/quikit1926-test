@@ -104,7 +104,7 @@ describe("GET /api/super/orgs/[id]/full", () => {
     const res = await GET(makeRequest("http://localhost:3006/api/super/orgs/t-1/full"), PARAMS);
     expect(res.status).toBe(404);
     const body = await bodyOf(res);
-    expect(body.error).toBe("Tenant not found");
+    expect(body.error).toBe("Organization not found");
   });
 
   it("returns consolidated tenant data on happy path", async () => {

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * SA-B.1 — Per-tenant app access control panel.
+ * SA-B.1 — Per-organization app access control panel.
  *
  * Each row = one registered app + a toggle that writes TenantAppAccess.
  * When a tenant is "blocked" for an app, all routes / APIs for that app

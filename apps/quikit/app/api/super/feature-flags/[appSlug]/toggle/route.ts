@@ -68,14 +68,14 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
       );
     }
 
-    // Verify the target tenant exists (useful 404 rather than FK violation).
-    const tenant = await db.org.findUnique({
+    // Verify the target org exists (useful 404 rather than FK violation).
+    const org = await db.org.findUnique({
       where: { id: orgId },
       select: { id: true, name: true },
     });
-    if (!tenant) {
+    if (!org) {
       return NextResponse.json(
-        { success: false, error: "Tenant not found" },
+        { success: false, error: "Organization not found" },
         { status: 404 },
       );
     }
@@ -111,7 +111,7 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
       entityId: `${appSlug}/${moduleKey}`,
       actorId,
       orgId,
-      newValues: JSON.stringify({ appSlug, moduleKey, enabled, tenantName: tenant.name }),
+      newValues: JSON.stringify({ appSlug, moduleKey, enabled, orgName: org.name }),
     });
 
     // Invalidate the target app's disabled-modules cache so the next

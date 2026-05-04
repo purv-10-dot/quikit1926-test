@@ -14,7 +14,7 @@ import { EmptyState, Skeleton, CardSkeleton, useConfirm } from "@quikit/ui";
 
 interface MembershipInfo {
   id: string;
-  tenantName: string;
+  orgName: string;
   tenantSlug: string;
   role: string;
   status: string;
@@ -24,7 +24,7 @@ interface AppAccessInfo {
   id: string;
   appName: string;
   appSlug: string;
-  tenantName: string;
+  orgName: string;
 }
 
 interface UserDetail {
@@ -90,7 +90,7 @@ export default function UserDetailPage() {
         title: isRevoke ? `Revoke super admin from ${fullName}?` : `Grant super admin to ${fullName}?`,
         description: isRevoke
           ? "They will lose platform-wide administrative access immediately."
-          : "They will gain full platform-wide administrative access across every tenant.",
+          : "They will gain full platform-wide administrative access across every org.",
         confirmLabel: isRevoke ? "Revoke" : "Grant",
         tone: "danger",
       }))
@@ -241,7 +241,7 @@ export default function UserDetailPage() {
                   {user.memberships.map((m) => (
                     <tr key={m.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-3">
-                        <p className="text-sm text-gray-900 font-medium">{m.tenantName}</p>
+                        <p className="text-sm text-gray-900 font-medium">{m.orgName}</p>
                         <p className="text-xs text-gray-400 mt-0.5">{m.tenantSlug}</p>
                       </td>
                       <td className="px-5 py-3">
@@ -288,7 +288,7 @@ export default function UserDetailPage() {
                         <p className="text-sm text-gray-900 font-medium">{a.appName}</p>
                         <p className="text-xs text-gray-400 mt-0.5">{a.appSlug}</p>
                       </td>
-                      <td className="px-5 py-3 text-sm text-gray-600">{a.tenantName}</td>
+                      <td className="px-5 py-3 text-sm text-gray-600">{a.orgName}</td>
                     </tr>
                   ))}
                 </tbody>

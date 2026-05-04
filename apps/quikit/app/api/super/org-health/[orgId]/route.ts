@@ -1,7 +1,7 @@
 /**
- * SA-B.5 — Tenant health snapshot.
+ * SA-B.5 — Organization health snapshot.
  *
- * Returns a single JSON blob the tenant detail page renders as a "how is
+ * Returns a single JSON blob the org detail page renders as a "how is
  * this customer doing" panel. Combines data from:
  *   - Membership / User  → member count, last login
  *   - SessionEvent       → active-user count in the last 7 days
@@ -28,11 +28,11 @@ async function computeTenantHealth(orgId: string) {
     startOfWeek.setUTCDate(now.getUTCDate() - now.getUTCDay());
     startOfWeek.setUTCHours(0, 0, 0, 0);
 
-    const tenant = await db.org.findUnique({
+    const org = await db.org.findUnique({
       where: { id: orgId },
       select: { id: true, name: true, slug: true, plan: true, status: true, createdAt: true },
     });
-    if (!tenant) return null;
+    if (!org) return null;
 
     const [
       memberCount,
@@ -85,7 +85,7 @@ async function computeTenantHealth(orgId: string) {
     if (disabledModuleCount < 3) healthScore += 10;
 
     return {
-      tenant,
+      org,
       healthScore,
       signals: {
         memberCount,
@@ -116,14 +116,14 @@ async function computeTenantHealth(orgId: string) {
 export const GET = withSuperAdminAuth<{ orgId: string }>(async (_auth, _req, { params }) => {
   try {
     const orgId = params.orgId;
-    const cacheKey = `super:tenant-health:${orgId}`;
+    const cacheKey = `super:org-health:${orgId}`;
     const data = await cacheOrCompute(cacheKey, CACHE_TTL_SECONDS, () => computeTenantHealth(orgId));
     if (!data) {
-      return NextResponse.json({ success: false, error: "Tenant not found" }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Organization not found" }, { status: 404 });
     }
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to load tenant health";
+    const message = error instanceof Error ? error.message : "Failed to load org health";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 });

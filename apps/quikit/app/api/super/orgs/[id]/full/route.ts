@@ -1,18 +1,18 @@
 /**
- * SA-Perf D-1 — Consolidated tenant detail endpoint.
+ * SA-Perf D-1 — Consolidated org detail endpoint.
  *
  * Returns org info + health + app-access + invoices + analytics in ONE
- * response so the tenant detail page fires 1 HTTP request instead of 6.
+ * response so the org detail page fires 1 HTTP request instead of 6.
  * Saves ~5 roundtrips × ~100ms = ~500ms on a cold nav.
  *
  * The panels on /organizations/[id] can either:
  *   - Migrate to this endpoint (preferred), OR
  *   - Keep their per-panel endpoints for backwards compat.
  *
- * This endpoint is NOT cached server-side because it mixes per-tenant
+ * This endpoint is NOT cached server-side because it mixes per-org
  * state that changes on user actions (invoice status, app access).
  * Individual sub-queries already cache themselves where appropriate
- * (tenant-health is behind a 60s Redis cache; analytics uses rollups).
+ * (org-health is behind a 60s Redis cache; analytics uses rollups).
  */
 
 import { NextResponse } from "next/server";
@@ -29,8 +29,8 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
     startOfWeek.setUTCDate(now.getUTCDate() - now.getUTCDay());
     startOfWeek.setUTCHours(0, 0, 0, 0);
 
-    // Preflight: verify tenant exists
-    const tenant = await db.org.findUnique({
+    // Preflight: verify org exists
+    const org = await db.org.findUnique({
       where: { id: orgId },
       include: {
         _count: { select: { users: true, teams: true, userAppAccess: true } },
@@ -45,8 +45,8 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
         },
       },
     });
-    if (!tenant) {
-      return NextResponse.json({ success: false, error: "Tenant not found" }, { status: 404 });
+    if (!org) {
+      return NextResponse.json({ success: false, error: "Organization not found" }, { status: 404 });
     }
 
     // Parallel: everything that can be fetched independently.
@@ -208,15 +208,15 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
       success: true,
       data: {
         org: {
-          id: tenant.id,
-          name: tenant.name,
-          slug: tenant.slug,
-          plan: tenant.plan,
-          status: tenant.status,
-          billingEmail: tenant.billingEmail,
-          createdAt: tenant.createdAt,
-          _count: tenant._count,
-          users: tenant.users,
+          id: org.id,
+          name: org.name,
+          slug: org.slug,
+          plan: org.plan,
+          status: org.status,
+          billingEmail: org.billingEmail,
+          createdAt: org.createdAt,
+          _count: org._count,
+          users: org.users,
         },
         health: {
           healthScore,
@@ -292,7 +292,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
       },
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Failed to load tenant full data";
+    const message = error instanceof Error ? error.message : "Failed to load org full data";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 });

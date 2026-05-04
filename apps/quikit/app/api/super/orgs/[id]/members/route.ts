@@ -34,12 +34,12 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
     }
 
     // Verify org and look up user in parallel
-    const [tenant, existingUser] = await Promise.all([
+    const [org, existingUser] = await Promise.all([
       db.org.findUnique({ where: { id: orgId }, select: { id: true, name: true } }),
       db.user.findUnique({ where: { email } }),
     ]);
 
-    if (!tenant) {
+    if (!org) {
       return NextResponse.json(
         { success: false, error: "Organization not found" },
         { status: 404 },
@@ -106,7 +106,7 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
     });
 
     // Fire-and-forget email notification
-    sendMemberAddedEmail({ to: user.email, orgName: tenant.name, role }).catch((err) =>
+    sendMemberAddedEmail({ to: user.email, orgName: org.name, role }).catch((err) =>
       console.error("[email] Failed to send member added email:", user.email, err)
     );
 

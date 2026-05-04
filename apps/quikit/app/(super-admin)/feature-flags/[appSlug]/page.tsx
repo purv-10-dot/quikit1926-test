@@ -135,7 +135,7 @@ export default function AppFeatureFlagsPage() {
     );
   }
 
-  const selectedTenant = tenants.find((t) => t.id === orgId);
+  const selectedOrg = tenants.find((t) => t.id === orgId);
 
   return (
     <div className="p-6 max-w-4xl">
@@ -189,7 +189,7 @@ export default function AppFeatureFlagsPage() {
         <>
           <div className="mb-3 text-xs text-gray-500">
             Showing {appConfig.modules.length} modules for{" "}
-            <span className="font-medium text-gray-700">{selectedTenant?.name}</span>.{" "}
+            <span className="font-medium text-gray-700">{selectedOrg?.name}</span>.{" "}
             {disabledKeys.size === 0 ? (
               <span className="text-green-700">All enabled.</span>
             ) : (

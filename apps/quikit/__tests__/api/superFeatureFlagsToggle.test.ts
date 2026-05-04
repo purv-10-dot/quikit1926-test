@@ -118,7 +118,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
     );
     expect(res.status).toBe(404);
     const body = await bodyOf(res);
-    expect(body.error).toBe("Tenant not found");
+    expect(body.error).toBe("Organization not found");
   });
 
   it("disables a module by upserting a row and writes audit log", async () => {

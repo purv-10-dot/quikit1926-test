@@ -156,7 +156,7 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
         target: {
           userEmail: membership.user.email,
           userName: `${membership.user.firstName} ${membership.user.lastName}`.trim(),
-          tenantName: membership.org.name,
+          orgName: membership.org.name,
           appName: app.name,
         },
       },

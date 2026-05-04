@@ -1,5 +1,5 @@
 /**
- * SA-B.3 — List invoices for a tenant + create one manually.
+ * SA-B.3 — List invoices for a org + create one manually.
  */
 
 import { NextResponse } from "next/server";
@@ -10,11 +10,11 @@ import { logAudit } from "@/lib/auditLog";
 
 export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: NextRequest, { params }) => {
   try {
-    const tenant = await db.org.findUnique({
+    const org = await db.org.findUnique({
       where: { id: params.orgId },
       select: { id: true, name: true, plan: true },
     });
-    if (!tenant) return NextResponse.json({ success: false, error: "Tenant not found" }, { status: 404 });
+    if (!org) return NextResponse.json({ success: false, error: "Organization not found" }, { status: 404 });
 
     const invoices = await db.invoice.findMany({
       where: { orgId: params.orgId },
@@ -36,7 +36,7 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: Next
     return NextResponse.json({
       success: true,
       data: {
-        tenant,
+        org,
         invoices: invoices.map((inv) => ({
           ...inv,
           amountDollars: (inv.amountCents / 100).toFixed(2),
@@ -62,19 +62,19 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: Next
   }
 });
 
-/** Manually generate an invoice for a tenant (e.g. to backfill a period). */
+/** Manually generate an invoice for a org (e.g. to backfill a period). */
 export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: NextRequest, { params }) => {
   try {
-    const tenant = await db.org.findUnique({
+    const org = await db.org.findUnique({
       where: { id: params.orgId },
       select: { id: true, plan: true, name: true },
     });
-    if (!tenant) return NextResponse.json({ success: false, error: "Tenant not found" }, { status: 404 });
+    if (!org) return NextResponse.json({ success: false, error: "Organization not found" }, { status: 404 });
 
-    const plan = await db.plan.findUnique({ where: { slug: tenant.plan } });
+    const plan = await db.plan.findUnique({ where: { slug: org.plan } });
     if (!plan) {
       return NextResponse.json(
-        { success: false, error: `Tenant's plan "${tenant.plan}" is not defined in the Plan table` },
+        { success: false, error: `Organization's plan "${org.plan}" is not defined in the Plan table` },
         { status: 400 },
       );
     }
@@ -92,7 +92,7 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
         status: "pending",
         periodStart,
         periodEnd,
-        notes: body.notes ?? `Manual invoice for ${tenant.name}`,
+        notes: body.notes ?? `Manual invoice for ${org.name}`,
       },
     });
 

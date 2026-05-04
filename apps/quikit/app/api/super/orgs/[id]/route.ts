@@ -13,7 +13,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _request, { 
   try {
     const { id } = params;
 
-    const tenant = await db.org.findUnique({
+    const org = await db.org.findUnique({
       where: { id },
       include: {
         _count: { select: { users: true, teams: true, userAppAccess: true } },
@@ -29,14 +29,14 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _request, { 
       },
     });
 
-    if (!tenant) {
+    if (!org) {
       return NextResponse.json(
         { success: false, error: "Organization not found" },
         { status: 404 },
       );
     }
 
-    return NextResponse.json({ success: true, data: tenant });
+    return NextResponse.json({ success: true, data: org });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -76,7 +76,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async ({ userId }, reque
     if (billingEmail !== undefined) updateData.billingEmail = billingEmail;
     if (description !== undefined) updateData.description = description;
 
-    const tenant = await db.org.update({
+    const org = await db.org.update({
       where: { id },
       data: updateData,
     });
@@ -91,7 +91,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async ({ userId }, reque
       newValues: JSON.stringify(updateData),
     });
 
-    return NextResponse.json({ success: true, data: tenant });
+    return NextResponse.json({ success: true, data: org });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

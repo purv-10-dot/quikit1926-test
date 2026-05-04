@@ -61,7 +61,7 @@ export function HealthPanel({ orgId }: { orgId: string }) {
       <header className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Activity className="h-5 w-5 text-gray-500" />
-          <h2 className="font-semibold text-gray-900">Tenant health</h2>
+          <h2 className="font-semibold text-gray-900">Organization health</h2>
         </div>
         <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg ${sc.bg} ring-1 ${sc.ring}/20`}>
           <span className={`text-xs font-semibold ${sc.text}`}>Score</span>

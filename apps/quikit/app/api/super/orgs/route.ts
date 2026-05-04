@@ -84,20 +84,20 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
       );
     }
 
-    const tenant = await db.org.create({
+    const org = await db.org.create({
       data: { name, slug, plan, billingEmail, description, createdBy: userId },
     });
 
     logAudit({
       action: "create",
       entityType: "tenant",
-      entityId: tenant.id,
+      entityId: org.id,
       actorId: userId,
-      orgId: tenant.id,
+      orgId: org.id,
       newValues: JSON.stringify({ name, slug, plan }),
     });
 
-    return NextResponse.json({ success: true, data: tenant }, { status: 201 });
+    return NextResponse.json({ success: true, data: org }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Operation failed";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
