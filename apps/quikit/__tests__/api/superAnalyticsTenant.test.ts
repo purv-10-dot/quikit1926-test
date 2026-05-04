@@ -1,5 +1,5 @@
 /**
- * Smoke tests — GET /api/super/analytics/tenant/[orgId]
+ * Smoke tests — GET /api/super/analytics/org/[orgId]
  * Auth matrix, 404 on missing tenant, happy-path shape assertion.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -16,11 +16,11 @@ vi.mock("@/lib/email", () => ({
   sendOrgSuspendedEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { GET } from "@/app/api/super/analytics/tenant/[orgId]/route";
+import { GET } from "@/app/api/super/analytics/org/[orgId]/route";
 
 function makeRequest() {
   return new NextRequest(
-    new URL("/api/super/analytics/tenant/t-1", "http://localhost:3006"),
+    new URL("/api/super/analytics/org/t-1", "http://localhost:3006"),
   );
 }
 
@@ -32,7 +32,7 @@ const SUPER_ADMIN = { id: "sa-1", email: "super@test.com", isSuperAdmin: true };
 const REGULAR_USER = { id: "user-1", email: "user@test.com", isSuperAdmin: false };
 const PARAMS = { params: { orgId: "t-1" } };
 
-describe("GET /api/super/analytics/tenant/[orgId]", () => {
+describe("GET /api/super/analytics/org/[orgId]", () => {
   beforeEach(() => {
     resetMockDb();
   });
@@ -51,7 +51,7 @@ describe("GET /api/super/analytics/tenant/[orgId]", () => {
 
   it("returns 404 when tenant is missing", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue(null as never);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
 
     const res = await GET(makeRequest(), PARAMS);
     expect(res.status).toBe(404);
@@ -61,7 +61,7 @@ describe("GET /api/super/analytics/tenant/[orgId]", () => {
 
   it("returns analytics data shape on happy path", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({
+    mockDb.org.findUnique.mockResolvedValue({
       id: "t-1",
       name: "Acme",
       plan: "startup",
@@ -69,7 +69,7 @@ describe("GET /api/super/analytics/tenant/[orgId]", () => {
     } as never);
     mockDb.sessionEvent.findMany.mockResolvedValue([] as never);
     mockDb.apiCallHourlyRollup.findMany.mockResolvedValue([] as never);
-    mockDb.tenantAppAccess.findMany.mockResolvedValue([] as never);
+    mockDb.orgAppAccess.findMany.mockResolvedValue([] as never);
     mockDb.appModuleFlag.findMany.mockResolvedValue([] as never);
     mockDb.kPI.count.mockResolvedValue(0 as never);
     mockDb.invoice.findMany.mockResolvedValue([] as never);
@@ -79,7 +79,7 @@ describe("GET /api/super/analytics/tenant/[orgId]", () => {
 
     const body = await bodyOf(res);
     expect(body.success).toBe(true);
-    expect(body.data.tenant.id).toBe("t-1");
+    expect(body.data.org.id).toBe("t-1");
     expect(body.data.windowDays).toBe(30);
     expect(body.data).toHaveProperty("dauTrend");
     expect(body.data).toHaveProperty("api");

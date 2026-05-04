@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     if (!orgId) {
       return NextResponse.json({ success: false, error: "orgId required" }, { status: 400 });
     }
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { orgId, userId, status: "active" },
     });
     if (!membership) {

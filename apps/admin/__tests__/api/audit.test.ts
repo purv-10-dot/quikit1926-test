@@ -14,7 +14,7 @@ function buildRequest(method: string, url: string): NextRequest {
 
 function asAuthedAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m-admin",
     userId: USER,
     orgId: TENANT,

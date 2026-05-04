@@ -10,11 +10,11 @@ const withTenantAuth = withTenantAuthForModule("opsp.history");
  * fiscal year, plus available fiscal years and tenant fiscal config.
  */
 export const GET = withTenantAuth(async ({ orgId }, req) => {
-  const tenant = await db.tenant.findUnique({
+  const org = await db.org.findUnique({
     where: { id: orgId },
     select: { fiscalYearStart: true },
   });
-  const fiscalYearStart = tenant?.fiscalYearStart ?? 1;
+  const fiscalYearStart = org?.fiscalYearStart ?? 1;
 
   const yearParam = req.nextUrl.searchParams.get("year");
   const year = yearParam ? parseInt(yearParam) : null;

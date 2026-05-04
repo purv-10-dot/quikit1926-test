@@ -9,7 +9,7 @@ export const GET = withTenantAuth(async ({ orgId }, request) => {
     const where = { orgId };
 
     const [members, total] = await Promise.all([
-      db.membership.findMany({
+      db.orgMember.findMany({
         where,
         include: {
           user: {
@@ -23,7 +23,7 @@ export const GET = withTenantAuth(async ({ orgId }, request) => {
         skip,
         take,
       }),
-      db.membership.count({ where }),
+      db.orgMember.count({ where }),
     ]);
 
     // Only load meetings whose attendees include the paginated user set —

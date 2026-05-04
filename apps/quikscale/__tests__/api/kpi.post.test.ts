@@ -25,7 +25,7 @@ function buildRequest(body: unknown): NextRequest {
 function asAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
   // getTenantId: session has orgId → verifies via membership findFirst
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -74,7 +74,7 @@ describe("POST /api/kpi — auth", () => {
 
   it("returns 403 when authenticated but no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await POST(buildRequest(baseIndividual), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -169,7 +169,7 @@ describe("POST /api/kpi — team KPI permission", () => {
   beforeEach(() => {
     // Non-admin membership (so canManageTeamKPI must check team head)
     setSession({ id: USER, orgId: TENANT, role: "member" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
       orgId: TENANT,
@@ -212,7 +212,7 @@ describe("POST /api/kpi — team KPI happy path", () => {
       headId: "head-user",
     } as any);
     // All owners are active members of the team
-    mockDb.membership.findMany.mockResolvedValue([
+    mockDb.orgMember.findMany.mockResolvedValue([
       { userId: USER } as any,
       { userId: OTHER } as any,
     ]);
@@ -238,7 +238,7 @@ describe("POST /api/kpi — team KPI happy path", () => {
       headId: "head-user",
     } as any);
     // Only USER is in the team — OTHER is missing
-    mockDb.membership.findMany.mockResolvedValue([{ userId: USER } as any]);
+    mockDb.orgMember.findMany.mockResolvedValue([{ userId: USER } as any]);
 
     const res = await POST(buildRequest(baseTeam), { params: {} } as any);
     expect(res.status).toBe(400);

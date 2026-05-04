@@ -11,7 +11,7 @@ export const GET = withTenantAuth(async ({ orgId }, request) => {
 
     // Fetch paginated members with performance data
     const [members, total] = await Promise.all([
-      db.membership.findMany({
+      db.orgMember.findMany({
         where,
         include: {
           user: {
@@ -31,7 +31,7 @@ export const GET = withTenantAuth(async ({ orgId }, request) => {
         skip,
         take,
       }),
-      db.membership.count({ where }),
+      db.orgMember.count({ where }),
     ]);
 
     // Legacy team-meeting attendance removed in Client Meetings rewrite.

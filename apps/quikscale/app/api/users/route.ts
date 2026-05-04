@@ -15,7 +15,7 @@ export const GET = withTenantAuth(
     };
 
     const [members, total] = await Promise.all([
-      db.membership.findMany({
+      db.orgMember.findMany({
         where,
         select: {
           user: {
@@ -26,7 +26,7 @@ export const GET = withTenantAuth(
         skip,
         take,
       }),
-      db.membership.count({ where }),
+      db.orgMember.count({ where }),
     ]);
 
     const users = members.map((m) => m.user).filter(Boolean);

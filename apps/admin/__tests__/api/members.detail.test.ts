@@ -21,7 +21,7 @@ const routeContext = { params: { id: MEMBER_ID } };
 
 function asAuthedAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -51,7 +51,7 @@ describe("GET /api/members/[id]", () => {
     asAuthedAdmin();
     // First findFirst for requireAdmin already mocked in asAuthedAdmin
     // Second findFirst for the actual member lookup — return null
-    mockDb.membership.findFirst
+    mockDb.orgMember.findFirst
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
@@ -75,7 +75,7 @@ describe("GET /api/members/[id]", () => {
 
     const now = new Date();
     // Second findFirst for the actual member lookup
-    mockDb.membership.findFirst
+    mockDb.orgMember.findFirst
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
@@ -143,7 +143,7 @@ describe("PATCH /api/members/[id]", () => {
 
   it("returns 404 when member not in tenant", async () => {
     asAuthedAdmin();
-    mockDb.membership.findFirst
+    mockDb.orgMember.findFirst
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
@@ -162,7 +162,7 @@ describe("PATCH /api/members/[id]", () => {
 
   it("returns 400 for invalid input", async () => {
     asAuthedAdmin();
-    mockDb.membership.findFirst
+    mockDb.orgMember.findFirst
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
@@ -187,7 +187,7 @@ describe("PATCH /api/members/[id]", () => {
 
   it("updates member role (happy path)", async () => {
     asAuthedAdmin();
-    mockDb.membership.findFirst
+    mockDb.orgMember.findFirst
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
@@ -203,7 +203,7 @@ describe("PATCH /api/members/[id]", () => {
         status: "active",
       } as any);
 
-    mockDb.membership.update.mockResolvedValue({
+    mockDb.orgMember.update.mockResolvedValue({
       id: MEMBER_ID,
       role: "manager",
       status: "active",
@@ -234,7 +234,7 @@ describe("DELETE /api/members/[id]", () => {
 
   it("returns 404 when member not in tenant", async () => {
     asAuthedAdmin();
-    mockDb.membership.findFirst
+    mockDb.orgMember.findFirst
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
@@ -253,7 +253,7 @@ describe("DELETE /api/members/[id]", () => {
 
   it("deactivates member (happy path)", async () => {
     asAuthedAdmin();
-    mockDb.membership.findFirst
+    mockDb.orgMember.findFirst
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
@@ -269,7 +269,7 @@ describe("DELETE /api/members/[id]", () => {
         status: "active",
       } as any);
 
-    mockDb.membership.update.mockResolvedValue({
+    mockDb.orgMember.update.mockResolvedValue({
       id: MEMBER_ID,
       status: "inactive",
     } as any);
@@ -284,7 +284,7 @@ describe("DELETE /api/members/[id]", () => {
     expect(body.message).toBe("Member deactivated");
 
     // Verify it was a soft delete (status update, not hard delete)
-    expect(mockDb.membership.update).toHaveBeenCalledWith({
+    expect(mockDb.orgMember.update).toHaveBeenCalledWith({
       where: { id: MEMBER_ID },
       data: { status: "inactive" },
     });

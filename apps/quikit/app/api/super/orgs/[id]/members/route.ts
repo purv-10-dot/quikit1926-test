@@ -35,7 +35,7 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
 
     // Verify org and look up user in parallel
     const [tenant, existingUser] = await Promise.all([
-      db.tenant.findUnique({ where: { id: orgId }, select: { id: true, name: true } }),
+      db.org.findUnique({ where: { id: orgId }, select: { id: true, name: true } }),
       db.user.findUnique({ where: { email } }),
     ]);
 
@@ -64,7 +64,7 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
     }
 
     // Check if membership already exists
-    const existing = await db.membership.findUnique({
+    const existing = await db.orgMember.findUnique({
       where: { orgId_userId: { orgId, userId: user.id } },
     });
 
@@ -76,7 +76,7 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
     }
 
     // Create or reactivate membership
-    const membership = await db.membership.upsert({
+    const membership = await db.orgMember.upsert({
       where: { orgId_userId: { orgId, userId: user.id } },
       create: {
         orgId,

@@ -25,7 +25,7 @@ export const GET = withSuperAdminAuth(async (_auth, request: NextRequest) => {
       : {};
 
     const [tenants, total] = await Promise.all([
-      db.tenant.findMany({
+      db.org.findMany({
         where,
         select: {
           id: true,
@@ -39,7 +39,7 @@ export const GET = withSuperAdminAuth(async (_auth, request: NextRequest) => {
         orderBy: { createdAt: "desc" },
         ...paginationToSkipTake(pagination),
       }),
-      db.tenant.count({ where }),
+      db.org.count({ where }),
     ]);
 
     const data = tenants.map((t) => ({
@@ -76,7 +76,7 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
     const { name, slug, plan, billingEmail, description } = parsed.data;
 
     // Check slug uniqueness
-    const existing = await db.tenant.findUnique({ where: { slug } });
+    const existing = await db.org.findUnique({ where: { slug } });
     if (existing) {
       return NextResponse.json(
         { success: false, error: "An organization with this slug already exists" },
@@ -84,7 +84,7 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
       );
     }
 
-    const tenant = await db.tenant.create({
+    const tenant = await db.org.create({
       data: { name, slug, plan, billingEmail, description, createdBy: userId },
     });
 

@@ -14,7 +14,7 @@ beforeEach(() => {
 describe("getOrgId", () => {
   it("returns orgId from session when session has orgId and active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
       orgId: TENANT,
@@ -37,7 +37,7 @@ describe("getOrgId", () => {
 
   it("returns null when session has orgId but no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
 
     const result = await getOrgId(USER);
     expect(result).toBeNull();
@@ -45,7 +45,7 @@ describe("getOrgId", () => {
 
   it("returns null when session has orgId but no app access", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
       orgId: TENANT,
@@ -64,7 +64,7 @@ describe("getOrgId", () => {
   it("returns orgId from first membership when session has no orgId", async () => {
     setSession({ id: USER, orgId: "", role: "admin" });
     // When orgId is falsy, it falls through to membership lookup
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
       orgId: TENANT,

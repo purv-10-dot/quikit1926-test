@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   const periodEnd = firstOfMonthUTC(now); // exclusive end = start of current month
 
   try {
-    const tenants = await db.tenant.findMany({
+    const tenants = await db.org.findMany({
       where: { status: "active" },
       select: { id: true, plan: true, name: true },
     });

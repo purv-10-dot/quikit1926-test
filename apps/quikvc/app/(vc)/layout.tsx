@@ -28,9 +28,9 @@ export default async function VCLayout({ children }: { children: React.ReactNode
   // Hardened: redirects to /login when no session. Demo bypass requires
   // QUIKVC_DEV_BYPASS=1 (see lib/dev-session.ts).
   const { userId, orgId } = await requireSession();
-  const [role, tenant, fundProfile] = await Promise.all([
+  const [role, org, fundProfile] = await Promise.all([
     getVCRole(userId, orgId),
-    db.tenant.findUnique({
+    db.org.findUnique({
       where: { id: orgId },
       select: { name: true },
     }),
@@ -80,7 +80,7 @@ export default async function VCLayout({ children }: { children: React.ReactNode
         {/* Top context bar */}
         <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-6 flex-shrink-0">
           <div className="flex items-center gap-2 text-sm min-w-0">
-            <OrgSwitcher currentTenantName={tenant?.name ?? undefined} />
+            <OrgSwitcher currentTenantName={org?.name ?? undefined} />
             {/* Fund switcher placeholder — single-fund-per-tenant in v1; UI hint
                 only. Becomes a dropdown when multi-fund support lands. */}
             <span className="text-gray-400 hidden sm:inline">/</span>

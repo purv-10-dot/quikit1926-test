@@ -160,7 +160,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 7. Get tenant fiscal config
-    const tenant = await db.tenant.findUnique({
+    const org = await db.org.findUnique({
       where: { id: orgId },
       select: { fiscalYearStart: true },
     });
@@ -215,7 +215,7 @@ export async function GET(req: NextRequest) {
         year,
         quarter,
         horizon,
-        fiscalYearStart: tenant?.fiscalYearStart ?? 1,
+        fiscalYearStart: org?.fiscalYearStart ?? 1,
       },
     });
   } catch (error: unknown) {

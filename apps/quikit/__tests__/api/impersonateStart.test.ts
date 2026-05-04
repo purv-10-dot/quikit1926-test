@@ -49,7 +49,7 @@ describe("POST /api/super/impersonate/start", () => {
   });
 
   it("returns 404 when target user has no active membership", async () => {
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await POST(makeRequest({
       targetUserId: "target-user",
       targetOrgId: "tenant-1",
@@ -59,10 +59,10 @@ describe("POST /api/super/impersonate/start", () => {
   });
 
   it("returns 403 when trying to impersonate another super admin", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       role: "admin",
       user: { id: "su-2", email: "su2@test.com", firstName: "Other", lastName: "SA" },
-      tenant: { id: "tenant-1", name: "Test" },
+      org: { id: "tenant-1", name: "Test" },
     } as never);
     mockDb.app.findUnique.mockResolvedValue({
       id: "app-1", baseUrl: "http://localhost:3002", name: "QuikScale", status: "active",
@@ -77,10 +77,10 @@ describe("POST /api/super/impersonate/start", () => {
   });
 
   it("creates an Impersonation row and returns a redirect URL on happy path", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       role: "admin",
       user: { id: "target-1", email: "target@test.com", firstName: "Target", lastName: "User" },
-      tenant: { id: "tenant-1", name: "Acme Corp" },
+      org: { id: "tenant-1", name: "Acme Corp" },
     } as never);
     mockDb.app.findUnique.mockResolvedValue({
       id: "app-1", baseUrl: "http://localhost:3002", name: "QuikScale", status: "active",
@@ -116,10 +116,10 @@ describe("POST /api/super/impersonate/start", () => {
   });
 
   it("rejects apps with a relative (launcher-self) baseUrl", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       role: "admin",
       user: { id: "target-1", email: "t@test.com", firstName: "T", lastName: "U" },
-      tenant: { id: "tenant-1", name: "Acme" },
+      org: { id: "tenant-1", name: "Acme" },
     } as never);
     mockDb.app.findUnique.mockResolvedValue({
       id: "app-1", baseUrl: "/", name: "QuikIT", status: "active",

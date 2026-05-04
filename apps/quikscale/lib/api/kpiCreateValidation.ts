@@ -71,7 +71,7 @@ export async function validateTeamKPICreate(
   }
 
   // All ownerIds must be active members of this team
-  const memberships = await db.membership.findMany({
+  const memberships = await db.orgMember.findMany({
     where: { orgId, teamId, userId: { in: ownerIds }, status: "active" },
     select: { userId: true },
   });

@@ -57,7 +57,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
   if (blocked) return blocked as NextResponse;
 
   // Get member counts per role for this tenant
-  const roleCounts = await db.membership.groupBy({
+  const roleCounts = await db.orgMember.groupBy({
     by: ["role"],
     where: { orgId, status: "active" },
     _count: { userId: true },

@@ -116,7 +116,7 @@ async function main() {
      3. MEMBERSHIPS for new users + team assignments
      ═══════════════════════════════════════════════ */
   // Rahul — manager of Engineering
-  await prisma.membership.upsert({
+  await prisma.orgMember.upsert({
     where: { id: "mem-rahul" },
     update: {},
     create: {
@@ -130,7 +130,7 @@ async function main() {
   });
 
   // Meera — team_head of Sales
-  await prisma.membership.upsert({
+  await prisma.orgMember.upsert({
     where: { id: "mem-meera" },
     update: {},
     create: {
@@ -144,7 +144,7 @@ async function main() {
   });
 
   // Vikram — employee in Marketing
-  await prisma.membership.upsert({
+  await prisma.orgMember.upsert({
     where: { id: "mem-vikram" },
     update: {},
     create: {

@@ -28,7 +28,7 @@ async function computeTenantHealth(orgId: string) {
     startOfWeek.setUTCDate(now.getUTCDate() - now.getUTCDay());
     startOfWeek.setUTCHours(0, 0, 0, 0);
 
-    const tenant = await db.tenant.findUnique({
+    const tenant = await db.org.findUnique({
       where: { id: orgId },
       select: { id: true, name: true, slug: true, plan: true, status: true, createdAt: true },
     });
@@ -46,7 +46,7 @@ async function computeTenantHealth(orgId: string) {
       apiCallCount7d,
       sessionsLast30d,
     ] = await Promise.all([
-      db.membership.count({ where: { orgId, status: "active" } }),
+      db.orgMember.count({ where: { orgId, status: "active" } }),
       // distinct userIds seen in SessionEvent in last 7 days
       db.sessionEvent.findMany({
         where: { orgId, event: "login", createdAt: { gte: sevenDaysAgo } },
@@ -63,7 +63,7 @@ async function computeTenantHealth(orgId: string) {
         where: { kpi: { orgId }, updatedAt: { gte: startOfWeek } },
       }),
       db.appModuleFlag.count({ where: { orgId, enabled: false } }),
-      db.tenantAppAccess.count({ where: { orgId, enabled: false } }),
+      db.orgAppAccess.count({ where: { orgId, enabled: false } }),
       db.invoice.findFirst({
         where: { orgId },
         orderBy: { periodStart: "desc" },

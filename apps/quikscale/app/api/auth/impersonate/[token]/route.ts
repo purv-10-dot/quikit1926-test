@@ -109,7 +109,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Cannot impersonate another super admin" }, { status: 403 });
     }
 
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { userId: imp.targetUserId, orgId: imp.targetOrgId, status: "active" },
       select: { role: true },
     });

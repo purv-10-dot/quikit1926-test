@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: {
       userId: user.id,
       orgId: tokenRecord.orgId,

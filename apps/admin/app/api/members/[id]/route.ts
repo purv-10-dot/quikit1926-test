@@ -10,7 +10,7 @@ export const GET = withAdminAuth<{ id: string }>(async ({ orgId }, _request, { p
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { id: membershipId, orgId },
     include: {
       user: {
@@ -81,7 +81,7 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ orgId }, request: Ne
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { id: membershipId, orgId },
   });
 
@@ -108,7 +108,7 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ orgId }, request: Ne
   if (status) updateData.status = status;
   if (customPermissions !== undefined) updateData.customPermissions = customPermissions;
 
-  const updated = await db.membership.update({
+  const updated = await db.orgMember.update({
     where: { id: membershipId },
     data: updateData,
   });
@@ -161,7 +161,7 @@ export const DELETE = withAdminAuth<{ id: string }>(async ({ orgId }, _request, 
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { id: membershipId, orgId },
   });
 
@@ -173,7 +173,7 @@ export const DELETE = withAdminAuth<{ id: string }>(async ({ orgId }, _request, 
   }
 
   // Soft deactivate — don't hard delete
-  await db.membership.update({
+  await db.orgMember.update({
     where: { id: membershipId },
     data: { status: "inactive" },
   });

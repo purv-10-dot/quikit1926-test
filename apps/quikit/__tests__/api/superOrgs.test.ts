@@ -67,8 +67,8 @@ describe("GET /api/super/orgs", () => {
       },
     ];
 
-    mockDb.tenant.findMany.mockResolvedValue(mockTenants as never);
-    mockDb.tenant.count.mockResolvedValue(1 as never);
+    mockDb.org.findMany.mockResolvedValue(mockTenants as never);
+    mockDb.org.count.mockResolvedValue(1 as never);
 
     const res = await GET(makeRequest("http://localhost:3006/api/super/orgs"));
     expect(res.status).toBe(200);
@@ -127,7 +127,7 @@ describe("POST /api/super/orgs", () => {
 
   it("returns 409 when slug already exists", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({ id: "existing" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "existing" } as never);
 
     const res = await POST(
       makeRequest("http://localhost:3006/api/super/orgs", {
@@ -142,7 +142,7 @@ describe("POST /api/super/orgs", () => {
 
   it("creates org and returns 201 on success", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue(null as never);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
 
     const createdTenant = {
       id: "t-new",
@@ -152,7 +152,7 @@ describe("POST /api/super/orgs", () => {
       status: "active",
       createdAt: new Date(),
     };
-    mockDb.tenant.create.mockResolvedValue(createdTenant as never);
+    mockDb.org.create.mockResolvedValue(createdTenant as never);
 
     const res = await POST(
       makeRequest("http://localhost:3006/api/super/orgs", {

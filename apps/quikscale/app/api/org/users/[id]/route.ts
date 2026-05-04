@@ -9,7 +9,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 
 // PUT /api/org/users/[id]
 export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
-  const membership = await db.membership.findUnique({
+  const membership = await db.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId: params.id } },
   });
   if (!membership)
@@ -42,7 +42,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req,
   if (resolvedTeamIds !== undefined) membershipUpdates.teamId = resolvedTeamIds[0] ?? null;
 
   if (Object.keys(membershipUpdates).length > 0) {
-    await db.membership.update({
+    await db.orgMember.update({
       where: { orgId_userId: { orgId, userId: params.id } },
       data: membershipUpdates,
     });
@@ -57,7 +57,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req,
   }
 
   // Return updated membership with teams
-  const updated = await db.membership.findUnique({
+  const updated = await db.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId: params.id } },
     include: {
       user: {
@@ -108,7 +108,7 @@ export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, r
   if (params.id === userId)
     return NextResponse.json({ success: false, error: "You cannot remove yourself" }, { status: 400 });
 
-  await db.membership.update({
+  await db.orgMember.update({
     where: { orgId_userId: { orgId, userId: params.id } },
     data:  { status: "inactive" },
   });

@@ -242,8 +242,8 @@ async function main() {
   // Final counts
   const [users, tenants, memberships, apps, oauthClients] = await Promise.all([
     prisma.user.count(),
-    prisma.tenant.count(),
-    prisma.membership.count(),
+    prisma.org.count(),
+    prisma.orgMember.count(),
     prisma.app.count(),
     prisma.oAuthClient.count(),
   ]);

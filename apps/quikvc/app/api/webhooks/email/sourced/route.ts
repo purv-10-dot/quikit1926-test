@@ -83,20 +83,20 @@ export async function POST(req: NextRequest) {
   // 3. Resolve tenant from To: address. Accept both string + array — pick
   // the first address that yields a known tenant.
   const recipients = Array.isArray(parsed.data.to) ? parsed.data.to : [parsed.data.to];
-  let tenant: { id: string; slug: string } | null = null;
+  let org: { id: string; slug: string } | null = null;
   for (const addr of recipients) {
     const slug = extractTenantSlug(addr);
     if (!slug) continue;
-    const t = await db.tenant.findUnique({
+    const t = await db.org.findUnique({
       where: { slug },
       select: { id: true, slug: true },
     });
     if (t) {
-      tenant = t;
+      org = t;
       break;
     }
   }
-  if (!tenant) {
+  if (!org) {
     return NextResponse.json(
       { success: false, error: "No matching tenant for inbound address" },
       { status: 404 },
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
   // 5. Persist
   const created = await db.vCSourcedOpportunity.create({
     data: {
-      orgId: tenant.id,
+      orgId: org.id,
       source: "email",
       status: "new",
       startupName: opp.startupName,
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(
     {
       success: true,
-      data: { id: created.id, tenantSlug: tenant.slug, startupName: created.startupName },
+      data: { id: created.id, tenantSlug: org.slug, startupName: created.startupName },
     },
     { status: 201 },
   );

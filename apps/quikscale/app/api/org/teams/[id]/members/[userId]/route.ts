@@ -29,7 +29,7 @@ export const DELETE = withTenantAuth<RouteParams>(
     }
 
     // Find the target user's membership in this tenant
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { orgId, userId: params.userId, status: "active" },
       select: { id: true, teamId: true },
     });
@@ -43,7 +43,7 @@ export const DELETE = withTenantAuth<RouteParams>(
     // Clear Membership.teamId only if it currently points to THIS team.
     // Preserves a different primary-team assignment if one exists.
     if (membership.teamId === params.id) {
-      await db.membership.update({
+      await db.orgMember.update({
         where: { id: membership.id },
         data: { teamId: null },
       });

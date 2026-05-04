@@ -25,7 +25,7 @@ export async function canEditPriority(
   if (priority.createdBy === userId || priority.owner === userId) return true;
 
   // 2. Admin role
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { userId, orgId, status: "active" },
     select: { role: true },
   });

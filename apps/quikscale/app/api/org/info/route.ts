@@ -12,7 +12,7 @@ import { withTenantAuth } from "@/lib/api/withTenantAuth";
 
 export const GET = withTenantAuth(
   async ({ orgId }) => {
-    const tenant = await db.tenant.findUnique({
+    const tenant = await db.org.findUnique({
       where: { id: orgId },
       select: { id: true, name: true, slug: true },
     });

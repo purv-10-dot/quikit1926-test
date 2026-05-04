@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 
   // Only tenants whose dailyBriefHour matches the current IST hour. Tenants
   // without a fund profile are skipped (no brief preference set).
-  const tenants = await db.tenant.findMany({
+  const tenants = await db.org.findMany({
     where: {
       tenantAppAccess: {
         some: { app: { slug: "quikvc" }, enabled: true },
@@ -152,7 +152,7 @@ export async function GET(req: NextRequest) {
     // emailing "[AI stub …]" to real users.
     let emailsSent = 0;
     if (!summary.isStub && emailEnabled()) {
-      const recipients = await db.membership.findMany({
+      const recipients = await db.orgMember.findMany({
         where: {
           orgId: t.id,
           status: "active",

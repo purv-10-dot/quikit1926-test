@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "orgId is required" }, { status: 400 });
   }
 
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: {
       userId: session.user.id,
       orgId,

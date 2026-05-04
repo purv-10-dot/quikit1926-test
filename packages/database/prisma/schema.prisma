@@ -41,6 +41,11 @@ model App {
   baseUrl     String // "https://quikscale.vercel.app" or "/" for self
   status      String  @default("active") // active | coming_soon | disabled
 
+  /// When true, only OrgMembers with role super_admin/org_admin (or User.isSuperAdmin)
+  /// can see/launch this app from the org's tile grid. Set on Admin Portal and
+  /// any future ops/billing surface. Default false for product apps.
+  requiresOrgAdmin Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -48,7 +53,7 @@ model App {
   oauthClient  OAuthClient?
   moduleFlags  AppModuleFlag[]
   healthChecks AppHealthCheck[]
-  tenantAccess TenantAppAccess[]
+  tenantAccess OrgAppAccess[]
 
   @@index([slug])
   @@index([status])
@@ -127,7 +132,7 @@ model UserAppAccess {
   grantedAt DateTime @default(now())
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@unique([userId, orgId, appId])
@@ -141,8 +146,7 @@ model UserAppAccess {
 // CORE MULTI-TENANT TABLES
 // ============================================================================
 
-model Tenant {
-  @@map("Org")
+model Org {
   id          String  @id @default(cuid())
   name        String
   slug        String  @unique
@@ -167,7 +171,7 @@ model Tenant {
   updatedAt DateTime @updatedAt
   createdBy String?
 
-  users                   Membership[]
+  users                   OrgMember[]
   userAppAccess           UserAppAccess[]
   teams                   Team[]
   userTeams               UserTeam[]
@@ -197,7 +201,7 @@ model Tenant {
   oneOnOnes               OneOnOne[]
   feedbackEntries         FeedbackEntry[]
   sessionEvents           SessionEvent[]
-  tenantAppAccess         TenantAppAccess[]
+  tenantAppAccess         OrgAppAccess[]
   invoices                Invoice[]
 
   // QuikConstruction module — back-relations (additions per phase)
@@ -337,7 +341,7 @@ model User {
   accounts             Account[]
   sessions             Session[]
   verificationTokens   VerificationToken[]
-  memberships          Membership[]
+  memberships          OrgMember[]
   appAccess   UserAppAccess[]
 
   createdAt    DateTime  @default(now())
@@ -420,8 +424,7 @@ model VerificationToken {
   @@schema("auth")
 }
 
-model Membership {
-  @@map("OrgMember")
+model OrgMember {
   id       String @id @default(cuid())
   orgId String
   userId   String
@@ -439,7 +442,7 @@ model Membership {
   updatedAt DateTime @updatedAt
   createdBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   team   Team?  @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
@@ -463,7 +466,7 @@ model UserTeam {
   teamId    String
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
@@ -495,8 +498,8 @@ model Team {
   createdBy String?
   deletedAt DateTime?
 
-  tenant                  Tenant                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  members                 Membership[]
+  org                  Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members                 OrgMember[]
   userTeams               UserTeam[]
   kpis                    KPI[]
   priorities              Priority[]
@@ -525,7 +528,7 @@ model AccountabilityFunction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant         Tenant                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org         Org                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   team           Team?                    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   assignedTo     User?                    @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
   childFunctions AccountabilityFunction[] @relation("FunctionHierarchy")
@@ -595,7 +598,7 @@ model KPI {
   createdBy String
   updatedBy String?
 
-  tenant       Tenant           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org       Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner_user   User?            @relation("KPIOwner", fields: [owner], references: [id])
   team         Team?            @relation(fields: [teamId], references: [id], onDelete: SetNull)
   parentKPI    KPI?             @relation("KPICascade", fields: [parentKPIId], references: [id], onDelete: SetNull)
@@ -715,7 +718,7 @@ model Priority {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant         Tenant                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org         Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner_user     User?                  @relation("PriorityOwner", fields: [owner], references: [id])
   team           Team?                  @relation(fields: [teamId], references: [id], onDelete: SetNull)
   weeklyStatuses PriorityWeeklyStatus[]
@@ -778,7 +781,7 @@ model WWWItem {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org       Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   revisionLogs WWWRevisionLog[]
 
   @@index([orgId])
@@ -831,7 +834,7 @@ model CategoryMaster {
   updatedAt DateTime @updatedAt
   createdBy String
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   // Uniqueness: (orgId, lowercased name, dataType, currency)
   // Two rows with the same case-insensitive name can coexist only if their
@@ -899,7 +902,7 @@ model Client {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant         Tenant                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   memberships    ClientMembership[]
   /// Client's external team members (from ClientMember entity — spec §2 multiplelookup).
   teamMembers    ClientTeamMember[]
@@ -970,7 +973,7 @@ model ClientMember {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant            Tenant                               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org            Org                               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   clientLinks       ClientTeamMember[]
   dailyAbsences     ClientDailyHuddleTeamAbsence[]
   weeklyAbsences    ClientWeeklyMeetingTeamAbsence[]
@@ -1015,7 +1018,7 @@ model ClientDailyHuddle {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant            Tenant                         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org            Org                         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   client            Client                         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   /// Legacy tenant-User-based absence (kept for older dashboard math).
   absentMembers     ClientDailyHuddleAbsence[]
@@ -1099,7 +1102,7 @@ model ClientWeeklyMeeting {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant                 Tenant                               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org                 Org                               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   client                 Client                               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   absentMembers          ClientWeeklyMeetingAbsence[]
   absentTeamMembers      ClientWeeklyMeetingTeamAbsence[]
@@ -1298,7 +1301,7 @@ model OPSPData {
 
   reviewEntries OPSPReviewEntry[]
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, userId, year, quarter])
@@ -1329,7 +1332,7 @@ model OPSPReviewEntry {
   updatedAt DateTime @updatedAt
   updatedBy String?
 
-  tenant Tenant   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   opsp   OPSPData @relation(fields: [opspId], references: [id], onDelete: Cascade)
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1358,7 +1361,7 @@ model OPSPDocument {
   createdBy String
   updatedBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, year, versionNumber])
   @@index([orgId])
@@ -1417,7 +1420,7 @@ model OPSPPlan {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, userId])
@@ -1457,7 +1460,7 @@ model HabitAssessment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([quarter, year])
@@ -1490,7 +1493,7 @@ model Notification {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([userId])
@@ -1522,7 +1525,7 @@ model AuditLog {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([entityType, entityId])
@@ -1547,7 +1550,7 @@ model FeatureFlag {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, key])
   @@index([orgId])
@@ -1574,7 +1577,7 @@ model QuarterSetting {
   updatedAt DateTime @updatedAt
   createdBy String
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, fiscalYear, quarter])
   @@index([orgId])
@@ -1610,7 +1613,7 @@ model PerformanceReview {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant   Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   reviewer User   @relation("ReviewsGiven", fields: [reviewerId], references: [id])
   reviewee User   @relation("ReviewsReceived", fields: [revieweeId], references: [id])
 
@@ -1644,7 +1647,7 @@ model TalentAssessment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant   Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user     User   @relation("TalentAssessed", fields: [userId], references: [id])
   assessor User   @relation("TalentAssessor", fields: [assessorId], references: [id])
 
@@ -1686,7 +1689,7 @@ model Goal {
   createdBy   String
   completedAt DateTime?
 
-  tenant     Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org     Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner      User   @relation("GoalOwner", fields: [ownerId], references: [id])
   parentGoal Goal?  @relation("GoalHierarchy", fields: [parentGoalId], references: [id], onDelete: SetNull)
   childGoals Goal[] @relation("GoalHierarchy")
@@ -1723,7 +1726,7 @@ model OneOnOne {
   updatedAt   DateTime  @updatedAt
   createdBy   String
 
-  tenant  Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   manager User   @relation("OneOnOneManager", fields: [managerId], references: [id])
   report  User   @relation("OneOnOneReport", fields: [reportId], references: [id])
 
@@ -1755,7 +1758,7 @@ model FeedbackEntry {
 
   createdAt DateTime @default(now())
 
-  tenant   Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   fromUser User   @relation("FeedbackFrom", fields: [fromUserId], references: [id])
   toUser   User   @relation("FeedbackTo", fields: [toUserId], references: [id])
 
@@ -1788,7 +1791,7 @@ model AppModuleFlag {
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, appId, moduleKey])
@@ -1881,7 +1884,7 @@ model SessionEvent {
   userAgent String?  @db.Text
   createdAt DateTime @default(now())
 
-  tenant Tenant? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org? @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([orgId, createdAt])
@@ -1930,8 +1933,7 @@ model BroadcastDismissal {
 /// Hard gate: if enabled=false the tenant cannot access this app at all,
 /// regardless of AppModuleFlag state. Evaluated first in the auth/route flow.
 /// Sparse: row exists only when explicitly toggled off (default = enabled).
-model TenantAppAccess {
-  @@map("OrgAppAccess")
+model OrgAppAccess {
   id        String   @id @default(cuid())
   orgId  String
   appId     String
@@ -1941,7 +1943,7 @@ model TenantAppAccess {
   updatedAt DateTime @updatedAt
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   app    App    @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, appId])
@@ -2062,7 +2064,7 @@ model Invoice {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, createdAt])
   @@index([orgId, status])
@@ -2105,7 +2107,7 @@ model CnCompany {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   banks    CnBank[]
   finYears CnFinancialYear[]
   projects CnProject[]
@@ -2144,7 +2146,7 @@ model CnVendor {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org      Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   pos         CnPurchaseOrder[]
   grns        CnGoodsReceiptNote[]
   goodReturns CnGoodReturn[]
@@ -2180,7 +2182,7 @@ model CnCustomer {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org      Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   projects    CnProject[]
   invoices    CnClientInvoice[]
   receipts    CnClientReceipt[]
@@ -2216,7 +2218,7 @@ model CnContractor {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant     Tenant        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org     Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   workOrders CnWorkOrder[]
 
   @@unique([orgId, code])
@@ -2238,7 +2240,7 @@ model CnUOM {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant              Tenant                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org              Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   items               CnItem[]
   prLines             CnPurchaseRequisitionLine[]
   poLines             CnPurchaseOrderLine[]
@@ -2285,7 +2287,7 @@ model CnItemGroup {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   parent   CnItemGroup?  @relation("CnItemGroupHierarchy", fields: [parentId], references: [id])
   children CnItemGroup[] @relation("CnItemGroupHierarchy")
   items    CnItem[]
@@ -2317,7 +2319,7 @@ model CnItem {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant              Tenant                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org              Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   group               CnItemGroup                 @relation(fields: [groupId], references: [id])
   uom                 CnUOM                       @relation(fields: [uomId], references: [id])
   // Phase 3 back-relations
@@ -2369,7 +2371,7 @@ model CnBank {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company CnCompany @relation(fields: [companyId], references: [id])
 
   @@unique([orgId, accountNo])
@@ -2393,7 +2395,7 @@ model CnDepartment {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant    Tenant       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org    Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   employees CnEmployee[]
 
   @@unique([orgId, code])
@@ -2415,7 +2417,7 @@ model CnWorkCategory {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant     Tenant        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org     Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   workOrders CnWorkOrder[]
 
   @@index([orgId])
@@ -2437,7 +2439,7 @@ model CnCostCenter {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, code])
   @@index([orgId])
@@ -2464,7 +2466,7 @@ model CnLocation {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant               Tenant                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org               Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project              CnProject?              @relation(fields: [projectId], references: [id])
   // Phase 3 back-relations
   deliveryForPOs       CnPurchaseOrder[]
@@ -2506,7 +2508,7 @@ model CnGSTCode {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, code])
   @@index([orgId])
@@ -2529,7 +2531,7 @@ model CnTDSCode {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, section])
   @@index([orgId])
@@ -2552,7 +2554,7 @@ model CnTermsCondition {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([orgId, applicableTo])
@@ -2576,7 +2578,7 @@ model CnFinancialYear {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company CnCompany @relation(fields: [companyId], references: [id])
 
   @@unique([orgId, companyId, label])
@@ -2610,7 +2612,7 @@ model CnProject {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant               Tenant                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org               Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
   company              CnCompany               @relation(fields: [companyId], references: [id])
   client               CnCustomer?             @relation(fields: [clientId], references: [id])
   locations            CnLocation[]
@@ -2678,7 +2680,7 @@ model CnMachinery {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant     Tenant        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org     Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   dieselLogs CnDieselLog[]
 
   @@unique([orgId, code])
@@ -2705,7 +2707,7 @@ model CnAsset {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, code])
   @@index([orgId])
@@ -2739,7 +2741,7 @@ model CnPurchaseRequisition {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject                   @relation(fields: [projectId], references: [id])
   lines   CnPurchaseRequisitionLine[]
   pos     CnPurchaseOrder[]
@@ -2797,7 +2799,7 @@ model CnPurchaseOrder {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant           Tenant                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org           Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project          CnProject              @relation(fields: [projectId], references: [id])
   vendor           CnVendor               @relation(fields: [vendorId], references: [id])
   pr               CnPurchaseRequisition? @relation(fields: [prId], references: [id])
@@ -2866,7 +2868,7 @@ model CnGoodsReceiptNote {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant        Tenant           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org        Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   po            CnPurchaseOrder  @relation(fields: [poId], references: [id])
   project       CnProject        @relation(fields: [projectId], references: [id])
   vendor        CnVendor         @relation(fields: [vendorId], references: [id])
@@ -2928,7 +2930,7 @@ model CnStockLedger {
   createdAt DateTime @default(now())
   createdBy String
 
-  tenant   Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project  CnProject  @relation(fields: [projectId], references: [id])
   location CnLocation @relation(fields: [locationId], references: [id])
   item     CnItem     @relation(fields: [itemId], references: [id])
@@ -2961,7 +2963,7 @@ model CnMaterialIssue {
   postedAt  DateTime?
   postedBy  String?
 
-  tenant          Tenant                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org          Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project         CnProject             @relation(fields: [projectId], references: [id])
   location        CnLocation            @relation(fields: [locationId], references: [id])
   lines           CnMaterialIssueLine[]
@@ -3020,7 +3022,7 @@ model CnPurchaseIndent {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject              @relation(fields: [projectId], references: [id])
   lines   CnPurchaseIndentLine[]
 
@@ -3067,7 +3069,7 @@ model CnRFQ {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject     @relation(fields: [projectId], references: [id])
   lines   CnRFQLine[]
   vendors CnRFQVendor[]
@@ -3134,7 +3136,7 @@ model CnGatePass {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project  CnProject  @relation(fields: [projectId], references: [id])
   location CnLocation @relation(fields: [locationId], references: [id])
 
@@ -3165,7 +3167,7 @@ model CnGoodReturn {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
   grn      CnGoodsReceiptNote @relation(fields: [grnId], references: [id])
   project  CnProject          @relation(fields: [projectId], references: [id])
   vendor   CnVendor           @relation(fields: [vendorId], references: [id])
@@ -3217,7 +3219,7 @@ model CnInternalReturn {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   issue    CnMaterialIssue        @relation(fields: [issueId], references: [id])
   project  CnProject              @relation(fields: [projectId], references: [id])
   location CnLocation             @relation(fields: [locationId], references: [id])
@@ -3267,7 +3269,7 @@ model CnStockTransfer {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org       Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project      CnProject             @relation(fields: [projectId], references: [id])
   fromLocation CnLocation            @relation("TransferFrom", fields: [fromLocationId], references: [id])
   toLocation   CnLocation            @relation("TransferTo", fields: [toLocationId], references: [id])
@@ -3315,7 +3317,7 @@ model CnStockReconciliation {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project  CnProject                   @relation(fields: [projectId], references: [id])
   location CnLocation                  @relation(fields: [locationId], references: [id])
   lines    CnStockReconciliationLine[]
@@ -3370,7 +3372,7 @@ model CnDieselLog {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant    Tenant       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org    Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project   CnProject    @relation(fields: [projectId], references: [id])
   location  CnLocation   @relation(fields: [locationId], references: [id])
   machinery CnMachinery? @relation(fields: [machineryId], references: [id])
@@ -3414,7 +3416,7 @@ model CnBOQ {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant          Tenant         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org          Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project         CnProject      @relation(fields: [projectId], references: [id])
   items           CnBOQItem[]
   rabs            CnRAB[]
@@ -3487,7 +3489,7 @@ model CnDPR {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant    Tenant          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org    Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project   CnProject       @relation(fields: [projectId], references: [id])
   location  CnLocation?     @relation("DprConsumptionLocation", fields: [consumptionLocationId], references: [id])
   lines     CnDPRLine[]
@@ -3572,7 +3574,7 @@ model CnHindrance {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject @relation(fields: [projectId], references: [id])
 
   @@index([orgId])
@@ -3606,7 +3608,7 @@ model CnEstimation {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org       Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project      CnProject          @relation(fields: [projectId], references: [id])
   convertedBoq CnBOQ?             @relation("EstimationToBoq", fields: [convertedBoqId], references: [id])
   items        CnEstimationItem[]
@@ -3671,7 +3673,7 @@ model CnWorkOrder {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org       Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project      CnProject         @relation(fields: [projectId], references: [id])
   contractor   CnContractor      @relation(fields: [contractorId], references: [id])
   workCategory CnWorkCategory?   @relation(fields: [workCategoryId], references: [id])
@@ -3737,7 +3739,7 @@ model CnRAB {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project  CnProject         @relation(fields: [projectId], references: [id])
   boq      CnBOQ             @relation(fields: [boqId], references: [id])
   lines    CnRABLine[]
@@ -3809,7 +3811,7 @@ model CnClientInvoice {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org      Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer    CnCustomer                  @relation(fields: [customerId], references: [id])
   project     CnProject?                  @relation(fields: [projectId], references: [id])
   rab         CnRAB?                      @relation(fields: [rabId], references: [id])
@@ -3845,7 +3847,7 @@ model CnClientReceipt {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org      Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer    CnCustomer                  @relation(fields: [customerId], references: [id])
   allocations CnClientReceiptAllocation[]
 
@@ -3900,7 +3902,7 @@ model CnVendorBill {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org      Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vendor      CnVendor                    @relation(fields: [vendorId], references: [id])
   project     CnProject?                  @relation(fields: [projectId], references: [id])
   grn         CnGoodsReceiptNote?         @relation(fields: [grnId], references: [id])
@@ -3937,7 +3939,7 @@ model CnVendorPayment {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant      Tenant                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org      Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vendor      CnVendor                    @relation(fields: [vendorId], references: [id])
   allocations CnVendorPaymentAllocation[]
 
@@ -3988,7 +3990,7 @@ model CnEmployee {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant       Tenant          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org       Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   department   CnDepartment?   @relation(fields: [departmentId], references: [id])
   attendances  CnAttendance[]
   payrollLines CnPayrollLine[]
@@ -4014,7 +4016,7 @@ model CnAttendance {
   updatedAt DateTime @updatedAt
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   employee CnEmployee @relation(fields: [employeeId], references: [id])
   project  CnProject? @relation(fields: [projectId], references: [id])
 
@@ -4043,7 +4045,7 @@ model CnPayroll {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
   lines  CnPayrollLine[]
 
   @@unique([orgId, runNumber])
@@ -4089,7 +4091,7 @@ model CnApprovalRule {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([orgId, docType])
@@ -4113,7 +4115,7 @@ model CnApprovalRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
   @@index([approverId, status])
@@ -4140,7 +4142,7 @@ model CnQCInspection {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   grn     CnGoodsReceiptNote? @relation(fields: [grnId], references: [id])
   project CnProject?          @relation(fields: [projectId], references: [id])
   defects CnQCDefect[]
@@ -4191,7 +4193,7 @@ model CnSafetyIncident {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject? @relation(fields: [projectId], references: [id])
 
   @@unique([orgId, incidentNumber])
@@ -4219,7 +4221,7 @@ model CnSafetyChecklist {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject? @relation(fields: [projectId], references: [id])
 
   @@index([orgId])
@@ -4245,7 +4247,7 @@ model CnDocument {
   createdAt DateTime  @default(now())
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, refType, refId])
   @@index([deletedAt])
@@ -4275,7 +4277,7 @@ model CnExpense {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant  Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   project CnProject? @relation(fields: [projectId], references: [id])
 
   @@unique([orgId, expenseNumber])
@@ -4351,7 +4353,7 @@ model CnCreditNote {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant   Tenant           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   customer CnCustomer       @relation(fields: [customerId], references: [id])
   invoice  CnClientInvoice? @relation(fields: [invoiceId], references: [id])
 
@@ -4382,7 +4384,7 @@ model CnDebitNote {
   updatedBy String?
   deletedAt DateTime?
 
-  tenant Tenant        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vendor CnVendor      @relation(fields: [vendorId], references: [id])
   bill   CnVendorBill? @relation(fields: [billId], references: [id])
 
@@ -4410,7 +4412,7 @@ model CnAuditLog {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, entityType, entityId])
   @@index([orgId, createdAt])
@@ -4429,7 +4431,7 @@ model CnNumberSequence {
   counter   Int      @default(0)
   updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, prefix, fyKey])
   @@index([orgId])
@@ -4483,7 +4485,7 @@ model VCFundProfile {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@schema("app_quikvc")
 }
@@ -4507,7 +4509,7 @@ model VCVertical {
   createdBy String?
   updatedBy String?
 
-  tenant               Tenant                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org               Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   scoringCriteria      VCScoringCriterion[]
   applications         VCApplication[]
   deals                VCDeal[]
@@ -4537,7 +4539,7 @@ model VCScoringCriterion {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vertical VCVertical @relation(fields: [verticalId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, verticalId, slug])
@@ -4581,7 +4583,7 @@ model VCApplication {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vertical VCVertical @relation(fields: [verticalId], references: [id], onDelete: Restrict)
   deal     VCDeal? // 1:1 — created automatically on submit
 
@@ -4624,7 +4626,7 @@ model VCDeal {
   createdBy String?
   updatedBy String?
 
-  tenant         Tenant                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   application    VCApplication         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   vertical       VCVertical            @relation(fields: [verticalId], references: [id], onDelete: Restrict)
   timelineEvents VCTimelineEvent[]
@@ -4670,7 +4672,7 @@ model VCTimelineEvent {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@index([orgId, dealId, createdAt])
@@ -4715,7 +4717,7 @@ model VCDealDocument {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@index([orgId, dealId])
@@ -4747,7 +4749,7 @@ model VCDealQuestion {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@index([orgId, dealId, status])
@@ -4775,7 +4777,7 @@ model VCDealScore {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, dealId, criterionSlug])
@@ -4814,7 +4816,7 @@ model VCDealSignal {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@index([orgId, dealId, status])
@@ -4839,7 +4841,7 @@ model VCICMemo {
   createdBy String?
   updatedBy String?
 
-  tenant         Tenant            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org         Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal           VCDeal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
   versions       VCICMemoVersion[] @relation("MemoVersions")
   currentVersion VCICMemoVersion?  @relation("CurrentMemoVersion", fields: [currentVersionId], references: [id])
@@ -4869,7 +4871,7 @@ model VCICMemoVersion {
   createdAt DateTime @default(now())
   createdBy String?
 
-  tenant         Tenant    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org         Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   memo           VCICMemo  @relation("MemoVersions", fields: [memoId], references: [id], onDelete: Cascade)
   currentForMemo VCICMemo? @relation("CurrentMemoVersion")
 
@@ -4903,7 +4905,7 @@ model VCComparableCompany {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@index([orgId, dealId])
@@ -4927,7 +4929,7 @@ model VCMeeting {
   type            String    @default("discovery-call")
   /// Status: "scheduled" | "completed" | "cancelled"
   status          String    @default("scheduled")
-  /// JSON array of participant Membership IDs + names + roles
+  /// JSON array of participant OrgMember IDs + names + roles
   participants    Json?
   /// Analyst pre-meeting notes
   agenda          String?   @db.Text
@@ -4937,7 +4939,7 @@ model VCMeeting {
   createdBy String?
   updatedBy String?
 
-  tenant     Tenant               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org     Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal       VCDeal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
   transcript VCMeetingTranscript?
 
@@ -4965,7 +4967,7 @@ model VCMeetingTranscript {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant  Tenant    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org  Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   meeting VCMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
@@ -4983,7 +4985,7 @@ model VCICVote {
   id         String  @id @default(cuid())
   orgId   String
   memoId     String
-  voterId    String // Membership user id with canVoteIC=true
+  voterId    String // OrgMember user id with canVoteIC=true
   /// Decision: "approve" | "conditional-approve" | "reject" | "abstain"
   decision   String
   /// Rationale shown to peers (per VCFundProfile.icVisibility)
@@ -4994,7 +4996,7 @@ model VCICVote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant Tenant   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   memo   VCICMemo @relation(fields: [memoId], references: [id], onDelete: Cascade)
 
   /// Voters cast at most one vote per memo (re-cast updates this row).
@@ -5027,7 +5029,7 @@ model VCInvestor {
   createdBy String?
   updatedBy String?
 
-  tenant             Tenant                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org             Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   commitments        VCCommitment[]
   capitalCalls       VCCapitalCall[]
   allocations        VCDealAllocation[]
@@ -5061,7 +5063,7 @@ model VCCommitment {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   investor VCInvestor @relation(fields: [investorId], references: [id], onDelete: Cascade)
 
   @@index([orgId, investorId])
@@ -5093,7 +5095,7 @@ model VCCapitalCall {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   investor VCInvestor             @relation(fields: [investorId], references: [id], onDelete: Cascade)
   payments VCCapitalCallPayment[]
 
@@ -5115,7 +5117,7 @@ model VCCapitalCallPayment {
   createdAt DateTime @default(now())
   createdBy String?
 
-  tenant      Tenant        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org      Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   capitalCall VCCapitalCall @relation(fields: [capitalCallId], references: [id], onDelete: Cascade)
 
   @@index([orgId, capitalCallId])
@@ -5141,7 +5143,7 @@ model VCDealAllocation {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal     VCDeal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
   investor VCInvestor @relation(fields: [investorId], references: [id], onDelete: Restrict)
 
@@ -5177,7 +5179,7 @@ model VCRepaymentSchedule {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
   investor VCInvestor           @relation(fields: [investorId], references: [id], onDelete: Restrict)
   payments VCRepaymentPayment[]
 
@@ -5202,7 +5204,7 @@ model VCRepaymentPayment {
   createdAt DateTime @default(now())
   createdBy String?
 
-  tenant   Tenant              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
   schedule VCRepaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   investor VCInvestor          @relation(fields: [investorId], references: [id], onDelete: Restrict)
 
@@ -5226,7 +5228,7 @@ model VCTermSheetTemplate {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, name])
   @@index([orgId])
@@ -5253,7 +5255,7 @@ model VCTermSheet {
   createdBy String?
   updatedBy String?
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
   deal   VCDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
@@ -5297,7 +5299,7 @@ model VCSourcedOpportunity {
   createdBy String?
   updatedBy String?
 
-  tenant   Tenant      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org   Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   vertical VCVertical? @relation(fields: [verticalId], references: [id], onDelete: SetNull)
 
   @@index([orgId, status])
@@ -5328,7 +5330,7 @@ model VCNotification {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, userId, readAt])
   @@index([orgId, userId, createdAt])
@@ -5364,7 +5366,7 @@ model VCAuditLog {
 
   createdAt DateTime @default(now())
 
-  tenant Tenant @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, createdAt])
   @@index([orgId, action, createdAt])

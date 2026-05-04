@@ -30,7 +30,7 @@ const E2E_MEMBER_EMAIL = "e2e-member@test.com";
 const E2E_SUPER_ADMIN_EMAIL = "e2e-super@test.com";
 
 async function wipeExistingE2ETenant() {
-  const existing = await prisma.tenant.findUnique({
+  const existing = await prisma.org.findUnique({
     where: { slug: E2E_TENANT_SLUG },
   });
   if (!existing) return;
@@ -43,15 +43,15 @@ async function wipeExistingE2ETenant() {
   await prisma.kPILog.deleteMany({ where: { tenantId: existing.id } });
   await prisma.kPINote.deleteMany({ where: { tenantId: existing.id } });
   await prisma.kPI.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.membership.deleteMany({ where: { tenantId: existing.id } });
+  await prisma.orgMember.deleteMany({ where: { tenantId: existing.id } });
   await prisma.team.deleteMany({ where: { tenantId: existing.id } });
-  await prisma.tenant.delete({ where: { id: existing.id } });
+  await prisma.org.delete({ where: { id: existing.id } });
 
   // Delete the E2E users if they have no remaining memberships
   for (const email of [E2E_ADMIN_EMAIL, E2E_HEAD_EMAIL, E2E_MEMBER_EMAIL]) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) continue;
-    const otherMemberships = await prisma.membership.count({
+    const otherMemberships = await prisma.orgMember.count({
       where: { userId: user.id },
     });
     if (otherMemberships === 0) {
@@ -74,7 +74,7 @@ async function main() {
 
   const hashed = await bcrypt.hash(E2E_PASSWORD, 10);
 
-  const tenant = await prisma.tenant.create({
+  const tenant = await prisma.org.create({
     data: {
       name: "E2E Test Tenant",
       slug: E2E_TENANT_SLUG,
@@ -126,7 +126,7 @@ async function main() {
     },
   });
 
-  await prisma.membership.create({
+  await prisma.orgMember.create({
     data: {
       userId: admin.id,
       tenantId: tenant.id,
@@ -134,7 +134,7 @@ async function main() {
       status: "active",
     },
   });
-  await prisma.membership.create({
+  await prisma.orgMember.create({
     data: {
       userId: head.id,
       tenantId: tenant.id,
@@ -143,7 +143,7 @@ async function main() {
       status: "active",
     },
   });
-  await prisma.membership.create({
+  await prisma.orgMember.create({
     data: {
       userId: member.id,
       tenantId: tenant.id,

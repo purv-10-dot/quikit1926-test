@@ -21,7 +21,7 @@ export async function GET() {
 
   // Fall back to first active membership if orgId not in session
   if (!orgId) {
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { userId, status: "active" },
       select: { orgId: true },
       orderBy: { createdAt: "asc" },

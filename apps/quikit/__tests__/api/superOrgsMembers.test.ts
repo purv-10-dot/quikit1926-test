@@ -90,7 +90,7 @@ describe("POST /api/super/orgs/[id]/members", () => {
 
   it("returns 404 when org not found", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue(null as never);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
     mockDb.user.findUnique.mockResolvedValue(null as never);
 
     const res = await POST(postReq(VALID_BODY), PARAMS);
@@ -101,12 +101,12 @@ describe("POST /api/super/orgs/[id]/members", () => {
 
   it("returns 409 when user is already an active member", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
     mockDb.user.findUnique.mockResolvedValue({
       id: "u-1",
       email: "new@acme.com",
     } as never);
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m-1",
       status: "active",
     } as never);
@@ -119,7 +119,7 @@ describe("POST /api/super/orgs/[id]/members", () => {
 
   it("creates new user and membership, returns 201", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
     // user does not exist yet
     mockDb.user.findUnique.mockResolvedValue(null as never);
     mockDb.user.create.mockResolvedValue({
@@ -128,8 +128,8 @@ describe("POST /api/super/orgs/[id]/members", () => {
       firstName: "New",
       lastName: "User",
     } as never);
-    mockDb.membership.findUnique.mockResolvedValue(null as never);
-    mockDb.membership.upsert.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue(null as never);
+    mockDb.orgMember.upsert.mockResolvedValue({
       id: "m-new",
       orgId: "t-1",
       userId: "u-new",
@@ -150,7 +150,7 @@ describe("POST /api/super/orgs/[id]/members", () => {
     expect(body.data.id).toBe("m-new");
 
     expect(mockDb.user.create).toHaveBeenCalledTimes(1);
-    expect(mockDb.membership.upsert).toHaveBeenCalledTimes(1);
+    expect(mockDb.orgMember.upsert).toHaveBeenCalledTimes(1);
     expect(logAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "add_member",
@@ -167,16 +167,16 @@ describe("POST /api/super/orgs/[id]/members", () => {
 
   it("reactivates membership for an existing user (no user.create)", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
     mockDb.user.findUnique.mockResolvedValue({
       id: "u-existing",
       email: "new@acme.com",
     } as never);
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m-old",
       status: "suspended",
     } as never);
-    mockDb.membership.upsert.mockResolvedValue({
+    mockDb.orgMember.upsert.mockResolvedValue({
       id: "m-old",
       orgId: "t-1",
       userId: "u-existing",
@@ -193,6 +193,6 @@ describe("POST /api/super/orgs/[id]/members", () => {
     const res = await POST(postReq({ ...VALID_BODY, role: "admin" }), PARAMS);
     expect(res.status).toBe(201);
     expect(mockDb.user.create).not.toHaveBeenCalled();
-    expect(mockDb.membership.upsert).toHaveBeenCalledTimes(1);
+    expect(mockDb.orgMember.upsert).toHaveBeenCalledTimes(1);
   });
 });

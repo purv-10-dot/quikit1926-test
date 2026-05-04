@@ -15,13 +15,15 @@ import { createMiddleware } from "@quikit/auth/middleware";
  * loose for preview / staging deployments).
  */
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
+const QUIKIT_URL = process.env.NEXT_PUBLIC_QUIKIT_URL;
 
 const realMiddleware = createMiddleware({
   loginRoute: "/login",
   selectOrgRoute: "/select-org",
   publicRoutes: ["/login", "/select-org", "/invitations"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
-  centralSelectOrgUrl: AUTH_URL ? `${AUTH_URL}/select-org` : undefined,
+  // /select-org retired — fall through to launcher /apps when token has no orgId.
+  centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
 
 function isDevBypassEnabled(): boolean {

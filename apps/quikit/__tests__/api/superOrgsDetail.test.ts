@@ -49,7 +49,7 @@ describe("GET /api/super/orgs/[id]", () => {
 
   it("returns 404 when org not found", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue(null as never);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
 
     const res = await GET(makeRequest("http://localhost:3006/api/super/orgs/org-1"), PARAMS);
     expect(res.status).toBe(404);
@@ -68,7 +68,7 @@ describe("GET /api/super/orgs/[id]", () => {
       _count: { users: 3, teams: 1, userAppAccess: 2 },
       users: [],
     };
-    mockDb.tenant.findUnique.mockResolvedValue(mockTenant as never);
+    mockDb.org.findUnique.mockResolvedValue(mockTenant as never);
 
     const res = await GET(makeRequest("http://localhost:3006/api/super/orgs/org-1"), PARAMS);
     expect(res.status).toBe(200);
@@ -125,7 +125,7 @@ describe("PATCH /api/super/orgs/[id]", () => {
 
   it("returns 404 when org not found", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue(null as never);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
 
     const res = await PATCH(
       makeRequest("http://localhost:3006/api/super/orgs/org-1", {
@@ -140,10 +140,10 @@ describe("PATCH /api/super/orgs/[id]", () => {
   it("updates org and returns 200 on success", async () => {
     setSession(SUPER_ADMIN);
     const existing = { id: "org-1", name: "Acme", plan: "startup", status: "active" };
-    mockDb.tenant.findUnique.mockResolvedValue(existing as never);
+    mockDb.org.findUnique.mockResolvedValue(existing as never);
 
     const updated = { ...existing, name: "Acme Updated" };
-    mockDb.tenant.update.mockResolvedValue(updated as never);
+    mockDb.org.update.mockResolvedValue(updated as never);
 
     const res = await PATCH(
       makeRequest("http://localhost:3006/api/super/orgs/org-1", {
@@ -180,7 +180,7 @@ describe("DELETE /api/super/orgs/[id]", () => {
 
   it("returns 404 when org not found", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue(null as never);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
 
     const res = await DELETE(makeRequest("http://localhost:3006/api/super/orgs/org-1"), PARAMS);
     expect(res.status).toBe(404);
@@ -189,12 +189,12 @@ describe("DELETE /api/super/orgs/[id]", () => {
   it("suspends org and returns 200 on success", async () => {
     setSession(SUPER_ADMIN);
     const existing = { id: "org-1", name: "Acme", status: "active" };
-    mockDb.tenant.findUnique.mockResolvedValue(existing as never);
-    mockDb.tenant.update.mockResolvedValue({ ...existing, status: "suspended" } as never);
+    mockDb.org.findUnique.mockResolvedValue(existing as never);
+    mockDb.org.update.mockResolvedValue({ ...existing, status: "suspended" } as never);
 
     // The route does a fire-and-forget membership lookup for email notifications
     const membershipPromise = Promise.resolve([]);
-    mockDb.membership.findMany.mockReturnValue(membershipPromise as never);
+    mockDb.orgMember.findMany.mockReturnValue(membershipPromise as never);
 
     const res = await DELETE(makeRequest("http://localhost:3006/api/super/orgs/org-1"), PARAMS);
     expect(res.status).toBe(200);

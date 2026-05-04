@@ -20,7 +20,7 @@ export const GET = withAdminAuth(async ({ orgId }, request: NextRequest) => {
   const skip = (page - 1) * limit;
 
   const [memberships, total] = await Promise.all([
-    db.membership.findMany({
+    db.orgMember.findMany({
       where: { orgId },
       include: {
         user: {
@@ -42,7 +42,7 @@ export const GET = withAdminAuth(async ({ orgId }, request: NextRequest) => {
       skip,
       take: limit,
     }),
-    db.membership.count({ where: { orgId } }),
+    db.orgMember.count({ where: { orgId } }),
   ]);
 
   const memberData = memberships.map((m) => ({
@@ -82,15 +82,15 @@ export const POST = withAdminAuth(async ({ orgId, userId: inviterId }, request: 
   const { email, firstName, lastName, role } = parsed.data;
 
   // Tenant lookup is needed for domain allowlist check, branding, AND email send.
-  const tenant = await db.tenant.findUnique({
+  const org = await db.org.findUnique({
     where: { id: orgId },
     select: { name: true, logoUrl: true, brandColor: true, allowedEmailDomains: true },
   });
 
   // Domain allowlist enforcement (empty list = unrestricted).
-  if (tenant?.allowedEmailDomains && tenant.allowedEmailDomains.length > 0) {
+  if (org?.allowedEmailDomains && org.allowedEmailDomains.length > 0) {
     const emailDomain = email.split("@")[1]?.toLowerCase() ?? "";
-    const allowed = tenant.allowedEmailDomains.map((d) => d.toLowerCase());
+    const allowed = org.allowedEmailDomains.map((d) => d.toLowerCase());
     if (!allowed.includes(emailDomain)) {
       return NextResponse.json(
         {
@@ -109,7 +109,7 @@ export const POST = withAdminAuth(async ({ orgId, userId: inviterId }, request: 
   let user = await db.user.findUnique({ where: { email } });
 
   if (user) {
-    const existingMembership = await db.membership.findUnique({
+    const existingMembership = await db.orgMember.findUnique({
       where: { orgId_userId: { orgId, userId: user.id } },
     });
 
@@ -145,7 +145,7 @@ export const POST = withAdminAuth(async ({ orgId, userId: inviterId }, request: 
   }
 
   // Create or upsert the membership
-  const membership = await db.membership.upsert({
+  const membership = await db.orgMember.upsert({
     where: { orgId_userId: { orgId, userId: user.id } },
     create: {
       orgId,
@@ -174,9 +174,9 @@ export const POST = withAdminAuth(async ({ orgId, userId: inviterId }, request: 
   // Send invitation email (tenant-branded)
   await sendInvitationEmail({
     to: email,
-    orgName: tenant?.name || "Organisation",
-    orgLogoUrl: tenant?.logoUrl ?? null,
-    orgBrandColor: tenant?.brandColor ?? null,
+    orgName: org?.name || "Organisation",
+    orgLogoUrl: org?.logoUrl ?? null,
+    orgBrandColor: org?.brandColor ?? null,
     inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}` : "An admin",
     role: ROLE_LABELS[role] || role,
     token: invitationToken,

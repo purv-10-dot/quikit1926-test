@@ -35,7 +35,7 @@ export function AnalyticsPanel({ orgId }: { orgId: string }) {
   const [loading, setLoading] = useState(true);
 
   useOnceEffect(() => {
-    fetch(`/api/super/analytics/tenant/${orgId}`)
+    fetch(`/api/super/analytics/org/${orgId}`)
       .then((r) => r.json())
       .then((j) => j.success && setData(j.data))
       .finally(() => setLoading(false));

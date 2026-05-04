@@ -37,7 +37,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ orgId }, req, { para
   const { userIds } = parsed.data;
 
   // Fetch the candidate memberships in one query to minimise round trips
-  const candidates = await db.membership.findMany({
+  const candidates = await db.orgMember.findMany({
     where: { orgId, userId: { in: userIds }, status: "active" },
     select: { id: true, userId: true, teamId: true },
   });
@@ -59,7 +59,7 @@ export const POST = withTenantAuth<{ id: string }>(async ({ orgId }, req, { para
     }
 
     // Primary-team assignment: set Membership.teamId
-    await db.membership.update({
+    await db.orgMember.update({
       where: { id: membership.id },
       data: { teamId: params.id },
     });

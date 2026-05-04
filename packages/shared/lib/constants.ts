@@ -39,26 +39,40 @@ export type MembershipStatus = (typeof MEMBERSHIP_STATUS)[keyof typeof MEMBERSHI
 
 // ── v4 role split ──────────────────────────────────────────────────────────
 // MEMBERSHIP_ROLES live on OrgMember.role (org-wide authority).
-// Per-app authority lives on UserAppAccess.role (app-scoped, value depends
-// on the app's domain — fetch from app schema).
+// Per-app authority lives on UserAppAccess.role (app-scoped — the value space
+// depends on the specific app's domain, e.g. KPI editor in QuikScale).
 //
-// Migration plan: legacy ROLES (super_admin/admin/executive/manager/employee/
-// coach) remain for backwards-compat with existing app code. New code should
-// use MEMBERSHIP_ROLES + the app-specific AppRole values.
+// SuperAdmin is the platform-wide role (also reflected on User.isSuperAdmin).
+// OrgAdmin can manage the organisation and access admin-tier apps (Admin
+// Portal). Member is the default role.
+//
+// Migration: legacy ROLES (admin/executive/manager/employee/coach) remain for
+// backwards-compat with existing app code. New code uses MEMBERSHIP_ROLES.
 
 export const MEMBERSHIP_ROLES = {
+  SUPER_ADMIN: "super_admin",
   ORG_ADMIN: "org_admin",
-  APP_ADMIN: "app_admin",
   MEMBER: "member",
 } as const;
 
 export type MembershipRole = (typeof MEMBERSHIP_ROLES)[keyof typeof MEMBERSHIP_ROLES];
 
 export const MEMBERSHIP_ROLE_LABELS: Record<MembershipRole, string> = {
+  [MEMBERSHIP_ROLES.SUPER_ADMIN]: "Super Admin",
   [MEMBERSHIP_ROLES.ORG_ADMIN]: "Org Admin",
-  [MEMBERSHIP_ROLES.APP_ADMIN]: "App Admin",
   [MEMBERSHIP_ROLES.MEMBER]: "Member",
 };
+
+/**
+ * Roles that grant access to admin-tier apps (apps with App.requiresOrgAdmin = true).
+ * super_admin and org_admin pass; member does not. Also accepts the legacy
+ * "admin" string for backwards compat with rows seeded before the rename.
+ */
+export const ADMIN_TIER_ROLES = new Set<string>([
+  MEMBERSHIP_ROLES.SUPER_ADMIN,
+  MEMBERSHIP_ROLES.ORG_ADMIN,
+  "admin", // legacy — pre-2026-05-04 rows used this string
+]);
 
 // ── Domain status const-enums ──────────────────────────────────────────────
 // These are TypeScript const objects (not Prisma enums) so they share the

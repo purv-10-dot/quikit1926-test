@@ -13,7 +13,7 @@ function buildGET(qs = ""): NextRequest {
 
 function asAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -41,7 +41,7 @@ describe("GET /api/users — auth", () => {
 
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(403);
   });
@@ -59,8 +59,8 @@ describe("GET /api/users — happy path", () => {
       { user: { id: "u1", firstName: "Alice", lastName: "A", email: "a@test.com" } },
       { user: { id: "u2", firstName: "Bob", lastName: "B", email: "b@test.com" } },
     ];
-    mockDb.membership.findMany.mockResolvedValue(members as any);
-    mockDb.membership.count.mockResolvedValue(2);
+    mockDb.orgMember.findMany.mockResolvedValue(members as any);
+    mockDb.orgMember.count.mockResolvedValue(2);
 
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(200);
@@ -72,23 +72,23 @@ describe("GET /api/users — happy path", () => {
   });
 
   it("filters by orgId and active status", async () => {
-    mockDb.membership.findMany.mockResolvedValue([]);
-    mockDb.membership.count.mockResolvedValue(0);
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
 
     await GET(buildGET(), { params: {} as any });
 
-    const call = mockDb.membership.findMany.mock.calls[0]?.[0] as any;
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
     expect(call.where.orgId).toBe(TENANT);
     expect(call.where.status).toBe("active");
   });
 
   it("filters by teamId when provided", async () => {
-    mockDb.membership.findMany.mockResolvedValue([]);
-    mockDb.membership.count.mockResolvedValue(0);
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
 
     await GET(buildGET("teamId=team-123"), { params: {} as any });
 
-    const call = mockDb.membership.findMany.mock.calls[0]?.[0] as any;
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
     expect(call.where.teamId).toBe("team-123");
   });
 });

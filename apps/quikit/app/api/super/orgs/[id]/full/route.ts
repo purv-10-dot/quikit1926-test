@@ -30,7 +30,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
     startOfWeek.setUTCHours(0, 0, 0, 0);
 
     // Preflight: verify tenant exists
-    const tenant = await db.tenant.findUnique({
+    const tenant = await db.org.findUnique({
       where: { id: orgId },
       include: {
         _count: { select: { users: true, teams: true, userAppAccess: true } },
@@ -70,7 +70,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
       moduleFlags,
       appAccess,
     ] = await Promise.all([
-      db.membership.count({ where: { orgId, status: "active" } }),
+      db.orgMember.count({ where: { orgId, status: "active" } }),
       db.sessionEvent.findMany({
         where: { orgId, event: "login", createdAt: { gte: sevenDaysAgo } },
         select: { userId: true },
@@ -86,7 +86,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
         where: { kpi: { orgId }, updatedAt: { gte: startOfWeek } },
       }),
       db.appModuleFlag.count({ where: { orgId, enabled: false } }),
-      db.tenantAppAccess.count({ where: { orgId, enabled: false } }),
+      db.orgAppAccess.count({ where: { orgId, enabled: false } }),
       db.invoice.findFirst({
         where: { orgId },
         orderBy: { periodStart: "desc" },
@@ -98,7 +98,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
         select: { id: true, slug: true, name: true, status: true, iconUrl: true },
         orderBy: { name: "asc" },
       }),
-      db.tenantAppAccess.findMany({
+      db.orgAppAccess.findMany({
         where: { orgId },
         select: { appId: true, enabled: true, reason: true, updatedAt: true, updatedBy: true },
       }),
@@ -127,7 +127,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
         where: { orgId, enabled: false },
         include: { app: { select: { slug: true } } },
       }),
-      db.tenantAppAccess.findMany({
+      db.orgAppAccess.findMany({
         where: { orgId, enabled: false },
         include: { app: { select: { slug: true, name: true } } },
       }),
@@ -207,7 +207,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _req, { para
     return NextResponse.json({
       success: true,
       data: {
-        tenant: {
+        org: {
           id: tenant.id,
           name: tenant.name,
           slug: tenant.slug,

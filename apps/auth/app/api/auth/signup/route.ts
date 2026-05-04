@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       const tokenRow = await db.verificationToken.findFirst({
         where: { tokenHash: inviteHash, type: "org_invite", usedAt: null, expiresAt: { gt: new Date() } },
       });
-      const membership = await db.membership.findFirst({
+      const membership = await db.orgMember.findFirst({
         where: { invitationToken: invite, acceptedAt: null, status: "active" },
       });
       if (tokenRow || membership) {
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (orgInviteConsumed) {
-      await db.membership.updateMany({
+      await db.orgMember.updateMany({
         where: { orgId: orgInviteConsumed.orgId, invitationToken: invite! },
         data: { userId: user.id, acceptedAt: new Date(), invitationToken: null },
       });

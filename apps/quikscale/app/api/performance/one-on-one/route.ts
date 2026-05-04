@@ -130,7 +130,7 @@ export const POST = withTenantAuth(
     }
 
     // Verify both users are active members of this tenant
-    const validCount = await db.membership.count({
+    const validCount = await db.orgMember.count({
       where: {
         orgId,
         userId: { in: [input.managerId, input.reportId] },

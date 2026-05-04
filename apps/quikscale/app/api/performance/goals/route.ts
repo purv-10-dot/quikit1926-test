@@ -101,7 +101,7 @@ export const POST = withTenantAuth(
     const input = parsed.data;
 
     // Verify owner is a member of this tenant
-    const ownerMembership = await db.membership.findFirst({
+    const ownerMembership = await db.orgMember.findFirst({
       where: { orgId, userId: input.ownerId, status: "active" },
       select: { id: true },
     });

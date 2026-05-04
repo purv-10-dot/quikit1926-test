@@ -151,7 +151,7 @@ export const DELETE = withAdminAuth<{ id: string }>(async ({ orgId }, _request, 
 
   // Remove team member associations, then delete team
   await db.userTeam.deleteMany({ where: { teamId: params.id, orgId } });
-  await db.membership.updateMany({
+  await db.orgMember.updateMany({
     where: { teamId: params.id, orgId },
     data: { teamId: null },
   });

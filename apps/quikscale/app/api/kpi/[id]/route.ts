@@ -75,7 +75,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req,
       if (ownerIds.length === 0) {
         return NextResponse.json({ success: false, error: "At least one KPI owner is required for team KPIs" }, { status: 400 });
       }
-      const memberships = await db.membership.findMany({
+      const memberships = await db.orgMember.findMany({
         where: { orgId, teamId: effectiveTeamId, userId: { in: ownerIds }, status: "active" },
         select: { userId: true },
       });

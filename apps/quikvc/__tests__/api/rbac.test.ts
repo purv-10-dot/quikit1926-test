@@ -29,8 +29,8 @@ function mockMembershipRole(role: string | null) {
   // getTenantId()  uses findFirst(where: { userId, orgId, status: "active" })
   // Mock both so the route can resolve orgId AND read role.
   if (role === null) {
-    mockDb.membership.findUnique.mockResolvedValue(null);
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findUnique.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
   } else {
     const m = {
       id: "m1",
@@ -47,8 +47,8 @@ function mockMembershipRole(role: string | null) {
       updatedAt: new Date(),
       createdBy: null,
     };
-    mockDb.membership.findUnique.mockResolvedValue(m as never);
-    mockDb.membership.findFirst.mockResolvedValue(m as never);
+    mockDb.orgMember.findUnique.mockResolvedValue(m as never);
+    mockDb.orgMember.findFirst.mockResolvedValue(m as never);
   }
   // Skip per-app access gate (app row missing → don't block, per createGetTenantId)
   mockDb.app.findUnique.mockResolvedValue(null);

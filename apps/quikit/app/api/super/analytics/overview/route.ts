@@ -35,8 +35,8 @@ async function computeOverview() {
       tenantsNeverLoggedIn,
       mostActiveTenants,
     ] = await Promise.all([
-      db.tenant.count(),
-      db.tenant.count({ where: { status: "active" } }),
+      db.org.count(),
+      db.org.count({ where: { status: "active" } }),
       db.user.count(),
       db.app.count({ where: { status: "active" } }),
       // latest 1 probe per app
@@ -59,7 +59,7 @@ async function computeOverview() {
         where: { periodStart: { gte: startOfPrevMonth, lt: startOfMonth } },
         select: { amountCents: true, status: true },
       }),
-      db.tenant.findMany({
+      db.org.findMany({
         where: {
           status: "active",
           users: { none: { user: { lastSignInAt: { not: null } } } },

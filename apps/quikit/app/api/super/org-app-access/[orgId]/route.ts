@@ -1,11 +1,11 @@
 /**
  * SA-B.1 — Super-admin per-tenant app access control.
  *
- * GET  /api/super/tenant-app-access/:orgId
+ * GET  /api/super/org-app-access/:orgId
  *   Returns the tenant's access status for each registered app:
  *   { appId, slug, name, enabled, reason, updatedAt }[]
  *
- * POST /api/super/tenant-app-access/:orgId
+ * POST /api/super/org-app-access/:orgId
  *   Toggles access for one (appId).
  *   Body: { appId: string, enabled: boolean, reason?: string }
  *   Sparse storage: an `enabled: true` toggle deletes the row (default state).
@@ -20,7 +20,7 @@ import { logAudit } from "@/lib/auditLog";
 export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: NextRequest, { params }) => {
   try {
     const { orgId } = params;
-    const tenant = await db.tenant.findUnique({
+    const tenant = await db.org.findUnique({
       where: { id: orgId },
       select: { id: true, name: true, slug: true },
     });
@@ -33,7 +33,7 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: Next
         select: { id: true, slug: true, name: true, status: true, iconUrl: true },
         orderBy: { name: "asc" },
       }),
-      db.tenantAppAccess.findMany({
+      db.orgAppAccess.findMany({
         where: { orgId },
         select: { appId: true, enabled: true, reason: true, updatedAt: true, updatedBy: true },
       }),
@@ -74,14 +74,14 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
     }
 
     const [tenant, app] = await Promise.all([
-      db.tenant.findUnique({ where: { id: orgId }, select: { id: true, name: true } }),
+      db.org.findUnique({ where: { id: orgId }, select: { id: true, name: true } }),
       db.app.findUnique({ where: { id: appId }, select: { id: true, slug: true, name: true } }),
     ]);
     if (!tenant || !app) {
       return NextResponse.json({ success: false, error: "Unknown tenant or app" }, { status: 404 });
     }
 
-    const existing = await db.tenantAppAccess.findUnique({
+    const existing = await db.orgAppAccess.findUnique({
       where: { orgId_appId: { orgId, appId } },
       select: { id: true, enabled: true, reason: true },
     });
@@ -89,7 +89,7 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
     // Sparse storage: when toggling back to enabled (default), just delete the row.
     if (enabled === true) {
       if (existing) {
-        await db.tenantAppAccess.delete({ where: { id: existing.id } });
+        await db.orgAppAccess.delete({ where: { id: existing.id } });
       }
       logAudit({
         orgId,
@@ -107,7 +107,7 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
     }
 
     // Blocking (enabled = false): upsert a sparse row.
-    const row = await db.tenantAppAccess.upsert({
+    const row = await db.orgAppAccess.upsert({
       where: { orgId_appId: { orgId, appId } },
       update: { enabled: false, reason, updatedBy: auth.userId },
       create: { orgId, appId, enabled: false, reason, updatedBy: auth.userId },

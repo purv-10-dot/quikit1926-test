@@ -66,7 +66,7 @@ export const POST = withTenantAuth(
       founder = created;
     } else {
       // Ensure founder membership exists for this tenant
-      await db.membership.upsert({
+      await db.orgMember.upsert({
         where: { orgId_userId: { orgId, userId: founder.id } },
         update: {},
         create: { userId: founder.id, orgId, role: "founder" },

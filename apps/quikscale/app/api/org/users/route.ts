@@ -55,7 +55,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
   const where = { orgId };
 
   const [memberships, total] = await Promise.all([
-    db.membership.findMany({
+    db.orgMember.findMany({
       where,
       include: {
         user: {
@@ -69,7 +69,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
       skip,
       take,
     }),
-    db.membership.count({ where }),
+    db.orgMember.count({ where }),
   ]);
 
   return NextResponse.json(paginatedResponse(memberships.map(buildUserResponse), total, page, limit));
@@ -91,13 +91,13 @@ export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
   let newUserId: string;
 
   if (existingUser) {
-    const existingMembership = await db.membership.findUnique({
+    const existingMembership = await db.orgMember.findUnique({
       where: { orgId_userId: { orgId, userId: existingUser.id } },
     });
     if (existingMembership)
       return NextResponse.json({ success: false, error: "This user is already a member of the organisation" }, { status: 409 });
 
-    await db.membership.create({
+    await db.orgMember.create({
       data: { orgId, userId: existingUser.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
     });
     newUserId = existingUser.id;
@@ -106,7 +106,7 @@ export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
     const user = await db.user.create({
       data: { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim().toLowerCase(), password: hashedPassword },
     });
-    await db.membership.create({
+    await db.orgMember.create({
       data: { orgId, userId: user.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
     });
     newUserId = user.id;
@@ -120,7 +120,7 @@ export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
     });
   }
 
-  const membership = await db.membership.findUnique({
+  const membership = await db.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId: newUserId } },
     include: {
       user: {

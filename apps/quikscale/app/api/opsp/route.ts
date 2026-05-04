@@ -13,7 +13,7 @@ export const GET = withTenantAuth(async ({ orgId, userId }, req) => {
   const quarter = searchParams.get("quarter") ?? "Q1";
 
   // Fetch fiscalYearStart from tenant
-  const tenant = await db.tenant.findUnique({
+  const org = await db.org.findUnique({
     where: { id: orgId },
     select: { fiscalYearStart: true },
   });
@@ -32,7 +32,7 @@ export const GET = withTenantAuth(async ({ orgId, userId }, req) => {
   return NextResponse.json({
     success: true,
     data: data ?? null,
-    fiscalYearStart: tenant?.fiscalYearStart ?? 1,
+    fiscalYearStart: org?.fiscalYearStart ?? 1,
   });
 });
 

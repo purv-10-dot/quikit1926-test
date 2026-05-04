@@ -21,7 +21,7 @@ export function createRequireAdmin(authOptions: NextAuthOptions) {
       return { error: NextResponse.json({ success: false, error: "No organisation selected" }, { status: 400 }) };
     }
 
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { userId: session.user.id, orgId, status: "active" },
     });
 

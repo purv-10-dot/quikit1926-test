@@ -33,7 +33,7 @@ export function createGetOrgId(authOptions: NextAuthOptions, config: GetOrgIdCon
         `membership:${userId}:${orgId}`,
         60,
         async () => {
-          const membership = await db.membership.findFirst({
+          const membership = await db.orgMember.findFirst({
             where: { userId, orgId, status: "active" },
             select: { id: true },
           });
@@ -69,7 +69,7 @@ export function createGetOrgId(authOptions: NextAuthOptions, config: GetOrgIdCon
       `firstActiveTenant:${userId}`,
       60,
       async () => {
-        const membership = await db.membership.findFirst({
+        const membership = await db.orgMember.findFirst({
           where: { userId, status: "active" },
           orderBy: { createdAt: "asc" },
           select: { orgId: true },

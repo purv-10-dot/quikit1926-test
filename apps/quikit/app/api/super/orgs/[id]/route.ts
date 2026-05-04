@@ -13,7 +13,7 @@ export const GET = withSuperAdminAuth<{ id: string }>(async (_auth, _request, { 
   try {
     const { id } = params;
 
-    const tenant = await db.tenant.findUnique({
+    const tenant = await db.org.findUnique({
       where: { id },
       include: {
         _count: { select: { users: true, teams: true, userAppAccess: true } },
@@ -59,7 +59,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async ({ userId }, reque
       );
     }
 
-    const existing = await db.tenant.findUnique({ where: { id } });
+    const existing = await db.org.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "Organization not found" },
@@ -76,7 +76,7 @@ export const PATCH = withSuperAdminAuth<{ id: string }>(async ({ userId }, reque
     if (billingEmail !== undefined) updateData.billingEmail = billingEmail;
     if (description !== undefined) updateData.description = description;
 
-    const tenant = await db.tenant.update({
+    const tenant = await db.org.update({
       where: { id },
       data: updateData,
     });
@@ -105,7 +105,7 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async ({ userId }, _req
   try {
     const { id } = params;
 
-    const existing = await db.tenant.findUnique({ where: { id } });
+    const existing = await db.org.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "Organization not found" },
@@ -113,7 +113,7 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async ({ userId }, _req
       );
     }
 
-    await db.tenant.update({
+    await db.org.update({
       where: { id },
       data: { status: "suspended" },
     });
@@ -129,7 +129,7 @@ export const DELETE = withSuperAdminAuth<{ id: string }>(async ({ userId }, _req
     });
 
     // Fire-and-forget: notify org admins about suspension
-    db.membership.findMany({
+    db.orgMember.findMany({
       where: { orgId: id, role: { in: ["owner", "admin"] }, status: "active" },
       include: { user: { select: { email: true } } },
     }).then((members) => {

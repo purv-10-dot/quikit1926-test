@@ -2,17 +2,21 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { ADMIN_TIER_ROLES } from "@quikit/shared";
 
 /**
  * GET /api/apps/launcher
  *
- * Returns all apps in the registry with an `installed` flag indicating
- * whether the current user's org has access. Used by the App Launcher page.
+ * Returns the apps the current user can see in their active org's launcher.
  *
- * Handles the case where orgId is NOT in the JWT session yet
- * (user just logged in but hasn't selected an org, OR the session
- * update from select-org didn't persist). Falls back to looking up
- * the user's first active membership.
+ * Visibility rule (post 2026-05-04 role refactor):
+ *   1. The org must have OrgAppAccess.enabled = true for the app
+ *   2. If App.requiresOrgAdmin = true, the user's OrgMember.role must be in
+ *      ADMIN_TIER_ROLES (super_admin/org_admin) OR User.isSuperAdmin must be true
+ *   3. UserAppAccess is now an OPTIONAL override — its presence elevates
+ *      the user's per-app role; its absence no longer blocks visibility
+ *
+ * Falls back to first active membership if session has no orgId yet.
  */
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -21,19 +25,24 @@ export async function GET() {
   }
 
   const userId = session.user.id;
+  const isSuperAdmin = session.user.isSuperAdmin === true;
 
-  // Try to get orgId from session, or fall back to the user's first active membership
+  // Resolve active orgId (session preferred; fall back to first active membership)
   let orgId = session.user.orgId;
+  let memberRole = session.user.membershipRole;
   if (!orgId) {
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { userId, status: "active" },
-      select: { orgId: true },
+      select: { orgId: true, role: true },
       orderBy: { createdAt: "asc" },
     });
     orgId = membership?.orgId ?? undefined;
+    memberRole = membership?.role ?? memberRole;
   }
 
-  // Get all active apps
+  const memberIsAdmin = isSuperAdmin || ADMIN_TIER_ROLES.has(String(memberRole ?? ""));
+
+  // Apps in catalog (active only)
   const allApps = await db.app.findMany({
     where: { status: { not: "disabled" } },
     select: {
@@ -44,19 +53,36 @@ export async function GET() {
       iconUrl: true,
       baseUrl: true,
       status: true,
+      requiresOrgAdmin: true,
     },
     orderBy: { name: "asc" },
   });
 
-  // Get this user's app access records
-  const accessRecords = orgId
+  // Org-level entitlement: which apps is THIS org allowed to see?
+  const orgEntitlements = orgId
+    ? await db.orgAppAccess.findMany({
+        where: { orgId, enabled: true },
+        select: { appId: true },
+      })
+    : [];
+  const orgEntitledAppIds = new Set(orgEntitlements.map((e) => e.appId));
+
+  // Optional per-user overrides (currently unused for visibility — present
+  // role elevates the per-app role. Future: explicit deny rows would block.)
+  const userOverrides = orgId
     ? await db.userAppAccess.findMany({
         where: { userId, orgId },
         select: { appId: true, role: true },
       })
-    : ([] as { appId: string; role: string }[]);
+    : [];
+  const userRoleOverride = new Map(userOverrides.map((u) => [u.appId, u.role]));
 
-  const accessMap = new Map(accessRecords.map((a) => [a.appId, a.role]));
+  // Visibility filter
+  const visibleApps = allApps.filter((app) => {
+    if (!orgEntitledAppIds.has(app.id)) return false;
+    if (app.requiresOrgAdmin && !memberIsAdmin) return false;
+    return true;
+  });
 
   // Env-override map: if the deployment supplies a per-app URL via env, use
   // it instead of the DB's stored baseUrl. Lets local dev (.env.local with
@@ -70,11 +96,11 @@ export async function GET() {
     quikconstruction: process.env.QUIKCONSTRUCTION_URL,
   };
 
-  const data = allApps.map((app) => ({
+  const data = visibleApps.map((app) => ({
     ...app,
     baseUrl: envBaseUrls[app.slug] ?? app.baseUrl,
-    installed: accessMap.has(app.id),
-    role: accessMap.get(app.id) ?? undefined,
+    installed: true, // visibility implies installed under the new rule
+    role: userRoleOverride.get(app.id) ?? (memberIsAdmin ? "admin" : "member"),
   }));
 
   // Authoritative IdP URL for the AppSwitcher's "View all apps" link —

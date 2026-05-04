@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const rows = await db.membership.findMany({
+    const rows = await db.orgMember.findMany({
       where: { userId, status: "active" },
       select: { orgId: true, role: true },
     });
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const tenants =
       orgIds.length === 0
         ? []
-        : await db.tenant.findMany({
+        : await db.org.findMany({
             where: { id: { in: orgIds } },
             select: { id: true, name: true, slug: true },
           });

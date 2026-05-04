@@ -386,7 +386,7 @@ async function main() {
   const candidateUserIds = users.map(u => u._id.$oid);
   await prisma.$transaction(async tx => {
     // Cascade delete: deleting Tenant cascades to all tenant-scoped rows
-    await tx.tenant.deleteMany({ where: { id: { in: tenantIds } } });
+    await tx.org.deleteMany({ where: { id: { in: tenantIds } } });
     // Also delete any leftover Users from previous import runs (Mongo IDs match)
     // — User isn't tenant-scoped, so the tenant wipe doesn't cascade to them.
     await tx.user.deleteMany({ where: { id: { in: candidateUserIds } } });
@@ -400,7 +400,7 @@ async function main() {
   for (const o of orgs) {
     const oid = o._id.$oid;
     const fys = fiscalYearByOrg.get(oid) ?? 1;
-    await prisma.tenant.create({
+    await prisma.org.create({
       data: {
         id: oid,
         name: (o.name || "Untitled").trim(),
@@ -468,7 +468,7 @@ async function main() {
         : mongoRole === "manager" ? "manager"
         : "employee";
       try {
-        await prisma.membership.create({
+        await prisma.orgMember.create({
           data: {
             tenantId: orgId,
             userId: userIdReal,
@@ -706,9 +706,9 @@ async function main() {
 
   // ─── 5. SUMMARY ──────────────────────────────────────────────────────────
   const [tn, un, mn, te, qs, kn, kw, pn, an] = await Promise.all([
-    prisma.tenant.count({ where: { id: { in: tenantIds } } }),
+    prisma.org.count({ where: { id: { in: tenantIds } } }),
     prisma.user.count({ where: { memberships: { some: { tenantId: { in: tenantIds } } } } }),
-    prisma.membership.count({ where: { tenantId: { in: tenantIds } } }),
+    prisma.orgMember.count({ where: { tenantId: { in: tenantIds } } }),
     prisma.team.count({ where: { tenantId: { in: tenantIds } } }),
     prisma.quarterSetting.count({ where: { tenantId: { in: tenantIds } } }),
     prisma.kPI.count({ where: { tenantId: { in: tenantIds } } }),

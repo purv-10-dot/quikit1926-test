@@ -24,7 +24,7 @@ export async function canEditKPIOwnerWeekly(
   if (!actorUserId || !orgId || !kpiId || !targetOwnerUserId) return false;
 
   // 1. Admin-level role check via Membership
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { userId: actorUserId, orgId, status: "active" },
     select: { role: true },
   });

@@ -13,7 +13,7 @@ function buildRequest(path = "http://localhost/api/test"): NextRequest {
 
 function asAuthed() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -41,7 +41,7 @@ describe("withTenantAuth", () => {
 
   it("returns 403 when authenticated but no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
 
     const handler = withTenantAuth(async () =>
       NextResponse.json({ success: true, data: "never" })

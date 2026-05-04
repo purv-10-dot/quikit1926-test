@@ -24,7 +24,7 @@ function buildPOST(body: unknown): NextRequest {
 
 function asAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -58,7 +58,7 @@ describe("GET /api/www — auth", () => {
 
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -122,7 +122,7 @@ describe("POST /api/www — auth", () => {
 
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST(validBody), { params: {} } as any);
     expect(res.status).toBe(403);
   });

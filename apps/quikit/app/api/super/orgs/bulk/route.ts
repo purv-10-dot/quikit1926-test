@@ -36,7 +36,7 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
 
     const newStatus = action === "suspend" ? "suspended" : "active";
 
-    const result = await db.tenant.updateMany({
+    const result = await db.org.updateMany({
       where: { id: { in: ids } },
       data: { status: newStatus },
     });

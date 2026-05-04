@@ -18,7 +18,7 @@ export async function GET() {
   }
 
   // Check 1: Is the membership still active?
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: {
       userId: session.user.id,
       orgId,

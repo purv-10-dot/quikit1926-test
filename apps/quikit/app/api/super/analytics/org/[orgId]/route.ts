@@ -16,7 +16,7 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (_auth, _req, { p
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const tenant = await db.tenant.findUnique({
+    const tenant = await db.org.findUnique({
       where: { id: orgId },
       select: { id: true, name: true, plan: true, createdAt: true },
     });
@@ -40,7 +40,7 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (_auth, _req, { p
           maxDurationMs: true,
         },
       }),
-      db.tenantAppAccess.findMany({
+      db.orgAppAccess.findMany({
         where: { orgId, enabled: false },
         include: { app: { select: { slug: true, name: true } } },
       }),

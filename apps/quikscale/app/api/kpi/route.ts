@@ -50,7 +50,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
   //     conditions as an OR so neither scope is hidden.
   if (validated.teamId) {
     if (validated.kpiLevel === "individual") {
-      const members = await db.membership.findMany({
+      const members = await db.orgMember.findMany({
         where: { orgId, teamId: validated.teamId, status: "active" },
         select: { userId: true },
       });
@@ -60,7 +60,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
     } else if (validated.kpiLevel === "team") {
       where.teamId = validated.teamId;
     } else {
-      const members = await db.membership.findMany({
+      const members = await db.orgMember.findMany({
         where: { orgId, teamId: validated.teamId, status: "active" },
         select: { userId: true },
       });

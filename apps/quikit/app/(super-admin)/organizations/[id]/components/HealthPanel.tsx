@@ -9,7 +9,7 @@ import { useOnceEffect } from "@/lib/hooks/useOnceEffect";
 import { Activity, CheckCircle2, AlertTriangle, AlertCircle, Users, Zap, Clock } from "lucide-react";
 
 interface HealthData {
-  tenant: { id: string; name: string; slug: string; plan: string; status: string; createdAt: string };
+  org: { id: string; name: string; slug: string; plan: string; status: string; createdAt: string };
   healthScore: number;
   signals: {
     memberCount: number;
@@ -44,7 +44,7 @@ export function HealthPanel({ orgId }: { orgId: string }) {
   const [loading, setLoading] = useState(true);
 
   useOnceEffect(() => {
-    fetch(`/api/super/tenant-health/${orgId}`)
+    fetch(`/api/super/org-health/${orgId}`)
       .then((r) => r.json())
       .then((j) => j.success && setData(j.data))
       .finally(() => setLoading(false));

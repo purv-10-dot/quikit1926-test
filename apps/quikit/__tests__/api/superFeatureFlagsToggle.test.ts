@@ -110,7 +110,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
   it("returns 404 when tenant not found", async () => {
     setSession(SUPER_ADMIN);
     mockDb.app.findUnique.mockResolvedValue({ id: "app-1" } as never);
-    mockDb.tenant.findUnique.mockResolvedValue(null as never);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
 
     const res = await POST(
       postReq({ orgId: "t-missing", moduleKey: "people.talent", enabled: false }),
@@ -124,7 +124,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
   it("disables a module by upserting a row and writes audit log", async () => {
     setSession(SUPER_ADMIN);
     mockDb.app.findUnique.mockResolvedValue({ id: "app-1" } as never);
-    mockDb.tenant.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
     mockDb.appModuleFlag.upsert.mockResolvedValue({} as never);
 
     const res = await POST(
@@ -156,7 +156,7 @@ describe("POST /api/super/feature-flags/[appSlug]/toggle", () => {
   it("enables a module by deleting the override row and writes audit log", async () => {
     setSession(SUPER_ADMIN);
     mockDb.app.findUnique.mockResolvedValue({ id: "app-1" } as never);
-    mockDb.tenant.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
+    mockDb.org.findUnique.mockResolvedValue({ id: "t-1", name: "Acme" } as never);
     mockDb.appModuleFlag.deleteMany.mockResolvedValue({ count: 1 } as never);
 
     const res = await POST(

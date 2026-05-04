@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
   if (!orgId) {
     // User hasn't selected an org yet — try to auto-select their first membership
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { userId, status: "active" },
       select: { orgId: true, role: true },
       orderBy: { createdAt: "asc" },

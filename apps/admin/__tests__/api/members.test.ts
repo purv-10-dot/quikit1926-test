@@ -24,7 +24,7 @@ function buildRequest(method: string, url: string, body?: object): NextRequest {
 
 function asAuthedAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -51,7 +51,7 @@ describe("GET /api/members", () => {
 
   it("returns 403 when user has no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
 
     const res = await GET(buildRequest("GET", "/api/members"));
     expect(res.status).toBe(403);
@@ -59,7 +59,7 @@ describe("GET /api/members", () => {
 
   it("returns 403 when user is not admin", async () => {
     setSession({ id: USER, orgId: TENANT, role: "employee" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
       orgId: TENANT,
@@ -75,7 +75,7 @@ describe("GET /api/members", () => {
     asAuthedAdmin();
 
     const now = new Date();
-    mockDb.membership.findMany.mockResolvedValue([
+    mockDb.orgMember.findMany.mockResolvedValue([
       {
         id: "m2",
         userId: "u2",
@@ -95,7 +95,7 @@ describe("GET /api/members", () => {
         },
       },
     ] as any);
-    mockDb.membership.count.mockResolvedValue(1);
+    mockDb.orgMember.count.mockResolvedValue(1);
 
     const res = await GET(buildRequest("GET", "/api/members"));
     expect(res.status).toBe(200);
@@ -110,23 +110,23 @@ describe("GET /api/members", () => {
   it("filters by orgId (tenant isolation)", async () => {
     asAuthedAdmin();
 
-    mockDb.membership.findMany.mockResolvedValue([]);
-    mockDb.membership.count.mockResolvedValue(0);
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
 
     await GET(buildRequest("GET", "/api/members"));
 
-    const findManyCall = mockDb.membership.findMany.mock.calls[0]?.[0] as any;
+    const findManyCall = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
     expect(findManyCall.where.orgId).toBe(TENANT);
 
-    const countCall = mockDb.membership.count.mock.calls[0]?.[0] as any;
+    const countCall = mockDb.orgMember.count.mock.calls[0]?.[0] as any;
     expect(countCall.where.orgId).toBe(TENANT);
   });
 
   it("respects pagination params", async () => {
     asAuthedAdmin();
 
-    mockDb.membership.findMany.mockResolvedValue([]);
-    mockDb.membership.count.mockResolvedValue(42);
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(42);
 
     const res = await GET(buildRequest("GET", "/api/members?page=3&limit=10"));
     expect(res.status).toBe(200);
@@ -134,7 +134,7 @@ describe("GET /api/members", () => {
     expect(body.meta.page).toBe(3);
     expect(body.meta.limit).toBe(10);
 
-    const call = mockDb.membership.findMany.mock.calls[0]?.[0] as any;
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
     expect(call.skip).toBe(20); // (3-1) * 10
     expect(call.take).toBe(10);
   });
@@ -188,7 +188,7 @@ describe("POST /api/members", () => {
   it("returns generic 200 (no leak) when user is already an active member, and writes DUPLICATE_INVITE audit", async () => {
     asAuthedAdmin();
 
-    mockDb.tenant.findUnique.mockResolvedValue({
+    mockDb.org.findUnique.mockResolvedValue({
       id: TENANT,
       name: "Acme",
       logoUrl: null,
@@ -196,7 +196,7 @@ describe("POST /api/members", () => {
       allowedEmailDomains: [],
     } as any);
     mockDb.user.findUnique.mockResolvedValue({ id: "u2", email: "existing@test.com" } as any);
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m2",
       orgId: TENANT,
       userId: "u2",
@@ -215,7 +215,7 @@ describe("POST /api/members", () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.message).toContain("existing@test.com");
-    expect(mockDb.membership.upsert).not.toHaveBeenCalled();
+    expect(mockDb.orgMember.upsert).not.toHaveBeenCalled();
     expect(mockDb.user.create).not.toHaveBeenCalled();
     expect(mockDb.auditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -232,7 +232,7 @@ describe("POST /api/members", () => {
   it("returns generic 200 (no leak) when user has a pending invite, and writes DUPLICATE_INVITE audit", async () => {
     asAuthedAdmin();
 
-    mockDb.tenant.findUnique.mockResolvedValue({
+    mockDb.org.findUnique.mockResolvedValue({
       id: TENANT,
       name: "Acme",
       logoUrl: null,
@@ -240,7 +240,7 @@ describe("POST /api/members", () => {
       allowedEmailDomains: [],
     } as any);
     mockDb.user.findUnique.mockResolvedValue({ id: "u2", email: "pending@test.com" } as any);
-    mockDb.membership.findUnique.mockResolvedValue({
+    mockDb.orgMember.findUnique.mockResolvedValue({
       id: "m2",
       orgId: TENANT,
       userId: "u2",
@@ -256,7 +256,7 @@ describe("POST /api/members", () => {
       })
     );
     expect(res.status).toBe(200);
-    expect(mockDb.membership.upsert).not.toHaveBeenCalled();
+    expect(mockDb.orgMember.upsert).not.toHaveBeenCalled();
     expect(mockDb.auditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -280,9 +280,9 @@ describe("POST /api/members", () => {
       lastName: "User",
     } as any);
     // Upsert membership
-    mockDb.membership.upsert.mockResolvedValue({ id: "m-new" } as any);
+    mockDb.orgMember.upsert.mockResolvedValue({ id: "m-new" } as any);
     // Tenant + inviter lookup
-    mockDb.tenant.findUnique.mockResolvedValue({ id: TENANT, name: "Acme Corp" } as any);
+    mockDb.org.findUnique.mockResolvedValue({ id: TENANT, name: "Acme Corp" } as any);
     mockDb.user.findUnique.mockResolvedValue({
       id: USER,
       firstName: "Admin",
@@ -306,7 +306,7 @@ describe("POST /api/members", () => {
   it("rejects email outside the tenant allowlist with 422", async () => {
     asAuthedAdmin();
 
-    mockDb.tenant.findUnique.mockResolvedValue({
+    mockDb.org.findUnique.mockResolvedValue({
       id: TENANT,
       name: "Acme Corp",
       logoUrl: null,
@@ -327,13 +327,13 @@ describe("POST /api/members", () => {
     expect(body.success).toBe(false);
     expect(body.error).toMatch(/domain not allowed/i);
     expect(mockDb.user.create).not.toHaveBeenCalled();
-    expect(mockDb.membership.upsert).not.toHaveBeenCalled();
+    expect(mockDb.orgMember.upsert).not.toHaveBeenCalled();
   });
 
   it("accepts email matching the tenant allowlist (case-insensitive)", async () => {
     asAuthedAdmin();
 
-    mockDb.tenant.findUnique.mockResolvedValue({
+    mockDb.org.findUnique.mockResolvedValue({
       id: TENANT,
       name: "Acme Corp",
       logoUrl: null,
@@ -342,7 +342,7 @@ describe("POST /api/members", () => {
     } as any);
     mockDb.user.findUnique.mockResolvedValueOnce(null);
     mockDb.user.create.mockResolvedValue({ id: "u-ok", email: "ok@ACME.com" } as any);
-    mockDb.membership.upsert.mockResolvedValue({ id: "m-ok" } as any);
+    mockDb.orgMember.upsert.mockResolvedValue({ id: "m-ok" } as any);
     mockDb.user.findUnique.mockResolvedValue({
       id: USER,
       firstName: "Admin",
@@ -363,7 +363,7 @@ describe("POST /api/members", () => {
   it("writes an INVITED audit log on successful invite", async () => {
     asAuthedAdmin();
 
-    mockDb.tenant.findUnique.mockResolvedValue({
+    mockDb.org.findUnique.mockResolvedValue({
       id: TENANT,
       name: "Acme Corp",
       logoUrl: null,
@@ -375,7 +375,7 @@ describe("POST /api/members", () => {
       id: "u-audit",
       email: "audit@test.com",
     } as any);
-    mockDb.membership.upsert.mockResolvedValue({ id: "m-audit" } as any);
+    mockDb.orgMember.upsert.mockResolvedValue({ id: "m-audit" } as any);
     mockDb.user.findUnique.mockResolvedValue({
       id: USER,
       firstName: "Admin",

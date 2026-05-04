@@ -79,12 +79,12 @@ export async function notify(input: NotifyInput): Promise<void> {
   if (!emailEnabled()) return;
 
   try {
-    const [users, tenant] = await Promise.all([
+    const [users, org] = await Promise.all([
       db.user.findMany({
         where: { id: { in: recipients } },
         select: { id: true, email: true, firstName: true },
       }),
-      db.tenant.findUnique({
+      db.org.findUnique({
         where: { id: input.orgId },
         select: { name: true },
       }),
@@ -110,7 +110,7 @@ export async function notify(input: NotifyInput): Promise<void> {
               body: input.body,
               href: input.href,
               recipientName: u.firstName ?? undefined,
-              tenantName: tenant?.name ?? "QuikVC",
+              tenantName: org?.name ?? "QuikVC",
               appUrl,
             }),
           }),
@@ -131,7 +131,7 @@ export async function notifyRole(
   role: string,
   payload: Omit<NotifyInput, "orgId" | "userIds">,
 ): Promise<void> {
-  const members = await db.membership.findMany({
+  const members = await db.orgMember.findMany({
     where: { orgId, role },
     select: { userId: true },
   });

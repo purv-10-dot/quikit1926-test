@@ -25,7 +25,7 @@ function buildPOST(body: unknown): NextRequest {
 
 function asAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -60,7 +60,7 @@ describe("GET /api/performance/feedback — auth", () => {
 
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} as any });
     expect(res.status).toBe(403);
   });
@@ -131,7 +131,7 @@ describe("POST /api/performance/feedback — auth", () => {
 
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await POST(buildPOST(validBody), { params: {} as any });
     expect(res.status).toBe(403);
   });
@@ -199,7 +199,7 @@ describe("POST /api/performance/feedback — recipient membership", () => {
   it("returns 400 when recipient is not an active member", async () => {
     // The first findFirst resolves for withTenantAuth (asAdmin).
     // The second call (recipient check) returns null.
-    mockDb.membership.findFirst
+    mockDb.orgMember.findFirst
       .mockResolvedValueOnce({
         id: "m1",
         userId: USER,
@@ -225,7 +225,7 @@ describe("POST /api/performance/feedback — happy path", () => {
 
   it("creates feedback entry with 201", async () => {
     // Recipient membership OK
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
       orgId: TENANT,

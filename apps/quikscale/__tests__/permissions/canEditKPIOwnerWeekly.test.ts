@@ -21,20 +21,20 @@ describe("canEditKPIOwnerWeekly — guards", () => {
 
 describe("canEditKPIOwnerWeekly — admin short-circuit", () => {
   it("admin role → true without looking at the KPI", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({ role: "admin" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as any);
     expect(await canEditKPIOwnerWeekly(ACTOR, TENANT, KPI, OTHER)).toBe(true);
     expect(mockDb.kPI.findUnique).not.toHaveBeenCalled();
   });
 
   it("super_admin → true", async () => {
-    mockDb.membership.findFirst.mockResolvedValue({ role: "super_admin" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "super_admin" } as any);
     expect(await canEditKPIOwnerWeekly(ACTOR, TENANT, KPI, OTHER)).toBe(true);
   });
 });
 
 describe("canEditKPIOwnerWeekly — individual KPI", () => {
   beforeEach(() => {
-    mockDb.membership.findFirst.mockResolvedValue({ role: "employee" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "employee" } as any);
   });
 
   it("allows the KPI owner editing themselves", async () => {
@@ -84,7 +84,7 @@ describe("canEditKPIOwnerWeekly — individual KPI", () => {
 
 describe("canEditKPIOwnerWeekly — team KPI", () => {
   beforeEach(() => {
-    mockDb.membership.findFirst.mockResolvedValue({ role: "employee" } as any);
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "employee" } as any);
   });
 
   it("allows self-edit when actor is in ownerIds", async () => {

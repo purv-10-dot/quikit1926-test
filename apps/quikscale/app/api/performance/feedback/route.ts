@@ -140,7 +140,7 @@ export const POST = withTenantAuth(
     }
 
     // Verify recipient is an active member
-    const recipientOk = await db.membership.findFirst({
+    const recipientOk = await db.orgMember.findFirst({
       where: { orgId, userId: input.toUserId, status: "active" },
       select: { id: true },
     });

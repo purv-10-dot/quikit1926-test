@@ -13,7 +13,7 @@ vi.mock("@/lib/email", () => ({
   sendMemberAddedEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { GET } from "@/app/api/super/tenants/[id]/full/route";
+import { GET } from "@/app/api/super/orgs/[id]/full/route";
 
 function makeRequest(url: string, init?: RequestInit) {
   return new NextRequest(new URL(url, "http://localhost:3006"), init as never);
@@ -29,7 +29,7 @@ const PARAMS = { params: { id: "t-1" } };
 
 function primeHappyPathMocks() {
   // Preflight tenant lookup
-  mockDb.tenant.findUnique.mockResolvedValue({
+  mockDb.org.findUnique.mockResolvedValue({
     id: "t-1",
     name: "Acme",
     slug: "acme",
@@ -41,13 +41,13 @@ function primeHappyPathMocks() {
     users: [],
   } as never);
 
-  mockDb.membership.count.mockResolvedValue(4 as never);
+  mockDb.orgMember.count.mockResolvedValue(4 as never);
   mockDb.sessionEvent.findMany.mockResolvedValue([] as never);
   mockDb.sessionEvent.findFirst.mockResolvedValue(null as never);
   mockDb.kPI.count.mockResolvedValue(10 as never);
   mockDb.kPIWeeklyValue.count.mockResolvedValue(3 as never);
   mockDb.appModuleFlag.count.mockResolvedValue(1 as never);
-  mockDb.tenantAppAccess.count.mockResolvedValue(0 as never);
+  mockDb.orgAppAccess.count.mockResolvedValue(0 as never);
   mockDb.invoice.findFirst.mockResolvedValue({
     status: "paid",
     amountCents: 10000,
@@ -61,7 +61,7 @@ function primeHappyPathMocks() {
   mockDb.app.findMany.mockResolvedValue([
     { id: "app-1", slug: "quikscale", name: "QuikScale", status: "active", iconUrl: null },
   ] as never);
-  mockDb.tenantAppAccess.findMany.mockResolvedValue([] as never);
+  mockDb.orgAppAccess.findMany.mockResolvedValue([] as never);
   mockDb.invoice.findMany.mockResolvedValue([
     {
       id: "inv-1",
@@ -80,28 +80,28 @@ function primeHappyPathMocks() {
   mockDb.appModuleFlag.findMany.mockResolvedValue([] as never);
 }
 
-describe("GET /api/super/tenants/[id]/full", () => {
+describe("GET /api/super/orgs/[id]/full", () => {
   beforeEach(() => {
     resetMockDb();
   });
 
   it("returns 401 without session", async () => {
     setSession(null);
-    const res = await GET(makeRequest("http://localhost:3006/api/super/tenants/t-1/full"), PARAMS);
+    const res = await GET(makeRequest("http://localhost:3006/api/super/orgs/t-1/full"), PARAMS);
     expect(res.status).toBe(401);
   });
 
   it("returns 403 for non-super-admin", async () => {
     setSession(REGULAR_USER);
-    const res = await GET(makeRequest("http://localhost:3006/api/super/tenants/t-1/full"), PARAMS);
+    const res = await GET(makeRequest("http://localhost:3006/api/super/orgs/t-1/full"), PARAMS);
     expect(res.status).toBe(403);
   });
 
   it("returns 404 when tenant not found", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue(null as never);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
 
-    const res = await GET(makeRequest("http://localhost:3006/api/super/tenants/t-1/full"), PARAMS);
+    const res = await GET(makeRequest("http://localhost:3006/api/super/orgs/t-1/full"), PARAMS);
     expect(res.status).toBe(404);
     const body = await bodyOf(res);
     expect(body.error).toBe("Tenant not found");
@@ -111,7 +111,7 @@ describe("GET /api/super/tenants/[id]/full", () => {
     setSession(SUPER_ADMIN);
     primeHappyPathMocks();
 
-    const res = await GET(makeRequest("http://localhost:3006/api/super/tenants/t-1/full"), PARAMS);
+    const res = await GET(makeRequest("http://localhost:3006/api/super/orgs/t-1/full"), PARAMS);
     expect(res.status).toBe(200);
     const body = await bodyOf(res);
 
@@ -170,7 +170,7 @@ describe("GET /api/super/tenants/[id]/full", () => {
     // Many disabled modules
     mockDb.appModuleFlag.count.mockResolvedValue(5 as never);
 
-    const res = await GET(makeRequest("http://localhost:3006/api/super/tenants/t-1/full"), PARAMS);
+    const res = await GET(makeRequest("http://localhost:3006/api/super/orgs/t-1/full"), PARAMS);
     expect(res.status).toBe(200);
     const body = await bodyOf(res);
     // 40 (active users) + 0 + 0 + 0 = 40

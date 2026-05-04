@@ -8,10 +8,10 @@ import { addDays, generateQuarterDates } from "@/lib/utils/quarterGen";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 
 async function getMembership(userId: string) {
-  return db.membership.findFirst({
+  return db.orgMember.findFirst({
     where: { userId, status: "active" },
     orderBy: { createdAt: "asc" },
-    include: { tenant: { select: { id: true, fiscalYearStart: true } } },
+    include: { org: { select: { id: true, fiscalYearStart: true } } },
   });
 }
 
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", orgId);
     if (blocked) return blocked;
 
-    const fiscalStartMonth = membership.tenant.fiscalYearStart ?? 4;
+    const fiscalStartMonth = membership.org.fiscalYearStart ?? 4;
 
     const parsed = generateQuartersSchema.safeParse(await request.json());
     if (!parsed.success) {

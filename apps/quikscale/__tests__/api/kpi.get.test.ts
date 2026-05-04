@@ -13,7 +13,7 @@ function buildRequest(qs: string = ""): NextRequest {
 
 function asAuthedAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -36,7 +36,7 @@ describe("GET /api/kpi — auth", () => {
 
   it("returns 403 when no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildRequest(), { params: {} } as any);
     expect(res.status).toBe(403);
   });

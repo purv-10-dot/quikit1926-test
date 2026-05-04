@@ -47,7 +47,7 @@ export const ANALYST_ROLES: VCRole[] = ["analyst", "partner", "fund-admin", "adm
  * Returns null if no active membership.
  */
 export async function getVCRole(userId: string, orgId: string): Promise<VCRole | null> {
-  const m = await db.membership.findUnique({
+  const m = await db.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId } },
     select: { role: true, status: true },
   });

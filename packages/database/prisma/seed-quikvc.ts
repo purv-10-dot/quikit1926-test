@@ -84,7 +84,7 @@ async function main() {
   console.log("🌱 QuikVC seed starting...");
 
   // 1. Tenant
-  const tenant = await prisma.tenant.upsert({
+  const tenant = await prisma.org.upsert({
     where: { slug: TENANT_SLUG },
     update: {},
     create: {
@@ -119,7 +119,7 @@ async function main() {
       status: "active",
     },
   });
-  await prisma.tenantAppAccess.upsert({
+  await prisma.orgAppAccess.upsert({
     where: { tenantId_appId: { tenantId: tenant.id, appId: app.id } },
     update: { enabled: true },
     create: { tenantId: tenant.id, appId: app.id, enabled: true },
@@ -185,7 +185,7 @@ async function main() {
     });
     userIds[u.role] = user.id;
 
-    await prisma.membership.upsert({
+    await prisma.orgMember.upsert({
       where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } },
       update: { role: u.role, status: "active" },
       create: { userId: user.id, tenantId: tenant.id, role: u.role, status: "active" },

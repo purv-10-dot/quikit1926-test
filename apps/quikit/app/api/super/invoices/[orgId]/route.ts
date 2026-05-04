@@ -10,7 +10,7 @@ import { logAudit } from "@/lib/auditLog";
 
 export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: NextRequest, { params }) => {
   try {
-    const tenant = await db.tenant.findUnique({
+    const tenant = await db.org.findUnique({
       where: { id: params.orgId },
       select: { id: true, name: true, plan: true },
     });
@@ -65,7 +65,7 @@ export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: Next
 /** Manually generate an invoice for a tenant (e.g. to backfill a period). */
 export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: NextRequest, { params }) => {
   try {
-    const tenant = await db.tenant.findUnique({
+    const tenant = await db.org.findUnique({
       where: { id: params.orgId },
       select: { id: true, plan: true, name: true },
     });

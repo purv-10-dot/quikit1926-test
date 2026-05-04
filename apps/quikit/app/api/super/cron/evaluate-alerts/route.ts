@@ -241,7 +241,7 @@ export async function GET(req: NextRequest) {
     {
       const failed = await db.invoice.findMany({
         where: { status: "failed", periodStart: { gte: startOfMonth } },
-        include: { tenant: { select: { id: true, name: true } } },
+        include: { org: { select: { id: true, name: true } } },
       });
       const active = new Set<string>();
       for (const inv of failed) {
@@ -250,7 +250,7 @@ export async function GET(req: NextRequest) {
           rule: "payment_failed",
           subjectKey: inv.orgId,
           severity: "warning",
-          title: `Payment failed: ${inv.tenant.name}`,
+          title: `Payment failed: ${inv.org.name}`,
           message: `$${(inv.amountCents / 100).toFixed(2)} ${inv.currency} (${inv.planSlug})`,
           link: `/organizations/${inv.orgId}`,
           data: { invoiceId: inv.id, amountCents: inv.amountCents },
@@ -262,7 +262,7 @@ export async function GET(req: NextRequest) {
 
     // ── Rule 4: tenant_inactive ─────────────────────────────────────
     {
-      const tenants = await db.tenant.findMany({
+      const tenants = await db.org.findMany({
         where: { status: "active" },
         select: { id: true, name: true, createdAt: true },
       });

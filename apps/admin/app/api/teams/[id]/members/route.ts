@@ -30,7 +30,7 @@ export const POST = withAdminAuth<{ id: string }>(async ({ orgId }, request: Nex
   const { userId } = parsed.data;
 
   // Verify user has membership in this tenant
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { userId, orgId, status: "active" },
   });
   if (!membership) {

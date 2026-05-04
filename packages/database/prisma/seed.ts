@@ -7,7 +7,7 @@ async function main() {
   console.log("🌱 Starting database seed...");
 
   // Create default tenant
-  const tenant = await prisma.tenant.create({
+  const tenant = await prisma.org.create({
     data: {
       name: "Demo Company",
       slug: "demo-company",
@@ -74,7 +74,7 @@ async function main() {
   console.log(`✅ Created 2 demo teams`);
 
   // Create memberships
-  await prisma.membership.create({
+  await prisma.orgMember.create({
     data: {
       tenantId: tenant.id,
       userId: ceo.id,
@@ -83,7 +83,7 @@ async function main() {
     },
   });
 
-  await prisma.membership.create({
+  await prisma.orgMember.create({
     data: {
       tenantId: tenant.id,
       userId: manager.id,
@@ -93,7 +93,7 @@ async function main() {
     },
   });
 
-  await prisma.membership.create({
+  await prisma.orgMember.create({
     data: {
       tenantId: tenant.id,
       userId: employee.id,

@@ -12,7 +12,7 @@ export const POST = withAdminAuth<{ id: string }>(async ({ orgId, userId: invite
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { id: membershipId, orgId, status: "invited" },
     include: { user: { select: { email: true } } },
   });
@@ -26,7 +26,7 @@ export const POST = withAdminAuth<{ id: string }>(async ({ orgId, userId: invite
 
   const newToken = crypto.randomUUID();
 
-  await db.membership.update({
+  await db.orgMember.update({
     where: { id: membershipId },
     data: {
       invitationToken: newToken,
@@ -34,8 +34,8 @@ export const POST = withAdminAuth<{ id: string }>(async ({ orgId, userId: invite
     },
   });
 
-  const [tenant, inviter] = await Promise.all([
-    db.tenant.findUnique({
+  const [org, inviter] = await Promise.all([
+    db.org.findUnique({
       where: { id: orgId },
       select: { name: true, logoUrl: true, brandColor: true },
     }),
@@ -44,9 +44,9 @@ export const POST = withAdminAuth<{ id: string }>(async ({ orgId, userId: invite
 
   await sendInvitationEmail({
     to: membership.user.email,
-    orgName: tenant?.name || "Organisation",
-    orgLogoUrl: tenant?.logoUrl ?? null,
-    orgBrandColor: tenant?.brandColor ?? null,
+    orgName: org?.name || "Organisation",
+    orgLogoUrl: org?.logoUrl ?? null,
+    orgBrandColor: org?.brandColor ?? null,
     inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}` : "An admin",
     role: ROLE_LABELS[membership.role] || membership.role,
     token: newToken,

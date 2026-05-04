@@ -9,7 +9,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
   const blocked = await gateModuleApi("admin", "settings", orgId);
   if (blocked) return blocked as NextResponse;
 
-  const tenant = await db.tenant.findUnique({
+  const tenant = await db.org.findUnique({
     where: { id: orgId },
     select: {
       id: true,
@@ -51,7 +51,7 @@ export const PATCH = withAdminAuth(async ({ orgId }, request: NextRequest) => {
 
   const data = parsed.data;
 
-  const updated = await db.tenant.update({
+  const updated = await db.org.update({
     where: { id: orgId },
     data,
   });

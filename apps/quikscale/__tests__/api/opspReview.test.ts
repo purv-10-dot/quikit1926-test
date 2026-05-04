@@ -25,7 +25,7 @@ function buildPOST(body: unknown): NextRequest {
 
 function asAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -80,7 +80,7 @@ describe("GET /api/opsp/review — auth", () => {
 
   it("returns 403 when no active admin membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "member" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       role: "employee",
       userId: USER,
       orgId: TENANT,
@@ -112,7 +112,7 @@ describe("GET /api/opsp/review — happy path", () => {
   it("returns quarter (actions) rows with no review entries", async () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(mockOPSP() as any);
     mockDb.oPSPReviewEntry.findMany.mockResolvedValue([]);
-    mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
+    mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
     expect(res.status).toBe(200);
@@ -140,7 +140,7 @@ describe("GET /api/opsp/review — happy path", () => {
         updatedAt: new Date(),
       },
     ] as any);
-    mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
+    mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=quarter"));
     const body = await res.json();
@@ -152,7 +152,7 @@ describe("GET /api/opsp/review — happy path", () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(mockOPSP() as any);
     mockDb.oPSPReviewEntry.findMany.mockResolvedValue([]);
     mockDb.oPSPData.findMany.mockResolvedValue([]); // no quarter OPSPs for cascade
-    mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
+    mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=yearly"));
     const body = await res.json();
@@ -164,7 +164,7 @@ describe("GET /api/opsp/review — happy path", () => {
     mockDb.oPSPData.findUnique.mockResolvedValue(mockOPSP() as any);
     mockDb.oPSPReviewEntry.findMany.mockResolvedValue([]);
     mockDb.oPSPData.findMany.mockResolvedValue([]); // no quarter OPSPs for cascade
-    mockDb.tenant.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
+    mockDb.org.findUnique.mockResolvedValue({ fiscalYearStart: 4 } as any);
 
     const res = await GET(buildGET("year=2026&quarter=Q1&horizon=3to5year"));
     const body = await res.json();

@@ -14,7 +14,7 @@ function buildGET(qs = "year=2026&quarter=Q1"): NextRequest {
 
 function asAuthedMember() {
   setSession({ id: USER, orgId: TENANT, role: "employee" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -28,7 +28,7 @@ function stubEmptyDb() {
   mockDb.priority.findMany.mockResolvedValue([] as any);
   mockDb.wWWItem.findMany.mockResolvedValue([] as any);
   mockDb.team.findMany.mockResolvedValue([] as any);
-  mockDb.membership.findMany.mockResolvedValue([] as any);
+  mockDb.orgMember.findMany.mockResolvedValue([] as any);
   mockDb.user.findMany.mockResolvedValue([] as any);
 }
 
@@ -47,7 +47,7 @@ describe("GET /api/dashboard/summary — auth", () => {
 
   it("returns 403 when the user has no active membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "employee" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: {} } as any);
     expect(res.status).toBe(403);
   });
@@ -109,7 +109,7 @@ describe("GET /api/dashboard/summary — happy path", () => {
     expect((mockDb.priority.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
     expect((mockDb.wWWItem.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
     expect((mockDb.team.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
-    expect((mockDb.membership.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
+    expect((mockDb.orgMember.findMany.mock.calls[0]?.[0] as any).where.orgId).toBe(TENANT);
   });
 
   it("caps each KPI list at 100 rows", async () => {
@@ -176,7 +176,7 @@ describe("GET /api/dashboard/summary — happy path", () => {
     ] as any);
 
     mockDb.team.findMany.mockResolvedValue([{ id: "t1", name: "Team A" }] as any);
-    mockDb.membership.findMany.mockResolvedValue([
+    mockDb.orgMember.findMany.mockResolvedValue([
       { user: { id: USER, firstName: "A", lastName: "B", email: "a@b.c" } },
     ] as any);
     mockDb.user.findMany.mockResolvedValue([] as any);

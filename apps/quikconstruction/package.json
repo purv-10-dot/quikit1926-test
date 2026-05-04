@@ -4,7 +4,7 @@
   "private": true,
   "description": "QuikConstruction — Construction ERP inside QuikIT.",
   "scripts": {
-    "dev": "next dev -p 3007",
+    "dev": "next dev -p 3004",
     "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "build": "next build",
     "start": "next start -p 3007",

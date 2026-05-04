@@ -19,7 +19,7 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ orgId }, request: Ne
   if (blocked) return blocked as NextResponse;
   const membershipId = params.id;
 
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { id: membershipId, orgId },
   });
 
@@ -38,7 +38,7 @@ export const PATCH = withAdminAuth<{ id: string }>(async ({ orgId }, request: Ne
 
   const { customPermissions } = parsed.data;
 
-  const updated = await db.membership.update({
+  const updated = await db.orgMember.update({
     where: { id: membershipId },
     data: { customPermissions },
   });

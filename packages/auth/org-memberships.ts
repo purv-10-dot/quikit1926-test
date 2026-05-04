@@ -62,14 +62,14 @@ export function createOrgMembershipsHandler(
       appId = app?.id ?? null;
     }
 
-    const memberships = await db.membership.findMany({
+    const memberships = await db.orgMember.findMany({
       where: {
         userId,
         // Only include tenants where this user has access to the requested
         // app (skipped when appSlug isn't set or app row isn't found).
         ...(appId
           ? {
-              tenant: {
+              org: {
                 userAppAccess: {
                   some: { userId, appId },
                 },
@@ -78,7 +78,7 @@ export function createOrgMembershipsHandler(
           : {}),
       },
       include: {
-        tenant: {
+        org: {
           select: {
             id: true,
             name: true,
@@ -96,13 +96,13 @@ export function createOrgMembershipsHandler(
 
     const orgs: OrgInfo[] = memberships.map((m) => ({
       membershipId: m.id,
-      orgId: m.tenant.id,
-      name: m.tenant.name,
-      slug: m.tenant.slug,
-      description: m.tenant.description,
-      logoUrl: m.tenant.logoUrl,
-      brandColor: m.tenant.brandColor,
-      plan: m.tenant.plan,
+      orgId: m.org.id,
+      name: m.org.name,
+      slug: m.org.slug,
+      description: m.org.description,
+      logoUrl: m.org.logoUrl,
+      brandColor: m.org.brandColor,
+      plan: m.org.plan,
       role: m.role,
       status: m.status,
       invitedAt: m.invitedAt,

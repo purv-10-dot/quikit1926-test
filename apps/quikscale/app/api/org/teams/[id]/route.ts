@@ -59,7 +59,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req,
   }
 
   // Get member count
-  const memberCount = await db.membership.count({
+  const memberCount = await db.orgMember.count({
     where: { teamId: team.id, status: "active" },
   });
 

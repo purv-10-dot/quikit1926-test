@@ -14,11 +14,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const membership = await db.membership.findUnique({
+  const membership = await db.orgMember.findUnique({
     where: { invitationToken: token },
     include: {
       user: { select: { firstName: true, lastName: true, email: true } },
-      tenant: { select: { name: true } },
+      org: { select: { name: true } },
     },
   });
 
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       orgId: membership.orgId,
       userId: membership.createdBy,
       title: "Invitation resend requested",
-      message: `${fullName} (${membership.user.email}) tried to accept their invitation to ${membership.tenant.name} but the link has expired. Open Members and click Resend to issue a fresh invite.`,
+      message: `${fullName} (${membership.user.email}) tried to accept their invitation to ${membership.org.name} but the link has expired. Open Members and click Resend to issue a fresh invite.`,
       type: "invitation_resend_requested",
       relatedEntityId: membership.id,
       relatedEntityType: "Membership",

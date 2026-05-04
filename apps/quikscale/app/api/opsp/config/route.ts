@@ -14,11 +14,11 @@ const withTenantAuth = withTenantAuthForModule("opsp");
  * - fiscalYearStart: tenant setting
  */
 export const GET = withTenantAuth(async ({ orgId, userId }) => {
-  const tenant = await db.tenant.findUnique({
+  const org = await db.org.findUnique({
     where: { id: orgId },
     select: { fiscalYearStart: true },
   });
-  const fiscalYearStart = tenant?.fiscalYearStart ?? 1;
+  const fiscalYearStart = org?.fiscalYearStart ?? 1;
 
   // Find the earliest OPSP record for this user in this tenant
   const earliest = await db.oPSPData.findFirst({

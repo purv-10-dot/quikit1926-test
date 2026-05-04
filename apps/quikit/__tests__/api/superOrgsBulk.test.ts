@@ -86,7 +86,7 @@ describe("POST /api/super/orgs/bulk — happy path", () => {
   beforeEach(asSuperAdmin);
 
   it("suspends multiple orgs", async () => {
-    mockDb.tenant.updateMany.mockResolvedValue({ count: 3 } as any);
+    mockDb.org.updateMany.mockResolvedValue({ count: 3 } as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     const res = await POST(buildPOST({ action: "suspend", ids: ["t1", "t2", "t3"] }));
@@ -95,7 +95,7 @@ describe("POST /api/super/orgs/bulk — happy path", () => {
     expect(body.success).toBe(true);
     expect(body.message).toContain("3");
 
-    expect(mockDb.tenant.updateMany).toHaveBeenCalledWith(
+    expect(mockDb.org.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: { in: ["t1", "t2", "t3"] } },
         data: { status: "suspended" },
@@ -104,14 +104,14 @@ describe("POST /api/super/orgs/bulk — happy path", () => {
   });
 
   it("activates multiple orgs", async () => {
-    mockDb.tenant.updateMany.mockResolvedValue({ count: 2 } as any);
+    mockDb.org.updateMany.mockResolvedValue({ count: 2 } as any);
     mockDb.auditLog.create.mockResolvedValue({} as any);
 
     const res = await POST(buildPOST({ action: "activate", ids: ["t1", "t2"] }));
     const body = await res.json();
     expect(body.success).toBe(true);
 
-    expect(mockDb.tenant.updateMany).toHaveBeenCalledWith(
+    expect(mockDb.org.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { status: "active" },
       })

@@ -162,7 +162,7 @@ async function wipeDemoData(): Promise<void> {
   const newUserIds = NEW_USERS.map(u => u.id);
   await prisma.$transaction([
     prisma.userAppAccess.deleteMany({ where: { userId: { in: newUserIds } } }),
-    prisma.membership.deleteMany({ where: { userId: { in: newUserIds } } }),
+    prisma.orgMember.deleteMany({ where: { userId: { in: newUserIds } } }),
   ]);
 
   console.log("  ✓ wiped\n");
@@ -172,7 +172,7 @@ async function wipeDemoData(): Promise<void> {
 
 async function seedTenantSettings() {
   console.log("⚙️  Setting tenant fiscalYearStart=4 (April)…");
-  await prisma.tenant.update({
+  await prisma.org.update({
     where: { id: TENANT_ID },
     data: { fiscalYearStart: 4, quarterStartMonth: 4 },
   });
@@ -200,7 +200,7 @@ async function seedNewUsers() {
         isSuperAdmin: false,
       },
     });
-    await prisma.membership.create({
+    await prisma.orgMember.create({
       data: {
         tenantId: TENANT_ID,
         userId: u.id,
@@ -705,7 +705,7 @@ async function main() {
   // Final counts
   const [u, m, t, q, c, af, k, kw, p, w, op, cl, cm, dh, wm] = await Promise.all([
     prisma.user.count({ where: { id: { in: [ASHWIN_ID, ...NEW_USERS.map(u => u.id)] } } }),
-    prisma.membership.count({ where: { tenantId: TENANT_ID } }),
+    prisma.orgMember.count({ where: { tenantId: TENANT_ID } }),
     prisma.team.count({ where: { tenantId: TENANT_ID } }),
     prisma.quarterSetting.count({ where: { tenantId: TENANT_ID } }),
     prisma.categoryMaster.count({ where: { tenantId: TENANT_ID } }),

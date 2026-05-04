@@ -149,6 +149,21 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           token.isSuperAdmin = (user as AuthUser).isSuperAdmin ?? false;
           token.sessionId = await createAuthSession(user.id, 30 * 24 * 60 * 60);
           token.sessionTouchedAt = Date.now();
+
+          // Auto-select first active org on initial sign-in so the user is
+          // dropped straight onto the launcher (/apps) without an interstitial
+          // /select-org step. Multi-org users can still switch orgs from the
+          // launcher header — /select-org is reachable on demand, not forced.
+          const firstMembership = await db.orgMember.findFirst({
+            where: { userId: user.id, status: "active" },
+            orderBy: { createdAt: "asc" },
+            select: { orgId: true, role: true },
+          });
+          if (firstMembership) {
+            token.orgId = firstMembership.orgId;
+            token.membershipRole = firstMembership.role;
+            token.membershipCheckedAt = Date.now();
+          }
         }
 
         const SESSION_TOUCH_INTERVAL = 5 * 60 * 1000;
@@ -181,7 +196,7 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           (!token.membershipCheckedAt ||
             Date.now() - (token.membershipCheckedAt as number) > RECHECK_INTERVAL)
         ) {
-          const membership = await db.membership.findFirst({
+          const membership = await db.orgMember.findFirst({
             where: {
               userId: token.id as string,
               orgId: token.orgId as string,

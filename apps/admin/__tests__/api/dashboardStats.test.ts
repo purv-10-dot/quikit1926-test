@@ -15,7 +15,7 @@ const TENANT = "tenant-001";
 
 function asAuthedAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -39,7 +39,7 @@ describe("GET /api/dashboard/stats", () => {
 
   it("returns 403 when user is not admin", async () => {
     setSession({ id: USER, orgId: TENANT, role: "employee" });
-    mockDb.membership.findFirst.mockResolvedValue({
+    mockDb.orgMember.findFirst.mockResolvedValue({
       id: "m1",
       userId: USER,
       orgId: TENANT,
@@ -54,7 +54,7 @@ describe("GET /api/dashboard/stats", () => {
   it("returns dashboard stats (happy path)", async () => {
     asAuthedAdmin();
 
-    mockDb.membership.count
+    mockDb.orgMember.count
       .mockResolvedValueOnce(15) // memberCount (active)
       .mockResolvedValueOnce(3); // pendingInvites (invited)
     mockDb.team.count.mockResolvedValue(4);
@@ -76,14 +76,14 @@ describe("GET /api/dashboard/stats", () => {
   it("filters counts by orgId (tenant isolation)", async () => {
     asAuthedAdmin();
 
-    mockDb.membership.count.mockResolvedValue(0);
+    mockDb.orgMember.count.mockResolvedValue(0);
     mockDb.team.count.mockResolvedValue(0);
     (mockDb.userAppAccess.groupBy as any).mockResolvedValue([] as any);
 
     await GET(req());
 
     // Check membership.count calls include orgId
-    for (const call of mockDb.membership.count.mock.calls) {
+    for (const call of mockDb.orgMember.count.mock.calls) {
       expect((call[0] as any).where.orgId).toBe(TENANT);
     }
 

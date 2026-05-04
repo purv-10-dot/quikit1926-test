@@ -174,7 +174,7 @@ export const isTenantAppBlocked = cache(
             select: { id: true },
           });
           if (!app) return false;
-          const access = await db.tenantAppAccess.findUnique({
+          const access = await db.orgAppAccess.findUnique({
             where: { orgId_appId: { orgId, appId: app.id } },
             select: { enabled: true },
           });

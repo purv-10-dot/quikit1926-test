@@ -10,7 +10,7 @@ export const GET = withAdminAuth(async ({ orgId }) => {
 
   // Parallel fetch: members, apps, and access records
   const [members, apps, accessRecords] = await Promise.all([
-    db.membership.findMany({
+    db.orgMember.findMany({
       where: { orgId, status: { in: ["active", "invited"] } },
       select: {
         status: true,

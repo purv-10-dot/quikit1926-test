@@ -15,7 +15,7 @@ function req(path: string, init?: RequestInit): NextRequest {
 
 function asAdminIn(orgId: string) {
   setSession({ id: USER, orgId, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId,
@@ -52,7 +52,7 @@ describe("tenant isolation — GET /api/kpi", () => {
   it("a user with no membership in the requested orgId gets 403", async () => {
     // Session says MY_TENANT but no active membership is returned
     setSession({ id: USER, orgId: MY_TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
 
     const res = await GET(req("/api/kpi"), { params: {} } as any);
     expect(res.status).toBe(403);

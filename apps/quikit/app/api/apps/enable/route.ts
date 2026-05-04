@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Check admin role
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { userId: session.user.id, orgId, status: "active" },
     select: { role: true },
   });
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Get all active members of this tenant (userId only — all we insert)
-  const members = await db.membership.findMany({
+  const members = await db.orgMember.findMany({
     where: { orgId, status: "active" },
     select: { userId: true },
   });

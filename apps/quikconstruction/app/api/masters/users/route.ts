@@ -9,7 +9,7 @@ const withTenantAuth = withTenantAuthForModule("masters");
  * Returns only active memberships; excludes soft-deleted users.
  */
 export const GET = withTenantAuth(async ({ orgId }) => {
-  const memberships = await db.membership.findMany({
+  const memberships = await db.orgMember.findMany({
     where: { orgId, status: "active" },
     select: {
       role: true,

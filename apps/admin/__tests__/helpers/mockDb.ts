@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 
 // Deep-mocked Prisma client. Every model and method is auto-stubbed; each
 // test configures the return values it needs via e.g.
-// `mockDb.membership.findFirst.mockResolvedValue(...)`.
+// `mockDb.orgMember.findFirst.mockResolvedValue(...)`.
 export const mockDb: DeepMockProxy<PrismaClient> = mockDeep<PrismaClient>();
 
 // The codebase has TWO import paths for the Prisma client:

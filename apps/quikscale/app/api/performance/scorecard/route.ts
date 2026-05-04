@@ -9,7 +9,7 @@ export const GET = withTenantAuth(async ({ orgId }) => {
       db.priority.findMany({ where: { orgId }, include: { weeklyStatuses: true } }),
       db.wWWItem.findMany({ where: { orgId } }),
       db.team.findMany({ where: { orgId } }),
-      db.membership.findMany({ where: { orgId }, include: { user: true } }),
+      db.orgMember.findMany({ where: { orgId }, include: { user: true } }),
     ]);
     // Legacy team-meeting attendance was part of this scorecard. The new
     // Client Meetings module tracks meeting-level stats per-client, not

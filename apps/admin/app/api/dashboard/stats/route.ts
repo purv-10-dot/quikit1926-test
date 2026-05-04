@@ -8,13 +8,13 @@ export const GET = withAdminAuth(async ({ orgId }) => {
   if (blocked) return blocked as NextResponse;
 
   const [memberCount, teamCount, pendingInvites, appCount] = await Promise.all([
-    db.membership.count({
+    db.orgMember.count({
       where: { orgId, status: "active" },
     }),
     db.team.count({
       where: { orgId },
     }),
-    db.membership.count({
+    db.orgMember.count({
       where: { orgId, status: "invited" },
     }),
     db.userAppAccess.groupBy({

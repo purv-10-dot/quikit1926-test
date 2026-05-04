@@ -5,13 +5,15 @@ import { createMiddleware } from "@quikit/auth/middleware";
  * Non-admin members are redirected with reason=unauthorized.
  */
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
+const QUIKIT_URL = process.env.NEXT_PUBLIC_QUIKIT_URL;
 
 export const middleware = createMiddleware({
   loginRoute: "/login",
   publicRoutes: ["/login", "/select-org", "/invitations"],
   requireAdmin: true,
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
-  centralSelectOrgUrl: AUTH_URL ? `${AUTH_URL}/select-org` : undefined,
+  // /select-org retired — fall through to launcher /apps when token has no orgId.
+  centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
 
 export const config = {

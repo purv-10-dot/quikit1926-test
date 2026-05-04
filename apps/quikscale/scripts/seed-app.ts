@@ -30,7 +30,7 @@ async function main() {
   console.log(`App upserted: ${app.name} (${app.id})`);
 
   // 2. Grant access to all active memberships
-  const memberships = await db.membership.findMany({
+  const memberships = await db.orgMember.findMany({
     where: { status: "active" },
   });
 

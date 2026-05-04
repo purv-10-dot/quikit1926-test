@@ -26,7 +26,7 @@ const routeContext = { params: { id: TEAM_ID } };
 
 function asAuthedAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
     orgId: TENANT,
@@ -339,7 +339,7 @@ describe("DELETE /api/teams/[id]", () => {
       _count: { userTeams: 1, childTeams: 0 },
     } as any);
     mockDb.userTeam.deleteMany.mockResolvedValue({ count: 1 } as any);
-    mockDb.membership.updateMany.mockResolvedValue({ count: 0 } as any);
+    mockDb.orgMember.updateMany.mockResolvedValue({ count: 0 } as any);
     mockDb.team.delete.mockResolvedValue({ id: TEAM_ID } as any);
 
     const res = await DELETE(

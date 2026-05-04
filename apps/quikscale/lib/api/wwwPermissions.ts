@@ -25,7 +25,7 @@ export async function canEditWWW(
   if (item.createdBy === userId || item.who === userId) return true;
 
   // 2. Admin-level role via Membership
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { userId, orgId, status: "active" },
     select: { role: true },
   });

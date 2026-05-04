@@ -174,7 +174,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
-    db.membership.findMany({
+    db.orgMember.findMany({
       where: { orgId, status: "active" },
       select: {
         user: { select: { id: true, firstName: true, lastName: true, email: true } },

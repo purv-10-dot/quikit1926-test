@@ -43,7 +43,7 @@ export async function canEditKPI(
   }
 
   // 4. Admin role on this tenant
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: { userId, orgId, status: "active" },
     select: { role: true },
   });

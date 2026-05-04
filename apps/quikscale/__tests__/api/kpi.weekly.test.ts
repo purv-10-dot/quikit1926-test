@@ -24,7 +24,7 @@ function buildPOST(body: unknown): NextRequest {
 
 function asAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  mockDb.membership.findFirst.mockResolvedValue({
+  mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1", userId: USER, orgId: TENANT, role: "admin", status: "active",
   } as any);
 }
@@ -56,7 +56,7 @@ describe("GET /api/kpi/[id]/weekly — auth", () => {
 
   it("403 no membership", async () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
-    mockDb.membership.findFirst.mockResolvedValue(null);
+    mockDb.orgMember.findFirst.mockResolvedValue(null);
     const res = await GET(buildGET(), { params: { id: KPI_ID } });
     expect(res.status).toBe(403);
   });

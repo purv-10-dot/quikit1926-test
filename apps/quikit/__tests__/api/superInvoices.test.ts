@@ -58,7 +58,7 @@ describe("GET /api/super/invoices/[orgId]", () => {
 
   it("returns 404 when tenant not found", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue(null as never);
+    mockDb.org.findUnique.mockResolvedValue(null as never);
 
     const res = await LIST_INVOICES(
       makeRequest("http://localhost:3006/api/super/invoices/tenant-1"),
@@ -69,7 +69,7 @@ describe("GET /api/super/invoices/[orgId]", () => {
 
   it("returns tenant invoices on success", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({
+    mockDb.org.findUnique.mockResolvedValue({
       id: "tenant-1",
       name: "Acme",
       plan: "startup",
@@ -138,7 +138,7 @@ describe("POST /api/super/invoices/[orgId]", () => {
 
   it("creates an invoice and returns 201", async () => {
     setSession(SUPER_ADMIN);
-    mockDb.tenant.findUnique.mockResolvedValue({
+    mockDb.org.findUnique.mockResolvedValue({
       id: "tenant-1",
       plan: "startup",
       name: "Acme",

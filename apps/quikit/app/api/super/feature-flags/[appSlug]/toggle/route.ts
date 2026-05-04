@@ -69,7 +69,7 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
     }
 
     // Verify the target tenant exists (useful 404 rather than FK violation).
-    const tenant = await db.tenant.findUnique({
+    const tenant = await db.org.findUnique({
       where: { id: orgId },
       select: { id: true, name: true },
     });

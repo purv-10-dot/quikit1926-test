@@ -11,7 +11,7 @@ export const DELETE = withAdminAuth<{ id: string }>(
 
     const membershipId = params.id;
 
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { id: membershipId, orgId, status: "invited" },
       include: { user: { select: { email: true } } },
     });
@@ -23,7 +23,7 @@ export const DELETE = withAdminAuth<{ id: string }>(
       );
     }
 
-    await db.membership.delete({ where: { id: membershipId } });
+    await db.orgMember.delete({ where: { id: membershipId } });
 
     await writeAuditLog({
       orgId,

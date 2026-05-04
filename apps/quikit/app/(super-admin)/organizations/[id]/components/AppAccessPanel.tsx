@@ -34,7 +34,7 @@ export function AppAccessPanel({ orgId }: { orgId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const r = await fetch(`/api/super/tenant-app-access/${orgId}`);
+      const r = await fetch(`/api/super/org-app-access/${orgId}`);
       const j = await r.json();
       if (j.success) setApps(j.data.apps);
     } finally {
@@ -51,7 +51,7 @@ export function AppAccessPanel({ orgId }: { orgId: string }) {
     // optimistic
     setApps((prev) => prev.map((a) => (a.appId === appId ? { ...a, enabled: next, reason: next ? null : reasonText ?? null } : a)));
     try {
-      const r = await fetch(`/api/super/tenant-app-access/${orgId}`, {
+      const r = await fetch(`/api/super/org-app-access/${orgId}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ appId, enabled: next, reason: reasonText }),

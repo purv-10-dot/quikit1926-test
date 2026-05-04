@@ -14,10 +14,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const membership = await db.membership.findUnique({
+  const membership = await db.orgMember.findUnique({
     where: { invitationToken: token },
     include: {
-      tenant: { select: { name: true, logoUrl: true, brandColor: true } },
+      org: { select: { name: true, logoUrl: true, brandColor: true } },
       user: { select: { email: true, firstName: true, lastName: true, password: true } },
     },
   });
@@ -48,9 +48,9 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     success: true,
     data: {
-      orgName: membership.tenant.name,
-      orgLogo: membership.tenant.logoUrl,
-      orgColor: membership.tenant.brandColor,
+      orgName: membership.org.name,
+      orgLogo: membership.org.logoUrl,
+      orgColor: membership.org.brandColor,
       email: membership.user.email,
       firstName: membership.user.firstName,
       lastName: membership.user.lastName,
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const membership = await db.membership.findUnique({
+  const membership = await db.orgMember.findUnique({
     where: { invitationToken: token },
     include: {
       user: { select: { id: true, password: true } },
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Activate membership
-  await db.membership.update({
+  await db.orgMember.update({
     where: { id: membership.id },
     data: {
       status: "active",

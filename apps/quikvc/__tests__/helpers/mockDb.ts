@@ -2,7 +2,7 @@
  * Deep-mocked Prisma client for QuikVC tests.
  *
  * Pattern matches QuikScale: every model + method auto-stubbed; tests
- * configure return values via e.g. `mockDb.membership.findUnique.mockResolvedValue(...)`.
+ * configure return values via e.g. `mockDb.orgMember.findUnique.mockResolvedValue(...)`.
  *
  * Mocks BOTH import paths the codebase uses:
  *   - `@quikit/database` (route handlers, libs)

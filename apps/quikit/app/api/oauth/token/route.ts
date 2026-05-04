@@ -215,7 +215,7 @@ async function handleAuthCodeExchange(
   }
 
   // Fetch membership role
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: {
       userId: authCode.userId,
       orgId: authCode.orgId,
@@ -298,7 +298,7 @@ async function handleRefreshToken(
     );
   }
 
-  const membership = await db.membership.findFirst({
+  const membership = await db.orgMember.findFirst({
     where: {
       userId: stored.userId,
       orgId: stored.orgId,

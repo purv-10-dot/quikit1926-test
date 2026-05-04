@@ -13,10 +13,10 @@ export async function GET() {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  const memberships = await db.membership.findMany({
+  const memberships = await db.orgMember.findMany({
     where: { userId: session.user.id },
     include: {
-      tenant: {
+      org: {
         select: {
           id: true, name: true, slug: true, description: true,
           logoUrl: true, brandColor: true, plan: true, status: true,
@@ -28,10 +28,10 @@ export async function GET() {
 
   const orgs = memberships.map((m) => ({
     membershipId: m.id,
-    orgId: m.tenant.id,
-    name: m.tenant.name,
-    slug: m.tenant.slug,
-    plan: m.tenant.plan,
+    orgId: m.org.id,
+    name: m.org.name,
+    slug: m.org.slug,
+    plan: m.org.plan,
     role: m.role,
     status: m.status,
   }));

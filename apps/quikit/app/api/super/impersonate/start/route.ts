@@ -63,11 +63,11 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
     }
 
     // Validate: target user must have an active membership in the target tenant.
-    const membership = await db.membership.findFirst({
+    const membership = await db.orgMember.findFirst({
       where: { userId: targetUserId, orgId: targetOrgId, status: "active" },
       include: {
         user: { select: { id: true, email: true, firstName: true, lastName: true } },
-        tenant: { select: { id: true, name: true } },
+        org: { select: { id: true, name: true } },
       },
     });
     if (!membership) {
@@ -156,7 +156,7 @@ export const POST = withSuperAdminAuth(async (auth, req: NextRequest) => {
         target: {
           userEmail: membership.user.email,
           userName: `${membership.user.firstName} ${membership.user.lastName}`.trim(),
-          tenantName: membership.tenant.name,
+          tenantName: membership.org.name,
           appName: app.name,
         },
       },
