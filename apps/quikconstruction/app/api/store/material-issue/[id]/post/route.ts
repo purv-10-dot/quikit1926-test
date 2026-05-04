@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * POST /api/store/material-issue/[id]/post
@@ -12,7 +12,7 @@ const withTenantAuth = withTenantAuthForModule("store");
  * single transaction. Validates running balance per item+location before
  * issuing to prevent negative stock.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const issue = await db.cnMaterialIssue.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },

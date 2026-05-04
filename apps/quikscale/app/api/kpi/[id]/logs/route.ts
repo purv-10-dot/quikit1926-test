@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("kpi");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("kpi");
 
 // GET /api/kpi/[id]/logs - Get audit logs for a KPI
-export const GET = withTenantAuth<{ id: string }>(
+export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId }, _request, { params }) => {
     // Check KPI exists and belongs to tenant
     const kpi = await db.kPI.findUnique({

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("quality");
+const withOrgAuth = withOrgAuthForModule("quality");
 
 const createSchema = z.object({
   inspectionNumber: z.string().min(1).max(50),
@@ -22,7 +22,7 @@ const createSchema = z.object({
   })).default([]),
 });
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const list = await db.cnQCInspection.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
@@ -36,7 +36,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = createSchema.parse(await req.json());
   const dup = await db.cnQCInspection.findFirst({ where: { orgId, inspectionNumber: input.inspectionNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Inspection '${input.inspectionNumber}' already exists` }, { status: 409 });

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.dailyHuddle");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
 
 /** GET /api/client-meetings/daily-huddles/[id]/logs — audit history. */
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const exists = await db.clientDailyHuddle.findFirst({ where: { id: params.id, orgId }, select: { id: true } });
   if (!exists) return NextResponse.json({ success: false, error: "Huddle not found" }, { status: 404 });
 

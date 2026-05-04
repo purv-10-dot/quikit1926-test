@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("analytics.individual");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("analytics.individual");
 
-export const GET = withTenantAuth(async ({ orgId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
     const where = { orgId };
 

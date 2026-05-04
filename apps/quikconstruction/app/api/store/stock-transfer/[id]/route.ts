@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const t = await db.cnStockTransfer.findFirst({
     where: { id: params.id, orgId },
     include: { project: true, fromLocation: true, toLocation: true, lines: { include: { item: true, uom: true } } },
@@ -13,7 +13,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { para
   return NextResponse.json({ success: true, data: t });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const t = await db.cnStockTransfer.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, status: true } });
   if (!t) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (t.status === "received") return NextResponse.json({ success: false, error: "Fully-posted transfer is immutable" }, { status: 400 });

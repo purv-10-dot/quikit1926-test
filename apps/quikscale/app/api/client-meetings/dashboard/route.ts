@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import {
   calculateDailyMonthlyStats, calculateWeeklyMonthlyStats,
   computeMemberPunchIn, calculateOverallFinalAverage,
   previousMonths, type MonthlyStatRow,
 } from "@/lib/services/clientMeetingsMath";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.dashboard");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
 
 /**
  * GET /api/client-meetings/dashboard
@@ -16,7 +16,7 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.dashboard");
  *
  * Returns up to 6 months of monthly aggregates + overall totals.
  */
-export const GET = withTenantAuth(async ({ orgId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
   const url = new URL(request.url);
   const clientId = url.searchParams.get("clientId");
   const mode = (url.searchParams.get("mode") ?? "daily") as "daily" | "weekly";

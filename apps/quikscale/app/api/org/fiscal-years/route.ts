@@ -11,13 +11,13 @@
  */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
 // Use "kpi" module gate — every module that needs the picker has at least this
 // license row. The endpoint itself is tenant-scoped and read-only.
-const withTenantAuth = withTenantAuthForModule("kpi");
+const withOrgAuth = withOrgAuthForModule("kpi");
 
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const rows = await db.quarterSetting.findMany({
     where: { orgId },
     select: { fiscalYear: true, quarter: true },

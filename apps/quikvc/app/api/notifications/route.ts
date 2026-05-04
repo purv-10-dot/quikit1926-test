@@ -7,9 +7,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
-export const GET = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const unreadOnly = req.nextUrl.searchParams.get("unreadOnly") === "true";
   const limit = Math.min(100, parseInt(req.nextUrl.searchParams.get("limit") ?? "20", 10));
 

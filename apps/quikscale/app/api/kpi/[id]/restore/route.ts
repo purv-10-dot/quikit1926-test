@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("kpi");
+const withOrgAuth = withOrgAuthForModule("kpi");
 
 // POST /api/kpi/[id]/restore — unset deletedAt, bring row back into active set.
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const { id } = params;
   if (!id) {
     return NextResponse.json({ success: false, error: "Missing id" }, { status: 400 });

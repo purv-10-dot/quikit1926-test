@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createReviewSchema } from "@/lib/schemas/reviewSchema";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.reviews");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.reviews");
 
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
     const where = { orgId };
@@ -33,7 +33,7 @@ export const GET = withTenantAuth(
   { fallbackErrorMessage: "Failed to fetch reviews" },
 );
 
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, request) => {
     const parsed = createReviewSchema.safeParse(await request.json());
     if (!parsed.success) {

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { nextNumber, fyKey } from "@/lib/sequence";
 
-const withTenantAuth = withTenantAuthForModule("masters");
+const withOrgAuth = withOrgAuthForModule("masters");
 
 const q = z.object({
   prefix: z.string().min(1).max(20),
@@ -17,7 +17,7 @@ const q = z.object({
  * Front-end forms should call this when opening "New <Doc>" to prefill the
  * number field, replacing the `Date.now().toString().slice(-6)` pattern.
  */
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const params = q.parse(Object.fromEntries(req.nextUrl.searchParams));
   const number = await nextNumber({
     orgId,

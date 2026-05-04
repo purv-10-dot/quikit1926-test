@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * POST /api/store/grn/[id]/post
@@ -21,7 +21,7 @@ const withTenantAuth = withTenantAuthForModule("store");
  * If any step fails, the whole transaction rolls back. Re-posting a posted
  * GRN is a no-op (returns 409).
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const grn = await db.cnGoodsReceiptNote.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: {

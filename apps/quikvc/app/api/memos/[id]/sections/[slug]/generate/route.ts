@@ -8,14 +8,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import {
   generateMemoSection,
   type MemoSectionSlug,
   MEMO_SECTIONS,
 } from "@/lib/ai/prompts/generate-memo-section";
 
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async (
     { orgId },
     _req: NextRequest,

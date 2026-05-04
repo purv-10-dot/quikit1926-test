@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { weeklyValueSchema } from "@/lib/schemas/kpiSchema";
 import { canEditKPIOwnerWeekly } from "@/lib/api/kpiWeeklyPermissions";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("kpi");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 
@@ -23,7 +23,7 @@ function calcHealthStatus(progress: number, status: string): string {
  *
  * The GET /api/kpi (list) endpoint handles aggregation automatically for table display.
  */
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({ where: { id: params.id }, select: { orgId: true } });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
   if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
@@ -56,7 +56,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, req, { param
  * On success, re-aggregates qtdAchieved as the SUM of all weekly values for the KPI
  * and recomputes progressPercent + healthStatus.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({
     where: { id: params.id },
     select: {

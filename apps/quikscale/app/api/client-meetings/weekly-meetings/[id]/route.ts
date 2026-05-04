@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { updateWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.weeklyMeeting");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
-export const GET = withTenantAuth<{ id: string }>(
+export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId }, _req, { params }) => {
     const row = await db.clientWeeklyMeeting.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
@@ -51,7 +51,7 @@ export const GET = withTenantAuth<{ id: string }>(
 );
 
 /** PUT — replaces absence + dashboardNA links atomically. */
-export const PUT = withTenantAuth<{ id: string }>(
+export const PUT = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, request, { params }) => {
     const parsed = updateWeeklyMeetingSchema.safeParse(await request.json());
     if (!parsed.success)
@@ -208,7 +208,7 @@ export const PUT = withTenantAuth<{ id: string }>(
   }
 );
 
-export const DELETE = withTenantAuth<{ id: string }>(
+export const DELETE = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
     const existing = await db.clientWeeklyMeeting.findFirst({
       where: { id: params.id, orgId, deletedAt: null },

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("safety");
+const withOrgAuth = withOrgAuthForModule("safety");
 
 const createSchema = z.object({
   incidentNumber: z.string().min(1).max(50),
@@ -16,7 +16,7 @@ const createSchema = z.object({
   reportedBy: z.string().min(1),
 });
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const list = await db.cnSafetyIncident.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
@@ -26,7 +26,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = createSchema.parse(await req.json());
   const dup = await db.cnSafetyIncident.findFirst({ where: { orgId, incidentNumber: input.incidentNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Incident '${input.incidentNumber}' already exists` }, { status: 409 });

@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { updateClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.clients");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.clients");
 
 /** GET /api/client-meetings/clients/[id] — detail including team-member list. */
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const row = await db.client.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: {

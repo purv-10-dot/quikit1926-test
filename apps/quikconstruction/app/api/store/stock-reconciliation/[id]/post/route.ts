@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * Reconciliation post: writes adjustment rows.
@@ -11,7 +11,7 @@ const withTenantAuth = withTenantAuthForModule("store");
  *   adjustmentQty = 0 → skip (no ledger row needed)
  * transactionType = "reconciliation_adj".
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const rec = await db.cnStockReconciliation.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },

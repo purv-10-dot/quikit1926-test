@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("dashboard");
+const withOrgAuth = withOrgAuthForModule("dashboard");
 
 // Shared selects — keep payload small by only returning what the dashboard actually renders.
 const KPI_SELECT = {
@@ -144,7 +144,7 @@ function enrichKpis(
 // Consolidated dashboard payload — replaces 6 separate client queries
 // (individual KPIs, team KPIs, priorities, WWW items, teams, users) with
 // a single server round-trip using Promise.all.
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const parsed = querySchema.safeParse({
     year: req.nextUrl.searchParams.get("year"),
     quarter: req.nextUrl.searchParams.get("quarter"),

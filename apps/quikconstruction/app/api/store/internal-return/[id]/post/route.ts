@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * Internal Return posting: stock comes BACK IN (qtyIn > 0) at the issue
  * location. No upstream balance check needed — adding to stock can't go
  * negative. transactionType = "return_internal".
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const ret = await db.cnInternalReturn.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },

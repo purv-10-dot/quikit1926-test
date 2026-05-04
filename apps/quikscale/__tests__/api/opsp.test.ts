@@ -30,7 +30,7 @@ function buildPOST(body: unknown): NextRequest {
 
 function asAuthed() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  // withTenantAuth calls getTenantId which calls membership.findFirst
+  // withOrgAuth calls getTenantId which calls membership.findFirst
   mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,

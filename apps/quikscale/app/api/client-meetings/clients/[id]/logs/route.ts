@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.clients");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.clients");
 
 /** GET /api/client-meetings/clients/[id]/logs — audit history for one Client. */
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const client = await db.client.findFirst({ where: { id: params.id, orgId }, select: { id: true } });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
 

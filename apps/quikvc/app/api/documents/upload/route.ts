@@ -22,7 +22,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { put } from "@vercel/blob";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
 const ALLOWED_MIME = new Set([
   "application/pdf",
@@ -36,7 +36,7 @@ const ALLOWED_MIME = new Set([
 
 const MAX_BYTES = 4_500_000; // ~4.5 MB — Vercel API route body limit
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const formData = await req.formData();
   const file = formData.get("file");
   const dealId = String(formData.get("dealId") ?? "");

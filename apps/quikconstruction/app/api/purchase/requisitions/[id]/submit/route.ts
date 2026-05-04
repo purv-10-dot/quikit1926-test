@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { checkApprovalGate } from "@/lib/approvals";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("purchase");
+const withOrgAuth = withOrgAuthForModule("purchase");
 
 /**
  * POST /api/purchase/requisitions/[id]/submit
@@ -13,7 +13,7 @@ const withTenantAuth = withTenantAuthForModule("purchase");
  * matches for docType="pr" above threshold, an approved CnApprovalRequest
  * must exist for this PR.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const pr = await db.cnPurchaseRequisition.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     select: { id: true, status: true, lines: { select: { quantity: true, estimatedRate: true } } },

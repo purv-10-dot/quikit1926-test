@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, ANALYST_ROLES } from "@/lib/rbac";
 
 const itemSchema = z.object({
@@ -29,7 +29,7 @@ const postSchema = z.union([
   z.object({ items: z.array(itemSchema).min(1).max(500) }),
 ]);
 
-export const GET = withTenantAuth(async ({ orgId }, req: NextRequest) => {
+export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   const status = req.nextUrl.searchParams.get("status");
   const where: Record<string, string> = { orgId };
   if (status) where.status = status;
@@ -50,7 +50,7 @@ export const GET = withTenantAuth(async ({ orgId }, req: NextRequest) => {
   });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const denied = denyIfNotInRoles(await getVCRole(userId, orgId), ANALYST_ROLES);
   if (denied) return denied;
 

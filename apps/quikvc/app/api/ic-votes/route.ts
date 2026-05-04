@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, IC_VOTING_ROLES } from "@/lib/rbac";
 
 const bodySchema = z.object({
@@ -22,7 +22,7 @@ const bodySchema = z.object({
   conditions: z.string().max(2000).optional(),
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const denied = denyIfNotInRoles(await getVCRole(userId, orgId), IC_VOTING_ROLES);
   if (denied) return denied;
 

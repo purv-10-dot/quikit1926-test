@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { invoiceCreateSchema } from "@/lib/schemas/finance";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const customerId = req.nextUrl.searchParams.get("customerId") || undefined;
   const status = req.nextUrl.searchParams.get("status") || undefined;
@@ -22,7 +22,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = invoiceCreateSchema.parse(await req.json());
   const dup = await db.cnClientInvoice.findFirst({ where: { orgId, invoiceNumber: input.invoiceNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Invoice '${input.invoiceNumber}' already exists` }, { status: 409 });

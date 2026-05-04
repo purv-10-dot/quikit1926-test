@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { checkApprovalGate } from "@/lib/approvals";
 import { logAudit } from "@/lib/audit";
 import { canFinalize, forbidden } from "@/lib/permissions";
 
-const withTenantAuth = withTenantAuthForModule("hrms");
+const withOrgAuth = withOrgAuthForModule("hrms");
 
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId, session }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId, session }, _req, { params }) => {
   if (!canFinalize(session.user.membershipRole)) return forbidden("Payroll finalize requires admin or accountant role");
   const p = await db.cnPayroll.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, status: true, totalNet: true } });
   if (!p) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });

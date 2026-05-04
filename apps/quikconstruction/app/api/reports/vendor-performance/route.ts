@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("reports");
+const withOrgAuth = withOrgAuthForModule("reports");
 
 /**
  * GET /api/reports/vendor-performance
@@ -12,7 +12,7 @@ const withTenantAuth = withTenantAuthForModule("reports");
  *   - grnOnTimePct — GRN date <= PO deliveryDate
  *   - qualityAcceptPct — accepted GRN lines / total GRN lines
  */
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const vendors = await db.cnVendor.findMany({
     where: { orgId, deletedAt: null },
     select: { id: true, code: true, name: true, rating: true },

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const boq = await db.cnBOQ.findFirst({
     where: { id: params.id, orgId },
     include: {
@@ -22,7 +22,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { para
   return NextResponse.json({ success: true, data: boq });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const boq = await db.cnBOQ.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, status: true } });
   if (!boq) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (boq.status === "locked") {

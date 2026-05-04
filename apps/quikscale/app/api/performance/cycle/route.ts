@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.cycle");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.cycle");
 
 /**
  * GET /api/performance/cycle
@@ -44,7 +44,7 @@ function computePhaseFromDate(
   return "manager-review";
 }
 
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId, userId }) => {
     const today = new Date();
 

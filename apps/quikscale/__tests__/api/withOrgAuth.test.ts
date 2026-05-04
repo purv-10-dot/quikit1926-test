@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
 import { setSession } from "../setup";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
 const USER = "user-1";
 const TENANT = "tenant-1";
@@ -27,10 +27,10 @@ beforeEach(() => {
   setSession(null);
 });
 
-describe("withTenantAuth", () => {
+describe("withOrgAuth", () => {
   it("returns 401 when unauthenticated", async () => {
     setSession(null);
-    const handler = withTenantAuth(async () =>
+    const handler = withOrgAuth(async () =>
       NextResponse.json({ success: true, data: "never" })
     );
     const res = await handler(buildRequest(), { params: {} });
@@ -43,7 +43,7 @@ describe("withTenantAuth", () => {
     setSession({ id: USER, orgId: TENANT, role: "admin" });
     mockDb.orgMember.findFirst.mockResolvedValue(null);
 
-    const handler = withTenantAuth(async () =>
+    const handler = withOrgAuth(async () =>
       NextResponse.json({ success: true, data: "never" })
     );
     const res = await handler(buildRequest(), { params: {} });
@@ -55,7 +55,7 @@ describe("withTenantAuth", () => {
   it("passes orgId and userId to the inner handler on success", async () => {
     asAuthed();
     const seen: { orgId?: string; userId?: string } = {};
-    const handler = withTenantAuth(async ({ orgId, userId }) => {
+    const handler = withOrgAuth(async ({ orgId, userId }) => {
       seen.orgId = orgId;
       seen.userId = userId;
       return NextResponse.json({ success: true, data: "ok" });
@@ -68,7 +68,7 @@ describe("withTenantAuth", () => {
 
   it("forwards route params to the inner handler", async () => {
     asAuthed();
-    const handler = withTenantAuth<{ id: string }>(async (_ctx, _req, { params }) =>
+    const handler = withOrgAuth<{ id: string }>(async (_ctx, _req, { params }) =>
       NextResponse.json({ success: true, data: params.id })
     );
     const res = await handler(buildRequest(), { params: { id: "kpi-42" } });
@@ -78,7 +78,7 @@ describe("withTenantAuth", () => {
 
   it("catches thrown errors and returns 500 with toErrorMessage", async () => {
     asAuthed();
-    const handler = withTenantAuth(
+    const handler = withOrgAuth(
       async () => {
         throw new Error("inner failure");
       },
@@ -92,7 +92,7 @@ describe("withTenantAuth", () => {
 
   it("uses the fallback error message for non-Error throws", async () => {
     asAuthed();
-    const handler = withTenantAuth(
+    const handler = withOrgAuth(
       async () => {
         // eslint-disable-next-line @typescript-eslint/no-throw-literal
         throw { not: "an Error" };

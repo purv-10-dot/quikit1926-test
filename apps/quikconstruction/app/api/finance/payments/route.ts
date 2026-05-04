@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { paymentCreateSchema } from "@/lib/schemas/finance";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const vendorId = req.nextUrl.searchParams.get("vendorId") || undefined;
   const list = await db.cnVendorPayment.findMany({
@@ -24,7 +24,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
  * Same pattern as client receipts, but against CnVendorBill. Bills must be
  * status ∈ {approved, partial} to accept payment.
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = paymentCreateSchema.parse(await req.json());
 
   const dup = await db.cnVendorPayment.findFirst({ where: { orgId, paymentNumber: input.paymentNumber, deletedAt: null }, select: { id: true } });

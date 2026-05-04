@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { contractorCreateSchema } from "@/lib/schemas/masters";
 
-const withTenantAuth = withTenantAuthForModule("masters");
+const withOrgAuth = withOrgAuthForModule("masters");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const contractors = await db.cnContractor.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
@@ -14,7 +14,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
   return NextResponse.json({ success: true, data: contractors });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = contractorCreateSchema.parse(body);
   const existing = await db.cnContractor.findFirst({

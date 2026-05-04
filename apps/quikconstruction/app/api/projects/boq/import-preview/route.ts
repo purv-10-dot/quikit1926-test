@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import * as XLSX from "xlsx";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
 /**
  * POST /api/projects/boq/import-preview
@@ -14,7 +14,7 @@ const withTenantAuth = withTenantAuthForModule("projects");
  * Returns a parsed rows preview without persisting. User confirms, then calls
  * /import-commit with the sanitized rows + target project/boq info.
  */
-export const POST = withTenantAuth(async (_ctx, req) => {
+export const POST = withOrgAuth(async (_ctx, req) => {
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {

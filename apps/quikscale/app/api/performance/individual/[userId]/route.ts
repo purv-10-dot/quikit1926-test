@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("analytics.individual");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("analytics.individual");
 
-export const GET = withTenantAuth<{ userId: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ userId: string }>(async ({ orgId }, _req, { params }) => {
   const target = await db.user.findUnique({
     where: { id: params.userId },
     include: {

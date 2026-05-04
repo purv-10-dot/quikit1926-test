@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.oneOnOne");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.oneOnOne");
 import { updateOneOnOneSchema } from "@/lib/schemas/oneOnOneSchema";
 
 type Params = { id: string };
 
-export const GET = withTenantAuth<Params>(
+export const GET = withOrgAuth<Params>(
   async ({ orgId, userId }, _req, { params }) => {
     const session = await db.oneOnOne.findFirst({
       where: {
@@ -35,7 +35,7 @@ export const GET = withTenantAuth<Params>(
   { fallbackErrorMessage: "Failed to fetch 1:1 session" },
 );
 
-export const PUT = withTenantAuth<Params>(
+export const PUT = withOrgAuth<Params>(
   async ({ orgId, userId }, request, { params }) => {
     const existing = await db.oneOnOne.findFirst({
       where: {
@@ -94,7 +94,7 @@ export const PUT = withTenantAuth<Params>(
   { fallbackErrorMessage: "Failed to update 1:1 session" },
 );
 
-export const DELETE = withTenantAuth<Params>(
+export const DELETE = withOrgAuth<Params>(
   async ({ orgId, userId }, _req, { params }) => {
     const existing = await db.oneOnOne.findFirst({
       where: {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.oneOnOne");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.oneOnOne");
 import {
   createOneOnOneSchema,
   listOneOnOnesParamsSchema,
@@ -16,7 +16,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
  *   - if managerId filter → admin-style lookup for that manager
  *   - if reportId filter → admin-style lookup for that report
  */
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId, userId }, request) => {
     const parsed = listOneOnOnesParamsSchema.safeParse({
       managerId: request.nextUrl.searchParams.get("managerId") ?? undefined,
@@ -89,7 +89,7 @@ export const GET = withTenantAuth(
 /**
  * POST /api/performance/one-on-one — schedule a new session.
  */
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, request) => {
     const rl = rateLimit({
       routeKey: "one-on-one:create",

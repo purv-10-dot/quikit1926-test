@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { createClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.clients");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.clients");
 
 /**
  * GET /api/client-meetings/clients
  *   ?includeDeleted=true → return ONLY soft-deleted rows (trash view).
  */
-export const GET = withTenantAuth(async ({ orgId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
   const rows = await db.client.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },

@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { CAPITAL_OPS_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 
@@ -22,7 +22,7 @@ const postSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const denied = await requireRoleOrAudit(userId, orgId, CAPITAL_OPS_ROLES, {
       action: "allocation.create",

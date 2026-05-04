@@ -9,7 +9,7 @@
  *   - no session in any other environment → redirect to /login?callbackUrl=…
  *
  * Use from server components / page.tsx / layout.tsx. For API routes, prefer
- * `withTenantAuth` which has its own auth + 401 handling.
+ * `withOrgAuth` which has its own auth + 401 handling.
  */
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";

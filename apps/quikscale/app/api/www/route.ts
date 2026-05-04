@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("www");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("www");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
@@ -9,7 +9,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
 // GET /api/www — list all WWWItems for tenant
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const search = searchParams.get("search") || undefined;
   const status = searchParams.get("status") || undefined;
@@ -73,7 +73,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
 });
 
 // POST /api/www — create a WWWItem
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const rl = rateLimit({
     routeKey: "www:create",
     clientKey: `${orgId}:${userId}`,

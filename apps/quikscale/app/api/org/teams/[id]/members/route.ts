@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("orgSetup.teams");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("orgSetup.teams");
 import { addTeamMembersSchema } from "@/lib/schemas/teamMembersSchema";
 
 /**
@@ -17,7 +17,7 @@ import { addTeamMembersSchema } from "@/lib/schemas/teamMembersSchema";
  * Responds with { success, data: { added, skipped, skippedUserIds } }
  * so the client can report partial failures.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
   // Verify team belongs to this tenant and isn't soft-deleted
   const team = await db.team.findFirst({
     where: { id: params.id, orgId },

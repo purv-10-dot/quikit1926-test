@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.weeklyMeeting");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
 /** GET /api/client-meetings/weekly-meetings/[id]/logs — audit trail */
-export const GET = withTenantAuth<{ id: string }>(
+export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId }, _req, { params }) => {
     const meeting = await db.clientWeeklyMeeting.findFirst({
       where: { id: params.id, orgId },

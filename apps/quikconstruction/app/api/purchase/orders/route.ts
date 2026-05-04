@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { poCreateSchema } from "@/lib/schemas/procurement";
 
-const withTenantAuth = withTenantAuthForModule("purchase");
+const withOrgAuth = withOrgAuthForModule("purchase");
 
 function computeTotals(lines: Array<{ orderedQty: number; unitRate: number; gstRate?: number | null }>) {
   let subtotal = 0;
@@ -17,7 +17,7 @@ function computeTotals(lines: Array<{ orderedQty: number; unitRate: number; gstR
   return { subtotal, taxAmount, totalAmount: subtotal + taxAmount };
 }
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
@@ -39,7 +39,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
   return NextResponse.json({ success: true, data: pos });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = poCreateSchema.parse(body);
 

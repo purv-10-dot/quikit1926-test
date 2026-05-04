@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { companyUpdateSchema } from "@/lib/schemas/masters";
 
-const withTenantAuth = withTenantAuthForModule("masters");
+const withOrgAuth = withOrgAuthForModule("masters");
 
 // GET /api/masters/companies/[id]
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const company = await db.cnCompany.findFirst({
     where: { id: params.id, orgId },
   });
@@ -17,7 +17,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { para
 });
 
 // PATCH /api/masters/companies/[id]
-export const PATCH = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existing = await db.cnCompany.findFirst({
     where: { id: params.id, orgId },
     select: { id: true, deletedAt: true },
@@ -35,7 +35,7 @@ export const PATCH = withTenantAuth<{ id: string }>(async ({ orgId, userId }, re
 });
 
 // DELETE /api/masters/companies/[id] — soft delete
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.cnCompany.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     select: { id: true },

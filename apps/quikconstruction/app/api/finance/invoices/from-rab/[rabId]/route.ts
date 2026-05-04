@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { invoiceFromRabSchema } from "@/lib/schemas/finance";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
 /**
  * POST /api/finance/invoices/from-rab/[rabId] — materialize an approved RAB
  * into a client invoice. Snapshots customer from project.clientId. RAB must be
  * status=approved (or paid) and not already invoiced.
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req, ctx: { params: { rabId: string } }) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req, ctx: { params: { rabId: string } }) => {
   const input = invoiceFromRabSchema.parse(await req.json());
 
   const rab = await db.cnRAB.findFirst({

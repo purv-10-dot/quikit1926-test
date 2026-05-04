@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { notify, buildApprovalRequestedEmail } from "@/lib/notify";
 
-const withTenantAuth = withTenantAuthForModule("approvals");
+const withOrgAuth = withOrgAuthForModule("approvals");
 
 const requestSchema = z.object({
   docType: z.string().min(1),
@@ -15,7 +15,7 @@ const requestSchema = z.object({
   comment: z.string().optional().nullable(),
 });
 
-export const GET = withTenantAuth(async ({ orgId, userId }, req) => {
+export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const inbox = req.nextUrl.searchParams.get("inbox") === "true";
   const status = req.nextUrl.searchParams.get("status") || undefined;
   const where: Record<string, unknown> = { orgId };
@@ -28,7 +28,7 @@ export const GET = withTenantAuth(async ({ orgId, userId }, req) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = requestSchema.parse(await req.json());
   const reqRow = await db.cnApprovalRequest.create({
     data: {

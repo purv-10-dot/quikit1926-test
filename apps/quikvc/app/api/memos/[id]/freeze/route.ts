@@ -10,11 +10,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { notifyRole } from "@/lib/notifications";
 import { ANALYST_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const denied = await requireRoleOrAudit(userId, orgId, ANALYST_ROLES, {
       action: "deal.advance",

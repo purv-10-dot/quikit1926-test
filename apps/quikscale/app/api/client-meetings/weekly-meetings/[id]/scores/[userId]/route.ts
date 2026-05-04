@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { updateMemberScoreSchema } from "@/lib/schemas/clientMeetingsSchema";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.weeklyMeeting");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
 /**
  * PATCH /api/client-meetings/weekly-meetings/[id]/scores/[userId]
  * Upserts one member's scores. Used by the per-row "Update" button in
  * the Update tab (image 1).
  */
-export const PATCH = withTenantAuth<{ id: string; userId: string }>(
+export const PATCH = withOrgAuth<{ id: string; userId: string }>(
   async ({ orgId, userId: actorId }, request, { params }) => {
     const parsed = updateMemberScoreSchema.safeParse(await request.json());
     if (!parsed.success) {

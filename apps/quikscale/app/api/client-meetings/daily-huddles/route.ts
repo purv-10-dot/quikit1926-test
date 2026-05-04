@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.dailyHuddle");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
 
 /**
  * GET /api/client-meetings/daily-huddles
@@ -13,7 +13,7 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.dailyHuddle");
  * Returns rows with creator/updater name + initials + absence-member
  * ids (both legacy User-based and new ClientMember-based).
  */
-export const GET = withTenantAuth(async ({ orgId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
   const url = new URL(request.url);
   const clientId       = url.searchParams.get("clientId") ?? undefined;
   const from           = url.searchParams.get("from");
@@ -85,7 +85,7 @@ export const GET = withTenantAuth(async ({ orgId }, request) => {
 });
 
 /** POST — create a daily huddle. Any active tenant member may call. */
-export const POST = withTenantAuth(async ({ orgId, userId }, request) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
   const parsed = createDailyHuddleSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json({ success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 });

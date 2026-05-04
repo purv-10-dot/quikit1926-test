@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("audit");
+const withOrgAuth = withOrgAuthForModule("audit");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const entityType = req.nextUrl.searchParams.get("entityType") || undefined;
   const entityId = req.nextUrl.searchParams.get("entityId") || undefined;
   const userId = req.nextUrl.searchParams.get("userId") || undefined;

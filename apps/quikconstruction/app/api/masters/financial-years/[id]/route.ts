@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { financialYearUpdateSchema } from "@/lib/schemas/masters-phase2";
 
-const withTenantAuth = withTenantAuthForModule("masters");
+const withOrgAuth = withOrgAuthForModule("masters");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const year = await db.cnFinancialYear.findFirst({
     where: { id: params.id, orgId },
     include: { company: { select: { id: true, name: true } } },
@@ -14,7 +14,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { para
   return NextResponse.json({ success: true, data: year });
 });
 
-export const PATCH = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existing = await db.cnFinancialYear.findFirst({
     where: { id: params.id, orgId },
     select: { id: true, companyId: true },
@@ -43,7 +43,7 @@ export const PATCH = withTenantAuth<{ id: string }>(async ({ orgId, userId }, re
   return NextResponse.json({ success: true, data: updated });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.cnFinancialYear.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     select: { id: true },

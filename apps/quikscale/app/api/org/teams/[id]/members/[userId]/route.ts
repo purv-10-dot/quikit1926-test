@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("orgSetup.teams");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("orgSetup.teams");
 
 type RouteParams = { id: string; userId: string };
 
@@ -15,7 +15,7 @@ type RouteParams = { id: string; userId: string };
  *   - Does NOT delete or deactivate the Membership itself — the user is
  *     still part of the organisation, just not this team.
  */
-export const DELETE = withTenantAuth<RouteParams>(
+export const DELETE = withOrgAuth<RouteParams>(
   async ({ orgId }, _request, { params }) => {
     // Verify team belongs to this tenant
     const team = await db.team.findFirst({

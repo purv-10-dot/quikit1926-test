@@ -197,7 +197,7 @@ describe("POST /api/performance/feedback — recipient membership", () => {
   beforeEach(asAdmin);
 
   it("returns 400 when recipient is not an active member", async () => {
-    // The first findFirst resolves for withTenantAuth (asAdmin).
+    // The first findFirst resolves for withOrgAuth (asAdmin).
     // The second call (recipient check) returns null.
     mockDb.orgMember.findFirst
       .mockResolvedValueOnce({

@@ -15,14 +15,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { notifyRole } from "@/lib/notifications";
 import { PARTNER_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 
 const bodySchema = z.object({ memoId: z.string().min(1) });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const denied = await requireRoleOrAudit(userId, orgId, PARTNER_ROLES, {
     action: "ic.settle",
     req,

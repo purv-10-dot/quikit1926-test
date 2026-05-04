@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
 /**
  * POST /api/projects/hindrance/[id]/close  body: { endDate?: string }
  * open → resolved/closed. If no endDate on the hindrance yet, caller provides
  * one so daysImpacted can be computed.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const h = await db.cnHindrance.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
   if (!h) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (h.status === "closed" || h.status === "resolved") {

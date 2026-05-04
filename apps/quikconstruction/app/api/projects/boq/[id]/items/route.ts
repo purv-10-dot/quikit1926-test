@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
 const patchSchema = z.object({
   updates: z.array(z.object({
@@ -19,7 +19,7 @@ const patchSchema = z.object({
  * BOQ items. Owner BOQ must belong to the tenant. Fields are orthogonal to
  * the BOQ's locked status — schedules can be revised post-lock.
  */
-export const PATCH = withTenantAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
+export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
   const input = patchSchema.parse(await req.json());
   const boq = await db.cnBOQ.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, items: { select: { id: true } } } });
   if (!boq) return NextResponse.json({ success: false, error: "BOQ not found" }, { status: 404 });

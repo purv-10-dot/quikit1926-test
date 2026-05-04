@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { ZodSchema } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
 /**
  * createMasterRoutes — factory that produces {GET, POST} list handlers and a
@@ -63,9 +63,9 @@ function modelFn(name: PrismaModelName) {
 }
 
 export function createListRoutes(config: ListRoutesConfig) {
-  const withTenantAuth = withTenantAuthForModule("masters");
+  const withOrgAuth = withOrgAuthForModule("masters");
 
-  const GET = withTenantAuth(async ({ orgId }, req) => {
+  const GET = withOrgAuth(async ({ orgId }, req) => {
     const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
     const rows = await modelFn(config.model).findMany({
       where: {
@@ -78,7 +78,7 @@ export function createListRoutes(config: ListRoutesConfig) {
     return NextResponse.json({ success: true, data: rows });
   });
 
-  const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+  const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     const body = await req.json();
     const input = config.createSchema.parse(body);
 
@@ -115,9 +115,9 @@ interface IdRoutesConfig {
 }
 
 export function createIdRoutes(config: IdRoutesConfig) {
-  const withTenantAuth = withTenantAuthForModule("masters");
+  const withOrgAuth = withOrgAuthForModule("masters");
 
-  const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+  const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
     const row = await modelFn(config.model).findFirst({
       where: { id: params.id, orgId },
     });
@@ -127,7 +127,7 @@ export function createIdRoutes(config: IdRoutesConfig) {
     return NextResponse.json({ success: true, data: row });
   });
 
-  const PATCH = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+  const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
     const existing = await modelFn(config.model).findFirst({
       where: { id: params.id, orgId },
       select: config.uniqueBy ? { id: true, [config.uniqueBy]: true } : { id: true },
@@ -167,7 +167,7 @@ export function createIdRoutes(config: IdRoutesConfig) {
     return NextResponse.json({ success: true, data: updated });
   });
 
-  const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+  const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
     const existing = await modelFn(config.model).findFirst({
       where: { id: params.id, orgId, deletedAt: null },
       select: { id: true },

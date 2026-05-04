@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { calculateDailyMonthlyStats, previousMonths } from "@/lib/services/clientMeetingsMath";
 import { applyPctFill, applyHeader, workbookToBuffer } from "@/lib/exports/clientMeetingsExcel";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.dashboard");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
 
 /**
  * POST /api/client-meetings/export/daily
  * Body: { clientId, monthsBack? }
  * Returns: xlsx blob with 6 metric rows × N month columns + Total Avg.
  */
-export const POST = withTenantAuth(async ({ orgId }, request) => {
+export const POST = withOrgAuth(async ({ orgId }, request) => {
   const body = await request.json();
   const clientId: string = body.clientId;
   const monthsBack: number = body.monthsBack ?? 6;

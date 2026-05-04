@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { MEMO_SECTIONS } from "@/lib/ai/prompts/generate-memo-section";
 import type { MemoSection, MemoSectionsPayload } from "@/lib/memo/types";
 
@@ -26,7 +26,7 @@ const patchSchema = z.object({
   changeNote: z.string().max(500).optional(),
 });
 
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId }, _req: NextRequest, { params }: { params: { id: string } }) => {
     const dealId = params.id;
     const memo = await db.vCICMemo.findUnique({
@@ -83,7 +83,7 @@ export const GET = withTenantAuth(
   },
 );
 
-export const PATCH = withTenantAuth(
+export const PATCH = withOrgAuth(
   async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const dealId = params.id;
     const parsed = patchSchema.safeParse(await req.json());

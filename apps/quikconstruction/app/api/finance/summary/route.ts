@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
 /**
  * GET /api/finance/summary — AR + AP snapshot.
@@ -11,7 +11,7 @@ const withTenantAuth = withTenantAuthForModule("finance");
  * AP (Accounts Payable)    = outstanding on non-cancelled bills (total - paidAmount)
  * Also returns overdue sub-totals (dueDate < today, status ≠ paid/cancelled).
  */
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const today = new Date();
 
   const [invoices, bills] = await Promise.all([

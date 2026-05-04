@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("orgSetup.teams");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("orgSetup.teams");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
 // GET /api/org/teams — all teams with member count and head info
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
   const where = { orgId };
 
@@ -62,7 +62,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
 }, { fallbackErrorMessage: "Failed to fetch teams" });
 
 // POST /api/org/teams — create team
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const rl = rateLimit({
     routeKey: "team:create",
     clientKey: `${orgId}:${userId}`,

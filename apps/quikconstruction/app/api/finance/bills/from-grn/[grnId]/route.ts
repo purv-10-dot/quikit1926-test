@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { billFromGrnSchema } from "@/lib/schemas/finance";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
 /**
  * POST /api/finance/bills/from-grn/[grnId] — materialize a posted GRN into a
  * vendor bill. Totals copied from GRN lines. GRN must be status=posted and
  * not already billed (enforced by CnVendorBill.grnId @@unique).
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req, ctx: { params: { grnId: string } }) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req, ctx: { params: { grnId: string } }) => {
   const input = billFromGrnSchema.parse(await req.json());
 
   const grn = await db.cnGoodsReceiptNote.findFirst({

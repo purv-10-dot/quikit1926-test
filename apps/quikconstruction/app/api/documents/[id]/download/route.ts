@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { readUpload } from "@/lib/storage";
 
-const withTenantAuth = withTenantAuthForModule("documents");
+const withOrgAuth = withOrgAuthForModule("documents");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const doc = await db.cnDocument.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
   if (!doc) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   try {

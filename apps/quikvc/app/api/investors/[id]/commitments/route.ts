@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, FUND_ADMIN_ROLES } from "@/lib/rbac";
 
 const postSchema = z.object({
@@ -18,7 +18,7 @@ const postSchema = z.object({
   vintageYear: z.number().int().min(2000).max(2100).optional(),
 });
 
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const denied = denyIfNotInRoles(await getVCRole(userId, orgId), FUND_ADMIN_ROLES);
     if (denied) return denied;

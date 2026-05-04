@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { kpiNoteSchema } from "@/lib/schemas/kpiSchema";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("kpi");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("kpi");
 
 type RouteParams = { id: string };
 
-export const GET = withTenantAuth<RouteParams>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<RouteParams>(async ({ orgId }, _req, { params }) => {
   const kpi = await db.kPI.findUnique({
     where: { id: params.id },
     select: { orgId: true },
@@ -31,7 +31,7 @@ export const GET = withTenantAuth<RouteParams>(async ({ orgId }, _req, { params 
   return NextResponse.json({ success: true, data: notes });
 }, { fallbackErrorMessage: "Failed to fetch notes" });
 
-export const POST = withTenantAuth<RouteParams>(async ({ orgId, userId }, req, { params }) => {
+export const POST = withOrgAuth<RouteParams>(async ({ orgId, userId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({
     where: { id: params.id },
     select: { orgId: true },

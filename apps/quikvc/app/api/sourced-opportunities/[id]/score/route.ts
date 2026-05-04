@@ -9,11 +9,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { scoreThesisFit } from "@/lib/ai/prompts/thesis-fit";
 import { getVCRole, denyIfNotInRoles, ANALYST_ROLES } from "@/lib/rbac";
 
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, _req: NextRequest, { params }: { params: { id: string } }) => {
     const denied = denyIfNotInRoles(await getVCRole(userId, orgId), ANALYST_ROLES);
     if (denied) return denied;

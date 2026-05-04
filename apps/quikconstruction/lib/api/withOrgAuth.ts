@@ -7,7 +7,13 @@ import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { logApiCall } from "@quikit/shared/apiLogging";
 
 /**
- * Context passed to a route handler after the auth + tenant guard succeeds.
+ * withOrgAuth — lifted from apps/quikscale and scoped to `quikconstruction`.
+ *
+ * Provides: session check → orgId resolution → optional module feature gate
+ * → try/catch with friendly 500 → fire-and-forget API call log.
+ *
+ * Use the curried `withOrgAuthForModule("masters")` at the top of each
+ * route file so FF-1 gating inherits through every handler in the file.
  */
 export interface TenantAuthContext {
   session: Session;
@@ -15,45 +21,18 @@ export interface TenantAuthContext {
   orgId: string;
 }
 
-/**
- * Higher-order wrapper that runs the standard auth + orgId + error-handling
- * boilerplate around a route handler.
- *
- * Replaces the ~8 lines repeated across 35+ route files:
- *   - session check  → 401
- *   - orgId check → 403
- *   - try/catch      → 500 with `toErrorMessage`
- *
- * Usage:
- *   export const GET = withTenantAuth(async ({ orgId }, req) => {
- *     const data = await db.kpi.findMany({ where: { orgId } });
- *     return NextResponse.json({ success: true, data });
- *   });
- *
- *   // Dynamic route segments still work — pass them through as `params`:
- *   export const GET = withTenantAuth<{ id: string }>(
- *     async ({ orgId }, req, { params }) => { ... }
- *   );
- */
 export interface WithTenantAuthOptions {
-  /** Error message used when the handler throws an unhandled exception. */
   fallbackErrorMessage?: string;
-  /**
-   * FF-1 module gate. When set, the wrapper calls `gateModuleApi` after the
-   * auth check — if the tenant has this module (or any ancestor) disabled,
-   * the handler is skipped and a 404 is returned. Keeps L3 enforcement in
-   * a single place: flip this string on once per route group.
-   */
   moduleKey?: string;
 }
 
-export function withTenantAuth<Params = Record<string, never>>(
+export function withOrgAuth<Params = Record<string, never>>(
   handler: (
     ctx: TenantAuthContext,
     req: NextRequest,
-    routeCtx: { params: Params }
+    routeCtx: { params: Params },
   ) => Promise<NextResponse> | NextResponse,
-  options: WithTenantAuthOptions = {}
+  options: WithTenantAuthOptions = {},
 ) {
   return async (req: NextRequest, routeCtx: { params: Params }): Promise<NextResponse> => {
     const startedAt = Date.now();
@@ -72,21 +51,21 @@ export function withTenantAuth<Params = Record<string, never>>(
         } else {
           orgIdForLog = orgId;
           if (options.moduleKey) {
-            const blocked = await gateModuleApi("quikscale", options.moduleKey, orgId);
+            const blocked = await gateModuleApi("quikconstruction", options.moduleKey, orgId);
             if (blocked) {
               response = blocked as NextResponse;
             } else {
               response = await handler(
                 { session, userId: session.user.id, orgId },
                 req,
-                routeCtx ?? ({ params: {} as Params })
+                routeCtx ?? ({ params: {} as Params }),
               );
             }
           } else {
             response = await handler(
               { session, userId: session.user.id, orgId },
               req,
-              routeCtx ?? ({ params: {} as Params })
+              routeCtx ?? ({ params: {} as Params }),
             );
           }
         }
@@ -94,15 +73,14 @@ export function withTenantAuth<Params = Record<string, never>>(
     } catch (error: unknown) {
       response = NextResponse.json(
         { success: false, error: toErrorMessage(error, options.fallbackErrorMessage ?? "Operation failed") },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
-    // SA-A.2: fire-and-forget API call log. Never blocks the response.
     void logApiCall({
       orgId: orgIdForLog,
       userId: userIdForLog,
-      appSlug: "quikscale",
+      appSlug: "quikconstruction",
       method: req.method,
       path: req.nextUrl.pathname,
       statusCode: response.status,
@@ -115,22 +93,9 @@ export function withTenantAuth<Params = Record<string, never>>(
   };
 }
 
-/**
- * Curry factory for module-gated routes. Use at the top of any route file
- * that belongs to a specific FF-1 module, so every handler in the file
- * inherits the gate:
- *
- *   import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
- *   const withTenantAuth = withTenantAuthForModule("kpi");
- *   export const GET = withTenantAuth(async ({ orgId }, req) => { ... });
- *   export const POST = withTenantAuth(async ({ orgId }, req) => { ... });
- *
- * Any existing options (e.g. `fallbackErrorMessage`) still work — moduleKey
- * is merged in as a default but can be overridden per-call.
- */
-export function withTenantAuthForModule(moduleKey: string) {
+export function withOrgAuthForModule(moduleKey: string) {
   return <Params = Record<string, never>>(
-    handler: Parameters<typeof withTenantAuth<Params>>[0],
+    handler: Parameters<typeof withOrgAuth<Params>>[0],
     options: WithTenantAuthOptions = {},
-  ) => withTenantAuth<Params>(handler, { moduleKey, ...options });
+  ) => withOrgAuth<Params>(handler, { moduleKey, ...options });
 }

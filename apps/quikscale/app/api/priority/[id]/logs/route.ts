@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("priority");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("priority");
 
 // GET /api/priority/[id]/logs — change history for a Priority (read-only)
 // Source: AuditLog rows where entityType=Priority and entityId=id
-export const GET = withTenantAuth<{ id: string }>(
+export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId }, _request, { params }) => {
     const priority = await db.priority.findUnique({
       where: { id: params.id },

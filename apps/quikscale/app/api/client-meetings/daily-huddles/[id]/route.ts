@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { updateDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.dailyHuddle");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const row = await db.clientDailyHuddle.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: {
@@ -29,7 +29,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { para
 });
 
 /** PUT — full update. Absence sets (both kinds) and notes fields replace atomically. */
-export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, request, { params }) => {
+export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, request, { params }) => {
   const parsed = updateDailyHuddleSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json({ success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 });
@@ -90,7 +90,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, requ
   return NextResponse.json({ success: true });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.clientDailyHuddle.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
   if (!existing) return NextResponse.json({ success: false, error: "Huddle not found" }, { status: 404 });
   await db.clientDailyHuddle.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });

@@ -8,13 +8,13 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
 const bodySchema = z.object({
   ids: z.array(z.string()).optional(),
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   let ids: string[] | undefined;
   try {
     const json = await req.json();

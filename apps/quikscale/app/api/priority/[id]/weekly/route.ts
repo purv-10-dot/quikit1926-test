@@ -5,11 +5,11 @@ import {
   getPastWeekFlags,
   getCurrentFiscalWeekFromDB,
 } from "@/lib/utils/featureFlags";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("priority");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("priority");
 
 // POST /api/priority/[id]/weekly — upsert a weekly status
-export const POST = withTenantAuth<{ id: string }>(
+export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, request, { params }) => {
     const priority = await db.priority.findFirst({
       where: { id: params.id, orgId },

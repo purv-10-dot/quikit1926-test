@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("reports");
+const withOrgAuth = withOrgAuthForModule("reports");
 
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const today = new Date();
   const invoices = await db.cnClientInvoice.findMany({
     where: { orgId, deletedAt: null, status: { not: "cancelled" } },

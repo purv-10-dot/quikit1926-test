@@ -2,7 +2,7 @@
  * SA-A.2 — API call logging for super admin analytics.
  *
  * Fire-and-forget writes to the ApiCall table. Designed to be called from
- * auth wrappers (withTenantAuth, requireAdmin) so every API route is captured
+ * auth wrappers (withOrgAuth, requireAdmin) so every API route is captured
  * without per-route instrumentation.
  *
  * Failures NEVER propagate — logging must not break a request. Writes are

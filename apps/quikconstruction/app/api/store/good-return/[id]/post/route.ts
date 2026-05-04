@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * POST /api/store/good-return/[id]/post
@@ -11,7 +11,7 @@ const withTenantAuth = withTenantAuthForModule("store");
  * so qtyOut decrements the ledger balance for that item at that location.
  * Pre-checks current balance >= returnQty to prevent negative stock after post.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const ret = await db.cnGoodReturn.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },

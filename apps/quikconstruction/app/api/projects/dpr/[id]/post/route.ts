@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
 /**
  * POST /api/projects/dpr/[id]/post
@@ -17,7 +17,7 @@ const withTenantAuth = withTenantAuthForModule("projects");
  * If materials is empty, this is still a valid "lock" operation — it seals
  * the labour/activity log but writes no stock rows.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const dpr = await db.cnDPR.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: { materials: true, project: { select: { id: true } } },

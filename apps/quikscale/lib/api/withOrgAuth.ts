@@ -25,13 +25,13 @@ export interface TenantAuthContext {
  *   - try/catch      → 500 with `toErrorMessage`
  *
  * Usage:
- *   export const GET = withTenantAuth(async ({ orgId }, req) => {
+ *   export const GET = withOrgAuth(async ({ orgId }, req) => {
  *     const data = await db.kpi.findMany({ where: { orgId } });
  *     return NextResponse.json({ success: true, data });
  *   });
  *
  *   // Dynamic route segments still work — pass them through as `params`:
- *   export const GET = withTenantAuth<{ id: string }>(
+ *   export const GET = withOrgAuth<{ id: string }>(
  *     async ({ orgId }, req, { params }) => { ... }
  *   );
  */
@@ -47,7 +47,7 @@ export interface WithTenantAuthOptions {
   moduleKey?: string;
 }
 
-export function withTenantAuth<Params = Record<string, never>>(
+export function withOrgAuth<Params = Record<string, never>>(
   handler: (
     ctx: TenantAuthContext,
     req: NextRequest,
@@ -120,17 +120,17 @@ export function withTenantAuth<Params = Record<string, never>>(
  * that belongs to a specific FF-1 module, so every handler in the file
  * inherits the gate:
  *
- *   import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
- *   const withTenantAuth = withTenantAuthForModule("kpi");
- *   export const GET = withTenantAuth(async ({ orgId }, req) => { ... });
- *   export const POST = withTenantAuth(async ({ orgId }, req) => { ... });
+ *   import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+ *   const withOrgAuth = withOrgAuthForModule("kpi");
+ *   export const GET = withOrgAuth(async ({ orgId }, req) => { ... });
+ *   export const POST = withOrgAuth(async ({ orgId }, req) => { ... });
  *
  * Any existing options (e.g. `fallbackErrorMessage`) still work — moduleKey
  * is merged in as a default but can be overridden per-call.
  */
-export function withTenantAuthForModule(moduleKey: string) {
+export function withOrgAuthForModule(moduleKey: string) {
   return <Params = Record<string, never>>(
-    handler: Parameters<typeof withTenantAuth<Params>>[0],
+    handler: Parameters<typeof withOrgAuth<Params>>[0],
     options: WithTenantAuthOptions = {},
-  ) => withTenantAuth<Params>(handler, { moduleKey, ...options });
+  ) => withOrgAuth<Params>(handler, { moduleKey, ...options });
 }

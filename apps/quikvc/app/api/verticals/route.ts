@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, FUND_ADMIN_ROLES } from "@/lib/rbac";
 
 const postSchema = z.object({
@@ -21,7 +21,7 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80);
 }
 
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const items = await db.vCVertical.findMany({
     where: { orgId },
     orderBy: { sortOrder: "asc" },
@@ -32,7 +32,7 @@ export const GET = withTenantAuth(async ({ orgId }) => {
   return NextResponse.json({ success: true, data: items });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const denied = denyIfNotInRoles(await getVCRole(userId, orgId), FUND_ADMIN_ROLES);
   if (denied) return denied;
 

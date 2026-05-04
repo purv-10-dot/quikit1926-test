@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { CAPITAL_OPS_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
@@ -29,7 +29,7 @@ const postSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-export const GET = withTenantAuth(async ({ orgId }, req: NextRequest) => {
+export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   const dealId = req.nextUrl.searchParams.get("dealId");
   const investorId = req.nextUrl.searchParams.get("investorId");
 
@@ -64,7 +64,7 @@ export const GET = withTenantAuth(async ({ orgId }, req: NextRequest) => {
   });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const denied = await requireRoleOrAudit(userId, orgId, CAPITAL_OPS_ROLES, {
     action: "allocation.create", // Reuse existing audit action — capital call is the issuance side
     req,

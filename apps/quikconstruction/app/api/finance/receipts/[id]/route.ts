@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ orgId }, _req, ctx: { params: { id: string } }) => {
+export const GET = withOrgAuth(async ({ orgId }, _req, ctx: { params: { id: string } }) => {
   const r = await db.cnClientReceipt.findFirst({
     where: { id: ctx.params.id, orgId },
     include: {

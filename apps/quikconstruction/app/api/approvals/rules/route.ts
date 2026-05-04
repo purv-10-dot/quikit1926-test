@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("approvals");
+const withOrgAuth = withOrgAuthForModule("approvals");
 
 const ruleSchema = z.object({
   name: z.string().min(1).max(200),
@@ -12,7 +12,7 @@ const ruleSchema = z.object({
   approverId: z.string().min(1),
 });
 
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const list = await db.cnApprovalRule.findMany({
     where: { orgId, deletedAt: null },
     orderBy: [{ docType: "asc" }, { minAmount: "asc" }],
@@ -20,7 +20,7 @@ export const GET = withTenantAuth(async ({ orgId }) => {
   return NextResponse.json({ success: true, data: list });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = ruleSchema.parse(await req.json());
   const rule = await db.cnApprovalRule.create({
     data: { orgId, ...input, minAmount: input.minAmount ?? null, createdBy: userId },

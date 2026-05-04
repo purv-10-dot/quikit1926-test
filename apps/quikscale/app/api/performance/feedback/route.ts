@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.feedback");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.feedback");
 import {
   createFeedbackSchema,
   listFeedbackParamsSchema,
@@ -18,7 +18,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
  * Default (no filters) returns feedback where the current user is EITHER
  * the sender or receiver. Admin-style lookups via explicit filters.
  */
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId, userId }, request) => {
     const parsed = listFeedbackParamsSchema.safeParse({
       toUserId: request.nextUrl.searchParams.get("toUserId") ?? undefined,
@@ -102,7 +102,7 @@ export const GET = withTenantAuth(
 /**
  * POST /api/performance/feedback — drop feedback about another user.
  */
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, request) => {
     const rl = rateLimit({
       routeKey: "feedback:create",

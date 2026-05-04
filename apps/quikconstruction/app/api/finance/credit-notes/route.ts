@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { creditNoteSchema } from "@/lib/schemas/finance";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const customerId = req.nextUrl.searchParams.get("customerId") || undefined;
   const list = await db.cnCreditNote.findMany({
     where: { orgId, deletedAt: null, ...(customerId ? { customerId } : {}) },
@@ -27,7 +27,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
  * capped at total) and set note.status="applied". Otherwise the note stays
  * "issued" for manual allocation later.
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = creditNoteSchema.parse(await req.json());
   const dup = await db.cnCreditNote.findFirst({ where: { orgId, noteNumber: input.noteNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Credit note '${input.noteNumber}' already exists` }, { status: 409 });

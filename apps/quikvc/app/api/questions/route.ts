@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
 const postSchema = z.object({
   dealId: z.string().min(1),
@@ -22,7 +22,7 @@ const patchSchema = z.object({
   answer: z.string().min(1).max(5000),
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const parsed = postSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -66,7 +66,7 @@ export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) =
   return NextResponse.json({ success: true, data: q }, { status: 201 });
 });
 
-export const PATCH = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const PATCH = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const parsed = patchSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

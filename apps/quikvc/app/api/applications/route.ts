@@ -12,12 +12,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { fullApplicationSchema } from "@/lib/schemas/applicationSchema";
 import { scoreDeal } from "@/lib/ai/prompts/score-deal";
 import { detectFinancialSignals } from "@/lib/risk/auto-detect";
 
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, req: NextRequest) => {
     const parsed = fullApplicationSchema.safeParse(await req.json());
     if (!parsed.success) {

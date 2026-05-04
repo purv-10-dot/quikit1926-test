@@ -6,7 +6,7 @@
  * Use the factory's optional `module` argument when you want a feature-gate
  * check (e.g. only paid tenants on plan X can hit this endpoint).
  */
-import { withTenantAuthForModule } from "@quikit/auth/withTenantAuth";
+import { withOrgAuthForModule } from "@quikit/auth/withOrgAuth";
 
 // Pass null/undefined when the route isn't gated by a module.
-export const withTenantAuth = withTenantAuthForModule(null);
+export const withOrgAuth = withOrgAuthForModule(null);

@@ -8,9 +8,9 @@
  */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId }) => {
     const tenant = await db.org.findUnique({
       where: { id: orgId },

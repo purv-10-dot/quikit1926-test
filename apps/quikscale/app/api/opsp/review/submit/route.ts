@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("opsp");
+const withOrgAuth = withOrgAuthForModule("opsp");
 
 /**
  * POST /api/opsp/review/submit
@@ -22,7 +22,7 @@ const withTenantAuth = withTenantAuthForModule("opsp");
  *
  * Body: { year, quarter }
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const body = await req.json().catch(() => ({}));
   const year = typeof body.year === "number" ? body.year : parseInt(body.year);
   const quarter = String(body.quarter ?? "");

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.members");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.members");
 
 /**
  * GET /api/client-meetings/members/[id]/logs
@@ -10,7 +10,7 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.members");
  * Mirrors the shape consumed by the Individual-KPI logs modal so the same
  * component can render it.
  */
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const member = await db.clientMember.findFirst({
     where: { id: params.id, orgId },
     select: { orgId: true },

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("www");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("www");
 
 // GET /api/www/[id]/logs — change history for a WWW item (read-only)
 // Source: AuditLog rows where entityType=WWWItem and entityId=id
-export const GET = withTenantAuth<{ id: string }>(
+export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId }, _request, { params }) => {
     const item = await db.wWWItem.findUnique({
       where: { id: params.id },

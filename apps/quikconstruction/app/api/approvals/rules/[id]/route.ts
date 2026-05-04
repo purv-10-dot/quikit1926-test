@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("approvals");
+const withOrgAuth = withOrgAuthForModule("approvals");
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   await db.cnApprovalRule.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
   return NextResponse.json({ success: true });
 });

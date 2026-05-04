@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("dashboard");
+const withOrgAuth = withOrgAuthForModule("dashboard");
 
 /**
  * GET /api/dashboard — single rollup for the landing page.
@@ -16,7 +16,7 @@ const withTenantAuth = withTenantAuthForModule("dashboard");
  *   incidents  : 5 most-recent open safety incidents
  *   stockLow   : 10 lowest positive balances (as-of now) across project/location/item
  */
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - 7);

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId }, request) => {
     const teamId = request.nextUrl.searchParams.get("teamId");
     const { page, limit, skip, take } = parsePagination(request);

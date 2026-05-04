@@ -10,14 +10,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { analyzeTranscript } from "@/lib/ai/prompts/analyze-transcript";
 
 const bodySchema = z.object({
   rawText: z.string().min(50, "Transcript too short").max(150_000, "Transcript too long"),
 });
 
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const parsed = bodySchema.safeParse(await req.json());
     if (!parsed.success) {

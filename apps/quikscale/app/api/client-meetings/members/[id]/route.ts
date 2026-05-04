@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { updateClientMemberSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.members");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.members");
 
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const row = await db.clientMember.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
   });
@@ -20,7 +20,7 @@ export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { para
   });
 });
 
-export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, request, { params }) => {
+export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, request, { params }) => {
   const parsed = updateClientMemberSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json({ success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 });
@@ -57,7 +57,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, requ
   return NextResponse.json({ success: true });
 });
 
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.clientMember.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
   if (!existing) return NextResponse.json({ success: false, error: "Member not found" }, { status: 404 });
 

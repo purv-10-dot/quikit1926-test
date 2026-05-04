@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { boqCreateSchema } from "@/lib/schemas/projects";
 
-const withTenantAuth = withTenantAuthForModule("projects");
+const withOrgAuth = withOrgAuthForModule("projects");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
   const list = await db.cnBOQ.findMany({
@@ -30,7 +30,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
  *
  * Totals (subtotal, tax, total) are computed server-side.
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = boqCreateSchema.parse(body);
   const project = await db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } });

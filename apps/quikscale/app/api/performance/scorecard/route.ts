@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("analytics.scorecard");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("analytics.scorecard");
 
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
     const [kpis, priorities, wwwItems, teams, members] = await Promise.all([
       db.kPI.findMany({ where: { orgId }, include: { weeklyValues: true } }),
       db.priority.findMany({ where: { orgId }, include: { weeklyStatuses: true } }),

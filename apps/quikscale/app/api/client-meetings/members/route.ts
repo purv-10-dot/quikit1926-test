@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createClientMemberSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.members");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.members");
 
 /**
  * GET /api/client-meetings/members
  *   ?includeDeleted=true → return ONLY soft-deleted rows (trash view)
  */
-export const GET = withTenantAuth(async ({ orgId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
   const rows = await db.clientMember.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
@@ -55,7 +55,7 @@ export const GET = withTenantAuth(async ({ orgId }, request) => {
 });
 
 /** POST — create. Any tenant member. */
-export const POST = withTenantAuth(async ({ orgId, userId }, request) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
   const parsed = createClientMemberSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json({ success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 });

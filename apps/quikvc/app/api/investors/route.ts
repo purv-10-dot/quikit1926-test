@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, FUND_ADMIN_ROLES } from "@/lib/rbac";
 
 const postSchema = z.object({
@@ -22,7 +22,7 @@ const postSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const investors = await db.vCInvestor.findMany({
     where: { orgId },
     orderBy: { createdAt: "desc" },
@@ -35,7 +35,7 @@ export const GET = withTenantAuth(async ({ orgId }) => {
   return NextResponse.json({ success: true, data: investors });
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const denied = denyIfNotInRoles(await getVCRole(userId, orgId), FUND_ADMIN_ROLES);
   if (denied) return denied;
 

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("orgSetup.users");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("orgSetup.users");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createOrgUserSchema } from "@/lib/schemas/userSchema";
 
@@ -50,7 +50,7 @@ const USER_TEAMS_INCLUDE = (orgId: string) => ({
 });
 
 // GET /api/org/users
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
   const where = { orgId };
 
@@ -76,7 +76,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
 }, { fallbackErrorMessage: "Failed to fetch users" });
 
 // POST /api/org/users
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const parsed = createOrgUserSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

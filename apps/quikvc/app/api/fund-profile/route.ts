@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { FUND_ADMIN_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 
@@ -23,14 +23,14 @@ const putSchema = z.object({
   dailyBriefHour: z.number().int().min(0).max(23).optional(),
 });
 
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const profile = await db.vCFundProfile.findUnique({
     where: { orgId },
   });
   return NextResponse.json({ success: true, data: profile });
 });
 
-export const PUT = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const PUT = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const denied = await requireRoleOrAudit(userId, orgId, FUND_ADMIN_ROLES, {
     action: "fund-profile.update",
     req,

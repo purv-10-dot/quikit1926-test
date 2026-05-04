@@ -59,7 +59,7 @@ export async function getVCRole(userId: string, orgId: string): Promise<VCRole |
  * Throw a 403 NextResponse if the role is not in the allowlist.
  * Returns null when allowed (caller continues).
  *
- * Usage inside a withTenantAuth handler:
+ * Usage inside a withOrgAuth handler:
  *   const role = await getVCRole(userId, orgId);
  *   const denied = denyIfNotInRoles(role, FUND_ADMIN_ROLES);
  *   if (denied) return denied;

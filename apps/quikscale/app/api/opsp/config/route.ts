@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("opsp");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("opsp");
 
 /**
  * GET /api/opsp/config
@@ -13,7 +13,7 @@ const withTenantAuth = withTenantAuthForModule("opsp");
  * - hasSetup: whether any OPSP record exists (wizard completed)
  * - fiscalYearStart: tenant setting
  */
-export const GET = withTenantAuth(async ({ orgId, userId }) => {
+export const GET = withOrgAuth(async ({ orgId, userId }) => {
   const org = await db.org.findUnique({
     where: { id: orgId },
     select: { fiscalYearStart: true },

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { checkApprovalGate } from "@/lib/approvals";
 import { logAudit } from "@/lib/audit";
 import { canApprove, forbidden } from "@/lib/permissions";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ orgId }, _req, ctx: { params: { id: string } }) => {
+export const GET = withOrgAuth(async ({ orgId }, _req, ctx: { params: { id: string } }) => {
   const bill = await db.cnVendorBill.findFirst({
     where: { id: ctx.params.id, orgId },
     include: {
@@ -24,7 +24,7 @@ export const GET = withTenantAuth(async ({ orgId }, _req, ctx: { params: { id: s
   return NextResponse.json({ success: true, data: bill });
 });
 
-export const PATCH = withTenantAuth(async ({ orgId, userId, session }, req, ctx: { params: { id: string } }) => {
+export const PATCH = withOrgAuth(async ({ orgId, userId, session }, req, ctx: { params: { id: string } }) => {
   const body = await req.json();
   if (body.action === "approve" && !canApprove(session.user.membershipRole)) return forbidden("Bill approval requires admin or project manager role");
   const bill = await db.cnVendorBill.findFirst({ where: { id: ctx.params.id, orgId }, select: { id: true, status: true, total: true } });

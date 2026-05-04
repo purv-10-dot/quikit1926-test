@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { debitNoteSchema } from "@/lib/schemas/finance";
 import { logAudit } from "@/lib/audit";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const vendorId = req.nextUrl.searchParams.get("vendorId") || undefined;
   const list = await db.cnDebitNote.findMany({
     where: { orgId, deletedAt: null, ...(vendorId ? { vendorId } : {}) },
@@ -23,7 +23,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
  * POST /api/finance/debit-notes — reduces a vendor bill's outstanding. Same
  * pattern as credit-note but against CnVendorBill.
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = debitNoteSchema.parse(await req.json());
   const dup = await db.cnDebitNote.findFirst({ where: { orgId, noteNumber: input.noteNumber, deletedAt: null }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Debit note '${input.noteNumber}' already exists` }, { status: 409 });

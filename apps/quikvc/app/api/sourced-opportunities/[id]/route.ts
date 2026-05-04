@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getVCRole, denyIfNotInRoles, ANALYST_ROLES } from "@/lib/rbac";
 
 const patchSchema = z.object({
@@ -24,7 +24,7 @@ const patchSchema = z.object({
   fundingAskLakhs: z.number().int().nonnegative().nullable().optional(),
 });
 
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId }, _req: NextRequest, { params }: { params: { id: string } }) => {
     const item = await db.vCSourcedOpportunity.findFirst({
       where: { id: params.id, orgId },
@@ -40,7 +40,7 @@ export const GET = withTenantAuth(
   },
 );
 
-export const PATCH = withTenantAuth(
+export const PATCH = withOrgAuth(
   async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const denied = denyIfNotInRoles(await getVCRole(userId, orgId), ANALYST_ROLES);
     if (denied) return denied;

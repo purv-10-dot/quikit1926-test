@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ orgId }, _req, ctx: { params: { id: string } }) => {
+export const GET = withOrgAuth(async ({ orgId }, _req, ctx: { params: { id: string } }) => {
   const inv = await db.cnClientInvoice.findFirst({
     where: { id: ctx.params.id, orgId },
     include: {
@@ -20,7 +20,7 @@ export const GET = withTenantAuth(async ({ orgId }, _req, ctx: { params: { id: s
   return NextResponse.json({ success: true, data: inv });
 });
 
-export const DELETE = withTenantAuth(async ({ orgId, userId }, _req, ctx: { params: { id: string } }) => {
+export const DELETE = withOrgAuth(async ({ orgId, userId }, _req, ctx: { params: { id: string } }) => {
   const inv = await db.cnClientInvoice.findFirst({ where: { id: ctx.params.id, orgId }, select: { id: true, paidAmount: true } });
   if (!inv) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (Number(inv.paidAmount) > 0) return NextResponse.json({ success: false, error: "Cannot delete invoice with receipts; reverse allocations first" }, { status: 400 });

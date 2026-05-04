@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("orgSetup.teams");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("orgSetup.teams");
 import { updateTeamSchema } from "@/lib/schemas/teamSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
 
 // PUT /api/org/teams/[id] — update team
-export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existing = await db.team.findFirst({ where: { id: params.id, orgId } });
   if (!existing)
     return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });
@@ -79,7 +79,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req,
 }, { fallbackErrorMessage: "Failed to update team" });
 
 // DELETE /api/org/teams/[id] — delete team
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existing = await db.team.findFirst({ where: { id: params.id, orgId } });
   if (!existing)
     return NextResponse.json({ success: false, error: "Team not found" }, { status: 404 });

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.talent");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.talent");
 import { talentAssessmentSchema } from "@/lib/schemas/talentSchema";
 
-export const GET = withTenantAuth(async ({ orgId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
     const where = { orgId };
 
@@ -118,7 +118,7 @@ export const GET = withTenantAuth(async ({ orgId }, request) => {
     return NextResponse.json(paginatedResponse(people, total, page, limit));
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId: actorId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
     const body = await req.json();
     const parsed = talentAssessmentSchema.safeParse(body);
     if (!parsed.success) {

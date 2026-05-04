@@ -10,13 +10,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { renderTermSheet, DEFAULT_TEMPLATE_HTML, type TermSheetVars } from "@/lib/term-sheet/render";
 import { notifyRole } from "@/lib/notifications";
 import { PARTNER_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId }, _req: NextRequest, { params }: { params: { id: string } }) => {
     const ts = await db.vCTermSheet.findFirst({
       where: { orgId, dealId: params.id },
@@ -32,7 +32,7 @@ export const GET = withTenantAuth(
   },
 );
 
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, req: NextRequest, { params }: { params: { id: string } }) => {
     const denied = await requireRoleOrAudit(userId, orgId, PARTNER_ROLES, {
       action: "term-sheet.generate",

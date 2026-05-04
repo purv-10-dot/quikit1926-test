@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { attendanceUpsertSchema } from "@/lib/schemas/hrms";
 
-const withTenantAuth = withTenantAuthForModule("hrms");
+const withOrgAuth = withOrgAuthForModule("hrms");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const date = req.nextUrl.searchParams.get("date");
   const from = req.nextUrl.searchParams.get("from");
   const to = req.nextUrl.searchParams.get("to");
@@ -25,7 +25,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
  * POST /api/hrms/attendance — upsert attendance rows for a given date.
  * One tx. Deletes prior rows for same (orgId, employeeId, date) then inserts.
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = attendanceUpsertSchema.parse(await req.json());
   const date = new Date(input.date);
   const employeeIds = input.rows.map(r => r.employeeId);

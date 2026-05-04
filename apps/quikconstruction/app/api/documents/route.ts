@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { saveUpload } from "@/lib/storage";
 
-const withTenantAuth = withTenantAuthForModule("documents");
+const withOrgAuth = withOrgAuthForModule("documents");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const refType = req.nextUrl.searchParams.get("refType") || undefined;
   const refId = req.nextUrl.searchParams.get("refId") || undefined;
   const list = await db.cnDocument.findMany({
@@ -19,7 +19,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
  * POST /api/documents — multipart upload.
  *   fields: refType (required), refId (required), file (required)
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const form = await req.formData();
   const refType = String(form.get("refType") ?? "");
   const refId = String(form.get("refId") ?? "");

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { z } from "zod";
 
-const withTenantAuth = withTenantAuthForModule("purchase");
+const withOrgAuth = withOrgAuthForModule("purchase");
 
 const convertSchema = z.object({
   poNumber: z.string().min(1).max(50),
@@ -26,7 +26,7 @@ const convertSchema = z.object({
  * PO lines using the `lineRates` array to set unit rate + GST. Flips RFQ
  * status to keep history, doesn't delete. Atomic.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const rfq = await db.cnRFQ.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: {

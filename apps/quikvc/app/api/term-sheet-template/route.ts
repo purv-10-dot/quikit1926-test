@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { DEFAULT_TEMPLATE_HTML } from "@/lib/term-sheet/render";
 import { FUND_ADMIN_ROLES, requireRoleOrAudit } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
@@ -18,7 +18,7 @@ const putSchema = z.object({
   name: z.string().max(120).optional(),
 });
 
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const tpl = await db.vCTermSheetTemplate.findFirst({
     where: { orgId },
     orderBy: { createdAt: "desc" },
@@ -30,7 +30,7 @@ export const GET = withTenantAuth(async ({ orgId }) => {
   });
 });
 
-export const PUT = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const PUT = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const denied = await requireRoleOrAudit(userId, orgId, FUND_ADMIN_ROLES, {
     action: "term-sheet-template.update",
     req,

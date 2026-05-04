@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateTablePreferencesSchema } from "@/lib/schemas/tablePreferencesSchema";
 import { validationError } from "@/lib/api/validationError";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
 function parseHidden(json: string | null): string[] {
   if (!json) return [];
@@ -32,7 +32,7 @@ function parseWidths(json: string | null): Record<string, number> {
 }
 
 // GET /api/settings/table-preferences — return all table prefs for the current user
-export const GET = withTenantAuth(async ({ userId }) => {
+export const GET = withOrgAuth(async ({ userId }) => {
     const user = await db.user.findUnique({
       where: { id: userId },
       select: {
@@ -77,7 +77,7 @@ export const GET = withTenantAuth(async ({ userId }) => {
 }, { fallbackErrorMessage: "Failed to fetch preferences" });
 
 // PATCH /api/settings/table-preferences — update one or more fields for a table
-export const PATCH = withTenantAuth(async ({ userId }, request) => {
+export const PATCH = withOrgAuth(async ({ userId }, request) => {
     const body = await request.json();
     const parsed = updateTablePreferencesSchema.safeParse(body);
     if (!parsed.success) return validationError(parsed);

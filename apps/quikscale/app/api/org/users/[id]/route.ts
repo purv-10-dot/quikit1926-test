@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("orgSetup.users");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("orgSetup.users");
 import { updateOrgUserSchema } from "@/lib/schemas/userSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
 
 // PUT /api/org/users/[id]
-export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const membership = await db.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId: params.id } },
   });
@@ -104,7 +104,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req,
 }, { fallbackErrorMessage: "Failed to update user" });
 
 // DELETE /api/org/users/[id] — deactivate membership
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   if (params.id === userId)
     return NextResponse.json({ success: false, error: "You cannot remove yourself" }, { status: 400 });
 

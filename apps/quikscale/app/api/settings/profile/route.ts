@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateProfileSchema } from "@/lib/schemas/settingsSchema";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId, userId }) => {
     const user = await db.user.findUnique({
       where: { id: userId },
@@ -41,7 +41,7 @@ export const GET = withTenantAuth(
   { fallbackErrorMessage: "Failed to fetch profile" },
 );
 
-export const PATCH = withTenantAuth(
+export const PATCH = withOrgAuth(
   async ({ userId }, request) => {
     const body = await request.json();
     const parsed = updateProfileSchema.safeParse(body);

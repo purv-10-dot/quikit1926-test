@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateQuarterSchema } from "@/lib/schemas/quarterSchema";
 import { addDays } from "@/lib/utils/quarterGen";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("orgSetup.quarters");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("orgSetup.quarters");
 
 const DAYS_PER_QUARTER = 91; // 13 weeks
 
@@ -22,7 +22,7 @@ function serializeQuarter(
 }
 
 // PUT /api/org/quarters/[id] — only Q1 start date can be changed, recalculates all quarters
-export const PUT = withTenantAuth<{ id: string }>(async ({ orgId }, request, { params }) => {
+export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { params }) => {
     const existing = await db.quarterSetting.findFirst({ where: { id: params.id, orgId } });
     if (!existing)
       return NextResponse.json({ success: false, error: "Quarter not found" }, { status: 404 });
@@ -112,7 +112,7 @@ export const PUT = withTenantAuth<{ id: string }>(async ({ orgId }, request, { p
 }, { fallbackErrorMessage: "Failed to update quarter" });
 
 // DELETE /api/org/quarters/[id]
-export const DELETE = withTenantAuth<{ id: string }>(async ({ orgId }, _request, { params }) => {
+export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId }, _request, { params }) => {
     const existing = await db.quarterSetting.findFirst({ where: { id: params.id, orgId } });
     if (!existing)
       return NextResponse.json({ success: false, error: "Quarter not found" }, { status: 404 });

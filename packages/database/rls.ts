@@ -9,7 +9,7 @@
  * This is belt-and-braces on top of the application-level `WHERE tenantId`
  * filters. Both layers must agree — if either is wrong, the other catches it.
  *
- * Usage in withTenantAuth:
+ * Usage in withOrgAuth:
  *   import { setTenantContext } from "@quikit/database/rls";
  *   await setTenantContext(tenantId);
  *   // ... run queries ...
@@ -39,7 +39,7 @@ export async function setTenantContext(tenantId: string): Promise<void> {
   try {
     // Use $executeRawUnsafe because $executeRaw doesn't support SET commands
     // with parameterized values. The tenantId is already validated by
-    // withTenantAuth before this point AND the UUID regex above.
+    // withOrgAuth before this point AND the UUID regex above.
     await db.$executeRawUnsafe(`SET app.tenant_id = '${tenantId}'`);
   } catch {
     // Swallow — RLS is an additional safety layer, not a blocker.

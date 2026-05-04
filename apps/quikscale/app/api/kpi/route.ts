@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("kpi");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("kpi");
 import { createKPISchema, kpiListParamsSchema } from "@/lib/schemas/kpiSchema";
 import { ApiResponse } from "@/lib/services/kpiService";
 import {
@@ -14,7 +14,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const params = {
     page: parseInt(searchParams.get("page") || "1"),
@@ -208,7 +208,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
 });
 
 // POST /api/kpi - Create KPI
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   // Rate limit: 30 KPI writes / minute per user (prevents bulk-insert abuse)
   const rl = rateLimit({
     routeKey: "kpi:create",

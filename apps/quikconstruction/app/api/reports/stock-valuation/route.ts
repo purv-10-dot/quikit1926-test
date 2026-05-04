@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("reports");
+const withOrgAuth = withOrgAuthForModule("reports");
 
 /**
  * GET /api/reports/stock-valuation
@@ -10,7 +10,7 @@ const withTenantAuth = withTenantAuthForModule("reports");
  * Per (project, location, item): qty = Σ qtyIn − Σ qtyOut.
  * Value approximated as qty × moving-avg rate (weighted avg of inbound rows).
  */
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const rows = await db.cnStockLedger.groupBy({
     by: ["projectId", "locationId", "itemId", "uomId"],
     where: { orgId },

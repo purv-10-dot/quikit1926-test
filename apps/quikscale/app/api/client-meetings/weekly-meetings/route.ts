@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.weeklyMeeting");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
 /**
  * GET /api/client-meetings/weekly-meetings?clientId=&from=&to=
  * Ordered newest first; soft-deleted hidden.
  */
-export const GET = withTenantAuth(async ({ orgId }, request) => {
+export const GET = withOrgAuth(async ({ orgId }, request) => {
   const url = new URL(request.url);
   const clientId = url.searchParams.get("clientId") ?? undefined;
   const from = url.searchParams.get("from");
@@ -85,7 +85,7 @@ export const GET = withTenantAuth(async ({ orgId }, request) => {
 });
 
 /** POST — create weekly meeting with absence + dashboardNA links + per-member scores. */
-export const POST = withTenantAuth(async ({ orgId, userId }, request) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
   const parsed = createWeeklyMeetingSchema.safeParse(await request.json());
   if (!parsed.success)
     return NextResponse.json(

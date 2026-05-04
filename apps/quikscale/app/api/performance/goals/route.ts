@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
-const withTenantAuth = withTenantAuthForModule("people.goals");
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+const withOrgAuth = withOrgAuthForModule("people.goals");
 import {
   createGoalSchema,
   listGoalsParamsSchema,
@@ -13,7 +13,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
  * GET /api/performance/goals
  * Filters: ownerId / quarter / year / status / parentGoalId
  */
-export const GET = withTenantAuth(
+export const GET = withOrgAuth(
   async ({ orgId }, request) => {
     const parsed = listGoalsParamsSchema.safeParse({
       ownerId: request.nextUrl.searchParams.get("ownerId") ?? undefined,
@@ -78,7 +78,7 @@ export const GET = withTenantAuth(
 /**
  * POST /api/performance/goals
  */
-export const POST = withTenantAuth(
+export const POST = withOrgAuth(
   async ({ orgId, userId }, request) => {
     const rl = rateLimit({
       routeKey: "goal:create",

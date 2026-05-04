@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuth } from "@/lib/api/withTenantAuth";
+import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
 const postSchema = z.object({
   dealId: z.string().min(1),
@@ -12,7 +12,7 @@ const postSchema = z.object({
   mitigation: z.string().max(4000).optional(),
 });
 
-export const POST = withTenantAuth(async ({ orgId, userId }, req: NextRequest) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const parsed = postSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

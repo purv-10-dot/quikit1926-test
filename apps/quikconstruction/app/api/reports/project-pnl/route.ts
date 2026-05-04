@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("reports");
+const withOrgAuth = withOrgAuthForModule("reports");
 
 /**
  * GET /api/reports/project-pnl
@@ -20,7 +20,7 @@ const withTenantAuth = withTenantAuthForModule("reports");
  *   Allocate `basicAmount × daysPerProject / totalPaidDays` to each project.
  *   Attendance rows with null projectId → not allocated to any project.
  */
-export const GET = withTenantAuth(async ({ orgId }) => {
+export const GET = withOrgAuth(async ({ orgId }) => {
   const [projects, invoices, bills, consumption, expenses, finalizedPayrolls] = await Promise.all([
     db.cnProject.findMany({
       where: { orgId, deletedAt: null },

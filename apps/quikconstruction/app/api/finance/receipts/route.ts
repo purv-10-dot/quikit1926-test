@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { receiptCreateSchema } from "@/lib/schemas/finance";
 
-const withTenantAuth = withTenantAuthForModule("finance");
+const withOrgAuth = withOrgAuthForModule("finance");
 
-export const GET = withTenantAuth(async ({ orgId }, req) => {
+export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const customerId = req.nextUrl.searchParams.get("customerId") || undefined;
   const list = await db.cnClientReceipt.findMany({
@@ -29,7 +29,7 @@ export const GET = withTenantAuth(async ({ orgId }, req) => {
  *   4. Create receipt + allocations
  *   5. For each invoice: increment paidAmount, update status (partial/paid)
  */
-export const POST = withTenantAuth(async ({ orgId, userId }, req) => {
+export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = receiptCreateSchema.parse(await req.json());
 
   const dup = await db.cnClientReceipt.findFirst({ where: { orgId, receiptNumber: input.receiptNumber, deletedAt: null }, select: { id: true } });

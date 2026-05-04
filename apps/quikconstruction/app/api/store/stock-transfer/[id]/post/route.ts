@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("store");
+const withOrgAuth = withOrgAuthForModule("store");
 
 /**
  * POST /api/store/stock-transfer/[id]/post
@@ -14,7 +14,7 @@ const withTenantAuth = withTenantAuthForModule("store");
  * Only valid if source has sufficient stock. Both ledger rows share the same
  * transactionRefId so reconciliation reports can pair them.
  */
-export const POST = withTenantAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const tr = await db.cnStockTransfer.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: { lines: true },

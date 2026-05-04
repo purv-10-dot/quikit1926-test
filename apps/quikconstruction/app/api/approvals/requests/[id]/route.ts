@@ -1,22 +1,22 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-const withTenantAuth = withTenantAuthForModule("approvals");
+const withOrgAuth = withOrgAuthForModule("approvals");
 
 const decideSchema = z.object({
   decision: z.enum(["approved", "rejected"]),
   comment: z.string().optional().nullable(),
 });
 
-export const GET = withTenantAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const r = await db.cnApprovalRequest.findFirst({ where: { id: params.id, orgId } });
   if (!r) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: r });
 });
 
-export const PATCH = withTenantAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const input = decideSchema.parse(await req.json());
   const r = await db.cnApprovalRequest.findFirst({ where: { id: params.id, orgId }, select: { id: true, approverId: true, status: true } });
   if (!r) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
-import { withTenantAuthForModule } from "@/lib/api/withTenantAuth";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { computeMemberPunchIn, calculateOverallFinalAverage } from "@/lib/services/clientMeetingsMath";
 import { applyPctFill, applyHeader, workbookToBuffer, EXCEL_COLORS } from "@/lib/exports/clientMeetingsExcel";
 
-const withTenantAuth = withTenantAuthForModule("clientMeetings.dashboard");
+const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
 
 /**
  * POST /api/client-meetings/export/punch
@@ -15,7 +15,7 @@ const withTenantAuth = withTenantAuthForModule("clientMeetings.dashboard");
  * scores + a per-member Total row. Finishes with an overall "Total Average of
  * All Members" row (spec §7.9).
  */
-export const POST = withTenantAuth(async ({ orgId }, request) => {
+export const POST = withOrgAuth(async ({ orgId }, request) => {
   const body = await request.json();
   const clientId: string = body.clientId;
   const year: number = parseInt(body.year, 10);
