@@ -1,5 +1,13 @@
 import type { NextRequest } from "next/server";
 import { verifyJWT } from "./jwt";
+import type { ActingAs } from "./types";
+
+const ALLOWED_ACTING_AS: ReadonlySet<ActingAs> = new Set([
+  "user",
+  "ai_agent",
+  "platform_service",
+  "scheduled_job",
+]);
 
 export interface AuthContext {
   userId: string;
@@ -9,6 +17,14 @@ export interface AuthContext {
   permissions: string[];
   isSuperAdmin: boolean;
   email: string | null;
+  /**
+   * Who/what is acting on this request. `'user'` for normal session JWTs.
+   * Non-`'user'` only when the JWT was minted by the agent issuance endpoint.
+   * Audit log code should record this as the actor type.
+   */
+  actingAs: ActingAs;
+  /** Set when `actingAs === 'ai_agent'`. Null otherwise. */
+  actingAgentId: string | null;
 }
 
 export async function withAuth(req: NextRequest): Promise<AuthContext> {
@@ -26,6 +42,11 @@ export async function withAuth(req: NextRequest): Promise<AuthContext> {
       { status: 403, headers: { "content-type": "application/json" } },
     );
   }
+  // Defensive read: defaults to 'user' if the claim is absent (legacy tokens)
+  // or if a malformed value somehow slipped through.
+  const rawActingAs = token.actingAs as ActingAs | undefined;
+  const actingAs: ActingAs =
+    rawActingAs && ALLOWED_ACTING_AS.has(rawActingAs) ? rawActingAs : "user";
   return {
     userId: token.id as string,
     orgId,
@@ -33,6 +54,8 @@ export async function withAuth(req: NextRequest): Promise<AuthContext> {
     permissions: (token as unknown as { permissions?: string[] }).permissions ?? [],
     isSuperAdmin: Boolean(token.isSuperAdmin),
     email: (token.email as string | undefined) ?? null,
+    actingAs,
+    actingAgentId: (token.actingAgentId as string | undefined) ?? null,
   };
 }
 

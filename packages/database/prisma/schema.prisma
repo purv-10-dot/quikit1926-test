@@ -424,6 +424,30 @@ model VerificationToken {
   @@schema("auth")
 }
 
+/// Audit row written by `POST /api/auth/internal/issue-agent-jwt` on every
+/// attempt — success and failure. `status` distinguishes outcomes; `errorCode`
+/// is set on non-success rows to mirror the API error envelope. No FK to User
+/// because we want to log issuance attempts even for unknown userIds (which is
+/// itself a useful security signal).
+model AgentJwtIssuance {
+  id                String   @id @default(cuid())
+  requestingService String
+  userId            String
+  orgId             String
+  agentId           String?
+  reason            String
+  ttlSeconds        Int
+  actingAs          String
+  traceId           String?
+  status            String // "success" | "unauthorized" | "forbidden" | "not_found" | "validation_error" | "internal_error"
+  errorCode         String?
+  issuedAt          DateTime @default(now())
+
+  @@index([userId, issuedAt])
+  @@index([requestingService, issuedAt])
+  @@schema("auth")
+}
+
 model OrgMember {
   id       String @id @default(cuid())
   orgId String

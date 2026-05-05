@@ -13,6 +13,11 @@ export {
   type ModuleDef,
   type AppModuleConfig,
 } from "./lib/moduleRegistry";
+export {
+  INTERNAL_SERVICE_ALLOWLIST,
+  isAllowedInternalService,
+  type InternalService,
+} from "./lib/internal-services";
 
 // DO NOT re-export from "./lib/rateLimit" here.
 // Rate-limit code pulls in ioredis (a Node-only package that tries to

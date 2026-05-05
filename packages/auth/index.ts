@@ -120,10 +120,14 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           // fine: successful logins are within the allowed-count window and
           // the bucket expires on its own.
 
+          // Users added by a super admin start with empty firstName/lastName
+          // (collected on first login via /complete-profile). Fall back to
+          // email so session.user.name is never blank.
+          const fullName = `${user.firstName} ${user.lastName}`.trim();
           return {
             id: user.id,
             email: user.email,
-            name: `${user.firstName} ${user.lastName}`,
+            name: fullName || user.email,
             isSuperAdmin: user.isSuperAdmin,
           };
         },

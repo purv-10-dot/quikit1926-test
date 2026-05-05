@@ -18,6 +18,7 @@
     "@quikit/shared": "*",
     "@quikit/ui": "*",
     "@sentry/nextjs": "^10.48.0",
+    "@types/nodemailer": "^8.0.0",
     "bcryptjs": "^2.4.3",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
@@ -27,6 +28,7 @@
     "lucide-react": "^0.309.0",
     "next": "14.0.4",
     "next-auth": "^4.24.0",
+    "nodemailer": "^7.0.13",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

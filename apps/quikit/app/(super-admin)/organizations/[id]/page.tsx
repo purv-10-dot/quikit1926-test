@@ -69,9 +69,10 @@ export default function OrgDetailPage() {
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
-  // Add member
+  // Add member. firstName/lastName intentionally omitted — captured on the
+  // member's first login via the /complete-profile flow.
   const [addMemberOpen, setAddMemberOpen] = useState(false);
-  const [memberForm, setMemberForm] = useState({ email: "", firstName: "", lastName: "", role: "admin", password: "" });
+  const [memberForm, setMemberForm] = useState({ email: "", role: "admin", password: "" });
   const [addingMember, setAddingMember] = useState(false);
   const [memberError, setMemberError] = useState("");
 
@@ -144,7 +145,7 @@ export default function OrgDetailPage() {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Failed to add member");
       setAddMemberOpen(false);
-      setMemberForm({ email: "", firstName: "", lastName: "", role: "admin", password: "" });
+      setMemberForm({ email: "", role: "admin", password: "" });
       fetchOrg();
     } catch (err) {
       setMemberError(err instanceof Error ? err.message : "Failed to add member");
@@ -375,9 +376,13 @@ export default function OrgDetailPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {org.users.map((m) => (
+                  {org.users.map((m) => {
+                    const fullName = `${m.user.firstName} ${m.user.lastName}`.trim();
+                    return (
                     <tr key={m.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-5 py-3 text-sm text-gray-900 font-medium">{m.user.firstName} {m.user.lastName}</td>
+                      <td className="px-5 py-3 text-sm text-gray-900 font-medium">
+                        {fullName || <span className="text-gray-400 italic">Pending first sign-in</span>}
+                      </td>
                       <td className="px-5 py-3 text-sm text-gray-500">{m.user.email}</td>
                       <td className="px-5 py-3">
                         <span className={`text-xs px-2.5 py-1 rounded-full font-medium capitalize ${roleBadge[m.role] || "bg-gray-100 text-gray-600"}`}>
@@ -385,7 +390,8 @@ export default function OrgDetailPage() {
                         </span>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
               </div>
@@ -442,28 +448,6 @@ export default function OrgDetailPage() {
               onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
             />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1.5">First Name <span className="text-red-400">*</span></label>
-              <input
-                required
-                placeholder="John"
-                value={memberForm.firstName}
-                onChange={(e) => setMemberForm({ ...memberForm, firstName: e.target.value })}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1.5">Last Name <span className="text-red-400">*</span></label>
-              <input
-                required
-                placeholder="Doe"
-                value={memberForm.lastName}
-                onChange={(e) => setMemberForm({ ...memberForm, lastName: e.target.value })}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
-              />
-            </div>
           </div>
           <div>
             <Select

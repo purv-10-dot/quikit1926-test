@@ -8,7 +8,7 @@ import React, {
 import {
   ArrowRight, Mail, Lock, Eye, EyeOff,
   ArrowLeft, X, AlertCircle, PartyPopper, Loader,
-  TrendingUp, Target, BarChart3, Zap,
+  TrendingUp, Target, BarChart3, Zap, User as UserIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useInView, Variants, Transition } from "framer-motion";
 import { useRouter } from "next/navigation";
@@ -157,15 +157,40 @@ export const SignInComponent = ({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [authStep, setAuthStep] = useState<"email" | "password">("email");
+  const [authStep, setAuthStep] = useState<"email" | "password" | "profile" | "forgot-otp" | "new-password">("email");
   const [modalStatus, setModalStatus] = useState<"closed" | "loading" | "error" | "success">("closed");
   const [modalErrorMessage, setModalErrorMessage] = useState("");
   const [banner, setBanner] = useState<string | null>(initialError ?? null);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  // Forgot-password flow state
+  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpSecondsLeft, setOtpSecondsLeft] = useState(0);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpSending, setOtpSending] = useState(false);
+  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   const confettiRef = useRef<ConfettiRef>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const firstNameInputRef = useRef<HTMLInputElement>(null);
+  const otpInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const newPasswordInputRef = useRef<HTMLInputElement>(null);
 
   const isEmailValid = /\S+@\S+\.\S+/.test(email);
   const isPasswordValid = password.length > 0;
+  const isProfileValid = firstName.trim().length > 0 && lastName.trim().length > 0;
+  const otpValue = otpDigits.join("");
+  const isOtpComplete = otpValue.length === 6 && /^\d{6}$/.test(otpValue);
+  const isNewPasswordValid =
+    newPassword.length >= 8 && newPassword === confirmPassword;
 
   const fireConfetti = () => {
     const fire = confettiRef.current?.fire;
@@ -173,6 +198,46 @@ export const SignInComponent = ({
     const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 100 };
     fire({ ...defaults, particleCount: 60, origin: { x: 0.1, y: 0.9 }, angle: 60 });
     fire({ ...defaults, particleCount: 60, origin: { x: 0.9, y: 0.9 }, angle: 120 });
+  };
+
+  const navigateToTarget = () => {
+    const target = callbackUrl || redirectPath;
+    if (hardNavigate) {
+      window.location.assign(target);
+    } else {
+      router.push(target);
+    }
+  };
+
+  /**
+   * After a successful credentials sign-in, ask the auth service whether the
+   * user has a first/last name on file. If yes, redirect to the launcher as
+   * before. If no (super-admin-added accounts start with empty names), close
+   * the loading modal and advance to the inline profile step. We swallow any
+   * fetch error and fall through to the normal redirect — the /select-org
+   * destination has its own profile gate as a safety net.
+   */
+  const advancePostSignIn = async () => {
+    try {
+      const res = await fetch("/api/auth/me/profile", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success && data.complete === false) {
+          setModalStatus("closed");
+          setAuthStep("profile");
+          return;
+        }
+      }
+    } catch {
+      // Network blip — fall through to redirect.
+    }
+    fireConfetti();
+    setModalStatus("success");
+    setTimeout(navigateToTarget, 1400);
   };
 
   const runSignIn = async (email?: string, password?: string) => {
@@ -187,16 +252,7 @@ export const SignInComponent = ({
         redirect: false,
       });
       if (result?.ok) {
-        fireConfetti();
-        setModalStatus("success");
-        const target = callbackUrl || redirectPath;
-        setTimeout(() => {
-          if (hardNavigate) {
-            window.location.assign(target);
-          } else {
-            router.push(target);
-          }
-        }, 1400);
+        await advancePostSignIn();
       } else {
         setModalErrorMessage(result?.error === "Invalid credentials" ? "Invalid email or password." : "Sign in failed. Please try again.");
         setModalStatus("error");
@@ -204,6 +260,137 @@ export const SignInComponent = ({
     } catch {
       setModalErrorMessage("Something went wrong. Please try again.");
       setModalStatus("error");
+    }
+  };
+
+  const submitProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isProfileValid || savingProfile) return;
+    setProfileError(null);
+    setSavingProfile(true);
+    try {
+      const res = await fetch("/api/auth/me/profile", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Could not save your name.");
+      }
+      fireConfetti();
+      setModalStatus("success");
+      setTimeout(navigateToTarget, 1100);
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "Could not save your name.");
+      setSavingProfile(false);
+    }
+  };
+
+  /* ─── Forgot-password (OTP) flow ───────────────────────────────────── */
+
+  const sendOtp = async (): Promise<boolean> => {
+    if (!isEmailValid) return false;
+    setOtpSending(true);
+    setOtpError(null);
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // 429 throttle is the only non-200 we surface to the user.
+        setOtpError(data?.error || "Could not send code. Try again shortly.");
+        return false;
+      }
+      const ttl: number = typeof data?.expiresInSeconds === "number" ? data.expiresInSeconds : 180;
+      setOtpDigits(["", "", "", "", "", ""]);
+      setOtpExpiresAt(Date.now() + ttl * 1000);
+      setOtpSecondsLeft(ttl);
+      return true;
+    } catch {
+      setOtpError("Network error. Try again.");
+      return false;
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  const startForgotPassword = async () => {
+    const ok = await sendOtp();
+    if (ok) setAuthStep("forgot-otp");
+  };
+
+  const verifyOtpDigits = async () => {
+    if (!isOtpComplete || otpVerifying) return;
+    setOtpVerifying(true);
+    setOtpError(null);
+    try {
+      const res = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, otp: otpValue }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        setOtpError(data?.error || "Invalid or expired code.");
+        // Clear digits so the user can retype without backspacing.
+        setOtpDigits(["", "", "", "", "", ""]);
+        setTimeout(() => otpInputRefs.current[0]?.focus(), 50);
+        return;
+      }
+      setResetToken(data.resetToken);
+      setAuthStep("new-password");
+    } catch {
+      setOtpError("Network error. Try again.");
+    } finally {
+      setOtpVerifying(false);
+    }
+  };
+
+  const submitNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isNewPasswordValid || resetSubmitting || !resetToken) return;
+    setResetError(null);
+    setResetSubmitting(true);
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ resetToken, password: newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Could not update password.");
+      }
+      // Auto sign-in with the new password so the user lands on /apps without
+      // typing it a third time.
+      const signInResult = await nextAuthSignIn("credentials", {
+        email,
+        password: newPassword,
+        redirect: false,
+      });
+      if (!signInResult?.ok) {
+        // Edge case: password updated but sign-in failed (e.g. bad rate limit
+        // bucket). Send the user to the password step with a helpful message.
+        setBanner("Password updated. Please sign in with your new password.");
+        setAuthStep("password");
+        setPassword("");
+        setResetSubmitting(false);
+        return;
+      }
+      fireConfetti();
+      setModalStatus("success");
+      setTimeout(navigateToTarget, 1200);
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Could not update password.");
+      setResetSubmitting(false);
     }
   };
 
@@ -227,7 +414,95 @@ export const SignInComponent = ({
 
   useEffect(() => {
     if (authStep === "password") setTimeout(() => passwordInputRef.current?.focus(), 400);
+    if (authStep === "profile") setTimeout(() => firstNameInputRef.current?.focus(), 400);
+    if (authStep === "forgot-otp") setTimeout(() => otpInputRefs.current[0]?.focus(), 400);
+    if (authStep === "new-password") setTimeout(() => newPasswordInputRef.current?.focus(), 400);
   }, [authStep]);
+
+  // Countdown ticker for the OTP step. Re-arms on every send (`otpExpiresAt`
+  // bumps), stops when zero or when we leave the step.
+  useEffect(() => {
+    if (authStep !== "forgot-otp" || !otpExpiresAt) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000));
+      setOtpSecondsLeft(remaining);
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [authStep, otpExpiresAt]);
+
+  // Auto-submit the OTP the moment all 6 digits are filled — the user never
+  // needs to click anything in the happy path.
+  useEffect(() => {
+    if (authStep === "forgot-otp" && isOtpComplete && !otpVerifying && otpSecondsLeft > 0) {
+      verifyOtpDigits();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otpValue, authStep]);
+
+  /* ─── OTP digit input handlers ─────────────────────────────────────── */
+
+  const handleOtpChange = (index: number, raw: string) => {
+    // Strip non-digits in case of paste / IME quirks
+    const digits = raw.replace(/\D/g, "");
+    if (digits.length === 0) {
+      const next = [...otpDigits];
+      next[index] = "";
+      setOtpDigits(next);
+      return;
+    }
+    if (digits.length > 1) {
+      // Multi-character input (paste) — distribute across boxes from `index`.
+      const next = [...otpDigits];
+      for (let i = 0; i < digits.length && index + i < 6; i++) {
+        next[index + i] = digits[i]!;
+      }
+      setOtpDigits(next);
+      const lastFilled = Math.min(index + digits.length - 1, 5);
+      const nextFocus = lastFilled < 5 ? lastFilled + 1 : 5;
+      otpInputRefs.current[nextFocus]?.focus();
+      return;
+    }
+    const next = [...otpDigits];
+    next[index] = digits;
+    setOtpDigits(next);
+    if (index < 5) otpInputRefs.current[index + 1]?.focus();
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !otpDigits[index] && index > 0) {
+      e.preventDefault();
+      const next = [...otpDigits];
+      next[index - 1] = "";
+      setOtpDigits(next);
+      otpInputRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      otpInputRefs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!text) return;
+    const next = ["", "", "", "", "", ""];
+    for (let i = 0; i < text.length; i++) next[i] = text[i]!;
+    setOtpDigits(next);
+    const lastFilled = Math.min(text.length - 1, 5);
+    const nextFocus = lastFilled < 5 ? lastFilled + 1 : 5;
+    otpInputRefs.current[nextFocus]?.focus();
+  };
+
+  const formatCountdown = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
 
   const modalSteps = [
     { message: "Verifying your identity…" },
@@ -454,7 +729,7 @@ export const SignInComponent = ({
             </div>
           )}
           <AnimatePresence mode="wait">
-            {authStep === "email" ? (
+            {authStep === "email" && (
               <motion.div key="email-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
 
@@ -534,7 +809,8 @@ export const SignInComponent = ({
                   <span className="text-white/45 hover:text-white/70 cursor-pointer transition-colors">Privacy Policy</span>
                 </p>
               </motion.div>
-            ) : (
+            )}
+            {authStep === "password" && (
               <motion.div key="password-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
 
@@ -587,6 +863,17 @@ export const SignInComponent = ({
                     </div>
                   </div>
 
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={startForgotPassword}
+                      disabled={!isEmailValid || otpSending}
+                      className="text-violet-400 hover:text-violet-300 disabled:text-white/25 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+                    >
+                      {otpSending ? "Sending code…" : "Forgot password?"}
+                    </button>
+                  </div>
+
                   <button type="submit" disabled={!isPasswordValid}
                     className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:-translate-y-0.5 active:translate-y-0">
                     Sign In
@@ -599,6 +886,219 @@ export const SignInComponent = ({
                   <ArrowLeft className="w-4 h-4" />
                   Back to sign in options
                 </button>
+              </motion.div>
+            )}
+            {authStep === "profile" && (
+              <motion.div key="profile-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
+
+                {/* Heading */}
+                <div className="space-y-2">
+                  <h2 className="text-3xl font-semibold text-white tracking-tight"
+                    style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
+                    Tell us your name
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-violet-400" />
+                    <p className="text-white/45 text-sm truncate max-w-[280px]">{email}</p>
+                  </div>
+                </div>
+
+                {/* Name inputs */}
+                <form onSubmit={submitProfile} className="space-y-3">
+                  <div className="gi-wrap w-full">
+                    <div className="gi">
+                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
+                        <UserIcon className="w-4 h-4 text-white/40" />
+                      </div>
+                      <input
+                        ref={firstNameInputRef}
+                        type="text"
+                        placeholder="First name"
+                        value={firstName}
+                        onChange={e => setFirstName(e.target.value)}
+                        maxLength={100}
+                        autoComplete="given-name"
+                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="gi-wrap w-full">
+                    <div className="gi">
+                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
+                        <UserIcon className="w-4 h-4 text-white/40" />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Last name"
+                        value={lastName}
+                        onChange={e => setLastName(e.target.value)}
+                        maxLength={100}
+                        autoComplete="family-name"
+                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
+                      />
+                    </div>
+                  </div>
+
+                  {profileError && (
+                    <p className="text-xs text-red-300/90 px-1">{profileError}</p>
+                  )}
+
+                  <button type="submit" disabled={!isProfileValid || savingProfile}
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:-translate-y-0.5 active:translate-y-0">
+                    {savingProfile ? "Saving…" : "Continue"}
+                  </button>
+                </form>
+              </motion.div>
+            )}
+            {authStep === "forgot-otp" && (
+              <motion.div key="forgot-otp-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
+
+                {/* Heading */}
+                <div className="space-y-2">
+                  <h2 className="text-3xl font-semibold text-white tracking-tight"
+                    style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
+                    Check your email
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-violet-400" />
+                    <p className="text-white/45 text-sm truncate max-w-[260px]">{email}</p>
+                    <button onClick={() => { setAuthStep("password"); setOtpDigits(["","","","","",""]); setOtpError(null); setOtpExpiresAt(null); }}
+                      className="text-violet-400 hover:text-violet-300 transition-colors ml-auto text-xs font-medium flex-shrink-0">
+                      Change
+                    </button>
+                  </div>
+                  <p className="text-white/45 text-sm">Enter the 6-digit code we just sent.</p>
+                </div>
+
+                {/* OTP boxes */}
+                <div className="space-y-3">
+                  <div className="flex justify-between gap-2">
+                    {otpDigits.map((digit, i) => (
+                      <input
+                        key={i}
+                        ref={(el) => { otpInputRefs.current[i] = el; }}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        autoComplete={i === 0 ? "one-time-code" : "off"}
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleOtpChange(i, e.target.value)}
+                        onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                        onPaste={i === 0 ? handleOtpPaste : undefined}
+                        disabled={otpVerifying || otpSecondsLeft === 0}
+                        className="w-11 h-12 text-center text-xl font-semibold rounded-xl bg-white/[0.04] border border-white/15 text-white placeholder:text-white/20 focus:outline-none focus:border-violet-400 focus:bg-white/[0.07] transition-colors disabled:opacity-50"
+                      />
+                    ))}
+                  </div>
+
+                  {/* Countdown / resend */}
+                  <div className="flex items-center justify-between text-xs">
+                    {otpSecondsLeft > 0 ? (
+                      <span className="text-white/45">
+                        Code expires in <span className="text-violet-300 font-mono">{formatCountdown(otpSecondsLeft)}</span>
+                      </span>
+                    ) : (
+                      <span className="text-white/45">Code expired.</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={sendOtp}
+                      disabled={otpSending || otpSecondsLeft > 0}
+                      className="text-violet-400 hover:text-violet-300 disabled:text-white/25 disabled:cursor-not-allowed transition-colors font-medium"
+                    >
+                      {otpSending ? "Sending…" : otpSecondsLeft > 0 ? "Resend code" : "Send new code"}
+                    </button>
+                  </div>
+
+                  {otpError && (
+                    <p className="text-xs text-red-300/90 px-1">{otpError}</p>
+                  )}
+
+                  {otpVerifying && (
+                    <p className="text-xs text-white/45 px-1">Verifying…</p>
+                  )}
+                </div>
+
+                {/* Back */}
+                <button type="button" onClick={() => { setAuthStep("password"); setOtpDigits(["","","","","",""]); setOtpError(null); setOtpExpiresAt(null); }}
+                  className="flex items-center gap-2 text-white/35 hover:text-white/70 transition-colors text-sm">
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to password
+                </button>
+              </motion.div>
+            )}
+            {authStep === "new-password" && (
+              <motion.div key="new-password-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
+
+                {/* Heading */}
+                <div className="space-y-2">
+                  <h2 className="text-3xl font-semibold text-white tracking-tight"
+                    style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
+                    Create a new password
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-violet-400" />
+                    <p className="text-white/45 text-sm truncate max-w-[280px]">{email}</p>
+                  </div>
+                </div>
+
+                <form onSubmit={submitNewPassword} className="space-y-3">
+                  <div className="gi-wrap w-full">
+                    <div className="gi">
+                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
+                        <button type="button" onClick={() => setShowNewPassword(v => !v)} className="text-white/40 hover:text-white/70 transition-colors p-1">
+                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <input
+                        ref={newPasswordInputRef}
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="New password (min 8 characters)"
+                        value={newPassword}
+                        onChange={e => setNewPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                        maxLength={200}
+                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="gi-wrap w-full">
+                    <div className="gi">
+                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
+                        <Lock className="w-4 h-4 text-white/40" />
+                      </div>
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="Confirm new password"
+                        value={confirmPassword}
+                        onChange={e => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                        maxLength={200}
+                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
+                      />
+                    </div>
+                  </div>
+
+                  {confirmPassword.length > 0 && newPassword !== confirmPassword && (
+                    <p className="text-xs text-red-300/90 px-1">Passwords don&apos;t match.</p>
+                  )}
+                  {resetError && (
+                    <p className="text-xs text-red-300/90 px-1">{resetError}</p>
+                  )}
+
+                  <button type="submit" disabled={!isNewPasswordValid || resetSubmitting}
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:-translate-y-0.5 active:translate-y-0">
+                    {resetSubmitting ? "Updating…" : "Update password"}
+                  </button>
+                </form>
               </motion.div>
             )}
           </AnimatePresence>

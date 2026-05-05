@@ -16,12 +16,14 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
   try {
     const orgId = params.id;
     const body = await request.json();
-    const { email, firstName, lastName, role, password } = body;
+    const { email, role, password } = body;
 
-    // Validate required fields
-    if (!email || !firstName || !lastName || !role) {
+    // Validate required fields. firstName/lastName are intentionally NOT
+    // collected here — the user fills them in on first login via the
+    // /complete-profile flow on apps/auth.
+    if (!email || !role) {
       return NextResponse.json(
-        { success: false, error: "Email, first name, last name, and role are required" },
+        { success: false, error: "Email and role are required" },
         { status: 400 },
       );
     }
@@ -47,20 +49,24 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
     }
 
     let user = existingUser;
+    let rawPassword: string | undefined;
 
     if (!user) {
-      // Create new user — use provided password or generate a random one
-      const rawPassword = password || crypto.randomBytes(16).toString("base64url");
-      const hashedPassword = await bcrypt.hash(rawPassword, 12);
+      const newPassword: string = password || crypto.randomBytes(16).toString("base64url");
+      const hashedPassword = await bcrypt.hash(newPassword, 12);
 
+      // Persist empty firstName/lastName — the User schema requires them as
+      // non-null Strings, so we store "" and treat empty as "not yet set".
+      // The /complete-profile flow on first login captures real values.
       user = await db.user.create({
         data: {
           email,
-          firstName,
-          lastName,
+          firstName: "",
+          lastName: "",
           password: hashedPassword,
         },
       });
+      rawPassword = newPassword;
     }
 
     // Check if membership already exists
@@ -105,8 +111,14 @@ export const POST = withSuperAdminAuth<{ id: string }>(async ({ userId: adminUse
       newValues: JSON.stringify({ email, role, userId: user.id }),
     });
 
-    // Fire-and-forget email notification
-    sendMemberAddedEmail({ to: user.email, orgName: org.name, role }).catch((err) =>
+    // Fire-and-forget email notification. Temp password is only included for
+    // newly created users; existing users keep their own password.
+    sendMemberAddedEmail({
+      to: user.email,
+      orgName: org.name,
+      role,
+      tempPassword: rawPassword,
+    }).catch((err) =>
       console.error("[email] Failed to send member added email:", user.email, err)
     );
 

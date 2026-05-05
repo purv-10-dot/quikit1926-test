@@ -27,6 +27,13 @@ declare module "next-auth" {
   }
 }
 
+/**
+ * Closed enum for the `actingAs` claim. `'user'` is the default for any
+ * normal session JWT (set by NextAuth credentials/OAuth callbacks).
+ * Non-`'user'` values are minted only by `POST /api/auth/internal/issue-agent-jwt`.
+ */
+export type ActingAs = "user" | "ai_agent" | "platform_service" | "scheduled_job";
+
 declare module "next-auth/jwt" {
   interface JWT {
     id?: string;
@@ -42,5 +49,13 @@ declare module "next-auth/jwt" {
     impersonatorUserId?: string;
     impersonatorEmail?: string;
     impersonationExpiresAt?: string;
+    /**
+     * Identifies the principal "behind" the token. Absent on legacy tokens —
+     * `withAuth` defaults to `'user'`. Set to a non-`'user'` value only by
+     * the agent JWT issuance endpoint.
+     */
+    actingAs?: ActingAs;
+    /** Set when `actingAs === 'ai_agent'`. Null on user sessions. */
+    actingAgentId?: string;
   }
 }

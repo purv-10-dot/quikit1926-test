@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "PowerShell(Get-NetTCPConnection -LocalPort 6379 -ErrorAction SilentlyContinue)",
-      "PowerShell(Test-NetConnection -ComputerName localhost -Port 6379 -InformationLevel Quiet -WarningAction SilentlyContinue)"
+      "PowerShell(Test-NetConnection -ComputerName localhost -Port 6379 -InformationLevel Quiet -WarningAction SilentlyContinue)",
+      "Bash(mkdir -p \"c:\\\\wwwwwwwwww\\\\Authmergewithmainbranch\\\\QuikIT\\\\apps\\\\auth\\\\app\\\\api\\\\auth\\\\me\\\\profile\" && ls \"c:\\\\wwwwwwwwww\\\\Authmergewithmainbranch\\\\QuikIT\\\\apps\\\\auth\\\\app\\\\api\\\\auth\\\\me\\\\\")"
+    ],
+    "additionalDirectories": [
+      "c:\\wwwwwwwwww\\Authmergewithmainbranch\\QuikIT\\apps\\auth\\app\\api\\auth\\me"
     ]
   }
 }
