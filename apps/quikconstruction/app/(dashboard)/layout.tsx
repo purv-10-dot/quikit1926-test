@@ -1,53 +1,50 @@
-"use client";
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
+import { authOptions } from "@/lib/auth/next-auth-options";
+import { ensureLocalUser } from "@/lib/auth/jit-provision";
+import { QuikConstructionShell } from "@/components/QuikConstructionShell";
 
-import {
-  LayoutDashboard,
-  Building2,
-  ShoppingCart,
-  Warehouse,
-  DollarSign,
-  Users,
-  ShieldAlert,
-  ClipboardCheck,
-  Settings,
-  FileText,
-  CheckSquare,
-  BarChart3,
-  Paperclip,
-  FileClock,
-} from "lucide-react";
-import { AppSidebar, type NavItem } from "@quikit/ui";
-import { ToastProvider } from "@/components/ui/Toast";
+/**
+ * Dashboard layout — server component.
+ *
+ * Runs on every authenticated page render. Two responsibilities:
+ *   1. JIT-provision the SSO user into our local `User` table on first
+ *      visit (mirrored from QuikIT's `auth."User"` row).
+ *   2. Render the shared @quikit/app-shell via QuikConstructionShell
+ *      (client component — header, sidebar, user menu, Cmd+K).
+ *
+ * The middleware does the "are you logged in?" check; this layout
+ * additionally confirms the local mirror exists so the role-gate
+ * (re-enabled in middleware after this) sees a valid `roleKey`.
+ */
+export default async function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const session = await getServerSession(authOptions);
+  const email = session?.user?.email;
 
-const NAV: NavItem[] = [
-  { label: "Dashboard",  href: "/dashboard",  icon: LayoutDashboard },
-  { label: "Projects",   href: "/projects",   icon: Building2 },
-  { label: "Purchase",   href: "/purchase",   icon: ShoppingCart },
-  { label: "Store",      href: "/store",      icon: Warehouse },
-  { label: "Finance",    href: "/finance",    icon: DollarSign },
-  { label: "HRMS",       href: "/hrms",       icon: Users },
-  { label: "Safety",     href: "/safety",     icon: ShieldAlert },
-  { label: "Quality",    href: "/quality",    icon: ClipboardCheck },
-  { label: "Masters",    href: "/masters",    icon: FileText },
-  { label: "Approvals",  href: "/approvals",  icon: CheckSquare },
-  { label: "Reports",    href: "/reports",    icon: BarChart3 },
-  { label: "Documents",  href: "/documents",  icon: Paperclip },
-  { label: "Audit Log",  href: "/audit",      icon: FileClock },
-  { label: "Settings",   href: "/settings",   icon: Settings },
-];
+  // Defensive — middleware should have redirected unauth'd requests
+  // already, but if a stale render slips through, send them to login.
+  if (!email) {
+    redirect("/login");
+  }
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  // Mirror the QuikIT central row into our local `User` table on first
+  // visit. Idempotent — subsequent calls take the fast "already exists"
+  // path and don't re-INSERT.
+  const result = await ensureLocalUser(email);
+
+  if (result.notFoundInCentral) {
+    // Authenticated session but the email isn't in `auth."User"` either —
+    // shouldn't happen in normal flow. Bounce to login with a hint.
+    redirect("/login?error=UserNotProvisioned");
+  }
+
   return (
-    <ToastProvider>
-      <div className="flex h-screen bg-gray-50">
-        <AppSidebar
-          brand={{ name: "QuikConstruction", subtitle: "ERP Suite", icon: Building2 }}
-          nav={NAV}
-          storageKey="quikconstruction.sidebar"
-          footer={<div className="flex items-center justify-between"><span>v1.0</span><span>:3007</span></div>}
-        />
-        <main className="flex-1 overflow-auto">{children}</main>
-      </div>
-    </ToastProvider>
+    <QuikConstructionShell>
+      {children}
+    </QuikConstructionShell>
   );
 }

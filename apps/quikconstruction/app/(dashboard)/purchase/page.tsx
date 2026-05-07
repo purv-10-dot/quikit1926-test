@@ -1,33 +1,77 @@
-import Link from "next/link";
-import { FileText, ShoppingCart, Clipboard, FileQuestion } from "lucide-react";
+"use client";
 
-const LINKS = [
-  { href: "/purchase/requisitions", label: "Purchase Requisitions", description: "Internal requests for materials with project + line items.", icon: FileText },
-  { href: "/purchase/indents",      label: "Purchase Indents",      description: "Consolidated requests approvers review before PO.",           icon: Clipboard },
-  { href: "/purchase/rfqs",         label: "RFQs",                  description: "Solicit quotes from multiple vendors for comparison.",        icon: FileQuestion },
-  { href: "/purchase/orders",       label: "Purchase Orders",       description: "Formal orders issued to vendors. Can be created from a PR.", icon: ShoppingCart },
-];
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import {
+  ClipboardList, FileText, GitCompareArrows,
+  FileSpreadsheet, BadgeCheck, ArrowRight,
+} from "lucide-react";
+import { PageHeader, PageContainer, KPICard } from "@/components/PageShell";
 
-export default function PurchaseIndex() {
+export default function PurchaseIndexPage() {
+  const router = useRouter();
+
+  const { data } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard");
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const kpis = data?.kpis ?? {};
+
   return (
-    <div className="p-6 max-w-5xl">
-      <h1 className="text-lg font-semibold text-gray-900 mb-1">Purchase</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Procurement pipeline — Requisitions → Indents → RFQs → Orders → GRN.
-      </p>
-      <div className="grid gap-3 md:grid-cols-2">
-        {LINKS.map((p) => (
-          <Link key={p.href} href={p.href}
-            className="flex items-start gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:border-accent-300 hover:shadow-sm transition">
-            <div className="p-2 rounded-lg bg-accent-50 text-accent-700"><p.icon className="h-4 w-4" /></div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">{p.label}</div>
-              <div className="text-xs text-gray-600 mt-0.5">{p.description}</div>
-            </div>
-            <span className="text-[10px] font-semibold uppercase bg-accent-100 text-accent-700 px-1.5 py-0.5 rounded">LIVE</span>
-          </Link>
-        ))}
-      </div>
-    </div>
+    <>
+      <PageHeader
+        title="Purchase & Procurement"
+        subtitle="PR → Indent → RFQ → PO → GRN pipeline"
+      />
+      <PageContainer>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <KPICard title="Open PRs" value={kpis.openPRs ?? 0}
+            icon={<ClipboardList className="w-5 h-5" />} color="blue"
+            onClick={() => router.push("/purchase/requisitions")} />
+          <KPICard title="Pending Indents" value={kpis.pendingIndents ?? 0}
+            icon={<FileText className="w-5 h-5" />} color="amber"
+            onClick={() => router.push("/purchase/indents")} />
+          <KPICard title="Active RFQs" value={kpis.activeRFQs ?? 0}
+            icon={<GitCompareArrows className="w-5 h-5" />} color="purple"
+            onClick={() => router.push("/purchase/rfqs")} />
+          <KPICard title="Open POs" value={kpis.openPOs ?? 0}
+            icon={<FileSpreadsheet className="w-5 h-5" />} color="orange"
+            onClick={() => router.push("/purchase/orders")} />
+          <KPICard title="GRNs This Month" value={kpis.grnThisMonth ?? 0}
+            icon={<BadgeCheck className="w-5 h-5" />} color="green"
+            onClick={() => router.push("/store/grn")} />
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-6">
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">Procurement Pipeline</h3>
+          <div className="flex items-center justify-between gap-2 overflow-x-auto">
+            {[
+              { label: "Purchase Requisition", sublabel: "Request materials", href: "/purchase/requisitions" },
+              { label: "Stock Check", sublabel: "System auto-check", href: "#" },
+              { label: "Purchase Indent", sublabel: "Indent for ordering", href: "/purchase/indents" },
+              { label: "RFQ", sublabel: "Vendor comparison", href: "/purchase/rfqs" },
+              { label: "Purchase Order", sublabel: "Order from vendor", href: "/purchase/orders" },
+              { label: "GRN", sublabel: "Receive & inspect", href: "/store/grn" },
+            ].map((step, i, arr) => (
+              <div key={step.label} className="flex items-center gap-2 min-w-0">
+                <button
+                  onClick={() => step.href !== "#" && router.push(step.href)}
+                  className="flex flex-col items-center p-4 rounded-xl bg-gray-50 hover:bg-orange-50 border border-gray-200 hover:border-orange-200 transition-all min-w-[140px]"
+                >
+                  <span className="text-xs font-semibold text-gray-900">{step.label}</span>
+                  <span className="text-[10px] text-gray-500 mt-0.5">{step.sublabel}</span>
+                </button>
+                {i < arr.length - 1 && <ArrowRight className="w-4 h-4 text-gray-300 shrink-0" />}
+              </div>
+            ))}
+          </div>
+        </div>
+      </PageContainer>
+    </>
   );
 }

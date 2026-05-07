@@ -1,51 +1,41 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { hindranceCreateSchema } from "@/lib/schemas/projects";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
 
-const withOrgAuth = withOrgAuthForModule("projects");
+const data: any[] = [];
 
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const status = req.nextUrl.searchParams.get("status") || undefined;
-  const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
-  const list = await db.cnHindrance.findMany({
-    where: {
-      orgId,
-      deletedAt: includeDeleted ? { not: null } : null,
-      ...(status ? { status } : {}),
-      ...(projectId ? { projectId } : {}),
-    },
-    include: { project: { select: { id: true, name: true, code: true } } },
-    orderBy: { hindranceDate: "desc" },
-  });
-  return NextResponse.json({ success: true, data: list });
-});
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const search = searchParams.get("search")?.toLowerCase() ?? "";
 
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
+    const ctx = await getTenantContext();
+
+    let filtered: any[] = data;
+
+    // Per-user project scoping — applied BEFORE the optional ?projectId
+    // query filter so a user can never use the query string to see a project
+    // they're not assigned to.
+    if (ctx?.projectIds !== undefined) {
+      const allowed = new Set(ctx.projectIds);
+      filtered = filtered.filter((row: any) => allowed.has(row.projectId));
+    }
+
+    if (search) filtered = filtered.filter(r => r.hindranceNo.toLowerCase().includes(search) || r.category.toLowerCase().includes(search) || r.description.toLowerCase().includes(search));
+    return NextResponse.json({ data: filtered, total: filtered.length });
+
+  } catch (err: unknown) {
+    const e = err as { message?: string };
+    console.error("[projects/hindrance.GET] failed:", err);
+    return NextResponse.json(
+      { ok: false, error: e.message ?? "Internal error" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
   const body = await req.json();
-  const input = hindranceCreateSchema.parse(body);
-  const project = await db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } });
-  if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
-
-  const start = new Date(input.startDate);
-  const end = input.endDate ? new Date(input.endDate) : null;
-  const daysImpacted = end ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1) : null;
-
-  const h = await db.cnHindrance.create({
-    data: {
-      orgId,
-      projectId: input.projectId,
-      hindranceDate: new Date(input.hindranceDate),
-      category: input.category,
-      title: input.title,
-      description: input.description,
-      startDate: start,
-      endDate: end,
-      daysImpacted,
-      status: "open",
-      createdBy: userId,
-    },
-  });
-  return NextResponse.json({ success: true, data: h }, { status: 201 });
-});
+  const record = { id: `hind-${data.length + 1}`, hindranceNo: `HIND-2026-${String(data.length + 1).padStart(3, "0")}`, ...body };
+  data.push(record);
+  return NextResponse.json(record, { status: 201 });
+}

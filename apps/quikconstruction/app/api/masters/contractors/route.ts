@@ -1,34 +1,128 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { contractorCreateSchema } from "@/lib/schemas/masters";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
+import {
+  validateMobile,
+  normalizeMobile,
+  validateEmail,
+  normalizeEmail,
+  validateGSTIN,
+  validatePAN,
+  validateRequired,
+  validateIFSC,
+} from "@/lib/validators";
+import {
+  listContractors,
+  countContractors,
+  createContractor,
+} from "@/lib/masters/contractors-repository";
+import { parsePagination, paginateDb } from "@/lib/http/pagination";
 
-const withOrgAuth = withOrgAuthForModule("masters");
+/**
+ * GET  /api/masters/contractors — list tenant contractors (seeded on first call).
+ * POST /api/masters/contractors — create a contractor.
+ */
 
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const contractors = await db.cnContractor.findMany({
-    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
-    orderBy: { name: "asc" },
-  });
-  return NextResponse.json({ success: true, data: contractors });
-});
+export async function GET(req: NextRequest) {
+  try {  
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  
+    const { searchParams } = new URL(req.url);
+    const search = searchParams.get("search") ?? "";
+  
+    const baseOpts = {
+      tenantId: ctx.tenantId,
+      orgId: ctx.orgId,
+      createdBy: ctx.userId,
+      search,
+    };
+    const result = await paginateDb(
+      parsePagination(req),
+      (paging) => listContractors({ ...baseOpts, ...paging }),
+      () => countContractors(baseOpts),
+    );
+    return NextResponse.json(result);
 
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const body = await req.json();
-  const input = contractorCreateSchema.parse(body);
-  const existing = await db.cnContractor.findFirst({
-    where: { orgId, code: input.code, deletedAt: null },
-    select: { id: true },
-  });
-  if (existing) {
+  } catch (err: unknown) {
+    const e = err as { message?: string };
+    console.error("[masters/contractors.GET] failed:", err);
     return NextResponse.json(
-      { success: false, error: `Contractor code '${input.code}' already exists` },
-      { status: 409 },
+      { ok: false, error: e.message ?? "Internal error" },
+      { status: 500 },
     );
   }
-  const contractor = await db.cnContractor.create({
-    data: { ...input, orgId, createdBy: userId },
-  });
-  return NextResponse.json({ success: true, data: contractor }, { status: 201 });
-});
+}
+
+export async function POST(req: NextRequest) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+  const body = await req.json();
+
+  const nameCheck = validateRequired(body.name, "Contractor Name");
+  if (!nameCheck.valid) {
+    return NextResponse.json({ error: nameCheck.error }, { status: 400 });
+  }
+
+  const phone = body.phone ?? body.mobile ?? "";
+  if (phone) {
+    const r = validateMobile(phone);
+    if (!r.valid) return NextResponse.json({ error: r.error }, { status: 400 });
+  }
+  if (body.email) {
+    const r = validateEmail(body.email);
+    if (!r.valid) return NextResponse.json({ error: r.error }, { status: 400 });
+  }
+  if (body.gstin) {
+    const r = validateGSTIN(body.gstin);
+    if (!r.valid) return NextResponse.json({ error: r.error }, { status: 400 });
+  }
+  if (body.pan) {
+    const r = validatePAN(body.pan);
+    if (!r.valid) return NextResponse.json({ error: r.error }, { status: 400 });
+  }
+  if (body.ifscCode) {
+    const r = validateIFSC(body.ifscCode);
+    if (!r.valid) return NextResponse.json({ error: r.error }, { status: 400 });
+  }
+
+  try {
+    const record = await createContractor({
+      tenantId: ctx.tenantId,
+      orgId: ctx.orgId,
+      createdBy: ctx.userId,
+      name: String(body.name).trim(),
+      legalName: body.legalName,
+      contactPerson: body.contactPerson,
+      phone: phone ? normalizeMobile(phone) : undefined,
+      email: body.email ? normalizeEmail(body.email) : undefined,
+      gstin: body.gstin || undefined,
+      pan: body.pan || undefined,
+      address: body.address,
+      city: body.city,
+      state: body.state,
+      licenseNo: body.licenseNo,
+      specialization: body.specialization,
+      bankName: body.bankName,
+      branchName: body.branchName,
+      accountNo: body.accountNo,
+      ifscCode: body.ifscCode,
+      accountType: body.accountType,
+      status: body.status ?? "active",
+    });
+    return NextResponse.json(record, { status: 201 });
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "P2002") {
+      return NextResponse.json(
+        { error: "A contractor with this code already exists" },
+        { status: 409 },
+      );
+    }
+    console.error("[contractors.create] failed:", err);
+    return NextResponse.json(
+      { error: e?.message ?? "Failed to create contractor" },
+      { status: 500 },
+    );
+  }
+}

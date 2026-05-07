@@ -1,66 +1,74 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { projectUpdateSchema } from "@/lib/schemas/masters-phase2";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
+import {
+  findProjectById,
+  updateProject,
+  deleteProject,
+} from "@/lib/masters/projects-repository";
 
-const withOrgAuth = withOrgAuthForModule("masters");
+// Block by-id access when the user has a project-assignment whitelist that
+// excludes this project. We treat "out of scope" as 404 (not 403) so a
+// site-scoped user can't probe the existence of unrelated projects by
+// brute-forcing IDs — they get the same response as a missing row.
+function outOfScope(ctxProjectIds: string[] | undefined, id: string): boolean {
+  return Array.isArray(ctxProjectIds) && !ctxProjectIds.includes(id);
+}
 
-export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
-  const project = await db.cnProject.findFirst({
-    where: { id: params.id, orgId },
-    include: {
-      company: { select: { id: true, name: true } },
-      client: { select: { id: true, name: true } },
-    },
-  });
-  if (!project) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  return NextResponse.json({ success: true, data: project });
-});
-
-export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
-  const existing = await db.cnProject.findFirst({
-    where: { id: params.id, orgId },
-    select: { id: true, code: true },
-  });
-  if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  const body = await req.json();
-  const input = projectUpdateSchema.parse(body);
-
-  if (input.code && input.code !== existing.code) {
-    const conflict = await db.cnProject.findFirst({
-      where: { orgId, code: input.code, deletedAt: null, NOT: { id: params.id } },
-      select: { id: true },
-    });
-    if (conflict) {
-      return NextResponse.json(
-        { success: false, error: `Project code '${input.code}' already exists` },
-        { status: 409 },
-      );
-    }
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  if (outOfScope(ctx.projectIds, params.id)) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
+  const row = await findProjectById(ctx.tenantId, params.id);
+  if (!row) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  return NextResponse.json(row);
+}
 
-  const updated = await db.cnProject.update({
-    where: { id: params.id },
-    data: {
-      ...input,
-      ...(input.startDate ? { startDate: new Date(input.startDate) } : {}),
-      ...(input.expectedEndDate ? { expectedEndDate: new Date(input.expectedEndDate) } : {}),
-      ...(input.actualEndDate ? { actualEndDate: new Date(input.actualEndDate) } : {}),
-      updatedBy: userId,
-    },
-  });
-  return NextResponse.json({ success: true, data: updated });
-});
+async function handleUpdate(req: NextRequest, id: string) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  if (outOfScope(ctx.projectIds, id)) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  const body = await req.json();
+  const {
+    id: _a, tenantId: _b, orgId: _c, createdAt: _d, createdBy: _e,
+    updatedAt: _f, updatedBy: _g,
+    companyName: _h, clientName: _i,
+    ...safe
+  } = body ?? {};
+  try {
+    const next = await updateProject(ctx.tenantId, id, { ...safe, updatedBy: ctx.userId });
+    if (!next) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    return NextResponse.json(next);
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "P2002") {
+      return NextResponse.json({ error: "Project code is already in use" }, { status: 409 });
+    }
+    if (e?.code === "P2003") {
+      return NextResponse.json({ error: "Referenced company or customer does not exist" }, { status: 400 });
+    }
+    console.error("[projects.update] failed:", err);
+    return NextResponse.json({ error: e?.message ?? "Failed to update project" }, { status: 500 });
+  }
+}
 
-export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
-  const existing = await db.cnProject.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
-    select: { id: true },
-  });
-  if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  await db.cnProject.update({
-    where: { id: params.id },
-    data: { deletedAt: new Date(), updatedBy: userId },
-  });
+export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  return handleUpdate(req, params.id);
+}
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  return handleUpdate(req, params.id);
+}
+
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  if (outOfScope(ctx.projectIds, params.id)) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  const ok = await deleteProject(ctx.tenantId, params.id, ctx.userId);
+  if (!ok) return NextResponse.json({ error: "Project not found" }, { status: 404 });
   return NextResponse.json({ success: true });
-});
+}

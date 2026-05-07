@@ -1,46 +1,153 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { vendorCreateSchema } from "@/lib/schemas/masters";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
+import {
+  validateMobile,
+  normalizeMobile,
+  validateEmail,
+  normalizeEmail,
+  validateGSTIN,
+  validatePAN,
+  validateRequired,
+} from "@/lib/validators";
+import {
+  listVendors,
+  countVendors,
+  createVendor,
+} from "@/lib/masters/vendors-repository";
+import { parsePagination, paginateDb } from "@/lib/http/pagination";
 
-const withOrgAuth = withOrgAuthForModule("masters");
+/**
+ * GET  /api/masters/vendors — list tenant vendors (seeded on first call).
+ * POST /api/masters/vendors — create a vendor. Preserves the existing
+ *                            input shape (mobile/phone alias, ifscCode
+ *                            alias, etc.) so the Vendor master form
+ *                            doesn't need to change.
+ */
 
-// GET /api/masters/vendors
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const status = req.nextUrl.searchParams.get("status") || undefined;
-  const vendors = await db.cnVendor.findMany({
-    where: {
-      orgId,
-      deletedAt: includeDeleted ? { not: null } : null,
-      ...(status ? { status } : {}),
-    },
-    orderBy: { name: "asc" },
-  });
-  return NextResponse.json({ success: true, data: vendors });
-});
+export async function GET(req: NextRequest) {
+  try {  
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  
+    const { searchParams } = new URL(req.url);
+    const search = searchParams.get("search") ?? "";
+  
+    const baseOpts = {
+      tenantId: ctx.tenantId,
+      orgId: ctx.orgId,
+      createdBy: ctx.userId,
+      search,
+    };
+    const result = await paginateDb(
+      parsePagination(req),
+      (paging) => listVendors({ ...baseOpts, ...paging }),
+      () => countVendors(baseOpts),
+    );
+    return NextResponse.json(result);
 
-// POST /api/masters/vendors
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const body = await req.json();
-  const input = vendorCreateSchema.parse(body);
-  // Enforce per-tenant unique code at the app layer with a friendlier error
-  const existing = await db.cnVendor.findFirst({
-    where: { orgId, code: input.code, deletedAt: null },
-    select: { id: true },
-  });
-  if (existing) {
+  } catch (err: unknown) {
+    const e = err as { message?: string };
+    console.error("[masters/vendors.GET] failed:", err);
     return NextResponse.json(
-      { success: false, error: `Vendor code '${input.code}' already exists` },
-      { status: 409 },
+      { ok: false, error: e.message ?? "Internal error" },
+      { status: 500 },
     );
   }
-  const vendor = await db.cnVendor.create({
-    data: {
-      ...input,
-      orgId,
-      createdBy: userId,
-    },
-  });
-  return NextResponse.json({ success: true, data: vendor }, { status: 201 });
-});
+}
+
+export async function POST(req: NextRequest) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+  const body = await req.json();
+
+  // Required fields
+  const nameCheck = validateRequired(body.name, "Vendor Name");
+  if (!nameCheck.valid) {
+    return NextResponse.json({ error: nameCheck.error }, { status: 400 });
+  }
+  const addressCheck = validateRequired(body.address, "Address");
+  if (!addressCheck.valid) {
+    return NextResponse.json({ error: addressCheck.error }, { status: 400 });
+  }
+
+  // Validate/normalise the same inputs the legacy route validated —
+  // keeps the form contract identical.
+  const mobile = body.mobile ?? body.phone ?? "";
+  if (mobile) {
+    const mobileCheck = validateMobile(mobile);
+    if (!mobileCheck.valid) {
+      return NextResponse.json({ error: mobileCheck.error }, { status: 400 });
+    }
+  }
+  const email = body.email ?? "";
+  const emailRequired = validateRequired(email, "Email");
+  if (!emailRequired.valid) {
+    return NextResponse.json({ error: emailRequired.error }, { status: 400 });
+  }
+  const emailCheck = validateEmail(email);
+  if (!emailCheck.valid) {
+    return NextResponse.json({ error: emailCheck.error }, { status: 400 });
+  }
+  const gstin = body.gstin ?? "";
+  if (gstin) {
+    const gstinCheck = validateGSTIN(gstin);
+    if (!gstinCheck.valid) {
+      return NextResponse.json({ error: gstinCheck.error }, { status: 400 });
+    }
+  }
+  const pan = body.pan ?? "";
+  if (pan) {
+    const panCheck = validatePAN(pan);
+    if (!panCheck.valid) {
+      return NextResponse.json({ error: panCheck.error }, { status: 400 });
+    }
+  }
+
+  try {
+    const record = await createVendor({
+      tenantId: ctx.tenantId,
+      orgId: ctx.orgId,
+      createdBy: ctx.userId,
+      name: String(body.name).trim(),
+      companyName: body.companyName ? String(body.companyName).trim() : undefined,
+      vendorType: body.vendorType,
+      category: body.category,
+      contactPerson: body.contactPerson
+        ? String(body.contactPerson).trim()
+        : undefined,
+      phone: mobile ? normalizeMobile(mobile) : undefined,
+      email: email ? normalizeEmail(email) : undefined,
+      gstin: gstin || undefined,
+      gstType: body.gstType,
+      pan: pan || undefined,
+      msmeStatus: body.msmeStatus,
+      msmeNumber: body.msmeNumber,
+      address: body.address,
+      city: body.city,
+      state: body.state,
+      pincode: body.pincode,
+      bankName: body.bankName,
+      bankAccountNo: body.accountNumber ?? body.bankAccountNo,
+      bankIfsc: body.ifscCode ?? body.bankIfsc,
+      paymentTerms: body.paymentTerms,
+      paymentTermsDays: body.creditPeriod ?? body.paymentTermsDays,
+      blacklistReason: body.blacklistReason,
+      status: body.isBlacklisted ? "blacklisted" : (body.status ?? "active"),
+    });
+    return NextResponse.json(record, { status: 201 });
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "P2002") {
+      return NextResponse.json(
+        { error: `A vendor with this code already exists` },
+        { status: 409 },
+      );
+    }
+    console.error("[vendors.create] failed:", err);
+    return NextResponse.json(
+      { error: e?.message ?? "Failed to create vendor" },
+      { status: 500 },
+    );
+  }
+}

@@ -1,255 +1,302 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Briefcase, TrendingUp, Wallet, CreditCard,
-  FileSearch, PackageCheck, ClipboardList, AlertTriangle,
-  ArrowRight, PackageOpen,
+  ShoppingCart, Warehouse, FolderKanban, CheckCircle2,
+  AlertTriangle, Package, FileText, ClipboardList,
+  ArrowRight, HardHat, Truck,
 } from "lucide-react";
-import { KpiTileSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
-import { useToast } from "@/components/ui/Toast";
+import {
+  PageContainer, PageHeader, KPICard, StatusChip,
+  EmptyState, PageSkeleton,
+} from "@/components/PageShell";
+import { usePermissions } from "@/hooks/use-permissions";
 
-interface DashboardData {
-  kpis: { activeProjects: number; revenueMtd: number; arTotal: number; arOverdue: number; apTotal: number; apOverdue: number };
-  activity: { openPrs: number; monthGrnCount: number; weekDprCount: number; openIncidentCount: number };
-  overdue: {
-    invoices: Array<{ id: string; ref: string; party: string; days: number; outstanding: number }>;
-    bills: Array<{ id: string; ref: string; party: string; days: number; outstanding: number }>;
-  };
-  recentDprs: Array<{ id: string; dprDate: string; status: string; project: { name: string; code: string } | null; _count: { lines: number; materials: number } }>;
-  recentRabs: Array<{ id: string; rabNumber: string; rabDate: string; status: string; total: string; project: { name: string } | null }>;
-  incidents: Array<{ id: string; incidentNumber: string; incidentDate: string; severity: string; category: string; title: string; project: { name: string } | null }>;
-  stockLow: Array<{ qty: number; project: string; location: string; itemCode: string; itemName: string }>;
-}
+export default function DashboardPage() {
+  const router = useRouter();
+  const { hasModule, canMenuAction, isLoading: permsLoading } = usePermissions();
 
-const SEV: Record<string, string> = { low: "bg-gray-100 text-gray-700", medium: "bg-amber-100 text-amber-700", high: "bg-orange-100 text-orange-700", critical: "bg-red-100 text-red-700" };
-const STATUS: Record<string, string> = {
-  draft: "bg-gray-100 text-gray-600", submitted: "bg-amber-100 text-amber-700",
-  posted: "bg-blue-100 text-blue-700", approved: "bg-green-100 text-green-700",
-  paid: "bg-blue-100 text-blue-700", rejected: "bg-red-100 text-red-700",
-};
+  const { data, isLoading } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard");
+      if (!res.ok) throw new Error("Failed to load dashboard");
+      return res.json();
+    },
+  });
 
-function fmtInr(n: number) {
-  return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-}
+  const kpis = data?.kpis ?? {};
+  const recent = data?.recentActivity ?? { prs: [], pos: [] };
 
-export default function Dashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const toast = useToast();
-  useEffect(() => {
-    fetch("/api/dashboard").then(r => r.json()).then(j => {
-      if (j.success) setData(j.data);
-      else { setErr(j.error ?? "Failed to load"); toast.error(j.error ?? "Failed to load dashboard"); }
-    }).catch(e => { setErr(e.message); toast.error(e.message); });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  if (isLoading || permsLoading) return <PageSkeleton />;
 
-  if (err) return (
-    <div className="p-6 max-w-2xl">
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">
-        <div className="font-semibold mb-1">Couldn&apos;t load dashboard</div>
-        <div className="text-xs">{err}</div>
-      </div>
-    </div>
-  );
-  if (!data) return (
-    <div className="p-6 max-w-7xl">
-      <div className="h-6 w-40 animate-pulse rounded bg-gray-200 mb-6" />
-      <div className="grid gap-3 md:grid-cols-4 mb-4">
-        {Array.from({ length: 4 }).map((_, i) => <KpiTileSkeleton key={i} />)}
-      </div>
-      <div className="grid gap-3 md:grid-cols-4 mb-6">
-        {Array.from({ length: 4 }).map((_, i) => <KpiTileSkeleton key={i} />)}
-      </div>
-      <div className="grid gap-4 md:grid-cols-2"><TableSkeleton rows={5} cols={4} /><TableSkeleton rows={5} cols={4} /></div>
-    </div>
-  );
+  // Module gates — super admins / users with no module restriction get
+  // everything (hasModule returns true). Restricted users only see tiles,
+  // recent lists, and quick actions whose owning module is in their
+  // modulesAssigned list. The data itself is already project-scoped server-
+  // side in /api/dashboard so there's nothing to leak via the client.
+  const showProjects = hasModule("project_mgmt");
+  const showPurchase = hasModule("purchase");
+  const showStore = hasModule("store");
+  const showMasters = hasModule("masters");
+  // Pending Approvals is cross-module — show it whenever the user has any
+  // module that produces approvals (PRs, POs, DPRs, WOs, GRNs).
+  const showApprovals = showPurchase || showStore || showProjects;
 
-  const kpiTiles = [
-    { label: "Active Projects", value: data.kpis.activeProjects.toString(), icon: Briefcase, color: "text-indigo-700 bg-indigo-50", href: "/masters/projects" },
-    { label: "Revenue (MTD)", value: fmtInr(data.kpis.revenueMtd), icon: TrendingUp, color: "text-emerald-700 bg-emerald-50", href: "/finance/invoices" },
-    { label: "AR Outstanding", value: fmtInr(data.kpis.arTotal), sub: data.kpis.arOverdue > 0 ? `${fmtInr(data.kpis.arOverdue)} overdue` : "on track", subWarn: data.kpis.arOverdue > 0, icon: Wallet, color: "text-emerald-700 bg-emerald-50", href: "/finance/invoices" },
-    { label: "AP Outstanding", value: fmtInr(data.kpis.apTotal), sub: data.kpis.apOverdue > 0 ? `${fmtInr(data.kpis.apOverdue)} overdue` : "on track", subWarn: data.kpis.apOverdue > 0, icon: CreditCard, color: "text-rose-700 bg-rose-50", href: "/finance/bills" },
+  type Tile = { node: ReactNode; show: boolean };
+
+  const row1: Tile[] = [
+    {
+      show: showProjects,
+      node: (
+        <KPICard key="projects" title="Active Projects" value={kpis.activeProjects ?? 0} subtitle="Across your sites"
+          icon={<FolderKanban className="w-5 h-5" />} color="blue" onClick={() => router.push("/masters/projects")} />
+      ),
+    },
+    {
+      show: showApprovals,
+      node: (
+        <KPICard key="approvals" title="Pending Approvals" value={kpis.pendingApprovals ?? 0} subtitle="PRs, POs, DPRs, WOs"
+          icon={<CheckCircle2 className="w-5 h-5" />} color="amber" onClick={() => router.push("/approvals")} />
+      ),
+    },
+    {
+      show: showPurchase,
+      node: (
+        <KPICard key="pos" title="Open Purchase Orders" value={kpis.openPOs ?? 0} subtitle="Awaiting delivery"
+          icon={<ShoppingCart className="w-5 h-5" />} color="purple" onClick={() => router.push("/purchase/orders")} />
+      ),
+    },
+    {
+      show: showStore,
+      node: (
+        <KPICard key="lowstock" title="Low Stock Items" value={kpis.lowStockItems ?? 0} subtitle="Below minimum level"
+          icon={<AlertTriangle className="w-5 h-5" />} color="red" onClick={() => router.push("/store/stock-register")} />
+      ),
+    },
   ];
 
-  const activityTiles = [
-    { label: "Open PRs", value: data.activity.openPrs, icon: FileSearch, href: "/purchase/requisitions" },
-    { label: "GRNs this month", value: data.activity.monthGrnCount, icon: PackageCheck, href: "/store/grn" },
-    { label: "DPRs last 7 days", value: data.activity.weekDprCount, icon: ClipboardList, href: "/projects/dpr" },
-    { label: "Open incidents", value: data.activity.openIncidentCount, icon: AlertTriangle, href: "/safety/incidents", warn: data.activity.openIncidentCount > 0 },
+  const row2: Tile[] = [
+    {
+      show: showStore,
+      node: (
+        <KPICard key="grn" title="GRNs This Month" value={kpis.grnThisMonth ?? 0} icon={<Package className="w-5 h-5" />} color="green" />
+      ),
+    },
+    {
+      show: showStore,
+      node: (
+        <KPICard key="issues" title="Material Issues" value={kpis.issuesThisMonth ?? 0} subtitle="This month" icon={<Warehouse className="w-5 h-5" />} color="sky" />
+      ),
+    },
+    {
+      show: showProjects,
+      node: (
+        <KPICard key="wos" title="Active Work Orders" value={kpis.activeWOs ?? 0} icon={<HardHat className="w-5 h-5" />} color="orange" />
+      ),
+    },
+    {
+      show: showProjects,
+      node: (
+        <KPICard key="dprs" title="DPRs Pending" value={kpis.pendingDPRApproval ?? 0} icon={<FileText className="w-5 h-5" />} color="indigo" />
+      ),
+    },
   ];
+
+  // Flatten the two row definitions into a single visible-tile list. The
+  // old 2-row layout left half-empty rows for users with only one module
+  // assigned (e.g. project_mgmt → 4 tiles in a 4-col grid felt sparse).
+  // A single grid lets the column count adapt to whatever is visible.
+  const visibleTiles = [...row1, ...row2].filter((t) => t.show);
+  const tileGridCols =
+    visibleTiles.length <= 2
+      ? "grid-cols-1 sm:grid-cols-2"
+      : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4";
+
+  // Quick Actions are "Create X" shortcuts. Two-stage gate so the
+  // shortcut hides whenever the user can't actually use it:
+  //   1. Module gate — `hasModule` keeps the whole module out of view
+  //      for users who weren't assigned it (e.g. a Site Engineer with
+  //      only `store` won't see purchase shortcuts).
+  //   2. Action gate — `canMenuAction(href, "add")` consults the
+  //      per-menu Add/Edit/Delete/View matrix saved on the user. So a
+  //      user with `purchase` module access but `add: false` on
+  //      Purchase Requisitions still won't see "Create PR" — only the
+  //      shortcuts they can actually act on appear here.
+  const quickActions = [
+    { label: "Create Purchase Requisition", href: "/purchase/requisitions", icon: ClipboardList, color: "text-blue-600 bg-blue-50",  module: "purchase" },
+    { label: "Record GRN",                  href: "/store/grn",              icon: Package,        color: "text-green-600 bg-green-50", module: "store" },
+    { label: "Issue Material",              href: "/store/issue",            icon: Warehouse,      color: "text-purple-600 bg-purple-50", module: "store" },
+    { label: "Submit DPR",                  href: "/projects/dpr",           icon: FileText,       color: "text-orange-600 bg-orange-50", module: "project_mgmt" },
+    { label: "Add Vendor",                  href: "/masters/vendors",        icon: Truck,          color: "text-sky-600 bg-sky-50",   module: "masters" },
+    { label: "Create Work Order",           href: "/projects/work-orders",   icon: HardHat,        color: "text-amber-600 bg-amber-50", module: "project_mgmt" },
+  ].filter((a) => hasModule(a.module) && canMenuAction(a.href, "add"));
+
+  // If a non-admin user has no assigned modules at all, the dashboard is
+  // effectively empty. Show a friendly message instead of a blank page so
+  // they know to ask their admin for access rather than thinking the app
+  // is broken.
+  const nothingVisible = visibleTiles.length === 0 && quickActions.length === 0;
 
   return (
-    <div className="p-6 max-w-7xl">
-      <h1 className="text-lg font-semibold text-gray-900 mb-1">Dashboard</h1>
-      <p className="text-sm text-gray-500 mb-6">Operations snapshot across projects, finance, stock, and safety.</p>
+    <>
+      <PageHeader title="Dashboard" subtitle="Construction operations overview" />
 
-      {/* KPI tiles */}
-      <section className="grid gap-3 md:grid-cols-4 mb-4">
-        {kpiTiles.map(t => (
-          <Link key={t.label} href={t.href} className="rounded-lg border border-gray-200 bg-white p-4 hover:border-accent-300 hover:shadow-sm transition block">
-            <div className="flex items-start justify-between">
-              <div className={`p-2 rounded-lg ${t.color}`}><t.icon className="h-4 w-4" /></div>
-              <ArrowRight className="h-3 w-3 text-gray-300" />
-            </div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mt-3">{t.label}</div>
-            <div className="text-xl font-semibold text-gray-900 mt-0.5 break-words">{t.value}</div>
-            {t.sub && <div className={`text-xs mt-1 ${t.subWarn ? "text-amber-700" : "text-gray-500"}`}>{t.sub}</div>}
-          </Link>
-        ))}
-      </section>
+      <PageContainer>
+        {nothingVisible ? (
+          <EmptyState
+            title="No modules assigned yet"
+            description="Your account doesn't have any modules enabled. Please contact your administrator to grant access."
+            icon={<ClipboardList className="w-8 h-8" />}
+          />
+        ) : (
+          <>
+            {/* KPI tiles — single flat grid so a small visible-tile count
+                doesn't leave awkward empty columns. */}
+            {visibleTiles.length > 0 && (
+              <div className={`grid ${tileGridCols} gap-4`}>
+                {visibleTiles.map((t) => t.node)}
+              </div>
+            )}
 
-      {/* Activity tiles */}
-      <section className="grid gap-3 md:grid-cols-4 mb-6">
-        {activityTiles.map(t => (
-          <Link key={t.label} href={t.href} className="rounded-lg border border-gray-200 bg-white p-3 hover:border-accent-300 transition flex items-center gap-3">
-            <div className={`p-2 rounded ${t.warn && t.value > 0 ? "text-red-700 bg-red-50" : "text-gray-600 bg-gray-50"}`}><t.icon className="h-4 w-4" /></div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[11px] text-gray-500">{t.label}</div>
-              <div className={`text-lg font-semibold ${t.warn && t.value > 0 ? "text-red-700" : "text-gray-900"}`}>{t.value}</div>
-            </div>
-          </Link>
-        ))}
-      </section>
+            {/* Main Grid — only render the 2:1 split when Recent Activity
+                actually has content to put in the wide column. Otherwise
+                Quick Actions renders as a constrained card on its own. */}
+            {showPurchase ? (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+                <div className="lg:col-span-2 space-y-6">
+                    {/* Recent PRs */}
+                    <ActivityCard
+                      title="Recent Purchase Requisitions"
+                      onViewAll={() => router.push("/purchase/requisitions")}
+                      empty={recent.prs.length === 0 ? <EmptyState title="No recent PRs" description="Purchase requisitions will appear here." icon={<ClipboardList className="w-8 h-8" />} /> : null}
+                    >
+                      {recent.prs.map((pr: any) => (
+                        <button
+                          type="button"
+                          key={pr.id}
+                          onClick={() => router.push(`/purchase/requisitions/${pr.id}`)}
+                          className="group w-full flex items-center justify-between gap-3 px-5 py-3 hover:bg-orange-50/50 transition-colors text-left"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 group-hover:text-orange-700 transition-colors truncate">{pr.number}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 truncate">{pr.project} &middot; {new Date(pr.date).toLocaleDateString()}</p>
+                          </div>
+                          <StatusChip status={pr.status} />
+                        </button>
+                      ))}
+                    </ActivityCard>
 
-      <div className="grid gap-4 md:grid-cols-2 mb-6">
-        {/* Overdue invoices */}
-        <section className="rounded-lg border border-gray-200 bg-white">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Top Overdue Invoices</h2>
-            <Link href="/reports/ar-aging" className="text-xs text-accent-700 hover:underline">AR aging →</Link>
-          </div>
-          {data.overdue.invoices.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-gray-500">No overdue invoices. Clean slate.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody>{data.overdue.invoices.map(i => (
-                <tr key={i.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2 font-mono text-xs"><Link href={`/finance/invoices/${i.id}`} className="text-accent-700 hover:underline">{i.ref}</Link></td>
-                  <td className="px-4 py-2 text-xs text-gray-600">{i.party}</td>
-                  <td className="px-4 py-2 text-xs text-right text-red-700 font-semibold">{i.days}d</td>
-                  <td className="px-4 py-2 text-right font-medium">{fmtInr(i.outstanding)}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          )}
-        </section>
+                    {/* Recent POs */}
+                    <ActivityCard
+                      title="Recent Purchase Orders"
+                      onViewAll={() => router.push("/purchase/orders")}
+                      empty={recent.pos.length === 0 ? <EmptyState title="No recent POs" description="Purchase orders will appear here." icon={<ShoppingCart className="w-8 h-8" />} /> : null}
+                    >
+                      {recent.pos.map((po: any) => (
+                        <button
+                          type="button"
+                          key={po.id}
+                          onClick={() => router.push(`/purchase/orders/${po.id}`)}
+                          className="group w-full flex items-center justify-between gap-3 px-5 py-3 hover:bg-orange-50/50 transition-colors text-left"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900 group-hover:text-orange-700 transition-colors truncate">{po.number}</p>
+                            <p className="text-xs text-slate-500 mt-0.5 truncate">{po.vendor} &middot; {po.project}</p>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-sm font-semibold text-slate-900 tabular-nums">₹ {Number(po.amount).toLocaleString("en-IN")}</span>
+                            <StatusChip status={po.status} />
+                          </div>
+                        </button>
+                      ))}
+                    </ActivityCard>
+                </div>
 
-        {/* Overdue bills */}
-        <section className="rounded-lg border border-gray-200 bg-white">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Top Overdue Bills</h2>
-            <Link href="/reports/ap-aging" className="text-xs text-accent-700 hover:underline">AP aging →</Link>
-          </div>
-          {data.overdue.bills.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-gray-500">No overdue bills.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody>{data.overdue.bills.map(b => (
-                <tr key={b.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2 font-mono text-xs"><Link href={`/finance/bills/${b.id}`} className="text-accent-700 hover:underline">{b.ref}</Link></td>
-                  <td className="px-4 py-2 text-xs text-gray-600">{b.party}</td>
-                  <td className="px-4 py-2 text-xs text-right text-red-700 font-semibold">{b.days}d</td>
-                  <td className="px-4 py-2 text-right font-medium">{fmtInr(b.outstanding)}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          )}
-        </section>
+                {/* Quick Actions — right column when Recent Activity present */}
+                {quickActions.length > 0 && <QuickActionsCard actions={quickActions} onPick={(href) => router.push(href)} />}
+              </div>
+            ) : (
+              quickActions.length > 0 && (
+                /* No Recent Activity — render Quick Actions as a standalone
+                   constrained card so it doesn't float in a half-empty grid. */
+                <div className="mt-6 max-w-md">
+                  <QuickActionsCard actions={quickActions} onPick={(href) => router.push(href)} />
+                </div>
+              )
+            )}
+          </>
+        )}
+      </PageContainer>
+    </>
+  );
+}
+
+// ─── Dashboard-only sub-components ──────────────────────────────────
+
+function ActivityCard({
+  title,
+  onViewAll,
+  empty,
+  children,
+}: {
+  title: string;
+  onViewAll: () => void;
+  empty: ReactNode | null;
+  children: ReactNode;
+}) {
+  return (
+    <div className="relative bg-white rounded-xl border border-slate-200 shadow-soft overflow-hidden">
+      <span aria-hidden className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-orange-500 via-orange-400 to-orange-600 opacity-70" />
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+          <span aria-hidden className="w-1 h-4 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+          {title}
+        </h3>
+        <button
+          onClick={onViewAll}
+          className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 px-2 py-1 rounded-md hover:bg-orange-50 transition-colors"
+        >
+          View all <ArrowRight className="w-3 h-3" />
+        </button>
       </div>
+      {empty ? <div className="p-5">{empty}</div> : <div className="divide-y divide-slate-100">{children}</div>}
+    </div>
+  );
+}
 
-      <div className="grid gap-4 md:grid-cols-2 mb-6">
-        {/* Recent DPRs */}
-        <section className="rounded-lg border border-gray-200 bg-white">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Recent DPRs</h2>
-            <Link href="/projects/dpr" className="text-xs text-accent-700 hover:underline">All →</Link>
-          </div>
-          {data.recentDprs.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-gray-500">No DPRs yet.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody>{data.recentDprs.map(d => (
-                <tr key={d.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2 text-xs"><Link href={`/projects/dpr/${d.id}`} className="text-accent-700 hover:underline">{new Date(d.dprDate).toISOString().slice(0, 10)}</Link></td>
-                  <td className="px-4 py-2 text-xs text-gray-600">{d.project?.name ?? "—"}</td>
-                  <td className="px-4 py-2 text-xs text-gray-500">{d._count.lines} activities · {d._count.materials} materials</td>
-                  <td className="px-4 py-2"><span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${STATUS[d.status] ?? "bg-gray-100"}`}>{d.status}</span></td>
-                </tr>
-              ))}</tbody>
-            </table>
-          )}
-        </section>
-
-        {/* Recent RABs */}
-        <section className="rounded-lg border border-gray-200 bg-white">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Recent RABs</h2>
-            <Link href="/projects/rab" className="text-xs text-accent-700 hover:underline">All →</Link>
-          </div>
-          {data.recentRabs.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-gray-500">No RABs yet.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody>{data.recentRabs.map(r => (
-                <tr key={r.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2 font-mono text-xs"><Link href={`/projects/rab/${r.id}`} className="text-accent-700 hover:underline">{r.rabNumber}</Link></td>
-                  <td className="px-4 py-2 text-xs text-gray-600">{r.project?.name ?? "—"}</td>
-                  <td className="px-4 py-2 text-xs text-gray-500">{new Date(r.rabDate).toISOString().slice(0, 10)}</td>
-                  <td className="px-4 py-2 text-right font-medium">{fmtInr(Number(r.total))}</td>
-                  <td className="px-4 py-2"><span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${STATUS[r.status] ?? "bg-gray-100"}`}>{r.status}</span></td>
-                </tr>
-              ))}</tbody>
-            </table>
-          )}
-        </section>
+function QuickActionsCard({
+  actions,
+  onPick,
+}: {
+  actions: Array<{ label: string; href: string; icon: any; color: string }>;
+  onPick: (href: string) => void;
+}) {
+  return (
+    <div className="relative bg-white rounded-xl border border-slate-200 shadow-soft h-fit overflow-hidden">
+      <span aria-hidden className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-orange-500 via-orange-400 to-orange-600 opacity-70" />
+      <div className="px-5 py-4 border-b border-slate-100">
+        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+          <span aria-hidden className="w-1 h-4 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+          Quick Actions
+        </h3>
       </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Open incidents */}
-        <section className="rounded-lg border border-gray-200 bg-white">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Open Safety Incidents</h2>
-            <Link href="/safety/incidents" className="text-xs text-accent-700 hover:underline">All →</Link>
-          </div>
-          {data.incidents.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-gray-500">No open incidents.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody>{data.incidents.map(i => (
-                <tr key={i.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2 font-mono text-xs">{i.incidentNumber}</td>
-                  <td className="px-4 py-2 text-xs"><span className={`font-semibold uppercase text-[10px] px-1.5 py-0.5 rounded ${SEV[i.severity] ?? "bg-gray-100"}`}>{i.severity}</span></td>
-                  <td className="px-4 py-2 text-xs text-gray-500">{i.category}</td>
-                  <td className="px-4 py-2 text-xs text-gray-700">{i.title}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          )}
-        </section>
-
-        {/* Low stock */}
-        <section className="rounded-lg border border-gray-200 bg-white">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Low Stock</h2>
-            <Link href="/reports/stock-valuation" className="text-xs text-accent-700 hover:underline">Valuation →</Link>
-          </div>
-          {data.stockLow.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-gray-500 flex flex-col items-center gap-2"><PackageOpen className="h-6 w-6 text-gray-300" /> No stock yet. Post some GRNs.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody>{data.stockLow.map((s, idx) => (
-                <tr key={idx} className="border-t border-gray-100">
-                  <td className="px-4 py-2"><div className="text-xs font-mono">{s.itemCode}</div><div className="text-xs text-gray-700">{s.itemName}</div></td>
-                  <td className="px-4 py-2 text-xs text-gray-500">{s.project} · {s.location}</td>
-                  <td className="px-4 py-2 text-right font-medium text-amber-700">{s.qty}</td>
-                </tr>
-              ))}</tbody>
-            </table>
-          )}
-        </section>
+      <div className="p-2.5 space-y-0.5">
+        {actions.map((action) => (
+          <button
+            key={action.label}
+            onClick={() => onPick(action.href)}
+            className="group w-full flex items-center gap-3 px-2.5 py-2.5 rounded-lg hover:bg-orange-50/60 transition-colors text-left"
+          >
+            <div className={`w-8 h-8 rounded-lg ${action.color} flex items-center justify-center transition-transform group-hover:scale-105`}>
+              <action.icon className="w-4 h-4" />
+            </div>
+            <span className="text-sm text-slate-700 font-medium group-hover:text-orange-800 transition-colors">{action.label}</span>
+            <ArrowRight className="w-3.5 h-3.5 ml-auto text-slate-300 group-hover:text-orange-500 group-hover:translate-x-0.5 transition-all" />
+          </button>
+        ))}
       </div>
     </div>
   );

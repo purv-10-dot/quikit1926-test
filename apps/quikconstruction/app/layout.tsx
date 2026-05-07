@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
-import { Providers } from "@/components/providers";
 import "./globals.css";
+import { Providers } from "./providers";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -11,14 +11,18 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "QuikConstruction",
-  description: "Construction ERP inside QuikIT.",
+  title: "QuikConstruction — Construction ERP",
+  description: "From BOQ to Billing, Site to HO, Material to Progress — one construction operating system.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en" suppressHydrationWarning className={jakarta.variable}>
-      <body className="font-sans antialiased">
+    <html lang="en" className={jakarta.variable} suppressHydrationWarning>
+      <body className={jakarta.className}>
         <Providers>{children}</Providers>
       </body>
     </html>

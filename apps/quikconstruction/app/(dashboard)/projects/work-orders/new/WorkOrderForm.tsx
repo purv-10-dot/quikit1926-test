@@ -1,0 +1,575 @@
+"use client";
+
+/**
+ * WorkOrderForm — shared full-page form for both Create and Edit flows.
+ *
+ * Used from:
+ *   - /projects/work-orders/new            (create — editData omitted)
+ *   - /projects/work-orders/[id]/edit      (edit  — editData = the row)
+ *
+ * Layout:
+ *   Header strip:      "New / Edit Work Order — Define contractor scope…"   [Save]
+ *   BASIC INFORMATION  Project · WO Type · Contractor · Work Type · Dates
+ *   BOQ SCOPE          empty state → [Add BOQ Item] → table grows below
+ *
+ * Save branches:
+ *   - create → POST /api/projects/work-orders
+ *   - edit   → PUT  /api/projects/work-orders/:id
+ *
+ * In edit mode the BOQ scope table is pre-filled and the project
+ * selector is locked (projectId is stable once items are on the WO).
+ */
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Save,
+  Briefcase,
+  FileText,
+  Plus,
+  Trash2,
+  Loader2,
+  AlertTriangle,
+} from "lucide-react";
+import { PageContainer } from "@/components/PageShell";
+import { SelectInput } from "@/components/FormDrawer";
+import { useProjects, useContractors, useUOMs } from "@/hooks/use-masters";
+import { BOQActivityPickerModal } from "./BOQActivityPickerModal";
+
+interface ScopeLine {
+  boqItemId: string;
+  boqNo: string;
+  description: string;
+  uomCode: string;
+  quantity: string;
+  rate: string;
+}
+
+interface Props {
+  /** When present, switches to edit mode and pre-fills every field. */
+  editData?: any | null;
+  /** When true, hides the sticky page header strip (back button + Save)
+   *  so the form can render cleanly inside a side drawer that supplies
+   *  its own header/footer chrome. After a successful save, `onSaved`
+   *  fires instead of the default `router.push` so the drawer host
+   *  can close itself and refresh the list. */
+  embedded?: boolean;
+  /** Called after a successful create / update when `embedded` is true. */
+  onSaved?: () => void;
+}
+
+export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
+  const router = useRouter();
+  const isEdit = !!editData?.id;
+
+  const { data: projectsResult } = useProjects();
+  const { data: contractorsResult } = useContractors();
+  const { data: uomsResult } = useUOMs();
+
+  const projects = projectsResult?.data ?? [];
+  const contractors = contractorsResult?.data ?? [];
+  const uoms = (uomsResult?.data ?? []) as any[];
+
+  // Basic Information state
+  const [projectId, setProjectId] = useState("");
+  const [woType, setWoType] = useState("Work Order");
+  const [contractorId, setContractorId] = useState("");
+  const [workType, setWorkType] = useState("Without Material (Aakar supplies)");
+  const [plannedStart, setPlannedStart] = useState("");
+  const [plannedEnd, setPlannedEnd] = useState("");
+
+  // BOQ Scope state
+  const [scope, setScope] = useState<ScopeLine[]>([]);
+  const [boqModalOpen, setBoqModalOpen] = useState(false);
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // Pre-fill from editData when the component mounts or the row changes
+  useEffect(() => {
+    if (!editData) return;
+    setProjectId(editData.projectId ?? "");
+    setWoType(editData.type ?? "Work Order");
+    setContractorId(editData.contractorId ?? "");
+    setWorkType(editData.workType ?? "Without Material (Aakar supplies)");
+    setPlannedStart(editData.plannedStart ? String(editData.plannedStart).slice(0, 10) : "");
+    setPlannedEnd(editData.plannedEnd ? String(editData.plannedEnd).slice(0, 10) : "");
+    const rawScope: any[] = Array.isArray(editData.boqItems) ? editData.boqItems : [];
+    setScope(
+      rawScope.map((s: any) => ({
+        boqItemId: s.boqItemId ?? "",
+        boqNo: s.boqNo ?? "",
+        description: s.description ?? "",
+        uomCode: s.uomCode ?? "",
+        quantity: s.quantity != null ? String(s.quantity) : "",
+        rate: s.rate != null ? String(s.rate) : "",
+      }))
+    );
+  }, [editData]);
+
+  const totalValue = useMemo(
+    () =>
+      scope.reduce((sum, line) => {
+        const qty = parseFloat(line.quantity) || 0;
+        const rate = parseFloat(line.rate) || 0;
+        return sum + qty * rate;
+      }, 0),
+    [scope]
+  );
+
+  const alreadyAddedIds = useMemo(
+    () => new Set(scope.map((s) => s.boqItemId)),
+    [scope]
+  );
+
+  const addBoqItem = (row: any) => {
+    setScope((prev) => [
+      ...prev,
+      {
+        boqItemId: row.id,
+        boqNo: row.boq_no,
+        description: row.display_name,
+        uomCode: row.unit ?? "",
+        quantity: String(row.balanceQty ?? row.scopeQty ?? ""),
+        rate: "",
+      },
+    ]);
+  };
+
+  const updateScopeLine = (idx: number, field: keyof ScopeLine, value: string) => {
+    setScope((prev) =>
+      prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const removeScopeLine = (idx: number) => {
+    setScope((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSave = async () => {
+    setError("");
+    if (!projectId) return setError("Pick a project");
+    if (plannedStart && plannedEnd && plannedEnd <= plannedStart) {
+      return setError("Planned end must be after planned start");
+    }
+    if (scope.length === 0) return setError("Add at least one BOQ item");
+    const invalid = scope.find((s) => !s.quantity || !s.rate);
+    if (invalid) return setError(`Fill qty + rate for all BOQ lines (missing on ${invalid.boqNo})`);
+
+    setSaving(true);
+    try {
+      const contractor = contractors.find((c: any) => c.id === contractorId);
+      const boqItems = scope.map((s) => {
+        const qty = parseFloat(s.quantity) || 0;
+        const rate = parseFloat(s.rate) || 0;
+        return {
+          boqItemId: s.boqItemId,
+          boqNo: s.boqNo,
+          description: s.description,
+          uomCode: s.uomCode,
+          quantity: qty,
+          rate,
+          amount: qty * rate,
+        };
+      });
+
+      const project = projects.find((p: any) => p.id === projectId);
+      const payload = {
+        projectId,
+        contractorId: contractorId || null,
+        contractorName: contractor?.name ?? editData?.contractorName ?? "New Contractor",
+        type: woType,
+        workType,
+        title: `${woType} for ${project?.name ?? ""}`.trim(),
+        plannedStart: plannedStart || null,
+        plannedEnd: plannedEnd || null,
+        boqItems,
+        // Edit preserves status; create stamps "draft".
+        ...(isEdit ? {} : { status: "draft" }),
+      };
+
+      const url = isEdit
+        ? `/api/projects/work-orders/${editData.id}`
+        : `/api/projects/work-orders`;
+      const method = isEdit ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": `wo-${isEdit ? editData.id : "new"}-${Date.now()}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+
+      if (embedded) {
+        // Drawer host owns navigation/refresh — let it react to the save.
+        onSaved?.();
+      } else {
+        router.push("/projects/work-orders");
+        router.refresh();
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to save work order");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Header strip — hidden in embedded (drawer) mode because the
+          drawer chrome supplies its own header and Save button. */}
+      {!embedded && (
+      <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 shrink-0">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/projects/work-orders"
+            className="p-1.5 rounded-lg hover:bg-orange-50 hover:text-orange-700 text-slate-500 transition-colors"
+            title="Back to Work Orders"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div className="flex items-center gap-2.5">
+            <span aria-hidden className="hidden sm:block w-1 h-6 rounded-full bg-gradient-to-b from-orange-500 to-orange-600" />
+            <div>
+            <h1 className="text-lg font-semibold text-slate-900 tracking-tight">
+              {isEdit ? `Edit Work Order · ${editData?.woNumber ?? ""}` : "New Work Order"}
+            </h1>
+            <p className="text-xs text-slate-500">
+              {isEdit
+                ? "Update scope, rates, contractor, and schedule."
+                : "Define contractor scope, rates, and terms."}
+            </p>
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 rounded-lg shadow-brand active:translate-y-[1px] transition-all"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" /> {isEdit ? "Save Changes" : "Save Draft"}
+            </>
+          )}
+        </button>
+      </div>
+      )}
+
+      <PageContainer>
+        {error && (
+          <div className="bg-rose-50 border border-rose-200 rounded-lg px-4 py-2.5 text-sm text-rose-700 flex items-start gap-2 mb-4">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="flex-1">{error}</span>
+            <button onClick={() => setError("")} className="text-rose-400 hover:text-rose-600">
+              ×
+            </button>
+          </div>
+        )}
+
+        {/* ── BASIC INFORMATION ── */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-soft px-6 py-5 mb-5">
+          <h2 className="text-xs font-bold text-orange-700 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <Briefcase className="w-4 h-4" /> BASIC INFORMATION
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Field label="PROJECT" required>
+              <SelectInput
+                value={projectId}
+                onChange={setProjectId}
+                disabled={isEdit && scope.length > 0}
+                placeholder="Select project…"
+                options={projects.map((p: any) => ({ value: p.id, label: p.name }))}
+              />
+              {isEdit && scope.length > 0 && (
+                <p className="mt-1 text-[10px] text-gray-400">
+                  Project is locked because BOQ items are attached.
+                </p>
+              )}
+            </Field>
+            <Field label="WO TYPE">
+              <SelectInput
+                value={woType}
+                onChange={setWoType}
+                options={[
+                  { value: "Work Order", label: "Work Order" },
+                  { value: "Service Order", label: "Service Order" },
+                  { value: "Supply Order", label: "Supply Order" },
+                ]}
+              />
+            </Field>
+            <Field label="CONTRACTOR">
+              <SelectInput
+                value={contractorId}
+                onChange={setContractorId}
+                placeholder="Select Contractor…"
+                options={contractors.map((c: any) => ({ value: c.id, label: c.name }))}
+              />
+            </Field>
+            <Field label="WORK TYPE">
+              <SelectInput
+                value={workType}
+                onChange={setWorkType}
+                options={[
+                  { value: "Without Material (Aakar supplies)", label: "Without Material (Aakar supplies)" },
+                  { value: "With Material (contractor supplies)", label: "With Material (contractor supplies)" },
+                  { value: "Labour Only", label: "Labour Only" },
+                ]}
+              />
+            </Field>
+            <Field label="PLANNED START">
+              <input
+                type="date"
+                value={plannedStart}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setPlannedStart(next);
+                  // Auto-bump end date so it stays strictly after start
+                  if (next && plannedEnd && plannedEnd <= next) {
+                    setPlannedEnd(addDays(next, 1));
+                  }
+                }}
+                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+              />
+            </Field>
+            <Field label="PLANNED END">
+              <input
+                type="date"
+                value={plannedEnd}
+                min={plannedStart ? addDays(plannedStart, 1) : undefined}
+                onChange={(e) => setPlannedEnd(e.target.value)}
+                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+              />
+            </Field>
+          </div>
+        </section>
+
+        {/* ── BOQ SCOPE ── */}
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-soft px-6 py-5 mb-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-bold text-orange-700 uppercase tracking-wider flex items-center gap-2">
+              <FileText className="w-4 h-4" /> BOQ SCOPE
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                if (!projectId) {
+                  setError("Pick a project first before adding BOQ items");
+                  return;
+                }
+                setBoqModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-orange-700 hover:text-orange-800 bg-orange-50 hover:bg-orange-100 border border-orange-200 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add BOQ Item
+            </button>
+          </div>
+
+          {scope.length === 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (!projectId) {
+                  setError("Pick a project first before adding BOQ items");
+                  return;
+                }
+                setBoqModalOpen(true);
+              }}
+              className="w-full border-2 border-dashed border-orange-200 bg-orange-50/30 hover:bg-orange-50/60 hover:border-orange-300 rounded-xl p-10 text-center transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-300"
+            >
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-orange-50 text-orange-500 mb-3 ring-4 ring-orange-50/60">
+                <FileText className="w-6 h-6" />
+              </div>
+              <div className="text-sm font-semibold text-slate-800">No BOQ items added yet</div>
+              <p className="text-xs text-slate-500 mt-1">
+                Add items to define the scope and value of this work order.
+              </p>
+            </button>
+          ) : (
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gradient-to-b from-slate-50 to-slate-100/70 border-b border-slate-200">
+                  <tr className="text-[11px] uppercase font-bold text-slate-600 tracking-wider">
+                    <th className="px-3 py-3 text-left w-[100px]">Item Code</th>
+                    <th className="px-3 py-3 text-left">Description</th>
+                    <th className="px-3 py-3 text-left w-[90px]">UOM</th>
+                    <th className="px-3 py-3 text-right w-[130px]">Quantity</th>
+                    <th className="px-3 py-3 text-right w-[130px]">Rate (₹)</th>
+                    <th className="px-3 py-3 text-right w-[140px]">Amount (₹)</th>
+                    <th className="px-3 py-3 w-[40px]"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scope.map((line, idx) => {
+                    const qty = parseFloat(line.quantity) || 0;
+                    const rate = parseFloat(line.rate) || 0;
+                    const amount = qty * rate;
+                    return (
+                      <tr key={`${line.boqItemId}-${idx}`} className="border-t border-slate-100 hover:bg-orange-50/40 transition-colors">
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={line.boqNo}
+                            onChange={(e) => updateScopeLine(idx, "boqNo", e.target.value)}
+                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded font-mono focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={line.description}
+                            onChange={(e) =>
+                              updateScopeLine(idx, "description", e.target.value)
+                            }
+                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <SelectInput
+                            value={line.uomCode}
+                            onChange={(v) => updateScopeLine(idx, "uomCode", v)}
+                            placeholder="—"
+                            options={(() => {
+                              const opts = uoms.map((u: any) => ({ value: u.code, label: u.code }));
+                              if (
+                                line.uomCode &&
+                                !uoms.find((u: any) => u.code === line.uomCode)
+                              ) {
+                                opts.push({ value: line.uomCode, label: line.uomCode });
+                              }
+                              return opts;
+                            })()}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={line.quantity}
+                            onChange={(e) =>
+                              updateScopeLine(idx, "quantity", e.target.value)
+                            }
+                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={line.rate}
+                            onChange={(e) => updateScopeLine(idx, "rate", e.target.value)}
+                            className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right text-sm font-semibold text-slate-900 tabular-nums">
+                          ₹{amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => removeScopeLine(idx)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            title="Remove line"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-orange-50/50 border-t border-slate-200">
+                  <tr>
+                    <td colSpan={5} className="px-3 py-3 text-right text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Total Value
+                    </td>
+                    <td className="px-3 py-3 text-right text-sm font-bold text-orange-700 tabular-nums">
+                      ₹{totalValue.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </section>
+      </PageContainer>
+
+      {/* BOQ picker modal */}
+      <BOQActivityPickerModal
+        open={boqModalOpen}
+        onClose={() => setBoqModalOpen(false)}
+        projectId={projectId}
+        alreadyAddedIds={alreadyAddedIds}
+        onAdd={addBoqItem}
+      />
+
+      {/* Embedded-mode footer — shows the Save button at the bottom of
+          the form when hosted inside a drawer (the top header strip is
+          hidden in that mode, so without this footer there'd be no way
+          to save). Mirrors the QuickCreateDrawer footer convention. */}
+      {embedded && (
+        <div className="border-t border-gray-200 px-6 py-4 flex justify-end gap-3 shrink-0 bg-gray-50">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-b from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 rounded-lg shadow-brand active:translate-y-[1px] transition-all"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" /> Saving…
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" /> {isEdit ? "Save Changes" : "Save Draft"}
+              </>
+            )}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+        {label}
+        {required && <span className="text-rose-500 ml-0.5">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+// Adds N days to a YYYY-MM-DD string and returns the same format.
+// Used to keep planned-end strictly after planned-start.
+function addDays(yyyyMmDd: string, days: number) {
+  const d = new Date(yyyyMmDd + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}

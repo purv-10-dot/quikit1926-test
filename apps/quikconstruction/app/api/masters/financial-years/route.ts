@@ -1,62 +1,84 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { financialYearCreateSchema } from "@/lib/schemas/masters-phase2";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
+import {
+  listFinancialYears,
+  countFinancialYears,
+  createFinancialYear,
+} from "@/lib/masters/financial-years-repository";
+import { parsePagination, paginateDb } from "@/lib/http/pagination";
 
-const withOrgAuth = withOrgAuthForModule("masters");
+export async function GET(req: NextRequest) {
+  try {  
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  
+    const { searchParams } = new URL(req.url);
+    const search = searchParams.get("search") ?? "";
+    const baseOpts = { tenantId: ctx.tenantId, orgId: ctx.orgId, search };
+  
+    const result = await paginateDb(
+      parsePagination(req),
+      (paging) => listFinancialYears({ ...baseOpts, ...paging }),
+      () => countFinancialYears(baseOpts),
+    );
+    return NextResponse.json(result);
 
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const companyId = req.nextUrl.searchParams.get("companyId") || undefined;
-  const years = await db.cnFinancialYear.findMany({
-    where: {
-      orgId,
-      deletedAt: includeDeleted ? { not: null } : null,
-      ...(companyId ? { companyId } : {}),
-    },
-    include: { company: { select: { id: true, name: true } } },
-    orderBy: [{ startDate: "desc" }],
-  });
-  return NextResponse.json({ success: true, data: years });
-});
-
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const body = await req.json();
-  const input = financialYearCreateSchema.parse(body);
-  const company = await db.cnCompany.findFirst({
-    where: { id: input.companyId, orgId },
-    select: { id: true },
-  });
-  if (!company) {
-    return NextResponse.json({ success: false, error: "Company not found" }, { status: 400 });
-  }
-  const conflict = await db.cnFinancialYear.findFirst({
-    where: { orgId, companyId: input.companyId, label: input.label, deletedAt: null },
-    select: { id: true },
-  });
-  if (conflict) {
+  } catch (err: unknown) {
+    const e = err as { message?: string };
+    console.error("[masters/financial-years.GET] failed:", err);
     return NextResponse.json(
-      { success: false, error: `Financial year '${input.label}' already exists for this company` },
-      { status: 409 },
+      { ok: false, error: e.message ?? "Internal error" },
+      { status: 500 },
     );
   }
-  // If marked current, un-current any other year for the same company
-  const created = await db.$transaction(async (tx) => {
-    if (input.isCurrent) {
-      await tx.cnFinancialYear.updateMany({
-        where: { orgId, companyId: input.companyId, isCurrent: true },
-        data: { isCurrent: false },
-      });
-    }
-    return tx.cnFinancialYear.create({
-      data: {
-        ...input,
-        startDate: new Date(input.startDate),
-        endDate: new Date(input.endDate),
-        orgId,
-        createdBy: userId,
-      },
+}
+
+export async function POST(req: NextRequest) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+  const body = await req.json();
+  if (!body?.label || !String(body.label).trim()) {
+    return NextResponse.json({ error: "Financial year label is required" }, { status: 400 });
+  }
+  if (!body?.startDate) {
+    return NextResponse.json({ error: "Start date is required" }, { status: 400 });
+  }
+  if (!body?.endDate) {
+    return NextResponse.json({ error: "End date is required" }, { status: 400 });
+  }
+
+  try {
+    const record = await createFinancialYear({
+      tenantId: ctx.tenantId,
+      orgId: ctx.orgId,
+      createdBy: ctx.userId,
+      companyId: body.companyId,
+      label: body.label,
+      startDate: body.startDate,
+      endDate: body.endDate,
+      isCurrent: body.isCurrent,
+      status: body.status ?? "active",
     });
-  });
-  return NextResponse.json({ success: true, data: created }, { status: 201 });
-});
+    return NextResponse.json(record, { status: 201 });
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "P2002") {
+      return NextResponse.json(
+        { error: "A financial year with this label already exists" },
+        { status: 409 },
+      );
+    }
+    if (e?.code === "P2003") {
+      return NextResponse.json(
+        { error: "The selected company does not exist" },
+        { status: 400 },
+      );
+    }
+    console.error("[financial-years.create] failed:", err);
+    return NextResponse.json(
+      { error: e?.message ?? "Failed to create financial year" },
+      { status: 500 },
+    );
+  }
+}

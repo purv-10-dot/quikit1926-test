@@ -1,180 +1,126 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { AddButton, EmptyState, useConfirm } from "@quikit/ui";
-import { FileText, ArrowLeft, Send, Trash2, Eye } from "lucide-react";
-import { MultiLineDocForm, type LineColumn } from "@/components/procurement/MultiLineDocForm";
-import type { FieldConfig } from "@/components/masters/MasterListPage";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Eye, Send } from "lucide-react";
+import {
+  PageHeader, PageContainer, StatusChip, TabBar,
+} from "@/components/PageShell";
+import { DataTable, type ColDef } from "@/components/DataTable";
+import { usePurchaseRequisitions, useSubmitPR } from "@/hooks/use-purchase";
+import dynamic from "next/dynamic";
+const PRCreateDrawer = dynamic(
+  () => import("./PRCreateDrawer").then((m) => m.PRCreateDrawer),
+  { ssr: false },
+);
+import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
 
-interface Pr {
-  id: string;
-  prNumber: string;
-  status: string;
-  requestDate: string;
-  requiredDate: string | null;
-  purpose: string | null;
-  project: { id: string; name: string } | null;
-  lines: Array<{ id: string; item: { code: string; name: string }; quantity: string; uom: { code: string } }>;
-}
+const STATUS_TABS: TabSpec[] = [
+  { key: "all", label: "All" },
+  { key: "draft", label: "Draft" },
+  { key: "pending_approval", label: "Pending Approval" },
+  { key: "approved_stock_available", label: "Stock Available" },
+  { key: "approved_indent_required", label: "Indent Required" },
+  { key: "closed", label: "Closed" },
+];
 
-const STATUS_BADGE: Record<string, string> = {
-  draft:     "bg-gray-100 text-gray-600",
-  submitted: "bg-amber-100 text-amber-700",
-  approved:  "bg-green-100 text-green-700",
-  rejected:  "bg-red-100 text-red-700",
-  converted: "bg-blue-100 text-blue-700",
-  cancelled: "bg-gray-100 text-gray-400 line-through",
-};
+export default function PurchaseRequisitionsPage() {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState("all");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-interface Opt { id: string; name: string; code?: string }
+  // Fetch the unfiltered list once and derive both the tab counts and
+  // the visible slice client-side. Keeps the page to one query and
+  // makes tab switches instant.
+  const { data: result, isLoading } = usePurchaseRequisitions({
+    status: "all",
+    search: "",
+  });
+  const submitMutation = useSubmitPR();
 
-export default function PrListPage() {
-  const [items, setItems] = useState<Pr[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [formOpen, setFormOpen] = useState(false);
-  const [projects, setProjects] = useState<Opt[]>([]);
-  const [items_, setItems_] = useState<Opt[]>([]);
-  const [uoms, setUoms] = useState<Opt[]>([]);
-  const confirm = useConfirm();
+  const allRows = result?.data ?? [];
+  const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
+  const data = useMemo(() => filterByTab(allRows, activeTab, STATUS_TABS), [allRows, activeTab]);
 
-  useEffect(() => {
-    fetch("/api/masters/projects").then(r => r.json()).then(j => j.success && setProjects(j.data));
-    fetch("/api/masters/items").then(r => r.json()).then(j => j.success && setItems_(j.data));
-    fetch("/api/masters/uom").then(r => r.json()).then(j => j.success && setUoms(j.data));
-  }, []);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const handleSubmitPR = async (id: string) => {
+    if (!confirm("Submit this PR for approval?")) return;
     try {
-      const res = await fetch("/api/purchase/requisitions");
-      const j = await res.json();
-      if (j.success) setItems(j.data);
-    } finally {
-      setLoading(false);
+      await submitMutation.mutateAsync(id);
+    } catch (err: any) {
+      alert(err.message);
     }
-  }, []);
+  };
 
-  useEffect(() => { refresh(); }, [refresh]);
-
-  async function submit(pr: Pr) {
-    const ok = await confirm({
-      title: "Submit this PR?",
-      description: `"${pr.prNumber}" will move to 'submitted'. You won't be able to edit it.`,
-      confirmLabel: "Submit",
-      tone: "default",
-    });
-    if (!ok) return;
-    await fetch(`/api/purchase/requisitions/${pr.id}/submit`, { method: "POST" });
-    refresh();
-  }
-
-  async function remove(pr: Pr) {
-    const ok = await confirm({
-      title: "Delete this draft PR?",
-      description: `"${pr.prNumber}" will be archived.`,
-      confirmLabel: "Delete",
-      tone: "danger",
-    });
-    if (!ok) return;
-    await fetch(`/api/purchase/requisitions/${pr.id}`, { method: "DELETE" });
-    refresh();
-  }
+  const columns: ColDef<any>[] = [
+    {
+      key: "prNumber", label: "PR Number", sortable: true, searchable: true,
+      render: (row) => (
+        <span className="text-blue-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/purchase/requisitions/${row.id}`)}>
+          {row.prNumber}
+        </span>
+      ),
+    },
+    { key: "projectName", label: "Project", sortable: true, searchable: true },
+    { key: "requestDate", label: "Date", type: "date", sortable: true },
+    { key: "requiredDate", label: "Required Date", type: "date", sortable: true },
+    { key: "purpose", label: "Purpose", searchable: true },
+    {
+      key: "lineCount", label: "Items", type: "number", sortable: true,
+      render: (row) => `${row.lineCount ?? 0} items`,
+    },
+    {
+      key: "estimatedTotal", label: "Est. Value", type: "number", sortable: true,
+      render: (row) => row.estimatedTotal ? `₹ ${Number(row.estimatedTotal).toLocaleString("en-IN")}` : "—",
+    },
+    {
+      key: "status", label: "Status", type: "select",
+      options: ["draft", "pending_approval", "approved_stock_available", "approved_indent_required", "closed"],
+      sortable: true,
+      render: (row) => <StatusChip status={row.status ?? ""} />,
+    },
+    {
+      key: "_actions", label: "Actions", width: "100px",
+      render: (row) => (
+        <div className="flex items-center justify-end gap-1">
+          <button onClick={() => router.push(`/purchase/requisitions/${row.id}`)}
+            className="p-1.5 rounded hover:bg-gray-100 text-gray-500" title="View">
+            <Eye className="w-4 h-4" />
+          </button>
+          {row.status === "draft" && (
+            <button onClick={() => handleSubmitPR(row.id)}
+              className="p-1.5 rounded hover:bg-gray-100 text-orange-500" title="Submit for Approval">
+              <Send className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="p-6 max-w-6xl">
-      <Link href="/purchase" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 mb-3">
-        <ArrowLeft className="h-3 w-3" /> Purchase
-      </Link>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Purchase Requisitions</h1>
-          <p className="text-xs text-gray-500">Multi-line create UI ships in Phase 3b — for now POST to <code className="bg-gray-100 px-1 rounded">/api/purchase/requisitions</code> with body <code className="bg-gray-100 px-1 rounded">{`{prNumber, projectId, requestedById, requestDate, lines:[...]}`}</code>.</p>
-        </div>
-        <AddButton onClick={() => setFormOpen(true)}>Add PR</AddButton>
-      </div>
-
-      {loading ? (
-        <div className="text-sm text-gray-500">Loading…</div>
-      ) : items.length === 0 ? (
-        <EmptyState icon={FileText} title="No requisitions yet" message="Create your first PR — header + line items." />
-      ) : (
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-accent-50 text-xs text-gray-600">
-              <tr>
-                <th className="text-left px-3 py-2">PR #</th>
-                <th className="text-left px-3 py-2">Project</th>
-                <th className="text-left px-3 py-2">Date</th>
-                <th className="text-left px-3 py-2">Lines</th>
-                <th className="text-left px-3 py-2">Status</th>
-                <th className="px-3 py-2" style={{ width: 100 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((pr) => (
-                <tr key={pr.id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-2 font-mono text-xs text-gray-900">{pr.prNumber}</td>
-                  <td className="px-3 py-2 text-gray-700">{pr.project?.name ?? "—"}</td>
-                  <td className="px-3 py-2 text-xs text-gray-500">{new Date(pr.requestDate).toISOString().slice(0, 10)}</td>
-                  <td className="px-3 py-2 text-gray-700">{pr.lines.length}</td>
-                  <td className="px-3 py-2">
-                    <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${STATUS_BADGE[pr.status] ?? "bg-gray-100 text-gray-600"}`}>
-                      {pr.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <Link href={`/purchase/requisitions/${pr.id}`} className="text-gray-400 hover:text-accent-600 p-1 inline-block" title="View"><Eye className="h-3.5 w-3.5" /></Link>
-                    {pr.status === "draft" && (
-                      <>
-                        <button onClick={() => submit(pr)} className="text-gray-400 hover:text-accent-600 p-1" title="Submit">
-                          <Send className="h-3.5 w-3.5" />
-                        </button>
-                        <button onClick={() => remove(pr)} className="text-gray-400 hover:text-red-600 p-1" title="Delete">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <MultiLineDocForm
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        title="Purchase Requisition"
-        endpoint="/api/purchase/requisitions"
-        onSaved={refresh}
-        addLineLabel="Add Item"
-        headerDefaults={{
-          prNumber: `PR-${Date.now().toString().slice(-6)}`,
-          requestDate: new Date().toISOString().slice(0, 10),
-        }}
-        lineDefault={{ itemId: "", quantity: null, uomId: "", estimatedRate: null, remarks: "" }}
-        headerFields={[
-          { name: "prNumber", label: "PR Number", type: "text", required: true, width: "half", transform: "uppercase" },
-          { name: "requestDate", label: "Request Date", type: "text", required: true, width: "half", placeholder: "YYYY-MM-DD" },
-          { name: "projectId", label: "Project", type: "select", required: true, width: "half",
-            options: projects.map(p => ({ value: p.id, label: p.name })) },
-          { name: "requestedById", label: "Requested By (user id)", type: "text", required: true, width: "half",
-            hint: "Paste a user id — picker coming in Phase 3c" },
-          { name: "requiredDate", label: "Required By", type: "text", width: "half", placeholder: "YYYY-MM-DD" },
-          { name: "purpose", label: "Purpose", type: "textarea" },
-        ] as FieldConfig[]}
-        lineColumns={[
-          { key: "itemId", label: "Item", type: "select", required: true, width: 220,
-            options: items_.map(i => ({ value: i.id, label: `${i.code} — ${i.name}` })) },
-          { key: "quantity", label: "Qty", type: "number", required: true, width: 90, min: 0 },
-          { key: "uomId", label: "UOM", type: "select", required: true, width: 100,
-            options: uoms.map(u => ({ value: u.id, label: u.code ?? u.name })) },
-          { key: "estimatedRate", label: "Est. Rate", type: "number", width: 100, min: 0 },
-          { key: "remarks", label: "Remarks", type: "text", width: 140 },
-        ] as LineColumn[]}
+    <>
+      <PageHeader
+        title="Purchase Requisitions"
+        subtitle="Request materials needed for site operations"
+        breadcrumbs={[{ label: "Purchase", href: "/purchase" }, { label: "Requisitions" }]}
       />
-    </div>
+
+      <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+
+      <PageContainer>
+        <DataTable
+          id="purchase-requisitions"
+          columns={columns}
+          data={data}
+          onAdd={() => setDrawerOpen(true)}
+          addLabel="New PR"
+          defaultSort="requestDate"
+          defaultSortDir="desc"
+        />
+      </PageContainer>
+
+      <PRCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+    </>
   );
 }

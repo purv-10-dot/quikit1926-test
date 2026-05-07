@@ -1,22 +1,122 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
+import {
+  findIndentById,
+  softDeleteIndent,
+} from "@/lib/purchase/indent-repository";
+import { resolveUserNames } from "@/lib/users/resolve-names";
+import { db } from "@/lib/db/prisma";
 
-const withOrgAuth = withOrgAuthForModule("purchase");
+/**
+ * Indent per-row endpoints — Postgres-backed.
+ *
+ * GET    — fetch one, tenant-scoped, enriched with the live approval
+ *          instance + history + workflow steps so the detail page can
+ *          render the same real timeline PR uses.
+ * DELETE — soft delete via `status = "inactive"` so approval history
+ *          and any downstream POs stay referentially valid.
+ */
 
-export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
-  const r = await db.cnPurchaseIndent.findFirst({
-    where: { id: params.id, orgId },
-    include: { project: true, lines: { include: { item: true, uom: true } } },
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+  const row = await findIndentById(ctx.tenantId, params.id);
+  if (!row || row.status === "inactive") {
+    return NextResponse.json({ error: "Indent not found" }, { status: 404 });
+  }
+
+  // Same fan-out the PR detail route uses — instance + workflow + history,
+  // with user names pre-resolved so the client timeline doesn't need a
+  // second round-trip for display labels.
+  let approval: any = null;
+  if (row.approvalId) {
+    const instance = await (db as any).cnApprovalInstance.findFirst({
+      where: { id: row.approvalId, tenantId: ctx.tenantId },
+      include: {
+        history: { orderBy: { actionAt: "asc" } },
+        workflow: { include: { steps: { orderBy: { stepOrder: "asc" } } } },
+      },
+    });
+    if (instance) {
+      const userIds = Array.from(
+        new Set<string>([
+          instance.requestedById,
+          ...instance.history.map((h: any) => h.actionById),
+          ...(instance.workflow.steps
+            .map((s: any) => s.approverUserId)
+            .filter(Boolean) as string[]),
+        ]),
+      );
+      const users = userIds.length
+        ? await (db as any).cnUser.findMany({
+            where: { id: { in: userIds } },
+            select: { id: true, fullName: true },
+          })
+        : [];
+      const nameById = new Map<string, string>(
+        users.map((u: any) => [u.id, u.fullName]),
+      );
+
+      approval = {
+        id: instance.id,
+        status: instance.status,
+        currentStepOrder: instance.currentStepOrder,
+        completedAt: instance.completedAt?.toISOString?.() ?? null,
+        requestedAt: instance.requestedAt.toISOString(),
+        requestedById: instance.requestedById,
+        requestedByName: nameById.get(instance.requestedById) ?? "User",
+        workflow: {
+          id: instance.workflow.id,
+          name: instance.workflow.name,
+          steps: instance.workflow.steps.map((s: any) => ({
+            stepOrder: s.stepOrder,
+            approverRoleId: s.approverRoleId,
+            approverUserId: s.approverUserId,
+            approverUserName: s.approverUserId
+              ? (nameById.get(s.approverUserId) ?? null)
+              : null,
+          })),
+        },
+        history: instance.history.map((h: any) => ({
+          stepOrder: h.stepOrder,
+          action: h.action,
+          actionById: h.actionById,
+          actionByName: nameById.get(h.actionById) ?? "User",
+          actionAt: h.actionAt.toISOString(),
+          comments: h.comments,
+        })),
+      };
+    }
+  }
+
+  const auditNames = await resolveUserNames([
+    row.createdBy,
+    row.updatedBy,
+    row.requestedById,
+  ]);
+  return NextResponse.json({
+    ...row,
+    approval,
+    createdByName: auditNames.get(row.createdBy) ?? row.createdBy,
+    updatedByName: auditNames.get(row.updatedBy) ?? row.updatedBy,
+    requestedByName: row.requestedById
+      ? (auditNames.get(row.requestedById) ?? row.requestedById)
+      : null,
   });
-  if (!r) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  return NextResponse.json({ success: true, data: r });
-});
+}
 
-export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
-  const r = await db.cnPurchaseIndent.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, status: true } });
-  if (!r) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  if (r.status !== "draft") return NextResponse.json({ success: false, error: "Only draft indents can be deleted" }, { status: 400 });
-  await db.cnPurchaseIndent.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+  const ok = await softDeleteIndent(ctx.tenantId, params.id, ctx.userId);
+  if (!ok) return NextResponse.json({ error: "Indent not found" }, { status: 404 });
   return NextResponse.json({ success: true });
-});
+}

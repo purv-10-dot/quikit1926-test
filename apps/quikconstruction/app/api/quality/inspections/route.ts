@@ -1,59 +1,41 @@
-import { NextResponse } from "next/server";
-import { z } from "zod";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
 
-const withOrgAuth = withOrgAuthForModule("quality");
+const data: any[] = [];
 
-const createSchema = z.object({
-  inspectionNumber: z.string().min(1).max(50),
-  grnId: z.string().optional().nullable(),
-  projectId: z.string().optional().nullable(),
-  inspectorId: z.string().min(1),
-  inspectionDate: z.string().min(1),
-  decision: z.enum(["pending", "accepted", "rejected", "conditional"]).default("pending"),
-  remarks: z.string().optional().nullable(),
-  defects: z.array(z.object({
-    itemId: z.string().optional().nullable(),
-    defectType: z.string().min(1),
-    severity: z.enum(["minor", "major", "critical"]).default("minor"),
-    quantity: z.number().min(0).optional().nullable(),
-    remarks: z.string().optional().nullable(),
-  })).default([]),
-});
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const search = searchParams.get("search")?.toLowerCase() ?? "";
 
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const list = await db.cnQCInspection.findMany({
-    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
-    include: {
-      grn: { select: { id: true, grnNumber: true } },
-      project: { select: { id: true, name: true, code: true } },
-      _count: { select: { defects: true } },
-    },
-    orderBy: { inspectionDate: "desc" },
-  });
-  return NextResponse.json({ success: true, data: list });
-});
+    const ctx = await getTenantContext();
 
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const input = createSchema.parse(await req.json());
-  const dup = await db.cnQCInspection.findFirst({ where: { orgId, inspectionNumber: input.inspectionNumber, deletedAt: null }, select: { id: true } });
-  if (dup) return NextResponse.json({ success: false, error: `Inspection '${input.inspectionNumber}' already exists` }, { status: 409 });
-  const insp = await db.cnQCInspection.create({
-    data: {
-      orgId,
-      inspectionNumber: input.inspectionNumber,
-      grnId: input.grnId ?? null,
-      projectId: input.projectId ?? null,
-      inspectorId: input.inspectorId,
-      inspectionDate: new Date(input.inspectionDate),
-      decision: input.decision,
-      remarks: input.remarks ?? null,
-      createdBy: userId,
-      defects: { create: input.defects.map(d => ({ itemId: d.itemId ?? null, defectType: d.defectType, severity: d.severity, quantity: d.quantity ?? null, remarks: d.remarks ?? null })) },
-    },
-    include: { defects: true },
-  });
-  return NextResponse.json({ success: true, data: insp }, { status: 201 });
-});
+    let filtered: any[] = data;
+
+    // Per-user project scoping — applied BEFORE the optional ?projectId
+    // query filter so a user can never use the query string to see a project
+    // they're not assigned to.
+    if (ctx?.projectIds !== undefined) {
+      const allowed = new Set(ctx.projectIds);
+      filtered = filtered.filter((row: any) => allowed.has(row.projectId));
+    }
+
+    if (search) filtered = filtered.filter(r => r.inspectionNo.toLowerCase().includes(search) || r.boqItem.toLowerCase().includes(search) || r.inspector.toLowerCase().includes(search));
+    return NextResponse.json({ data: filtered, total: filtered.length });
+
+  } catch (err: unknown) {
+    const e = err as { message?: string };
+    console.error("[quality/inspections.GET] failed:", err);
+    return NextResponse.json(
+      { ok: false, error: e.message ?? "Internal error" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const record = { id: `insp-${data.length + 1}`, inspectionNo: `QI-2026-${String(data.length + 1).padStart(3, "0")}`, ...body };
+  data.push(record);
+  return NextResponse.json(record, { status: 201 });
+}

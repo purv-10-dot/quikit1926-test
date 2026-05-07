@@ -1,65 +1,66 @@
-import Link from "next/link";
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
-  PackageCheck, PackageMinus, Warehouse,
-  PackageX, Undo2, ArrowLeftRight, Scale, Fuel, DoorOpen,
+  BarChart3, Package, ClipboardList, ArrowLeftRight,
+  FileBarChart2, Fuel, AlertTriangle,
 } from "lucide-react";
+import { PageHeader, PageContainer, KPICard } from "@/components/PageShell";
 
-const CORE = [
-  { href: "/store/grn",            label: "GRN (Goods Receipt)", description: "Receive materials against a PO. Writes stock ledger on post.", icon: PackageCheck },
-  { href: "/store/material-issue", label: "Material Issue",     description: "Issue stock to project/site. Writes negative ledger on post.",  icon: PackageMinus },
-  { href: "/store/stock-register", label: "Stock Register",     description: "Current balance per item × location.",                         icon: Warehouse    },
-];
+export default function StoreIndexPage() {
+  const router = useRouter();
 
-const EXTENDED = [
-  { href: "/store/good-return",           label: "Good Return (Vendor)",   description: "Return defective stock to vendor. Reverses GRN ledger.",   icon: PackageX },
-  { href: "/store/internal-return",       label: "Internal Return",        description: "Unused stock returns from issue. Writes stock back in.",   icon: Undo2 },
-  { href: "/store/stock-transfer",        label: "Stock Transfer",         description: "Move stock between locations. Paired ledger rows.",        icon: ArrowLeftRight },
-  { href: "/store/stock-reconciliation",  label: "Stock Reconciliation",   description: "Physical count adjustments. Writes +/- adjustment rows.",  icon: Scale },
-  { href: "/store/gate-pass",             label: "Gate Pass",              description: "In/out gate register. Links to GRN/Issue/Return.",         icon: DoorOpen },
-  { href: "/store/diesel-log",            label: "Diesel Log",             description: "Fuel consumption per machine/vehicle.",                    icon: Fuel },
-];
+  const { data } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard");
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
 
-export default function StoreIndex() {
+  const kpis = data?.kpis ?? {};
+
   return (
-    <div className="p-6 max-w-5xl">
-      <h1 className="text-lg font-semibold text-gray-900 mb-1">Store</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Inventory — every stock write goes through <code className="bg-gray-100 px-1 rounded text-xs">CnStockLedger</code> inside a DB transaction.
-      </p>
+    <>
+      <PageHeader
+        title="Store & Inventory"
+        subtitle="Stock register, material movements, and inventory control"
+      />
+      <PageContainer>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPICard title="Total Stock Value" value={kpis.stockValue ? `₹ ${Number(kpis.stockValue).toLocaleString("en-IN")}` : "₹ 0"}
+            icon={<BarChart3 className="w-5 h-5" />} color="blue" onClick={() => router.push("/store/stock-register")} />
+          <KPICard title="Low Stock Items" value={kpis.lowStockItems ?? 0} subtitle="Below minimum level"
+            icon={<AlertTriangle className="w-5 h-5" />} color="red" onClick={() => router.push("/store/stock-register?filter=low_stock")} />
+          <KPICard title="Issues This Month" value={kpis.issuesThisMonth ?? 0}
+            icon={<Package className="w-5 h-5" />} color="purple" onClick={() => router.push("/store/issue")} />
+          <KPICard title="Pending Transfers" value={kpis.pendingTransfers ?? 0}
+            icon={<ArrowLeftRight className="w-5 h-5" />} color="amber" onClick={() => router.push("/store/transfer")} />
+        </div>
 
-      <section className="mb-8">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Core P2P</h2>
-        <div className="grid gap-3 md:grid-cols-2">
-          {CORE.map((p) => (
-            <Link key={p.href} href={p.href}
-              className="flex items-start gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:border-accent-300 hover:shadow-sm transition">
-              <div className="p-2 rounded-lg bg-accent-50 text-accent-700"><p.icon className="h-4 w-4" /></div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-gray-900">{p.label}</div>
-                <div className="text-xs text-gray-600 mt-0.5">{p.description}</div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-6">
+          {[
+            { label: "Stock Register", href: "/store/stock-register", icon: BarChart3, color: "bg-blue-50 text-blue-600", desc: "Current stock by item, location" },
+            { label: "Material Issue", href: "/store/issue", icon: Package, color: "bg-purple-50 text-purple-600", desc: "Issue materials to site" },
+            { label: "Gate Pass", href: "/store/gate-pass", icon: ClipboardList, color: "bg-green-50 text-green-600", desc: "Inward / outward gate passes" },
+            { label: "Good Return", href: "/store/good-return", icon: ArrowLeftRight, color: "bg-red-50 text-red-600", desc: "Return rejected material to vendor" },
+            { label: "Stock Transfer", href: "/store/transfer", icon: ArrowLeftRight, color: "bg-amber-50 text-amber-600", desc: "Transfer between sites" },
+            { label: "Reconciliation", href: "/store/reconciliation", icon: FileBarChart2, color: "bg-indigo-50 text-indigo-600", desc: "Physical vs system stock" },
+            { label: "Diesel Log", href: "/store/diesel-log", icon: Fuel, color: "bg-orange-50 text-orange-600", desc: "Machine-wise fuel consumption" },
+          ].map((m) => (
+            <button key={m.href} onClick={() => router.push(m.href)}
+              className="flex flex-col p-5 rounded-xl bg-white border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all text-left">
+              <div className={`w-10 h-10 rounded-lg ${m.color} flex items-center justify-center mb-3`}>
+                <m.icon className="w-5 h-5" />
               </div>
-              <span className="text-[10px] font-semibold uppercase bg-accent-100 text-accent-700 px-1.5 py-0.5 rounded">LIVE</span>
-            </Link>
+              <p className="text-sm font-semibold text-gray-900">{m.label}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{m.desc}</p>
+            </button>
           ))}
         </div>
-      </section>
-
-      <section>
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Extended (Phase 3b)</h2>
-        <div className="grid gap-3 md:grid-cols-2">
-          {EXTENDED.map((p) => (
-            <Link key={p.href} href={p.href}
-              className="flex items-start gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:border-accent-300 hover:shadow-sm transition">
-              <div className="p-2 rounded-lg bg-accent-50 text-accent-700"><p.icon className="h-4 w-4" /></div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-gray-900">{p.label}</div>
-                <div className="text-xs text-gray-600 mt-0.5">{p.description}</div>
-              </div>
-              <span className="text-[10px] font-semibold uppercase bg-accent-100 text-accent-700 px-1.5 py-0.5 rounded">LIVE</span>
-            </Link>
-          ))}
-        </div>
-      </section>
-    </div>
+      </PageContainer>
+    </>
   );
 }

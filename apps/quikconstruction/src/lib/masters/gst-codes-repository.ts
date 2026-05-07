@@ -1,0 +1,227 @@
+/**
+ * GST Codes master — Prisma-backed CRUD for `gst_codes`.
+ *
+ * The form captures `igstRate`; we derive `rate = igstRate` and
+ * `cgstRate = sgstRate = igstRate / 2` to satisfy the required Decimal
+ * columns on the schema.
+ */
+
+import { db } from "@/lib/db/prisma";
+
+export interface GSTCodeRecord {
+  id: string;
+  tenantId: string;
+  orgId: string;
+  code: string;
+  codeType: string | null;
+  description: string;
+  rate: string;
+  cgstRate: string;
+  sgstRate: string;
+  igstRate: string;
+  isRcm: boolean;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  itemGroupId: string | null;
+  itemGroupName: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+}
+
+function toStr(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof (v as any)?.toString === "function") return (v as any).toString();
+  return String(v);
+}
+
+function toRecord(row: any): GSTCodeRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    orgId: row.orgId,
+    code: row.code,
+    codeType: row.codeType ?? null,
+    description: row.description ?? "",
+    rate: toStr(row.rate),
+    cgstRate: toStr(row.cgstRate),
+    sgstRate: toStr(row.sgstRate),
+    igstRate: toStr(row.igstRate),
+    isRcm: !!row.isRcm,
+    effectiveFrom: row.effectiveFrom ? row.effectiveFrom.toISOString() : null,
+    effectiveTo: row.effectiveTo ? row.effectiveTo.toISOString() : null,
+    itemGroupId: row.itemGroupId ?? null,
+    itemGroupName: row.itemGroupName ?? null,
+    status: row.status,
+    createdAt: row.createdAt?.toISOString?.() ?? "",
+    updatedAt: row.updatedAt?.toISOString?.() ?? "",
+    createdBy: row.createdBy,
+    updatedBy: row.updatedBy,
+  };
+}
+
+export interface ListGSTOptions {
+  tenantId: string;
+  orgId: string;
+  createdBy: string;
+  search?: string;
+  /** Pagination — passed straight through to Prisma findMany. */
+  take?: number;
+  skip?: number;
+}
+
+function buildGSTCodesWhere(
+  opts: Pick<ListGSTOptions, "tenantId" | "orgId" | "search">,
+): Record<string, unknown> {
+  const q = (opts.search ?? "").trim();
+  return {
+    tenantId: opts.tenantId,
+    orgId: opts.orgId,
+    ...(q
+      ? {
+          OR: [
+            { code: { contains: q, mode: "insensitive" } },
+            { description: { contains: q, mode: "insensitive" } },
+            { codeType: { contains: q, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+}
+
+export async function listGSTCodes(opts: ListGSTOptions): Promise<GSTCodeRecord[]> {
+  const rows = await (db as any).cnGSTCode.findMany({
+    where: buildGSTCodesWhere(opts),
+    orderBy: { createdAt: "desc" },
+    ...(typeof opts.take === "number" ? { take: opts.take } : {}),
+    ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
+  });
+  return rows.map(toRecord);
+}
+
+export async function countGSTCodes(
+  opts: Pick<ListGSTOptions, "tenantId" | "orgId" | "search">,
+): Promise<number> {
+  return (db as any).cnGSTCode.count({ where: buildGSTCodesWhere(opts) });
+}
+
+export async function findGSTCodeById(
+  tenantId: string,
+  id: string,
+): Promise<GSTCodeRecord | null> {
+  const row = await (db as any).cnGSTCode.findFirst({ where: { id, tenantId } });
+  return row ? toRecord(row) : null;
+}
+
+export interface CreateGSTInput {
+  tenantId: string;
+  orgId: string;
+  createdBy: string;
+  code: string;
+  codeType?: string | null;
+  description: string;
+  igstRate: number | string;
+  isRcm?: boolean;
+  effectiveFrom?: string | Date | null;
+  effectiveTo?: string | Date | null;
+  itemGroupId?: string | null;
+  itemGroupName?: string | null;
+  status?: string;
+}
+
+function sOrNull(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s.length ? s : null;
+}
+function dateOrNull(v: unknown): Date | null {
+  if (v === null || v === undefined || v === "") return null;
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
+  const d = new Date(String(v));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function numOrZero(v: unknown): number {
+  if (v === null || v === undefined || v === "") return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export async function createGSTCode(input: CreateGSTInput): Promise<GSTCodeRecord> {
+  const igst = numOrZero(input.igstRate);
+  if (igst < 0) throw new Error("IGST rate must be non-negative");
+
+  const row = await (db as any).cnGSTCode.create({
+    data: {
+      tenantId: input.tenantId,
+      orgId: input.orgId,
+      code: String(input.code).trim(),
+      codeType: sOrNull(input.codeType),
+      description: String(input.description).trim(),
+      rate: String(igst),
+      cgstRate: String(igst / 2),
+      sgstRate: String(igst / 2),
+      igstRate: String(igst),
+      isRcm: !!input.isRcm,
+      effectiveFrom: dateOrNull(input.effectiveFrom),
+      effectiveTo: dateOrNull(input.effectiveTo),
+      itemGroupId: sOrNull(input.itemGroupId),
+      itemGroupName: sOrNull(input.itemGroupName),
+      status: input.status ?? "active",
+      createdBy: input.createdBy,
+      updatedBy: input.createdBy,
+    },
+  });
+  return toRecord(row);
+}
+
+export interface UpdateGSTInput
+  extends Partial<Omit<CreateGSTInput, "tenantId" | "orgId" | "createdBy">> {
+  updatedBy: string;
+}
+
+export async function updateGSTCode(
+  tenantId: string,
+  id: string,
+  patch: UpdateGSTInput,
+): Promise<GSTCodeRecord | null> {
+  const existing = await (db as any).cnGSTCode.findFirst({
+    where: { id, tenantId },
+    select: { id: true },
+  });
+  if (!existing) return null;
+
+  const data: Record<string, unknown> = { updatedBy: patch.updatedBy };
+  if (patch.code !== undefined) data.code = String(patch.code).trim();
+  if (patch.codeType !== undefined) data.codeType = sOrNull(patch.codeType);
+  if (patch.description !== undefined) data.description = String(patch.description).trim();
+  if (patch.igstRate !== undefined) {
+    const igst = numOrZero(patch.igstRate);
+    data.rate = String(igst);
+    data.cgstRate = String(igst / 2);
+    data.sgstRate = String(igst / 2);
+    data.igstRate = String(igst);
+  }
+  if (patch.isRcm !== undefined) data.isRcm = !!patch.isRcm;
+  if (patch.effectiveFrom !== undefined) data.effectiveFrom = dateOrNull(patch.effectiveFrom);
+  if (patch.effectiveTo !== undefined) data.effectiveTo = dateOrNull(patch.effectiveTo);
+  if (patch.itemGroupId !== undefined) data.itemGroupId = sOrNull(patch.itemGroupId);
+  if (patch.itemGroupName !== undefined) data.itemGroupName = sOrNull(patch.itemGroupName);
+  if (patch.status !== undefined) data.status = patch.status;
+
+  const row = await (db as any).cnGSTCode.update({ where: { id }, data });
+  return toRecord(row);
+}
+
+export async function deleteGSTCode(
+  tenantId: string,
+  id: string,
+  updatedBy: string,
+): Promise<boolean> {
+  const res = await (db as any).cnGSTCode.updateMany({
+    where: { id, tenantId },
+    data: { status: "inactive", updatedBy },
+  });
+  return res.count > 0;
+}

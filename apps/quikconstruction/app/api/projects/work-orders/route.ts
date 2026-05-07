@@ -1,88 +1,241 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { woCreateSchema } from "@/lib/schemas/projects-4b";
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db/prisma";
+import { getTenantContext, tenantCreate } from "@/lib/auth/context";
+import { parsePagination } from "@/lib/http/pagination";
 
-const withOrgAuth = withOrgAuthForModule("projects");
+/**
+ * Work Orders — flat list + create.
+ *
+ * Backed by `work_orders` + `work_order_lines` (Prisma).
+ *
+ * Schema-vs-UI gap: the UI carries a richer shape than the schema
+ * (workType, retentionPct, securityDepositPct, tdsPct, progressPct,
+ * type, plannedStart, plannedEnd). The schema only stores
+ * startDate / endDate / totalAmount / title / etc. We persist what the
+ * schema supports and echo the rest back on the response so the
+ * existing API surface keeps the same keys, even though the optional
+ * extras aren't durable.
+ */
 
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
-  const contractorId = req.nextUrl.searchParams.get("contractorId") || undefined;
-  const status = req.nextUrl.searchParams.get("status") || undefined;
-  const list = await db.cnWorkOrder.findMany({
-    where: {
-      orgId,
-      deletedAt: includeDeleted ? { not: null } : null,
-      ...(projectId ? { projectId } : {}),
-      ...(contractorId ? { contractorId } : {}),
-      ...(status ? { status } : {}),
-    },
-    include: {
-      project: { select: { id: true, name: true, code: true } },
-      contractor: { select: { id: true, name: true } },
-      workCategory: { select: { id: true, name: true } },
-    },
-    orderBy: { woDate: "desc" },
-  });
-  return NextResponse.json({ success: true, data: list });
-});
+function enrichWO(row: any, project?: any, contractor?: any): any {
+  const lines = (row.lines ?? []).map((l: any) => ({
+    id: l.id,
+    boqNo: l.boqItemId ?? "",
+    boqItemId: l.boqItemId ?? "",
+    description: l.description ?? "",
+    uomId: l.uomId ?? "",
+    uomCode: l.uomCode ?? "",
+    quantity: l.quantity?.toString?.() ?? "0",
+    rate: l.negotiatedRate?.toString?.() ?? "0",
+    amount: l.amount?.toString?.() ?? "0",
+  }));
+  return {
+    id: row.id,
+    woNumber: row.woNumber,
+    tenantId: row.tenantId,
+    orgId: row.orgId,
+    projectId: row.projectId,
+    projectName: project?.name ?? row.projectName ?? "",
+    contractorId: row.contractorId,
+    contractorName: contractor?.name ?? row.contractorName ?? "",
+    title: row.title ?? "",
+    description: row.description ?? "",
+    type: row.type ?? "Work Order",
+    workType: row.workType ?? "Without Material",
+    plannedStart: row.startDate?.toISOString?.().slice(0, 10) ?? null,
+    plannedEnd: row.endDate?.toISOString?.().slice(0, 10) ?? null,
+    retentionPct: 0,
+    securityDepositPct: 0,
+    tdsPct: 0,
+    boqItems: lines,
+    lines,
+    lineCount: lines.length,
+    totalAmount: parseFloat(row.totalAmount?.toString?.() ?? "0"),
+    progressPct: 0,
+    status: row.status,
+    approvalId: row.approvalId ?? null,
+    createdAt: row.createdAt?.toISOString?.() ?? null,
+    updatedAt: row.updatedAt?.toISOString?.() ?? null,
+    createdBy: row.createdBy,
+    updatedBy: row.updatedBy,
+  };
+}
 
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const body = await req.json();
-  const input = woCreateSchema.parse(body);
-
-  const [project, contractor] = await Promise.all([
-    db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } }),
-    db.cnContractor.findFirst({ where: { id: input.contractorId, orgId }, select: { id: true } }),
-  ]);
-  if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
-  if (!contractor) return NextResponse.json({ success: false, error: "Contractor not found" }, { status: 400 });
-
-  const dup = await db.cnWorkOrder.findFirst({ where: { orgId, woNumber: input.woNumber, deletedAt: null }, select: { id: true } });
-  if (dup) return NextResponse.json({ success: false, error: `WO '${input.woNumber}' already exists` }, { status: 409 });
-
-  let subtotal = 0, taxAmount = 0;
-  const linesData = input.lines.map((l) => {
-    const amount = l.quantity * l.rate;
-    const tax = l.gstRate ? amount * (l.gstRate / 100) : 0;
-    subtotal += amount;
-    taxAmount += tax;
-    return {
-      itemId: l.itemId ?? null,
-      description: l.description,
-      quantity: l.quantity,
-      uomId: l.uomId ?? null,
-      rate: l.rate,
-      amount,
-      gstRate: l.gstRate ?? null,
-      taxAmount: tax,
-      totalAmount: amount + tax,
-      remarks: l.remarks ?? null,
+export async function GET(req: NextRequest) {
+  try {  
+    const { searchParams } = new URL(req.url);
+    const status = searchParams.get("status") ?? "";
+    const projectId = searchParams.get("projectId") ?? "";
+    const search = searchParams.get("search")?.toLowerCase() ?? "";
+  
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  
+    const where: Record<string, unknown> = {
+      tenantId: ctx.tenantId,
+      orgId: ctx.orgId,
     };
-  });
+    // Per-user project scoping — applied BEFORE the optional ?projectId
+    // query filter so a user can never use the query string to see a project
+    // they're not assigned to.
+    if (Array.isArray(ctx.projectIds) && ctx.projectIds.length > 0) {
+      where.projectId = { in: ctx.projectIds };
+    }
+    if (status && status !== "all") where.status = status;
+    if (projectId) where.projectId = projectId;
+  
+    const p = parsePagination(req);
+    const rows = await (db as any).cnWorkOrder.findMany({
+      where,
+      include: {
+        lines: true,
+        project: { select: { id: true, name: true, code: true } },
+        contractor: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
+    });
+  
+    let data = rows.map((r: any) => enrichWO(r, r.project, r.contractor));
+  
+    if (search) {
+      data = data.filter((r: any) =>
+        [r.woNumber, r.title, r.projectName, r.contractorName]
+          .some((v) => typeof v === "string" && v.toLowerCase().includes(search))
+      );
+    }
+  
+    if (p.paginated) {
+      return NextResponse.json({
+        data,
+        total: data.length,
+        page: p.page,
+        pageSize: p.pageSize,
+        hasMore: data.length === p.pageSize,
+      });
+    }
+    return NextResponse.json({ data, total: data.length });
 
-  const wo = await db.cnWorkOrder.create({
-    data: {
-      orgId,
-      woNumber: input.woNumber,
-      projectId: input.projectId,
-      contractorId: input.contractorId,
-      workCategoryId: input.workCategoryId ?? null,
-      woDate: new Date(input.woDate),
-      startDate: input.startDate ? new Date(input.startDate) : null,
-      endDate: input.endDate ? new Date(input.endDate) : null,
-      paymentTermsDays: input.paymentTermsDays ?? null,
-      termsConditionId: input.termsConditionId ?? null,
-      remarks: input.remarks,
-      subtotal,
-      taxAmount,
-      totalAmount: subtotal + taxAmount,
-      status: "draft",
-      createdBy: userId,
-      lines: { create: linesData },
-    },
-    include: { lines: true },
+  } catch (err: unknown) {
+    const e = err as { message?: string };
+    console.error("[projects/work-orders.GET] failed:", err);
+    return NextResponse.json(
+      { ok: false, error: e.message ?? "Internal error" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const ctx = await getTenantContext();
+  if (!ctx)
+    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.projectId) {
+    return NextResponse.json(
+      { error: "projectId is required" },
+      { status: 400 }
+    );
+  }
+
+  // Resolve project + contractor via Prisma. contractorId is NOT NULL on
+  // the WO schema, so we require one before we can persist.
+  const project = await (db as any).cnProject.findFirst({
+    where: { id: body.projectId, tenantId: ctx.tenantId },
+    select: { id: true, name: true, code: true },
   });
-  return NextResponse.json({ success: true, data: wo }, { status: 201 });
-});
+  if (!project) {
+    return NextResponse.json(
+      { error: `Project ${body.projectId} not found` },
+      { status: 404 }
+    );
+  }
+
+  let contractor: any = null;
+  if (body.contractorId) {
+    contractor = await (db as any).cnContractor.findFirst({
+      where: { id: body.contractorId, tenantId: ctx.tenantId },
+      select: { id: true, name: true },
+    });
+  }
+  if (!contractor) {
+    return NextResponse.json(
+      { error: "contractorId is required and must reference an existing contractor" },
+      { status: 400 }
+    );
+  }
+
+  // Auto WO number — pattern: WO-<projectSlug>-<next>
+  const existingCount = await (db as any).cnWorkOrder.count({
+    where: { tenantId: ctx.tenantId, orgId: ctx.orgId, projectId: project.id },
+  });
+  const slug = String(project.code ?? project.name ?? "NEW")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase()
+    .slice(0, 6) || "NEW";
+  const next = (existingCount + 460).toString().padStart(3, "0");
+  const woNumber = body.woNumber ?? `WO-${slug}-${next}`;
+
+  const boqItems: any[] = Array.isArray(body.boqItems) ? body.boqItems : [];
+  const totalAmount = boqItems.reduce(
+    (sum, it) => sum + (Number(it.amount) || 0),
+    0
+  );
+
+  const startDate = body.plannedStart
+    ? new Date(body.plannedStart)
+    : new Date();
+  const endDate = body.plannedEnd ? new Date(body.plannedEnd) : new Date();
+
+  try {
+    const created = await (db as any).cnWorkOrder.create({
+      data: tenantCreate(ctx, {
+        woNumber,
+        projectId: project.id,
+        contractorId: contractor.id,
+        title: body.title ?? `Work Order ${woNumber}`,
+        description: body.description ?? null,
+        startDate,
+        endDate,
+        totalAmount: String(totalAmount),
+        status: body.status ?? "draft",
+        lines: {
+          create: boqItems.map((it: any) => ({
+            boqItemId: String(it.boqNo ?? it.boqItemId ?? ""),
+            description: String(it.description ?? ""),
+            quantity: String(Number(it.quantity) || 0),
+            uomId: String(it.uomId ?? ""),
+            negotiatedRate: String(Number(it.rate) || 0),
+            amount: String(Number(it.amount) || 0),
+          })),
+        },
+      }),
+      include: {
+        lines: true,
+        project: { select: { id: true, name: true, code: true } },
+        contractor: { select: { id: true, name: true } },
+      },
+    });
+    return NextResponse.json(enrichWO(created, created.project, created.contractor), { status: 201 });
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "P2002") {
+      return NextResponse.json(
+        { error: "A work order with this number already exists" },
+        { status: 409 }
+      );
+    }
+    console.error("[work-order.create] failed:", err);
+    return NextResponse.json(
+      { error: e?.message ?? "Internal error" },
+      { status: 500 }
+    );
+  }
+}

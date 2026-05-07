@@ -1,153 +1,409 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { AddButton, EmptyState, useConfirm } from "@quikit/ui";
-import { Users, ArrowLeft, Pencil, Trash2 } from "lucide-react";
-import { VendorFormPanel, type VendorInitial } from "./_components/VendorFormPanel";
+import { useState } from "react";
+import { Truck } from "lucide-react";
+import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
+import dynamic from "next/dynamic";
+import type { ImportFieldDef } from "@/components/ImportDataDrawer";
+const ImportDataDrawer = dynamic(
+  () => import("@/components/ImportDataDrawer").then((m) => m.ImportDataDrawer),
+  { ssr: false },
+);
+import { useVendors, useCreateVendor, useUpdateVendor } from "@/hooks/use-masters";
+import {
+  FormDrawer, FormSection, FormRow, Field,
+  TextInput, NumberInput, SelectInput, TextAreaInput, CheckboxInput,
+} from "@/components/FormDrawer";
+import {
+  validateForm, type ValidationRules, validateEmail, validateMobile,
+  validateGSTIN, validatePAN, validateIFSC, validatePincode, validateMinLength,
+  validateNonNegativeNumber,
+} from "@/lib/validators";
+import { StateCitySelect } from "@/components/StateCitySelect";
 
-interface Vendor {
-  id: string;
-  code: string;
-  name: string;
-  legalName: string | null;
-  gstin: string | null;
-  pan: string | null;
-  contactPerson: string | null;
-  phone: string | null;
-  email: string | null;
-  city: string | null;
-  state: string | null;
-  paymentTermsDays: number | null;
-  rating: number | null;
-  status: string;
+interface VendorRow {
+  id: string; code: string; name: string; companyName?: string; gstin?: string;
+  contactPerson?: string; phone?: string; city?: string; state?: string;
+  vendorType?: string; category?: string; status: string;
 }
 
-export default function VendorsList() {
-  const [items, setItems] = useState<Vendor[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [editing, setEditing] = useState<VendorInitial | undefined>(undefined);
-  const confirm = useConfirm();
+const columns: MasterColumnDef<VendorRow>[] = [
+  { key: "code", label: "Code", width: "90px" },
+  { key: "companyName", label: "Company / Firm", render: (row) => (
+    <div>
+      <span className="font-medium text-gray-900">{row.companyName || row.name}</span>
+      {row.companyName && row.name && row.companyName !== row.name && (
+        <span className="text-[10px] text-gray-500 block">{row.name}</span>
+      )}
+    </div>
+  )},
+  { key: "vendorType", label: "Type", width: "100px", type: "select",
+    options: ["Supplier", "Transporter", "Service"] },
+  { key: "category", label: "Category", width: "140px",
+    render: (row) => row.category ? row.category : <span className="text-gray-400">—</span> },
+  { key: "phone", label: "Mobile", width: "110px" },
+  { key: "gstin", label: "GSTIN", width: "160px" },
+  { key: "city", label: "City" },
+  { key: "state", label: "State" },
+  { key: "status", label: "Status", type: "status" },
+];
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+// Subcontractor intentionally removed — subcontractors are managed as
+// their own entity under Masters › Contractors / Sub-contractors.
+const VENDOR_TYPES = [
+  { value: "Supplier", label: "Supplier" },
+  { value: "Transporter", label: "Transporter" },
+  { value: "Service", label: "Service Provider" },
+];
+
+const GST_TYPES = [
+  { value: "Regular", label: "Regular" },
+  { value: "Composition", label: "Composition" },
+  { value: "Unregistered", label: "Unregistered" },
+];
+
+const emptyForm = {
+  name: "", vendorType: "Supplier", category: "", mobile: "", email: "", creditPeriod: "30",
+  gstType: "Regular", gstin: "", pan: "", msmeStatus: "Unregistered", msmeNumber: "",
+  bankName: "", branchName: "", accountNumber: "", ifscCode: "", accountType: "current",
+  address: "", city: "", state: "", pincode: "", paymentTerms: "Net 30",
+  isBlacklisted: false, blacklistReason: "", status: "active",
+};
+
+const ACCOUNT_TYPE_OPTIONS = [
+  { value: "current", label: "Current" },
+  { value: "savings", label: "Savings" },
+];
+
+const rules: ValidationRules<typeof emptyForm> = {
+  name: [
+    { required: true, label: "Vendor name" },
+    { validator: (v) => validateMinLength(String(v ?? ""), 2, "Vendor name") },
+  ],
+  vendorType: [{ required: true, label: "Vendor type" }],
+  address: [
+    { required: true, label: "Address" },
+    { validator: (v) => validateMinLength(String(v ?? ""), 5, "Address") },
+  ],
+  mobile: [{ validator: validateMobile }],
+  email: [{ required: true, label: "Email" }, { validator: validateEmail }],
+  creditPeriod: [{ validator: (v) => validateNonNegativeNumber(v, "Credit period") }],
+  gstin: [{ validator: validateGSTIN }],
+  pan: [{ validator: validatePAN }],
+  ifscCode: [{ validator: validateIFSC }],
+  accountNumber: [{ validator: (v) => {
+      const s = String(v ?? "").trim();
+      if (!s) return { valid: true };
+      if (!/^\d{6,20}$/.test(s)) return { valid: false, error: "Account number must be 6–20 digits" };
+      return { valid: true };
+  } }],
+  pincode: [{ validator: validatePincode }],
+  msmeNumber: [{ validator: (v) => {
+      const s = String(v ?? "").trim();
+      if (!s) return { valid: true };
+      if (!/^UDYAM-[A-Z]{2}-\d{2}-\d{7}$/i.test(s)) return { valid: false, error: "MSME format: UDYAM-XX-00-0000000" };
+      return { valid: true };
+  } }],
+};
+
+// Import field definitions — column headers in the user's spreadsheet
+// auto-map to these by case + spacing-insensitive label match.
+const IMPORT_FIELDS: ImportFieldDef[] = [
+  { key: "name", label: "Name", required: true, hint: "Vendor / contact name" },
+  { key: "companyName", label: "Company / Firm" },
+  { key: "vendorType", label: "Vendor Type", hint: "Supplier | Transporter | Service" },
+  { key: "category", label: "Category", hint: "Free-text — e.g. Steel, Cement, Logistics" },
+  { key: "contactPerson", label: "Contact Person" },
+  { key: "mobile", label: "Mobile", hint: "10-digit Indian mobile" },
+  { key: "email", label: "Email", required: true },
+  { key: "creditPeriod", label: "Credit Period" },
+  { key: "paymentTerms", label: "Payment Terms" },
+  { key: "gstType", label: "GST Type", hint: "Regular | Composition | Unregistered" },
+  { key: "gstin", label: "GSTIN" },
+  { key: "pan", label: "PAN" },
+  { key: "msmeStatus", label: "MSME Status" },
+  { key: "msmeNumber", label: "MSME Number" },
+  { key: "bankName", label: "Bank Name" },
+  { key: "branchName", label: "Branch Name" },
+  { key: "accountNumber", label: "Account Number" },
+  { key: "ifscCode", label: "IFSC Code" },
+  { key: "accountType", label: "Account Type", hint: "current | savings" },
+  { key: "address", label: "Address", required: true },
+  { key: "city", label: "City" },
+  { key: "state", label: "State" },
+  { key: "pincode", label: "Pincode" },
+];
+
+export default function VendorsPage() {
+  const { data: result, isLoading } = useVendors();
+  const createMutation = useCreateVendor();
+  const updateMutation = useUpdateVendor();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const handleImportRow = async (row: Record<string, string>) => {
+    if (!row.name?.trim()) return { ok: false as const, error: "Name is required" };
+    if (!row.email?.trim()) return { ok: false as const, error: "Email is required" };
+    if (!row.address?.trim()) return { ok: false as const, error: "Address is required" };
     try {
-      const res = await fetch("/api/masters/vendors");
-      const j = await res.json();
-      if (j.success) setItems(j.data);
-    } catch (e) {
-      console.error("[vendors] list failed:", e);
-    } finally {
-      setLoading(false);
+      await createMutation.mutateAsync({
+        name: row.name.trim(),
+        companyName: row.companyName || undefined,
+        vendorType: row.vendorType?.trim() || "Supplier",
+        category: row.category?.trim() || undefined,
+        contactPerson: row.contactPerson || undefined,
+        mobile: row.mobile.replace(/\D/g, ""),
+        email: row.email || undefined,
+        creditPeriod: row.creditPeriod || "30",
+        paymentTerms: row.paymentTerms || "Net 30",
+        gstType: row.gstType?.trim() || "Regular",
+        gstin: row.gstin?.toUpperCase() || undefined,
+        pan: row.pan?.toUpperCase() || undefined,
+        msmeStatus: row.msmeStatus?.trim() || "Unregistered",
+        msmeNumber: row.msmeNumber?.toUpperCase() || undefined,
+        bankName: row.bankName || undefined,
+        branchName: row.branchName || undefined,
+        accountNumber: row.accountNumber?.replace(/\D/g, "") || undefined,
+        ifscCode: row.ifscCode?.toUpperCase() || undefined,
+        accountType: row.accountType?.toLowerCase() || "current",
+        address: row.address.trim(),
+        city: row.city || undefined,
+        state: row.state || undefined,
+        pincode: row.pincode?.replace(/\D/g, "") || undefined,
+        status: "active",
+      });
+      return { ok: true as const };
+    } catch (err: any) {
+      return { ok: false as const, error: err?.message ?? "Failed to create vendor" };
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  const set = (key: string, val: any) => {
+    setForm(prev => ({ ...prev, [key]: val }));
+    if (errors[key]) setErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
+  };
 
-  async function handleDelete(v: Vendor) {
-    const ok = await confirm({
-      title: "Archive this vendor?",
-      description: `"${v.name}" will be moved to trash. This can be undone from the trash view.`,
-      confirmLabel: "Archive",
-      tone: "danger",
+  const closeDrawer = () => { setDrawerOpen(false); setEditId(null); setForm(emptyForm); setErrors({}); };
+
+  const handleSubmit = async () => {
+    const errs = validateForm(form, rules);
+    if (form.msmeStatus === "Registered" && !String(form.msmeNumber || "").trim()) {
+      errs.msmeNumber = "MSME number is required when registered";
+    }
+    if (form.isBlacklisted && !String(form.blacklistReason || "").trim()) {
+      errs.blacklistReason = "Blacklist reason is required";
+    }
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    try {
+      if (editId) {
+        await updateMutation.mutateAsync({ id: editId, ...form });
+      } else {
+        await createMutation.mutateAsync(form);
+      }
+      closeDrawer();
+    } catch (err: any) { alert(err.message); }
+  };
+
+  const handleDelete = async (item: any) => {
+    await updateMutation.mutateAsync({ id: item.id, status: "inactive" });
+  };
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  const handleEdit = (item: any) => {
+    setEditId(item.id);
+    setForm({
+      name: item.name ?? "",
+      vendorType: item.vendorType ?? "Supplier",
+      category: item.category ?? "",
+      mobile: item.phone ?? "", email: item.email ?? "",
+      creditPeriod: String(item.paymentTermsDays ?? "30"),
+      gstType: item.gstType ?? "Regular", gstin: item.gstin ?? "",
+      pan: item.pan ?? "", msmeStatus: item.msmeStatus ?? "Unregistered",
+      msmeNumber: item.msmeNumber ?? "", bankName: item.bankName ?? "",
+      branchName: item.branchName ?? "",
+      accountNumber: item.bankAccountNo ?? item.accountNumber ?? "",
+      ifscCode: item.bankIfsc ?? item.ifscCode ?? "",
+      accountType: item.accountType ?? "current",
+      address: item.address ?? "", city: item.city ?? "",
+      state: item.state ?? "", pincode: item.pincode ?? "",
+      paymentTerms: item.paymentTerms ?? "Net 30",
+      isBlacklisted: item.status === "blacklisted",
+      blacklistReason: item.blacklistReason ?? "", status: item.status ?? "active",
     });
-    if (!ok) return;
-    await fetch(`/api/masters/vendors/${v.id}`, { method: "DELETE" });
-    refresh();
-  }
+    setDrawerOpen(true);
+  };
 
   return (
-    <div className="p-6 max-w-6xl">
-      <Link href="/masters" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 mb-3">
-        <ArrowLeft className="h-3 w-3" /> Masters
-      </Link>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Vendors</h1>
-          <p className="text-xs text-gray-500">Suppliers for materials and services. Code is unique per tenant.</p>
-        </div>
-        <AddButton onClick={() => { setEditing(undefined); setPanelOpen(true); }}>
-          Add Vendor
-        </AddButton>
-      </div>
-
-      {loading ? (
-        <div className="text-sm text-gray-500">Loading…</div>
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title="No vendors yet"
-          message="Register your first vendor with their GSTIN, contact + banking details."
-          action={{ label: "Add Vendor", onClick: () => { setEditing(undefined); setPanelOpen(true); } }}
-        />
-      ) : (
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-accent-50 text-xs text-gray-600">
-              <tr>
-                <th className="text-left px-3 py-2">Code</th>
-                <th className="text-left px-3 py-2">Name</th>
-                <th className="text-left px-3 py-2">GSTIN</th>
-                <th className="text-left px-3 py-2">City</th>
-                <th className="text-left px-3 py-2">Terms</th>
-                <th className="text-left px-3 py-2">Rating</th>
-                <th className="text-left px-3 py-2">Status</th>
-                <th className="px-3 py-2" style={{ width: 80 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((v) => (
-                <tr key={v.id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-2 font-mono text-xs text-gray-900">{v.code}</td>
-                  <td className="px-3 py-2">
-                    <div className="font-medium text-gray-900">{v.name}</div>
-                    {v.contactPerson && <div className="text-xs text-gray-500">{v.contactPerson}</div>}
-                  </td>
-                  <td className="px-3 py-2 text-gray-700 font-mono text-xs">{v.gstin ?? "—"}</td>
-                  <td className="px-3 py-2 text-gray-700">{v.city ?? "—"}</td>
-                  <td className="px-3 py-2 text-gray-700">{v.paymentTermsDays ? `${v.paymentTermsDays}d` : "—"}</td>
-                  <td className="px-3 py-2 text-gray-700">{v.rating ? `${v.rating}★` : "—"}</td>
-                  <td className="px-3 py-2">
-                    <span className={
-                      v.status === "active"
-                        ? "text-[10px] font-semibold uppercase bg-green-100 text-green-700 px-1.5 py-0.5 rounded"
-                      : v.status === "blacklisted"
-                        ? "text-[10px] font-semibold uppercase bg-red-100 text-red-700 px-1.5 py-0.5 rounded"
-                        : "text-[10px] font-semibold uppercase bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded"
-                    }>{v.status}</span>
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <button
-                      onClick={() => { setEditing(v as VendorInitial); setPanelOpen(true); }}
-                      className="text-gray-400 hover:text-accent-600 p-1"
-                      title="Edit"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(v)}
-                      className="text-gray-400 hover:text-red-600 p-1"
-                      title="Archive"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <VendorFormPanel
-        open={panelOpen}
-        onClose={() => setPanelOpen(false)}
-        initial={editing}
-        onSaved={refresh}
+    <>
+      <MasterListPage
+        title="Vendors / Suppliers"
+        entityName="Vendor"
+        columns={columns}
+        data={result?.data ?? []}
+        total={result?.total ?? 0}
+        isLoading={isLoading}
+        onAdd={() => { setForm(emptyForm); setErrors({}); setEditId(null); setDrawerOpen(true); }}
+        onEdit={(item: any) => { setErrors({}); handleEdit(item); }}
+        onDelete={handleDelete}
+        onImport={() => setImportOpen(true)}
+        deleteConfirmMessage={(item: any) => (
+          <>
+            Delete vendor{" "}
+            <span className="font-semibold text-gray-900">“{item.name}”</span>?
+            <br />
+            It will be hidden from the list. You can restore it later from the
+            “Show deleted” view.
+          </>
+        )}
+        canExport canImport
+        emptyIcon={<Truck className="w-8 h-8" />}
+        emptyDescription="Vendors supply materials to your projects."
       />
-    </div>
+
+      <FormDrawer open={drawerOpen} onClose={closeDrawer}
+        title={editId ? "Edit Vendor" : "Add Vendor"} subtitle={editId ? "Update vendor details" : "Register a new vendor/supplier"}
+        width="xl" onSubmit={handleSubmit} loading={isSaving}
+        submitLabel={editId ? "Save Changes" : "Save"}>
+
+        <FormSection title="Basic Information">
+          <FormRow>
+            <Field label="Vendor / Contact Name" required error={errors.name}>
+              <TextInput value={form.name} onChange={v => set("name", v)} placeholder="Contact person / proprietor name" invalid={!!errors.name} />
+            </Field>
+            <Field label="Company / Firm Name" hint="Registered business name">
+              <TextInput value={(form as any).companyName ?? ""} onChange={v => set("companyName", v)} placeholder="e.g. Tata Steel Ltd" />
+            </Field>
+          </FormRow>
+          <FormRow>
+            <Field label="Vendor Type" required error={errors.vendorType}>
+              <SelectInput value={form.vendorType} onChange={v => set("vendorType", v)} options={VENDOR_TYPES} invalid={!!errors.vendorType} />
+            </Field>
+            <Field label="Category" hint="e.g. Steel, Cement, Logistics">
+              <TextInput value={form.category} onChange={v => set("category", v)} placeholder="Vendor category" />
+            </Field>
+          </FormRow>
+          <FormRow>
+            <Field label="Contact Person">
+              <TextInput value={(form as any).contactPerson ?? ""} onChange={v => set("contactPerson", v)} placeholder="Primary contact" />
+            </Field>
+            <div />
+          </FormRow>
+          <FormRow>
+            <Field label="Mobile Number" error={errors.mobile} hint="10-digit Indian mobile">
+              <TextInput value={form.mobile} onChange={v => set("mobile", v.replace(/\D/g, ""))} placeholder="9876543210" maxLength={10} invalid={!!errors.mobile} />
+            </Field>
+            <Field label="Email Address" required error={errors.email}>
+              <TextInput value={form.email} onChange={v => set("email", v)} placeholder="vendor@email.com" type="email" invalid={!!errors.email} />
+            </Field>
+          </FormRow>
+          <FormRow>
+            <Field label="Credit Period (Days)" error={errors.creditPeriod}>
+              <NumberInput value={form.creditPeriod} onChange={v => set("creditPeriod", v)} min={0} placeholder="30" invalid={!!errors.creditPeriod} />
+            </Field>
+            <Field label="Payment Terms">
+              <TextInput value={form.paymentTerms} onChange={v => set("paymentTerms", v)} placeholder="Net 30" />
+            </Field>
+          </FormRow>
+        </FormSection>
+
+        <FormSection title="Tax Details">
+          <FormRow>
+            <Field label="GST Registration Type">
+              <SelectInput value={form.gstType} onChange={v => set("gstType", v)} options={GST_TYPES} />
+            </Field>
+            <Field label="GSTIN" error={errors.gstin} hint="15-character GST number">
+              <TextInput value={form.gstin} onChange={v => set("gstin", v.toUpperCase())}
+                placeholder="22AAAAA0000A1Z5" disabled={form.gstType === "Unregistered"} maxLength={15} invalid={!!errors.gstin} />
+            </Field>
+          </FormRow>
+          <FormRow>
+            <Field label="PAN Number" error={errors.pan}>
+              <TextInput value={form.pan} onChange={v => set("pan", v.toUpperCase())} placeholder="AAAAA0000A" maxLength={10} invalid={!!errors.pan} />
+            </Field>
+            <Field label="MSME Status">
+              <SelectInput value={form.msmeStatus} onChange={v => set("msmeStatus", v)}
+                options={[{ value: "Unregistered", label: "Unregistered" }, { value: "Registered", label: "Registered" }]} />
+            </Field>
+          </FormRow>
+          {form.msmeStatus === "Registered" && (
+            <Field label="MSME Registration Number" required error={errors.msmeNumber}>
+              <TextInput value={form.msmeNumber} onChange={v => set("msmeNumber", v.toUpperCase())} placeholder="UDYAM-XX-00-0000000" invalid={!!errors.msmeNumber} />
+            </Field>
+          )}
+        </FormSection>
+
+        <FormSection title="Bank Details">
+          <FormRow>
+            <Field label="Bank Name">
+              <TextInput value={form.bankName} onChange={v => set("bankName", v)} placeholder="State Bank of India" />
+            </Field>
+            <Field label="Branch Name">
+              <TextInput value={form.branchName} onChange={v => set("branchName", v)} placeholder="Mumbai Main Branch" />
+            </Field>
+          </FormRow>
+          <FormRow>
+            <Field label="Account Number" error={errors.accountNumber}>
+              <TextInput value={form.accountNumber} onChange={v => set("accountNumber", v.replace(/\D/g, ""))} placeholder="Account number" maxLength={20} invalid={!!errors.accountNumber} />
+            </Field>
+            <Field label="IFSC Code" error={errors.ifscCode} hint="11-char IFSC e.g. SBIN0001234">
+              <TextInput value={form.ifscCode} onChange={v => set("ifscCode", v.toUpperCase())} placeholder="SBIN0001234" maxLength={11} invalid={!!errors.ifscCode} />
+            </Field>
+          </FormRow>
+          <Field label="Account Type">
+            <SelectInput value={form.accountType} onChange={v => set("accountType", v)} options={ACCOUNT_TYPE_OPTIONS} />
+          </Field>
+        </FormSection>
+
+        <FormSection title="Address">
+          <Field label="Address" span={2} required error={errors.address}>
+            <TextAreaInput value={form.address} onChange={v => set("address", v)} placeholder="Street address" rows={2} invalid={!!errors.address} />
+          </Field>
+          <StateCitySelect
+            state={form.state}
+            city={form.city}
+            onStateChange={v => set("state", v)}
+            onCityChange={v => set("city", v)}
+            pincode={form.pincode}
+            onPincodeChange={v => set("pincode", v)}
+          />
+          <Field label="PIN Code" error={errors.pincode}>
+            <TextInput value={form.pincode} onChange={v => set("pincode", v.replace(/\D/g, ""))} placeholder="400001" maxLength={6} invalid={!!errors.pincode} />
+          </Field>
+        </FormSection>
+
+        <FormSection title="Status">
+          <Field label="Status">
+            <SelectInput
+              value={form.status}
+              onChange={v => set("status", v)}
+              options={[
+                { value: "active", label: "Active" },
+                { value: "inactive", label: "Inactive" },
+              ]}
+            />
+          </Field>
+          <CheckboxInput checked={form.isBlacklisted} onChange={v => set("isBlacklisted", v)}
+            label="Blacklisted (prevents new POs)" />
+          {form.isBlacklisted && (
+            <Field label="Blacklist Reason" required error={errors.blacklistReason}>
+              <TextAreaInput value={form.blacklistReason} onChange={v => set("blacklistReason", v)}
+                placeholder="Reason for blacklisting" rows={2} invalid={!!errors.blacklistReason} />
+            </Field>
+          )}
+        </FormSection>
+      </FormDrawer>
+
+      <ImportDataDrawer
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        entityName="Vendor"
+        fields={IMPORT_FIELDS}
+        onImport={handleImportRow}
+      />
+    </>
   );
 }

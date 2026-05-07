@@ -1,145 +1,264 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { rabCreateSchema } from "@/lib/schemas/projects-4b";
-
-const withOrgAuth = withOrgAuthForModule("projects");
-
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const projectId = req.nextUrl.searchParams.get("projectId") || undefined;
-  const list = await db.cnRAB.findMany({
-    where: { orgId, deletedAt: includeDeleted ? { not: null } : null, ...(projectId ? { projectId } : {}) },
-    include: {
-      project: { select: { id: true, name: true, code: true } },
-      boq: { select: { id: true, boqNumber: true } },
-      _count: { select: { lines: true } },
-    },
-    orderBy: [{ projectId: "asc" }, { billSeqNo: "desc" }],
-  });
-  return NextResponse.json({ success: true, data: list });
-});
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db/prisma";
+import { getTenantContext } from "@/lib/auth/context";
+import { generateDocNumber } from "@/lib/db/doc-number";
+import { BOQError } from "@/lib/boq";
+import { parsePagination } from "@/lib/http/pagination";
 
 /**
- * POST /api/projects/rab — create a Running Account Bill.
+ * RAB (Running Account Bill) — list + create.
  *
- * For each line:
- *   1. Verify boqItem belongs to the referenced BOQ + tenant
- *   2. Sum `currentPeriodQty` across APPROVED+DRAFT+SUBMITTED prior RABs for this boqItem
- *      → that's `priorCumulativeQty`
- *   3. `currentPeriodQty = cumulativeQtyDone - priorCumulativeQty`
- *      Reject if negative (user is billing LESS than already billed)
- *   4. rate copied from the BOQ item at submit time
- *   5. currentPeriodAmount = currentPeriodQty × rate
+ * Now Postgres-backed (was globalThis.__qcRABs in memory). Header lives
+ * on `running_account_bills`; per-line BOQ billing detail lives on
+ * `rab_lines` and is populated by a richer flow when the form is
+ * extended to capture per-BOQ-item billing. Today's create UI captures
+ * only the header (project, contractor, period, current-bill amount),
+ * so this route persists the header and leaves lines empty.
  *
- * billSeqNo auto-allocated as (max prior on project) + 1.
+ * The schema requires `woId` (FK to work_orders). The current form
+ * sends `woRef` (a free-text WO number) or nothing. We resolve woId via:
+ *   1. body.woId (explicit FK)
+ *   2. body.woRef → look up work_orders.woNumber for this project
+ *   3. fall back to the most recent WO for this project + contractor
+ * If none of those yield a WO, we return a clear 400 — RAB requires a WO.
  */
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const body = await req.json();
-  const input = rabCreateSchema.parse(body);
 
-  const [project, boq] = await Promise.all([
-    db.cnProject.findFirst({ where: { id: input.projectId, orgId }, select: { id: true } }),
-    db.cnBOQ.findFirst({ where: { id: input.boqId, orgId, projectId: input.projectId }, include: { items: true } }),
-  ]);
-  if (!project) return NextResponse.json({ success: false, error: "Project not found" }, { status: 400 });
-  if (!boq) return NextResponse.json({ success: false, error: "BOQ not found for this project" }, { status: 400 });
-  if (boq.status !== "locked") {
-    return NextResponse.json({ success: false, error: "Source BOQ must be locked before billing against it" }, { status: 400 });
-  }
-
-  const dup = await db.cnRAB.findFirst({ where: { orgId, rabNumber: input.rabNumber, deletedAt: null }, select: { id: true } });
-  if (dup) return NextResponse.json({ success: false, error: `RAB '${input.rabNumber}' already exists` }, { status: 409 });
-
-  // Allocate billSeqNo
-  const lastSeq = await db.cnRAB.aggregate({
-    where: { projectId: input.projectId, orgId, deletedAt: null },
-    _max: { billSeqNo: true },
-  });
-  const billSeqNo = (lastSeq._max.billSeqNo ?? 0) + 1;
-
-  // Validate each line + compute prior cumulative
-  const boqItemMap = new Map(boq.items.map((i) => [i.id, i]));
-  const errors: string[] = [];
-  const prepared: Array<{
-    boqItemId: string; cumulativeQtyDone: number; priorCumulativeQty: number;
-    currentPeriodQty: number; rate: number; currentPeriodAmount: number;
-    gstRate: number | null; taxAmount: number; remarks: string | null;
-  }> = [];
-
-  for (const l of input.lines) {
-    const boqItem = boqItemMap.get(l.boqItemId);
-    if (!boqItem) { errors.push(`BOQ item ${l.boqItemId} is not on this BOQ`); continue; }
-    if (boqItem.kind !== "item") { errors.push(`Cannot bill against a group header (${boqItem.description})`); continue; }
-
-    // Sum prior RAB lines for this boqItem on same project (excluding rejected)
-    const priorAgg = await db.cnRABLine.aggregate({
-      where: {
-        boqItemId: l.boqItemId,
-        rab: { orgId, projectId: input.projectId, status: { in: ["draft", "submitted", "approved", "paid"] } },
+export async function GET(req: NextRequest) {
+  try {  
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  
+    const { searchParams } = new URL(req.url);
+    const status = searchParams.get("status") ?? "";
+    const projectId = searchParams.get("projectId") ?? "";
+  
+    const where: Record<string, unknown> = {
+      tenantId: ctx.tenantId,
+      orgId: ctx.orgId,
+    };
+    if (status && status !== "all") where.status = status;
+  
+    // Per-user project scope (assigned site users) takes precedence over the
+    // optional ?projectId query — a user can never use the query string to
+    // see a project they're not assigned to.
+    if (ctx.projectIds !== undefined) {
+      if (projectId) {
+        where.projectId = ctx.projectIds.includes(projectId) ? projectId : "__none__";
+      } else {
+        where.projectId = { in: ctx.projectIds };
+      }
+    } else if (projectId) {
+      where.projectId = projectId;
+    }
+  
+    const p = parsePagination(req);
+    const rows = await (db as any).cnRunningAccountBill.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: {
+        project: { select: { name: true } },
+        contractor: { select: { name: true } },
       },
-      _sum: { currentPeriodQty: true },
+      ...(p.paginated ? { take: p.take, skip: p.skip } : {}),
     });
-    const priorCumulativeQty = Number(priorAgg._sum.currentPeriodQty ?? 0);
-    const currentPeriodQty = l.cumulativeQtyDone - priorCumulativeQty;
-    if (currentPeriodQty < 0) {
-      errors.push(`Line for "${boqItem.description}": cumulative (${l.cumulativeQtyDone}) is less than already-billed (${priorCumulativeQty})`);
-      continue;
+  
+    const data = rows.map((r: any) => ({
+      id: r.id,
+      rabNumber: r.rabNumber,
+      projectId: r.projectId,
+      projectName: r.project?.name ?? "",
+      contractorId: r.contractorId,
+      contractorName: r.contractor?.name ?? "",
+      woId: r.woId,
+      billPeriodFrom: r.billPeriodFrom?.toISOString().slice(0, 10) ?? "",
+      billPeriodTo: r.billPeriodTo?.toISOString().slice(0, 10) ?? "",
+      previousBillAmount: r.previousBillAmount?.toString() ?? "0",
+      currentBillAmount: r.currentBillAmount?.toString() ?? "0",
+      cumulativeAmount: r.cumulativeAmount?.toString() ?? "0",
+      netPayable: r.netPayable?.toString() ?? "0",
+      status: r.status,
+      createdAt: r.createdAt?.toISOString() ?? "",
+      updatedAt: r.updatedAt?.toISOString() ?? "",
+    }));
+  
+    if (p.paginated) {
+      return NextResponse.json({
+        data,
+        total: data.length,
+        page: p.page,
+        pageSize: p.pageSize,
+        hasMore: data.length === p.pageSize,
+      });
     }
-    const orderedQty = Number(boqItem.quantity ?? 0);
-    if (orderedQty > 0 && l.cumulativeQtyDone > orderedQty) {
-      errors.push(`Line for "${boqItem.description}": cumulative (${l.cumulativeQtyDone}) exceeds BOQ qty (${orderedQty})`);
-      continue;
+    return NextResponse.json({ data, total: data.length });
+
+  } catch (err: unknown) {
+    const e = err as { message?: string };
+    console.error("[projects/rab.GET] failed:", err);
+    return NextResponse.json(
+      { ok: false, error: e.message ?? "Internal error" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+    const body = await req.json();
+
+    if (!body.projectId) {
+      return NextResponse.json({ error: "Project is required" }, { status: 400 });
     }
-    const rate = Number(boqItem.rate ?? 0);
-    const currentPeriodAmount = currentPeriodQty * rate;
-    const gstRate = l.gstRate ?? (boqItem.gstRate != null ? Number(boqItem.gstRate) : null);
-    const taxAmount = gstRate ? currentPeriodAmount * (gstRate / 100) : 0;
-    prepared.push({
-      boqItemId: l.boqItemId,
-      cumulativeQtyDone: l.cumulativeQtyDone,
-      priorCumulativeQty,
-      currentPeriodQty,
-      rate,
-      currentPeriodAmount,
-      gstRate,
-      taxAmount,
-      remarks: l.remarks ?? null,
+    if (!body.contractorId) {
+      return NextResponse.json({ error: "Contractor is required" }, { status: 400 });
+    }
+    if (!body.billPeriodFrom || !body.billPeriodTo) {
+      return NextResponse.json(
+        { error: "Bill period (from + to) is required" },
+        { status: 400 },
+      );
+    }
+
+    // ── Resolve woId — required by schema ──────────────────────────
+    let woId: string | null = null;
+    if (body.woId) {
+      woId = String(body.woId);
+    } else if (body.woRef) {
+      const wo = await (db as any).cnWorkOrder.findFirst({
+        where: {
+          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
+          woNumber: String(body.woRef).trim(),
+          projectId: body.projectId,
+        },
+        select: { id: true },
+      });
+      if (!wo) {
+        return NextResponse.json(
+          { error: `Work order "${body.woRef}" not found for this project.` },
+          { status: 400 },
+        );
+      }
+      woId = wo.id;
+    } else {
+      const wo = await (db as any).cnWorkOrder.findFirst({
+        where: {
+          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
+          projectId: body.projectId,
+          contractorId: body.contractorId,
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (!wo) {
+        return NextResponse.json(
+          {
+            error:
+              "No work order exists for this project and contractor. Create the WO first, then generate a RAB against it.",
+          },
+          { status: 400 },
+        );
+      }
+      woId = wo.id;
+    }
+
+    // ── Compute previous / cumulative / net amounts ────────────────
+    // Prior approved RABs against the same WO contribute to the running
+    // total. Stays correct even when previous RABs span different
+    // billing periods.
+    const priorAgg = await (db as any).cnRunningAccountBill.aggregate({
+      where: {
+        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
+        woId,
+        status: "approved",
+      },
+      _sum: { currentBillAmount: true },
     });
-  }
-  if (errors.length) {
-    return NextResponse.json({ success: false, error: errors.join("; ") }, { status: 400 });
-  }
+    const previousBillAmount = Number(
+      priorAgg._sum.currentBillAmount?.toString() ?? "0",
+    );
+    const currentBillAmount = Number(body.currentBillAmount ?? 0);
+    const cumulativeAmount = previousBillAmount + currentBillAmount;
+    // No retention/deductions form fields yet — net = current.
+    const netPayable = currentBillAmount;
 
-  const currentBillAmount = prepared.reduce((s, p) => s + p.currentPeriodAmount, 0);
-  const taxTotal = prepared.reduce((s, p) => s + p.taxAmount, 0);
-  const priorBilledAmount = 0; // simplified; full rollup from all prior RAB totals would be better
-  const priorAmountAgg = await db.cnRAB.aggregate({
-    where: { orgId, projectId: input.projectId, deletedAt: null, status: { in: ["approved", "paid"] } },
-    _sum: { currentBillAmount: true },
-  });
-  const prior = Number(priorAmountAgg._sum.currentBillAmount ?? 0);
+    const rabNumber = await generateDocNumber("rab", ctx.tenantId, ctx.orgId);
+    const requestedStatus = body.status === "submitted" ? "submitted" : "draft";
 
-  const rab = await db.cnRAB.create({
-    data: {
-      orgId,
-      projectId: input.projectId,
-      boqId: input.boqId,
-      rabNumber: input.rabNumber,
-      rabDate: new Date(input.rabDate),
-      billedTillDate: new Date(input.billedTillDate),
-      billSeqNo,
-      priorBilledAmount: prior,
-      currentBillAmount,
-      subtotal: currentBillAmount,
-      taxAmount: taxTotal,
-      total: currentBillAmount + taxTotal,
-      status: "draft",
-      remarks: input.remarks,
-      createdBy: userId,
-      lines: { create: prepared },
-    },
-    include: { lines: true },
-  });
-  return NextResponse.json({ success: true, data: rab }, { status: 201 });
-});
+    const created = await (db as any).cnRunningAccountBill.create({
+      data: {
+        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
+        rabNumber,
+        projectId: body.projectId,
+        contractorId: body.contractorId,
+        woId: woId!,
+        billPeriodFrom: new Date(body.billPeriodFrom),
+        billPeriodTo: new Date(body.billPeriodTo),
+        previousBillAmount,
+        currentBillAmount,
+        cumulativeAmount,
+        netPayable,
+        status: requestedStatus,
+        createdBy: ctx.userId,
+        updatedBy: ctx.userId,
+      },
+      include: {
+        project: { select: { name: true } },
+        contractor: { select: { name: true } },
+      },
+    });
+
+    return NextResponse.json(
+      {
+        id: created.id,
+        rabNumber: created.rabNumber,
+        projectId: created.projectId,
+        projectName: created.project?.name ?? "",
+        contractorId: created.contractorId,
+        contractorName: created.contractor?.name ?? "",
+        woId: created.woId,
+        billPeriodFrom: created.billPeriodFrom.toISOString().slice(0, 10),
+        billPeriodTo: created.billPeriodTo.toISOString().slice(0, 10),
+        previousBillAmount: created.previousBillAmount.toString(),
+        currentBillAmount: created.currentBillAmount.toString(),
+        cumulativeAmount: created.cumulativeAmount.toString(),
+        netPayable: created.netPayable.toString(),
+        status: created.status,
+        createdAt: created.createdAt.toISOString(),
+        updatedAt: created.updatedAt.toISOString(),
+      },
+      { status: 201 },
+    );
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (err instanceof BOQError) {
+      return NextResponse.json(
+        { error: e.message, code: e.code },
+        { status: err.httpStatus },
+      );
+    }
+    if (e?.code === "P2002") {
+      return NextResponse.json(
+        { error: "A RAB with this number already exists." },
+        { status: 409 },
+      );
+    }
+    if (e?.code === "P2003") {
+      return NextResponse.json(
+        { error: "Referenced project / contractor / work order does not exist." },
+        { status: 400 },
+      );
+    }
+    console.error("[rab.create] failed:", err);
+    return NextResponse.json(
+      { error: e?.message ?? "Failed to create RAB" },
+      { status: 500 },
+    );
+  }
+}

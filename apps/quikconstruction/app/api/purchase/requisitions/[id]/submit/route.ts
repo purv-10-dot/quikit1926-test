@@ -1,36 +1,89 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { checkApprovalGate } from "@/lib/approvals";
-import { logAudit } from "@/lib/audit";
-
-const withOrgAuth = withOrgAuthForModule("purchase");
+import { getTenantContext } from "@/lib/auth/context";
+import { findPRById } from "@/lib/purchase/pr-repository";
+import {
+  submitForApproval,
+  NoActiveWorkflowError,
+} from "@/lib/approvals/submit-for-approval";
 
 /**
- * POST /api/purchase/requisitions/[id]/submit
+ * Submit PR for approval.
  *
- * draft → submitted. Applies approval gate (Phase 8) — if a CnApprovalRule
- * matches for docType="pr" above threshold, an approved CnApprovalRequest
- * must exist for this PR.
+ * Finds the active `CnApprovalWorkflow` for `purchase_requisitions` via
+ * `submitForApproval` and stamps the resulting `CnApprovalInstance` id
+ * onto the PR via `approvalId`. Skip-on-raiser, auto-approve-on-full-skip
+ * and history-row writes live in the helper.
+ *
+ * PR-specific behaviour preserved here:
+ *   - Auto-approved branch: PR status comes from `stockCheckSummary` —
+ *     `ALL_AVAILABLE` → `approved_stock_available`, otherwise
+ *     `approved_indent_required`. Mirrors the approve route.
+ *   - Pending branch: PR moves to `pending_approval`.
+ *   - Both updates run inside the same transaction as the instance + history
+ *     rows so a partial submit is impossible.
  */
-export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
-  const pr = await db.cnPurchaseRequisition.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
-    select: { id: true, status: true, lines: { select: { quantity: true, estimatedRate: true } } },
-  });
-  if (!pr) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+export async function POST(_req: Request, { params }: { params: { id: string } }) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+  const pr = await findPRById(ctx.tenantId, params.id);
+  if (!pr) return NextResponse.json({ error: "PR not found" }, { status: 404 });
   if (pr.status !== "draft") {
-    return NextResponse.json({ success: false, error: `Cannot submit from status '${pr.status}'` }, { status: 400 });
+    return NextResponse.json(
+      { error: `Cannot submit PR in status: ${pr.status}` },
+      { status: 400 },
+    );
   }
 
-  const amount = pr.lines.reduce((s, l) => s + Number(l.quantity ?? 0) * Number(l.estimatedRate ?? 0), 0);
-  const gate = await checkApprovalGate({ orgId, docType: "pr", docId: pr.id, amount });
-  if (!gate.allowed) return NextResponse.json({ success: false, error: gate.reason, code: "APPROVAL_REQUIRED" }, { status: 403 });
+  // Compute the PR's final status if it auto-approves (every step is
+  // self). Branches by the stock check exactly like the approve route.
+  const summary = String(pr.stockCheckSummary ?? "").toUpperCase();
+  const autoApprovedPRStatus =
+    summary === "ALL_AVAILABLE"
+      ? "approved_stock_available"
+      : "approved_indent_required";
 
-  const updated = await db.cnPurchaseRequisition.update({
-    where: { id: params.id },
-    data: { status: "submitted", updatedBy: userId },
+  let instanceId: string;
+  let autoApproved: boolean;
+  try {
+    ({ instanceId, autoApproved } = await submitForApproval({
+      ctx: {
+        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        roleKey: ctx.roleKey,
+      },
+      entityType: "purchase_requisitions",
+      entityId: pr.id,
+      entityNumber: pr.prNumber,
+      onCreatedInTxn: async (tx, args) => {
+        await tx.cnPurchaseRequisition.update({
+          where: { id: pr.id },
+          data: {
+            status: args.autoApproved ? autoApprovedPRStatus : "pending_approval",
+            approvalId: args.instanceId,
+            updatedBy: ctx.userId,
+          },
+        });
+      },
+    }));
+  } catch (err) {
+    if (err instanceof NoActiveWorkflowError) {
+      return NextResponse.json(
+        {
+          error:
+            "No active Purchase Requisition workflow is configured. Ask an admin to create one under Settings → Workflows.",
+        },
+        { status: 400 },
+      );
+    }
+    throw err;
+  }
+
+  const updated = await findPRById(ctx.tenantId, pr.id);
+  return NextResponse.json({
+    ...updated,
+    approvalInstanceId: instanceId,
+    autoApproved,
   });
-  await logAudit({ orgId, userId, actionType: "status_change", entityType: "cnPurchaseRequisition", entityId: pr.id, oldValues: { status: "draft" }, newValues: { status: "submitted" } });
-  return NextResponse.json({ success: true, data: updated });
-});
+}

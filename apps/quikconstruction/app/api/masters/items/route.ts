@@ -1,54 +1,102 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { itemCreateSchema } from "@/lib/schemas/masters";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  listItems,
+  countItems,
+  createItem,
+} from "@/lib/masters/items-repository";
+import { paginateDb } from "@/lib/http/pagination";
+import { withListRoute, withMutationRoute, DomainError } from "@/lib/http";
 
-const withOrgAuth = withOrgAuthForModule("masters");
+/**
+ * GET  /api/masters/items — list tenant items (seeded on first call if empty).
+ * POST /api/masters/items — create a new item. Free-text `category` and
+ *                          `uomCode` are resolved into CnItemGroup / CnUOM
+ *                          by find-or-create.
+ */
 
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const groupId = req.nextUrl.searchParams.get("groupId") || undefined;
-  const items = await db.cnItem.findMany({
-    where: {
-      orgId,
-      deletedAt: includeDeleted ? { not: null } : null,
-      ...(groupId ? { groupId } : {}),
-    },
-    include: {
-      group: { select: { id: true, name: true } },
-      uom: { select: { id: true, code: true, name: true } },
-    },
-    orderBy: { code: "asc" },
-  });
-  return NextResponse.json({ success: true, data: items });
-});
+export async function GET(req: NextRequest) {
+  try {  
+    return withListRoute(
+      req,
+      { entityLabel: "item" },
+      async ({ ctx, searchParams, pagination }) => {
+        const baseOpts = {
+          tenantId: ctx.tenantId,
+          orgId: ctx.orgId,
+          createdBy: ctx.userId,
+          search: searchParams.get("search") ?? "",
+          groupId: searchParams.get("groupId") || undefined,
+        };
+        const result = await paginateDb(
+          pagination,
+          (paging) => listItems({ ...baseOpts, ...paging }),
+          () => countItems(baseOpts),
+        );
+        return NextResponse.json(result);
+      },
+    );
 
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const body = await req.json();
-  const input = itemCreateSchema.parse(body);
-  // Validate group + uom belong to this tenant
-  const [group, uom] = await Promise.all([
-    db.cnItemGroup.findFirst({ where: { id: input.groupId, orgId }, select: { id: true } }),
-    db.cnUOM.findFirst({ where: { id: input.uomId, orgId }, select: { id: true } }),
-  ]);
-  if (!group) {
-    return NextResponse.json({ success: false, error: "Item group not found" }, { status: 400 });
-  }
-  if (!uom) {
-    return NextResponse.json({ success: false, error: "UOM not found" }, { status: 400 });
-  }
-  const existing = await db.cnItem.findFirst({
-    where: { orgId, code: input.code, deletedAt: null },
-    select: { id: true },
-  });
-  if (existing) {
+  } catch (err: unknown) {
+    const e = err as { message?: string };
+    console.error("[masters/items.GET] failed:", err);
     return NextResponse.json(
-      { success: false, error: `Item code '${input.code}' already exists` },
-      { status: 409 },
+      { ok: false, error: e.message ?? "Internal error" },
+      { status: 500 },
     );
   }
-  const item = await db.cnItem.create({
-    data: { ...input, orgId, createdBy: userId },
-  });
-  return NextResponse.json({ success: true, data: item }, { status: 201 });
-});
+}
+
+interface ItemBody {
+  name: string;
+  code?: string;
+  itemType?: string;
+  category?: string;
+  groupName?: string;
+  uomId?: string;
+  uomCode?: string;
+  uomIds?: string[];
+  specifications?: string;
+  hsnCode?: string;
+  gstRate?: string | number;
+  standardRate?: string | number;
+  minStockLevel?: string | number;
+  reorderLevel?: string | number;
+  status?: string;
+}
+
+export async function POST(req: NextRequest) {
+  return withMutationRoute<ItemBody>(
+    req,
+    {
+      entityLabel: "item",
+      successStatus: 201,
+      parseBody: (raw): ItemBody => {
+        const body = (raw ?? {}) as Record<string, unknown>;
+        const name = typeof body.name === "string" ? body.name.trim() : "";
+        if (!name) throw new DomainError("VALIDATION", "Item name is required", 400);
+        return { ...(body as unknown as ItemBody), name };
+      },
+    },
+    async ({ ctx, body }) => {
+      return createItem({
+        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
+        createdBy: ctx.userId,
+        code: body.code,
+        name: body.name,
+        itemType: body.itemType,
+        category: body.category ?? body.groupName,
+        uomId: body.uomId,
+        uomCode: body.uomCode,
+        uomIds: Array.isArray(body.uomIds) ? body.uomIds : undefined,
+        specifications: body.specifications,
+        hsnCode: body.hsnCode,
+        gstRate: body.gstRate as any,
+        standardRate: body.standardRate as any,
+        minStockLevel: body.minStockLevel as any,
+        reorderLevel: body.reorderLevel as any,
+        status: body.status,
+      });
+    },
+  );
+}

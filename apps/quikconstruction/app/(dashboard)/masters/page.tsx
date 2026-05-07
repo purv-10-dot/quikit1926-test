@@ -1,92 +1,85 @@
-import Link from "next/link";
-import {
-  Building2, Users, Briefcase, HardHat, Package, Boxes, Ruler,
-  Building, Layers, PieChart, MapPin, Percent, Receipt, FileText,
-  Landmark, CalendarRange, Hammer, Truck, Archive,
-} from "lucide-react";
+"use client";
 
-const MASTER_SECTIONS: Array<{
-  title: string;
-  items: Array<{ href: string; label: string; description: string; icon: React.ComponentType<{ className?: string }> }>;
-}> = [
-  {
-    title: "People & Partners",
-    items: [
-      { href: "/masters/companies",   label: "Companies",   description: "Legal entities with GSTIN/PAN/CIN.",           icon: Building2 },
-      { href: "/masters/vendors",     label: "Vendors",     description: "Suppliers for materials and services.",        icon: Users },
-      { href: "/masters/customers",   label: "Customers",   description: "Clients you bill for projects.",               icon: Briefcase },
-      { href: "/masters/contractors", label: "Contractors", description: "Subcontractors with specialisation + license.", icon: HardHat },
-    ],
-  },
-  {
-    title: "Items & Inventory",
-    items: [
-      { href: "/masters/items",       label: "Items",       description: "Materials, consumables, services.",    icon: Package },
-      { href: "/masters/item-groups", label: "Item Groups", description: "Hierarchical categorisation.",         icon: Boxes },
-      { href: "/masters/uom",         label: "UOM",         description: "Units of measurement.",                icon: Ruler },
-    ],
-  },
-  {
-    title: "Organisation",
-    items: [
-      { href: "/masters/departments",     label: "Departments",     description: "Functional departments.",       icon: Building },
-      { href: "/masters/work-categories", label: "Work Categories", description: "Types of construction work.",   icon: Layers },
-      { href: "/masters/cost-centers",    label: "Cost Centers",    description: "Accounting cost buckets.",      icon: PieChart },
-      { href: "/masters/locations",       label: "Locations",       description: "Sites, warehouses, offices.",   icon: MapPin },
-    ],
-  },
-  {
-    title: "Financial",
-    items: [
-      { href: "/masters/gst",              label: "GST Codes",         description: "Tax rate slabs.",               icon: Percent },
-      { href: "/masters/tds",              label: "TDS Codes",         description: "Income tax deduction sections.", icon: Receipt },
-      { href: "/masters/terms",            label: "Terms & Conditions", description: "Reusable clauses.",           icon: FileText },
-      { href: "/masters/banks",            label: "Banks",             description: "Bank accounts per company.",    icon: Landmark },
-      { href: "/masters/financial-years",  label: "Financial Years",   description: "Fiscal periods.",               icon: CalendarRange },
-    ],
-  },
-  {
-    title: "Project Operations",
-    items: [
-      { href: "/masters/projects",  label: "Projects",  description: "Construction projects.",                icon: Hammer },
-      { href: "/masters/machinery", label: "Machinery", description: "Heavy equipment — owned or rented.",    icon: Truck },
-      { href: "/masters/assets",    label: "Assets",    description: "Non-inventory fixed assets.",           icon: Archive },
-    ],
-  },
+/**
+ * Masters index — grid of all master data modules.
+ */
+
+import { useRouter } from "next/navigation";
+import {
+  FolderKanban, Package, Boxes, Truck, HardHat, Building2,
+  MapPin, Calculator, Receipt, CreditCard, Landmark,
+  Users, ListTodo, BarChart3, Hammer, Globe, CalendarCheck, FileText,
+  ArrowUpRight,
+} from "lucide-react";
+import { PageHeader, PageContainer } from "@/components/PageShell";
+
+const MASTERS = [
+  { label: "Projects",          href: "/masters/projects",         icon: FolderKanban,  count: 0 },
+  { label: "Items / Materials", href: "/masters/items",            icon: Package,       count: 0 },
+  { label: "Item Groups",       href: "/masters/item-groups",      icon: Boxes,         count: 0 },
+  { label: "Vendors",           href: "/masters/vendors",          icon: Truck,         count: 0 },
+  { label: "Contractors",       href: "/masters/contractors",      icon: HardHat,       count: 0 },
+  { label: "Customers",         href: "/masters/customers",        icon: Building2,     count: 0 },
+  { label: "Locations / Sites", href: "/masters/locations",        icon: MapPin,        count: 0 },
+  { label: "UOM",               href: "/masters/uom",              icon: Calculator,    count: 0 },
+  { label: "GST Codes",         href: "/masters/gst",              icon: Receipt,       count: 0 },
+  { label: "TDS Codes",         href: "/masters/tds",              icon: CreditCard,    count: 0 },
+  { label: "Banks",             href: "/masters/banks",            icon: Landmark,      count: 0 },
+  { label: "Departments",       href: "/masters/departments",      icon: Users,         count: 0 },
+  { label: "Work Categories",   href: "/masters/work-categories",  icon: ListTodo,      count: 0 },
+  { label: "Cost Centers",      href: "/masters/cost-centers",     icon: BarChart3,     count: 0 },
+  { label: "Machinery",         href: "/masters/machinery",        icon: Hammer,        count: 0 },
+  { label: "Companies",         href: "/masters/companies",        icon: Globe,         count: 0 },
+  { label: "Financial Years",   href: "/masters/financial-years",  icon: CalendarCheck, count: 0 },
+  { label: "Terms & Conditions",href: "/masters/terms",            icon: FileText,      count: 0 },
 ];
 
-export default function MastersIndex() {
-  return (
-    <div className="p-6 max-w-6xl">
-      <h1 className="text-lg font-semibold text-gray-900 mb-1">Masters</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Reference data for the whole ERP — create these before you can transact.
-      </p>
+export default function MastersIndexPage() {
+  const router = useRouter();
 
-      {MASTER_SECTIONS.map((section) => (
-        <section key={section.title} className="mb-8">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-            {section.title}
-          </h2>
-          <div className="grid gap-3 md:grid-cols-2">
-            {section.items.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex items-start gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:border-accent-300 hover:shadow-sm transition"
-              >
-                <div className="p-2 rounded-lg bg-accent-50 text-accent-700">
-                  <item.icon className="h-4 w-4" />
+  return (
+    <>
+      <PageHeader
+        title="Master Data"
+        subtitle="Foundation data for all construction modules"
+      />
+      <PageContainer>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 table-enter">
+          {MASTERS.map((m) => (
+            <button
+              key={m.href}
+              onClick={() => router.push(m.href)}
+              className="group relative flex flex-col items-start gap-3 p-5 rounded-xl bg-white border border-slate-200 shadow-soft hover:shadow-lg hover:border-orange-200 hover:-translate-y-0.5 transition-all text-left overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
+            >
+              {/* hover-revealed accent stripe */}
+              <span
+                aria-hidden
+                className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 opacity-0 group-hover:opacity-100 transition-opacity"
+              />
+              {/* soft brand wash on hover */}
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-gradient-to-br from-orange-50/0 to-transparent group-hover:from-orange-50/40 transition-colors"
+              />
+              <div className="relative flex w-full items-start justify-between">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 flex items-center justify-center ring-1 ring-orange-100 group-hover:from-orange-500 group-hover:to-orange-600 group-hover:text-white group-hover:ring-orange-300 group-hover:scale-105 transition-all">
+                  <m.icon className="w-5 h-5" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-gray-900">{item.label}</div>
-                  <div className="text-xs text-gray-600 mt-0.5">{item.description}</div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
+                <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-orange-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+              </div>
+              <div className="relative">
+                <p className="text-sm font-semibold text-slate-900 group-hover:text-orange-800 transition-colors">{m.label}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5 inline-flex items-center gap-1">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-semibold tabular-nums">
+                    {m.count}
+                  </span>
+                  records
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </PageContainer>
+    </>
   );
 }

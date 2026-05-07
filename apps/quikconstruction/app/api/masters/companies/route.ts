@@ -1,33 +1,81 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { companyCreateSchema } from "@/lib/schemas/masters";
+import { NextRequest } from "next/server";
+import {
+  listCompanies,
+  countCompanies,
+  createCompany,
+} from "@/lib/masters/companies-repository";
+import { paginateDb } from "@/lib/http/pagination";
+import {
+  withListRoute,
+  withMutationRoute,
+  DomainError,
+} from "@/lib/http";
 
-const withOrgAuth = withOrgAuthForModule("masters");
+/**
+ * Companies master — Postgres-backed.
+ *
+ * Uses the standard route wrappers so auth, tenant scoping, pagination,
+ * Prisma error mapping (P2002 / P2003 / P2025), and response envelopes
+ * stay consistent with every other route.
+ */
 
-// GET /api/masters/companies — list tenant's companies (active only by default)
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const companies = await db.cnCompany.findMany({
-    where: {
-      orgId,
-      deletedAt: includeDeleted ? { not: null } : null,
-    },
-    orderBy: { name: "asc" },
+export async function GET(req: NextRequest) {
+  return withListRoute(req, { entityLabel: "company" }, async ({ ctx, searchParams, pagination }) => {
+    const baseOpts = {
+      tenantId: ctx.tenantId,
+      orgId: ctx.orgId,
+      createdBy: ctx.userId,
+      search: searchParams.get("search") ?? "",
+    };
+    return paginateDb(
+      pagination,
+      (paging) => listCompanies({ ...baseOpts, ...paging }),
+      () => countCompanies(baseOpts),
+    );
   });
-  return NextResponse.json({ success: true, data: companies });
-});
+}
 
-// POST /api/masters/companies — create
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const body = await req.json();
-  const input = companyCreateSchema.parse(body);
-  const company = await db.cnCompany.create({
-    data: {
-      ...input,
-      orgId,
-      createdBy: userId,
+export async function POST(req: NextRequest) {
+  return withMutationRoute(
+    req,
+    {
+      entityLabel: "company",
+      successStatus: 201,
+      parseBody: (raw) => {
+        const body = (raw ?? {}) as Record<string, unknown>;
+        const name = typeof body.name === "string" ? body.name.trim() : "";
+        if (!name) {
+          throw new DomainError("VALIDATION", "Company name is required", 400);
+        }
+        return { ...body, name } as Record<string, unknown>;
+      },
     },
-  });
-  return NextResponse.json({ success: true, data: company }, { status: 201 });
-});
+    async ({ ctx, body }) => {
+      return createCompany({
+        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
+        createdBy: ctx.userId,
+        name: body.name as string,
+        legalName: body.legalName as string | undefined,
+        shortName: body.shortName as string | undefined,
+        gstin: body.gstin as string | undefined,
+        pan: body.pan as string | undefined,
+        cin: body.cin as string | undefined,
+        address: body.address as string | undefined,
+        city: body.city as string | undefined,
+        state: body.state as string | undefined,
+        pincode: body.pincode as string | undefined,
+        phone: body.phone as string | undefined,
+        email: body.email as string | undefined,
+        website: body.website as string | undefined,
+        logoUrl: body.logoUrl as string | undefined,
+        bankName: body.bankName as string | undefined,
+        branchName: body.branchName as string | undefined,
+        accountNo: body.accountNo as string | undefined,
+        ifscCode: body.ifscCode as string | undefined,
+        accountType: body.accountType as string | undefined,
+        status: (body.status as string | undefined) ?? "active",
+      });
+    },
+  );
+}

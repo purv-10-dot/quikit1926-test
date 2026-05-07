@@ -54,3 +54,31 @@ export async function readUpload(storagePath: string): Promise<Buffer> {
 export async function deleteUpload(storagePath: string): Promise<void> {
   try { await fs.unlink(resolveStoragePath(storagePath)); } catch { /* already gone */ }
 }
+
+// ─── Re-export the driver-based file service ───────────────────────
+//
+// The functions above (saveUpload / readUpload / deleteUpload) are the
+// simple legacy path used by /api/documents — they write to a fixed
+// uploads dir on the local filesystem. The driver-based file service in
+// `src/lib/storage/` is the newer abstraction used by /api/files/* and
+// supports S3 / R2 / local with presigned URLs. Both surfaces live behind
+// the same `@/lib/storage` import so route handlers don't need to know
+// which path map entry they're hitting.
+export {
+  getStorageDriver,
+  resetStorageDriver,
+  S3Driver,
+  LocalDriver,
+  fileService,
+  FileService,
+  FileError,
+  MAX_FILE_SIZE_BYTES,
+  ALLOWED_MIME_TYPES,
+} from "../src/lib/storage";
+export type {
+  StorageDriver,
+  PresignedUploadUrl,
+  PresignedDownloadUrl,
+  AttachmentEntityType,
+  UploadInitResult,
+} from "../src/lib/storage";

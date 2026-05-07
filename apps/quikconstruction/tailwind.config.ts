@@ -1,14 +1,79 @@
-import type { Config } from "tailwindcss";
-import baseConfig from "@quikit/ui/tailwind-config";
+import type { Config } from 'tailwindcss';
 
-const config = {
-  ...baseConfig,
+const config: Config = {
   content: [
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./lib/**/*.{js,ts,jsx,tsx,mdx}",
-    "../../packages/ui/**/*.{js,ts,jsx,tsx,mdx}",
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/**/*.{js,ts,jsx,tsx}',
+    '../../packages/app-shell/src/**/*.{js,ts,jsx,tsx}',
+    '../../packages/data-grid/src/**/*.{js,ts,jsx,tsx}',
   ],
-} satisfies Config;
+  theme: {
+    extend: {
+      colors: {
+        // ─── Brand: warm construction orange ──────────────────────────
+        construction: {
+          50:  '#fff7ed',
+          100: '#ffedd5',
+          200: '#fed7aa',
+          300: '#fdba74',
+          400: '#fb923c',
+          500: '#f97316',
+          600: '#ea580c',
+          700: '#c2410c',
+          800: '#9a3412',
+          900: '#7c2d12',
+          950: '#431407',
+        },
+        // Semantic alias of the brand — what UI code should reach for
+        // when it wants "the construction primary".
+        brand: {
+          50:  '#fff7ed',
+          100: '#ffedd5',
+          200: '#fed7aa',
+          300: '#fdba74',
+          400: '#fb923c',
+          500: '#f97316',
+          600: '#ea580c',
+          700: '#c2410c',
+          800: '#9a3412',
+          900: '#7c2d12',
+        },
+        // Slate-blue used for "execution / informational" surfaces
+        // (works alongside the brand without competing).
+        steel: {
+          50:  '#f1f5f9',
+          100: '#e2e8f0',
+          200: '#cbd5e1',
+          500: '#64748b',
+          600: '#475569',
+          700: '#334155',
+          800: '#1e293b',
+        },
+      },
+      boxShadow: {
+        'brand': '0 4px 14px 0 rgba(234, 88, 12, 0.18)',
+        'soft':  '0 1px 2px 0 rgba(15, 23, 42, 0.04), 0 1px 3px 0 rgba(15, 23, 42, 0.05)',
+      },
+      backgroundImage: {
+        'brand-gradient':
+          'linear-gradient(135deg, #ea580c 0%, #f97316 50%, #fb923c 100%)',
+        'brand-soft':
+          'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)',
+        'shimmer-gradient':
+          'linear-gradient(90deg, rgba(226,232,240,0) 0%, rgba(226,232,240,0.7) 50%, rgba(226,232,240,0) 100%)',
+      },
+      keyframes: {
+        shimmer: {
+          '0%':   { backgroundPosition: '-1000px 0' },
+          '100%': { backgroundPosition: '1000px 0' },
+        },
+      },
+      animation: {
+        shimmer: 'shimmer 1.6s linear infinite',
+      },
+    },
+  },
+  plugins: [],
+};
 
 export default config;

@@ -1,28 +1,63 @@
-import Link from "next/link";
-import { AlertTriangle, ClipboardCheck } from "lucide-react";
+"use client";
 
-const MODS = [
-  { href: "/safety/incidents", label: "Incidents", description: "Log injuries, near-misses, property damage.", icon: AlertTriangle },
-  { href: "/safety/checklists", label: "Checklists", description: "Daily safety walk and site audit templates.", icon: ClipboardCheck },
-];
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { ShieldCheck, AlertTriangle, MessageSquare, ListChecks } from "lucide-react";
+import { PageHeader, PageContainer, KPICard } from "@/components/PageShell";
 
-export default function SafetyIndex() {
+export default function SafetyPage() {
+  const router = useRouter();
+
+  const { data: incResult } = useQuery({
+    queryKey: ["safety-incidents"],
+    queryFn: () => fetch("/api/safety/incidents").then(r => r.json()),
+  });
+
+  const { data: tbtResult } = useQuery({
+    queryKey: ["safety-toolbox-talks"],
+    queryFn: () => fetch("/api/safety/toolbox-talks").then(r => r.json()),
+  });
+
+  const incidents = incResult?.data ?? [];
+  const toolboxTalks = tbtResult?.data ?? [];
+  const openActions = incidents.filter((i: any) => i.status !== "Closed").length;
+  const totalIncidentsMonth = incidents.length;
+  const daysWithoutIncident = 2; // last incident was Apr 9
+
   return (
-    <div className="p-6 max-w-5xl">
-      <h1 className="text-lg font-semibold text-gray-900 mb-1">Safety</h1>
-      <p className="text-sm text-gray-500 mb-6">Incident reporting and safety compliance checks.</p>
-      <div className="grid gap-3 md:grid-cols-2">
-        {MODS.map(m => (
-          <Link key={m.href} href={m.href} className="flex items-start gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:border-accent-300 hover:shadow-sm transition">
-            <div className="p-2 rounded-lg bg-accent-50 text-accent-700"><m.icon className="h-4 w-4" /></div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">{m.label}</div>
-              <div className="text-xs text-gray-600 mt-0.5">{m.description}</div>
-            </div>
-            <span className="text-[10px] font-semibold uppercase bg-accent-100 text-accent-700 px-1.5 py-0.5 rounded">LIVE</span>
-          </Link>
-        ))}
-      </div>
-    </div>
+    <>
+      <PageHeader
+        title="Safety / HSE"
+        subtitle="Incident reporting, toolbox talks, and HSE compliance"
+      />
+      <PageContainer>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPICard title="Days Without Incident" value={daysWithoutIncident}
+            icon={<ShieldCheck className="w-5 h-5" />} color="green" />
+          <KPICard title="Total Incidents (Month)" value={totalIncidentsMonth}
+            icon={<AlertTriangle className="w-5 h-5" />} color="red" />
+          <KPICard title="Toolbox Talks (Month)" value={toolboxTalks.length}
+            icon={<MessageSquare className="w-5 h-5" />} color="blue" />
+          <KPICard title="Open Actions" value={openActions}
+            icon={<ListChecks className="w-5 h-5" />} color="amber" />
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+          {[
+            { label: "Incidents", href: "/safety/incidents", icon: AlertTriangle, color: "bg-red-50 text-red-600", desc: "Report and track safety incidents and near misses" },
+            { label: "Toolbox Talks", href: "/safety/toolbox-talks", icon: MessageSquare, color: "bg-blue-50 text-blue-600", desc: "Daily toolbox talk records and attendance" },
+          ].map((m) => (
+            <button key={m.href} onClick={() => router.push(m.href)}
+              className="flex flex-col p-5 rounded-xl bg-white border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all text-left">
+              <div className={`w-10 h-10 rounded-lg ${m.color} flex items-center justify-center mb-3`}>
+                <m.icon className="w-5 h-5" />
+              </div>
+              <p className="text-sm font-semibold text-gray-900">{m.label}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{m.desc}</p>
+            </button>
+          ))}
+        </div>
+      </PageContainer>
+    </>
   );
 }

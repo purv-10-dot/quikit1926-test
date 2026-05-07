@@ -46,3 +46,19 @@ export function canManageSettings(role: Role | null | undefined): boolean {
 export function forbidden(reason: string) {
   return NextResponse.json({ success: false, error: `Forbidden: ${reason}`, code: "PERMISSION_DENIED" }, { status: 403 });
 }
+
+// ─── Re-export from the detailed RBAC catalog ──────────────────────
+//
+// `src/lib/permissions.ts` carries the full role → permission matrix used by
+// the settings/roles UI. The tsconfig path map resolves `@/lib/permissions`
+// to *this* file first, so any consumer that needs `ROLES`, `PERMISSIONS`,
+// `ConstructionRole`, or the `*PermissionsForRole` helpers picks them up
+// transparently here without having to know two paths exist.
+export {
+  ROLES,
+  PERMISSIONS,
+  getPermissionsForRole,
+  hasPermission,
+  hasAnyPermission,
+} from "../src/lib/permissions";
+export type { ConstructionRole } from "../src/lib/permissions";

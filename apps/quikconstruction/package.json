@@ -4,7 +4,7 @@
   "private": true,
   "description": "QuikConstruction — Construction ERP inside QuikIT.",
   "scripts": {
-    "dev": "next dev -p 3006",
+    "dev": "next dev -p 3005",
     "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "build": "next build",
     "start": "next start -p 3007",
@@ -19,10 +19,13 @@
     "@quikit/shared": "*",
     "@quikit/ui": "*",
     "@tanstack/react-query": "^5.28.0",
+    "@types/nodemailer": "^8.0.0",
     "lucide-react": "^0.294.0",
     "next": "14.0.4",
     "next-auth": "^4.24.0",
     "next-themes": "^0.2.1",
+    "nodemailer": "^7.0.13",
+    "pdf-lib": "^1.17.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^3.22.4"

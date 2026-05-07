@@ -1,72 +1,65 @@
-import Link from "next/link";
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
-  ListTree, ClipboardList, AlertTriangle,
-  Calculator, Briefcase, Receipt, GanttChart,
+  FileSpreadsheet, Calculator, Hammer, CalendarCheck,
+  Receipt, GanttChart, TrendingUp,
 } from "lucide-react";
+import { PageHeader, PageContainer, KPICard } from "@/components/PageShell";
 
-const CORE = [
-  { href: "/projects/boq",       label: "BOQ",        description: "Bill of Quantities — hierarchical item list with qty × rate per project. Lock once approved.", icon: ListTree },
-  { href: "/projects/dpr",       label: "DPR",        description: "Daily Progress Report — one header per (project, date). Captures work done, labour, machinery.", icon: ClipboardList },
-  { href: "/projects/hindrance", label: "Hindrance",  description: "Log blockers — weather, permits, material shortage. Used for delay claims.", icon: AlertTriangle },
-];
+export default function ProjectsIndexPage() {
+  const router = useRouter();
 
-const EXTENDED = [
-  { href: "/projects/estimation",  label: "Estimation",    description: "Pre-BOQ cost estimate. Convert to BOQ once approved.",                   icon: Calculator },
-  { href: "/projects/work-orders", label: "Work Orders",   description: "Sub-contract scope packages to contractors with per-line rates.",         icon: Briefcase },
-  { href: "/projects/rab",         label: "RAB (Running Account Bill)", description: "Progressive billing to client against a locked BOQ.",         icon: Receipt },
-  { href: "/projects/gantt",       label: "Gantt",         description: "Schedule BOQ items with start/end dates + % complete; SVG timeline.", icon: GanttChart },
-];
+  const { data } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard");
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
 
-const DEFERRED: string[] = [];
+  const kpis = data?.kpis ?? {};
 
-export default function ProjectsIndex() {
   return (
-    <div className="p-6 max-w-5xl">
-      <h1 className="text-lg font-semibold text-gray-900 mb-1">Projects</h1>
-      <p className="text-sm text-gray-500 mb-6">
-        Project operations — BOQ is the scope, DPR is the daily pulse, Hindrance is the delay record, RAB is the bill.
-      </p>
+    <>
+      <PageHeader
+        title="Project Management"
+        subtitle="BOQ, estimation, work orders, DPR, and billing"
+      />
+      <PageContainer>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPICard title="BOQ Value" value={kpis.boqValue ? `₹ ${Number(kpis.boqValue).toLocaleString("en-IN")}` : "₹ 0"}
+            subtitle="Total contract value" icon={<FileSpreadsheet className="w-5 h-5" />} color="blue" />
+          <KPICard title="Work Done" value={kpis.overallProgress ? `${kpis.overallProgress}%` : "0%"}
+            subtitle="Overall progress" icon={<TrendingUp className="w-5 h-5" />} color="green" />
+          <KPICard title="Active Work Orders" value={kpis.activeWOs ?? 0}
+            icon={<Hammer className="w-5 h-5" />} color="orange" onClick={() => router.push("/projects/work-orders")} />
+          <KPICard title="Pending DPR Approval" value={kpis.pendingDPRApproval ?? 0}
+            icon={<CalendarCheck className="w-5 h-5" />} color="amber" onClick={() => router.push("/projects/dpr")} />
+        </div>
 
-      <section className="mb-8">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Core</h2>
-        <div className="grid gap-3 md:grid-cols-2">
-          {CORE.map((p) => (
-            <Link key={p.href} href={p.href}
-              className="flex items-start gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:border-accent-300 hover:shadow-sm transition">
-              <div className="p-2 rounded-lg bg-accent-50 text-accent-700"><p.icon className="h-4 w-4" /></div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-gray-900">{p.label}</div>
-                <div className="text-xs text-gray-600 mt-0.5">{p.description}</div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+          {[
+            { label: "BOQ", href: "/projects/boq", icon: FileSpreadsheet, color: "bg-blue-50 text-blue-600", desc: "Bill of Quantities — hierarchical scope" },
+            { label: "Material Estimation", href: "/projects/estimation", icon: Calculator, color: "bg-teal-50 text-teal-600", desc: "Map BOQ items to material requirements" },
+            { label: "Work Orders", href: "/projects/work-orders", icon: Hammer, color: "bg-orange-50 text-orange-600", desc: "Assign scope to contractors" },
+            { label: "Daily Progress (DPR)", href: "/projects/dpr", icon: CalendarCheck, color: "bg-green-50 text-green-600", desc: "Record daily work, labour, machinery" },
+            { label: "Running A/c Bill (RAB)", href: "/projects/rab", icon: Receipt, color: "bg-purple-50 text-purple-600", desc: "Contractor billing from DPR" },
+            { label: "Gantt View", href: "/projects/gantt", icon: GanttChart, color: "bg-indigo-50 text-indigo-600", desc: "Planned vs actual timeline" },
+          ].map((m) => (
+            <button key={m.href} onClick={() => router.push(m.href)}
+              className="flex flex-col p-5 rounded-xl bg-white border border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 transition-all text-left">
+              <div className={`w-10 h-10 rounded-lg ${m.color} flex items-center justify-center mb-3`}>
+                <m.icon className="w-5 h-5" />
               </div>
-              <span className="text-[10px] font-semibold uppercase bg-accent-100 text-accent-700 px-1.5 py-0.5 rounded">LIVE</span>
-            </Link>
+              <p className="text-sm font-semibold text-gray-900">{m.label}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{m.desc}</p>
+            </button>
           ))}
         </div>
-      </section>
-
-      <section className="mb-8">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Extended (Phase 4b)</h2>
-        <div className="grid gap-3 md:grid-cols-2">
-          {EXTENDED.map((p) => (
-            <Link key={p.href} href={p.href}
-              className="flex items-start gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:border-accent-300 hover:shadow-sm transition">
-              <div className="p-2 rounded-lg bg-accent-50 text-accent-700"><p.icon className="h-4 w-4" /></div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-gray-900">{p.label}</div>
-                <div className="text-xs text-gray-600 mt-0.5">{p.description}</div>
-              </div>
-              <span className="text-[10px] font-semibold uppercase bg-accent-100 text-accent-700 px-1.5 py-0.5 rounded">LIVE</span>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Deferred</h2>
-        <div className="flex flex-wrap gap-1.5">
-          {DEFERRED.map((d) => <span key={d} className="text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded px-2 py-0.5">{d}</span>)}
-        </div>
-      </section>
-    </div>
+      </PageContainer>
+    </>
   );
 }

@@ -1,9 +1,65 @@
-import { createIdRoutes } from "@/lib/api/masterFactory";
-import { tdsCodeUpdateSchema } from "@/lib/schemas/masters-phase2";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
+import {
+  findTDSCodeById,
+  updateTDSCode,
+  deleteTDSCode,
+} from "@/lib/masters/tds-codes-repository";
 
-export const { GET, PATCH, DELETE } = createIdRoutes({
-  model: "cnTDSCode",
-  updateSchema: tdsCodeUpdateSchema,
-  uniqueBy: "section",
-  errorLabel: "TDS Code",
-});
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+  const row = await findTDSCodeById(ctx.tenantId, params.id);
+  if (!row) return NextResponse.json({ error: "TDS code not found" }, { status: 404 });
+  return NextResponse.json(row);
+}
+
+async function handleUpdate(req: NextRequest, id: string) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
+  const body = await req.json();
+  const {
+    id: _a, tenantId: _b, orgId: _c, createdAt: _d, createdBy: _e,
+    updatedAt: _f, updatedBy: _g,
+    ...safe
+  } = body ?? {};
+
+  try {
+    const next = await updateTDSCode(ctx.tenantId, id, {
+      ...safe,
+      updatedBy: ctx.userId,
+    });
+    if (!next) return NextResponse.json({ error: "TDS code not found" }, { status: 404 });
+    return NextResponse.json(next);
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    console.error("[tds.update] failed:", err);
+    return NextResponse.json(
+      { error: e?.message ?? "Failed to update TDS code" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  return handleUpdate(req, params.id);
+}
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  return handleUpdate(req, params.id);
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ok = await deleteTDSCode(ctx.tenantId, params.id, ctx.userId);
+  if (!ok) return NextResponse.json({ error: "TDS code not found" }, { status: 404 });
+  return NextResponse.json({ success: true });
+}

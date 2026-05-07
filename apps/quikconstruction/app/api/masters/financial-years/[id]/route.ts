@@ -1,57 +1,77 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { financialYearUpdateSchema } from "@/lib/schemas/masters-phase2";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
+import {
+  findFinancialYearById,
+  updateFinancialYear,
+  deleteFinancialYear,
+} from "@/lib/masters/financial-years-repository";
 
-const withOrgAuth = withOrgAuthForModule("masters");
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
-  const year = await db.cnFinancialYear.findFirst({
-    where: { id: params.id, orgId },
-    include: { company: { select: { id: true, name: true } } },
-  });
-  if (!year) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  return NextResponse.json({ success: true, data: year });
-});
+  const row = await findFinancialYearById(ctx.tenantId, params.id);
+  if (!row) return NextResponse.json({ error: "Financial year not found" }, { status: 404 });
+  return NextResponse.json(row);
+}
 
-export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
-  const existing = await db.cnFinancialYear.findFirst({
-    where: { id: params.id, orgId },
-    select: { id: true, companyId: true },
-  });
-  if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+async function handleUpdate(req: NextRequest, id: string) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
   const body = await req.json();
-  const input = financialYearUpdateSchema.parse(body);
+  const {
+    id: _a, tenantId: _b, orgId: _c, createdAt: _d, createdBy: _e,
+    updatedAt: _f, updatedBy: _g, companyName: _h,
+    ...safe
+  } = body ?? {};
 
-  const updated = await db.$transaction(async (tx) => {
-    if (input.isCurrent === true) {
-      await tx.cnFinancialYear.updateMany({
-        where: { orgId, companyId: existing.companyId, isCurrent: true, NOT: { id: params.id } },
-        data: { isCurrent: false },
-      });
-    }
-    return tx.cnFinancialYear.update({
-      where: { id: params.id },
-      data: {
-        ...input,
-        ...(input.startDate ? { startDate: new Date(input.startDate) } : {}),
-        ...(input.endDate ? { endDate: new Date(input.endDate) } : {}),
-        updatedBy: userId,
-      },
+  try {
+    const next = await updateFinancialYear(ctx.tenantId, id, {
+      ...safe,
+      updatedBy: ctx.userId,
     });
-  });
-  return NextResponse.json({ success: true, data: updated });
-});
+    if (!next) return NextResponse.json({ error: "Financial year not found" }, { status: 404 });
+    return NextResponse.json(next);
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    if (e?.code === "P2002") {
+      return NextResponse.json(
+        { error: "A financial year with this label already exists" },
+        { status: 409 },
+      );
+    }
+    if (e?.code === "P2003") {
+      return NextResponse.json(
+        { error: "The selected company does not exist" },
+        { status: 400 },
+      );
+    }
+    console.error("[financial-years.update] failed:", err);
+    return NextResponse.json(
+      { error: e?.message ?? "Failed to update financial year" },
+      { status: 500 },
+    );
+  }
+}
 
-export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
-  const existing = await db.cnFinancialYear.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
-    select: { id: true },
-  });
-  if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  await db.cnFinancialYear.update({
-    where: { id: params.id },
-    data: { deletedAt: new Date(), updatedBy: userId },
-  });
+export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  return handleUpdate(req, params.id);
+}
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  return handleUpdate(req, params.id);
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ok = await deleteFinancialYear(ctx.tenantId, params.id, ctx.userId);
+  if (!ok) return NextResponse.json({ error: "Financial year not found" }, { status: 404 });
   return NextResponse.json({ success: true });
-});
+}

@@ -1,47 +1,62 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { bankCreateSchema } from "@/lib/schemas/masters-phase2";
+import { NextRequest } from "next/server";
+import { listBanks, countBanks, createBank } from "@/lib/masters/banks-repository";
+import { paginateDb } from "@/lib/http/pagination";
+import { withListRoute, withMutationRoute, DomainError } from "@/lib/http";
 
-const withOrgAuth = withOrgAuthForModule("masters");
+/**
+ * Banks master.
+ *
+ * The mutation wrapper auto-maps Prisma P2002 / P2003 to friendly 409 /
+ * 400 responses, so the route handler only validates inputs and delegates
+ * to the repository.
+ */
 
-export const GET = withOrgAuth(async ({ orgId }, req) => {
-  const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
-  const companyId = req.nextUrl.searchParams.get("companyId") || undefined;
-  const banks = await db.cnBank.findMany({
-    where: {
-      orgId,
-      deletedAt: includeDeleted ? { not: null } : null,
-      ...(companyId ? { companyId } : {}),
-    },
-    include: { company: { select: { id: true, name: true } } },
-    orderBy: [{ bankName: "asc" }, { accountNo: "asc" }],
-  });
-  return NextResponse.json({ success: true, data: banks });
-});
-
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const body = await req.json();
-  const input = bankCreateSchema.parse(body);
-  const company = await db.cnCompany.findFirst({
-    where: { id: input.companyId, orgId },
-    select: { id: true },
-  });
-  if (!company) {
-    return NextResponse.json({ success: false, error: "Company not found" }, { status: 400 });
-  }
-  const existing = await db.cnBank.findFirst({
-    where: { orgId, accountNo: input.accountNo, deletedAt: null },
-    select: { id: true },
-  });
-  if (existing) {
-    return NextResponse.json(
-      { success: false, error: `Account number '${input.accountNo}' already exists` },
-      { status: 409 },
+export async function GET(req: NextRequest) {
+  return withListRoute(req, { entityLabel: "bank" }, async ({ ctx, searchParams, pagination }) => {
+    const baseOpts = {
+      tenantId: ctx.tenantId,
+      orgId: ctx.orgId,
+      search: searchParams.get("search") ?? "",
+    };
+    return paginateDb(
+      pagination,
+      (paging) => listBanks({ ...baseOpts, ...paging }),
+      () => countBanks(baseOpts),
     );
-  }
-  const bank = await db.cnBank.create({
-    data: { ...input, orgId, createdBy: userId },
   });
-  return NextResponse.json({ success: true, data: bank }, { status: 201 });
-});
+}
+
+export async function POST(req: NextRequest) {
+  return withMutationRoute(
+    req,
+    {
+      entityLabel: "bank",
+      successStatus: 201,
+      parseBody: (raw) => {
+        const body = (raw ?? {}) as Record<string, unknown>;
+        const required = (key: string, label: string) => {
+          const v = typeof body[key] === "string" ? (body[key] as string).trim() : "";
+          if (!v) throw new DomainError("VALIDATION", `${label} is required`, 400);
+          return v;
+        };
+        return {
+          bankName: required("bankName", "Bank name"),
+          accountNo: required("accountNo", "Account number"),
+          ifscCode: required("ifscCode", "IFSC code"),
+          accountType: required("accountType", "Account type"),
+          companyId: required("companyId", "Company"),
+          branchName: typeof body.branchName === "string" ? body.branchName : undefined,
+          status: typeof body.status === "string" ? body.status : "active",
+        };
+      },
+    },
+    async ({ ctx, body }) => {
+      return createBank({
+        tenantId: ctx.tenantId,
+        orgId: ctx.orgId,
+        createdBy: ctx.userId,
+        ...body,
+      });
+    },
+  );
+}

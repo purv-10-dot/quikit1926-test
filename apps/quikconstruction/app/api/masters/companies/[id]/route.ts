@@ -1,51 +1,65 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { companyUpdateSchema } from "@/lib/schemas/masters";
+import { NextRequest, NextResponse } from "next/server";
+import { getTenantContext } from "@/lib/auth/context";
+import {
+  findCompanyById,
+  updateCompany,
+  deleteCompany,
+} from "@/lib/masters/companies-repository";
 
-const withOrgAuth = withOrgAuthForModule("masters");
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-// GET /api/masters/companies/[id]
-export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
-  const company = await db.cnCompany.findFirst({
-    where: { id: params.id, orgId },
-  });
-  if (!company) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  }
-  return NextResponse.json({ success: true, data: company });
-});
+  const row = await findCompanyById(ctx.tenantId, params.id);
+  if (!row) return NextResponse.json({ error: "Company not found" }, { status: 404 });
+  return NextResponse.json(row);
+}
 
-// PATCH /api/masters/companies/[id]
-export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
-  const existing = await db.cnCompany.findFirst({
-    where: { id: params.id, orgId },
-    select: { id: true, deletedAt: true },
-  });
-  if (!existing) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
-  }
+async function handleUpdate(req: NextRequest, id: string) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+
   const body = await req.json();
-  const input = companyUpdateSchema.parse(body);
-  const updated = await db.cnCompany.update({
-    where: { id: params.id },
-    data: { ...input, updatedBy: userId },
-  });
-  return NextResponse.json({ success: true, data: updated });
-});
+  const {
+    id: _a, tenantId: _b, orgId: _c, createdAt: _d, createdBy: _e,
+    updatedAt: _f, updatedBy: _g,
+    ...safe
+  } = body ?? {};
 
-// DELETE /api/masters/companies/[id] — soft delete
-export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
-  const existing = await db.cnCompany.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
-    select: { id: true },
-  });
-  if (!existing) {
-    return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
+  try {
+    const next = await updateCompany(ctx.tenantId, id, {
+      ...safe,
+      updatedBy: ctx.userId,
+    });
+    if (!next) return NextResponse.json({ error: "Company not found" }, { status: 404 });
+    return NextResponse.json(next);
+  } catch (err: unknown) {
+    const e = err as { code?: string; message?: string };
+    console.error("[companies.update] failed:", err);
+    return NextResponse.json(
+      { error: e?.message ?? "Failed to update company" },
+      { status: 500 },
+    );
   }
-  await db.cnCompany.update({
-    where: { id: params.id },
-    data: { deletedAt: new Date(), updatedBy: userId },
-  });
+}
+
+export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+  return handleUpdate(req, params.id);
+}
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  return handleUpdate(req, params.id);
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ok = await deleteCompany(ctx.tenantId, params.id, ctx.userId);
+  if (!ok) return NextResponse.json({ error: "Company not found" }, { status: 404 });
   return NextResponse.json({ success: true });
-});
+}

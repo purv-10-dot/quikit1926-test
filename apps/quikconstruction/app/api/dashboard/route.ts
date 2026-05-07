@@ -1,154 +1,224 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-
-const withOrgAuth = withOrgAuthForModule("dashboard");
+import { db } from "@/lib/db/prisma";
+import { getTenantContext } from "@/lib/auth/context";
 
 /**
- * GET /api/dashboard — single rollup for the landing page.
+ * GET /api/dashboard
  *
- * Returns:
- *   kpis       : active project count, revenue MTD, AR/AP outstanding + overdue
- *   activity   : counts of open PRs, recent GRNs, DPRs this week, open incidents
- *   overdue    : top 5 overdue invoices + top 5 overdue bills
- *   recentDprs : last 5 posted/submitted DPRs
- *   recentRabs : last 5 RABs across statuses
- *   incidents  : 5 most-recent open safety incidents
- *   stockLow   : 10 lowest positive balances (as-of now) across project/location/item
+ * KPI tiles + recent activity for the dashboard. Backed by Postgres so the
+ * numbers reflect the real transaction tables, not the in-memory demo store.
+ *
+ * Per-user project scoping: when `ctx.projectIds` is set (site-scoped users
+ * with a non-empty `projectsAssigned` list), every count and recent-list
+ * query is filtered to those projects only. Super/tenant admins and HO
+ * users have `ctx.projectIds === undefined` and see global counts.
  */
-export const GET = withOrgAuth(async ({ orgId }) => {
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - 7);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  const [
-    activeProjects,
-    mtdInvoices,
-    allInvoices,
-    allBills,
-    openPrs,
-    monthGrnCount,
-    weekDprCount,
-    openIncidentCount,
-    recentDprs,
-    recentRabs,
-    openIncidents,
-  ] = await Promise.all([
-    db.cnProject.count({ where: { orgId, deletedAt: null, status: "active" } }),
-    db.cnClientInvoice.aggregate({
-      where: { orgId, deletedAt: null, status: { not: "cancelled" }, invoiceDate: { gte: monthStart } },
-      _sum: { total: true },
-    }),
-    db.cnClientInvoice.findMany({
-      where: { orgId, deletedAt: null, status: { not: "cancelled" } },
-      select: { id: true, invoiceNumber: true, total: true, paidAmount: true, dueDate: true, invoiceDate: true, status: true, customer: { select: { name: true } } },
-    }),
-    db.cnVendorBill.findMany({
-      where: { orgId, deletedAt: null, status: { not: "cancelled" } },
-      select: { id: true, billNumber: true, total: true, paidAmount: true, dueDate: true, billDate: true, status: true, vendor: { select: { name: true } } },
-    }),
-    db.cnPurchaseRequisition.count({ where: { orgId, deletedAt: null, status: { in: ["draft", "submitted"] } } }),
-    db.cnGoodsReceiptNote.count({ where: { orgId, deletedAt: null, grnDate: { gte: monthStart } } }),
-    db.cnDPR.count({ where: { orgId, deletedAt: null, dprDate: { gte: weekStart } } }),
-    db.cnSafetyIncident.count({ where: { orgId, deletedAt: null, status: { in: ["open", "investigating"] } } }),
-    db.cnDPR.findMany({
-      where: { orgId, deletedAt: null },
-      select: { id: true, dprDate: true, status: true, project: { select: { name: true, code: true } }, _count: { select: { lines: true, materials: true } } },
-      orderBy: { dprDate: "desc" },
-      take: 5,
-    }),
-    db.cnRAB.findMany({
-      where: { orgId, deletedAt: null },
-      select: { id: true, rabNumber: true, rabDate: true, status: true, total: true, project: { select: { name: true } } },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-    }),
-    db.cnSafetyIncident.findMany({
-      where: { orgId, deletedAt: null, status: { in: ["open", "investigating"] } },
-      select: { id: true, incidentNumber: true, incidentDate: true, severity: true, category: true, title: true, project: { select: { name: true } } },
-      orderBy: { incidentDate: "desc" },
-      take: 5,
-    }),
-  ]);
+const PENDING_APPROVAL_STATUSES = [
+  "pending_approval",
+  "submitted",
+  "approved_l1",
+  "approved_l2",
+];
 
-  // AR / AP aggregates
-  const arTotal = allInvoices.reduce((s, i) => s + (Number(i.total) - Number(i.paidAmount)), 0);
-  const arOverdueRows = allInvoices
-    .map(i => {
-      const out = Number(i.total) - Number(i.paidAmount);
-      if (out <= 0.01) return null;
-      const ref = i.dueDate ?? i.invoiceDate;
-      const days = Math.floor((today.getTime() - ref.getTime()) / 86400000);
-      if (days <= 0) return null;
-      return { id: i.id, ref: i.invoiceNumber, party: i.customer?.name ?? "—", days, outstanding: out };
-    })
-    .filter(Boolean) as Array<{ id: string; ref: string; party: string; days: number; outstanding: number }>;
-  const arOverdue = arOverdueRows.reduce((s, r) => s + r.outstanding, 0);
+const OPEN_PO_STATUSES = [
+  "approved",
+  "partially_received",
+  "sent",
+  "awaiting_delivery",
+  "pending_approval",
+];
 
-  const apTotal = allBills.reduce((s, b) => s + (Number(b.total) - Number(b.paidAmount)), 0);
-  const apOverdueRows = allBills
-    .map(b => {
-      const out = Number(b.total) - Number(b.paidAmount);
-      if (out <= 0.01) return null;
-      const ref = b.dueDate ?? b.billDate;
-      const days = Math.floor((today.getTime() - ref.getTime()) / 86400000);
-      if (days <= 0) return null;
-      return { id: b.id, ref: b.billNumber, party: b.vendor?.name ?? "—", days, outstanding: out };
-    })
-    .filter(Boolean) as Array<{ id: string; ref: string; party: string; days: number; outstanding: number }>;
-  const apOverdue = apOverdueRows.reduce((s, r) => s + r.outstanding, 0);
+const ACTIVE_WO_STATUSES = [
+  "active",
+  "approved",
+  "in_progress",
+  "partially_completed",
+];
 
-  // Stock low-balance — per (project, location, item) compute running balance, show lowest 10 positive
-  const ledger = await db.cnStockLedger.groupBy({
-    by: ["projectId", "locationId", "itemId"],
-    where: { orgId },
-    _sum: { qtyIn: true, qtyOut: true },
-  });
-  const positive = ledger.map(r => ({
-    projectId: r.projectId, locationId: r.locationId, itemId: r.itemId,
-    qty: Number(r._sum.qtyIn ?? 0) - Number(r._sum.qtyOut ?? 0),
-  })).filter(r => r.qty > 0).sort((a, b) => a.qty - b.qty).slice(0, 10);
+const EMPTY_RESPONSE = {
+  kpis: {
+    activeProjects: 0,
+    pendingApprovals: 0,
+    openPOs: 0,
+    lowStockItems: 0,
+    grnThisMonth: 0,
+    issuesThisMonth: 0,
+    activeWOs: 0,
+    pendingDPRApproval: 0,
+  },
+  recentActivity: { prs: [], pos: [] },
+};
 
-  const projIds = Array.from(new Set(positive.map(p => p.projectId)));
-  const locIds = Array.from(new Set(positive.map(p => p.locationId)));
-  const itmIds = Array.from(new Set(positive.map(p => p.itemId)));
-  const [projs, locs, items] = await Promise.all([
-    db.cnProject.findMany({ where: { id: { in: projIds } }, select: { id: true, name: true, code: true } }),
-    db.cnLocation.findMany({ where: { id: { in: locIds } }, select: { id: true, name: true } }),
-    db.cnItem.findMany({ where: { id: { in: itmIds } }, select: { id: true, code: true, name: true } }),
-  ]);
-  const stockLow = positive.map(p => ({
-    qty: p.qty,
-    project: projs.find(x => x.id === p.projectId)?.name ?? "—",
-    location: locs.find(x => x.id === p.locationId)?.name ?? "—",
-    itemCode: items.find(x => x.id === p.itemId)?.code ?? "—",
-    itemName: items.find(x => x.id === p.itemId)?.name ?? "—",
-  }));
+export async function GET() {
+  try {
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json(EMPTY_RESPONSE);
 
-  return NextResponse.json({
-    success: true,
-    data: {
-      kpis: {
-        activeProjects,
-        revenueMtd: Number(mtdInvoices._sum.total ?? 0),
-        arTotal, arOverdue,
-        apTotal, apOverdue,
-      },
-      activity: {
-        openPrs,
-        monthGrnCount,
-        weekDprCount,
-        openIncidentCount,
-      },
-      overdue: {
-        invoices: arOverdueRows.sort((a, b) => b.days - a.days).slice(0, 5),
-        bills: apOverdueRows.sort((a, b) => b.days - a.days).slice(0, 5),
-      },
-      recentDprs,
-      recentRabs,
-      incidents: openIncidents,
-      stockLow,
-    },
-  });
-});
+    const { tenantId, orgId, projectIds } = ctx;
+    const restrict = Array.isArray(projectIds);
+    const inProjects = restrict ? { projectId: { in: projectIds! } } : {};
+    const tenantWhere = { tenantId, orgId };
+
+    // Calendar-month bounds for "this month" KPIs. Done client-time-zone-naive
+    // (server local) — close enough for an at-a-glance dashboard tile.
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const nextMonth = new Date(monthStart);
+    nextMonth.setMonth(monthStart.getMonth() + 1);
+
+    // All count queries run in parallel — single DB round-trip latency.
+    const [
+      activeProjects,
+      pendingPRs,
+      pendingPOs,
+      pendingIndents,
+      pendingDPRs,
+      pendingGRNs,
+      pendingWOs,
+      openPOs,
+      grnThisMonth,
+      issuesThisMonth,
+      activeWOs,
+      items,
+      recentPRsRaw,
+      recentPOsRaw,
+    ] = await Promise.all([
+      (db as any).cnProject.count({
+        where: {
+          ...tenantWhere,
+          status: "active",
+          ...(restrict ? { id: { in: projectIds! } } : {}),
+        },
+      }),
+      (db as any).cnPurchaseRequisition.count({
+        where: { ...tenantWhere, ...inProjects, status: { in: PENDING_APPROVAL_STATUSES } },
+      }),
+      (db as any).cnPurchaseOrder.count({
+        where: { ...tenantWhere, ...inProjects, status: { in: PENDING_APPROVAL_STATUSES } },
+      }),
+      (db as any).cnPurchaseIndent.count({
+        where: { ...tenantWhere, ...inProjects, status: { in: PENDING_APPROVAL_STATUSES } },
+      }),
+      (db as any).cnDailyProgressReport.count({
+        where: { ...tenantWhere, ...inProjects, status: { in: PENDING_APPROVAL_STATUSES } },
+      }),
+      (db as any).cnGoodsReceiptNote.count({
+        where: { ...tenantWhere, ...inProjects, status: { in: PENDING_APPROVAL_STATUSES } },
+      }),
+      (db as any).cnWorkOrder.count({
+        where: { ...tenantWhere, ...inProjects, status: { in: PENDING_APPROVAL_STATUSES } },
+      }),
+      (db as any).cnPurchaseOrder.count({
+        where: { ...tenantWhere, ...inProjects, status: { in: OPEN_PO_STATUSES } },
+      }),
+      (db as any).cnGoodsReceiptNote.count({
+        where: {
+          ...tenantWhere,
+          ...inProjects,
+          grnDate: { gte: monthStart, lt: nextMonth },
+        },
+      }),
+      (db as any).cnMaterialIssue.count({
+        where: {
+          ...tenantWhere,
+          ...inProjects,
+          issueDate: { gte: monthStart, lt: nextMonth },
+        },
+      }),
+      (db as any).cnWorkOrder.count({
+        where: { ...tenantWhere, ...inProjects, status: { in: ACTIVE_WO_STATUSES } },
+      }),
+      // Items master is tenant-global, not per-project. Low-stock detection
+      // walks stock balances scoped to the user's projects below.
+      (db as any).cnItem.findMany({
+        where: { ...tenantWhere, status: "active" },
+        select: { id: true, minStockLevel: true },
+      }),
+      (db as any).cnPurchaseRequisition.findMany({
+        where: { ...tenantWhere, ...inProjects },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: { project: { select: { name: true } } },
+      }),
+      (db as any).cnPurchaseOrder.findMany({
+        where: { ...tenantWhere, ...inProjects },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: {
+          project: { select: { name: true } },
+          vendor: { select: { name: true } },
+        },
+      }),
+    ]);
+
+    // Low-stock count: aggregate stock balances by item across the user's
+    // visible projects, then mark each item as low-stock when its visible
+    // total is below `minStockLevel`. Items master is global, balances are
+    // per (project, location, item) so this is the only correct way to scope.
+    const balances = await (db as any).cnStockBalance.findMany({
+      where: { tenantId, orgId, ...(restrict ? { projectId: { in: projectIds! } } : {}) },
+      select: { itemId: true, quantity: true },
+    });
+    const totalsByItem = new Map<string, number>();
+    for (const r of balances as Array<{ itemId: string; quantity: any }>) {
+      const q = Number(r.quantity ?? 0);
+      totalsByItem.set(r.itemId, (totalsByItem.get(r.itemId) ?? 0) + q);
+    }
+    let lowStockItems = 0;
+    for (const it of items as Array<{ id: string; minStockLevel: any }>) {
+      const min = Number(it.minStockLevel ?? 0);
+      if (min <= 0) continue;
+      const cur = totalsByItem.get(it.id) ?? 0;
+      if (cur < min) lowStockItems++;
+    }
+
+    const pendingApprovals =
+      pendingPRs + pendingPOs + pendingIndents + pendingDPRs + pendingGRNs + pendingWOs;
+
+    const kpis = {
+      activeProjects,
+      pendingApprovals,
+      openPOs,
+      lowStockItems,
+      grnThisMonth,
+      issuesThisMonth,
+      activeWOs,
+      pendingDPRApproval: pendingDPRs,
+    };
+
+    const prs = (recentPRsRaw as any[]).map((pr) => ({
+      id: pr.id,
+      number: pr.prNumber,
+      project: pr.project?.name ?? "",
+      date:
+        pr.requestDate?.toISOString?.() ??
+        pr.createdAt?.toISOString?.() ??
+        "",
+      status: pr.status,
+    }));
+
+    const pos = (recentPOsRaw as any[]).map((po) => ({
+      id: po.id,
+      number: po.poNumber,
+      vendor: po.vendor?.name ?? "",
+      project: po.project?.name ?? "",
+      amount: Number(po.totalAmount ?? 0),
+      status: po.status,
+    }));
+
+    return NextResponse.json({
+      kpis,
+      recentActivity: { prs, pos },
+    });
+
+  } catch (err: unknown) {
+    const e = err as { message?: string };
+    console.error("[dashboard.GET] failed:", err);
+    return NextResponse.json(
+      { ok: false, error: e.message ?? "Internal error" },
+      { status: 500 },
+    );
+  }
+}

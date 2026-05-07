@@ -1,124 +1,377 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { AddButton, EmptyState, useConfirm } from "@quikit/ui";
-import { PackageCheck, ArrowLeft, CheckCircle, Trash2, Eye } from "lucide-react";
-import { GrnFormPanel } from "./_components/GrnFormPanel";
+/**
+ * GRN — Goods Receipt Notes. Lives under Store since it's the "goods in"
+ * counterpart of Material Issue. The backend API still sits under
+ * /api/purchase/grn to avoid a backend migration — GRN is still
+ * conceptually a Purchase-workflow artifact, we've only moved the UI
+ * placement so store users find it in the expected section.
+ */
 
-interface Grn {
-  id: string;
-  grnNumber: string;
-  grnDate: string;
-  status: string;
-  po: { id: string; poNumber: string } | null;
-  project: { id: string; name: string } | null;
-  vendor: { id: string; name: string } | null;
-  location: { id: string; name: string } | null;
-}
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Eye, Send } from "lucide-react";
+import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { DataTable, type ColDef } from "@/components/DataTable";
+import { useGRNs, usePurchaseOrders, useSubmitGRN } from "@/hooks/use-purchase";
+import { QuickCreateDrawer } from "@/components/QuickCreateDrawer";
+import { useProjects, useItems, useLocations, useVendors } from "@/hooks/use-masters";
+import { useQueryClient } from "@tanstack/react-query";
+import { renderGrnLine } from "@/components/GrnLineRow";
+import { buildGrnFields } from "@/lib/grn-form-fields";
+import { buildTabCounts, filterByTab, type TabSpec } from "@/lib/tab-counts";
 
-const STATUS_BADGE: Record<string, string> = {
-  draft:  "bg-gray-100 text-gray-600",
-  posted: "bg-green-100 text-green-700",
-};
+const STATUS_TABS: TabSpec[] = [
+  { key: "all", label: "All" },
+  { key: "draft", label: "Draft" },
+  { key: "pending_inspection", label: "Pending Inspection" },
+  { key: "inspected", label: "Inspected" },
+  { key: "approved", label: "Approved" },
+  { key: "partially_accepted", label: "Partial" },
+  { key: "rejected", label: "Rejected" },
+];
 
-export default function GrnListPage() {
-  const [items, setItems] = useState<Grn[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [formOpen, setFormOpen] = useState(false);
-  const confirm = useConfirm();
+export default function GRNPage() {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const [activeTab, setActiveTab] = useState("all");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const { data: result, isLoading } = useGRNs({ status: "all", search: "" });
+  const submitMutation = useSubmitGRN();
+  const allRows = result?.data ?? [];
+  const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
+  const data = useMemo(
+    () => filterByTab(allRows, activeTab, STATUS_TABS),
+    [allRows, activeTab],
+  );
+
+  const handleSubmit = async (grnId: string) => {
+    if (!confirm("Submit this GRN for approval?")) return;
     try {
-      const res = await fetch("/api/store/grn");
-      const j = await res.json();
-      if (j.success) setItems(j.data);
-    } finally { setLoading(false); }
-  }, []);
+      await submitMutation.mutateAsync(grnId);
+    } catch (err: any) {
+      alert(err?.message ?? "Failed to submit GRN");
+    }
+  };
 
-  useEffect(() => { refresh(); }, [refresh]);
+  const { data: projectsData } = useProjects();
+  const { data: itemsData } = useItems();
+  const { data: locationsData } = useLocations();
+  const { data: vendorsData } = useVendors();
+  // Indexed vendor lookup so we can always resolve a name from the
+  // PO's vendorId even if the PO-list response's inlined vendorName
+  // is empty (can happen when the PO was created before the Prisma
+  // migration's vendor-join was in place).
+  const vendorById = new Map<string, any>();
+  for (const v of vendorsData?.data ?? []) vendorById.set(v.id, v);
 
-  async function post(grn: Grn) {
-    const ok = await confirm({
-      title: "Post this GRN?",
-      description: `"${grn.grnNumber}" will write rows to CnStockLedger and update PO pending qty. This cannot be undone.`,
-      confirmLabel: "Post",
-      tone: "default",
-    });
-    if (!ok) return;
-    const res = await fetch(`/api/store/grn/${grn.id}/post`, { method: "POST" });
-    const j = await res.json();
-    if (!j.success) alert(`Posting failed: ${j.error}`);
-    refresh();
-  }
+  const projectOptions = (projectsData?.data ?? []).map((p: any) => ({ value: p.id, label: p.name }));
+  const itemOptions = (itemsData?.data ?? []).map((i: any) => ({ value: i.id, label: i.name }));
+  const locationOptions = (locationsData?.data ?? []).map((l: any) => ({ value: l.id, label: l.name }));
+  // Only offer POs that are approved/sent/partially-received — draft
+  // POs can't yet receive goods, and fully-received ones don't make
+  // sense to GRN-against a second time.
+  const { data: posData } = usePurchaseOrders({ status: "all" });
+  const allPOs: any[] = posData?.data ?? [];
+  const poOptions = allPOs
+    .filter((p) =>
+      ["approved", "sent", "partially_received"].includes(p.status),
+    )
+    .map((p) => ({
+      value: p.poNumber,
+      label: p.poNumber,
+    }));
+  const poByNumber = new Map<string, any>();
+  for (const p of allPOs) poByNumber.set(p.poNumber, p);
 
-  async function remove(grn: Grn) {
-    const ok = await confirm({ title: "Delete this draft GRN?", description: `"${grn.grnNumber}" will be archived.`, confirmLabel: "Delete", tone: "danger" });
-    if (!ok) return;
-    await fetch(`/api/store/grn/${grn.id}`, { method: "DELETE" });
-    refresh();
-  }
+  const config = {
+    title: "Record GRN",
+    subtitle: "Receive and inspect goods against a purchase order",
+    apiEndpoint: "/api/purchase/grn",
+    onSuccess: (created: any) => {
+      qc.invalidateQueries({ queryKey: ["grns"] });
+      const newId = created?.id ?? created?.data?.id;
+      if (newId) router.push(`/store/grn/${newId}`);
+    },
+    // Shared field list — see `buildGrnFields` for the canonical
+    // shape. The only thing that differs between the two GRN entry
+    // points is the "PO Reference" field: dropdown here, disabled
+    // text on the PO-detail page.
+    fields: buildGrnFields({
+      poRefField: {
+        key: "poRef",
+        label: "PO Reference",
+        type: "select" as const,
+        required: true,
+        options: poOptions,
+        placeholder:
+          poOptions.length === 0
+            ? "No open POs available"
+            : "Select a Purchase Order\u2026",
+        onChange: (value: string) => {
+          if (!value) return;
+          const po = poByNumber.get(value);
+          if (!po) return;
+          const fields: Record<string, string> = {};
+          if (po.projectId) fields.projectId = po.projectId;
+          const masterVendor = po.vendorId
+            ? vendorById.get(po.vendorId)
+            : null;
+          const vendorName =
+            po.vendorName ||
+            masterVendor?.companyName ||
+            masterVendor?.name ||
+            "";
+          if (vendorName) fields.vendorName = vendorName;
+          const lines = (po.lines ?? []).map((l: any) => ({
+            itemId: l.itemId,
+            itemName: l.itemName ?? "",
+            uomCode: l.uomCode ?? "",
+            poQty: String(l.poQty ?? l.quantity ?? "0"),
+            prevRcvd: String(l.receivedQty ?? "0"),
+            pending: String(
+              parseFloat(String(l.poQty ?? l.quantity ?? "0")) -
+                parseFloat(String(l.receivedQty ?? "0")),
+            ),
+            receivedQty: "",
+            rejectedQty: "",
+            batchNo: "",
+            condition: "Good",
+            testCertRef: "",
+            remarks: "",
+          }));
+          return { fields, lines };
+        },
+      },
+      projectOptions,
+      locationOptions,
+    }),
+    lineItems: {
+      label: "Received Items",
+      hideAddLine: true,
+      // Card-style row layout — see `renderGrnLine` for the JSX. The
+      // `fields` list below is still required so the drawer serialises
+      // every line key into the POST payload; the default inline grid
+      // is bypassed by `rowRender`.
+      rowRender: renderGrnLine,
+      fields: [
+        {
+          // Material — read-only label, filled from the selected PO.
+          key: "itemName",
+          label: "Material",
+          type: "custom" as const,
+          width: "wide" as const,
+          render: (line: Record<string, any>) => (
+            <div className="text-sm text-gray-900 leading-tight">
+              <div className="font-medium truncate">
+                {line.itemName || "\u2014"}
+              </div>
+              {(() => {
+                const poQty = parseFloat(String(line.poQty ?? "0")) || 0;
+                const received = parseFloat(String(line.receivedQty ?? "0")) || 0;
+                const rejected = parseFloat(String(line.rejectedQty ?? "0")) || 0;
+                const accepted = Math.max(received - rejected, 0);
+                const short = poQty - accepted;
+                if (short > 0 && received > 0) {
+                  return (
+                    <div className="text-[10px] text-rose-600 font-semibold mt-0.5">
+                      Short by {short.toLocaleString("en-IN")} {line.uomCode || ""}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          ),
+        },
+        {
+          key: "uomCode",
+          label: "UOM",
+          type: "custom" as const,
+          render: (line: Record<string, any>) => (
+            <div className="text-xs text-gray-700 uppercase">
+              {line.uomCode || "\u2014"}
+            </div>
+          ),
+        },
+        {
+          key: "poQty",
+          label: "PO Qty",
+          type: "custom" as const,
+          render: (line: Record<string, any>) => (
+            <div className="text-sm text-gray-800 tabular-nums">
+              {line.poQty != null
+                ? Number(line.poQty).toLocaleString("en-IN")
+                : "\u2014"}
+            </div>
+          ),
+        },
+        {
+          key: "prevRcvd",
+          label: "Prev. Rcvd",
+          type: "custom" as const,
+          render: (line: Record<string, any>) => (
+            <div className="text-sm text-gray-500 tabular-nums">
+              {line.prevRcvd != null
+                ? Number(line.prevRcvd).toLocaleString("en-IN")
+                : "0"}
+            </div>
+          ),
+        },
+        {
+          key: "pending",
+          label: "Pending",
+          type: "custom" as const,
+          render: (line: Record<string, any>) => {
+            const poQty = parseFloat(String(line.poQty ?? "0")) || 0;
+            const prev = parseFloat(String(line.prevRcvd ?? "0")) || 0;
+            const pending = Math.max(poQty - prev, 0);
+            return (
+              <div className="text-sm text-gray-800 tabular-nums">
+                {pending.toLocaleString("en-IN")}
+              </div>
+            );
+          },
+        },
+        {
+          key: "receivedQty",
+          label: "Received",
+          type: "number" as const,
+          placeholder: "0",
+        },
+        {
+          key: "rejectedQty",
+          label: "Rejected",
+          type: "number" as const,
+          placeholder: "0",
+        },
+        {
+          key: "acceptedQty",
+          label: "Accepted",
+          type: "custom" as const,
+          render: (line: Record<string, any>) => {
+            const received = parseFloat(String(line.receivedQty ?? "0")) || 0;
+            const rejected = parseFloat(String(line.rejectedQty ?? "0")) || 0;
+            const accepted = Math.max(received - rejected, 0);
+            return (
+              <div className="text-sm font-semibold text-emerald-600 tabular-nums">
+                {accepted.toLocaleString("en-IN")}
+              </div>
+            );
+          },
+        },
+        {
+          key: "batchNo",
+          label: "Batch / Heat No.",
+          type: "text" as const,
+          placeholder: "Batch",
+        },
+        {
+          key: "condition",
+          label: "Condition",
+          type: "select" as const,
+          options: [
+            { value: "Good", label: "Good" },
+            { value: "Damaged", label: "Damaged" },
+            { value: "Partially Damaged", label: "Partially Damaged" },
+          ],
+        },
+        {
+          key: "testCertRef",
+          label: "Test Cert. Ref.",
+          type: "text" as const,
+          placeholder: "Ref...",
+        },
+        {
+          key: "remarks",
+          label: "Remarks",
+          type: "text" as const,
+          placeholder: "Remarks",
+        },
+      ],
+    },
+  };
+
+  const columns: ColDef<any>[] = [
+    {
+      key: "grnNumber", label: "GRN No", sortable: true, searchable: true,
+      render: (row) => (
+        <span className="text-blue-600 cursor-pointer hover:underline font-medium"
+              onClick={() => router.push(`/store/grn/${row.id}`)}>
+          {row.grnNumber}
+        </span>
+      ),
+    },
+    { key: "poNumber", label: "PO Number", sortable: true, searchable: true },
+    { key: "vendorName", label: "Vendor", sortable: true, searchable: true },
+    { key: "projectName", label: "Project", sortable: true, searchable: true },
+    { key: "grnDate", label: "Date", type: "date", sortable: true },
+    {
+      key: "lineCount", label: "Items", type: "number", sortable: true,
+      render: (row) => `${row.lineCount ?? 0} items`,
+    },
+    {
+      key: "status", label: "Status", type: "select",
+      options: ["draft", "pending_inspection", "inspected", "approved", "partially_accepted", "rejected"],
+      sortable: true,
+      render: (row) => <StatusChip status={row.status ?? ""} />,
+    },
+    {
+      key: "_actions",
+      label: "Actions",
+      width: "100px",
+      render: (row) => (
+        <div className="flex items-center justify-end gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/store/grn/${row.id}`);
+            }}
+            className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+            title="View"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+          {row.status === "draft" && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSubmit(row.id);
+              }}
+              className="p-1.5 rounded hover:bg-gray-100 text-orange-500"
+              title="Submit for Approval"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="p-6 max-w-6xl">
-      <Link href="/store" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 mb-3">
-        <ArrowLeft className="h-3 w-3" /> Store
-      </Link>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">GRN — Goods Receipt</h1>
-          <p className="text-xs text-gray-500">Draft → Posted. Posting writes to the stock ledger inside a DB transaction.</p>
-        </div>
-        <AddButton onClick={() => setFormOpen(true)}>Add GRN</AddButton>
-      </div>
+    <>
+      <PageHeader
+        title="Goods Receipt Notes (GRN)"
+        subtitle="Receive, inspect, and accept deliveries against purchase orders"
+        breadcrumbs={[{ label: "Store", href: "/store" }, { label: "GRN" }]}
+      />
 
-      {loading ? (
-        <div className="text-sm text-gray-500">Loading…</div>
-      ) : items.length === 0 ? (
-        <EmptyState icon={PackageCheck} title="No GRNs yet" message="Create a GRN against an open PO to receive stock." />
-      ) : (
-        <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-accent-50 text-xs text-gray-600">
-              <tr>
-                <th className="text-left px-3 py-2">GRN #</th>
-                <th className="text-left px-3 py-2">PO #</th>
-                <th className="text-left px-3 py-2">Vendor</th>
-                <th className="text-left px-3 py-2">Location</th>
-                <th className="text-left px-3 py-2">Date</th>
-                <th className="text-left px-3 py-2">Status</th>
-                <th className="px-3 py-2" style={{ width: 100 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((grn) => (
-                <tr key={grn.id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-3 py-2 font-mono text-xs text-gray-900">{grn.grnNumber}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-accent-700">{grn.po?.poNumber ?? "—"}</td>
-                  <td className="px-3 py-2 text-gray-700">{grn.vendor?.name ?? "—"}</td>
-                  <td className="px-3 py-2 text-gray-700">{grn.location?.name ?? "—"}</td>
-                  <td className="px-3 py-2 text-xs text-gray-500">{new Date(grn.grnDate).toISOString().slice(0, 10)}</td>
-                  <td className="px-3 py-2">
-                    <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${STATUS_BADGE[grn.status] ?? "bg-gray-100 text-gray-600"}`}>
-                      {grn.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <Link href={`/store/grn/${grn.id}`} className="text-gray-400 hover:text-accent-600 p-1 inline-block" title="View"><Eye className="h-3.5 w-3.5" /></Link>
-                    {grn.status === "draft" && <>
-                      <button onClick={() => post(grn)} className="text-gray-400 hover:text-green-600 p-1" title="Post to stock ledger"><CheckCircle className="h-3.5 w-3.5" /></button>
-                      <button onClick={() => remove(grn)} className="text-gray-400 hover:text-red-600 p-1" title="Delete draft"><Trash2 className="h-3.5 w-3.5" /></button>
-                    </>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <TabBar tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <GrnFormPanel open={formOpen} onClose={() => setFormOpen(false)} onSaved={refresh} />
-    </div>
+      <PageContainer>
+        <DataTable
+          id="store-grn"
+          columns={columns}
+          data={data}
+          onAdd={() => setDrawerOpen(true)}
+          addLabel="Record GRN"
+          defaultSort="grnDate"
+          defaultSortDir="desc"
+        />
+      </PageContainer>
+      <QuickCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} config={config as any} />
+    </>
   );
 }
