@@ -57,6 +57,8 @@ export function useCreateKPI() {
     onSuccess: () => {
       // Invalidate lists so they refetch
       queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      // Dashboard summary aggregates KPIs — keep it in sync.
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -71,6 +73,7 @@ export function useUpdateKPI(id: string) {
       // Invalidate specific KPI and lists
       queryClient.invalidateQueries({ queryKey: kpiKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -84,6 +87,7 @@ export function useDeleteKPI() {
     onSuccess: () => {
       // Invalidate all KPI queries
       queryClient.invalidateQueries({ queryKey: kpiKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -108,6 +112,9 @@ export function useUpdateWeeklyValue(kpiId: string) {
       // Invalidate weekly values and parent KPI
       queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
       queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
+      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      // Dashboard pulls weekly values + progress%; keep it fresh after a save.
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }

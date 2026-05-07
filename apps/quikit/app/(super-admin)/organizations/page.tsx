@@ -20,6 +20,13 @@ import {
   Ban,
 } from "lucide-react";
 import { SlidePanel, Pagination, EmptyState, Select, TableSkeleton, useConfirm } from "@quikit/ui";
+import { INVITE_METHOD, validateSsoEmail } from "@quikit/shared";
+
+interface PlatformApp {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 interface TenantInfo {
   id: string;
@@ -97,16 +104,75 @@ export default function OrgsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
-  // Create panel
+  // Create panel — FRD FR-SA-001 single-shot org + first OrgAdmin form.
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({
+  const [createForm, setCreateForm] = useState<{
+    name: string;
+    slug: string;
+    plan: string;
+    billingEmail: string;
+    appIds: string[];
+    admin: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      inviteMethod: typeof INVITE_METHOD.SSO | typeof INVITE_METHOD.NATIVE;
+    };
+  }>({
     name: "",
     slug: "",
     plan: "startup",
     billingEmail: "",
+    appIds: [],
+    admin: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      inviteMethod: INVITE_METHOD.SSO,
+    },
   });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [platformApps, setPlatformApps] = useState<PlatformApp[]>([]);
+
+  // FR-SA-002 — fetch the App registry once on mount so the multi-select
+  // can render. We only show active apps because that's what the API will
+  // accept on org create (super_admin schema filters on status="active").
+  useEffect(() => {
+    fetch("/api/super/apps?status=active")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success && Array.isArray(j.data)) {
+          setPlatformApps(
+            j.data.map((a: { id: string; name: string; slug: string }) => ({
+              id: a.id,
+              name: a.name,
+              slug: a.slug,
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Admin Portal is mandatory on every new org — the first Org Admin needs
+  // it to manage members/teams/etc. The checkbox in the form is disabled
+  // (always-checked); this id is used both to pre-select it in createForm
+  // and to skip toggle-off attempts.
+  const adminAppId =
+    platformApps.find((a) => a.slug === "admin")?.id ?? null;
+
+  // Once the App registry has loaded, ensure adminAppId is included in the
+  // create-form's appIds. Idempotent — runs again if the user opens/closes
+  // the panel and platformApps re-resolves.
+  useEffect(() => {
+    if (!adminAppId) return;
+    setCreateForm((prev) =>
+      prev.appIds.includes(adminAppId)
+        ? prev
+        : { ...prev, appIds: [...prev.appIds, adminAppId] }
+    );
+  }, [adminAppId]);
 
   // Edit panel
   const [editOpen, setEditOpen] = useState(false);
@@ -194,11 +260,49 @@ export default function OrgsPage() {
     setEditOpen(true);
   }
 
+  function resetCreateForm() {
+    setCreateForm({
+      name: "",
+      slug: "",
+      plan: "startup",
+      billingEmail: "",
+      // Keep Admin Portal pre-selected after reset — it's mandatory.
+      appIds: adminAppId ? [adminAppId] : [],
+      admin: {
+        firstName: "",
+        lastName: "",
+        email: "",
+        inviteMethod: INVITE_METHOD.SSO,
+      },
+    });
+  }
+
+  function toggleCreateAppId(id: string) {
+    // Admin Portal can't be deselected — checkbox is also rendered disabled,
+    // but guard at the handler level too in case of programmatic clicks.
+    if (id === adminAppId) return;
+    setCreateForm((prev) => ({
+      ...prev,
+      appIds: prev.appIds.includes(id)
+        ? prev.appIds.filter((x) => x !== id)
+        : [...prev.appIds, id],
+    }));
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
     setCreateError("");
     try {
+      // FR-SA-002 — at least one app required when an admin is being invited.
+      if (createForm.appIds.length === 0) {
+        throw new Error("Select at least one application for this organisation.");
+      }
+      // FR-SA-004 — client-side SSO domain validation.
+      if (createForm.admin.inviteMethod === INVITE_METHOD.SSO) {
+        const err = validateSsoEmail(createForm.admin.email);
+        if (err) throw new Error(err);
+      }
       const res = await fetch("/api/super/orgs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -208,7 +312,7 @@ export default function OrgsPage() {
       if (!res.ok || !data.success)
         throw new Error(data.error || "Failed to create organization");
       setCreateOpen(false);
-      setCreateForm({ name: "", slug: "", plan: "startup", billingEmail: "" });
+      resetCreateForm();
       fetchOrgs();
     } catch (err) {
       setCreateError(
@@ -580,6 +684,157 @@ export default function OrgsPage() {
               className={inputCls}
               placeholder="billing@acme.com"
             />
+          </div>
+
+          {/* FR-SA-002 — Application Access multi-select. Required.
+              Apps selected here are provisioned for the org (OrgAppAccess)
+              and granted to the first Org Admin. */}
+          <div>
+            <label className={labelCls}>
+              Application Access <span className="text-red-500">*</span>
+            </label>
+            {platformApps.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No active applications available.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {platformApps.map((a) => {
+                  const isAdmin = a.id === adminAppId;
+                  return (
+                    <label
+                      key={a.id}
+                      title={isAdmin ? "Admin Portal is required for every organization." : undefined}
+                      className={`flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg ${
+                        isAdmin
+                          ? "bg-gray-50 cursor-not-allowed opacity-80"
+                          : "hover:bg-gray-50 cursor-pointer"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isAdmin || createForm.appIds.includes(a.id)}
+                        disabled={isAdmin}
+                        onChange={() => toggleCreateAppId(a.id)}
+                        className="rounded text-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm">{a.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* FR-SA-001 / FR-SA-003 — first Org Admin block. Role is
+              hard-fixed to "Org Admin" per FR-SA-003. */}
+          <div className="border-t border-gray-200 pt-5 space-y-3">
+            <p className="text-sm font-semibold text-gray-700">First Org Admin</p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>First Name</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={50}
+                  value={createForm.admin.firstName}
+                  onChange={(e) =>
+                    setCreateForm({
+                      ...createForm,
+                      admin: { ...createForm.admin, firstName: e.target.value },
+                    })
+                  }
+                  className={inputCls}
+                  placeholder="Jane"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Last Name</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={50}
+                  value={createForm.admin.lastName}
+                  onChange={(e) =>
+                    setCreateForm({
+                      ...createForm,
+                      admin: { ...createForm.admin, lastName: e.target.value },
+                    })
+                  }
+                  className={inputCls}
+                  placeholder="Smith"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className={labelCls}>Email</label>
+              <input
+                type="email"
+                required
+                value={createForm.admin.email}
+                onChange={(e) =>
+                  setCreateForm({
+                    ...createForm,
+                    admin: { ...createForm.admin, email: e.target.value },
+                  })
+                }
+                className={inputCls}
+                placeholder="jane@acme.com"
+              />
+            </div>
+
+            <div>
+              <label className={labelCls}>Role</label>
+              {/* FR-SA-003 — read-only Org Admin role. */}
+              <input
+                type="text"
+                disabled
+                value="Org Admin"
+                className={`${inputCls} bg-gray-50 text-gray-500 cursor-not-allowed`}
+              />
+            </div>
+
+            <div>
+              <label className={labelCls}>Invitation Method</label>
+              <div className="space-y-2">
+                <label className="flex items-start gap-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer">
+                  <input
+                    type="radio"
+                    name="org-invite-method"
+                    value={INVITE_METHOD.SSO}
+                    checked={createForm.admin.inviteMethod === INVITE_METHOD.SSO}
+                    onChange={() =>
+                      setCreateForm({
+                        ...createForm,
+                        admin: { ...createForm.admin, inviteMethod: INVITE_METHOD.SSO },
+                      })
+                    }
+                    className="mt-0.5 text-indigo-600"
+                  />
+                  <span className="text-sm">
+                    <strong>SSO</strong> — Google or Microsoft sign-in
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer">
+                  <input
+                    type="radio"
+                    name="org-invite-method"
+                    value={INVITE_METHOD.NATIVE}
+                    checked={createForm.admin.inviteMethod === INVITE_METHOD.NATIVE}
+                    onChange={() =>
+                      setCreateForm({
+                        ...createForm,
+                        admin: { ...createForm.admin, inviteMethod: INVITE_METHOD.NATIVE },
+                      })
+                    }
+                    className="mt-0.5 text-indigo-600"
+                  />
+                  <span className="text-sm">
+                    <strong>Native Email</strong> — temporary password via email (Quikit2026)
+                  </span>
+                </label>
+              </div>
+            </div>
           </div>
         </form>
       </SlidePanel>

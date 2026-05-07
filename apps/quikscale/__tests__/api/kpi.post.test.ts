@@ -24,7 +24,7 @@ function buildRequest(body: unknown): NextRequest {
 /** Default stubs: authenticated admin in TENANT, feature flags OFF, no data. */
 function asAdmin() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  // getTenantId: session has orgId → verifies via membership findFirst
+  // getOrgId: session has orgId → verifies via membership findFirst
   mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,

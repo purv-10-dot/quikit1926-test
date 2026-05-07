@@ -29,11 +29,13 @@ interface CatMeta {
   dataType: string;
   symbol: string | null;
   currency: string | null;
+  /// "Cumulative" | "Standalone" | "CumulativeTillExit" | "Manual"
+  breakdownType: string;
 }
 export const catMetaCache = new Map<string, CatMeta>();
 
 export function populateCatCache(
-  data: { name: string; dataType: string; currency: string | null }[],
+  data: { name: string; dataType: string; currency: string | null; breakdownType?: string }[],
 ) {
   data.forEach((c) => {
     const symbol =
@@ -44,6 +46,7 @@ export function populateCatCache(
       dataType: c.dataType,
       symbol,
       currency: c.currency,
+      breakdownType: c.breakdownType ?? "Cumulative",
     });
   });
 }
@@ -120,6 +123,14 @@ export function CategorySelect({
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("Number");
   const [newCurrency, setNewCurrency] = useState("NONE");
+  // Two-tier picker:
+  //   - Mode: Manual | Automatic
+  //   - When Automatic, AutoType picks one of the three distribution rules
+  // Persisted breakdownType is computed as:
+  //   Manual    → "Manual"
+  //   Automatic → newAutoType  ("Cumulative" | "Standalone" | "CumulativeTillExit")
+  const [newMode, setNewMode] = useState<"manual" | "automatic">("automatic");
+  const [newAutoType, setNewAutoType] = useState<"Cumulative" | "Standalone" | "CumulativeTillExit">("Cumulative");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -168,6 +179,8 @@ export function CategorySelect({
     setNewName("");
     setNewType("Number");
     setNewCurrency("NONE");
+    setNewMode("automatic");
+    setNewAutoType("Cumulative");
     setError("");
   }
 
@@ -194,6 +207,7 @@ export function CategorySelect({
     setSaving(true);
     setError("");
     try {
+      const breakdownType = newMode === "manual" ? "Manual" : newAutoType;
       const res = await fetch("/api/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -201,6 +215,7 @@ export function CategorySelect({
           name: trimmed,
           dataType: newType,
           currency: effectiveCurrency,
+          breakdownType,
         }),
       });
       const json = await res.json();
@@ -329,6 +344,49 @@ export function CategorySelect({
                           {c.symbol} {c.code} — {c.name}
                         </option>
                       ))}
+                    </select>
+                  )}
+                  {/* Breakdown — drives auto-fill semantics in OPSP forms.
+                      Mode: Manual (no auto-fill, user types every cell) or
+                      Automatic (Projected splits across periods). When
+                      Automatic, the dropdown chooses how it splits. */}
+                  <div className="flex items-center gap-3 px-0.5">
+                    <label className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="newCatMode"
+                        value="manual"
+                        checked={newMode === "manual"}
+                        onChange={() => setNewMode("manual")}
+                        disabled={saving}
+                        className="accent-accent-600"
+                      />
+                      Manual
+                    </label>
+                    <label className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="newCatMode"
+                        value="automatic"
+                        checked={newMode === "automatic"}
+                        onChange={() => setNewMode("automatic")}
+                        disabled={saving}
+                        className="accent-accent-600"
+                      />
+                      Automatic
+                    </label>
+                  </div>
+                  {newMode === "automatic" && (
+                    <select
+                      value={newAutoType}
+                      onChange={(e) => setNewAutoType(e.target.value as typeof newAutoType)}
+                      disabled={saving}
+                      title="Distribution — how Projected splits across years/quarters/weeks"
+                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:opacity-50"
+                    >
+                      <option value="Cumulative">Cumulative</option>
+                      <option value="Standalone">Standalone</option>
+                      <option value="CumulativeTillExit">Cumulative Till Exit</option>
                     </select>
                   )}
                   {error && <p className="text-red-500 text-xs">{error}</p>}

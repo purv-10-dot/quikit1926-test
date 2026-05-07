@@ -7,6 +7,103 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
+/**
+ * Push target / weekly-target changes from a Team KPI down to every child
+ * Individual KPI it created. Each child's `target` is `team.target × pct/100`
+ * and each child's `weeklyTargets` come from `weeklyOwnerTargets[owner]`
+ * (or scaled `weeklyTargets`).
+ */
+async function syncTeamTargetToChildren(teamKpiId: string) {
+  const team = await db.kPI.findUnique({
+    where: { id: teamKpiId },
+    select: {
+      target: true, ownerIds: true, ownerContributions: true,
+      weeklyTargets: true, weeklyOwnerTargets: true,
+    },
+  });
+  if (!team) return;
+  const ownerIds = (team.ownerIds ?? []) as string[];
+  if (ownerIds.length === 0) return;
+  const contribs = (team.ownerContributions as Record<string, number> | null) ?? {};
+  const ownerWeekly = (team.weeklyOwnerTargets as Record<string, Record<string, number>> | null) ?? null;
+  const teamWeekly = (team.weeklyTargets as Record<string, number> | null) ?? null;
+  const teamTarget = team.target ?? 0;
+
+  for (const ownerId of ownerIds) {
+    const child = await db.kPI.findFirst({
+      where: { parentKPIId: teamKpiId, owner: ownerId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!child) continue;
+
+    const pct = contribs[ownerId] ?? (100 / ownerIds.length);
+    const childTarget = (teamTarget * pct) / 100;
+    const childWeekly: Record<string, number> = (() => {
+      if (ownerWeekly?.[ownerId]) return ownerWeekly[ownerId];
+      if (teamWeekly) {
+        const out: Record<string, number> = {};
+        for (const [w, v] of Object.entries(teamWeekly)) out[w] = (v * pct) / 100;
+        return out;
+      }
+      return {};
+    })();
+
+    await db.kPI.update({
+      where: { id: child.id },
+      data: {
+        target: childTarget,
+        weeklyTargets: childWeekly as any,
+      },
+    });
+  }
+}
+
+/**
+ * Push target / weekly-target changes from a child Individual KPI up to its
+ * parent Team KPI. The team's `target` becomes the sum of all children's
+ * targets; `ownerContributions` are recomputed proportionally; per-owner
+ * weekly maps are updated from each child's `weeklyTargets`.
+ */
+async function syncChildTargetToParent(parentKpiId: string) {
+  const parent = await db.kPI.findUnique({
+    where: { id: parentKpiId },
+    select: { ownerIds: true, weeklyTargets: true },
+  });
+  if (!parent) return;
+  const ownerIds = (parent.ownerIds ?? []) as string[];
+  if (ownerIds.length === 0) return;
+
+  const children = await db.kPI.findMany({
+    where: { parentKPIId: parentKpiId, deletedAt: null },
+    select: { id: true, owner: true, target: true, weeklyTargets: true },
+  });
+  if (children.length === 0) return;
+
+  const totalTarget = children.reduce((s, c) => s + (c.target ?? 0), 0);
+  const newOwnerContributions: Record<string, number> = {};
+  const newOwnerWeekly: Record<string, Record<string, number>> = {};
+  const aggregatedWeekly: Record<string, number> = {};
+  for (const c of children) {
+    if (!c.owner) continue;
+    newOwnerContributions[c.owner] = totalTarget > 0 ? ((c.target ?? 0) / totalTarget) * 100 : 0;
+    const cw = (c.weeklyTargets as Record<string, number> | null) ?? {};
+    newOwnerWeekly[c.owner] = cw;
+    for (const [w, v] of Object.entries(cw)) {
+      aggregatedWeekly[w] = (aggregatedWeekly[w] ?? 0) + v;
+    }
+  }
+
+  await db.kPI.update({
+    where: { id: parentKpiId },
+    data: {
+      target: totalTarget,
+      ownerContributions: newOwnerContributions as any,
+      weeklyTargets: aggregatedWeekly as any,
+      weeklyOwnerTargets: newOwnerWeekly as any,
+    },
+  });
+}
+
 
 export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({
@@ -196,6 +293,46 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
     },
   });
 
+  // ── Target sync between Team KPI ↔ child Individual KPIs ──
+  // (a) Team edit  → push target/weeklyTargets/contributions to children
+  // (b) Child edit → recompute parent.target from sum of children
+  const targetMaybeChanged =
+    validated.target !== undefined ||
+    validated.weeklyTargets !== undefined ||
+    validated.weeklyOwnerTargets !== undefined ||
+    validated.ownerContributions !== undefined;
+  if (targetMaybeChanged) {
+    if (effectiveLevel === "team") {
+      await syncTeamTargetToChildren(params.id).catch((e) =>
+        console.error("[kpi PUT] syncTeamTargetToChildren failed", e),
+      );
+    } else if (existingKPI.parentKPIId) {
+      await syncChildTargetToParent(existingKPI.parentKPIId).catch((e) =>
+        console.error("[kpi PUT] syncChildTargetToParent failed", e),
+      );
+    }
+  }
+
+  // ── Per-owner child rename ──
+  // When the Team KPI form sends `ownerKpiNames`, rename each child Individual
+  // KPI to match. Empty / missing entries are ignored (child keeps its name).
+  if (effectiveLevel === "team" && validated.ownerKpiNames) {
+    const ownerNames = validated.ownerKpiNames as Record<string, string>;
+    for (const [ownerId, rawName] of Object.entries(ownerNames)) {
+      const newName = rawName?.trim();
+      if (!newName) continue;
+      const child = await db.kPI.findFirst({
+        where: { parentKPIId: params.id, owner: ownerId, deletedAt: null },
+        select: { id: true, name: true },
+      });
+      if (!child || child.name === newName) continue;
+      await db.kPI.update({
+        where: { id: child.id },
+        data: { name: newName, updatedBy: userId },
+      });
+    }
+  }
+
   await db.kPILog.create({
     data: { orgId, kpiId: params.id, action: "UPDATE", oldValue, newValue: JSON.stringify(updatedKPI), changedBy: userId },
   });
@@ -224,7 +361,33 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req,
   }
 
   const oldValue = JSON.stringify(kpi);
-  await db.kPI.update({ where: { id: params.id }, data: { deletedAt: new Date() } });
+  const now = new Date();
+  await db.kPI.update({ where: { id: params.id }, data: { deletedAt: now } });
+
+  // ── Linked-KPI cleanup ──
+  // Team KPI deleted → soft-delete every child Individual KPI.
+  // Child Individual KPI deleted → recompute parent target/contributions.
+  if (kpi.kpiLevel === "team") {
+    const children = await db.kPI.findMany({
+      where: { parentKPIId: params.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (children.length > 0) {
+      await db.kPI.updateMany({
+        where: { id: { in: children.map((c) => c.id) } },
+        data: { deletedAt: now },
+      });
+      for (const c of children) {
+        await db.kPILog.create({
+          data: { orgId, kpiId: c.id, action: "DELETE", oldValue: JSON.stringify({ cascadedFromTeamKPI: params.id }), changedBy: userId },
+        });
+      }
+    }
+  } else if (kpi.parentKPIId) {
+    await syncChildTargetToParent(kpi.parentKPIId).catch((e) =>
+      console.error("[kpi DELETE] syncChildTargetToParent failed", e),
+    );
+  }
 
   await db.kPILog.create({ data: { orgId, kpiId: params.id, action: "DELETE", oldValue, changedBy: userId } });
 

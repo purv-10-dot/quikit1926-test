@@ -17,7 +17,13 @@ import { runExport } from "@/lib/export/xlsx";
 
 export default function WWWPage() {
   const [search, setSearch] = useState("");
-  const { filterTeam, setFilterTeam, filterOwner: filterWho, setFilterOwner: setFilterWho } = useFilterContext();
+  // WWW only honours the OWNER filter from the global context (no team scope
+  // ever bleeds in — per product rule). And like KPI/Priority, the owner is
+  // seeded from context on first mount but lives locally so clearing it here
+  // doesn't affect the other modules.
+  const ctx = useFilterContext();
+  const [filterWho, setFilterWho] = useState<string>(ctx.filterOwner);
+  const [filterTeam, setFilterTeam] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [showFilter, setShowFilter] = useState(false);
 

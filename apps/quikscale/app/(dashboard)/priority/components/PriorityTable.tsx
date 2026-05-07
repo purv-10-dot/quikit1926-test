@@ -163,9 +163,13 @@ interface Props {
   total?: number;
   onPageChange?: (p: number) => void;
   onPageSizeChange?: (size: number) => void;
+  /** When true, the table stretches to 100% of its container instead of using
+   *  `min-width: max-content`. Use this in dashboard previews where the
+   *  number of week columns is small and we want to fill horizontal space. */
+  fillWidth?: boolean;
 }
 
-export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quarter, defaultYear, defaultQuarter, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange }: Props) {
+export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quarter, defaultYear, defaultQuarter, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, fillWidth }: Props) {
   const priorities = maxRows != null ? prioritiesAll.slice(0, maxRows) : prioritiesAll;
   const paginationEnabled = page != null && pageSize != null && total != null && onPageChange != null;
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil((total as number) / (pageSize as number))) : 1;
@@ -288,6 +292,9 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   // - Per-instance `hideColumns` prop CAN hide anything (used by dashboard preview)
   const instanceHides = new Set(hideColumns ?? []);
   const persistedHides = new Set(hiddenCols);
+  // Allow the dashboard to limit which week columns are visible by passing
+  // `week${n}` keys in `hideColumns`. Default keeps the full 13-week grid.
+  const visibleWeeksList = ALL_WEEKS.filter(w => !instanceHides.has(`week${w}`));
   const COL_ORDER = COL_ORDER_FULL.filter((c) => {
     if (instanceHides.has(c)) return false;
     if (ALWAYS_VISIBLE.has(c)) return true;
@@ -338,8 +345,16 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
     <div className="flex flex-col h-full">
       {/* Table */}
       <HorizontalScroller className="flex-1">
-        <table className="border-collapse" style={{ minWidth: "max-content", tableLayout: "fixed" }}>
-          <thead>
+        <table
+          className={`border-collapse ${fillWidth ? "w-full" : ""}`}
+          style={fillWidth
+            ? { width: "100%", tableLayout: "fixed" }
+            : { minWidth: "max-content", tableLayout: "fixed" }}>
+          {/* Sticky header — matches KPITable behaviour. Without `sticky top-0`
+              on the <thead>, the header row scrolls away with the body during
+              vertical scroll. The frozen <th> cells additionally use their
+              own `sticky left:` so they stay pinned during horizontal scroll. */}
+          <thead className="sticky top-0 z-30">
             <tr className="bg-accent-50 border-b border-gray-200">
               {/* Header cells — checkbox/log/id always sticky, others sticky if isColFrozen */}
               {COL_ORDER.map((colKey) => {
@@ -348,7 +363,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                 const isAlwaysFrozen = ALWAYS_FROZEN.has(colKey);
                 const label =
                   colKey === "_cb" ? "" :
-                  colKey === "_log" ? "" :
+                  colKey === "_log" ? "Log" :
                   colKey === "_id" ? "ID" :
                   COL_LABELS[colKey] ?? "";
                 const showMenu = !ALWAYS_FROZEN.has(colKey);
@@ -358,7 +373,16 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
 
                 return (
                   <th key={colKey}
-                    className={`group relative top-0 z-30 bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none ${frozen ? "sticky" : ""}`}
+                    // Always `sticky top-0` so the header pins on vertical scroll.
+                    // Frozen cells additionally get a `left:` offset so they pin
+                    // on horizontal scroll (matches KPITable's pattern).
+                    // `z-[35]` for frozen cells so they sit above unfrozen
+                    // headers (z-30) during horizontal scroll — otherwise
+                    // unfrozen cells slide *over* frozen ones and the leftmost
+                    // headers visually disappear.
+                    // `relative` was previously here and was overriding `sticky`
+                    // in the CSS cascade — removed.
+                    className={`group sticky top-0 ${frozen ? "z-[35]" : "z-30"} bg-accent-50 border-b border-gray-200 border-r border-r-gray-200 text-left px-2 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap select-none`}
                     style={{
                       left: frozen ? getLeftOffset(colKey) : undefined,
                       width,
@@ -406,7 +430,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
               })}
 
               {/* Week header cells */}
-              {ALL_WEEKS.map(w => (
+              {visibleWeeksList.map(w => (
                 <th key={w}
                   className="sticky top-0 z-20 bg-accent-50 border-b border-gray-200 border-r border-r-gray-100 text-center px-1 py-2 text-[10px] font-semibold text-gray-500 whitespace-nowrap select-none"
                   style={{ minWidth: 76 }}>
@@ -419,7 +443,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
           <tbody>
             {priorities.length === 0 && (
               <tr>
-                <td colSpan={COL_ORDER.length + ALL_WEEKS.length} className="text-center py-12 text-xs text-gray-400">
+                <td colSpan={COL_ORDER.length + visibleWeeksList.length} className="text-center py-12 text-xs text-gray-400">
                   No priorities found for this period
                 </td>
               </tr>
@@ -431,9 +455,12 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
               return (
                 <tr key={priority.id}
                   className={`border-b border-gray-100 hover:bg-blue-50 transition-colors ${rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
-                  {/* Checkbox — always frozen (hidable only via hideColumns prop) */}
+                  {/* Checkbox — always frozen. z-[25] keeps it above non-frozen
+                      body cells (z-20) during horizontal scroll so the
+                      sticky cell stays visually on top instead of being
+                      covered by scrolling neighbours. */}
                   {COL_ORDER.includes("_cb") && (
-                    <td className="sticky z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit"
+                    <td className="sticky z-[25] border-r border-gray-100 px-2 py-1.5 bg-inherit"
                       style={{ left: getLeftOffset("_cb"), width: 40, minWidth: 40 }}>
                       <input type="checkbox"
                         checked={selectedIds.has(priority.id)}
@@ -442,9 +469,9 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     </td>
                   )}
 
-                  {/* Log icon — always frozen (hidable only via hideColumns prop) */}
+                  {/* Log icon — always frozen. z-[25] same reason as the cb cell. */}
                   {COL_ORDER.includes("_log") && (
-                    <td className="sticky z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit"
+                    <td className="sticky z-[25] border-r border-gray-100 px-1 py-1.5 text-center bg-inherit"
                       style={{ left: getLeftOffset("_log"), width: 40, minWidth: 40 }}>
                       <button onClick={() => setLogPriority(priority)}
                         className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
@@ -456,9 +483,9 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     </td>
                   )}
 
-                  {/* ID — always frozen (hidable only via hideColumns prop) */}
+                  {/* ID — always frozen. z-[25] same reason as the cb cell. */}
                   {COL_ORDER.includes("_id") && (
-                    <td className="z-20 border-r border-gray-100 px-1 py-1.5 text-center bg-inherit sticky"
+                    <td className="z-[25] border-r border-gray-100 px-1 py-1.5 text-center bg-inherit sticky"
                       style={{
                         left: getLeftOffset("_id"),
                         width: 40,
@@ -602,7 +629,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                   })()}
 
                   {/* Week cells */}
-                  {ALL_WEEKS.map(w => {
+                  {visibleWeeksList.map(w => {
                     const inRange = isInRange(priority, w);
                     const status = getWeekStatus(priority, w);
                     const note = getWeekNote(priority, w);

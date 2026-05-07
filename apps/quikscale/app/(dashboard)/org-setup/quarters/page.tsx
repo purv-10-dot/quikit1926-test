@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Search, ChevronDown, Calendar,
   Plus, X, Pencil, Trash2, MoreVertical, Filter,
-  CalendarDays,
+  CalendarDays, Lock,
 } from "lucide-react";
 import { invalidateFiscalYearsCache } from "@/lib/hooks/useFiscalYears";
 import {
@@ -284,10 +284,20 @@ function GenerateModal({
   const [error,  setError]  = useState("");
   const [startDate, setStartDate] = useState("");
 
+  // The phantom future-year placeholder lives inside `existingYears` (the API
+  // injects it when the `enable_future_quarters` flag is on so it shows up in
+  // the picker), but no DB rows exist for it yet. Strip it before any
+  // "already exists" reasoning so we don't mistreat the year the user is
+  // here to initialize as something already done.
+  const trulyExistingYears = futureYearAvailable != null
+    ? existingYears.filter((y) => y !== futureYearAvailable)
+    : existingYears;
+
   // Calculate the next available FY
   const currentFY = new Date().getMonth() >= 3 ? new Date().getFullYear() : new Date().getFullYear() - 1;
+  const createdYears = existingYears.filter(y => y !== futureYearAvailable);
   let nextFY = currentFY;
-  while (existingYears.includes(nextFY)) nextFY++;
+  while (trulyExistingYears.includes(nextFY)) nextFY++;
 
   // Block only when a future FY is requested AND the `enable_future_quarters`
   // feature flag is off. The server returns `futureYearAvailable != null`
@@ -357,7 +367,7 @@ function GenerateModal({
 
   async function handleGenerate() {
     if (!startDate) { setError("Please select a start date."); return; }
-    if (existingYears.includes(derivedFY)) { setError(`FY ${derivedFY}-${String(derivedFY + 1).slice(-2)} already exists.`); return; }
+    if (trulyExistingYears.includes(derivedFY)) { setError(`FY ${derivedFY}-${String(derivedFY + 1).slice(-2)} already exists.`); return; }
 
     setSaving(true); setError("");
     try {
@@ -491,6 +501,7 @@ export default function QuarterSettingsPage() {
   const [generateOpen,  setGenerateOpen]  = useState(false);
   const [futureYearAvailable, setFutureYearAvailable] = useState<number | null>(null);
   const [latestEndDate, setLatestEndDate] = useState<string | null>(null);
+  const [hasDataByYear, setHasDataByYear] = useState<Record<number, boolean>>({});
 
   const filterRef = useRef<HTMLDivElement>(null);
   const yearRef   = useRef<HTMLDivElement>(null);
@@ -510,6 +521,7 @@ export default function QuarterSettingsPage() {
         setAllYears(json.availableYears ?? []);
         setFutureYearAvailable(json.futureYearAvailable ?? null);
         setLatestEndDate(json.latestEndDate ?? null);
+        if (json.hasDataByYear) setHasDataByYear(prev => ({ ...prev, ...(json.hasDataByYear as Record<number, boolean>) }));
       }
     } finally {
       setLoading(false);
@@ -526,6 +538,7 @@ export default function QuarterSettingsPage() {
         setAllYears(years);
         setFutureYearAvailable(json.futureYearAvailable ?? null);
         setLatestEndDate(json.latestEndDate ?? null);
+        if (json.hasDataByYear) setHasDataByYear(json.hasDataByYear as Record<number, boolean>);
         const fy = years.includes(defaultFY) ? defaultFY : (years[0] ?? defaultFY);
         setSelectedYear(fy);
         const filtered = (json.data as QuarterRow[]).filter(r => r.fiscalYear === fy);
@@ -580,6 +593,7 @@ export default function QuarterSettingsPage() {
       setSelectedYear(fy);
       setAllYears(prev => [...new Set([...prev, fy])].sort((a, b) => b - a));
       fetchRows(fy);
+      invalidateFiscalYearsCache();
     }
   }
 
@@ -635,6 +649,7 @@ export default function QuarterSettingsPage() {
 
   const currentQW  = getCurrentQuarterAndWeek(rows);
   const fyLabel    = selectedYear ? `FY ${selectedYear}-${String(selectedYear + 1).slice(-2)}` : "—";
+  const fyHasData  = hasDataByYear[selectedYear ?? 0] ?? false;
   const activeFilters = (filterQ ? 1 : 0);
 
   // Pagination — default 10 rows, options 10/20/30/50
@@ -681,11 +696,12 @@ export default function QuarterSettingsPage() {
             </tr>
           ) : pagedQuarters.map((row, idx) => {
             const isQ1 = row.quarter === "Q1";
+            const canEdit = isQ1 && !fyHasData;
             return (
             <tr
               key={row.id}
-              className={`group transition-colors ${isQ1 ? "hover:bg-accent-50/30 cursor-pointer" : ""} ${selectedIds.has(row.id) ? "bg-accent-50/60" : ""}`}
-              onClick={() => { if (isQ1) { setEditRow(row); setPanelOpen(true); } }}
+              className={`group transition-colors ${canEdit ? "hover:bg-accent-50/30 cursor-pointer" : ""} ${selectedIds.has(row.id) ? "bg-accent-50/60" : ""}`}
+              onClick={() => { if (canEdit) { setEditRow(row); setPanelOpen(true); } }}
             >
               <td className="px-2 py-2 border-b border-r border-gray-100" onClick={e => e.stopPropagation()}>
                 <input
@@ -702,19 +718,33 @@ export default function QuarterSettingsPage() {
               <td className="px-3 py-2 border-b border-r border-gray-100" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   {isQ1 && (
-                  <button
-                    onClick={() => { setEditRow(row); setPanelOpen(true); }}
-                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
+                    fyHasData ? (
+                      <span title="Start date cannot be changed — data exists for this fiscal year"
+                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-300 cursor-not-allowed">
+                        <Lock className="h-3.5 w-3.5" />
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => { setEditRow(row); setPanelOpen(true); }}
+                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    )
                   )}
-                  <button
-                    onClick={() => setDeleteRow(row)}
-                    className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {fyHasData ? (
+                    <span title="Quarter cannot be deleted — data exists for this fiscal year"
+                      className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-300 cursor-not-allowed">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => setDeleteRow(row)}
+                      className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -752,6 +782,12 @@ export default function QuarterSettingsPage() {
               Quarter: {currentQW.quarter} • Week {currentQW.week}
             </span>
           )}
+          {fyHasData && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium border border-amber-200">
+              <Lock className="h-3 w-3" />
+              Locked — data exists for {fyLabel}
+            </span>
+          )}
         </div>
       </div>
 
@@ -759,12 +795,19 @@ export default function QuarterSettingsPage() {
       <div className="px-6 py-3 bg-white border-b border-gray-200 flex items-center gap-2 flex-shrink-0 flex-wrap">
         {/* Bulk delete */}
         {selectedIds.size > 0 && (
-          <button
-            onClick={handleBulkDelete}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100"
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Delete ({selectedIds.size})
-          </button>
+          fyHasData ? (
+            <span title="Data exists for this fiscal year — quarters cannot be deleted"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-300 border border-gray-200 bg-gray-50 rounded-lg cursor-not-allowed">
+              <Lock className="h-3.5 w-3.5" /> Delete ({selectedIds.size})
+            </span>
+          ) : (
+            <button
+              onClick={handleBulkDelete}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete ({selectedIds.size})
+            </button>
+          )
         )}
 
         <div className="flex-1" />
@@ -847,12 +890,19 @@ export default function QuarterSettingsPage() {
                 <Plus className="h-3.5 w-3.5 text-accent-500" /> Initialize Quarters
               </button>
               {selectedYear !== null && (
-                <button
-                  onClick={() => { setDeleteFY(selectedYear); setMoreOpen(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 hover:bg-red-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Delete FY {selectedYear}-{String(selectedYear + 1).slice(-2)}
-                </button>
+                fyHasData ? (
+                  <span title="Data exists for this fiscal year — cannot delete"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 cursor-not-allowed">
+                    <Lock className="h-3.5 w-3.5" /> Delete FY {selectedYear}-{String(selectedYear + 1).slice(-2)}
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => { setDeleteFY(selectedYear); setMoreOpen(false); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete FY {selectedYear}-{String(selectedYear + 1).slice(-2)}
+                  </button>
+                )
               )}
             </div>
           )}

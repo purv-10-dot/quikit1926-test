@@ -22,6 +22,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { normalizeLoadedOPSP } from "@/lib/utils/opspNormalize";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
+import { breakdownProjected } from "../components/modals";
 import type {
   TargetRow,
   GoalRow,
@@ -260,8 +261,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   }, [form, save]);
 
   /* ── Cascade: Targets → Goals → Actions (reactive, force-sync) ── */
-  // Targets y1 (current year) → Goals category + projected
-  // When source clears → also wipe quarter values (q1–q4)
+  // Targets y1 (current year) → Goals category + projected, plus auto-fill q1–q4
+  // using the category's breakdownType. When source clears → wipe quarters.
   useEffect(() => {
     setForm(prev => {
       const next = [...prev.goalRows];
@@ -273,7 +274,11 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
         const newProj = hasSrc ? t.y1 : "";
         if (next[i].category !== newCat || next[i].projected !== newProj) {
           if (hasSrc) {
-            next[i] = { ...next[i], category: newCat, projected: newProj };
+            const autofill = breakdownProjected(newCat, newProj, 4);
+            const qPatch = autofill
+              ? { q1: autofill[0] ?? "", q2: autofill[1] ?? "", q3: autofill[2] ?? "", q4: autofill[3] ?? "" }
+              : {};
+            next[i] = { ...next[i], category: newCat, projected: newProj, ...qPatch };
           } else {
             // Source cleared → reset entire Goals row
             next[i] = { category: "", projected: "", q1: "", q2: "", q3: "", q4: "" };
@@ -285,8 +290,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     });
   }, [form.targetRows]);
 
-  // Goals current-quarter column → Actions category + projected
-  // When source clears → also wipe month values (m1–m3)
+  // Goals current-quarter column → Actions category + projected, plus auto-fill
+  // m1–m3 by breakdownType. When source clears → wipe months.
   useEffect(() => {
     const qKey = form.quarter.toLowerCase() as keyof GoalRow; // "q1" | "q2" | "q3" | "q4"
     setForm(prev => {
@@ -300,7 +305,11 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
         const newProj = hasSrc ? qVal : "";
         if (next[i].category !== newCat || next[i].projected !== newProj) {
           if (hasSrc) {
-            next[i] = { ...next[i], category: newCat, projected: newProj };
+            const autofill = breakdownProjected(newCat, newProj, 3);
+            const mPatch = autofill
+              ? { m1: autofill[0] ?? "", m2: autofill[1] ?? "", m3: autofill[2] ?? "" }
+              : {};
+            next[i] = { ...next[i], category: newCat, projected: newProj, ...mPatch };
           } else {
             // Source cleared → reset entire Actions row
             next[i] = { category: "", projected: "", m1: "", m2: "", m3: "" };

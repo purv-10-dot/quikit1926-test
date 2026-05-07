@@ -14,7 +14,6 @@ import {
   UserPicker,
   DropdownPicker,
   DatePicker,
-  TimePicker,
   Pagination,
   type PickerUser,
 } from "@quikit/ui";
@@ -27,6 +26,11 @@ import {
   Search,
   Filter as FilterIcon,
 } from "lucide-react";
+import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
+import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
+import { runExport } from "@/lib/export/xlsx";
+import type { ExportSelection } from "@quikit/ui";
+import { Download } from "lucide-react";
 
 type Flag = "YES" | "NO" | "NA";
 type Status =
@@ -225,6 +229,7 @@ export default function WeeklyMeetingPage() {
   const [clients, setClients] = useState<ClientOpt[]>([]);
   const [clientDetail, setClientDetail] = useState<ClientDetail | null>(null);
   const [filterClientId, setFilterClientId] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{
     id: string | null;
@@ -233,6 +238,10 @@ export default function WeeklyMeetingPage() {
   const [activeTab, setActiveTab] = useState<"edit" | "update">("edit");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Per-field validation errors (keyed by paired-time field name like
+  // "segmentTime1"). Drives the red border + inline error message under
+  // each Time input that's empty while its YES radio is set.
+  const [timeFieldErrors, setTimeFieldErrors] = useState<Set<string>>(new Set());
 
   // Search + selection (KPI-style chrome).
   const [searchQuery, setSearchQuery] = useState("");
@@ -491,6 +500,44 @@ export default function WeeklyMeetingPage() {
       setError("Actual end time must be after start time");
       return;
     }
+
+    // ── YES → Time is mandatory ──────────────────────────────────────────
+    // For each radio field (Good News Sharing, K&P dashboard, GAPS, WWW,
+    // Customer/Employee Feedback, Collective Intelligence, OPSP Review):
+    // if the user picked YES, the paired Time field must be filled.
+    // YES means "yes, we did this segment" — and the time it took is the
+    // measurable record we keep. NO / NA legitimately have no time.
+    const missingTimes = RADIO_FIELDS.filter(
+      (rf) => f[rf.key] === "YES" && !f[rf.pairedTime],
+    );
+    if (missingTimes.length > 0) {
+      // Populate per-field errors so each empty Time input shows a red
+      // border + inline error message inline (no scroll-to-top required).
+      setTimeFieldErrors(new Set(missingTimes.map((rf) => rf.pairedTime)));
+      const labels = missingTimes.map((rf) => rf.label).join(", ");
+      setError(
+        `Please enter the time for: ${labels}. Time is required when set to YES.`,
+      );
+      // Scroll the FIRST missing-time field into view so the user lands
+      // directly on the error instead of staring at a Submit button that
+      // didn't seem to do anything. requestAnimationFrame waits one tick
+      // so the just-rendered red border is visible at scroll-end.
+      const firstMissingKey = missingTimes[0].pairedTime;
+      requestAnimationFrame(() => {
+        const el = document.querySelector(
+          `[data-time-field="${firstMissingKey}"]`,
+        ) as HTMLElement | null;
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          // Brief focus so screen readers announce the error region too.
+          setTimeout(() => el.focus({ preventScroll: true }), 350);
+        }
+      });
+      return;
+    }
+    // Clear any prior per-field errors on a successful pass.
+    if (timeFieldErrors.size > 0) setTimeFieldErrors(new Set());
+
     setSaving(true);
     setError("");
     try {
@@ -682,14 +729,17 @@ export default function WeeklyMeetingPage() {
     memberToPickerUser
   );
 
-  // Update tab roster — present members only (exclude those flagged Absent in
-  // the Edit tab). Reactive: toggling an absence in Edit removes/re-adds the
-  // row in Update without a save round-trip. Per-member scores are keyed by
-  // clientMemberId server-side, so any saved scores for a now-absent member
-  // are preserved in the DB and reappear if the user un-marks them.
+  // Update tab roster — present members only. Excludes BOTH:
+  //   - Absent members (flagged on the Edit tab)
+  //   - Weekly-Dashboard-NA members (also flagged on the Edit tab)
+  // Reactive: toggling either flag in Edit removes/re-adds the row in Update
+  // without a save round-trip. Per-member scores are keyed by
+  // clientMemberId server-side, so any saved scores for a now-excluded
+  // member are preserved in the DB and reappear if the user un-flags them.
   const absentSet = new Set(editing?.form.absentClientMemberIds ?? []);
+  const dashboardNASet = new Set(editing?.form.dashboardNAClientMemberIds ?? []);
   const activeMembers = (clientDetail?.members ?? []).filter(
-    (m) => !absentSet.has(m.userId)
+    (m) => !absentSet.has(m.userId) && !dashboardNASet.has(m.userId),
   );
   const allAbsent =
     (clientDetail?.members.length ?? 0) > 0 && activeMembers.length === 0;
@@ -764,6 +814,16 @@ export default function WeeklyMeetingPage() {
               </option>
             ))}
           </select>
+
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            disabled={clients.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-md disabled:opacity-50"
+            title="Export Data"
+          >
+            <Download className="h-3.5 w-3.5" /> Export Data
+          </button>
 
           <AddButton onClick={openCreate}>Add</AddButton>
         </div>
@@ -1087,7 +1147,19 @@ export default function WeeklyMeetingPage() {
                 <Field label="Absent Members">
                   <UserMultiPicker
                     values={editing.form.absentClientMemberIds}
-                    onChange={(v) => updateField("absentClientMemberIds", v)}
+                    onChange={(v) => {
+                      updateField("absentClientMemberIds", v);
+                      // Newly-absent users can't also be Dashboard NA — drop
+                      // any stale NA entries that overlap with the new absent
+                      // list. Keeps the two pickers consistent.
+                      const absentSet = new Set(v);
+                      const cleanedNA = editing.form.dashboardNAClientMemberIds.filter(
+                        (id) => !absentSet.has(id),
+                      );
+                      if (cleanedNA.length !== editing.form.dashboardNAClientMemberIds.length) {
+                        updateField("dashboardNAClientMemberIds", cleanedNA);
+                      }
+                    }}
                     users={pickerUsers}
                     placeholder={pickerPlaceholder(
                       editing.form.clientId,
@@ -1102,7 +1174,13 @@ export default function WeeklyMeetingPage() {
                 <UserMultiPicker
                   values={editing.form.dashboardNAClientMemberIds}
                   onChange={(v) => updateField("dashboardNAClientMemberIds", v)}
-                  users={pickerUsers}
+                  // Hide users already flagged Absent — they can't also be
+                  // "Dashboard NA" (a member is either present-but-skipping-
+                  // dashboard or absent altogether). If a user becomes absent
+                  // after being marked NA, drop their NA selection too.
+                  users={pickerUsers.filter(
+                    (u) => !editing.form.absentClientMemberIds.includes(u.id),
+                  )}
                   placeholder={pickerPlaceholder(
                     editing.form.clientId,
                     pickerUsers.length
@@ -1113,45 +1191,107 @@ export default function WeeklyMeetingPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Actual Start Time" required>
-                  <TimePicker
+                  <input
+                    type="time"
                     value={editing.form.actualStartTime}
-                    onChange={(v) => updateField("actualStartTime", v)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      updateField("actualStartTime", v);
+                      if (
+                        editing.form.actualEndTime &&
+                        v &&
+                        editing.form.actualEndTime <= v
+                      ) {
+                        updateField("actualEndTime", "");
+                      }
+                    }}
                     disabled={editing.form.callStatus !== "HELD"}
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
                   />
                 </Field>
                 <Field label="Actual End Time" required>
-                  <TimePicker
+                  <input
+                    type="time"
                     value={editing.form.actualEndTime}
-                    onChange={(v) => updateField("actualEndTime", v)}
-                    disabled={editing.form.callStatus !== "HELD"}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (
+                        editing.form.actualStartTime &&
+                        v &&
+                        v <= editing.form.actualStartTime
+                      ) {
+                        return;
+                      }
+                      updateField("actualEndTime", v);
+                    }}
+                    disabled={
+                      editing.form.callStatus !== "HELD" || !editing.form.actualStartTime
+                    }
+                    min={editing.form.actualStartTime || undefined}
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
                   />
                 </Field>
               </div>
 
-              {RADIO_FIELDS.map((rf) => (
-                <div key={rf.key} className="grid grid-cols-2 gap-4">
-                  <Field label={rf.label} required>
-                    <Segmented
-                      value={editing.form[rf.key]}
-                      onChange={(v) =>
-                        setRadio(rf.key, rf.pairedTime, v as Flag)
-                      }
-                      options={FLAG_OPTS}
-                      disabled={editing.form.callStatus !== "HELD"}
-                    />
-                  </Field>
-                  <Field label={`${rf.label} Time`}>
-                    <TimePicker
-                      value={editing.form[rf.pairedTime]}
-                      onChange={(v) => updateField(rf.pairedTime, v)}
-                      disabled={
-                        editing.form.callStatus !== "HELD" ||
-                        editing.form[rf.key] !== "YES"
-                      }
-                    />
-                  </Field>
-                </div>
-              ))}
+              {RADIO_FIELDS.map((rf) => {
+                const hasTimeError = timeFieldErrors.has(rf.pairedTime);
+                return (
+                  <div key={rf.key} className="grid grid-cols-2 gap-4">
+                    <Field label={rf.label} required>
+                      <Segmented
+                        value={editing.form[rf.key]}
+                        onChange={(v) => {
+                          setRadio(rf.key, rf.pairedTime, v as Flag);
+                          // Toggling away from YES clears the time field; clear
+                          // its error too so the next render isn't stuck red.
+                          if (v !== "YES" && hasTimeError) {
+                            setTimeFieldErrors((prev) => {
+                              const next = new Set(prev);
+                              next.delete(rf.pairedTime);
+                              return next;
+                            });
+                          }
+                        }}
+                        options={FLAG_OPTS}
+                        disabled={editing.form.callStatus !== "HELD"}
+                      />
+                    </Field>
+                    <Field label={`${rf.label} Time`}>
+                      <input
+                        type="time"
+                        data-time-field={rf.pairedTime}
+                        value={editing.form[rf.pairedTime]}
+                        onChange={(e) => {
+                          updateField(rf.pairedTime, e.target.value);
+                          // Typing a value clears this field's error inline so
+                          // the user gets immediate feedback that they fixed it.
+                          if (e.target.value && hasTimeError) {
+                            setTimeFieldErrors((prev) => {
+                              const next = new Set(prev);
+                              next.delete(rf.pairedTime);
+                              return next;
+                            });
+                          }
+                        }}
+                        disabled={
+                          editing.form.callStatus !== "HELD" ||
+                          editing.form[rf.key] !== "YES"
+                        }
+                        className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 disabled:bg-gray-50 ${
+                          hasTimeError
+                            ? "border-red-400 focus:ring-red-300 bg-red-50"
+                            : "border-gray-200 focus:ring-accent-400"
+                        }`}
+                      />
+                      {hasTimeError && (
+                        <p className="mt-1 text-[11px] text-red-600">
+                          Time is required when {rf.label} is set to YES.
+                        </p>
+                      )}
+                    </Field>
+                  </div>
+                );
+              })}
 
               <Field label="Notes K&P dashboard">
                 <RichTextField
@@ -1185,62 +1325,150 @@ export default function WeeklyMeetingPage() {
             <p className="text-xs text-gray-400 italic">No log entries yet.</p>
           ) : (
             <ul className="space-y-3">
-              {logs.map((l) => (
-                <li
-                  key={l.id}
-                  className="border border-gray-200 rounded-lg p-3 text-xs"
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${
-                        l.action === "CREATE"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : l.action === "UPDATE"
-                            ? "bg-amber-100 text-amber-700"
-                            : l.action === "DELETE"
-                              ? "bg-red-100 text-red-700"
-                              : l.action === "SCORE_UPDATE"
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-gray-100 text-gray-700"
-                      }`}
-                    >
-                      {l.action}
-                    </span>
-                    <span className="text-gray-400 text-[11px]">
-                      {new Date(l.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="text-gray-700">
-                    <strong>{l.changedByName}</strong>
-                    {l.reason && (
-                      <span className="text-gray-500"> · {l.reason}</span>
+              {logs.map((l) => {
+                // Build a friendly id → name resolver from in-memory data.
+                const nameById = (id: string): string | undefined => {
+                  const client = clients.find((c) => c.id === id);
+                  if (client) return client.name;
+                  const member = clientDetail?.members.find((m) => m.userId === id);
+                  if (member) return member.name;
+                  return undefined;
+                };
+                const friendly = fmtFriendlyAuditEntry(
+                  l.action,
+                  l.newValue,
+                  l.oldValue,
+                  { nameById },
+                );
+                return (
+                  <li
+                    key={l.id}
+                    className="border border-gray-200 rounded-lg p-3 text-xs"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${
+                          l.action === "CREATE"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : l.action === "UPDATE"
+                              ? "bg-amber-100 text-amber-700"
+                              : l.action === "DELETE"
+                                ? "bg-red-100 text-red-700"
+                                : l.action === "SCORE_UPDATE"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {l.action}
+                      </span>
+                      <span className="text-gray-400 text-[11px]">
+                        {new Date(l.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="text-gray-800 font-medium mb-0.5">
+                      {friendly.headline}
+                    </div>
+                    <div className="text-gray-600 text-[11px] mb-1">
+                      by <strong>{l.changedByName}</strong>
+                      {l.reason && <span className="text-gray-500"> · {l.reason}</span>}
+                    </div>
+                    {friendly.rows.length > 0 && (
+                      <table className="w-full mt-2 text-[11px] border-collapse">
+                        <tbody>
+                          {friendly.rows.map((r, i) => (
+                            <tr key={i} className="border-t border-gray-100 first:border-t-0">
+                              <td className="py-1 pr-3 text-gray-500 align-top whitespace-nowrap">{r.label}</td>
+                              {r.oldValue !== undefined ? (
+                                <td className="py-1 text-gray-700 align-top">
+                                  <span className="text-gray-400 line-through mr-1.5">{r.oldValue}</span>
+                                  <span className="text-gray-400 mr-1.5">→</span>
+                                  <span className="font-medium">{r.newValue}</span>
+                                </td>
+                              ) : (
+                                <td className="py-1 text-gray-700 align-top break-words">
+                                  {r.newValue}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     )}
-                  </div>
-                  {l.oldValue && (
-                    <details className="mt-1.5">
-                      <summary className="cursor-pointer text-[11px] text-gray-500">
-                        Old
-                      </summary>
-                      <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">
-                        {l.oldValue}
-                      </pre>
-                    </details>
-                  )}
-                  {l.newValue && (
-                    <details className="mt-1">
-                      <summary className="cursor-pointer text-[11px] text-gray-500">
-                        New
-                      </summary>
-                      <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">
-                        {l.newValue}
-                      </pre>
-                    </details>
-                  )}
-                </li>
-              ))}
+                    {/* Raw JSON kept inside a collapsed details block so devs
+                        can still see the source payload when debugging. */}
+                    {(l.oldValue || l.newValue) && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-[10px] text-gray-400">
+                          Raw payload
+                        </summary>
+                        {l.oldValue && (
+                          <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">
+                            old: {l.oldValue}
+                          </pre>
+                        )}
+                        {l.newValue && (
+                          <pre className="mt-1 p-2 bg-gray-50 rounded text-[10px] overflow-x-auto">
+                            new: {l.newValue}
+                          </pre>
+                        )}
+                      </details>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </RightPanel>
+
+        <ExportDataModal
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          clients={clients}
+          defaultClientId={filterClientId || null}
+          onSubmit={async ({ from, to, clientId }: ExportRange) => {
+            // Fetch weekly meetings in the chosen client + date window.
+            const qs = new URLSearchParams();
+            if (clientId) qs.set("clientId", clientId);
+            qs.set("from", from);
+            qs.set("to", to);
+            const res = await fetch(`/api/client-meetings/weekly-meetings?${qs.toString()}`);
+            const json = await res.json();
+            const data: MeetingRow[] = json.success ? (json.data as MeetingRow[]) : [];
+
+            const columns = [
+              { key: "meetingDate",            label: "Meeting Date",      value: (r: MeetingRow) => r.meetingDate.slice(0, 10) },
+              { key: "clientName",             label: "Client Name",       value: (r: MeetingRow) => r.clientName },
+              { key: "callStatus",             label: "Call Status",       value: (r: MeetingRow) => r.callStatus },
+              { key: "absentMembers",          label: "Absent Members",    value: (r: MeetingRow) => r.absentClientMemberNames.join(", ") },
+              { key: "dashboardNAMembers",     label: "Weekly Dashboard NA", value: (r: MeetingRow) => r.dashboardNAClientMemberNames.join(", ") },
+              { key: "actualStartTime",        label: "Actual Start Time", value: (r: MeetingRow) => r.actualStartTime ?? "" },
+              { key: "actualEndTime",          label: "Actual End Time",   value: (r: MeetingRow) => r.actualEndTime ?? "" },
+              { key: "goodNewsSharing",        label: "Good News Sharing", value: (r: MeetingRow) => r.goodNewsSharing },
+              { key: "goodNewsSharingTime",    label: "Good News Sharing Time", value: (r: MeetingRow) => r.segmentTime1 ?? "" },
+              { key: "kpDashboard",            label: "K&P dashboard",     value: (r: MeetingRow) => r.kpDashboard },
+              { key: "kpDashboardTime",        label: "K&P dashboard Time", value: (r: MeetingRow) => r.segmentTime2 ?? "" },
+              { key: "gaps",                   label: "GAPS",              value: (r: MeetingRow) => r.gaps },
+              { key: "gapsTime",               label: "GAPS Time",         value: (r: MeetingRow) => r.segmentTime3 ?? "" },
+              { key: "www",                    label: "WWW",               value: (r: MeetingRow) => r.www },
+              { key: "wwwTime",                label: "WWW Time",          value: (r: MeetingRow) => r.segmentTime4 ?? "" },
+              { key: "feedback",               label: "Customer/Employee Feedback", value: (r: MeetingRow) => r.feedback },
+              { key: "feedbackTime",           label: "Customer/Employee Feedback Time", value: (r: MeetingRow) => r.segmentTime5 ?? "" },
+              { key: "collectiveIntelligence", label: "Collective Intelligence", value: (r: MeetingRow) => r.collectiveIntelligence },
+              { key: "ciTime",                 label: "Collective Intelligence Time", value: (r: MeetingRow) => r.segmentTime6 ?? "" },
+              { key: "opspReview",             label: "OPSP Review",       value: (r: MeetingRow) => r.opspReview },
+              { key: "opspReviewTime",         label: "OPSP Review Time",  value: (r: MeetingRow) => r.segmentTime7 ?? "" },
+            ];
+
+            await runExport<MeetingRow>({
+              selection: { rowScope: "all", columnKeys: columns.map((c) => c.key) },
+              columns,
+              pageRows: data,
+              fetchFiltered: async () => data,
+              fetchAll: async () => data,
+              filename: `WeeklyMeeting_${from}_${to}${clientId ? "" : "_all-clients"}`,
+            });
+          }}
+        />
       </div>
     </div>
   );
@@ -1362,7 +1590,13 @@ function UpdateScoreGrid({
                         min={0}
                         max={100}
                         step="0.01"
-                        value={s[c.key]}
+                        // Render the input EMPTY when the stored value is the
+                        // default 0 so the user sees a "0" placeholder instead
+                        // of a literal value they have to clear before typing.
+                        // Save logic still treats an empty / NaN field as 0
+                        // via the parseFloat fallback in onChange.
+                        value={s[c.key] === 0 ? "" : s[c.key]}
+                        placeholder="0"
                         disabled={inputsDisabled}
                         onChange={(e) => {
                           // Clamp to [0, 100] — browser `max` only validates
@@ -1374,7 +1608,7 @@ function UpdateScoreGrid({
                             : Math.min(100, Math.max(0, raw));
                           onChange(m.userId, c.key, clamped);
                         }}
-                        className={`w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400 ${inputsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
+                        className={`w-20 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400 placeholder:text-gray-400 ${inputsDisabled ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
                       />
                     </td>
                   ))}

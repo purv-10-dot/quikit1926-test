@@ -82,14 +82,23 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       include: {
         absentMembers: true, absentTeamMembers: true,
         dashboardNAMembers: true, dashboardNATeamMembers: true,
+        // memberScores feed the "Quality of the dashboards" metric — see
+        // clientMeetingsMath.ts › calculateWeeklyMonthlyStats.
+        memberScores: true,
       },
     });
     monthlyStats = calculateWeeklyMonthlyStats(
       meetings.map(m => {
-        // Members on Dashboard-NA aren't expected to update that week, so
-        // they shouldn't drag the attendance score down — drop them from the
-        // denominator AND from the absent count if they happened to overlap.
-        const naCount = m.dashboardNAMembers.length + m.dashboardNATeamMembers.length;
+        // Attendance = (roster − absent) / roster.
+        //
+        // Dashboard-NA members are PRESENT at the meeting — they just
+        // aren't expected to update the dashboard that week. So they
+        // count as attending: they don't go in `absentCount`, and the
+        // denominator stays at the full roster size.
+        //
+        // Example: roster 4, absent 1 (Alok), NA 1 (Pravin)
+        //   → (4 − 1) / 4 = 75%   ✓
+        // Previous code subtracted NA from the roster, producing 67%.
         const absentCount = m.absentMembers.length + m.absentTeamMembers.length;
         return {
           meetingDate: m.meetingDate,
@@ -102,9 +111,16 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
           // Weekly model has no override column; with the fixed isPunctual,
           // "NA" no longer auto-passes — falls through to the time check.
           punctualityOverride: ("NA" as const),
-          totalMembers: Math.max(0, rosterSize - naCount),
+          totalMembers: rosterSize,
           absentCount,
-          memberScores: [] as const,
+          memberScores: m.memberScores.map(s => ({
+            userId: s.clientMemberId,
+            kpiWeeklyQTD: s.kpiWeeklyQTD,
+            kpiCoding: s.kpiCoding,
+            priorityNotes: s.priorityNotes,
+            priorityStartEndDate: s.priorityStartEndDate,
+            priorityColor: s.priorityColor,
+          })),
         };
       }),
       months,
@@ -139,11 +155,18 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
   if (mode === "weekly" && punchUserId) {
     const tm = client.teamMembers.find(t => t.member.id === punchUserId);
     if (tm && !tm.member.deletedAt) {
+      // The Weekly Meeting form writes Absent / Dashboard-NA selections
+      // into the ClientMember-keyed tables (`absentTeamMembers` /
+      // `dashboardNATeamMembers`) — not the User-keyed `absentMembers` /
+      // `dashboardNAMembers` tables. `punchUserId` here is a `ClientMember.id`
+      // (sourced from `client.teamMembers[].member.id`), so we MUST compare
+      // against the ClientMember-keyed relations or the AB / NA flags
+      // never match and every absent row renders as 0%.
       const meetings = await db.clientWeeklyMeeting.findMany({
         where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
         include: {
-          absentMembers: true,
-          dashboardNAMembers: true,
+          absentTeamMembers: true,
+          dashboardNATeamMembers: true,
           memberScores: { where: { clientMemberId: punchUserId } },
         },
         orderBy: { meetingDate: "asc" },
@@ -151,8 +174,12 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       punchIn = computeMemberPunchIn(
         meetings.map(m => ({
           id: m.id, meetingDate: m.meetingDate,
-          absentUserIds: m.absentMembers.map(a => a.userId),
-          dashboardNAUserIds: m.dashboardNAMembers.map(a => a.userId),
+          // `absentUserIds` / `dashboardNAUserIds` are misnomers in
+          // computeMemberPunchIn's API — the function compares them against
+          // `member.id`, which is the ClientMember id. We pass ClientMember
+          // ids here so the comparison works.
+          absentUserIds: m.absentTeamMembers.map(a => a.clientMemberId),
+          dashboardNAUserIds: m.dashboardNATeamMembers.map(a => a.clientMemberId),
           memberScores: m.memberScores.map(s => ({
             userId: s.clientMemberId,
             kpiWeeklyQTD: s.kpiWeeklyQTD,

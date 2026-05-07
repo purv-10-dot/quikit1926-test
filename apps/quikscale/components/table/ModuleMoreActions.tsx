@@ -40,6 +40,14 @@ interface ModuleMoreActionsProps {
 
   // What visible-column keys are selected by default on export
   defaultExportColumnKeys: string[];
+
+  /**
+   * Optional override for the "Export Data" item. When provided, clicking
+   * Export Data calls this instead of opening the built-in column-selection
+   * ExportModal — useful for pages that prefer a custom modal (e.g. the
+   * Client Meeting "From / To / Client" modal).
+   */
+  onExportClick?: () => void;
 }
 
 export function ModuleMoreActions({
@@ -51,6 +59,7 @@ export function ModuleMoreActions({
   rowCounts,
   onExport,
   defaultExportColumnKeys,
+  onExportClick,
 }: ModuleMoreActionsProps) {
   const [showExport, setShowExport] = useState(false);
   const [showManage, setShowManage] = useState(false);
@@ -60,7 +69,7 @@ export function ModuleMoreActions({
       key: "export",
       label: "Export Data",
       icon: Download,
-      onSelect: () => setShowExport(true),
+      onSelect: () => (onExportClick ? onExportClick() : setShowExport(true)),
     },
     {
       key: "trash",

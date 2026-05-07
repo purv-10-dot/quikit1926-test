@@ -66,6 +66,34 @@ export function getWeekDateRange(year: number, quarter: string, weekNumber: numb
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
+/**
+ * Past-only rolling window for the dashboard.
+ *
+ * Returns up to `size` consecutive past week numbers ending at
+ * `currentWeek - 1` (the current week itself is excluded). Examples:
+ *   - currentWeek=4  → [1, 2, 3]                  (only 3 past weeks exist)
+ *   - currentWeek=6  → [1, 2, 3, 4, 5]            (5-week window cap)
+ *   - currentWeek=10 → [5, 6, 7, 8, 9]            (last 5 past weeks)
+ *   - currentWeek=13 → [8, 9, 10, 11, 12]
+ *   - currentWeek=1  → []                          (nothing past yet)
+ *
+ * When the user is on a past quarter, `useCurrentWeek` returns 13 and the
+ * window collapses to [8..12]. When the user is on a future quarter, it
+ * returns 1 and the window is empty (nothing has happened yet).
+ *
+ * Returns [] when `currentWeek` is null/undefined (still loading).
+ */
+export function rollingVisibleWeeks(
+  currentWeek: number | null | undefined,
+  size = 5,
+  total = 13,
+): number[] {
+  if (currentWeek == null || currentWeek <= 1) return [];
+  const end = Math.min(total, currentWeek - 1);
+  const start = Math.max(1, end - size + 1);
+  return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+}
+
 /** Compact date range for table headers: "1–7 Apr" or "29 Apr–5 May" */
 export function weekDateLabel(year: number, quarter: string, weekNumber: number): string {
   const [mo, dy] = QUARTER_STARTS[quarter] ?? [3, 1];

@@ -7,6 +7,7 @@ import { createPrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
+import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
 
 const PRIORITY_SELECT = {
   id: true,
@@ -144,6 +145,20 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     entityId: priority.id,
     newValues: priority,
   });
+
+  if (priority.owner) {
+    notifyPriorityAssignment({
+      orgId,
+      priorityId: priority.id,
+      priorityName: priority.name,
+      quarter: priority.quarter,
+      year: priority.year,
+      creatorUserId: userId,
+      ownerUserId: priority.owner,
+    }).catch((err) => {
+      console.error("[POST /api/priority] notifyPriorityAssignment failed:", err);
+    });
+  }
 
   return NextResponse.json({ success: true, data: priority }, { status: 201 });
 });

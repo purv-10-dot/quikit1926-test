@@ -30,7 +30,7 @@ function buildPOST(body: unknown): NextRequest {
 
 function asAuthed() {
   setSession({ id: USER, orgId: TENANT, role: "admin" });
-  // withOrgAuth calls getTenantId which calls membership.findFirst
+  // withOrgAuth calls getOrgId which calls membership.findFirst
   mockDb.orgMember.findFirst.mockResolvedValue({
     id: "m1",
     userId: USER,
@@ -38,7 +38,7 @@ function asAuthed() {
     role: "admin",
     status: "active",
   } as never);
-  // getTenantId also checks app access
+  // getOrgId also checks app access
   mockDb.app.findUnique.mockResolvedValue({ id: "app1", slug: "quikscale" } as never);
   mockDb.userAppAccess.findUnique.mockResolvedValue({ id: "access1" } as never);
   // GET route fetches tenant for fiscalYearStart

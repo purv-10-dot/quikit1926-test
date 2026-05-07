@@ -40,19 +40,19 @@ export const httpRequestsTotal = new client.Counter({
 export const kpiUpdatesTotal = new client.Counter({
   name: "quikscale_kpi_updates_total",
   help: "Total number of KPI weekly value saves",
-  labelNames: ["tenant_id"] as const,
+  labelNames: ["org_id"] as const,
 });
 
 export const meetingsCreatedTotal = new client.Counter({
   name: "quikscale_meetings_created_total",
   help: "Total number of meetings created",
-  labelNames: ["tenant_id", "cadence"] as const,
+  labelNames: ["org_id", "cadence"] as const,
 });
 
 export const feedbackEntriesTotal = new client.Counter({
   name: "quikscale_feedback_entries_total",
   help: "Total number of feedback entries created",
-  labelNames: ["tenant_id", "category"] as const,
+  labelNames: ["org_id", "category"] as const,
 });
 
 /* ── Registry export ─────────────────────────────────────────────────── */

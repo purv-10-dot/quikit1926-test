@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
 import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
+import { computeQtd, weeklyGoalFor } from "./kpiStats";
 import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
 import { useStickyOffsets } from "../hooks/useStickyOffsets";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
@@ -61,9 +62,14 @@ interface Props {
   maxRows?: number;
   /** When true, all interactive affordances (selection, edit, log, weekly cell input) are suppressed. */
   readOnly?: boolean;
+  /** When true, the table stretches to 100% of its container instead of using
+   *  `min-width: max-content`. Use this in dashboard previews where the
+   *  number of week columns is small and we want to fill the available
+   *  horizontal space rather than leaving empty space on the right. */
+  fillWidth?: boolean;
 }
 
-export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly }: Props) {
+export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth }: Props) {
   const kpis = maxRows != null ? kpisAll.slice(0, maxRows) : kpisAll;
   const allCols = [...ALL_STATIC_COLS, ...ALL_WEEKS.map(w => `week${w}`)];
   const headerRowRef = useRef<HTMLTableRowElement>(null);
@@ -151,7 +157,11 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
     <div className="flex flex-col h-full">
 
       <HorizontalScroller className="flex-1">
-        <table className="border-separate border-spacing-0 text-xs" style={{ minWidth: "max-content", tableLayout: "fixed" }}>
+        <table
+          className={`border-separate border-spacing-0 text-xs ${fillWidth ? "w-full" : ""}`}
+          style={fillWidth
+            ? { width: "100%", tableLayout: "fixed" }
+            : { minWidth: "max-content", tableLayout: "fixed" }}>
           <thead className="sticky top-0 z-30">
             <tr ref={headerRowRef}>
               {/* Fixed columns: Checkbox, Log, ID (hidable via hideColumns prop) */}
@@ -196,11 +206,15 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                 const col = `week${w}`;
                 const colW = getColWidth(col);
                 return (
-                  <th key={w} data-col-key={col} className={thClass(col)} style={stickyStyle(col, colW)}>
+                  <th key={w} data-col-key={col}
+                    className={thClass(col)}
+                    style={stickyStyle(col, colW)}>
                     <div className="flex items-start gap-1 px-3 py-2 pr-2">
                       {frozenUpTo === col && <FreezeIcon className="mt-0.5" />}
                       <div className="min-w-0 flex-1">
-                        <div className="whitespace-nowrap">Week {w}</div>
+                        <div className="whitespace-nowrap">
+                          Week {w}
+                        </div>
                         <div className="text-[9px] font-normal text-gray-400 leading-none mt-0.5 whitespace-nowrap">
                           {weekLabels[w - 1] ?? weekDateLabel(year, quarter, w)}
                         </div>
@@ -279,11 +293,27 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {!localHideSet.has("owner") && (
                     <td className={tdClass("owner", "whitespace-nowrap")} style={stickyStyle("owner", getColWidth("owner"))}>{ownerName}</td>
                   )}
-                  {/* KPI Name */}
+                  {/* KPI Name — caps at 3 visible lines; long names scroll
+                      vertically inside the cell. `break-all` lets the cell
+                      break a single very-long unbroken string (e.g. a paste
+                      with no spaces) so it can't blow out the column width. */}
                   {!localHideSet.has("kpiName") && (
                     <td className={tdClass("kpiName")} style={stickyStyle("kpiName", getColWidth("kpiName"))}>
                       <NameTooltip name={kpi.name}>
-                        <span className="line-clamp-2 leading-snug cursor-default">{kpi.name}</span>
+                        <div
+                          className="max-h-[3.25rem] overflow-y-auto leading-snug break-all cursor-default pr-1"
+                          style={{ scrollbarWidth: "thin" }}
+                        >
+                          {kpi.name}
+                          {kpi.parentKPI && (
+                            <span
+                              title={`Linked to Team KPI: ${kpi.parentKPI.name}`}
+                              className="ml-1 inline-block px-1.5 py-px text-[9px] font-semibold rounded bg-gray-100 text-gray-600 align-middle"
+                            >
+                              Linked
+                            </span>
+                          )}
+                        </div>
                       </NameTooltip>
                     </td>
                   )}
@@ -346,20 +376,34 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {!localHideSet.has("quarterlyGoal") && (
                     <td className={tdClass("quarterlyGoal")} style={stickyStyle("quarterlyGoal", getColWidth("quarterlyGoal"))}>{fmtCompact(kpi.quarterlyGoal ?? null)}</td>
                   )}
-                  {/* QTD Goal */}
-                  {!localHideSet.has("qtdGoal") && (
-                    <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>{fmtCompact(kpi.qtdGoal ?? null)}</td>
-                  )}
-                  {/* QTD Achieved */}
-                  {!localHideSet.has("qtdAchieved") && (
+                  {/* QTD Goal — Σ weeklyTargets[1..currentWeek-1].
+                      Falls back to kpi.qtdGoal when currentWeek is unresolvable. */}
+                  {!localHideSet.has("qtdGoal") && (() => {
+                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek);
+                    return (
+                      <>
+                        <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
+                          {qtdGoal != null ? fmtCompact(qtdGoal) : "—"}
+                        </td>
+                        {!localHideSet.has("qtdAchieved") && (
+                          <td className={tdClass("qtdAchieved")} style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}>
+                            {qtdAchieved != null ? fmtCompact(qtdAchieved) : "—"}
+                          </td>
+                        )}
+                      </>
+                    );
+                  })()}
+                  {/* If qtdGoal column is hidden but qtdAchieved is shown, render it standalone. */}
+                  {localHideSet.has("qtdGoal") && !localHideSet.has("qtdAchieved") && (
                     <td className={tdClass("qtdAchieved")} style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}>{fmtCompact(kpi.qtdAchieved ?? null)}</td>
                   )}
-                  {/* Weekly Goal (computed: (qtdGoal ?? target) / 13) */}
+                  {/* Weekly Goal — current week's target (from weeklyTargets), falling
+                      back to flat target/13 when no per-week breakdown is set. */}
                   {!localHideSet.has("weeklyGoal") && (
                     <td className={tdClass("weeklyGoal")} style={stickyStyle("weeklyGoal", getColWidth("weeklyGoal"))}>
                       {(() => {
-                        const base = kpi.qtdGoal ?? kpi.target ?? 0;
-                        return base > 0 ? fmtCompact(base / 13) : "—";
+                        const wg = weeklyGoalFor(kpi, currentWeek ?? 1);
+                        return wg > 0 ? fmtCompact(wg) : "—";
                       })()}
                     </td>
                   )}

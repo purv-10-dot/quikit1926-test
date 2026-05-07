@@ -1,5 +1,7 @@
 import { type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
+import AzureADProvider from "next-auth/providers/azure-ad";
 import { db } from "@quikit/database";
 import { rateLimitAsync } from "@quikit/shared/rateLimit";
 import bcrypt from "bcryptjs";
@@ -8,6 +10,7 @@ import {
   revokeAuthSession,
   touchAuthSession,
 } from "./session-store";
+import { setOAuthPrefill } from "./oauth-prefill-store";
 
 export interface AuthConfig {
   signInPage: string;
@@ -16,11 +19,23 @@ export interface AuthConfig {
 
 interface AuthUser {
   id: string;
-  email: string | null;
+  email: string;
   name?: string | null;
   isSuperAdmin?: boolean;
   orgId?: string;
   membershipRole?: string;
+  /** Stashed by Google/Azure profile() callbacks for post-OAuth pre-fill. */
+  oauthFirstName?: string;
+  oauthLastName?: string;
+}
+
+/** Split a single "First Last" string into parts (Microsoft profile shape). */
+function splitName(name: string | undefined | null): { first: string; last: string } {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed) return { first: "", last: "" };
+  const idx = trimmed.indexOf(" ");
+  if (idx < 0) return { first: trimmed, last: "" };
+  return { first: trimmed.slice(0, idx), last: trimmed.slice(idx + 1).trim() };
 }
 
 /**
@@ -98,8 +113,16 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
             );
           }
 
-          const user = await db.user.findUnique({
-            where: { email: credentials.email as string },
+          // Case-insensitive lookup so existing rows whose `email` was stored
+          // with the casing the admin originally typed (e.g. "Foo@Bar.com")
+          // still match what the user types into the sign-in form.
+          const user = await db.user.findFirst({
+            where: {
+              email: {
+                equals: String(credentials.email),
+                mode: "insensitive",
+              },
+            },
           });
 
           if (!user || !user.password) {
@@ -132,6 +155,67 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           };
         },
       }),
+      // Google OAuth — only registered when both env vars are set so the
+      // provider never appears in /api/auth/providers in dev environments
+      // that haven't configured it.
+      ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+        ? [
+            GoogleProvider({
+              clientId: process.env.GOOGLE_CLIENT_ID,
+              clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+              // Force account chooser every time — avoids silent re-use of a
+              // previously linked Google account when the user wants to
+              // switch.
+              authorization: { params: { prompt: "select_account" } },
+              profile(profile) {
+                console.log("[google.profile] raw profile from Google:", {
+                  sub: profile.sub,
+                  email: profile.email,
+                  name: profile.name,
+                  given_name: profile.given_name,
+                  family_name: profile.family_name,
+                });
+                return {
+                  // Placeholder id — `signIn` callback replaces it with the
+                  // DB User.id once we've confirmed the email exists.
+                  id: profile.sub,
+                  email: profile.email ?? "",
+                  name: profile.name ?? "",
+                  oauthFirstName: profile.given_name ?? "",
+                  oauthLastName: profile.family_name ?? "",
+                } as AuthUser;
+              },
+            }),
+          ]
+        : []),
+      // Microsoft OAuth (Azure AD / Entra ID). MICROSOFT_TENANT_ID="common"
+      // accepts both work/school and personal Microsoft accounts. Set a
+      // specific tenant GUID to restrict to one organization.
+      ...(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET
+        ? [
+            AzureADProvider({
+              clientId: process.env.MICROSOFT_CLIENT_ID,
+              clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+              tenantId: process.env.MICROSOFT_TENANT_ID || "common",
+              profile(profile) {
+                console.log("[azure-ad.profile] raw profile from Microsoft:", profile);
+                // Azure AD's id_token rarely splits given/family — derive
+                // both from `name` so we always have something to pre-fill.
+                const split = splitName(profile.name);
+                return {
+                  id: (profile as { sub?: string; oid?: string }).sub ?? (profile as { oid?: string }).oid ?? "",
+                  email:
+                    (profile as { email?: string }).email ??
+                    (profile as { preferred_username?: string }).preferred_username ??
+                    "",
+                  name: profile.name ?? "",
+                  oauthFirstName: split.first,
+                  oauthLastName: split.last,
+                } as AuthUser;
+              },
+            }),
+          ]
+        : []),
     ],
     pages: {
       signIn: config.signInPage,
@@ -146,6 +230,118 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
       maxAge: 30 * 24 * 60 * 60,
     },
     callbacks: {
+      /**
+       * Gate every OAuth sign-in on the email already existing in the User
+       * table. Returning a URL string redirects there; new users are NOT
+       * auto-created — they need to be added by an org admin first.
+       *
+       * Side-effect: stash the OAuth profile's first/last name in the
+       * pre-fill store (Redis, 10-min TTL) keyed by the matched DB user
+       * id. The post-login profile-confirmation form reads this to
+       * pre-populate its inputs. We deliberately do NOT write the names
+       * to the User row here — keeping firstName/lastName empty until
+       * the user clicks Continue is what makes /select-org route them
+       * to the form in the first place (matches credentials behavior).
+       */
+      async signIn({ user, account }) {
+        if (account?.provider === "google" || account?.provider === "azure-ad") {
+          const email = (user.email ?? "").toLowerCase();
+          if (!email) {
+            console.warn("[auth.signIn] OAuth attempt with no email on profile");
+            return "/login?reason=invalid_user_info";
+          }
+          // Case-insensitive lookup so historical rows that were inserted
+          // with the original mixed-case email (e.g. "Pravin.Sharma@quikit.ai")
+          // still match a lowercased OAuth email. Postgres' `mode: "insensitive"`
+          // uses ILIKE under the hood, which still benefits from a regular
+          // index on lower(email) — but for our membership volumes a normal
+          // index scan is fine.
+          const dbUser = await db.user.findFirst({
+            where: { email: { equals: email, mode: "insensitive" } },
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              isSuperAdmin: true,
+            },
+          });
+          if (!dbUser) {
+            console.warn("[auth.signIn] OAuth login rejected — unknown email:", email);
+            return "/login?reason=invalid_user_info";
+          }
+          // FRD FR-SA-006 / FR-OA-004 — auto-accept any pending SSO invitation
+          // for this user. We promote OrgMember rows where inviteMethod=sso and
+          // status=invited to status=active, granting the corresponding
+          // UserAppAccess rows. This is the SSO equivalent of the native
+          // accept-invite endpoint POST handler.
+          //
+          // BR-005 — the SSO-authenticated email must equal the email the
+          // invitation was sent to. Because OrgMember.userId points at the
+          // User row whose `email` column we just matched, this equality is
+          // automatic: a different OAuth email would have produced a different
+          // (or null) `dbUser` above. So no explicit comparison is needed
+          // here, but the audit log captures the link for traceability.
+          const pendingInvites = await db.orgMember.findMany({
+            where: {
+              userId: dbUser.id,
+              status: "invited",
+              inviteMethod: "sso",
+            },
+          });
+          for (const inv of pendingInvites) {
+            await db.orgMember.update({
+              where: { id: inv.id },
+              data: {
+                status: "active",
+                acceptedAt: new Date(),
+                invitationToken: null,
+              },
+            });
+            if (inv.inviteAppIds && inv.inviteAppIds.length > 0) {
+              const userAppRole = inv.role === "app_admin" ? "admin" : "member";
+              await db.userAppAccess.createMany({
+                data: inv.inviteAppIds.map((appId) => ({
+                  userId: dbUser.id,
+                  orgId: inv.orgId,
+                  appId,
+                  role: userAppRole,
+                  grantedBy: inv.createdBy,
+                })),
+                skipDuplicates: true,
+              });
+            }
+          }
+
+          // Replace the provider-supplied id with the actual DB id so
+          // downstream callbacks find the right OrgMember rows.
+          user.id = dbUser.id;
+          user.email = dbUser.email;
+          (user as AuthUser).isSuperAdmin = dbUser.isSuperAdmin;
+
+          // Stash OAuth names for the post-login form to pre-fill. Always
+          // write — even if the DB row already has names — so the form
+          // can show the latest provider-supplied values when users want
+          // to refresh. Cleared by the PATCH endpoint on save.
+          const oauthFirst = (user as AuthUser).oauthFirstName ?? "";
+          const oauthLast = (user as AuthUser).oauthLastName ?? "";
+          try {
+            await setOAuthPrefill(dbUser.id, {
+              firstName: oauthFirst,
+              lastName: oauthLast,
+            });
+            console.log(
+              "[auth.signIn] OAuth pre-fill stored for",
+              email,
+              { firstName: oauthFirst, lastName: oauthLast, provider: account.provider },
+            );
+          } catch (err) {
+            console.error("[auth.signIn] failed to stash OAuth pre-fill:", err);
+          }
+          return true;
+        }
+        return true;
+      },
       async jwt({ token, user, trigger, session }) {
         if (user) {
           token.id = user.id;
@@ -153,6 +349,55 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           token.isSuperAdmin = (user as AuthUser).isSuperAdmin ?? false;
           token.sessionId = await createAuthSession(user.id, 30 * 24 * 60 * 60);
           token.sessionTouchedAt = Date.now();
+
+          // OAuth pre-fill: when the user came from Google/Azure, stash the
+          // provider's given/family name on the JWT so the post-login profile
+          // step can pre-fill its inputs even though the User row's
+          // firstName/lastName columns are still empty.
+          const oauthFirst = (user as AuthUser).oauthFirstName;
+          const oauthLast = (user as AuthUser).oauthLastName;
+          if (oauthFirst) token.oauthFirstName = oauthFirst;
+          if (oauthLast) token.oauthLastName = oauthLast;
+
+          // FRD FR-SA-006 — auto-accept any pending NATIVE invitations for
+          // this user. SSO invites are accepted in the signIn callback
+          // above (which runs only for OAuth providers), so credentials
+          // logins would otherwise leave invited memberships in status
+          // "invited" — token.orgId stays undefined and the launcher
+          // bounces the user between /apps ↔ /select-org indefinitely.
+          // The user has authenticated against their stored password, so
+          // we treat that as proof of identity equivalent to clicking the
+          // accept-invite link.
+          const pendingNativeInvites = await db.orgMember.findMany({
+            where: {
+              userId: user.id,
+              status: "invited",
+              inviteMethod: "native",
+            },
+          });
+          for (const inv of pendingNativeInvites) {
+            await db.orgMember.update({
+              where: { id: inv.id },
+              data: {
+                status: "active",
+                acceptedAt: new Date(),
+                invitationToken: null,
+              },
+            });
+            if (inv.inviteAppIds && inv.inviteAppIds.length > 0) {
+              const userAppRole = inv.role === "app_admin" ? "admin" : "member";
+              await db.userAppAccess.createMany({
+                data: inv.inviteAppIds.map((appId) => ({
+                  userId: user.id,
+                  orgId: inv.orgId,
+                  appId,
+                  role: userAppRole,
+                  grantedBy: inv.createdBy,
+                })),
+                skipDuplicates: true,
+              });
+            }
+          }
 
           // Auto-select first active org on initial sign-in so the user is
           // dropped straight onto the launcher (/apps) without an interstitial

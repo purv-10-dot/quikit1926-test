@@ -37,14 +37,21 @@ async function fetchFiscalYears(): Promise<FiscalYearsData> {
   return inflight;
 }
 
-export function useFiscalYears(): FiscalYearsData {
+export interface FiscalYearsResult extends FiscalYearsData {
+  isLoading: boolean;
+}
+
+export function useFiscalYears(): FiscalYearsResult {
   const [data, setData] = useState<FiscalYearsData>(cache ?? { years: [], configured: [] });
+  const [isLoading, setIsLoading] = useState(!cache);
   useEffect(() => {
     let alive = true;
-    fetchFiscalYears().then(d => { if (alive) setData(d); });
+    fetchFiscalYears().then(d => {
+      if (alive) { setData(d); setIsLoading(false); }
+    });
     return () => { alive = false; };
   }, []);
-  return data;
+  return { ...data, isLoading };
 }
 
 /** Test / admin helper — force a refetch on next mount (e.g., after org-setup CRUD). */

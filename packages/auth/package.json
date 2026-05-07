@@ -17,7 +17,8 @@
     "./jwt": "./jwt.ts",
     "./with-auth": "./with-auth.ts",
     "./verify-token-remote": "./verify-token-remote.ts",
-    "./session-store": "./session-store.ts"
+    "./session-store": "./session-store.ts",
+    "./oauth-prefill-store": "./oauth-prefill-store.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

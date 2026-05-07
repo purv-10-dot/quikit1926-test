@@ -32,7 +32,13 @@ export default function IndividualKPIPage() {
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Year + quarter via shared FilterContext so they persist across module nav.
-  const { year: ctxYear, setYear: ctxSetYear, quarter: ctxQuarter, setQuarter: ctxSetQuarter, filterTeam, setFilterTeam, filterOwner, setFilterOwner } = useFilterContext();
+  // filterTeam / filterOwner are seeded from context on first mount (so the
+  // Dashboard's tab/filter selection carries over) but live LOCALLY here —
+  // edits/clears on this page don't bleed into Priority or WWW.
+  const ctx = useFilterContext();
+  const { year: ctxYear, setYear: ctxSetYear, quarter: ctxQuarter, setQuarter: ctxSetQuarter } = ctx;
+  const [filterTeam, setFilterTeam] = useState<string>(ctx.filterTeam);
+  const [filterOwner, setFilterOwner] = useState<string>(ctx.filterOwner);
 
   // View Trash toggle — when true, list fetches ONLY soft-deleted rows (?includeDeleted=true)
   const [viewTrash, setViewTrash] = useState(false);

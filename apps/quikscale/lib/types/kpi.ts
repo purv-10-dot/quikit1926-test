@@ -41,6 +41,9 @@ export interface KPIRow {
   team?: TeamInfo | null;
   teamId?: string | null;
   parentKPIId?: string | null;
+  /** Populated by /api/kpi list when parentKPIId is set — used by the
+   *  Individual table to surface a "Linked" badge pointing at the Team KPI. */
+  parentKPI?: { id: string; name: string; kpiLevel: string | null } | null;
   quarter: string;
   year: number;
   measurementUnit: string;

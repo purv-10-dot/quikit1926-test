@@ -1,4 +1,8 @@
-@import url("https://rsms.me/inter/inter.css");
+/* Inter served from Google Fonts. rsms.me is not on the apps' CSP allowlist
+   (style-src), so importing from there gets blocked during the OAuth-callback
+   redirect and cascades into a chunk-load timeout. fonts.googleapis.com +
+   fonts.gstatic.com are already allowed by every app's CSP. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;

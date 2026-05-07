@@ -2,6 +2,8 @@ export type WWWItem = {
   id: string;
   orgId: string;
   who: string;
+  /** Full assignee list. */
+  whoIds: string[];
   what: string;
   when: string;
   status: string;
@@ -13,4 +15,6 @@ export type WWWItem = {
   createdAt: string;
   updatedAt: string;
   who_user?: { id: string; firstName: string; lastName: string } | null;
+  /** Hydrated assignees in `whoIds` order. */
+  who_users?: Array<{ id: string; firstName: string; lastName: string; email?: string }>;
 };

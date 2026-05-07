@@ -35,7 +35,7 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
 export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
   const parsed = createCategorySchema.safeParse(await request.json());
   if (!parsed.success) return validationError(parsed);
-  const { name, dataType, currency, description } = parsed.data;
+  const { name, dataType, currency, description, breakdownType } = parsed.data;
 
   const trimmedName = name.trim();
   const effectiveCurrency = dataType === "Currency" ? (currency || null) : null;
@@ -49,6 +49,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
         dataType,
         currency: effectiveCurrency,
         description: description?.trim() || null,
+        breakdownType: breakdownType ?? "Cumulative",
         createdBy: userId,
       },
     });

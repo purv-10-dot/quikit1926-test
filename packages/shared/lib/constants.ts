@@ -52,6 +52,7 @@ export type MembershipStatus = (typeof MEMBERSHIP_STATUS)[keyof typeof MEMBERSHI
 export const MEMBERSHIP_ROLES = {
   SUPER_ADMIN: "super_admin",
   ORG_ADMIN: "org_admin",
+  APP_ADMIN: "app_admin",
   MEMBER: "member",
 } as const;
 
@@ -60,19 +61,43 @@ export type MembershipRole = (typeof MEMBERSHIP_ROLES)[keyof typeof MEMBERSHIP_R
 export const MEMBERSHIP_ROLE_LABELS: Record<MembershipRole, string> = {
   [MEMBERSHIP_ROLES.SUPER_ADMIN]: "Super Admin",
   [MEMBERSHIP_ROLES.ORG_ADMIN]: "Org Admin",
-  [MEMBERSHIP_ROLES.MEMBER]: "Member",
+  [MEMBERSHIP_ROLES.APP_ADMIN]: "App Admin",
+  [MEMBERSHIP_ROLES.MEMBER]: "User",
 };
 
 /**
  * Roles that grant access to admin-tier apps (apps with App.requiresOrgAdmin = true).
- * super_admin and org_admin pass; member does not. Also accepts the legacy
- * "admin" string for backwards compat with rows seeded before the rename.
+ * super_admin and org_admin pass; app_admin and member do not. Also accepts the
+ * legacy "admin" string for backwards compat with rows seeded before the rename.
  */
 export const ADMIN_TIER_ROLES = new Set<string>([
   MEMBERSHIP_ROLES.SUPER_ADMIN,
   MEMBERSHIP_ROLES.ORG_ADMIN,
   "admin", // legacy — pre-2026-05-04 rows used this string
 ]);
+
+// ── Invitation method (FRD §3.3, §3.4) ─────────────────────────────────────
+// FRD requires the inviter (Superadmin or Org Admin) to choose between an SSO
+// flow (Google / Microsoft) and a Native Email flow (default password +
+// Set-Password screen on first login).
+export const INVITE_METHOD = {
+  SSO: "sso",
+  NATIVE: "native",
+} as const;
+export type InviteMethod = (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
+
+// FRD §1.4 — system-defined default password for all native email invitations.
+// Stored as a constant so email templates and the Set-Password screen agree.
+export const DEFAULT_INVITE_PASSWORD = "Quikit2026";
+
+// FRD §3.3 — SSO providers we recognise. Email-domain classification maps an
+// invited address to one of these so the invitation email can render the right
+// CTA ("Sign in with Google" vs "Sign in with Microsoft").
+export const SSO_PROVIDER = {
+  GOOGLE: "google",
+  MICROSOFT: "microsoft",
+} as const;
+export type SsoProvider = (typeof SSO_PROVIDER)[keyof typeof SSO_PROVIDER];
 
 // ── Domain status const-enums ──────────────────────────────────────────────
 // These are TypeScript const objects (not Prisma enums) so they share the

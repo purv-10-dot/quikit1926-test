@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
-import { EmptyState, UserMultiPicker, UserPicker, DropdownPicker, type PickerUser } from "@quikit/ui";
+import { EmptyState, UserPicker, DropdownPicker, type PickerUser } from "@quikit/ui";
 import type { PerformanceColor } from "@/lib/services/clientMeetingsMath";
 
 interface ClientOpt { id: string; name: string }
@@ -84,6 +84,9 @@ export default function ClientMeetingsDashboardPage() {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"performance" | "punch">("performance");
+  // Single member at a time — the Member Punch-In tab only ever queries
+  // for one user (see `punchUserId` below), and the picker UI was confusing
+  // when admins could tick multiple but only see results for the first.
   const [punchUserIds, setPunchUserIds] = useState<string[]>([]);
   const [punchYear, setPunchYear] = useState<number>(new Date().getFullYear());
   const [punchMonth, setPunchMonth] = useState<number>(new Date().getMonth() + 1);
@@ -99,6 +102,15 @@ export default function ClientMeetingsDashboardPage() {
   const [exportYear, setExportYear] = useState<number>(new Date().getFullYear());
   const [exportClientId, setExportClientId] = useState("");
   const [exporting, setExporting] = useState(false);
+  // Inline error message shown inside the Export Report modal — replaces
+  // the previous alert() so a "no data in range" 404 surfaces visibly.
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // Clear any stale export error the moment the user changes a filter so
+  // they can re-try without manually dismissing the banner.
+  useEffect(() => {
+    setExportError(null);
+  }, [exportType, exportFrom, exportTo, exportYear, exportMonth, exportClientId]);
 
   useEffect(() => {
     fetch("/api/client-meetings/clients").then(r => r.json()).then(j => {
@@ -277,14 +289,14 @@ export default function ClientMeetingsDashboardPage() {
               <div className="flex items-center gap-2 min-w-[260px]">
                 <label className="text-xs text-gray-600 whitespace-nowrap">Select Member:</label>
                 <div className="flex-1">
-                  <UserMultiPicker
-                    values={punchUserIds}
-                    onChange={setPunchUserIds}
+                  <UserPicker
+                    value={punchUserIds[0] ?? ""}
+                    onChange={(id) => setPunchUserIds(id ? [id] : [])}
                     users={data.roster.map<PickerUser>(m => {
                       const parts = m.name.trim().split(/\s+/);
                       return { id: m.userId, firstName: parts[0] ?? m.name, lastName: parts.slice(1).join(" "), email: "" };
                     })}
-                    placeholder={data.roster.length ? "Select members…" : "No team members on this client"}
+                    placeholder={data.roster.length ? "Select a member…" : "No team members on this client"}
                     disabled={!data.roster.length}
                   />
                 </div>
@@ -341,16 +353,22 @@ export default function ClientMeetingsDashboardPage() {
                       <tr key={w.meetingDate} className="border-b border-gray-100">
                         <td className="px-3 py-2 text-gray-700">{w.meetingDate}</td>
                         {[w.kpiWeeklyQTD, w.kpiCoding, w.priorityNotes, w.priorityStartEndDate, w.priorityColor].map((v, i) => {
+                          // No color coding on Member Punch-In rows — admin
+                          // wants plain values. AB / NA still distinguished
+                          // by the literal label (no background tint).
                           const isNum = typeof v === "number";
-                          const cls = isNum ? cellClass(v, true) : v === "AB" ? "bg-red-500 text-white" : "bg-gray-300 text-white";
-                          return <td key={i} className={`text-center px-3 py-2 font-semibold ${cls}`}>{isNum ? `${v}%` : v}</td>;
+                          return (
+                            <td key={i} className="text-center px-3 py-2 font-semibold text-gray-800">
+                              {isNum ? `${v}%` : v}
+                            </td>
+                          );
                         })}
                       </tr>
                     ))}
                     <tr className="bg-gray-50 font-semibold">
                       <td className="px-3 py-2 text-gray-700">Total Avg</td>
                       {[data.punchIn.totals.kpiWeeklyQTD, data.punchIn.totals.kpiCoding, data.punchIn.totals.priorityNotes, data.punchIn.totals.priorityStartEndDate, data.punchIn.totals.priorityColor].map((v, i) => (
-                        <td key={i} className={`text-center px-3 py-2 ${cellClass(v, true)}`}>{v}%</td>
+                        <td key={i} className="text-center px-3 py-2 text-gray-800">{v}%</td>
                       ))}
                     </tr>
                   </tbody>
@@ -362,7 +380,10 @@ export default function ClientMeetingsDashboardPage() {
       </div>
 
       {exportOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40" onClick={() => setExportOpen(false)}>
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40"
+          onClick={() => { setExportOpen(false); setExportError(null); }}
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -371,12 +392,24 @@ export default function ClientMeetingsDashboardPage() {
                 </svg>
                 <h3 className="text-sm font-semibold text-gray-900">Export Report</h3>
               </div>
-              <button onClick={() => setExportOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => { setExportOpen(false); setExportError(null); }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
+
+            {exportError && (
+              <div className="mb-3 px-3 py-2 rounded-md bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2">
+                <svg className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <span>{exportError}</span>
+              </div>
+            )}
 
             <div className="space-y-4">
               <div>
@@ -546,6 +579,7 @@ export default function ClientMeetingsDashboardPage() {
                   if (exportType !== "member" && !exportTo) return;
                   if (exportType !== "member" && exportFrom && exportFrom > exportTo) return;
                   setExporting(true);
+                  setExportError(null);
                   try {
                     let year: number;
                     let month: number;
@@ -573,7 +607,9 @@ export default function ClientMeetingsDashboardPage() {
                     });
                     if (!res.ok) {
                       const j = await res.json().catch(() => ({}));
-                      alert(j.error ?? "Export failed");
+                      // Inline error inside the modal (also covers the 404
+                      // "no data in selected range" case).
+                      setExportError(j.error ?? "Export failed");
                       return;
                     }
                     const blob = await res.blob();

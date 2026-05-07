@@ -1,16 +1,23 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { verifyJWT } from "@quikit/auth/jwt";
+import { getOAuthPrefill, clearOAuthPrefill } from "@quikit/auth/oauth-prefill-store";
 import { db } from "@/lib/db";
 
 /**
  * GET /api/auth/me/profile
  *
  * Reports whether the currently signed-in user has filled in their first
- * name and last name. The sign-in component reads this immediately after a
- * successful credentials login to decide whether to advance to an inline
- * "tell us your name" step (when `complete === false`) or redirect straight
- * to the launcher.
+ * name and last name. The sign-in component reads this:
+ *   - immediately after a successful credentials login, to decide whether
+ *     to advance to an inline "tell us your name" step (when
+ *     `complete === false`) or redirect to the launcher
+ *   - when the profile step opens, to pre-fill the inputs.
+ *
+ * Pre-fill priority: stored DB values first, then OAuth-supplied fallbacks
+ * (`suggestedFirstName` / `suggestedLastName`) when DB is empty. This lets
+ * Google/Azure logins arrive at the form with the provider's name already
+ * typed in.
  */
 export async function GET(req: NextRequest) {
   const token = await verifyJWT(req);
@@ -27,12 +34,34 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
   }
 
+  // Pre-fill priority: stored DB names take precedence; the OAuth pre-fill
+  // store is the fallback used only when the DB columns are still empty.
+  // The token-stashed `oauthFirstName`/`oauthLastName` are kept as a
+  // last-resort backup in case the pre-fill store ever returns null.
+  const prefill = await getOAuthPrefill(userId);
   const fullName = `${user.firstName} ${user.lastName}`.trim();
+  const suggestedFirst =
+    prefill?.firstName ||
+    (token.oauthFirstName as string | undefined) ||
+    null;
+  const suggestedLast =
+    prefill?.lastName ||
+    (token.oauthLastName as string | undefined) ||
+    null;
+  console.log("[me/profile.GET] userId=", userId, {
+    dbFirst: user.firstName,
+    dbLast: user.lastName,
+    suggestedFirst,
+    suggestedLast,
+    prefillHit: prefill !== null,
+  });
   return NextResponse.json({
     success: true,
     firstName: user.firstName,
     lastName: user.lastName,
     complete: fullName.length > 0,
+    suggestedFirstName: suggestedFirst,
+    suggestedLastName: suggestedLast,
   });
 }
 
@@ -91,6 +120,12 @@ export async function PATCH(req: NextRequest) {
       where: { id: userId },
       data: { firstName: trimmedFirst, lastName: trimmedLast },
       select: { id: true, firstName: true, lastName: true, email: true },
+    });
+    // The pre-fill suggestion is now obsolete — the user has confirmed
+    // their name. Clear it so a stale value isn't shown if they edit
+    // their profile later within the 10-minute TTL.
+    await clearOAuthPrefill(userId).catch(() => {
+      // Non-fatal — the key will TTL-expire on its own.
     });
     return NextResponse.json({ success: true, user: updated });
   } catch (error: unknown) {

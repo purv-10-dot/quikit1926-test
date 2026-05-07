@@ -1,5 +1,8 @@
 export * from "./types";
 export * from "./lib/constants";
+export { classifySsoProvider, validateSsoEmail } from "./lib/sso-domain";
+export { renderInvitationEmail, type RenderInvitationParams } from "./lib/onboarding-email-template";
+export { sendWithRetry, type SendWithRetryResult } from "./lib/email-retry";
 export { sendInvitationEmail } from "./lib/email";
 export { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "./lib/pagination";
 export { requireProdEnv, requireEnv } from "./lib/env";

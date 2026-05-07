@@ -102,22 +102,35 @@ export async function GET(req: NextRequest) {
     : [];
   const orgAllowedAppIds = new Set(orgAllows.map((a) => a.appId));
 
-  // Optional per-user overrides (currently unused for visibility — present
-  // role elevates the per-app role. Future: explicit deny rows would block.)
-  const userOverrides = orgId
+  // Per-user app access (FRD FR-OA-002 / FR-OA-003).
+  //   - Map entry → user has been explicitly assigned this app; the value
+  //     is their per-app role ("admin" for App Admin, "member" for User).
+  //   - Map miss → user is NOT assigned the app and should not see it,
+  //     UNLESS they're an Org Admin or Super Admin (full-org visibility).
+  const userAccess = orgId
     ? await db.userAppAccess.findMany({
         where: { userId, orgId },
         select: { appId: true, role: true },
       })
     : [];
-  const userRoleOverride = new Map(userOverrides.map((u) => [u.appId, u.role]));
+  const userAppRoles = new Map(userAccess.map((u) => [u.appId, u.role]));
 
-  // Visibility filter (sparse storage — allow-list semantics, default-off):
-  //   - super-admin: bypasses entitlement gate, still subject to role check
-  //   - other users: app must have explicit OrgAppAccess { enabled:true } row
+  // Visibility (FRD-compliant, post-onboarding-FRD):
+  //   - Super Admin → sees every active app (still subject to requiresOrgAdmin)
+  //   - Org Admin → sees every app the org is provisioned for
+  //   - App Admin / User (Member) → only apps they have an explicit
+  //     UserAppAccess row for (FR-OA-002 / FR-OA-003)
+  //   - In every case, OrgAppAccess.enabled must be true (or super admin)
+  //     and requiresOrgAdmin gates admin-tier apps
   const visibleApps = allApps.filter((app) => {
     if (!isSuperAdmin && !orgAllowedAppIds.has(app.id)) return false;
     if (app.requiresOrgAdmin && !memberIsAdmin) return false;
+    // Per-user scoping for non-admin tiers. Super admin and org admin keep
+    // full org visibility; everyone else (App Admin, User/Member, legacy
+    // roles) must have a UserAppAccess row.
+    if (!isSuperAdmin && !memberIsAdmin && !userAppRoles.has(app.id)) {
+      return false;
+    }
     return true;
   });
 
@@ -133,11 +146,40 @@ export async function GET(req: NextRequest) {
     quikconstruction: process.env.QUIKCONSTRUCTION_URL,
   };
 
+  // Dev-only safety net. If the env var isn't set AND the DB's baseUrl is
+  // empty/missing, the launcher tile would set `window.location.href = ""`
+  // which silently reloads /apps. Map each app slug to its package.json dev
+  // port so the launcher always has a valid target on a fresh local clone.
+  // Production deployments must set the env vars (or have valid DB rows);
+  // we never inject localhost into a prod response.
+  const isDev = process.env.NODE_ENV !== "production";
+  const devLocalhostFallbacks: Record<string, string> = {
+    quikit: "http://localhost:3001",
+    admin: "http://localhost:3002",
+    quikscale: "http://localhost:3003",
+    quikconstruction: "http://localhost:3004",
+    quikvc: "http://localhost:3005",
+  };
+
+  /**
+   * Resolution order: explicit env override → DB-stored baseUrl → (dev only)
+   * localhost fallback. `||` is used instead of `??` so empty strings — which
+   * older seed scripts left behind when they ran without env vars — fall
+   * through instead of being treated as a valid value.
+   */
+  function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {
+    const fromEnv = envBaseUrls[slug];
+    if (fromEnv) return fromEnv;
+    if (dbBaseUrl) return dbBaseUrl;
+    if (isDev && devLocalhostFallbacks[slug]) return devLocalhostFallbacks[slug];
+    return "";
+  }
+
   const data = visibleApps.map((app) => ({
     ...app,
-    baseUrl: envBaseUrls[app.slug] ?? app.baseUrl,
+    baseUrl: resolveBaseUrl(app.slug, app.baseUrl),
     installed: true, // visibility implies installed under the new rule
-    role: userRoleOverride.get(app.id) ?? (memberIsAdmin ? "admin" : "member"),
+    role: userAppRoles.get(app.id) ?? (memberIsAdmin ? "admin" : "member"),
   }));
 
   // Authoritative IdP URL for the AppSwitcher's "View all apps" link —

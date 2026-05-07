@@ -7,14 +7,13 @@ import { useDashboardSummary } from "@/lib/hooks/useDashboardSummary";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption, FiscalPeriodPicker, type FiscalQuarter } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
-import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import { STATUS_FILTER_OPTIONS, STATUS_DOT, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
 import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
-  weekDateLabel, ALL_WEEKS,
+  weekDateLabel, ALL_WEEKS, rollingVisibleWeeks,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
@@ -29,7 +28,6 @@ import { ALL_STATIC_COLS, COL_LABELS as KPI_COL_LABELS } from "../kpi/hooks/useT
 import { ALL_WEEKS as FISCAL_ALL_WEEKS } from "@/lib/utils/fiscal";
 import { DashboardMoreActions, type DashboardSectionKey } from "./DashboardMoreActions";
 
-const ADMIN_MIN_LEVEL = ROLE_HIERARCHY[ROLES.ADMIN];
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -37,8 +35,15 @@ const CURRENT_YEAR = getFiscalYear();
 const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 const QUARTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
 
-// Shared week column definition used by KPI and Priority sections
-const WEEK_COLS: ColDef[] = ALL_WEEKS.map(w => ({ key: `w${w}`, label: `Week ${w}`, width: 64 }));
+// Shared week column factory. The Dashboard limits visible data to a rolling
+// 5-week window anchored at the current week (see rollingVisibleWeeks), so
+// these columns are derived per-render from `visibleWeeks` instead of being
+// the full 13-week constant. ALL_WEEKS is still exported elsewhere for the
+// non-dashboard tables that show the entire quarter.
+const ALL_WEEK_COLS: ColDef[] = ALL_WEEKS.map(w => ({ key: `w${w}`, label: `Week ${w}`, width: 64 }));
+function weekCols(visibleWeeks: number[]): ColDef[] {
+  return visibleWeeks.map(w => ({ key: `w${w}`, label: `Week ${w}`, width: 64 }));
+}
 
 // ── Status helpers ────────────────────────────────────────────────────────────
 
@@ -343,7 +348,7 @@ function ColMenu({ colKey, frozenUpTo, allColKeys, onFreeze }: {
 }
 
 // Shared thead for sections that have static cols + week cols
-function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, year, quarter }: {
+function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, year, quarter, weekCols }: {
   staticCols: ColDef[];
   allCols: ColDef[];
   frozenUpTo: string | null;
@@ -351,6 +356,7 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
   onFreeze: (key: string | null) => void;
   year: number;
   quarter: string;
+  weekCols: ColDef[];
 }) {
   const weekLabels = useWeekLabels(year, quarter);
   return (
@@ -365,7 +371,7 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
             </div>
           </th>
         ))}
-        {WEEK_COLS.map(col => (
+        {weekCols.map(col => (
           <th key={col.key} className={`sticky top-0 z-20 ${TH_BASE}`}
             style={{ ...getStickyStyle(col.key, frozenUpTo, allCols, 20), ...colW(col) }}>
             <div className="flex flex-col items-center px-1 py-1.5 gap-0.5">
@@ -461,11 +467,13 @@ const KPI_COLS: ColDef[] = [
   { key: "lastNotes",   label: "Last Notes",       width: 180 },
 ];
 
-const ALL_KPI_COLS: ColDef[] = [...KPI_COLS, ...WEEK_COLS];
-
-function KPISection({ kpis, year, quarter }: { kpis: KPIRow[]; year: number; quarter: string }) {
+function KPISection({ kpis, year, quarter, visibleWeeks }: { kpis: KPIRow[]; year: number; quarter: string; visibleWeeks: number[] }) {
   const [frozenUpTo, setFrozenUpTo] = useState<string | null>("name");
   const [page, setPage] = useState(1);
+  // Derive per-render week columns + the combined column list. Memoized so
+  // identity is stable while the visible window stays the same.
+  const WEEK_COLS = useMemo(() => weekCols(visibleWeeks), [visibleWeeks]);
+  const ALL_KPI_COLS = useMemo<ColDef[]>(() => [...KPI_COLS, ...WEEK_COLS], [WEEK_COLS]);
   const allColKeys = ALL_KPI_COLS.map(c => c.key);
   const paged = kpis.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const weekLabels = useWeekLabels(year, quarter);
@@ -478,7 +486,7 @@ function KPISection({ kpis, year, quarter }: { kpis: KPIRow[]; year: number; qua
       <WeekTableHead
         staticCols={KPI_COLS} allCols={ALL_KPI_COLS}
         frozenUpTo={frozenUpTo} allColKeys={allColKeys} onFreeze={setFrozenUpTo}
-        year={year} quarter={quarter}
+        year={year} quarter={quarter} weekCols={WEEK_COLS}
       />
       <tbody>
         {paged.map((kpi, ri) => {
@@ -535,7 +543,7 @@ function KPISection({ kpis, year, quarter }: { kpis: KPIRow[]; year: number; qua
                   </td>
                 );
               })}
-              {WEEK_COLS.map(col => {
+              {WEEK_COLS.map((col: ColDef) => {
                 const w = weekNum(col);
                 const val = weekMap[w];
                 const note = weekNoteMap[w];
@@ -591,12 +599,12 @@ const PRI_COLS: ColDef[] = [
   { key: "lastNotes", label: "Last Notes",    width: 180 },
 ];
 
-const ALL_PRI_COLS: ColDef[] = [...PRI_COLS, ...WEEK_COLS];
-
-function PrioritySection({ priorities, year, quarter }: { priorities: PriorityRow[]; year: number; quarter: string }) {
+function PrioritySection({ priorities, year, quarter, visibleWeeks }: { priorities: PriorityRow[]; year: number; quarter: string; visibleWeeks: number[] }) {
   const [frozenUpTo, setFrozenUpTo] = useState<string | null>("name");
   const [page, setPage] = useState(1);
   const weekLabels = useWeekLabels(year, quarter);
+  const WEEK_COLS = useMemo(() => weekCols(visibleWeeks), [visibleWeeks]);
+  const ALL_PRI_COLS = useMemo<ColDef[]>(() => [...PRI_COLS, ...WEEK_COLS], [WEEK_COLS]);
   const allColKeys = ALL_PRI_COLS.map(c => c.key);
   const paged = priorities.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -608,7 +616,7 @@ function PrioritySection({ priorities, year, quarter }: { priorities: PriorityRo
       <WeekTableHead
         staticCols={PRI_COLS} allCols={ALL_PRI_COLS}
         frozenUpTo={frozenUpTo} allColKeys={allColKeys} onFreeze={setFrozenUpTo}
-        year={year} quarter={quarter}
+        year={year} quarter={quarter} weekCols={WEEK_COLS}
       />
       <tbody>
         {paged.map((p, ri) => {
@@ -648,7 +656,7 @@ function PrioritySection({ priorities, year, quarter }: { priorities: PriorityRo
                   </td>
                 );
               })}
-              {WEEK_COLS.map(col => {
+              {WEEK_COLS.map((col: ColDef) => {
                 const w = weekNum(col);
                 const inRange = w >= start && w <= end;
                 const status = statusMap[w] ?? "";
@@ -794,7 +802,10 @@ function WWWSection({ items }: { items: WWWItem[] }) {
 
 export default function DashboardPage() {
   // Year + quarter live in FilterContext so they persist across module navigation.
-  const { filterTeam, setFilterTeam, filterOwner, setFilterOwner, year, setYear, quarter, setQuarter } = useFilterContext();
+  // setFilterTeam / setFilterOwner are written from this page so that when the
+  // user navigates to KPI / Team KPI / Priority via the sidebar, those modules
+  // pick up the same scope (My Dashboard → self; Team tab → picked user/team).
+  const { year, setYear, quarter, setQuarter, setFilterTeam, setFilterOwner } = useFilterContext();
   const [activeTab, setActiveTab] = useState<"individual" | "team">("individual");
 
   // Dashboard-level trash toggle — per-section. When a section is in this Set,
@@ -803,13 +814,11 @@ export default function DashboardPage() {
   // sections in trash mode will render empty until the API adds includeDeleted.
   const [dashTrashSections, setDashTrashSections] = useState<Set<DashboardSectionKey>>(new Set());
 
-  // Role-based dashboard: admins see all with filters; non-admins see only their own data
+  // My Dashboard is always scoped to the current user; the Team tab carries
+  // its own 3-stage filter (team / KPI type / owner) — no role-based gating
+  // is applied at this level any more.
   const { data: session } = useSession();
   const userId = session?.user?.id ?? "";
-  const role = (session?.user as { membershipRole?: string } | undefined)?.membershipRole;
-  const isSuperAdmin = (session?.user as { isSuperAdmin?: boolean } | undefined)?.isSuperAdmin;
-  const roleLevel = role ? (ROLE_HIERARCHY[role] ?? 0) : 0;
-  const isAdmin = roleLevel >= ADMIN_MIN_LEVEL || !!isSuperAdmin;
 
   /* ── Consolidated dashboard data — one API call instead of six ─────── */
   const { data: summary, isLoading } = useDashboardSummary({ year, quarter });
@@ -850,14 +859,35 @@ export default function DashboardPage() {
     [allOrgTeams],
   );
 
-  // Team tab: selected team for filtering
+  // ── Team tab filters (3-stage) ──
+  // A: Team scope — "" = All Users (no team filter); else specific team id.
+  // B: KPI type   — "individual" | "team" — only swaps the KPI section level.
+  // C: Owner       — "" = All Users; else a specific user id.
+  // A and C apply to ALL sections (KPI / Priority / WWW).
+  // B applies only to the KPI section.
   const [teamTabTeamId, setTeamTabTeamId] = useState<string>("");
-  // Non-admin: auto-select first team (they must pick one); admin: default to "All teams"
+  const [teamTabKpiType, setTeamTabKpiType] = useState<"individual" | "team">("individual");
+  const [teamTabOwnerId, setTeamTabOwnerId] = useState<string>("");
+  // Reset C when A changes (the user list narrows / widens).
+  useEffect(() => { setTeamTabOwnerId(""); }, [teamTabTeamId]);
+
+  // ── Sync Dashboard scope → FilterContext ──
+  // The KPI / Team KPI / Priority pages read `filterTeam` + `filterOwner`
+  // from FilterContext. Writing them here means a sidebar navigation lands
+  // on the destination page already filtered to the right scope.
+  //   - My Dashboard tab → owner = current user, no team.
+  //   - Team tab          → owner / team = whatever is picked in the 3-stage filter.
+  // WWW page intentionally ignores `filterTeam` (per product rule), so the
+  // team value here doesn't bleed into WWW even when set.
   useEffect(() => {
-    if (activeTab === "team" && !isAdmin && !teamTabTeamId && teams.length > 0) {
-      setTeamTabTeamId(teams[0].id);
+    if (activeTab === "individual") {
+      setFilterTeam("");
+      setFilterOwner(userId || "");
+    } else {
+      setFilterTeam(teamTabTeamId || "");
+      setFilterOwner(teamTabOwnerId || "");
     }
-  }, [activeTab, isAdmin, teamTabTeamId, teams]);
+  }, [activeTab, teamTabTeamId, teamTabOwnerId, userId, setFilterTeam, setFilterOwner]);
 
   // Team id → Set<userId> lookup, derived from KPI ownership so we can
   // filter the users list client-side without refetching.
@@ -878,9 +908,9 @@ export default function DashboardPage() {
     return map;
   }, [allIndKpis, allTeamKpis]);
 
-  const individualFilterTeam = isAdmin ? (filterTeam || undefined) : undefined;
-  const selectedTeamId =
-    activeTab === "individual" ? individualFilterTeam : (teamTabTeamId || undefined);
+  // Active scope team — only the Team tab uses a team filter now (My Dashboard
+  // is hard-locked to the current user, no team filter).
+  const selectedTeamId = activeTab === "team" ? (teamTabTeamId || undefined) : undefined;
 
   const users = useMemo(() => {
     if (!selectedTeamId) return allOrgUsers;
@@ -891,51 +921,76 @@ export default function DashboardPage() {
   // Set of user IDs belonging to the selected team (all org members when no team selected)
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
 
-  /* ── Individual tab data ─────────────────────────────────────────────── */
-  const indOwnerFilter = isAdmin ? (filterOwner || undefined) : (userId || undefined);
-  const ownerScopedIndKpis: KPIRow[] = indOwnerFilter
-    ? allIndKpis.filter((k) => k.owner === indOwnerFilter)
-    : allIndKpis;
-  const indKpis: KPIRow[] = (isAdmin && filterTeam && !filterOwner)
-    ? ownerScopedIndKpis.filter(k => !!k.owner && teamUserIds.has(k.owner))
-    : ownerScopedIndKpis;
-
-  const indPriorities = !isAdmin
-    ? allPriorities.filter(p => p.owner === userId)
-    : filterOwner
-      ? allPriorities.filter(p => p.owner === filterOwner)
-      : filterTeam
-        ? allPriorities.filter(p => teamUserIds.has(p.owner))
-        : allPriorities;
-
   const [wwwStatusFilter, setWwwStatusFilter] = useState<string>("");
-  const indWwwByOwner = !isAdmin
-    ? allWWW.filter(w => w.who === userId)
-    : filterOwner
-      ? allWWW.filter(w => w.who === filterOwner)
-      : filterTeam
-        ? allWWW.filter(w => teamUserIds.has(w.who))
-        : allWWW;
-  const indWwwItems = wwwStatusFilter
-    ? indWwwByOwner.filter(w => w.status === wwwStatusFilter)
-    : indWwwByOwner;
 
-  /* ── Team tab data ───────────────────────────────────────────────────── */
-  const teamKpis: KPIRow[] = teamTabTeamId
-    ? allTeamKpis.filter((k) => k.teamId === teamTabTeamId)
-    : allTeamKpis;
+  /* ── My Dashboard tab — always scoped to the current user ───────────── */
+  // KPI section: Individual KPIs owned by the user + Team KPIs they co-own.
+  // Priorities + WWW: rows owned by the user.
+  const myIndKpis: KPIRow[] = useMemo(
+    () => allIndKpis.filter((k) => k.owner === userId),
+    [allIndKpis, userId],
+  );
+  const myTeamKpis: KPIRow[] = useMemo(
+    () => allTeamKpis.filter((k) => ((k.ownerIds ?? []) as string[]).includes(userId)),
+    [allTeamKpis, userId],
+  );
+  const myKpis: KPIRow[] = useMemo(
+    () => [...myIndKpis, ...myTeamKpis],
+    [myIndKpis, myTeamKpis],
+  );
+  const myPriorities = useMemo(
+    () => allPriorities.filter((p) => p.owner === userId),
+    [allPriorities, userId],
+  );
+  const myWwwByOwner = useMemo(
+    () => allWWW.filter((w) => w.who === userId),
+    [allWWW, userId],
+  );
 
-  // Team tab: priorities filtered by team members (all if no team selected for admin)
-  const teamPriorities = teamTabTeamId
-    ? allPriorities.filter(p => teamUserIds.has(p.owner))
-    : isAdmin ? allPriorities : [];
+  /* ── Team tab — 3-stage filter (team scope, KPI type, owner) ────────── */
+  // Filter A (teamTabTeamId) + Filter C (teamTabOwnerId) apply to all sections.
+  // Filter B (teamTabKpiType) only swaps the KPI section level.
+  const teamScopeUserIds = teamTabTeamId ? teamUserIds : null;
+  const ownerFilter = teamTabOwnerId || null;
+
+  const teamKpis: KPIRow[] = useMemo(() => {
+    if (teamTabKpiType === "individual") {
+      let rows = allIndKpis;
+      if (teamScopeUserIds) rows = rows.filter((k) => !!k.owner && teamScopeUserIds.has(k.owner));
+      if (ownerFilter) rows = rows.filter((k) => k.owner === ownerFilter);
+      return rows;
+    }
+    // Team-level KPIs: scope by teamId, then by ownerIds when an owner is picked.
+    let rows = allTeamKpis;
+    if (teamTabTeamId) rows = rows.filter((k) => k.teamId === teamTabTeamId);
+    if (ownerFilter) {
+      rows = rows.filter((k) => ((k.ownerIds ?? []) as string[]).includes(ownerFilter));
+    }
+    return rows;
+  }, [teamTabKpiType, allIndKpis, allTeamKpis, teamScopeUserIds, ownerFilter, teamTabTeamId]);
+
+  const teamPriorities = useMemo(() => {
+    if (ownerFilter) return allPriorities.filter((p) => p.owner === ownerFilter);
+    if (teamScopeUserIds) return allPriorities.filter((p) => teamScopeUserIds.has(p.owner));
+    return allPriorities;
+  }, [allPriorities, teamScopeUserIds, ownerFilter]);
+
+  const teamWwwByOwner = useMemo(() => {
+    if (ownerFilter) return allWWW.filter((w) => w.who === ownerFilter);
+    if (teamScopeUserIds) return allWWW.filter((w) => teamScopeUserIds.has(w.who));
+    return allWWW;
+  }, [allWWW, teamScopeUserIds, ownerFilter]);
+
   /* ── Active tab data selection ───────────────────────────────────────── */
-  const kpis = activeTab === "individual" ? indKpis : teamKpis;
+  const kpis = activeTab === "individual" ? myKpis : teamKpis;
   const kpisLoading = isLoading;
   const priLoading = isLoading;
   const wwwLoading = isLoading;
-  const priorities = activeTab === "individual" ? indPriorities : teamPriorities;
-  const wwwItems = indWwwItems; // WWW only shown on Individual tab
+  const priorities = activeTab === "individual" ? myPriorities : teamPriorities;
+  const wwwSource = activeTab === "individual" ? myWwwByOwner : teamWwwByOwner;
+  const wwwItems = wwwStatusFilter
+    ? wwwSource.filter((w) => w.status === wwwStatusFilter)
+    : wwwSource;
 
   // Dashboard-local pagination state (10 rows per page for each table)
   const DASHBOARD_PAGE_SIZE = 10;
@@ -964,9 +1019,9 @@ export default function DashboardPage() {
   };
 
   // Reset to page 1 when filters, year, quarter, or tab change
-  useEffect(() => { setKpiPage(1); }, [activeTab, filterTeam, filterOwner, teamTabTeamId, year, quarter, kpis.length]);
-  useEffect(() => { setPriPage(1); }, [activeTab, filterTeam, filterOwner, teamTabTeamId, year, quarter, priorities.length]);
-  useEffect(() => { setWwwPage(1); }, [activeTab, filterTeam, filterOwner, teamTabTeamId, wwwStatusFilter, wwwItems.length]);
+  useEffect(() => { setKpiPage(1); }, [activeTab, teamTabTeamId, teamTabKpiType, teamTabOwnerId, year, quarter, kpis.length]);
+  useEffect(() => { setPriPage(1); }, [activeTab, teamTabTeamId, teamTabOwnerId, year, quarter, priorities.length]);
+  useEffect(() => { setWwwPage(1); }, [activeTab, teamTabTeamId, teamTabOwnerId, wwwStatusFilter, wwwItems.length]);
 
   // Slice each list to the current page's chunk
   const pagedKpis = kpis.slice((kpiPage - 1) * DASHBOARD_PAGE_SIZE, kpiPage * DASHBOARD_PAGE_SIZE);
@@ -978,9 +1033,25 @@ export default function DashboardPage() {
   const currentWeekRange = useWeekDateRange(year, quarter, currentWeek);
   const weekLabels = useWeekLabels(year, quarter);
 
+  // Rolling 5-week window. The dashboard always limits the week-grid to 5
+  // weeks ending at the current week. For past quarters useCurrentWeek
+  // clamps to 13 (so we get weeks 9-13), for future quarters it returns 1
+  // (so we get weeks 1-5). Until currentWeek is loaded we fall back to the
+  // first 5 weeks so the table renders something instead of being empty.
+  const visibleWeeks = useMemo(
+    () => rollingVisibleWeeks(currentWeek ?? 5),
+    [currentWeek],
+  );
+  const hiddenWeekCols = useMemo(() => {
+    const visible = new Set(visibleWeeks);
+    return ALL_WEEKS.filter(w => !visible.has(w)).map(w => `week${w}`);
+  }, [visibleWeeks]);
+
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
-  const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner ? 1 : 0);
+  // Active filter badge count for the Team tab — "Individual" default for B
+  // is not counted; only A (team) and C (owner) contribute.
+  const teamFilterCount = (teamTabTeamId ? 1 : 0) + (teamTabOwnerId ? 1 : 0);
 
   // Fiscal year list — DB-scoped via shared hook
   const { years: fyYears, configured: fyConfigured } = useFiscalYears();
@@ -1012,73 +1083,70 @@ export default function DashboardPage() {
           {/* AvgKPICard moved into the KPI Overview container header — see KPIOverviewContainer */}
         </div>
         <div className="flex items-center gap-2">
-          {/* Filter button — Individual tab: admin sees Team + Owner; Team tab: everyone sees Team picker */}
-          {(activeTab === "team" || (isAdmin && activeTab === "individual")) && (
+          {/* Filter button — only on Team tab. My Dashboard is locked to current user. */}
+          {activeTab === "team" && (
             <div className="relative" ref={filterRef}>
               <button
                 onClick={() => setShowFilter(o => !o)}
-                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || activeFilterCount > 0 || (activeTab === "team" && teamTabTeamId) ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
+                className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-md hover:bg-gray-50 transition-colors ${showFilter || teamFilterCount > 0 ? "border-accent-300 bg-accent-50 text-accent-600" : "border-gray-200 text-gray-600"}`}
               >
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" />
                 </svg>
-                {activeTab === "individual"
-                  ? (activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount > 1 ? "s" : ""}` : "Filter")
-                  : (teamTabTeamId ? "1 filter" : "Filter")
-                }
+                {teamFilterCount > 0 ? `${teamFilterCount} filter${teamFilterCount > 1 ? "s" : ""}` : "Filter"}
               </button>
 
               {showFilter && (
                 <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
-                  {activeTab === "individual" ? (
-                    <>
-                      <div>
-                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
-                        <FilterPicker
-                          value={filterTeam}
-                          onChange={setFilterTeam}
-                          options={teams.map(t => ({ value: t.id, label: t.name }))}
-                          allLabel="All teams"
-                        />
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
-                        <FilterPicker
-                          value={filterOwner}
-                          onChange={setFilterOwner}
-                          options={users.map(userToFilterOption)}
-                          allLabel="All owners"
-                        />
-                      </div>
-                      {(filterTeam || filterOwner) && (
+                  {/* A — Team scope */}
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
+                    <FilterPicker
+                      value={teamTabTeamId}
+                      onChange={setTeamTabTeamId}
+                      options={teams.map(t => ({ value: t.id, label: t.name }))}
+                      allLabel="All Users"
+                    />
+                  </div>
+                  {/* B — KPI type */}
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">KPI Type</p>
+                    <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg">
+                      {(["individual", "team"] as const).map(t => (
                         <button
-                          onClick={() => { setFilterTeam(""); setFilterOwner(""); }}
-                          className="w-full text-xs text-gray-500 hover:text-gray-800 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                          key={t}
+                          type="button"
+                          onClick={() => setTeamTabKpiType(t)}
+                          className={`flex-1 px-2 py-1 text-[11px] font-medium rounded-md transition-all ${
+                            teamTabKpiType === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                          }`}
                         >
-                          Clear filters
+                          {t === "individual" ? "Individual KPI" : "Team KPI"}
                         </button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div>
-                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
-                        <FilterPicker
-                          value={teamTabTeamId}
-                          onChange={setTeamTabTeamId}
-                          options={teams.map(t => ({ value: t.id, label: t.name }))}
-                          allLabel="All teams"
-                        />
-                      </div>
-                      {teamTabTeamId && (
-                        <button
-                          onClick={() => setTeamTabTeamId("")}
-                          className="w-full text-xs text-gray-500 hover:text-gray-800 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                        >
-                          Clear filters
-                        </button>
-                      )}
-                    </>
+                      ))}
+                    </div>
+                  </div>
+                  {/* C — Owner */}
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
+                    <FilterPicker
+                      value={teamTabOwnerId}
+                      onChange={setTeamTabOwnerId}
+                      options={users.map(userToFilterOption)}
+                      allLabel="All Users"
+                    />
+                  </div>
+                  {(teamTabTeamId || teamTabOwnerId || teamTabKpiType !== "individual") && (
+                    <button
+                      onClick={() => {
+                        setTeamTabTeamId("");
+                        setTeamTabOwnerId("");
+                        setTeamTabKpiType("individual");
+                      }}
+                      className="w-full text-xs text-gray-500 hover:text-gray-800 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Clear filters
+                    </button>
                   )}
                 </div>
               )}
@@ -1087,9 +1155,9 @@ export default function DashboardPage() {
 
           {/* Global More pill — Export/Trash/Manage Cols across sections */}
           <DashboardMoreActions
-            kpis={activeTab === "individual" ? indKpis : (allTeamKpis as any)}
-            priorities={indPriorities as any}
-            wwws={indWwwItems as any}
+            kpis={kpis as any}
+            priorities={priorities as any}
+            wwws={wwwItems as any}
             fiscalLabel={`FY${year}-${quarter}`}
             trashSections={dashTrashSections}
             onChangeTrashSections={setDashTrashSections}
@@ -1110,7 +1178,7 @@ export default function DashboardPage() {
       {/* Tabs */}
       <div className="flex border-b border-gray-200 bg-white px-4 md:px-6 flex-shrink-0">
         <button className={tabCls(activeTab === "individual")} onClick={() => setActiveTab("individual")}>
-          {isAdmin ? "Individual" : "My Dashboard"}
+          My Dashboard
         </button>
         <button className={tabCls(activeTab === "team")} onClick={() => setActiveTab("team")}>
           Team
@@ -1163,10 +1231,13 @@ export default function DashboardPage() {
                 onPageChange={setKpiPage}
                 onSort={() => {}}
                 onRefresh={() => {}}
-                hideColumns={activeTab === "team"
-                  ? ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "teamHead"]
-                  : ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "team", "teamHead", "kpiOwner"]
-                }
+                fillWidth
+                hideColumns={[
+                  ...(activeTab === "team"
+                    ? ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "teamHead"]
+                    : ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "team", "teamHead", "kpiOwner"]),
+                  ...hiddenWeekCols,
+                ]}
               />
             </div>
           )}
@@ -1193,10 +1264,13 @@ export default function DashboardPage() {
                 onRefresh={() => {}}
                 year={year}
                 quarter={quarter}
-                hideColumns={activeTab === "team"
-                  ? ["_cb", "_log", "_id", "owner"]
-                  : ["_cb", "_log", "_id", "team", "owner"]
-                }
+                fillWidth
+                hideColumns={[
+                  ...(activeTab === "team"
+                    ? ["_cb", "_log", "_id", "owner"]
+                    : ["_cb", "_log", "_id", "team", "owner"]),
+                  ...hiddenWeekCols,
+                ]}
                 readOnly
                 page={priPage}
                 pageSize={DASHBOARD_PAGE_SIZE}
@@ -1207,50 +1281,49 @@ export default function DashboardPage() {
           )}
         </Section>
 
-        {/* WWW section — Individual tab only */}
-        {activeTab === "individual" && (
-          <Section
-            badge="WWW"
-            count={wwwItems.length}
-            right={
-              <>
-                {wwwPrefs.hiddenCols.length > 0 && (
-                  <HiddenColsPill
-                    hiddenCols={wwwPrefs.hiddenCols}
-                    colLabels={WWW_DASH_COL_LABELS}
-                    onRestore={wwwPrefs.showCol}
-                    onRestoreAll={wwwPrefs.showAllCols}
-                  />
-                )}
-                <select
-                  value={wwwStatusFilter}
-                  onChange={e => setWwwStatusFilter(e.target.value)}
-                  className={selectCls}
-                  aria-label="Filter WWW by status"
-                >
-                  {STATUS_FILTER_OPTIONS.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </>
-            }
-          >
-            {wwwLoading ? <Spinner /> : (
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <WWWTable
-                  items={pagedWWW}
-                  onRefresh={() => {}}
-                  hideColumns={["_cb", "_log", "_id"]}
-                  readOnly
-                  page={wwwPage}
-                  pageSize={DASHBOARD_PAGE_SIZE}
-                  total={wwwItems.length}
-                  onPageChange={setWwwPage}
+        {/* WWW section — visible on both tabs. Source already respects active
+            tab + team-tab filter chain (A team scope + C owner). */}
+        <Section
+          badge="WWW"
+          count={wwwItems.length}
+          right={
+            <>
+              {wwwPrefs.hiddenCols.length > 0 && (
+                <HiddenColsPill
+                  hiddenCols={wwwPrefs.hiddenCols}
+                  colLabels={WWW_DASH_COL_LABELS}
+                  onRestore={wwwPrefs.showCol}
+                  onRestoreAll={wwwPrefs.showAllCols}
                 />
-              </div>
-            )}
-          </Section>
-        )}
+              )}
+              <select
+                value={wwwStatusFilter}
+                onChange={e => setWwwStatusFilter(e.target.value)}
+                className={selectCls}
+                aria-label="Filter WWW by status"
+              >
+                {STATUS_FILTER_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </>
+          }
+        >
+          {wwwLoading ? <Spinner /> : (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <WWWTable
+                items={pagedWWW}
+                onRefresh={() => {}}
+                hideColumns={["_cb", "_log", "_id"]}
+                readOnly
+                page={wwwPage}
+                pageSize={DASHBOARD_PAGE_SIZE}
+                total={wwwItems.length}
+                onPageChange={setWwwPage}
+              />
+            </div>
+          )}
+        </Section>
 
       </div>
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useUpdateKPI, useUpdateWeeklyValue, useNotes, useAddNote } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -16,7 +16,9 @@ import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import {
   buildBreakdown,
+  buildOwnerBreakdown,
   redistributeOwnerRemainder,
+  distributeContributionsEven,
 } from "./kpiModalHelpers";
 import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
@@ -36,6 +38,14 @@ type EditFormState = {
   currency: string;
   targetScale: string;
   reverseColor: boolean;
+  // Team-KPI multi-owner state (mirrors KPIModal's create form so the Edit
+  // dialog can show Contribution % per Owner + per-owner Target Breakdown rows).
+  ownerIds: string[];
+  ownerContributions: Record<string, string>;
+  weeklyOwnerBreakdown: Record<string, Record<number, string>>;
+  // Per-owner Individual KPI name override. Seeded from each child's current
+  // name on mount; sent on save so renames propagate to the linked children.
+  ownerKpiNames: Record<string, string>;
 };
 
 // ── Edit Tab ──────────────────────────────────────────────────────────────────
@@ -113,6 +123,114 @@ function EditTab({
       };
     });
   }
+
+  // ── Team-KPI helpers (mirror KPIModal) ──
+  function computeAllOwnerBreakdowns(f: EditFormState): Record<string, Record<number, string>> {
+    const tNum = f.measurementUnit === "Currency"
+      ? (parseFloat(f.target) || 0) * getMultiplier(f.currency, f.targetScale)
+      : parseFloat(f.target) || 0;
+    const out: Record<string, Record<number, string>> = {};
+    for (const id of f.ownerIds) {
+      const pct = parseFloat(f.ownerContributions[id]) || 0;
+      out[id] = buildOwnerBreakdown(pct, tNum, f.divisionType, f.measurementUnit, firstEditableWeek);
+    }
+    return out;
+  }
+
+  function setContribution(id: string, val: string) {
+    setForm(f => {
+      const newContribs = { ...f.ownerContributions, [id]: val };
+      const newOwnerBreakdown = computeAllOwnerBreakdowns({ ...f, ownerContributions: newContribs });
+      return { ...f, ownerContributions: newContribs, weeklyOwnerBreakdown: newOwnerBreakdown };
+    });
+  }
+
+  function distributeContributionsEvenly() {
+    setForm(f => {
+      if (f.ownerIds.length === 0) return f;
+      const newContribs = distributeContributionsEven(f.ownerIds);
+      const newOwnerBreakdown = computeAllOwnerBreakdowns({ ...f, ownerContributions: newContribs });
+      return { ...f, ownerContributions: newContribs, weeklyOwnerBreakdown: newOwnerBreakdown };
+    });
+  }
+
+  function setOwnerWeekCell(ownerId: string, weekNumber: number, rawVal: string) {
+    setForm(f => {
+      const totalTargetNum = actualNum(f);
+      const pct = parseFloat(f.ownerContributions[ownerId]) || 0;
+      const ownerSubTarget = totalTargetNum * (pct / 100);
+      const isWhole = f.measurementUnit === "Number";
+      const existingRow = f.weeklyOwnerBreakdown[ownerId] ?? {};
+
+      let priorSum = 0;
+      for (let i = 1; i < weekNumber; i++) priorSum += parseFloat(String(existingRow[i])) || 0;
+      const maxAllowed = Math.max(0, ownerSubTarget - priorSum);
+
+      let parsed = parseFloat(rawVal);
+      if (rawVal === "" || isNaN(parsed)) parsed = 0;
+      if (parsed < 0) parsed = 0;
+      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
+
+      const val = rawVal === "" ? "" : (isWhole ? String(Math.round(parsed)) : parsed.toFixed(2));
+      let ownerRow = { ...existingRow, [weekNumber]: val };
+      if (f.divisionType === "Cumulative") {
+        ownerRow = redistributeOwnerRemainder(ownerRow, weekNumber, ownerSubTarget, f.measurementUnit);
+      }
+      return { ...f, weeklyOwnerBreakdown: { ...f.weeklyOwnerBreakdown, [ownerId]: ownerRow } };
+    });
+  }
+
+  function setTeamTotalWeekCell(weekNumber: number, rawVal: string) {
+    setForm(f => {
+      const totalTargetNum = actualNum(f);
+      const isWhole = f.measurementUnit === "Number";
+
+      let priorTeamSum = 0;
+      for (let i = 1; i < weekNumber; i++) {
+        for (const id of f.ownerIds) {
+          priorTeamSum += parseFloat(String((f.weeklyOwnerBreakdown[id] ?? {})[i])) || 0;
+        }
+      }
+      const maxAllowed = Math.max(0, totalTargetNum - priorTeamSum);
+
+      let parsed = parseFloat(rawVal);
+      if (rawVal === "" || isNaN(parsed)) parsed = 0;
+      if (parsed < 0) parsed = 0;
+      if (f.divisionType === "Cumulative" && parsed > maxAllowed) parsed = maxAllowed;
+
+      const totalNum = parsed;
+      const newOwnerBreakdown: Record<string, Record<number, string>> = { ...f.weeklyOwnerBreakdown };
+      for (const id of f.ownerIds) {
+        const pct = parseFloat(f.ownerContributions[id]) || 0;
+        const ownerCellVal = totalNum * (pct / 100);
+        const formattedVal = isWhole ? String(Math.round(ownerCellVal)) : ownerCellVal.toFixed(2);
+        let ownerRow = { ...(newOwnerBreakdown[id] ?? {}), [weekNumber]: formattedVal };
+        if (f.divisionType === "Cumulative") {
+          const ownerSubTarget = totalTargetNum * (pct / 100);
+          ownerRow = redistributeOwnerRemainder(ownerRow, weekNumber, ownerSubTarget, f.measurementUnit);
+        }
+        newOwnerBreakdown[id] = ownerRow;
+      }
+      return { ...f, weeklyOwnerBreakdown: newOwnerBreakdown };
+    });
+  }
+
+  // Auto-seed empty per-owner rows on first render (handles legacy KPIs that
+  // were saved before `weeklyOwnerTargets` existed).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!isTeamKPI) return;
+    setForm(f => {
+      const needsSeed = f.ownerIds.some(id => !f.weeklyOwnerBreakdown[id] || Object.keys(f.weeklyOwnerBreakdown[id]).length === 0);
+      if (!needsSeed) return f;
+      return { ...f, weeklyOwnerBreakdown: computeAllOwnerBreakdowns(f) };
+    });
+  }, [isTeamKPI]);
+
+  const contributionSum = Object.values(form.ownerContributions).reduce(
+    (s, v) => s + (parseFloat(v) || 0), 0
+  );
+  const contributionSumValid = Math.abs(contributionSum - 100) <= 0.5 && form.ownerIds.length > 0;
 
   const isCurrency = form.measurementUnit === "Currency";
   const currencyObj = CURRENCIES.find(c => c.code === form.currency) ?? CURRENCIES[0];
@@ -267,6 +385,84 @@ function EditTab({
         </p>
       </div>
 
+      {/* Contribution % per Owner — Team KPI only. Mirrors KPIModal. */}
+      {isTeamKPI && form.ownerIds.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs font-medium text-gray-600">
+              Contribution % per Owner <span className="text-red-500">*</span>
+            </label>
+            <button
+              type="button"
+              onClick={distributeContributionsEvenly}
+              className="text-[10px] text-accent-500 hover:text-accent-700 hover:underline font-medium"
+            >
+              Distribute evenly
+            </button>
+          </div>
+          <div className="border rounded-lg divide-y overflow-hidden border-gray-200">
+            {form.ownerIds.map(id => {
+              const u = (kpiOwners ?? users).find(u => u.id === id);
+              if (!u) return null;
+              const pctStr = form.ownerContributions[id] ?? "";
+              const pct = parseFloat(pctStr) || 0;
+              const contributionValue = scaledTarget * (pct / 100);
+              const nameOverride = form.ownerKpiNames[id] ?? "";
+              return (
+                <div key={id} className="flex flex-col gap-1.5 px-3 py-2 bg-white hover:bg-gray-50">
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs text-gray-700 flex-1 truncate">
+                      {u.firstName} {u.lastName}
+                    </div>
+                    <div className="text-[10px] text-gray-400 whitespace-nowrap">
+                      Contribution value: <span className="text-gray-600 font-medium">
+                        {scaledTarget > 0
+                          ? (form.measurementUnit === "Number" ? Math.round(contributionValue) : contributionValue.toFixed(2))
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={pctStr}
+                        onChange={e => setContribution(id, e.target.value)}
+                        placeholder="0"
+                        className="w-16 px-2 py-1 text-xs text-right border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400"
+                      />
+                      <span className="text-xs text-gray-500">%</span>
+                    </div>
+                  </div>
+                  {/* Individual KPI name — pre-filled from the linked child KPI's
+                      current name. Editing it renames the child on Save. */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] text-gray-400 whitespace-nowrap">Individual KPI name</label>
+                    <input
+                      type="text"
+                      value={nameOverride}
+                      onChange={e => setForm(f => ({
+                        ...f,
+                        ownerKpiNames: { ...f.ownerKpiNames, [id]: e.target.value },
+                      }))}
+                      placeholder={form.name || "Defaults to Team KPI name"}
+                      className="flex-1 px-2 py-1 text-[11px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            <div className={`flex items-center justify-between px-3 py-1.5 text-[10px] font-medium ${
+              contributionSumValid ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
+            }`}>
+              <span>Total</span>
+              <span>{contributionSum.toFixed(1)}% {contributionSumValid ? "✓" : "(must equal 100%)"}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
         <textarea value={form.description ?? ""} onChange={e => set("description", e.target.value)}
@@ -281,6 +477,11 @@ function EditTab({
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50">
+                  {isTeamKPI && form.ownerIds.length > 0 && (
+                    <th className="sticky left-0 z-20 bg-gray-50 px-3 py-1.5 border-r border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wider whitespace-nowrap text-left min-w-[140px]">
+                      &nbsp;
+                    </th>
+                  )}
                   {ALL_WEEKS.map(w => {
                     const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandaloneEditable = form.divisionType === "Standalone" && isPastWeek && pastWeekAllowed;
@@ -294,14 +495,48 @@ function EditTab({
                 </tr>
               </thead>
               <tbody>
+                {/* Total row */}
                 <tr>
+                  {isTeamKPI && form.ownerIds.length > 0 && (
+                    <td className="sticky left-0 z-10 bg-white px-3 py-1.5 border-r border-gray-200 text-[10px] font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                      Total
+                    </td>
+                  )}
                   {ALL_WEEKS.map(w => {
                     const isPastWeek = currentWeek !== null && w < currentWeek;
                     const isStandalone = form.divisionType === "Standalone";
                     const isStandalonePastEditable = isStandalone && isPastWeek && pastWeekAllowed;
-                    // Standalone: locked unless it's a past week with the edit toggle ON (→ SELECT)
-                    // Cumulative: locked only if past week and toggle OFF
                     const isLocked = isStandalone ? !isStandalonePastEditable : (isPastWeek && !pastWeekAllowed);
+
+                    // Team mode: total = live sum of per-owner cells, edit redistributes by contribution %.
+                    if (isTeamKPI && form.ownerIds.length > 0) {
+                      const sum = form.ownerIds.reduce((s, id) => {
+                        const v = parseFloat(form.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0;
+                        return s + v;
+                      }, 0);
+                      const displaySum = form.measurementUnit === "Number"
+                        ? Math.round(sum).toString()
+                        : sum.toFixed(2);
+                      return (
+                        <td key={w} className="px-1 py-1.5 border-r border-gray-100 last:border-r-0 bg-gray-50">
+                          <input
+                            type="number"
+                            min="0"
+                            value={displaySum}
+                            onChange={e => setTeamTotalWeekCell(w, e.target.value)}
+                            readOnly={isLocked}
+                            title={isPastWeek && !pastWeekAllowed
+                              ? "Past week editing is disabled. Enable in Settings > Configurations."
+                              : "Editing the total redistributes across owners by contribution %"}
+                            className={`w-full px-1 py-1 text-center text-xs font-semibold border rounded focus:outline-none min-w-[72px] ${
+                              isLocked
+                                ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                : "border-gray-200 bg-white text-gray-800 focus:ring-1 focus:ring-accent-400"
+                            }`}
+                          />
+                        </td>
+                      );
+                    }
 
                     if (isStandalonePastEditable) {
                       const isNumUnit = form.measurementUnit === "Number";
@@ -349,6 +584,46 @@ function EditTab({
                     </td>
                   );})}
                 </tr>
+
+                {/* Per-owner rows — Team KPI only. Editable; total above derives from sum. */}
+                {isTeamKPI && form.ownerIds.map(id => {
+                  const u = (kpiOwners ?? users).find(u => u.id === id);
+                  if (!u) return null;
+                  const pct = parseFloat(form.ownerContributions[id]) || 0;
+                  const ownerRow = form.weeklyOwnerBreakdown[id] ?? {};
+                  return (
+                    <tr key={id} className="bg-gray-50/60">
+                      <td className="sticky left-0 z-10 bg-gray-50 px-3 py-1.5 border-r border-t border-gray-200 text-[10px] text-gray-600 whitespace-nowrap truncate max-w-[140px]">
+                        {u.firstName} {u.lastName}
+                        <span className="ml-1 text-gray-400">({pct.toFixed(0)}%)</span>
+                      </td>
+                      {ALL_WEEKS.map(w => {
+                        const isPastWeek = currentWeek !== null && w < currentWeek;
+                        const isStandalone = form.divisionType === "Standalone";
+                        const isLocked = isStandalone || (isPastWeek && !pastWeekAllowed);
+                        return (
+                          <td key={w} className="px-1 py-1.5 border-r border-t border-gray-100 last:border-r-0">
+                            <input
+                              type="number"
+                              min="0"
+                              value={ownerRow[w] ?? ""}
+                              onChange={e => setOwnerWeekCell(id, w, e.target.value)}
+                              readOnly={isLocked}
+                              title={isPastWeek && !pastWeekAllowed
+                                ? "Past week editing is disabled. Enable in Settings > Configurations."
+                                : isStandalone ? "Standalone mode locks per-owner cells" : undefined}
+                              className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
+                                isLocked
+                                  ? "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                  : "border-gray-200 focus:ring-1 focus:ring-accent-400"
+                              }`}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </WeeklyScroller>
@@ -676,6 +951,24 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
     const weeklyBreakdown = savedWeeklyTargets
       ? Object.fromEntries(ALL_WEEKS.map(w => [w, String(savedWeeklyTargets[String(w)] ?? "")])) as Record<number, string>
       : buildBreakdown(divisionType, storedTarget, measurementUnit);
+
+    // Team-KPI: rebuild ownerIds + contributions + per-owner weekly maps from
+    // the saved KPI snapshot. If `weeklyOwnerTargets` is missing (legacy data),
+    // each owner row is left empty and seeded from formula on first render.
+    const teamOwnerIds = (kpi.ownerIds ?? []) as string[];
+    const teamContribs: Record<string, string> = Object.fromEntries(
+      Object.entries((kpi.ownerContributions ?? {}) as Record<string, number>).map(([id, pct]) => [id, String(pct)])
+    );
+    const savedOwnerTargets = kpi.weeklyOwnerTargets as Record<string, Record<string, number>> | null | undefined;
+    const teamWeeklyOwner: Record<string, Record<number, string>> = {};
+    if (savedOwnerTargets) {
+      for (const [ownerId, weekMap] of Object.entries(savedOwnerTargets)) {
+        teamWeeklyOwner[ownerId] = Object.fromEntries(
+          ALL_WEEKS.map(w => [w, String(weekMap[String(w)] ?? "")])
+        ) as Record<number, string>;
+      }
+    }
+
     return {
       name: kpi.name,
       description: kpi.description ?? "",
@@ -694,8 +987,36 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
       currency,
       targetScale: savedScale,
       reverseColor: kpi.reverseColor ?? false,
+      ownerIds: teamOwnerIds,
+      ownerContributions: teamContribs,
+      weeklyOwnerBreakdown: teamWeeklyOwner,
+      ownerKpiNames: {} as Record<string, string>,
     };
   });
+
+  // Fetch existing child KPI names so the Edit form can pre-populate the
+  // per-owner "Individual KPI name" inputs. Only runs for Team KPIs.
+  useEffect(() => {
+    if (!isTeamKPI) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/kpi?parentKPIId=${kpi.id}&pageSize=100&kpiLevel=individual`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled) return;
+        const rows = (json?.data?.kpis ?? []) as Array<{ owner: string | null; name: string }>;
+        const map: Record<string, string> = {};
+        for (const r of rows) if (r.owner && !map[r.owner]) map[r.owner] = r.name;
+        if (Object.keys(map).length > 0) {
+          setEditForm(f => ({ ...f, ownerKpiNames: { ...map, ...f.ownerKpiNames } }));
+        }
+      } catch {
+        // Silent — child names are a soft enrichment, not load-bearing.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isTeamKPI, kpi.id]);
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
   // Weekly values state for individual KPIs — one input per week.
@@ -749,26 +1070,61 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
         ? (parseFloat(editForm.target) || 0) * (editForm.measurementUnit === "Currency" ? getMultiplier(editForm.currency, editForm.targetScale) : 1)
         : undefined;
 
-      const kpiPayload = {
+      // Team KPI: the displayed Total row is derived from per-owner cells, so
+      // weeklyTargets sent to the API is the per-week sum across owners.
+      const weeklyTargetsPayload = (() => {
+        if (isTeamKPI && editForm.ownerIds.length > 0) {
+          const out: Record<string, number> = {};
+          for (const w of ALL_WEEKS) {
+            let sum = 0;
+            for (const id of editForm.ownerIds) {
+              sum += parseFloat(editForm.weeklyOwnerBreakdown[id]?.[w] ?? "") || 0;
+            }
+            out[String(w)] = sum;
+          }
+          return out;
+        }
+        return Object.fromEntries(
+          Object.entries(editForm.weeklyBreakdown).map(([k, v]) => [k, parseFloat(v) || 0])
+        );
+      })();
+
+      const kpiPayload: Record<string, unknown> = {
         name: editForm.name.trim(),
         description: editForm.description || undefined,
         teamId: editForm.teamId || undefined,
         parentKPIId: editForm.parentKPIId || undefined,
         target: newTarget,
         quarterlyGoal: editForm.quarterlyGoal ? parseFloat(editForm.quarterlyGoal) : undefined,
-        // Keep qtdGoal in sync with the new target so progressPercent uses the correct denominator.
-        // editForm.qtdGoal is initialized from the old kpi.qtdGoal and is never edited by the user,
-        // so it would re-save the stale value if target changes.
         qtdGoal: newTarget !== undefined ? newTarget : (editForm.qtdGoal ? parseFloat(editForm.qtdGoal) : undefined),
         status: editForm.status as "active" | "paused" | "completed",
         divisionType: editForm.divisionType,
         targetScale: editForm.measurementUnit === "Currency" ? editForm.targetScale : null,
         reverseColor: editForm.reverseColor,
-        weeklyTargets: Object.fromEntries(
-          Object.entries(editForm.weeklyBreakdown)
-            .map(([k, v]) => [k, parseFloat(v) || 0])
-        ),
+        weeklyTargets: weeklyTargetsPayload,
       };
+
+      if (isTeamKPI && editForm.ownerIds.length > 0) {
+        kpiPayload.ownerContributions = Object.fromEntries(
+          Object.entries(editForm.ownerContributions).map(([id, v]) => [id, parseFloat(v) || 0])
+        );
+        kpiPayload.weeklyOwnerTargets = Object.fromEntries(
+          editForm.ownerIds.map(id => {
+            const row = editForm.weeklyOwnerBreakdown[id] ?? {};
+            return [id, Object.fromEntries(ALL_WEEKS.map(w => [String(w), parseFloat(row[w] ?? "") || 0]))];
+          })
+        );
+        // Per-owner Individual KPI name override — only owners with a non-empty
+        // entry are sent. Server skips entries the user left blank.
+        const renames: Record<string, string> = {};
+        for (const id of editForm.ownerIds) {
+          const v = (editForm.ownerKpiNames[id] ?? "").trim();
+          if (v.length > 0) renames[id] = v;
+        }
+        if (Object.keys(renames).length > 0) {
+          kpiPayload.ownerKpiNames = renames;
+        }
+      }
 
       // Collect weekly inputs WITHOUT starting the requests yet.
       // Metadata must commit first so the weekly endpoint reads the updated qtdGoal

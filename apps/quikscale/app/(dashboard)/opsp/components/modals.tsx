@@ -23,6 +23,7 @@ import { FInput } from "./RichEditor";
 import { CategorySelect, ProjectedInput, parseProjectedValue, combineProjectedValue, getScaleAbbrs, displayCategory, catMetaCache } from "./category";
 import { OwnerSelect, WithTooltip } from "./pickers";
 import { getScales } from "@/lib/utils/currency";
+import { calculateBreakdown, type BreakdownType } from "@quikit/shared";
 import type { TargetRow, GoalRow, RockRow, ActionRow, ThrustRow, KeyInitiativeRow, KPIAcctRow, QPriorRow } from "../types";
 
 /* ── Scale abbreviation → full label (for multiplier lookup) ── */
@@ -60,6 +61,229 @@ export function resolveProjected(categoryName: string, projected: string): numbe
 /** Format a number with commas for display. */
 function fmtNum(n: number): string {
   return n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
+/**
+ * Distribute a Projected value across `periodCount` period cells, using the
+ * category's `breakdownType` setting (Cumulative / Standalone / CumulativeTillExit /
+ * Manual).
+ *
+ * Operates on the displayed (typed-as) numeric value, not the resolved
+ * underlying numeric. So if the user typed "1" with scale "L" (= 100000 INR),
+ * we calculateBreakdown(type, 1, n) and then pair each cell value back with
+ * the same scale for display: each cell ends up as e.g. "0.25 L", "0.50 L",
+ * etc. for currency, or a plain stringified number for Number/Percentage.
+ *
+ * Returns:
+ *   - `null`                — when projected is empty / unparseable / type=Manual
+ *                             (caller should leave cells alone in this case)
+ *   - `string[]` of length `periodCount` — one value per cell, formatted to
+ *                             match the category's display shape
+ */
+export function breakdownProjected(
+  categoryName: string,
+  projected: string,
+  periodCount: number,
+): string[] | null {
+  const trimmed = (projected ?? "").trim();
+  if (!trimmed) return null;
+
+  const meta = catMetaCache.get(categoryName);
+  if (!meta) return null;
+
+  const breakdownType = (meta.breakdownType ?? "Cumulative") as BreakdownType;
+  // Manual → no auto-fill; let the user type every cell themselves.
+  if (breakdownType === "Manual") return null;
+
+  const isCurrency = meta.dataType === "Currency";
+  const currency = meta.currency ?? "USD";
+
+  let displayedNum: number;
+  let scale = "";
+  if (isCurrency) {
+    const parsed = parseProjectedValue(projected, currency);
+    displayedNum = parseFloat(parsed.num);
+    scale = parsed.scale ?? "";
+  } else {
+    displayedNum = parseFloat(trimmed);
+  }
+  if (!Number.isFinite(displayedNum) || displayedNum <= 0) return null;
+
+  // For Number we keep integer math; Percentage and Currency use 2-decimal.
+  const measurementUnit = isCurrency
+    ? "Currency"
+    : meta.dataType === "Percentage"
+      ? "Percentage"
+      : "Number";
+
+  const slices = calculateBreakdown(
+    breakdownType,
+    displayedNum,
+    periodCount,
+    { measurementUnit },
+  );
+
+  // Format each slice back into the cell's storage shape.
+  return slices.map((v) => {
+    if (v === 0) return "";
+    if (isCurrency) {
+      // combineProjectedValue takes the displayed numeric + scale and
+      // produces the canonical "<num> <scale>" string the cell stores.
+      return combineProjectedValue(String(v), scale);
+    }
+    return String(v);
+  });
+}
+
+/**
+ * When the user edits a single period cell on a **Cumulative** row, rebalance
+ * the OTHER period cells so the sum still equals Projected.
+ *
+ *   - Cumulative   → redistribute (Projected − editedValue) equally across
+ *                    other cells; last absorbs rounding residue. Negative
+ *                    remainder (user typed > Projected) → others go to 0.
+ *   - Standalone / CumulativeTillExit / Manual → return `null` (caller keeps
+ *                    the user's typed value as-is, no rebalance).
+ *
+ * Operates on the displayed numeric value (same as `breakdownProjected`)
+ * so currency rows preserve the Projected's scale across all cells.
+ *
+ * @param values   Current cell values (parallel to `keys`)
+ * @param edited   Index of the cell the user just edited
+ * @param newVal   Raw value the user typed for that cell
+ *
+ * Returns a new `string[]` of length `values.length`, OR `null` when no
+ * rebalance applies (then the caller should write only the edited cell).
+ */
+function redistributeOnCellEdit(opts: {
+  categoryName: string;
+  projected: string;
+  values: string[];
+  edited: number;
+  newVal: string;
+}): string[] | null {
+  const meta = catMetaCache.get(opts.categoryName);
+  if (!meta) return null;
+  if (meta.breakdownType !== "Cumulative") return null;
+
+  const trimmedProj = (opts.projected ?? "").trim();
+  if (!trimmedProj) return null;
+
+  const isCurrency = meta.dataType === "Currency";
+  const currency = meta.currency ?? "USD";
+
+  // Parse Projected → displayed numeric + scale
+  let projDisplayed: number;
+  let scale = "";
+  if (isCurrency) {
+    const p = parseProjectedValue(opts.projected, currency);
+    projDisplayed = parseFloat(p.num);
+    scale = p.scale ?? "";
+  } else {
+    projDisplayed = parseFloat(trimmedProj);
+  }
+  if (!Number.isFinite(projDisplayed) || projDisplayed <= 0) return null;
+
+  // Parse the edited value (same scale convention as Projected)
+  let editedDisplayed: number;
+  const editedTrim = (opts.newVal ?? "").trim();
+  if (editedTrim === "") {
+    editedDisplayed = 0;
+  } else if (isCurrency) {
+    const p = parseProjectedValue(opts.newVal, currency);
+    editedDisplayed = parseFloat(p.num);
+  } else {
+    editedDisplayed = parseFloat(editedTrim);
+  }
+  if (!Number.isFinite(editedDisplayed)) editedDisplayed = 0;
+
+  const isWhole = meta.dataType === "Number";
+  const formatVal = (v: number): string => {
+    if (v === 0) return "";
+    if (isCurrency) {
+      const numStr = isWhole ? String(Math.round(v)) : (Math.round(v * 100) / 100).toString();
+      return combineProjectedValue(numStr, scale);
+    }
+    return isWhole ? String(Math.round(v)) : String(Math.round(v * 100) / 100);
+  };
+
+  const out = [...opts.values];
+  // Write the edited cell with the formatted value (preserves scale on currency).
+  out[opts.edited] = formatVal(editedDisplayed);
+
+  // Remainder to distribute across the other cells (clamped to 0 if user
+  // typed > projected).
+  const remainder = Math.max(0, projDisplayed - editedDisplayed);
+  const otherIdxs: number[] = [];
+  for (let i = 0; i < opts.values.length; i++) if (i !== opts.edited) otherIdxs.push(i);
+  const n = otherIdxs.length;
+  if (n === 0) return out;
+
+  if (isWhole) {
+    const base = Math.floor(remainder / n);
+    const lastResidue = Math.round(remainder - base * (n - 1));
+    otherIdxs.forEach((origIdx, j) => {
+      const v = j === n - 1 ? lastResidue : base;
+      out[origIdx] = formatVal(v);
+    });
+  } else {
+    const base = Math.round((remainder / n) * 100) / 100;
+    const lastResidue = Math.round((remainder - base * (n - 1)) * 100) / 100;
+    otherIdxs.forEach((origIdx, j) => {
+      const v = j === n - 1 ? lastResidue : base;
+      out[origIdx] = formatVal(v);
+    });
+  }
+  return out;
+}
+
+/**
+ * Compute "is this row balanced?" using the category's breakdownType:
+ *   - Cumulative / Manual → sum of period cells must equal Projected
+ *                           (Manual leaves auto-fill off, but the user still has
+ *                            to make the cells add up to Projected by hand —
+ *                            the validation matches the original behaviour)
+ *   - CumulativeTillExit  → last period cell must equal Projected (intermediate
+ *                           cells are running totals, not separate amounts)
+ *   - Standalone          → every period cell must equal Projected
+ *
+ * Returns:
+ *   - effective: the value to compare against `projected` (sum / last / first
+ *                depending on type) — used by ValidationBar to render progress
+ *   - isBalanced / isOver: traffic-light states for the row
+ *   - mode: which comparison was used (drives the UI label below)
+ */
+function computeRowBalance(
+  categoryName: string,
+  values: number[],
+  projected: number,
+): { effective: number; isBalanced: boolean; isOver: boolean; mode: "sum" | "last" | "each" } {
+  const meta = catMetaCache.get(categoryName);
+  const type = (meta?.breakdownType ?? "Cumulative") as BreakdownType;
+
+  if (type === "CumulativeTillExit") {
+    const last = values[values.length - 1] ?? 0;
+    return {
+      effective: last,
+      isBalanced: Math.abs(last - projected) < 0.01,
+      isOver: last > projected + 0.01,
+      mode: "last",
+    };
+  }
+  if (type === "Standalone") {
+    const allMatch = values.length > 0 && values.every(v => Math.abs(v - projected) < 0.01);
+    const anyOver = values.some(v => v > projected + 0.01);
+    const firstNonZero = values.find(v => v > 0) ?? 0;
+    return { effective: firstNonZero, isBalanced: allMatch, isOver: anyOver, mode: "each" };
+  }
+  // Cumulative + Manual → sum check (the original enforcement)
+  const sum = values.reduce((a, b) => a + b, 0);
+  return {
+    effective: sum,
+    isBalanced: Math.abs(sum - projected) < 0.01,
+    isOver: sum > projected + 0.01,
+    mode: "sum",
+  };
 }
 
 /**
@@ -105,16 +329,17 @@ function fmtScaled(absVal: number, categoryName: string): string {
  *   - Sum = Projected  → green "✓ Balanced"
  *   - Sum > Projected  → red "Exceeded by X"
  */
-function ValidationBar({ sum, projected, categoryName }: {
-  sum: number;
+function ValidationBar({ effective, projected, categoryName, mode }: {
+  effective: number;
   projected: number;
   categoryName: string;
+  mode: "sum" | "last" | "each";
 }) {
-  if (projected <= 0 || sum === 0) return null;
+  if (projected <= 0 || effective === 0) return null;
 
-  const pct = Math.min((sum / projected) * 100, 100);
-  const isMatched = Math.abs(sum - projected) < 0.01;
-  const isOver = sum > projected + 0.01;
+  const pct = Math.min((effective / projected) * 100, 100);
+  const isMatched = Math.abs(effective - projected) < 0.01;
+  const isOver = effective > projected + 0.01;
 
   if (isMatched) {
     return (
@@ -126,7 +351,7 @@ function ValidationBar({ sum, projected, categoryName }: {
   }
 
   if (isOver) {
-    const overAmt = sum - projected;
+    const overAmt = effective - projected;
     return (
       <div className="flex items-center gap-1 pl-1 pt-0.5 pb-0.5">
         <AlertTriangle className="h-3 w-3 text-red-500" />
@@ -137,12 +362,14 @@ function ValidationBar({ sum, projected, categoryName }: {
     );
   }
 
-  // Under — show progress
+  // Under — show progress. Label tells the user what's being measured.
+  const progressLabel =
+    mode === "last" ? "End year" : mode === "each" ? "Each cell" : "Filled";
   return (
     <div className="pl-1 pt-0.5 pb-0.5 space-y-0.5">
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-blue-600 font-medium">
-          Filled: {fmtScaled(sum, categoryName)} / {fmtScaled(projected, categoryName)}
+          {progressLabel}: {fmtScaled(effective, categoryName)} / {fmtScaled(projected, categoryName)}
         </span>
         <span className="text-[10px] text-gray-400">{Math.round(pct)}%</span>
       </div>
@@ -205,25 +432,25 @@ export function TargetsModal({
     const projectedVal = resolveProjected(row.category, row.projected);
     const hasProjected = projectedVal !== null && projectedVal > 0;
     const yearValues = keys.map(k => resolveProjected(row.category, String(row[k] ?? "")) ?? 0);
-    const yearSum = yearValues.reduce((a, b) => a + b, 0);
     const hasAnyYear = yearValues.some(v => v > 0);
     const hasAllYears = keys.every(k => String(row[k] ?? "").trim() !== "");
-    const diff = hasProjected ? projectedVal - yearSum : 0;
+    const balance = computeRowBalance(row.category, yearValues, projectedVal ?? 0);
 
-    // Error states
-    const noYearsFilled = hasCategory && !hasAnyYear; // category selected but no year values
-    const isMatched = hasProjected && hasAllYears && Math.abs(diff) < 0.01;
-    const isOver = hasProjected && yearSum > projectedVal + 0.01;
-    const isUnder = hasProjected && hasAnyYear && !hasAllYears && diff > 0;
-    const isMismatch = hasProjected && hasAllYears && Math.abs(diff) >= 0.01;
+    // Error states (driven by breakdownType — sum/last/each/manual)
+    const noYearsFilled = hasCategory && !hasAnyYear;
+    const isMatched = hasProjected && hasAllYears && balance.isBalanced;
+    const isOver = hasProjected && balance.isOver;
+    const isUnder = hasProjected && hasAnyYear && !hasAllYears && !balance.isBalanced && !balance.isOver;
+    const isMismatch = hasProjected && hasAllYears && !balance.isBalanced;
 
     const hasError = noYearsFilled || isOver || isUnder || isMismatch;
-    // Block submit only when user has started filling AND sum doesn't match
-    const isUnbalanced = hasProjected && hasAnyYear && !isMatched;
+    // Block submit only when user has started filling AND row isn't balanced.
+    // Manual rows are always considered balanced (no enforcement).
+    const isUnbalanced = hasProjected && hasAnyYear && !balance.isBalanced;
 
     return {
       meta, hasCategory, projectedVal, hasProjected,
-      yearValues, yearSum, hasAnyYear, hasAllYears, diff,
+      yearValues, balance, hasAnyYear, hasAllYears,
       noYearsFilled, isMatched, isOver, isUnder, isMismatch, hasError, isUnbalanced,
     };
   });
@@ -286,7 +513,17 @@ export function TargetsModal({
                       value={row.projected}
                       onChange={(val) => {
                         const next = [...rows];
-                        next[i] = { ...next[i], projected: val };
+                        // Auto-fill year cells based on the category's breakdownType.
+                        // Cumulative / Standalone / CumulativeTillExit fill the
+                        // year cells; Manual returns null and leaves them alone.
+                        const autofill = breakdownProjected(row.category, val, targetYears);
+                        const yearPatch: Partial<TargetRow> = {};
+                        if (autofill) {
+                          keys.forEach((k, idx) => {
+                            (yearPatch as Record<string, string>)[k as string] = autofill[idx] ?? "";
+                          });
+                        }
+                        next[i] = { ...next[i], projected: val, ...yearPatch };
                         onChange(next);
                       }}
                     />
@@ -310,7 +547,27 @@ export function TargetsModal({
                           onChange={(e) => {
                             const next = [...rows];
                             const val = isCurrency ? combineProjectedValue(e.target.value, fieldScale) : e.target.value;
-                            next[i] = { ...next[i], [k]: val };
+                            // For Cumulative rows, rebalance the OTHER year cells
+                            // so the row sum stays equal to Projected. Standalone /
+                            // CumulativeTillExit / Manual leave the other cells alone.
+                            const editedIdx = keys.indexOf(k);
+                            const currentValues = keys.map((kk) => String(row[kk] ?? ""));
+                            const rebalanced = redistributeOnCellEdit({
+                              categoryName: row.category,
+                              projected: row.projected,
+                              values: currentValues,
+                              edited: editedIdx,
+                              newVal: val,
+                            });
+                            if (rebalanced) {
+                              const patch: Partial<TargetRow> = {};
+                              keys.forEach((kk, idx) => {
+                                (patch as Record<string, string>)[kk as string] = rebalanced[idx];
+                              });
+                              next[i] = { ...next[i], ...patch };
+                            } else {
+                              next[i] = { ...next[i], [k]: val };
+                            }
                             onChange(next);
                           }}
                           placeholder={yearPlaceholder}
@@ -345,7 +602,12 @@ export function TargetsModal({
 
                 {/* ── Compact validation bar ── */}
                 {v.hasProjected && v.hasAnyYear && (
-                  <ValidationBar sum={v.yearSum} projected={v.projectedVal!} categoryName={row.category} />
+                  <ValidationBar
+                    effective={v.balance.effective}
+                    projected={v.projectedVal!}
+                    categoryName={row.category}
+                    mode={v.balance.mode}
+                  />
                 )}
               </div>
             );
@@ -445,24 +707,23 @@ export function GoalsModal({
     const projectedVal = resolveProjected(row.category, row.projected);
     const hasProjected = projectedVal !== null && projectedVal > 0;
     const qValues = qCols.map(k => resolveProjected(row.category, String(row[k] ?? "")) ?? 0);
-    const qSum = qValues.reduce((a, b) => a + b, 0);
     const hasAnyQ = qValues.some(v => v > 0);
     const hasAllQ = qCols.every(k => String(row[k] ?? "").trim() !== "");
-    const diff = hasProjected ? projectedVal - qSum : 0;
+    const balance = computeRowBalance(row.category, qValues, projectedVal ?? 0);
 
     // Check if this row is inherited from Targets (rows 0-4 only)
     const t = i < targetRows.length ? targetRows[i] : null;
     const isInherited = !!(t && t.category.trim() && t.projected.trim() && t.y1.trim());
 
     const noQFilled = hasCategory && !hasAnyQ;
-    const isMatched = hasProjected && hasAllQ && Math.abs(diff) < 0.01;
-    const isOver = hasProjected && qSum > projectedVal + 0.01;
-    const isUnder = hasProjected && hasAnyQ && !hasAllQ && diff > 0;
-    const isMismatch = hasProjected && hasAllQ && Math.abs(diff) >= 0.01;
+    const isMatched = hasProjected && hasAllQ && balance.isBalanced;
+    const isOver = hasProjected && balance.isOver;
+    const isUnder = hasProjected && hasAnyQ && !hasAllQ && !balance.isBalanced && !balance.isOver;
+    const isMismatch = hasProjected && hasAllQ && !balance.isBalanced;
     const hasError = noQFilled || isOver || isUnder || isMismatch;
-    const isUnbalanced = hasProjected && hasAnyQ && !isMatched;
+    const isUnbalanced = hasProjected && hasAnyQ && !balance.isBalanced;
 
-    return { meta, hasCategory, projectedVal, hasProjected, qValues, qSum, hasAnyQ, hasAllQ, diff, noQFilled, isMatched, isOver, isUnder, isMismatch, hasError, isUnbalanced, isInherited };
+    return { meta, hasCategory, projectedVal, hasProjected, qValues, balance, hasAnyQ, hasAllQ, noQFilled, isMatched, isOver, isUnder, isMismatch, hasError, isUnbalanced, isInherited };
   });
 
   const hasAnyUnbalanced = rowValidations.some(v => v.isUnbalanced);
@@ -530,7 +791,16 @@ export function GoalsModal({
                         value={row.projected}
                         onChange={(val) => {
                           const next = [...rows];
-                          next[i] = { ...next[i], projected: val };
+                          // Auto-fill 4 quarter cells based on the category's
+                          // breakdownType when Projected is entered.
+                          const autofill = breakdownProjected(row.category, val, qCols.length);
+                          const qPatch: Partial<GoalRow> = {};
+                          if (autofill) {
+                            qCols.forEach((k, idx) => {
+                              (qPatch as Record<string, string>)[k as string] = autofill[idx] ?? "";
+                            });
+                          }
+                          next[i] = { ...next[i], projected: val, ...qPatch };
                           onChange(next);
                         }}
                       />
@@ -555,7 +825,25 @@ export function GoalsModal({
                           onChange={(e) => {
                             const next = [...rows];
                             const val = isCurrency ? combineProjectedValue(e.target.value, fieldScale) : e.target.value;
-                            next[i] = { ...next[i], [k]: val };
+                            // Cumulative-only rebalance — see TargetsModal comment.
+                            const editedIdx = qCols.indexOf(k);
+                            const currentValues = qCols.map((kk) => String(row[kk] ?? ""));
+                            const rebalanced = redistributeOnCellEdit({
+                              categoryName: row.category,
+                              projected: row.projected,
+                              values: currentValues,
+                              edited: editedIdx,
+                              newVal: val,
+                            });
+                            if (rebalanced) {
+                              const patch: Partial<GoalRow> = {};
+                              qCols.forEach((kk, idx) => {
+                                (patch as Record<string, string>)[kk as string] = rebalanced[idx];
+                              });
+                              next[i] = { ...next[i], ...patch };
+                            } else {
+                              next[i] = { ...next[i], [k]: val };
+                            }
                             onChange(next);
                           }}
                           placeholder={qPlaceholder}
@@ -590,7 +878,12 @@ export function GoalsModal({
 
                 {/* ── Compact validation bar ── */}
                 {v.hasProjected && v.hasAnyQ && (
-                  <ValidationBar sum={v.qSum} projected={v.projectedVal!} categoryName={row.category} />
+                  <ValidationBar
+                    effective={v.balance.effective}
+                    projected={v.projectedVal!}
+                    categoryName={row.category}
+                    mode={v.balance.mode}
+                  />
                 )}
               </div>
             );
@@ -650,10 +943,9 @@ export function ActionsModal({
     const projectedVal = resolveProjected(row.category, row.projected);
     const hasProjected = projectedVal !== null && projectedVal > 0;
     const mValues = mCols.map(k => resolveProjected(row.category, String(row[k] ?? "")) ?? 0);
-    const mSum = mValues.reduce((a, b) => a + b, 0);
     const hasAnyM = mValues.some(v => v > 0);
     const hasAllM = mCols.every(k => String(row[k] ?? "").trim() !== "");
-    const diff = hasProjected ? projectedVal - mSum : 0;
+    const balance = computeRowBalance(row.category, mValues, projectedVal ?? 0);
 
     // Check if inherited from Goals
     const g = i < goalRows.length ? goalRows[i] : null;
@@ -661,14 +953,14 @@ export function ActionsModal({
     const isInherited = !!(g && g.category.trim() && g.projected.trim() && gQVal);
 
     const noMFilled = hasCategory && !hasAnyM;
-    const isMatched = hasProjected && hasAllM && Math.abs(diff) < 0.01;
-    const isOver = hasProjected && mSum > projectedVal + 0.01;
-    const isUnder = hasProjected && hasAnyM && !hasAllM && diff > 0;
-    const isMismatch = hasProjected && hasAllM && Math.abs(diff) >= 0.01;
+    const isMatched = hasProjected && hasAllM && balance.isBalanced;
+    const isOver = hasProjected && balance.isOver;
+    const isUnder = hasProjected && hasAnyM && !hasAllM && !balance.isBalanced && !balance.isOver;
+    const isMismatch = hasProjected && hasAllM && !balance.isBalanced;
     const hasError = noMFilled || isOver || isUnder || isMismatch;
-    const isUnbalanced = hasProjected && hasAnyM && !isMatched;
+    const isUnbalanced = hasProjected && hasAnyM && !balance.isBalanced;
 
-    return { meta, hasCategory, projectedVal, hasProjected, mValues, mSum, hasAnyM, hasAllM, diff, noMFilled, isMatched, isOver, isUnder, isMismatch, hasError, isUnbalanced, isInherited };
+    return { meta, hasCategory, projectedVal, hasProjected, mValues, balance, hasAnyM, hasAllM, noMFilled, isMatched, isOver, isUnder, isMismatch, hasError, isUnbalanced, isInherited };
   });
 
   const hasAnyUnbalanced = rowValidations.some(v => v.isUnbalanced);
@@ -741,7 +1033,16 @@ export function ActionsModal({
                         value={row.projected}
                         onChange={(val) => {
                           const next = [...rows];
-                          next[i] = { ...next[i], projected: val };
+                          // Auto-fill 3 month cells based on the category's
+                          // breakdownType when Projected is entered.
+                          const autofill = breakdownProjected(row.category, val, mCols.length);
+                          const mPatch: Partial<ActionRow> = {};
+                          if (autofill) {
+                            mCols.forEach((k, idx) => {
+                              (mPatch as Record<string, string>)[k as string] = autofill[idx] ?? "";
+                            });
+                          }
+                          next[i] = { ...next[i], projected: val, ...mPatch };
                           onChange(next);
                         }}
                       />
@@ -766,7 +1067,25 @@ export function ActionsModal({
                           onChange={(e) => {
                             const next = [...rows];
                             const val = isCurrency ? combineProjectedValue(e.target.value, fieldScale) : e.target.value;
-                            next[i] = { ...next[i], [k]: val };
+                            // Cumulative-only rebalance — see TargetsModal comment.
+                            const editedIdx = mCols.indexOf(k);
+                            const currentValues = mCols.map((kk) => String(row[kk] ?? ""));
+                            const rebalanced = redistributeOnCellEdit({
+                              categoryName: row.category,
+                              projected: row.projected,
+                              values: currentValues,
+                              edited: editedIdx,
+                              newVal: val,
+                            });
+                            if (rebalanced) {
+                              const patch: Partial<ActionRow> = {};
+                              mCols.forEach((kk, idx) => {
+                                (patch as Record<string, string>)[kk as string] = rebalanced[idx];
+                              });
+                              next[i] = { ...next[i], ...patch };
+                            } else {
+                              next[i] = { ...next[i], [k]: val };
+                            }
                             onChange(next);
                           }}
                           placeholder={mPlaceholder}
@@ -801,7 +1120,12 @@ export function ActionsModal({
 
                 {/* ── Compact validation bar ── */}
                 {v.hasProjected && v.hasAnyM && (
-                  <ValidationBar sum={v.mSum} projected={v.projectedVal!} categoryName={row.category} />
+                  <ValidationBar
+                    effective={v.balance.effective}
+                    projected={v.projectedVal!}
+                    categoryName={row.category}
+                    mode={v.balance.mode}
+                  />
                 )}
               </div>
             );

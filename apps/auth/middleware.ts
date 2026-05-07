@@ -20,6 +20,11 @@ export async function middleware(req: NextRequest) {
     "/forgot-password",
     "/reset-password",
     "/verify-email",
+    // Native-invite acceptance — landing page + API are reachable without
+    // a session because the user authenticates by presenting their
+    // single-use invitation token (FRD FR-SA-009 / FR-SA-010).
+    "/invitations/accept",
+    "/api/invitations",
     "/api/auth",
     "/api/verify-token",
   ];

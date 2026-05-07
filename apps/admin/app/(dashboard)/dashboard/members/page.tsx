@@ -8,6 +8,17 @@ import { Avatar } from "@/components/ui/avatar";
 import { ROLE_LABELS } from "@/lib/constants";
 import { formatRelativeDate } from "@/lib/utils";
 import { UserPlus, Search, Loader2 } from "lucide-react";
+import {
+  DEFAULT_INVITE_PASSWORD,
+  INVITE_METHOD,
+  MEMBERSHIP_ROLES,
+  validateSsoEmail,
+} from "@quikit/shared";
+
+interface OrgApp {
+  id: string;
+  name: string;
+}
 
 interface Member {
   id: string;
@@ -27,14 +38,24 @@ export default function MembersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteForm, setInviteForm] = useState({
+  const [inviteForm, setInviteForm] = useState<{
+    email: string;
+    firstName: string;
+    lastName: string;
+    role: typeof MEMBERSHIP_ROLES.APP_ADMIN | typeof MEMBERSHIP_ROLES.MEMBER;
+    inviteMethod: typeof INVITE_METHOD.SSO | typeof INVITE_METHOD.NATIVE;
+    appIds: string[];
+  }>({
     email: "",
     firstName: "",
     lastName: "",
-    role: "employee",
+    role: MEMBERSHIP_ROLES.APP_ADMIN,
+    inviteMethod: INVITE_METHOD.SSO,
+    appIds: [],
   });
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState("");
+  const [orgApps, setOrgApps] = useState<OrgApp[]>([]);
 
   async function fetchMembers() {
     const res = await fetch("/api/members");
@@ -45,14 +66,61 @@ export default function MembersPage() {
     setLoading(false);
   }
 
+  // FRD FR-OA-002 — the App Access dropdown lists only the apps this org has
+  // been provisioned. Endpoint returns OrgAppAccess rows with enabled=true.
+  async function fetchOrgApps() {
+    try {
+      const res = await fetch("/api/org/apps");
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setOrgApps(json.data);
+      }
+    } catch {
+      // Non-fatal — the form will just show no app options.
+    }
+  }
+
   useEffect(() => {
     fetchMembers();
+    fetchOrgApps();
   }, []);
+
+  function resetInviteForm() {
+    setInviteForm({
+      email: "",
+      firstName: "",
+      lastName: "",
+      role: MEMBERSHIP_ROLES.APP_ADMIN,
+      inviteMethod: INVITE_METHOD.SSO,
+      appIds: [],
+    });
+  }
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     setInviting(true);
     setInviteError("");
+
+    // FR-SA-004 — client-side SSO domain check so the user gets immediate
+    // feedback. The server enforces the same rule.
+    if (inviteForm.inviteMethod === INVITE_METHOD.SSO) {
+      const err = validateSsoEmail(inviteForm.email);
+      if (err) {
+        setInviteError(err);
+        setInviting(false);
+        return;
+      }
+    }
+
+    // FR-OA-002 — App Admin must have at least one app.
+    if (
+      inviteForm.role === MEMBERSHIP_ROLES.APP_ADMIN &&
+      inviteForm.appIds.length === 0
+    ) {
+      setInviteError("Select at least one application for the App Admin.");
+      setInviting(false);
+      return;
+    }
 
     const res = await fetch("/api/members", {
       method: "POST",
@@ -63,12 +131,21 @@ export default function MembersPage() {
     const json = await res.json();
     if (json.success) {
       setInviteOpen(false);
-      setInviteForm({ email: "", firstName: "", lastName: "", role: "employee" });
+      resetInviteForm();
       fetchMembers();
     } else {
       setInviteError(json.error || "Failed to send invitation");
     }
     setInviting(false);
+  }
+
+  function toggleAppId(id: string) {
+    setInviteForm((prev) => ({
+      ...prev,
+      appIds: prev.appIds.includes(id)
+        ? prev.appIds.filter((a) => a !== id)
+        : [...prev.appIds, id],
+    }));
   }
 
   const filtered = members.filter(
@@ -244,19 +321,113 @@ export default function MembersPage() {
               />
             </div>
           </div>
+          {/* FR-OA-001 — role dropdown is App Admin / User only. Org Admin
+              and Super Admin cannot be assigned from here. */}
           <Select
             label="Role"
             value={inviteForm.role}
-            onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
+            onChange={(e) =>
+              setInviteForm({
+                ...inviteForm,
+                role: e.target.value as typeof MEMBERSHIP_ROLES.APP_ADMIN | typeof MEMBERSHIP_ROLES.MEMBER,
+              })
+            }
             options={[
-              { value: "employee", label: "Employee" },
-              { value: "coach", label: "Coach" },
-              { value: "manager", label: "Manager" },
-              { value: "executive", label: "Executive" },
-              { value: "admin", label: "Admin" },
+              { value: MEMBERSHIP_ROLES.APP_ADMIN, label: "App Admin" },
+              { value: MEMBERSHIP_ROLES.MEMBER, label: "User" },
             ]}
           />
-          {inviteError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{inviteError}</p>}
+
+          {/* FR-OA-002 — Application Access multi-select. Required for App Admin
+              (per superRefine in inviteMemberSchema). Optional for User per
+              FR-OA-003 — apps may be assigned later from the member detail. */}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1.5">
+              Application Access{" "}
+              {inviteForm.role === MEMBERSHIP_ROLES.APP_ADMIN && (
+                <span className="text-red-500">*</span>
+              )}
+            </label>
+            {orgApps.length === 0 ? (
+              <p className="text-xs text-gray-400 italic">
+                No applications provisioned for this organisation.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {orgApps.map((app) => (
+                  <label
+                    key={app.id}
+                    className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={inviteForm.appIds.includes(app.id)}
+                      onChange={() => toggleAppId(app.id)}
+                      className="rounded text-indigo-600"
+                    />
+                    <span className="text-sm">{app.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* FR-SA-004 / FR-OA-001 — invitation method radio. Drives whether
+              the invite email contains an SSO CTA or default credentials. */}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1.5">
+              Invitation Method
+            </label>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer">
+                <input
+                  type="radio"
+                  name="invite-method"
+                  value={INVITE_METHOD.SSO}
+                  checked={inviteForm.inviteMethod === INVITE_METHOD.SSO}
+                  onChange={() =>
+                    setInviteForm({ ...inviteForm, inviteMethod: INVITE_METHOD.SSO })
+                  }
+                  className="mt-0.5 text-indigo-600"
+                />
+                <span className="text-sm">
+                  <strong>SSO</strong> — sign in with Google or Microsoft
+                </span>
+              </label>
+              <label className="flex items-start gap-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer">
+                <input
+                  type="radio"
+                  name="invite-method"
+                  value={INVITE_METHOD.NATIVE}
+                  checked={inviteForm.inviteMethod === INVITE_METHOD.NATIVE}
+                  onChange={() =>
+                    setInviteForm({ ...inviteForm, inviteMethod: INVITE_METHOD.NATIVE })
+                  }
+                  className="mt-0.5 text-indigo-600"
+                />
+                <span className="text-sm">
+                  <strong>Native Email</strong> — temporary password via email
+                </span>
+              </label>
+            </div>
+            {/* FR-SA-007 — show the system default password to the inviter
+                so they can communicate it out-of-band if needed. */}
+            {inviteForm.inviteMethod === INVITE_METHOD.NATIVE && (
+              <p className="mt-2 text-xs text-gray-500">
+                Temporary password sent in the email:{" "}
+                <code className="px-1.5 py-0.5 bg-gray-100 rounded font-mono">
+                  {DEFAULT_INVITE_PASSWORD}
+                </code>
+                . The recipient will be prompted to set a new password on first login.
+              </p>
+            )}
+          </div>
+
+          {inviteError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {inviteError}
+            </p>
+          )}
         </form>
       </SlidePanel>
     </div>

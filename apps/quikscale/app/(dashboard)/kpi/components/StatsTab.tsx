@@ -18,7 +18,7 @@
 
 import type { KPIRow } from "@/lib/types/kpi";
 import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
-import { computeKPIStats } from "./kpiStats";
+import { computeKPIStats, computeQtd } from "./kpiStats";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
@@ -148,53 +148,3 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   );
 }
 
-/**
- * Compute QTD Goal + QTD Achieved as sums over [1 .. currentWeek-1].
- *
- *   - Uses `kpi.weeklyTargets` (per-week goal map) when present; falls back
- *     to an even split of the total target across 13 weeks.
- *   - Uses `kpi.weeklyValues` actuals, filtered to weeks < currentWeek.
- *
- * Falls back to the server-stored kpi.qtdGoal / qtdAchieved when currentWeek
- * is null (e.g. quarter has ended) so historical KPIs still look right.
- */
-function computeQtd(kpi: KPIRow, currentWeek: number | null): {
-  qtdGoal: number | null;
-  qtdAchieved: number | null;
-} {
-  if (currentWeek == null) {
-    return {
-      qtdGoal: kpi.target ?? kpi.qtdGoal ?? null,
-      qtdAchieved: kpi.qtdAchieved ?? null,
-    };
-  }
-
-  // Week 1 → no prior weeks → everything is 0 (not null — we know the answer).
-  if (currentWeek <= 1) {
-    return { qtdGoal: 0, qtdAchieved: 0 };
-  }
-
-  const priorWeeks = Array.from({ length: currentWeek - 1 }, (_, i) => i + 1);
-
-  // QTD Goal: prefer per-week breakdown; fall back to even split.
-  // Treat an explicit 0 the same as "not set" — buildBreakdown zeroes out weeks
-  // before firstEditableWeek (KPI created mid-quarter), so using those 0s as
-  // intentional targets would make QTD Goal = 0 even when a real target exists.
-  const wt = kpi.weeklyTargets ?? {};
-  const totalTarget = kpi.target ?? kpi.qtdGoal ?? 0;
-  const flat = totalTarget > 0 ? totalTarget / 13 : 0;
-  const goal = priorWeeks.reduce((sum, w) => {
-    const v = wt[String(w)];
-    // Use actual per-week target (including explicit 0 for weeks with no target).
-    // Fall back to flat rate only when no breakdown exists at all (undefined).
-    return sum + (typeof v === "number" ? v : flat);
-  }, 0);
-
-  // QTD Achieved: sum of actuals from prior weeks only.
-  const wv = kpi.weeklyValues ?? [];
-  const achieved = wv
-    .filter((v) => v.weekNumber < currentWeek)
-    .reduce((sum, v) => sum + (v.value ?? 0), 0);
-
-  return { qtdGoal: goal, qtdAchieved: achieved };
-}

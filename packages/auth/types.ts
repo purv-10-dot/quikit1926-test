@@ -57,5 +57,13 @@ declare module "next-auth/jwt" {
     actingAs?: ActingAs;
     /** Set when `actingAs === 'ai_agent'`. Null on user sessions. */
     actingAgentId?: string;
+    /**
+     * OAuth pre-fill: provider-supplied first/last name carried on the JWT
+     * for the post-login profile step to use. Only populated on the first
+     * JWT issued after a Google/Azure sign-in; once the user fills the
+     * /api/auth/me/profile PATCH, the stored DB value takes over.
+     */
+    oauthFirstName?: string;
+    oauthLastName?: string;
   }
 }

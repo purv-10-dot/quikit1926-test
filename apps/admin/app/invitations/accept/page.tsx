@@ -17,6 +17,8 @@ interface InvitationData {
   firstName: string;
   lastName: string;
   role: string;
+  /** "sso" | "native" | null (legacy invites) */
+  inviteMethod: string | null;
   needsPassword: boolean;
 }
 
@@ -29,8 +31,12 @@ export default function AcceptInvitationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isExpired, setIsExpired] = useState(false);
+
+  // FRD FR-SA-009 Set-Password screen state.
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [requesting, setRequesting] = useState(false);
@@ -74,29 +80,35 @@ export default function AcceptInvitationPage() {
     }
   }
 
-  async function handleAccept(e: React.FormEvent) {
-    e.preventDefault();
+  // FR-SA-009 — submit Current/New/Confirm. Validation mirrors BRV-006 / BRV-007.
+  async function submitAccept(opts: { skip: boolean }) {
+    setError("");
 
-    if (invitation?.needsPassword) {
+    if (!opts.skip && invitation?.needsPassword) {
+      if (!currentPassword) {
+        setError("Please enter your default password to proceed.");
+        return;
+      }
       if (!isPasswordValid(password)) {
-        setError("Password does not meet the requirements below");
+        setError("New password does not meet the requirements below.");
         return;
       }
       if (password !== confirmPassword) {
-        setError("Passwords do not match");
+        setError("Passwords do not match. Please re-enter.");
         return;
       }
     }
 
     setAccepting(true);
-    setError("");
 
     const res = await fetch("/api/invitations/accept", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         token,
-        password: invitation?.needsPassword ? password : undefined,
+        skip: opts.skip,
+        currentPassword: opts.skip ? undefined : currentPassword,
+        password: opts.skip ? undefined : password,
       }),
     });
 
@@ -117,6 +129,9 @@ export default function AcceptInvitationPage() {
     );
   }
 
+  // FR-SA-010 — after Set-Password (or Skip) the user is sent to the Quikit
+  // login screen. SSO accept currently never reaches the password screen, so
+  // this branch covers both: success → /login.
   if (accepted) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
@@ -179,6 +194,8 @@ export default function AcceptInvitationPage() {
     );
   }
 
+  const isNative = invitation?.inviteMethod === "native" || invitation?.needsPassword;
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
       <Card className="w-full max-w-md">
@@ -200,7 +217,13 @@ export default function AcceptInvitationPage() {
           </p>
         </div>
 
-        <form onSubmit={handleAccept} className="space-y-4">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitAccept({ skip: false });
+          }}
+          className="space-y-4"
+        >
           <div className="rounded-lg bg-[var(--color-bg-secondary)] p-3 text-sm">
             <p className="text-[var(--color-text-secondary)]">
               <strong className="text-[var(--color-text-primary)]">{invitation?.firstName} {invitation?.lastName}</strong>
@@ -209,11 +232,22 @@ export default function AcceptInvitationPage() {
             </p>
           </div>
 
-          {invitation?.needsPassword && (
+          {isNative && (
             <>
+              {/* FR-SA-009 — Current Password defaults to "Quikit2026" the
+                  user received in their invitation email. */}
+              <Input
+                id="current-password"
+                label="Current Password"
+                type="password"
+                placeholder="Enter your default password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+              />
               <Input
                 id="password"
-                label="Create Password"
+                label="New Password"
                 type="password"
                 placeholder={`Min ${PASSWORD_MIN_LENGTH} characters`}
                 value={password}
@@ -237,9 +271,24 @@ export default function AcceptInvitationPage() {
             <p className="text-sm text-[var(--color-danger)]">{error}</p>
           )}
 
-          <Button type="submit" className="w-full" loading={accepting}>
-            Accept Invitation
-          </Button>
+          <div className="space-y-2">
+            <Button type="submit" className="w-full" loading={accepting}>
+              {isNative ? "Save & Continue" : "Accept Invitation"}
+            </Button>
+            {/* FR-SA-009 — Skip keeps the default password and proceeds to login.
+                Only offered for native invites (SSO has no password to skip). */}
+            {isNative && (
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                disabled={accepting}
+                onClick={() => void submitAccept({ skip: true })}
+              >
+                Skip for now
+              </Button>
+            )}
+          </div>
         </form>
       </Card>
     </div>

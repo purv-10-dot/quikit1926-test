@@ -23,7 +23,8 @@ import {
 import { Calendar, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
-import { fmtAuditPayload } from "@/lib/utils/auditLog";
+import { fmtAuditPayload, fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
+import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
 
 type Status = "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT";
 const STATUS_OPTS: Array<{ value: Status; label: string }> = [
@@ -95,6 +96,9 @@ export default function DailyHuddlePage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [viewTrash, setViewTrash] = useState(false);
+  // New From / To / Client export modal — replaces the legacy column
+  // selection ExportModal that ModuleMoreActions opens by default.
+  const [exportOpen, setExportOpen] = useState(false);
 
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
@@ -404,6 +408,11 @@ export default function DailyHuddlePage() {
             rowCounts={{ page: filtered.length, filtered: filtered.length, all: rows.length }}
             onExport={handleExport}
             defaultExportColumnKeys={visibleColKeys}
+            // Override: open the From / To / Client modal instead of the
+            // built-in column-selection one. handleExport is still passed so
+            // the modal-driven submit (below) can re-use the column → cell
+            // value mapping via runExport.
+            onExportClick={() => setExportOpen(true)}
           />
 
           <AddButton onClick={openCreate} disabled={clients.length === 0}>Add New</AddButton>
@@ -590,30 +599,62 @@ export default function DailyHuddlePage() {
               <p className="text-xs text-gray-400 italic">No changes recorded yet.</p>
             ) : (
               <ul className="space-y-3">
-                {logRows.map(entry => (
-                  <li key={entry.id} className="border border-gray-100 rounded-lg px-4 py-3 bg-gray-50">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                        entry.action === "CREATE" ? "bg-green-100 text-green-700"
-                        : entry.action === "UPDATE" ? "bg-blue-100 text-blue-700"
-                        : entry.action === "DELETE" ? "bg-red-100 text-red-700"
-                        : entry.action === "RESTORE" ? "bg-amber-100 text-amber-700"
-                        : "bg-gray-100 text-gray-700"
-                      }`}>{entry.action}</span>
-                      <div className="text-[11px] text-gray-500 flex items-center gap-2">
-                        <span className="font-medium">{entry.changedByName}</span>
-                        <span>·</span>
-                        <span>{fmtDateTime(entry.createdAt)}</span>
+                {logRows.map(entry => {
+                  const nameById = (id: string): string | undefined => {
+                    const client = clients.find((c) => c.id === id);
+                    if (client) return client.name;
+                    const member = members.find((m) => m.id === id);
+                    if (member) return member.name;
+                    return undefined;
+                  };
+                  const friendly = fmtFriendlyAuditEntry(
+                    entry.action,
+                    entry.newValue,
+                    entry.oldValue,
+                    { nameById },
+                  );
+                  return (
+                    <li key={entry.id} className="border border-gray-100 rounded-lg px-4 py-3 bg-gray-50">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                          entry.action === "CREATE" ? "bg-green-100 text-green-700"
+                          : entry.action === "UPDATE" ? "bg-blue-100 text-blue-700"
+                          : entry.action === "DELETE" ? "bg-red-100 text-red-700"
+                          : entry.action === "RESTORE" ? "bg-amber-100 text-amber-700"
+                          : "bg-gray-100 text-gray-700"
+                        }`}>{entry.action}</span>
+                        <div className="text-[11px] text-gray-500 flex items-center gap-2">
+                          <span className="font-medium">{entry.changedByName}</span>
+                          <span>·</span>
+                          <span>{fmtDateTime(entry.createdAt)}</span>
+                        </div>
                       </div>
-                    </div>
-                    {!!entry.newValue && (() => {
-                      const text = fmtAuditPayload(entry.newValue);
-                      return text ? (
-                        <p className="text-[11px] text-gray-600 break-words">{text}</p>
-                      ) : null;
-                    })()}
-                  </li>
-                ))}
+                      <div className="text-[12px] text-gray-800 font-medium mb-1">
+                        {friendly.headline}
+                      </div>
+                      {friendly.rows.length > 0 && (
+                        <table className="w-full mt-1 text-[11px] border-collapse">
+                          <tbody>
+                            {friendly.rows.map((r, i) => (
+                              <tr key={i} className="border-t border-gray-200/70 first:border-t-0">
+                                <td className="py-1 pr-3 text-gray-500 align-top whitespace-nowrap">{r.label}</td>
+                                {r.oldValue !== undefined ? (
+                                  <td className="py-1 text-gray-700 align-top">
+                                    <span className="text-gray-400 line-through mr-1.5">{r.oldValue}</span>
+                                    <span className="text-gray-400 mr-1.5">→</span>
+                                    <span className="font-medium">{r.newValue}</span>
+                                  </td>
+                                ) : (
+                                  <td className="py-1 text-gray-700 align-top break-words">{r.newValue}</td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )
           ) : (
@@ -664,14 +705,50 @@ export default function DailyHuddlePage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Actual Start Time <span className="text-red-500">*</span></label>
-                  <input type="time" disabled={!isHeld} value={editing.form.actualStartTime}
-                    onChange={e => setEditing({ ...editing, form: { ...editing.form, actualStartTime: e.target.value } })}
+                  <input
+                    type="time"
+                    disabled={!isHeld}
+                    value={editing.form.actualStartTime}
+                    onChange={e => {
+                      const v = e.target.value;
+                      setEditing({
+                        ...editing,
+                        form: {
+                          ...editing.form,
+                          actualStartTime: v,
+                          // Clear end-time if it would now be <= start so the user
+                          // must re-pick a valid (greater) value.
+                          actualEndTime:
+                            editing.form.actualEndTime && v && editing.form.actualEndTime <= v
+                              ? ""
+                              : editing.form.actualEndTime,
+                        },
+                      });
+                    }}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Actual End Time <span className="text-red-500">*</span></label>
-                  <input type="time" disabled={!isHeld} value={editing.form.actualEndTime}
-                    onChange={e => setEditing({ ...editing, form: { ...editing.form, actualEndTime: e.target.value } })}
+                  <input
+                    type="time"
+                    disabled={!isHeld || !editing.form.actualStartTime}
+                    // Native browser validation: minutes earlier than start are
+                    // greyed out / blocked by the browser's time picker.
+                    min={editing.form.actualStartTime || undefined}
+                    value={editing.form.actualEndTime}
+                    onChange={e => {
+                      const v = e.target.value;
+                      // Belt-and-braces: if a value sneaks past `min` (some
+                      // browsers allow typing) reject it on commit.
+                      if (
+                        editing.form.actualStartTime &&
+                        v &&
+                        v <= editing.form.actualStartTime
+                      ) {
+                        return;
+                      }
+                      setEditing({ ...editing, form: { ...editing.form, actualEndTime: v } });
+                    }}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50" />
                 </div>
               </div>
@@ -726,6 +803,64 @@ export default function DailyHuddlePage() {
           )}
         </RightPanel>
       )}
+
+      {/* From / To / Client export modal — replaces the legacy
+          column-selection modal as the Export Data action. */}
+      <ExportDataModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        clients={clients}
+        defaultClientId={filterClientId || null}
+        onSubmit={async ({ from, to, clientId }: ExportRange) => {
+          // 1) Fetch the rows for the chosen From / To / Client window.
+          const qs = new URLSearchParams();
+          if (clientId) qs.set("clientId", clientId);
+          qs.set("from", from);
+          qs.set("to", to);
+          if (viewTrash) qs.set("includeDeleted", "true");
+          const res = await fetch(`/api/client-meetings/daily-huddles?${qs.toString()}`);
+          const json = await res.json();
+          const data: HuddleRow[] = json.success ? (json.data as HuddleRow[]) : [];
+
+          // 2) Build columns → cell mapping (mirrors handleExport's mapping;
+          //    kept inline so this modal owns its own export contract).
+          const columns = moduleColumns
+            .filter((c) => visibleColKeys.includes(c.key))
+            .map((c) => ({
+              key: c.key,
+              label: c.label,
+              value: (r: HuddleRow) => {
+                switch (c.key) {
+                  case "meetingDate":            return fmtDateShort(r.meetingDate);
+                  case "client":                 return r.clientName;
+                  case "callStatus":             return statusLabel(r.callStatus);
+                  case "absentMembers":          return r.absentTeamMemberNames.join(", ");
+                  case "actualStartTime":        return r.actualStartTime ?? "";
+                  case "actualEndTime":          return r.actualEndTime ?? "";
+                  case "yesterdaysAchievements": return r.yesterdaysAchievements ? "YES" : "NO";
+                  case "todaysPriority":         return r.todaysPriority ? "YES" : "NO";
+                  case "stuckIssues":            return r.stuckIssues ? "YES" : "NO";
+                  case "notesKPDashboard":       return r.notesKPDashboard ?? "";
+                  case "otherNotes":             return r.otherNotes ?? "";
+                  case "createdBy":              return r.createdByName;
+                  case "updatedBy":              return r.updatedByName ?? "";
+                  case "createdAt":              return fmtDateShort(r.createdAt);
+                  case "updatedAt":              return fmtDateShort(r.updatedAt);
+                  default:                       return "";
+                }
+              },
+            }));
+
+          await runExport<HuddleRow>({
+            selection: { rowScope: "all", columnKeys: visibleColKeys },
+            columns,
+            pageRows: data,
+            fetchFiltered: async () => data,
+            fetchAll: async () => data,
+            filename: `DailyHuddle_${from}_${to}${clientId ? "" : "_all-clients"}`,
+          });
+        }}
+      />
     </div>
   );
 }

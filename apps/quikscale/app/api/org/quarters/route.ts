@@ -66,26 +66,45 @@ export async function GET(request: NextRequest) {
     const availableYears = allYearsRaw.map(r => r.fiscalYear);
 
     // ── Future FY Visibility ──
-    // Single on/off gate: `enable_future_quarters`. When enabled, the next FY
-    // after the highest configured one is surfaced regardless of proximity to
-    // the current quarter's end. Overlap is prevented server-side by the
-    // contiguity check in POST (startDate must be after the latest existing
-    // quarter's endDate).
+    // Gate: `enable_future_quarters` toggles visibility on/off.
+    // `future_days_limit` (FeatureFlag.value) controls HOW EARLY the next FY
+    // appears — it only surfaces when today is within N days of the latest
+    // quarter's end date. If unset or 0, the next FY is never shown (the flag
+    // alone isn't enough). Overlap is prevented server-side by the contiguity
+    // check in POST (startDate must be after the latest existing endDate).
     let futureYearAvailable: number | null = null;
 
-    const futureFlag = await db.featureFlag.findFirst({
-      where: { orgId, key: "enable_future_quarters" },
-      select: { enabled: true },
-    });
+    const [futureFlag, futureDaysFlag, latestEndRow] = await Promise.all([
+      db.featureFlag.findFirst({
+        where: { orgId, key: "enable_future_quarters" },
+        select: { enabled: true },
+      }),
+      db.featureFlag.findFirst({
+        where: { orgId, key: "future_days_limit" },
+        select: { value: true },
+      }),
+      db.quarterSetting.findFirst({
+        where: { orgId },
+        orderBy: { endDate: "desc" },
+        select: { endDate: true },
+      }),
+    ]);
     const futureEnabled = futureFlag?.enabled ?? false;
+    const daysLimit     = parseInt(futureDaysFlag?.value ?? "0", 10) || 0;
 
-    if (futureEnabled) {
+    if (futureEnabled && daysLimit > 0 && latestEndRow) {
       const highestExistingFY = availableYears[0] ?? null;
       if (highestExistingFY !== null) {
         const nextFY = highestExistingFY + 1;
         if (!availableYears.includes(nextFY)) {
-          futureYearAvailable = nextFY;
-          availableYears.unshift(nextFY);
+          // Only surface the next FY when today is within `daysLimit` days of
+          // the latest quarter's end date (i.e. endDate - daysLimit <= today).
+          const threshold = new Date(latestEndRow.endDate);
+          threshold.setDate(threshold.getDate() - daysLimit);
+          if (new Date() >= threshold) {
+            futureYearAvailable = nextFY;
+            availableYears.unshift(nextFY);
+          }
         }
       }
     }
@@ -107,21 +126,31 @@ export async function GET(request: NextRequest) {
     });
     const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
-    // Tenant-wide latest endDate (across all FYs) — used by the Generate
-    // modal to pre-fill the next FY's start date as latestEnd + 1 so users
-    // don't have to remember where the previous FY ended.
-    const latestRow = await db.quarterSetting.findFirst({
-      where: { orgId },
-      orderBy: { endDate: "desc" },
-      select: { endDate: true },
-    });
+    // Determine which fiscal years are "locked" — i.e. have KPI, Priority, or
+    // OPSP data. Quarters for locked years cannot be deleted or have their
+    // start date changed to avoid orphaning existing records.
+    const realYears = availableYears.filter(y => y !== futureYearAvailable);
+    const dataChecks = await Promise.all(
+      realYears.map(async (year) => {
+        const [kpiCount, priorityCount, opspCount] = await Promise.all([
+          db.kPI.count({ where: { orgId, year, deletedAt: null } }),
+          db.priority.count({ where: { orgId, year, deletedAt: null } }),
+          db.oPSPData.count({ where: { orgId, year } }),
+        ]);
+        return { year, hasData: kpiCount > 0 || priorityCount > 0 || opspCount > 0 };
+      })
+    );
+    const hasDataByYear: Record<number, boolean> = Object.fromEntries(
+      dataChecks.map(({ year, hasData }) => [year, hasData])
+    );
 
     return NextResponse.json({
       success:        true,
       data:           rows.map(r => serializeRow(r, userMap)),
       availableYears: availableYears.sort((a, b) => b - a),
       futureYearAvailable,
-      latestEndDate:  latestRow?.endDate.toISOString() ?? null,
+      latestEndDate:  latestEndRow?.endDate.toISOString() ?? null,
+      hasDataByYear,
     });
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch quarters") }, { status: 500 });

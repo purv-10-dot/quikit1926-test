@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { ADMIN_TIER_ROLES } from "@quikit/shared";
 import { verifyTokenRemote } from "./verify-token-remote";
 
 export interface MiddlewareConfig {
@@ -24,7 +25,13 @@ export interface MiddlewareConfig {
   enforceRemoteSessionValidation?: boolean;
 }
 
-const ADMIN_ROLES = new Set(["admin", "super_admin"]);
+// Single source of truth for which membership roles can pass `requireAdmin`
+// gates. Imported from @quikit/shared so the launcher visibility filter, the
+// per-app middleware, and the in-app permission helpers all agree on the set
+// (super_admin / org_admin / legacy "admin"). The stale local copy that lived
+// here previously omitted "org_admin", which silently bounced freshly-invited
+// Org Admins out of the admin app on every click.
+const ADMIN_ROLES = ADMIN_TIER_ROLES;
 
 export function createMiddleware(config: MiddlewareConfig) {
   const shouldRemoteValidate =

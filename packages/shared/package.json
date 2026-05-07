@@ -15,7 +15,8 @@
     "./moduleRegistry": "./lib/moduleRegistry.ts",
     "./apiLogging": "./lib/apiLogging.ts",
     "./redisCache": "./lib/redisCache.ts",
-    "./dateFormat": "./lib/dateFormat.ts"
+    "./dateFormat": "./lib/dateFormat.ts",
+    "./sso-domain-server": "./lib/sso-domain-server.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

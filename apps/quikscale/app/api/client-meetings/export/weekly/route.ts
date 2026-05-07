@@ -18,8 +18,22 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
   const monthsBack: number = body.monthsBack ?? 6;
   if (!clientId) return NextResponse.json({ success: false, error: "clientId required" }, { status: 400 });
 
-  const client = await db.client.findFirst({ where: { id: clientId, orgId, deletedAt: null } });
+  // Pull the client + its active roster so we can size the attendance
+  // denominator. The dashboard route does the same; the export route
+  // previously hard-coded `totalMembers: 0` (always 0% attendance) and
+  // only counted User-keyed absents (missing the ClientMember-keyed list
+  // the form actually writes to).
+  const client = await db.client.findFirst({
+    where: { id: clientId, orgId, deletedAt: null },
+    include: {
+      teamMembers: {
+        include: { member: { select: { deletedAt: true } } },
+      },
+    },
+  });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+  // Roster size = active client team members (mirrors the dashboard route).
+  const rosterSize = client.teamMembers.filter(tm => !tm.member.deletedAt).length;
 
   const months = previousMonths(new Date(), monthsBack);
   const from = new Date(Date.UTC(months[0].year, months[0].month, 1));
@@ -27,8 +41,25 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
 
   const meetings = await db.clientWeeklyMeeting.findMany({
     where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-    include: { absentMembers: true, dashboardNAMembers: true },
+    include: {
+      absentMembers: true,
+      dashboardNAMembers: true,
+      absentTeamMembers: true,
+      dashboardNATeamMembers: true,
+      // memberScores power the "Quality of the dashboards" metric — without
+      // these the export would render Quality as 0% even when the dashboard
+      memberScores: true,
+    },
   });
+
+  // No-data guard — bail out before generating a blank workbook so the
+  // user gets a clear error instead of a 0%-everywhere xlsx download.
+  if (meetings.length === 0) {
+    return NextResponse.json(
+      { success: false, error: "There is no data in the selected range." },
+      { status: 404 },
+    );
+  }
   const stats = calculateWeeklyMonthlyStats(
     meetings.map(m => ({
       meetingDate: m.meetingDate, callStatus: m.callStatus,
@@ -37,8 +68,20 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
       www: m.www, feedback: m.feedback,
       collectiveIntelligence: m.collectiveIntelligence, gaps: m.gaps,
       opspReview: m.opspReview, punctualityOverride: ("NA" as const),
-      totalMembers: 0, absentCount: m.absentMembers.length,
-      memberScores: [] as const,
+      // Same attendance math as the dashboard route:
+      //   - denominator = full roster size (NA members count as present)
+      //   - absentCount = User-keyed + ClientMember-keyed absences combined
+      // See bugsResolve.md #19.
+      totalMembers: rosterSize,
+      absentCount: m.absentMembers.length + m.absentTeamMembers.length,
+      memberScores: m.memberScores.map(s => ({
+        userId: s.clientMemberId,
+        kpiWeeklyQTD: s.kpiWeeklyQTD,
+        kpiCoding: s.kpiCoding,
+        priorityNotes: s.priorityNotes,
+        priorityStartEndDate: s.priorityStartEndDate,
+        priorityColor: s.priorityColor,
+      })),
     })),
     months, client.weeklyStartTime, client.weeklyEndTime,
   );

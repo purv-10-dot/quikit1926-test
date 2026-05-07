@@ -8,7 +8,11 @@ export type AuditAction =
   | "RESENT"
   | "REVOKED"
   | "ACCEPTED"
-  | "DUPLICATE_INVITE";
+  | "DUPLICATE_INVITE"
+  // FRD §8 Auditability — invitation lifecycle events.
+  | "INVITE_EMAIL_SENT"
+  | "INVITE_EMAIL_FAILED"
+  | "INVITE_EXPIRED";
 
 export type AuditEntityType = "Membership" | "Invitation" | "User" | "Tenant";
 

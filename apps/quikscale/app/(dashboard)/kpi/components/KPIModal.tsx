@@ -87,6 +87,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
           ([id, pct]) => [id, String(pct)]
         )
       ) as Record<string, string>,
+      // Per-owner Individual KPI name override. Empty → child uses team's name.
+      ownerKpiNames: {} as Record<string, string>,
       weeklyOwnerBreakdown,
       teamId: kpi?.teamId ?? teamId ?? "",
       quarter: kpi?.quarter ?? defaultQuarter ?? "Q1",
@@ -591,6 +593,17 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
               ])
             )
           : undefined,
+        // Per-owner Individual KPI name overrides — only owners with a non-empty
+        // entry are sent. Server falls back to the Team KPI's name for the rest.
+        ownerKpiNames: (() => {
+          if (!isTeamScope || form.ownerIds.length === 0) return undefined;
+          const out: Record<string, string> = {};
+          for (const id of form.ownerIds) {
+            const v = (form.ownerKpiNames[id] ?? "").trim();
+            if (v.length > 0) out[id] = v;
+          }
+          return Object.keys(out).length > 0 ? out : undefined;
+        })(),
       };
       if (mode === "create") {
         await createKPI.mutateAsync(payload);
@@ -905,30 +918,47 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                   const pctStr = form.ownerContributions[id] ?? "";
                   const pct = parseFloat(pctStr) || 0;
                   const contributionValue = scaledTarget * (pct / 100);
+                  const nameOverride = form.ownerKpiNames[id] ?? "";
                   return (
-                    <div key={id} className="flex items-center gap-3 px-3 py-2 bg-white hover:bg-gray-50">
-                      <div className="text-xs text-gray-700 flex-1 truncate">
-                        {u.firstName} {u.lastName}
+                    <div key={id} className="flex flex-col gap-1.5 px-3 py-2 bg-white hover:bg-gray-50">
+                      <div className="flex items-center gap-3">
+                        <div className="text-xs text-gray-700 flex-1 truncate">
+                          {u.firstName} {u.lastName}
+                        </div>
+                        <div className="text-[10px] text-gray-400 whitespace-nowrap">
+                          Contribution value: <span className="text-gray-600 font-medium">
+                            {scaledTarget > 0
+                              ? (form.measurementUnit === "Number" ? Math.round(contributionValue) : contributionValue.toFixed(2))
+                              : "—"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            value={pctStr}
+                            onChange={e => setContribution(id, e.target.value)}
+                            placeholder="0"
+                            className="w-16 px-2 py-1 text-xs text-right border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400"
+                          />
+                          <span className="text-xs text-gray-500">%</span>
+                        </div>
                       </div>
-                      <div className="text-[10px] text-gray-400 whitespace-nowrap">
-                        Contribution value: <span className="text-gray-600 font-medium">
-                          {scaledTarget > 0
-                            ? (form.measurementUnit === "Number" ? Math.round(contributionValue) : contributionValue.toFixed(2))
-                            : "—"}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      {/* Per-owner Individual KPI name override. Empty → child KPI uses Team KPI name. */}
+                      <div className="flex items-center gap-2 pl-0">
+                        <label className="text-[10px] text-gray-400 whitespace-nowrap">Individual KPI name</label>
                         <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.1"
-                          value={pctStr}
-                          onChange={e => setContribution(id, e.target.value)}
-                          placeholder="0"
-                          className="w-16 px-2 py-1 text-xs text-right border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400"
+                          type="text"
+                          value={nameOverride}
+                          onChange={e => setForm(f => ({
+                            ...f,
+                            ownerKpiNames: { ...f.ownerKpiNames, [id]: e.target.value },
+                          }))}
+                          placeholder={form.name || "Defaults to Team KPI name"}
+                          className="flex-1 px-2 py-1 text-[11px] border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
                         />
-                        <span className="text-xs text-gray-500">%</span>
                       </div>
                     </div>
                   );

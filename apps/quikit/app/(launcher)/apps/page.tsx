@@ -163,7 +163,25 @@ export default function AppLauncherPage() {
   }
 
   function handleLaunch(app: AppInfo) {
-    window.location.href = app.baseUrl;
+    // Guard against the silent-reload trap: if `app.baseUrl` is "" or
+    // missing, `window.location.href = ""` re-navigates to the current
+    // page, which looks identical to "click does nothing". Surface a real
+    // error so the user knows the app's URL isn't configured rather than
+    // assuming the click is broken.
+    const url = (app.baseUrl ?? "").trim();
+    if (!url) {
+      console.error(
+        `[launcher] Cannot launch "${app.name}" (slug=${app.slug}): baseUrl is empty. ` +
+          `Check ${app.slug.toUpperCase()}_URL in apps/quikit/.env.local and the ` +
+          `App row in the database.`,
+      );
+      window.alert(
+        `Launch URL for "${app.name}" is not configured. ` +
+          `Set ${app.slug.toUpperCase()}_URL in the launcher's environment.`,
+      );
+      return;
+    }
+    window.location.href = url;
   }
 
   const matchesSearch = (a: AppInfo) =>

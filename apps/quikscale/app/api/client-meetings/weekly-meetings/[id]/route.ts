@@ -83,6 +83,44 @@ export const PUT = withOrgAuth<{ id: string }>(
         { status: 400 }
       );
 
+    // ── One-meeting-per-client-per-week rule (PUT side) ──────────────────
+    // Same constraint as POST. Move-within-the-same-week is fine because
+    // we exclude the current meeting's id from the lookup. Move TO a week
+    // that already has another meeting for this client → 409.
+    if (d.meetingDate) {
+      const newDate = new Date(d.meetingDate);
+      const day = newDate.getDay();
+      const daysFromMonday = day === 0 ? 6 : day - 1;
+      const weekStart = new Date(newDate);
+      weekStart.setDate(newDate.getDate() - daysFromMonday);
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      const conflict = await db.clientWeeklyMeeting.findFirst({
+        where: {
+          orgId,
+          clientId: existing.clientId,
+          deletedAt: null,
+          meetingDate: { gte: weekStart, lte: weekEnd },
+          id: { not: params.id },
+        },
+        select: { id: true },
+      });
+      if (conflict) {
+        const dd = (x: Date) =>
+          `${String(x.getDate()).padStart(2, "0")}/${String(x.getMonth() + 1).padStart(2, "0")}/${x.getFullYear()}`;
+        return NextResponse.json(
+          {
+            success: false,
+            error: `A weekly meeting for the selected client already exists between ${dd(weekStart)} and ${dd(weekEnd)}.`,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     const oldSnapshot = JSON.stringify({
       callStatus: existing.callStatus,
       meetingDate: existing.meetingDate.toISOString(),

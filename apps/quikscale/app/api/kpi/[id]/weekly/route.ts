@@ -56,13 +56,77 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params }
  * On success, re-aggregates qtdAchieved as the SUM of all weekly values for the KPI
  * and recomputes progressPercent + healthStatus.
  */
+/**
+ * Upsert a (kpiId, userId, weekNumber) weekly row + recompute that KPI's
+ * aggregate progress. Used both for the primary write and for the linked
+ * sync write (Team ↔ child Individual). No permission/log side-effects —
+ * those run only on the primary path.
+ */
+async function upsertAndRecalc(opts: {
+  kpiId: string;
+  orgId: string;
+  userId: string;
+  weekNumber: number;
+  value: number | null | undefined;
+  notes: string | null | undefined;
+  changedBy: string;
+}) {
+  const value = opts.value ?? 0;
+  const existing = await db.kPIWeeklyValue.findFirst({
+    where: { kpiId: opts.kpiId, userId: opts.userId, weekNumber: opts.weekNumber },
+    select: { id: true },
+  });
+  if (existing) {
+    await db.kPIWeeklyValue.update({
+      where: { id: existing.id },
+      data: { value, notes: opts.notes ?? null, updatedBy: opts.changedBy },
+    });
+  } else {
+    await db.kPIWeeklyValue.create({
+      data: {
+        kpiId: opts.kpiId,
+        orgId: opts.orgId,
+        userId: opts.userId,
+        weekNumber: opts.weekNumber,
+        value,
+        notes: opts.notes ?? null,
+        createdBy: opts.changedBy,
+      },
+    });
+  }
+
+  const target = await db.kPI.findUnique({
+    where: { id: opts.kpiId },
+    select: { qtdGoal: true, target: true, status: true },
+  });
+  if (!target) return;
+
+  const allWeekly = await db.kPIWeeklyValue.findMany({
+    where: { kpiId: opts.kpiId },
+    select: { value: true },
+  });
+  const totalAchieved = allWeekly.reduce((s, w) => s + (w.value || 0), 0);
+  const goal = target.qtdGoal ?? target.target ?? 0;
+  const progressPercent = goal ? (totalAchieved / goal) * 100 : 0;
+
+  await db.kPI.update({
+    where: { id: opts.kpiId },
+    data: {
+      qtdAchieved: totalAchieved,
+      progressPercent,
+      healthStatus: calcHealthStatus(progressPercent, target.status),
+      currentWeekValue: value,
+    },
+  });
+}
+
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({
     where: { id: params.id },
     select: {
       orgId: true, qtdGoal: true, target: true, status: true,
       quarter: true, year: true,
-      kpiLevel: true, owner: true, ownerIds: true,
+      kpiLevel: true, owner: true, ownerIds: true, parentKPIId: true,
     },
   });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
@@ -114,50 +178,56 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
     }
   }
 
-  // Upsert via findFirst + update/create because the compound unique key includes a nullable userId
-  const existing = await db.kPIWeeklyValue.findFirst({
-    where: { kpiId: params.id, userId: targetUserId, weekNumber: validated.weekNumber },
-    select: { id: true },
+  // Primary write — upsert + recompute on the KPI the request targets.
+  await upsertAndRecalc({
+    kpiId: params.id,
+    orgId,
+    userId: targetUserId,
+    weekNumber: validated.weekNumber,
+    value: validated.value,
+    notes: validated.notes,
+    changedBy: userId,
   });
-  let weeklyValue;
-  if (existing) {
-    weeklyValue = await db.kPIWeeklyValue.update({
-      where: { id: existing.id },
-      data: { value: validated.value, notes: validated.notes, updatedBy: userId },
-      select: { id: true, kpiId: true, userId: true, weekNumber: true, value: true, notes: true, createdAt: true, updatedAt: true },
+
+  // ── Bidirectional sync between Team KPI ↔ child Individual KPIs ──
+  // (a) Team write  → mirror to that owner's child Individual KPI
+  // (b) Child write → mirror to the parent Team KPI's per-owner row
+  if (kpi.kpiLevel === "team") {
+    const child = await db.kPI.findFirst({
+      where: {
+        parentKPIId: params.id,
+        owner: targetUserId,
+        deletedAt: null,
+      },
+      select: { id: true, orgId: true },
     });
-  } else {
-    weeklyValue = await db.kPIWeeklyValue.create({
-      data: {
-        kpiId: params.id,
-        orgId,
+    if (child) {
+      await upsertAndRecalc({
+        kpiId: child.id,
+        orgId: child.orgId,
         userId: targetUserId,
         weekNumber: validated.weekNumber,
         value: validated.value,
         notes: validated.notes,
-        createdBy: userId,
-      },
-      select: { id: true, kpiId: true, userId: true, weekNumber: true, value: true, notes: true, createdAt: true, updatedAt: true },
+        changedBy: userId,
+      });
+    }
+  } else if (kpi.parentKPIId) {
+    await upsertAndRecalc({
+      kpiId: kpi.parentKPIId,
+      orgId,
+      userId: targetUserId,
+      weekNumber: validated.weekNumber,
+      value: validated.value,
+      notes: validated.notes,
+      changedBy: userId,
     });
   }
 
-  // Recalculate aggregate progress (sum of ALL weekly rows across owners)
-  const allWeekly = await db.kPIWeeklyValue.findMany({
-    where: { kpiId: params.id },
-    select: { value: true },
-  });
-  const totalAchieved = allWeekly.reduce((s, w) => s + (w.value || 0), 0);
-  const goal = kpi.qtdGoal ?? kpi.target ?? 0;
-  const progressPercent = goal ? (totalAchieved / goal) * 100 : 0;
-
-  await db.kPI.update({
-    where: { id: params.id },
-    data: {
-      qtdAchieved: totalAchieved,
-      progressPercent,
-      healthStatus: calcHealthStatus(progressPercent, kpi.status),
-      currentWeekValue: validated.value,
-    },
+  // Re-read the row we just upserted so the response carries the canonical shape.
+  const weeklyValue = await db.kPIWeeklyValue.findFirst({
+    where: { kpiId: params.id, userId: targetUserId, weekNumber: validated.weekNumber },
+    select: { id: true, kpiId: true, userId: true, weekNumber: true, value: true, notes: true, createdAt: true, updatedAt: true },
   });
 
   await db.kPILog.create({

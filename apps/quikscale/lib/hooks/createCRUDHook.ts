@@ -119,12 +119,20 @@ export function createCRUDHook<Item, Filters>(
     });
   }
 
+  // Dashboard summary aggregates KPI + Priority + WWW in one cached payload
+  // (`useDashboardSummary`, key prefix `["dashboard"]`, staleTime 5min). Any
+  // resource mutation must invalidate it too — otherwise navigating to the
+  // dashboard right after creating/editing a row shows stale data until the
+  // staleTime expires or the user hard-refreshes.
+  const DASHBOARD_KEY = ["dashboard"] as const;
+
   function useCreate() {
     const queryClient = useQueryClient();
     return useMutation({
       mutationFn: (body: Partial<Item>) => createItem(body),
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: keys.lists() });
+        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
       },
     });
   }
@@ -136,6 +144,7 @@ export function createCRUDHook<Item, Filters>(
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: keys.detail(id) });
         queryClient.invalidateQueries({ queryKey: keys.lists() });
+        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
       },
     });
   }
@@ -146,6 +155,7 @@ export function createCRUDHook<Item, Filters>(
       mutationFn: (id: string) => deleteItem(id),
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: keys.lists() });
+        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
       },
     });
   }

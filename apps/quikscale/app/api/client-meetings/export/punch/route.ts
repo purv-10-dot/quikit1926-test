@@ -40,8 +40,13 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
     include: { absentMembers: true, dashboardNAMembers: true },
     orderBy: { meetingDate: "asc" },
   });
+  // No-data guard — same message as the daily / weekly exports so the
+  // client-side handler can show one consistent error.
   if (!meetings.length)
-    return NextResponse.json({ success: false, error: `No meetings for ${year}-${String(month).padStart(2, "0")}` }, { status: 400 });
+    return NextResponse.json(
+      { success: false, error: "There is no data in the selected range." },
+      { status: 404 },
+    );
 
   const reports = client.memberships.map(m =>
     computeMemberPunchIn(

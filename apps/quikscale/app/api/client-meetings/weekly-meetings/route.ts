@@ -116,6 +116,31 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       { status: 400 }
     );
 
+  // ── One-meeting-per-client-per-week rule ──────────────────────────────
+  // A client can only have a single weekly meeting in any given calendar
+  // week (Monday → Sunday). Check the bounds of the requested meetingDate
+  // and reject the create if anything else lives in the same window.
+  const meetingDate = new Date(d.meetingDate);
+  const { start: weekStart, end: weekEnd } = weekBoundsMondayToSunday(meetingDate);
+  const conflict = await db.clientWeeklyMeeting.findFirst({
+    where: {
+      orgId,
+      clientId: d.clientId,
+      deletedAt: null,
+      meetingDate: { gte: weekStart, lte: weekEnd },
+    },
+    select: { id: true },
+  });
+  if (conflict) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `A weekly meeting for the selected client already exists between ${fmtDDMMYYYY(weekStart)} and ${fmtDDMMYYYY(weekEnd)}.`,
+      },
+      { status: 409 },
+    );
+  }
+
   const created = await db.clientWeeklyMeeting.create({
     data: {
       orgId,
@@ -179,3 +204,29 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
     { status: 201 }
   );
 });
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Calendar-week bounds (Monday 00:00:00 → Sunday 23:59:59.999) for the date
+ * that contains `d`. Used by the one-meeting-per-client-per-week guard.
+ */
+function weekBoundsMondayToSunday(d: Date): { start: Date; end: Date } {
+  const day = d.getDay(); // 0 = Sun … 6 = Sat
+  const daysFromMonday = day === 0 ? 6 : day - 1;
+  const start = new Date(d);
+  start.setDate(d.getDate() - daysFromMonday);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+/** Format a Date as dd/MM/yyyy — matches the conflict-message format. */
+function fmtDDMMYYYY(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+

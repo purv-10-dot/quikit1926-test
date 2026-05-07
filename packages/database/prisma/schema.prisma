@@ -325,6 +325,13 @@ model User {
   themeMode   String? @default("light")
   accentColor String? @default("#0066cc")
 
+  /// FRD FR-SA-009 / BR-008 — true when the user was created via a native
+  /// email invite and is still on the system default password (Quikit2026).
+  /// On first login the auth flow routes them to /set-password instead of
+  /// the dashboard. Cleared once they save a new password (or click Skip,
+  /// because BR-008 says the screen is shown only once).
+  mustChangePassword Boolean @default(false)
+
   kpiFrozenCol       String?
   priorityFrozenCol  String?
   wwwFrozenCol       String?
@@ -461,6 +468,21 @@ model OrgMember {
   invitedAt       DateTime?
   acceptedAt      DateTime?
   status          String    @default("active")
+
+  /// FRD §3.3 / §3.4 — "sso" or "native". Drives which onboarding email is sent,
+  /// which CTA is rendered, and whether the accept flow goes through the
+  /// Set-Password screen. Null for legacy memberships created before the FRD.
+  inviteMethod String?
+
+  /// FRD §3.3 — for SSO invites we classify the invited email's provider at
+  /// invite time so the email template can render "Sign in with Google" vs
+  /// "Sign in with Microsoft". One of: "google" | "microsoft" | null.
+  inviteProvider String?
+
+  /// FRD FR-SA-002 / FR-OA-002 — apps to grant on accept. Replaces the old
+  /// auto-grant-all-active-apps behaviour. Empty = no app access (only valid
+  /// for role=member per FR-OA-003).
+  inviteAppIds String[] @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
-import { getTenantId } from "@/lib/api/getTenantId";
+import { getOrgId } from "@/lib/api/getOrgId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { diffDays, addDays } from "@/lib/utils/quarterGen";
@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest) {
       return NextResponse.json({ success: true, show: false });
     }
 
-    const orgId = await getTenantId(session.user.id);
+    const orgId = await getOrgId(session.user.id);
     if (!orgId) {
       return NextResponse.json({ success: true, show: false });
     }

@@ -175,7 +175,7 @@ describe("POST /api/performance/goals — owner membership", () => {
   it("returns 400 when owner is not an active member", async () => {
     // The first mockDb.orgMember.findFirst resolves for asAdmin().
     // The second call (owner membership check) needs to return null.
-    // Since withOrgAuth uses getTenantId which calls findFirst once,
+    // Since withOrgAuth uses getOrgId which calls findFirst once,
     // we override the second call for the owner membership check.
     mockDb.orgMember.findFirst
       .mockResolvedValueOnce({

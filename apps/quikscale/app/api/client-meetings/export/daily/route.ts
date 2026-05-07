@@ -29,6 +29,16 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
     where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
     include: { absentMembers: true },
   });
+
+  // No-data guard — return a 404 instead of a blank workbook so the user
+  // sees an explicit error message rather than a 0%-everywhere download.
+  if (huddles.length === 0) {
+    return NextResponse.json(
+      { success: false, error: "There is no data in the selected range." },
+      { status: 404 },
+    );
+  }
+
   const stats = calculateDailyMonthlyStats(
     huddles.map(h => ({
       meetingDate: h.meetingDate, callStatus: h.callStatus,

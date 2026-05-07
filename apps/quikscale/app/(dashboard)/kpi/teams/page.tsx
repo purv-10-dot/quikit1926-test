@@ -27,12 +27,16 @@ const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
 export default function TeamsKPIPage() {
   // Year + quarter live in FilterContext so they persist across module nav.
-  const { year, setYear, quarter, setQuarter } = useFilterContext();
+  // `filterTeam` is also read so the Dashboard's Team-tab team selection
+  // pre-seeds this page's multi-select filter on first mount.
+  const { year, setYear, quarter, setQuarter, filterTeam } = useFilterContext();
   const { years: fyYears, configured: fyConfigured } = useFiscalYears();
   const availableYears = fyYears.length ? fyYears : [FISCAL_YEAR];
 
   // Team filter — multi-select. Empty array = "All teams" (show everything).
-  const [filterTeamIds, setFilterTeamIds] = useState<string[]>([]);
+  // Initialised from FilterContext.filterTeam (single id) so Dashboard hand-off
+  // works; subsequent picks are managed locally on this page.
+  const [filterTeamIds, setFilterTeamIds] = useState<string[]>(() => filterTeam ? [filterTeam] : []);
   const [showTeamPicker, setShowTeamPicker] = useState(false);
   const teamRef = useRef<HTMLDivElement>(null);
   const [teamSearch, setTeamSearch] = useState("");

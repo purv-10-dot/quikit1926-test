@@ -14,24 +14,64 @@ interface CategoryItem {
   dataType: string;
   currency: string | null;
   description: string | null;
+  /// "Cumulative" | "Standalone" | "CumulativeTillExit" | "Manual"
+  breakdownType?: string;
   createdAt: string;
 }
+
+type AutoType = "Cumulative" | "Standalone" | "CumulativeTillExit";
 
 type FormState = {
   name: string;
   dataType: string;
   currency: string;
   description: string;
+  // Two-tier picker:
+  //   Mode = manual | automatic
+  //   When automatic, autoType picks the distribution rule.
+  //   On save, breakdownType = mode === "manual" ? "Manual" : autoType.
+  mode: "manual" | "automatic";
+  autoType: AutoType;
 };
 
 const DATA_TYPES = ["Number", "Percentage", "Currency"] as const;
-const EMPTY_FORM: FormState = { name: "", dataType: "", currency: "NONE", description: "" };
+const EMPTY_FORM: FormState = {
+  name: "",
+  dataType: "",
+  currency: "NONE",
+  description: "",
+  mode: "automatic",
+  autoType: "Cumulative",
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function currencySymbol(code: string | null) {
   if (!code || code === "NONE") return null;
   return CURRENCIES.find(c => c.code === code)?.symbol ?? null;
+}
+
+// Map the stored breakdownType enum onto the user-facing label + a soft badge.
+const BREAKDOWN_LABEL: Record<string, string> = {
+  Cumulative: "Cumulative",
+  Standalone: "Standalone",
+  CumulativeTillExit: "Cumulative Till End",
+  Manual: "Manual",
+};
+const BREAKDOWN_STYLE: Record<string, string> = {
+  Cumulative: "bg-blue-50 text-blue-700",
+  Standalone: "bg-emerald-50 text-emerald-700",
+  CumulativeTillExit: "bg-purple-50 text-purple-700",
+  Manual: "bg-gray-100 text-gray-600",
+};
+
+function BreakdownBadge({ value }: { value?: string }) {
+  const key = value && BREAKDOWN_LABEL[value] ? value : "Cumulative";
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${BREAKDOWN_STYLE[key]}`}>
+      {BREAKDOWN_LABEL[key]}
+    </span>
+  );
 }
 
 // ── Currency picker ───────────────────────────────────────────────────────────
@@ -143,7 +183,21 @@ function CategoryPanel({
 
   const [form, setForm] = useState<FormState>(
     editItem
-      ? { name: editItem.name, dataType: editItem.dataType, currency: editItem.currency ?? "NONE", description: editItem.description ?? "" }
+      ? {
+          name: editItem.name,
+          dataType: editItem.dataType,
+          currency: editItem.currency ?? "NONE",
+          description: editItem.description ?? "",
+          // Decompose existing breakdownType back into mode + autoType for the
+          // edit form. Legacy rows (no breakdownType column) default to
+          // Automatic + Cumulative — matches the historic implicit behaviour.
+          mode: editItem.breakdownType === "Manual" ? "manual" : "automatic",
+          autoType:
+            editItem.breakdownType === "Standalone" ||
+            editItem.breakdownType === "CumulativeTillExit"
+              ? (editItem.breakdownType as AutoType)
+              : "Cumulative",
+        }
       : EMPTY_FORM
   );
   const [errors, setErrors] = useState<Partial<FormState>>({});
@@ -157,10 +211,21 @@ function CategoryPanel({
     mutationFn: async (data: FormState) => {
       const url = editItem ? `/api/categories/${editItem.id}` : "/api/categories";
       const method = editItem ? "PUT" : "POST";
+      // Compose the API payload — derive breakdownType from mode/autoType,
+      // and don't send the form-only mode/autoType fields. Drop currency
+      // when the type is not Currency.
+      const breakdownType = data.mode === "manual" ? "Manual" : data.autoType;
+      const body = {
+        name: data.name,
+        dataType: data.dataType,
+        currency: data.dataType === "Currency" ? data.currency : null,
+        description: data.description,
+        breakdownType,
+      };
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(body),
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || "Failed to save");
@@ -253,6 +318,52 @@ function CategoryPanel({
               <CurrencyPicker value={form.currency} onChange={v => set("currency", v)} />
             </div>
           )}
+
+          {/* Breakdown — drives auto-fill in OPSP Targets / Goals / Quarter modals.
+              Manual = no auto-fill (user types every cell).
+              Automatic + Cumulative = split equally; Standalone = full target each
+              period; Cumulative Till Exit = ramp ending at target. */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Breakdown
+            </label>
+            <div className="flex items-center gap-4 mb-2">
+              <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="breakdownMode"
+                  value="manual"
+                  checked={form.mode === "manual"}
+                  onChange={() => set("mode", "manual")}
+                  className="accent-accent-600"
+                />
+                Manual
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="breakdownMode"
+                  value="automatic"
+                  checked={form.mode === "automatic"}
+                  onChange={() => set("mode", "automatic")}
+                  className="accent-accent-600"
+                />
+                Automatic
+              </label>
+            </div>
+            {form.mode === "automatic" && (
+              <select
+                value={form.autoType}
+                onChange={e => set("autoType", e.target.value as AutoType)}
+                title="Distribution — how Projected splits across years/quarters/weeks"
+                className="w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent bg-white border-gray-300"
+              >
+                <option value="Cumulative">Cumulative</option>
+                <option value="Standalone">Standalone</option>
+                <option value="CumulativeTillExit">Cumulative Till Exit</option>
+              </select>
+            )}
+          </div>
 
           {/* Description */}
           <div>
@@ -401,18 +512,19 @@ export default function CategoryMgmtPage() {
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Category Name</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-36">Data Type</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-28">Currency</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-44">Breakdown</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Description</th>
               </tr>
             </thead>
             <tbody>
               {isLoading && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">Loading…</td>
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">Loading…</td>
                 </tr>
               )}
               {!isLoading && items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">
                     No categories yet. Click <strong>Add Category</strong> to create one.
                   </td>
                 </tr>
@@ -443,6 +555,9 @@ export default function CategoryMgmtPage() {
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <BreakdownBadge value={item.breakdownType} />
                     </td>
                     <td className="px-4 py-3 text-gray-500 truncate max-w-xs">{item.description || "—"}</td>
                   </tr>

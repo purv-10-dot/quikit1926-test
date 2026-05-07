@@ -143,6 +143,27 @@ interface SignInComponentProps {
   initialError?: string | null;
   /** When true, use window.location.assign for navigation (hard nav). Default true to avoid session flicker. */
   hardNavigate?: boolean;
+  /**
+   * Open the component on a step other than "email". Used after an OAuth
+   * round-trip to land directly on the profile-confirmation step
+   * (`/login?step=profile`), or for the native-invite landing page which
+   * opens straight on the "Set your password" step (`initialStep="invitation"`).
+   */
+  initialStep?: "email" | "password" | "profile" | "forgot-otp" | "new-password" | "invitation";
+  /**
+   * Single-use invitation token (from `?token=…`). Required when
+   * `initialStep="invitation"`. The component fetches the invitation on
+   * mount, renders the Set-Password form, and on submit POSTs to
+   * `/api/invitations/accept` to activate the membership before signing
+   * the user in. Ignored for any other step.
+   */
+  invitationToken?: string | null;
+  /**
+   * Where to send the user after a successful invitation accept (Save &
+   * Continue). Defaults to `redirectPath`. Skip-for-now always sends the
+   * user to `/login` so they sign in manually with the default password.
+   */
+  invitationLauncherUrl?: string;
 }
 
 export const SignInComponent = ({
@@ -152,12 +173,15 @@ export const SignInComponent = ({
   callbackUrl,
   initialError,
   hardNavigate = true,
+  initialStep,
+  invitationToken,
+  invitationLauncherUrl,
 }: SignInComponentProps) => {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [authStep, setAuthStep] = useState<"email" | "password" | "profile" | "forgot-otp" | "new-password">("email");
+  const [authStep, setAuthStep] = useState<"email" | "password" | "profile" | "forgot-otp" | "new-password" | "invitation">(initialStep ?? "email");
   const [modalStatus, setModalStatus] = useState<"closed" | "loading" | "error" | "success">("closed");
   const [modalErrorMessage, setModalErrorMessage] = useState("");
   const [banner, setBanner] = useState<string | null>(initialError ?? null);
@@ -178,6 +202,21 @@ export const SignInComponent = ({
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  // Invitation (native invite "Set your password" step) state
+  const [invitationLoading, setInvitationLoading] = useState<boolean>(initialStep === "invitation");
+  const [invitationError, setInvitationError] = useState<string | null>(null);
+  const [invitationData, setInvitationData] = useState<{
+    orgName: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+  } | null>(null);
+  const [inviteCurrentPassword, setInviteCurrentPassword] = useState("");
+  const [inviteNewPassword, setInviteNewPassword] = useState("");
+  const [inviteConfirmPassword, setInviteConfirmPassword] = useState("");
+  const [inviteShowPassword, setInviteShowPassword] = useState(false);
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [inviteFormError, setInviteFormError] = useState<string | null>(null);
   const confettiRef = useRef<ConfettiRef>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const firstNameInputRef = useRef<HTMLInputElement>(null);
@@ -394,7 +433,173 @@ export const SignInComponent = ({
     }
   };
 
-  const handleSocialSignIn = (provider: "google" | "microsoft") => runSignIn();
+  /* ─── Native-invite acceptance flow (initialStep="invitation") ─────── */
+
+  /**
+   * On mount, fetch the invitation by token so we can show org/user
+   * context (and surface invalid/expired tokens before the user types a
+   * password). Re-runs only if the token prop ever changes — in practice
+   * the page hosting this component reads the token from the URL once.
+   */
+  useEffect(() => {
+    if (initialStep !== "invitation") return;
+    if (!invitationToken) {
+      setInvitationError("No invitation token provided.");
+      setInvitationLoading(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/invitations/accept?token=${encodeURIComponent(invitationToken)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        if (j?.success) {
+          setInvitationData(j.data);
+          if (j.data?.email) setEmail(j.data.email);
+        } else {
+          setInvitationError(j?.error || "Invalid invitation");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setInvitationError("Network error. Please try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setInvitationLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialStep, invitationToken]);
+
+  const submitInvitation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inviteSubmitting) return;
+    setInviteFormError(null);
+
+    if (!inviteCurrentPassword) {
+      setInviteFormError("Please enter your current password.");
+      return;
+    }
+    if (inviteNewPassword.length < 8) {
+      setInviteFormError("Password must be at least 8 characters.");
+      return;
+    }
+    if (!/[A-Z]/.test(inviteNewPassword)) {
+      setInviteFormError("Password must contain at least one uppercase letter.");
+      return;
+    }
+    if (!/[0-9]/.test(inviteNewPassword)) {
+      setInviteFormError("Password must contain at least one number.");
+      return;
+    }
+    if (!/[^A-Za-z0-9]/.test(inviteNewPassword)) {
+      setInviteFormError("Password must contain at least one special character.");
+      return;
+    }
+    if (inviteNewPassword !== inviteConfirmPassword) {
+      setInviteFormError("Passwords do not match. Please re-enter.");
+      return;
+    }
+
+    setInviteSubmitting(true);
+    try {
+      const res = await fetch("/api/invitations/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: invitationToken,
+          currentPassword: inviteCurrentPassword,
+          newPassword: inviteNewPassword,
+          confirmPassword: inviteConfirmPassword,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        setInviteFormError(json?.error ?? "Could not set your password. Please try again.");
+        setInviteSubmitting(false);
+        return;
+      }
+
+      // Auto sign-in with the new credentials so the user lands on the
+      // launcher without re-typing them. The success modal mirrors the
+      // normal post-login UX.
+      setModalStatus("loading");
+      const signInResult = await nextAuthSignIn("credentials", {
+        email: json.data?.email ?? invitationData?.email ?? "",
+        password: inviteNewPassword,
+        redirect: false,
+      });
+      if (!signInResult?.ok) {
+        setModalStatus("closed");
+        setBanner("Password set. Please sign in with your new password.");
+        setAuthStep("email");
+        setEmail(json.data?.email ?? invitationData?.email ?? "");
+        setInviteSubmitting(false);
+        return;
+      }
+      fireConfetti();
+      setModalStatus("success");
+      const target = invitationLauncherUrl || callbackUrl || redirectPath;
+      setTimeout(() => {
+        if (hardNavigate) window.location.assign(target);
+        else router.push(target);
+      }, 1200);
+    } catch {
+      setInviteFormError("Network error. Please try again.");
+      setInviteSubmitting(false);
+    }
+  };
+
+  const skipInvitation = async () => {
+    if (inviteSubmitting) return;
+    setInviteFormError(null);
+    setInviteSubmitting(true);
+    try {
+      const res = await fetch("/api/invitations/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: invitationToken, skip: true }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        setInviteFormError(json?.error ?? "Could not skip. Please try again.");
+        setInviteSubmitting(false);
+        return;
+      }
+      // Skip path: send the user to /login with their email pre-filled so
+      // they can sign in manually with the default password (FR-SA-010).
+      setBanner("Invitation accepted. Sign in to continue.");
+      setEmail(json.data?.email ?? invitationData?.email ?? "");
+      setAuthStep("email");
+      setInviteSubmitting(false);
+    } catch {
+      setInviteFormError("Network error. Please try again.");
+      setInviteSubmitting(false);
+    }
+  };
+
+  /**
+   * Kick off a real OAuth round-trip with NextAuth. The browser navigates
+   * away to Google/Microsoft, comes back through `/api/auth/callback/<p>`,
+   * and lands DIRECTLY on `/login?step=profile`.
+   *
+   * We deliberately don't route through `/select-org` for OAuth — that
+   * was brittle in practice (intermediate redirects sometimes lost the
+   * `fromOAuth` flag depending on browser cache and NextAuth's URL
+   * handling). Going straight to the profile-confirmation form is
+   * unconditional and impossible to bypass. After the form is submitted
+   * the post-save navigation falls back to `redirectPath` (`/select-org`),
+   * which then gates on the now-populated DB names and ships the user to
+   * the launcher.
+   *
+   * The "microsoft" prop name is the public-facing label; the NextAuth
+   * provider id is `azure-ad`.
+   */
+  const handleSocialSignIn = (provider: "google" | "microsoft") => {
+    const id = provider === "microsoft" ? "azure-ad" : "google";
+    setModalStatus("loading");
+    nextAuthSignIn(id, { callbackUrl: "/login?step=profile" });
+  };
 
   const handleNativeSignIn = (e: React.FormEvent) => {
     e.preventDefault();
@@ -417,6 +622,44 @@ export const SignInComponent = ({
     if (authStep === "profile") setTimeout(() => firstNameInputRef.current?.focus(), 400);
     if (authStep === "forgot-otp") setTimeout(() => otpInputRefs.current[0]?.focus(), 400);
     if (authStep === "new-password") setTimeout(() => newPasswordInputRef.current?.focus(), 400);
+  }, [authStep]);
+
+  // When the profile step opens with empty inputs, ask the auth service
+  // for pre-fill data. Priority:
+  //   1. `suggested*` (Google / Microsoft) — freshest source for OAuth
+  //      logins, set by the signIn callback into the OAuth pre-fill store.
+  //   2. DB `firstName` / `lastName` — fallback for credentials users or
+  //      when the suggestion store has nothing.
+  // Either way, `firstName`/`lastName` state become editable defaults the
+  // user can keep or edit.
+  useEffect(() => {
+    if (authStep !== "profile") return;
+    if (firstName !== "" || lastName !== "") return;
+    let cancelled = false;
+    fetch("/api/auth/me/profile", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.success) return;
+        const f =
+          (data.suggestedFirstName as string | null) ||
+          (data.firstName as string) ||
+          "";
+        const l =
+          (data.suggestedLastName as string | null) ||
+          (data.lastName as string) ||
+          "";
+        if (f) setFirstName(f);
+        if (l) setLastName(l);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authStep]);
 
   // Countdown ticker for the OTP step. Re-arms on every send (`otpExpiresAt`
@@ -1099,6 +1342,129 @@ export const SignInComponent = ({
                     {resetSubmitting ? "Updating…" : "Update password"}
                   </button>
                 </form>
+              </motion.div>
+            )}
+            {authStep === "invitation" && (
+              <motion.div key="invitation-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
+
+                {invitationLoading ? (
+                  <div className="space-y-2">
+                    <h2 className="text-3xl font-semibold text-white tracking-tight"
+                      style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
+                      Loading…
+                    </h2>
+                    <p className="text-white/45 text-sm">Validating your invitation.</p>
+                  </div>
+                ) : invitationError ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <h2 className="text-3xl font-semibold text-white tracking-tight"
+                        style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
+                        Invitation unavailable
+                      </h2>
+                      <p className="text-white/55 text-sm">{invitationError}</p>
+                    </div>
+                    <button type="button" onClick={() => { setAuthStep("email"); }}
+                      className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20">
+                      Go to sign in
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Heading */}
+                    <div className="space-y-2">
+                      <h2 className="text-3xl font-semibold text-white tracking-tight"
+                        style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
+                        Set your password
+                      </h2>
+                      <p className="text-white/45 text-sm">
+                        You&apos;re using a temporary password. Set a new one now, or skip and keep the default for now.
+                      </p>
+                      {invitationData?.email && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <div className="w-2 h-2 rounded-full bg-violet-400" />
+                          <p className="text-white/45 text-sm truncate max-w-[280px]">{invitationData.email}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <form onSubmit={submitInvitation} className="space-y-3">
+                      {/* Current password */}
+                      <div className="gi-wrap w-full">
+                        <div className="gi">
+                          <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
+                            <Lock className="w-4 h-4 text-white/40" />
+                          </div>
+                          <input
+                            type={inviteShowPassword ? "text" : "password"}
+                            placeholder="Enter your default password"
+                            value={inviteCurrentPassword}
+                            onChange={(e) => setInviteCurrentPassword(e.target.value)}
+                            autoComplete="current-password"
+                            className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
+                          />
+                        </div>
+                      </div>
+
+                      {/* New password */}
+                      <div className="gi-wrap w-full">
+                        <div className="gi">
+                          <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
+                            <button type="button" onClick={() => setInviteShowPassword((v) => !v)} className="text-white/40 hover:text-white/70 transition-colors p-1">
+                              {inviteShowPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                          <input
+                            type={inviteShowPassword ? "text" : "password"}
+                            placeholder="Min 8 chars, 1 uppercase, 1 number, 1 special"
+                            value={inviteNewPassword}
+                            onChange={(e) => setInviteNewPassword(e.target.value)}
+                            autoComplete="new-password"
+                            minLength={8}
+                            maxLength={200}
+                            className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Confirm new password */}
+                      <div className="gi-wrap w-full">
+                        <div className="gi">
+                          <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
+                            <Lock className="w-4 h-4 text-white/40" />
+                          </div>
+                          <input
+                            type={inviteShowPassword ? "text" : "password"}
+                            placeholder="Re-enter password"
+                            value={inviteConfirmPassword}
+                            onChange={(e) => setInviteConfirmPassword(e.target.value)}
+                            autoComplete="new-password"
+                            minLength={8}
+                            maxLength={200}
+                            className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
+                          />
+                        </div>
+                      </div>
+
+                      {inviteConfirmPassword.length > 0 && inviteNewPassword !== inviteConfirmPassword && (
+                        <p className="text-xs text-red-300/90 px-1">Passwords don&apos;t match.</p>
+                      )}
+                      {inviteFormError && (
+                        <p className="text-xs text-red-300/90 px-1">{inviteFormError}</p>
+                      )}
+
+                      <button type="submit" disabled={inviteSubmitting}
+                        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:-translate-y-0.5 active:translate-y-0">
+                        {inviteSubmitting ? "Saving…" : "Save & Continue"}
+                      </button>
+                      <button type="button" onClick={skipInvitation} disabled={inviteSubmitting}
+                        className="w-full py-3.5 rounded-2xl bg-white/[0.04] border border-white/15 text-white/85 hover:text-white hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed text-sm font-semibold transition-colors">
+                        Skip for now
+                      </button>
+                    </form>
+                  </>
+                )}
               </motion.div>
             )}
           </AnimatePresence>

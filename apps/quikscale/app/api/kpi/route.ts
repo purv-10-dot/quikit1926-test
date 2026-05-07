@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/kpiCreateValidation";
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
@@ -23,6 +24,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     kpiLevel: searchParams.get("kpiLevel") || undefined,
     owner: searchParams.get("owner") || undefined,
     teamId: searchParams.get("teamId") || undefined,
+    parentKPIId: searchParams.get("parentKPIId") || undefined,
     quarter: searchParams.get("quarter") || undefined,
     year: searchParams.get("year") ? parseInt(searchParams.get("year")!) : undefined,
     search: searchParams.get("search") || undefined,
@@ -71,6 +73,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
       ];
     }
   }
+  if (validated.parentKPIId) where.parentKPIId = validated.parentKPIId;
   if (validated.quarter) where.quarter = validated.quarter;
   if (validated.year) where.year = validated.year;
   if (validated.search) {
@@ -146,6 +149,18 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
       )
     : new Map();
 
+  // Batch-fetch parent KPIs so the Individual list can show "Linked to <Team KPI>".
+  const parentIds = new Set<string>();
+  for (const k of kpis) if (k.parentKPIId) parentIds.add(k.parentKPIId);
+  const parentMap = parentIds.size > 0
+    ? new Map(
+        (await db.kPI.findMany({
+          where: { id: { in: [...parentIds] }, orgId },
+          select: { id: true, name: true, kpiLevel: true },
+        })).map((p) => [p.id, p])
+      )
+    : new Map();
+
   const enriched = kpis.map((k) => {
     const ownerIds = (k.ownerIds as string[] | null) ?? [];
     const rawWeekly = (k.weeklyValues ?? []) as Array<{
@@ -196,6 +211,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
         ? { ...k.team, head: k.team.headId ? (usersMap.get(k.team.headId) ?? null) : null }
         : null,
       owners: ownerIds.map((id) => usersMap.get(id)).filter(Boolean),
+      parentKPI: k.parentKPIId ? (parentMap.get(k.parentKPIId) ?? null) : null,
     };
   });
 
@@ -269,6 +285,30 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const parentErr = await validateParentKPI(validated.parentKPIId, orgId);
   if (parentErr) return parentErr;
 
+  // Duplicate-name guard — KPI name must be unique within (tenant, quarter, year).
+  // Auto-created child KPIs (parentKPIId set) are excluded so a user can pick a
+  // child KPI's name for an unrelated new KPI without false-positive blocks.
+  const dup = await db.kPI.findFirst({
+    where: {
+      orgId,
+      name: validated.name,
+      quarter: validated.quarter,
+      year: validated.year,
+      deletedAt: null,
+      parentKPIId: null,
+    },
+    select: { id: true, kpiLevel: true },
+  });
+  if (dup) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `A KPI named "${validated.name}" already exists for ${validated.quarter} ${validated.year}.`,
+      },
+      { status: 400 },
+    );
+  }
+
   const kpi = await db.kPI.create({
     data: {
       orgId,
@@ -330,6 +370,114 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   await db.kPILog.create({
     data: { orgId, kpiId: kpi.id, action: "CREATE", newValue: JSON.stringify(kpi), changedBy: userId },
   });
+
+  // ── Auto-create linked Individual KPIs for every Team KPI owner ───────
+  // The Individual KPI list will show a "Linked to Team KPI" column for
+  // these. Bidirectional weekly-value + target sync is applied in the
+  // weekly + PATCH handlers (see Steps 3–5 in bugsResolve.md).
+  const childIdByOwner = new Map<string, string>();
+  if (isTeamLevel && (validated.ownerIds?.length ?? 0) > 0) {
+    const contribMap = (validated.ownerContributions as Record<string, number> | null | undefined) ?? null;
+    const ownerWeeklyTargets = (validated.weeklyOwnerTargets as Record<string, Record<string, number>> | null | undefined) ?? null;
+    const ownerNames = (validated.ownerKpiNames as Record<string, string> | null | undefined) ?? null;
+
+    for (const ownerId of validated.ownerIds!) {
+      const pct = contribMap?.[ownerId] ?? (100 / validated.ownerIds!.length);
+      const childTarget = ((validated.target ?? 0) * pct) / 100;
+      const customName = ownerNames?.[ownerId]?.trim();
+      // Per-week target — prefer the saved per-owner map; if missing, fall
+      // back to the team's `weeklyTargets` × this owner's contribution %.
+      const teamWeekly = (validated.weeklyTargets as Record<string, number> | null | undefined) ?? null;
+      const childWeekly: Record<string, number> = (() => {
+        if (ownerWeeklyTargets?.[ownerId]) return ownerWeeklyTargets[ownerId];
+        if (teamWeekly) {
+          const out: Record<string, number> = {};
+          for (const [w, v] of Object.entries(teamWeekly)) out[w] = (v * pct) / 100;
+          return out;
+        }
+        return {};
+      })();
+
+      const child = await db.kPI.create({
+        data: {
+          orgId,
+          name: customName && customName.length > 0 ? customName : validated.name, // per-owner override or fall back to Team KPI name
+          description: validated.description,
+          kpiLevel: "individual",
+          owner: ownerId,
+          ownerIds: [],
+          ownerContributions: undefined,
+          teamId: validated.teamId,
+          parentKPIId: kpi.id, // ← link to the Team KPI just created
+          quarter: validated.quarter,
+          year: validated.year,
+          measurementUnit: validated.measurementUnit,
+          target: childTarget,
+          quarterlyGoal: validated.quarterlyGoal != null ? (validated.quarterlyGoal * pct) / 100 : null,
+          qtdGoal: validated.qtdGoal != null ? (validated.qtdGoal * pct) / 100 : null,
+          progressPercent: 0,
+          status: validated.status || "active",
+          healthStatus: "on-track",
+          divisionType: validated.divisionType ?? "Cumulative",
+          weeklyTargets: childWeekly as any,
+          currency: validated.currency ?? null,
+          targetScale: validated.targetScale ?? null,
+          reverseColor: validated.reverseColor ?? false,
+          frequency: validated.frequency ?? "weekly",
+          createdBy: userId,
+        },
+        select: { id: true },
+      });
+      childIdByOwner.set(ownerId, child.id);
+
+      await db.kPILog.create({
+        data: {
+          orgId,
+          kpiId: child.id,
+          action: "CREATE",
+          newValue: JSON.stringify({
+            linkedFromTeamKPI: kpi.id,
+            owner: ownerId,
+            target: childTarget,
+            contributionPct: pct,
+          }),
+          changedBy: userId,
+        },
+      });
+    }
+  }
+
+  // ── Notifications ────────────────────────────────────────────────────
+  // Individual KPI: one email to its owner.
+  // Team KPI: one email per child Individual KPI (so each owner sees their
+  //   own derived target instead of the parent total).
+  if (isTeamLevel && childIdByOwner.size > 0) {
+    for (const [ownerId, childId] of childIdByOwner) {
+      notifyKPIAssignment({
+        orgId,
+        kpiId: childId,
+        kpiName: kpi.name,
+        quarter: kpi.quarter,
+        year: kpi.year,
+        creatorUserId: userId,
+        ownerUserIds: [ownerId],
+      }).catch((err) => {
+        console.error("[POST /api/kpi] team-child notify failed:", err);
+      });
+    }
+  } else if (!isTeamLevel && validated.owner) {
+    notifyKPIAssignment({
+      orgId,
+      kpiId: kpi.id,
+      kpiName: kpi.name,
+      quarter: kpi.quarter,
+      year: kpi.year,
+      creatorUserId: userId,
+      ownerUserIds: [validated.owner],
+    }).catch((err) => {
+      console.error("[POST /api/kpi] notifyKPIAssignment failed:", err);
+    });
+  }
 
   return NextResponse.json({ success: true, data: kpi, message: "KPI created successfully" }, { status: 201 });
 });

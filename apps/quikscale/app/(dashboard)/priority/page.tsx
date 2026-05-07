@@ -26,7 +26,13 @@ const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 
 export default function PriorityPage() {
   // Year + quarter via shared FilterContext (session-scoped persistence).
-  const { year, setYear, quarter, setQuarter, filterTeam, setFilterTeam, filterOwner, setFilterOwner } = useFilterContext();
+  // Team / Owner are seeded from context on first mount so the Dashboard's
+  // selection hands off, but live locally — clearing here doesn't propagate
+  // to KPI / WWW.
+  const ctx = useFilterContext();
+  const { year, setYear, quarter, setQuarter } = ctx;
+  const [filterTeam, setFilterTeam] = useState<string>(ctx.filterTeam);
+  const [filterOwner, setFilterOwner] = useState<string>(ctx.filterOwner);
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Search + filter

@@ -1,5 +1,11 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { requireProdEnv } from "@quikit/shared/env";
+import {
+  renderInvitationEmail,
+  sendWithRetry,
+  type InviteMethod,
+  type SsoProvider,
+} from "@quikit/shared";
 
 let _transporter: Transporter | null = null;
 
@@ -136,6 +142,64 @@ export async function sendUserCreatedEmail(params: {
     subject: "Welcome to QuikIT",
     html: `<p>Hi ${esc(params.firstName)},</p><p>Your QuikIT account has been created.</p><p><a href="${getLoginUrl()}">Sign in</a></p>`,
   });
+}
+
+/**
+ * FRD §4 — sends the SSO or Native invitation email for the Superadmin org
+ * onboarding flow. The Quikit launcher uses SMTP (nodemailer); apps/admin
+ * uses Resend. Both render the same template via @quikit/shared.
+ */
+export async function sendOnboardingInvitationEmail(params: {
+  to: string;
+  firstName: string;
+  orgName: string;
+  orgLogoUrl?: string | null;
+  orgBrandColor?: string | null;
+  inviterName: string;
+  role: string;
+  appNames: string[];
+  token: string;
+  inviteMethod: InviteMethod;
+  ssoProvider?: SsoProvider | null;
+  isReminder?: boolean;
+}): Promise<{ success: boolean; attempts: number; error?: unknown }> {
+  const transporter = getTransporter();
+  // Native-flow set-password URL lives on the central auth app; SSO CTA also
+  // points at /login there. Use the auth-app base URL for both — matches
+  // FR-SA-005 / FR-SA-008 wording about "the Quikit login page".
+  const authBase =
+    process.env.NEXT_PUBLIC_AUTH_URL ||
+    requireProdEnv("NEXTAUTH_URL", "http://localhost:3000"); // prod-safety-allow: dev fallback, prod throws
+
+  const { subject, html } = renderInvitationEmail({
+    ...params,
+    appBaseUrl: authBase,
+  });
+
+  if (!transporter) {
+    console.log(
+      "[email] SMTP not configured — would send onboarding invite to",
+      params.to,
+      `(method=${params.inviteMethod}${params.ssoProvider ? `/${params.ssoProvider}` : ""})`
+    );
+    // Return a synthetic success so callers don't see a "delivery failed"
+    // warning in dev when SMTP is intentionally unset.
+    return { success: true, attempts: 0 };
+  }
+
+  // FRD §7 — 3 attempts with linear back-off; nodemailer throws on failure
+  // and resolves on success, which sendWithRetry normalises.
+  const result = await sendWithRetry(
+    () =>
+      transporter.sendMail({
+        from: fromAddress(),
+        to: params.to,
+        subject,
+        html,
+      }),
+    { label: `onboarding-invite[${params.to}]`, attempts: 3 }
+  );
+  return { success: result.success, attempts: result.attempts, error: result.error };
 }
 
 export async function sendOrgSuspendedEmail(params: {

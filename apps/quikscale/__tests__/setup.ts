@@ -7,7 +7,7 @@ import { _clearLocalCache } from "@quikit/auth/cache";
 // Session injection for tests
 // ---------------------------------------------------------------------------
 // The auth helpers in @quikit/auth follow a factory pattern
-// (createGetTenantId(authOptions), etc.) and internally call
+// (createGetOrgId(authOptions), etc.) and internally call
 // next-auth/next's getServerSession on every invocation. Mocking that one
 // function gives us per-test session control across all 42 route files
 // without per-file boilerplate.

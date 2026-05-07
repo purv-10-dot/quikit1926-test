@@ -1,0 +1,132 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { requireAdmin } from "@/lib/api/requireAdmin";
+import { getQuikScaleAppId } from "@/lib/api/permissions";
+import {
+  seedAdminAppRole,
+  ensureUserOnRole,
+} from "@/lib/api/seedAdminAppRole";
+
+const bodySchema = z.object({
+  /** AppRole.id, or null to revoke. Special value "admin" auto-seeds + uses
+   *  the org's admin AppRole (creating it on demand). */
+  roleId: z.string().min(1).nullable(),
+});
+
+/**
+ * PATCH /api/org/users/[id]/role
+ *
+ * Inline role-change endpoint used by the Users list dropdown.
+ *
+ * Storage model (post-rename, 2026-05-06):
+ *   - Roles live in `app_quikscale.AppRole` (was `CustomRole`).
+ *   - User → role mapping lives in `app_quikscale.UserAppRole` (a join
+ *     table, replaces the `appRoleId` column that used to be on
+ *     `quikit.UserAppAccess`).
+ *
+ * Pre-condition: the user must already have a `quikit.UserAppAccess` row
+ * for QuikScale. If not, returns 409 — the admin must invite them first.
+ */
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } },
+) {
+  try {
+    const auth = await requireAdmin();
+    if ("error" in auth && auth.error) return auth.error;
+    const { orgId, userId: actorId } = auth as {
+      orgId: string;
+      userId: string;
+    };
+
+    const parsed = bodySchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: parsed.error.errors[0]?.message ?? "Invalid input",
+        },
+        { status: 400 },
+      );
+    }
+    const { roleId: requestedRoleId } = parsed.data;
+
+    const appId = await getQuikScaleAppId();
+    if (!appId) {
+      return NextResponse.json(
+        { success: false, error: "QuikScale app not registered" },
+        { status: 500 },
+      );
+    }
+
+    // Pre-condition: user must already have QuikScale access.
+    const access = await db.userAppAccess.findFirst({
+      where: { orgId, appId, userId: params.id },
+      select: { id: true },
+    });
+    if (!access) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "This user does not have access to QuikScale yet. Add them as a user first, then assign a role.",
+        },
+        { status: 409 },
+      );
+    }
+
+    // Resolve the target AppRole.
+    let targetRoleId: string | null = null;
+    if (requestedRoleId === "admin") {
+      // Convenience path — auto-seed the admin role on demand.
+      targetRoleId = await seedAdminAppRole(orgId);
+    } else if (requestedRoleId) {
+      const role = await db.appRole.findFirst({
+        where: { id: requestedRoleId, orgId, appId },
+        select: { id: true },
+      });
+      if (!role) {
+        return NextResponse.json(
+          { success: false, error: "Role not found" },
+          { status: 404 },
+        );
+      }
+      targetRoleId = role.id;
+    }
+
+    // Wipe any existing UserAppRole rows for this user (in this org), then
+    // assign the new one. We treat it as single-role-at-a-time per the
+    // dropdown UI even though the join supports multiples.
+    await db.userAppRole.deleteMany({
+      where: { userId: params.id, orgId },
+    });
+    if (targetRoleId) {
+      await ensureUserOnRole(params.id, orgId, targetRoleId, actorId);
+    }
+
+    // Hydrate response — include the role's id + name (or null if revoked).
+    const role = targetRoleId
+      ? await db.appRole.findUnique({
+          where: { id: targetRoleId },
+          select: { id: true, name: true },
+        })
+      : null;
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        userId: params.id,
+        appRoleId: targetRoleId,
+        appRole: role,
+      },
+    });
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "Failed to update role";
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 500 },
+    );
+  }
+}

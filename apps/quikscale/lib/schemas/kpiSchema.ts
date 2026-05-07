@@ -22,6 +22,10 @@ const kpiBaseFields = {
   weeklyTargets: z.record(z.string(), z.number()).optional().nullable(),
   // Team KPI per-owner weekly targets: { userId: { weekNumber: value } }
   weeklyOwnerTargets: z.record(z.string(), z.record(z.string(), z.number())).optional().nullable(),
+  // Team KPI: optional per-owner override for the auto-created child Individual
+  // KPI's name. Shape: { userId: "Custom name" }. Missing entries → child uses
+  // the Team KPI's `name`.
+  ownerKpiNames: z.record(z.string(), z.string().min(1).max(200)).optional().nullable(),
   currency: z.string().optional().nullable(),
   targetScale: z.string().optional().nullable(),
   reverseColor: z.boolean().optional(),
@@ -89,6 +93,9 @@ export const updateKPISchema = z
     divisionType: z.enum(["Cumulative", "Standalone"]).optional(),
     weeklyTargets: z.record(z.string(), z.number()).optional().nullable(),
     weeklyOwnerTargets: z.record(z.string(), z.record(z.string(), z.number())).optional().nullable(),
+    // Per-owner Individual KPI name override. Only meaningful when the row is a
+    // Team KPI; the PUT handler uses it to rename child Individual KPIs.
+    ownerKpiNames: z.record(z.string(), z.string().min(1).max(200)).optional().nullable(),
     currency: z.string().optional().nullable(),
     targetScale: z.string().optional().nullable(),
     reverseColor: z.boolean().optional(),
@@ -130,6 +137,7 @@ export const kpiListParamsSchema = z.object({
   kpiLevel: z.enum(["individual", "team"]).optional(),
   owner: z.string().cuid().optional(),
   teamId: z.string().cuid().optional(),
+  parentKPIId: z.string().cuid().optional(),
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
   year: z.number().int().optional(),
   search: z.string().optional(),

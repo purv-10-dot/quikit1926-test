@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
-import { getTenantId } from "@/lib/api/getTenantId";
+import { getOrgId } from "@/lib/api/getOrgId";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { updateConfigurationsSchema } from "@/lib/schemas/settingsSchema";
 
@@ -15,7 +15,7 @@ export async function GET() {
     if (!session?.user?.id) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    const orgId = await getTenantId(session.user.id);
+    const orgId = await getOrgId(session.user.id);
     if (!orgId) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }

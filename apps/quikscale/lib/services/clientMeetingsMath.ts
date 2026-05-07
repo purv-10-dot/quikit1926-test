@@ -222,16 +222,25 @@ export function calculateWeeklyMonthlyStats(
     const avgEF  = pctYesNA(held.map(r => r.feedback),         held.length);
     const avgCI  = pctYesNA(held.map(r => r.collectiveIntelligence),  held.length);
 
-    // avgAuality (spec's "dashboard quality"): derived from opspReview radio
-    // AND the average of all 5 member-score dimensions. We blend the two 50/50.
-    const qualityFlagPct = pctYesNA(held.map(r => r.opspReview), held.length);
+    // avgAuality ("Quality of the dashboards"): pure average of the 5
+    // per-member KPI scores across every held meeting.
+    //   per-member = (kpiWeeklyQTD + kpiCoding + priorityNotes
+    //                  + priorityStartEndDate + priorityColor) / 5
+    //   per-meeting = mean of per-member values for that meeting
+    //   avgAuality  = mean of per-meeting values
+    // The opspReview-flag blend has been removed — Quality reflects what
+    // the team actually scored each member on, nothing else. (The order of
+    // averaging is mathematically equivalent to "per-KPI average across
+    // members, then average those 5 KPIs" — the user-spec example.)
     const perMeetingMemberAvgs = held.map(r => {
       if (!r.memberScores.length) return 0;
       const perMember = r.memberScores.map(s => (s.kpiWeeklyQTD + s.kpiCoding + s.priorityNotes + s.priorityStartEndDate + s.priorityColor) / 5);
       return perMember.reduce((a, b) => a + b, 0) / perMember.length;
     });
-    const avgMemberScore = perMeetingMemberAvgs.length ? perMeetingMemberAvgs.reduce((a, b) => a + b, 0) / perMeetingMemberAvgs.length : 0;
-    const avgAuality = (qualityFlagPct + avgMemberScore) / 2;
+    const meetingsWithScores = perMeetingMemberAvgs.filter((_, i) => held[i].memberScores.length > 0);
+    const avgAuality = meetingsWithScores.length
+      ? meetingsWithScores.reduce((a, b) => a + b, 0) / meetingsWithScores.length
+      : 0;
 
     const attendancePercents = held.map(r => r.totalMembers > 0 ? ((r.totalMembers - r.absentCount) / r.totalMembers) * 100 : 0);
     const avgAttendance = attendancePercents.length ? attendancePercents.reduce((a, b) => a + b, 0) / attendancePercents.length : 0;
@@ -313,16 +322,21 @@ export function computeMemberPunchIn(
   const sorted = [...meetings].sort((a, b) => a.meetingDate.getTime() - b.meetingDate.getTime());
   const weeks: MemberPunchMeeting[] = sorted.map(mtg => {
     const onDashboardNA = mtg.dashboardNAUserIds.includes(member.id);
-    const present = mtg.memberScores.find(s => s.userId === member.id);
     const isAbsent = mtg.absentUserIds.includes(member.id);
+    const present = mtg.memberScores.find(s => s.userId === member.id);
 
     const dateStr = mtg.meetingDate.toISOString().slice(0, 10);
-    if (onDashboardNA && !present) {
+
+    // Status flags WIN over any saved scores: if a member is on the
+    // Dashboard-NA or Absent list for a meeting, every column shows the
+    // status label even when an old score exists in memberScores.
+    // (Previously the `!present` guard let a stale score sneak past.)
+    if (onDashboardNA) {
       return { meetingDate: dateStr,
         kpiWeeklyQTD: "NA", kpiCoding: "NA", priorityNotes: "NA",
         priorityStartEndDate: "NA", priorityColor: "NA" };
     }
-    if (isAbsent && !present) {
+    if (isAbsent) {
       return { meetingDate: dateStr,
         kpiWeeklyQTD: "AB", kpiCoding: "AB", priorityNotes: "AB",
         priorityStartEndDate: "AB", priorityColor: "AB" };

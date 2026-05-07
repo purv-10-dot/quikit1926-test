@@ -99,6 +99,7 @@ export function useUpdateWeeklyStatus(priorityId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: priority.keys.detail(priorityId) });
       queryClient.invalidateQueries({ queryKey: priority.keys.lists() });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }

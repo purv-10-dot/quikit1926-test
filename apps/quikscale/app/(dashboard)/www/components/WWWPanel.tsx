@@ -18,6 +18,7 @@ import {
   RightPanelFooter,
   RightPanelCancelButton,
   RightPanelSubmitButton,
+  UserSelect,
 } from "@quikit/ui";
 
 
@@ -53,8 +54,15 @@ interface Props {
 // ── Log Tab ──────────────────────────────────────────────────────────────────
 
 function LogTab({ item, users }: { item: WWWItem; users: Array<{ id: string; firstName: string; lastName: string; email: string }> }) {
-  const whoUser = users.find(u => u.id === item.who);
-  const whoName = whoUser ? `${whoUser.firstName} ${whoUser.lastName}` : item.who;
+  const whoIdList = (item.whoIds && item.whoIds.length > 0)
+    ? item.whoIds
+    : item.who ? [item.who] : [];
+  const whoUsersResolved = whoIdList
+    .map(id => users.find(u => u.id === id))
+    .filter((u): u is NonNullable<typeof u> => Boolean(u));
+  const whoName = whoUsersResolved.length > 0
+    ? whoUsersResolved.map(u => `${u.firstName} ${u.lastName}`).join(", ")
+    : item.who;
   const sLabel = statusLabel(item.status);
   const statusColor = statusDotColor(item.status);
 
@@ -158,14 +166,16 @@ function LogTab({ item, users }: { item: WWWItem; users: Array<{ id: string; fir
 function EditTab({
   form,
   set,
+  setMulti,
   errors,
   users,
   mode,
   readOnly,
   itemId,
 }: {
-  form: { who: string; what: string; when: string; status: string; revisedDate: string; notes: string; category: string; originalDueDate: string };
+  form: { whoIds: string[]; what: string; when: string; status: string; revisedDate: string; notes: string; category: string; originalDueDate: string };
   set: (key: string, val: string) => void;
+  setMulti: (key: "whoIds", val: string[]) => void;
   errors: Record<string, string>;
   users: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   mode: "create" | "edit";
@@ -192,20 +202,16 @@ function EditTab({
           <label className="block text-xs font-medium text-gray-600 mb-1">
             Who? <span className="text-red-500">*</span>
           </label>
-          <select
-            value={form.who}
-            onChange={e => set("who", e.target.value)}
+          <UserSelect
+            mode="multi"
+            values={form.whoIds}
+            onChange={(ids: string[]) => setMulti("whoIds", ids)}
+            users={users}
+            placeholder="Select person…"
+            error={!!errors.whoIds}
             disabled={readOnly}
-            className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white disabled:bg-gray-50 disabled:text-gray-500 ${errors.who ? "border-red-400" : "border-gray-200"}`}
-          >
-            <option value="">Select person…</option>
-            {users.map(u => (
-              <option key={u.id} value={u.id}>
-                {u.firstName} {u.lastName}
-              </option>
-            ))}
-          </select>
-          {errors.who && <p className="text-[10px] text-red-500 mt-0.5">{errors.who}</p>}
+          />
+          {errors.whoIds && <p className="text-[10px] text-red-500 mt-0.5">{errors.whoIds}</p>}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -413,8 +419,11 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
   const canEditItem = useCanEditWWW(item);
   const readOnly = mode === "edit" && !canEditItem;
 
+  const initialWhoIds = (item?.whoIds && item.whoIds.length > 0)
+    ? item.whoIds
+    : item?.who ? [item.who] : [];
   const [form, setForm] = useState({
-    who: item?.who ?? "",
+    whoIds: initialWhoIds,
     what: item?.what ?? "",
     when: toDateInputValue(item?.when),
     status: item?.status ?? "not-yet-started",
@@ -432,8 +441,11 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
   // Re-populate when item changes (edit mode)
   useEffect(() => {
     if (item) {
+      const ids = (item.whoIds && item.whoIds.length > 0)
+        ? item.whoIds
+        : item.who ? [item.who] : [];
       setForm({
-        who: item.who,
+        whoIds: ids,
         what: item.what,
         when: toDateInputValue(item.when),
         status: item.status,
@@ -452,9 +464,14 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
     setErrors(e => { const n = { ...e }; delete n[key]; return n; });
   }
 
+  function setMulti(key: "whoIds", val: string[]) {
+    setForm(f => ({ ...f, [key]: val }));
+    setErrors(e => { const n = { ...e }; delete n[key]; return n; });
+  }
+
   function validate() {
     const errs: Record<string, string> = {};
-    if (!form.who) errs.who = "Who is required";
+    if (!form.whoIds || form.whoIds.length === 0) errs.whoIds = "At least one assignee is required";
     if (!form.what.trim()) errs.what = "What is required";
     if (!form.when) errs.when = "When is required";
     // Edit mode only: revised date must not be earlier than When
@@ -470,7 +487,8 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
     setSaving(true);
     try {
       const payload: Partial<WWWItem> = {
-        who: form.who,
+        who: form.whoIds[0] ?? "",
+        whoIds: form.whoIds,
         what: form.what.trim(),
         when: form.when,
         status: form.status,
@@ -512,8 +530,17 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       ? [{ key: "edit", label: "Edit" }]
       : [{ key: "log", label: "Log" }, { key: "edit", label: "Edit" }];
 
-  const whoUser = users.find(u => u.id === (item?.who ?? form.who));
-  const whoName = whoUser ? `${whoUser.firstName} ${whoUser.lastName}` : "";
+  const subtitleIds = (item?.whoIds && item.whoIds.length > 0)
+    ? item.whoIds
+    : item?.who ? [item.who] : form.whoIds;
+  const subtitleUsers = subtitleIds
+    .map(id => users.find(u => u.id === id))
+    .filter((u): u is NonNullable<typeof u> => Boolean(u));
+  const whoName = subtitleUsers.length === 0
+    ? ""
+    : subtitleUsers.length === 1
+      ? `${subtitleUsers[0].firstName} ${subtitleUsers[0].lastName}`
+      : `${subtitleUsers[0].firstName} ${subtitleUsers[0].lastName} +${subtitleUsers.length - 1}`;
 
   const subtitle = mode === "create"
     ? "Create new record"
@@ -546,7 +573,7 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       }
     >
       {tab === "edit" && (
-        <EditTab form={form} set={set} errors={errors} users={users} mode={mode} readOnly={readOnly} itemId={item?.id} />
+        <EditTab form={form} set={set} setMulti={setMulti} errors={errors} users={users} mode={mode} readOnly={readOnly} itemId={item?.id} />
       )}
       {tab === "log" && item && (
         <LogTab item={item} users={users} />

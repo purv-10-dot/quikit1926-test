@@ -40,6 +40,8 @@ const navigation: NavItem[] = [
     { label: "Teams",           href: "/org-setup/teams",    icon: Users, moduleKey: "orgSetup.teams" },
     { label: "Users",           href: "/org-setup/users",    icon: User, moduleKey: "orgSetup.users" },
     { label: "Quarter Settings",href: "/org-setup/quarters", icon: CalendarDays, moduleKey: "orgSetup.quarters" },
+    // Roles & Permissions intentionally NOT in sidebar.
+    // Entry point is the header user-dropdown → "User Permission" instead.
   ]},
   { label: "WWW",            href: "/www",        icon: Activity, moduleKey: "www" },
   { label: "Meeting Rhythm", icon: Calendar,      moduleKey: "clientMeetings", children: [

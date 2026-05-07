@@ -8,6 +8,7 @@ import { FilterProvider } from "@/lib/context/FilterContext";
 import { SessionGuard } from "@/components/session-guard";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
 import { FeatureDisabledToast, ImpersonationBanner } from "@quikit/ui";
+import { QuarterRequiredGuard } from "@/components/quarter-required-guard";
 
 export default function DashboardLayout({
   children,
@@ -37,7 +38,9 @@ export default function DashboardLayout({
           {/* Page Content */}
           <main className="flex-1 overflow-y-auto bg-[var(--color-bg-secondary)]">
             <div className="h-full">
-              {children}
+              <QuarterRequiredGuard>
+                {children}
+              </QuarterRequiredGuard>
             </div>
           </main>
         </div>

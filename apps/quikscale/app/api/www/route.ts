@@ -7,6 +7,7 @@ import { createWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
+import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 
 // GET /api/www — list all WWWItems for tenant
 export const GET = withOrgAuth(async ({ orgId }, req) => {
@@ -50,24 +51,38 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     db.wWWItem.count({ where }),
   ]);
 
-  // Build user map for who_user
-  const whoIds = [...new Set(items.map(i => i.who).filter(Boolean))];
-  const users = whoIds.length
+  // Build user map covering BOTH legacy single `who` and new `whoIds[]`.
+  // Note: cached Prisma types may not yet include `whoIds` until the dev
+  // server restarts and re-runs `prisma generate`. Read it via an unknown
+  // cast in the meantime — the column exists in the DB after migration.
+  const allIds = new Set<string>();
+  for (const i of items) {
+    if (i.who) allIds.add(i.who);
+    const ids = ((i as unknown as { whoIds?: string[] }).whoIds) ?? [];
+    for (const id of ids) allIds.add(id);
+  }
+  const users = allIds.size
     ? await db.user.findMany({
-        where: { id: { in: whoIds } },
-        select: { id: true, firstName: true, lastName: true },
+        where: { id: { in: [...allIds] } },
+        select: { id: true, firstName: true, lastName: true, email: true },
       })
     : [];
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
-  const result = items.map(item => ({
-    ...item,
-    when: item.when.toISOString(),
-    originalDueDate: item.originalDueDate?.toISOString() ?? null,
-    createdAt: item.createdAt.toISOString(),
-    updatedAt: item.updatedAt.toISOString(),
-    who_user: userMap[item.who] ?? null,
-  }));
+  const result = items.map(item => {
+    const rawIds = (item as unknown as { whoIds?: string[] }).whoIds ?? [];
+    const ids = rawIds.length > 0 ? rawIds : item.who ? [item.who] : [];
+    return {
+      ...item,
+      whoIds: ids,
+      when: item.when.toISOString(),
+      originalDueDate: item.originalDueDate?.toISOString() ?? null,
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+      who_user: userMap[item.who] ?? null,
+      who_users: ids.map(id => userMap[id]).filter(Boolean),
+    };
+  });
 
   return NextResponse.json(paginatedResponse(result, total, page, limit));
 });
@@ -90,12 +105,21 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const parsed = createWWWSchema.safeParse(body);
   if (!parsed.success) return validationError(parsed);
-  const { who, what, when, status, notes, category, originalDueDate } = parsed.data;
+  const { who, whoIds, what, when, status, notes, category, originalDueDate } = parsed.data;
+
+  // Resolve assignee list. The Zod refine guarantees at least one of
+  // `who` / `whoIds` is set. `who` is mirrored as the primary assignee for
+  // legacy indexes / sort columns and equals whoIds[0].
+  const resolvedIds = (whoIds && whoIds.length > 0)
+    ? whoIds
+    : who ? [who] : [];
+  const primaryWho = resolvedIds[0]!;
 
   const item = await db.wWWItem.create({
     data: {
       orgId,
-      who,
+      who: primaryWho,
+      ...({ whoIds: resolvedIds } as { whoIds: string[] }),
       what,
       when: new Date(when),
       status: status ?? "not-yet-started",
@@ -104,22 +128,25 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       originalDueDate: originalDueDate ? new Date(originalDueDate) : null,
       revisedDates: [],
       createdBy: userId,
-    },
+    } as Parameters<typeof db.wWWItem.create>[0]["data"],
   });
 
-  // Attach who_user
-  const whoUser = await db.user.findUnique({
-    where: { id: item.who },
-    select: { id: true, firstName: true, lastName: true },
+  // Hydrate full assignee list for the response.
+  const assignees = await db.user.findMany({
+    where: { id: { in: resolvedIds } },
+    select: { id: true, firstName: true, lastName: true, email: true },
   });
+  const whoUser = assignees.find(u => u.id === primaryWho) ?? null;
 
   const result = {
     ...item,
+    whoIds: resolvedIds,
     when: item.when.toISOString(),
     originalDueDate: item.originalDueDate?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
-    who_user: whoUser ?? null,
+    who_user: whoUser,
+    who_users: resolvedIds.map(id => assignees.find(u => u.id === id)).filter(Boolean),
   };
 
   await writeAuditLog({
@@ -130,6 +157,19 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     entityId: item.id,
     newValues: item,
   });
+
+  if (resolvedIds.length > 0) {
+    notifyWWWAssignment({
+      orgId,
+      itemId: item.id,
+      what: item.what,
+      when: item.when,
+      creatorUserId: userId,
+      ownerUserIds: resolvedIds,
+    }).catch((err) => {
+      console.error("[POST /api/www] notifyWWWAssignment failed:", err);
+    });
+  }
 
   return NextResponse.json({ success: true, data: result }, { status: 201 });
 });
