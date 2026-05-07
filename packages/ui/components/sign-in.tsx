@@ -764,7 +764,15 @@ export const SignInComponent = ({
   return (
     <div className="min-h-screen w-screen flex bg-[#0a0a0f] overflow-hidden">
       {/* ── CSS ── */}
-      <style>{`
+      {/*
+        Use dangerouslySetInnerHTML so the CSS string is emitted byte-identical
+        on server and client. With <style>{cssString}</style>, React escapes
+        ', ", &, <, > in the text node on the server (e.g. ' → &#x27;) but
+        renders them raw on the client — producing a hydration mismatch and
+        breaking @import url('...') because the browser parses the escaped
+        server output literally.
+      */}
+      <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap');
 
         input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus{-webkit-box-shadow:0 0 0 30px transparent inset!important;-webkit-text-fill-color:#fff!important;transition:background-color 5000s ease-in-out 0s!important;}
@@ -787,7 +795,7 @@ export const SignInComponent = ({
         .gb:hover::after{--angle-1:-125deg;}
         .gb-shadow{--cut:2em;position:absolute;width:calc(100% + var(--cut));height:calc(100% + var(--cut));top:calc(-1 * var(--cut)/2);left:calc(-1 * var(--cut)/2);filter:blur(8px);pointer-events:none;}
         .gb-shadow::after{content:"";position:absolute;inset:0;border-radius:9999px;background:linear-gradient(180deg,rgba(255,255,255,.15),rgba(255,255,255,.05));width:calc(100% - var(--cut) - .25em);height:calc(100% - var(--cut) - .25em);top:calc(var(--cut) - .5em);left:calc(var(--cut) - .875em);padding:.125em;box-sizing:border-box;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;}
-      `}</style>
+      ` }} />
 
       <Confetti ref={confettiRef} manualstart className="fixed inset-0 pointer-events-none z-[999]" />
 

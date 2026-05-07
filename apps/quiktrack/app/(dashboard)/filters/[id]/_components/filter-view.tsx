@@ -1,0 +1,334 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { AlertTriangle, Star, ChevronLeft, ChevronRight } from "lucide-react";
+import { FilterToolbar, type ToolbarState, defaultToolbarStateFor } from "./filter-toolbar";
+
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
+interface IssueRow {
+  id: string;
+  key: string;
+  title: string;
+  type: string;
+  priority: string;
+  createdAt: string;
+  updatedAt: string;
+  project: { id: string; name: string; projectKey: string } | null;
+  status: { id: string; name: string; color: string; category: string } | null;
+  assignee: UserLite | null;
+  reporter: UserLite | null;
+}
+
+interface UserLite {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  avatar: string | null;
+}
+
+interface ApiResponse {
+  success: boolean;
+  data?: IssueRow[];
+  total?: number;
+  meta?: { title?: string; fallback?: string };
+  error?: string;
+}
+
+const dateFmt: Intl.DateTimeFormatOptions = {
+  month: "short",
+  day: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+};
+
+export function FilterView({ filterId }: { filterId: string }) {
+  const [items, setItems] = useState<IssueRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [title, setTitle] = useState("");
+  const [fallback, setFallback] = useState<string | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [toolbar, setToolbar] = useState<ToolbarState>(() => defaultToolbarStateFor(filterId));
+
+  // Reseed the toolbar state whenever the user switches between Default
+  // filters in the sidebar — each slug carries its own implicit chips.
+  useEffect(() => {
+    setToolbar(defaultToolbarStateFor(filterId));
+  }, [filterId]);
+
+  const toolbarQs = useMemo(() => {
+    const qs = new URLSearchParams();
+    if (toolbar.projectId) qs.set("projectId", toolbar.projectId);
+    if (toolbar.assignee) qs.set("assignee", toolbar.assignee);
+    if (toolbar.reporter) qs.set("reporter", toolbar.reporter);
+    if (toolbar.type.length) qs.set("type", toolbar.type.join(","));
+    if (toolbar.statusCategory.length)
+      qs.set("statusCategory", toolbar.statusCategory.join(","));
+    if (toolbar.resolution) qs.set("resolution", toolbar.resolution);
+    return qs.toString();
+  }, [toolbar]);
+
+  // Debounce the search box so we don't hammer the API on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset to page 1 whenever the filter, search, page size, or toolbar changes.
+  useEffect(() => {
+    setPage(1);
+  }, [filterId, debounced, pageSize, toolbarQs]);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError(null);
+    const qs = new URLSearchParams(toolbarQs);
+    if (debounced) qs.set("search", debounced);
+    qs.set("limit", String(pageSize));
+    qs.set("offset", String((page - 1) * pageSize));
+    fetch(`/api/filters/${filterId}?${qs}`)
+      .then((r) => r.json() as Promise<ApiResponse>)
+      .then((j) => {
+        if (!alive) return;
+        if (!j.success) {
+          setError(j.error ?? "Failed to load");
+          return;
+        }
+        setItems(j.data ?? []);
+        setTotal(j.total ?? 0);
+        setTitle(j.meta?.title ?? "Work items");
+        setFallback(j.meta?.fallback);
+      })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        setError(e instanceof Error ? e.message : "Failed to load");
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [filterId, debounced, page, pageSize, toolbarQs]);
+
+  return (
+    <div className="px-6 py-4">
+      <div className="flex items-center gap-2 mb-3">
+        <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+        <Star className="h-5 w-5 text-gray-300 hover:text-yellow-400 cursor-pointer" />
+      </div>
+
+      {fallback && (
+        <div className="mb-3 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span>{fallback}</span>
+        </div>
+      )}
+
+      <FilterToolbar
+        search={search}
+        onSearchChange={setSearch}
+        onClear={() => {
+          setSearch("");
+          setToolbar(defaultToolbarStateFor(filterId));
+        }}
+        state={toolbar}
+        onChange={setToolbar}
+      />
+
+      <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200 text-left text-xs font-medium text-gray-600 uppercase tracking-wide">
+            <tr>
+              <th className="px-3 py-2.5 w-[40%]">Work</th>
+              <th className="px-3 py-2.5">Assignee</th>
+              <th className="px-3 py-2.5">Reporter</th>
+              <th className="px-3 py-2.5">Priority</th>
+              <th className="px-3 py-2.5">Status</th>
+              <th className="px-3 py-2.5">Created</th>
+              <th className="px-3 py-2.5">Updated</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {loading && items.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-sm">
+                  Loading…
+                </td>
+              </tr>
+            ) : error ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-8 text-center text-red-600 text-sm">
+                  {error}
+                </td>
+              </tr>
+            ) : items.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-sm">
+                  No work items match this filter.
+                </td>
+              </tr>
+            ) : (
+              items.map((it) => (
+                <tr key={it.id} className="hover:bg-gray-50">
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {it.project ? (
+                        <Link
+                          href={`/spaces/${it.project.id}/work/${it.id}`}
+                          className="text-blue-600 hover:underline font-medium shrink-0"
+                        >
+                          {it.key}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-gray-700 shrink-0">{it.key}</span>
+                      )}
+                      <span className="text-gray-700 truncate">{it.title}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <UserCell user={it.assignee} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <UserCell user={it.reporter} />
+                  </td>
+                  <td className="px-3 py-2 text-gray-700 capitalize">
+                    {it.priority.toLowerCase()}
+                  </td>
+                  <td className="px-3 py-2">
+                    {it.status ? (
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium uppercase tracking-wide"
+                        style={{
+                          background: `${it.status.color}1f`,
+                          color: it.status.color,
+                          border: `1px solid ${it.status.color}55`,
+                        }}
+                      >
+                        {it.status.name}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600 text-xs">
+                    {new Date(it.createdAt).toLocaleString(undefined, dateFmt)}
+                  </td>
+                  <td className="px-3 py-2 text-gray-600 text-xs">
+                    {new Date(it.updatedAt).toLocaleString(undefined, dateFmt)}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <Pager
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        loading={loading}
+        rowCount={items.length}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
+    </div>
+  );
+}
+
+interface PagerProps {
+  page: number;
+  pageSize: number;
+  total: number;
+  loading: boolean;
+  rowCount: number;
+  onPageChange: (p: number) => void;
+  onPageSizeChange: (n: number) => void;
+}
+
+function Pager({ page, pageSize, total, loading, rowCount, onPageChange, onPageSizeChange }: PagerProps) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = total === 0 ? 0 : Math.min(total, (page - 1) * pageSize + rowCount);
+  const canPrev = page > 1 && !loading;
+  const canNext = page < totalPages && !loading;
+
+  return (
+    <div className="mt-3 flex items-center justify-between text-xs text-gray-600">
+      <div>
+        {loading && rowCount === 0
+          ? "Loading…"
+          : total === 0
+            ? "0 of 0"
+            : `${start}–${end} of ${total}`}
+      </div>
+      <div className="flex items-center gap-3">
+        <label className="flex items-center gap-1.5">
+          <span className="text-gray-500">Rows</span>
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="h-7 px-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {PAGE_SIZE_OPTIONS.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={!canPrev}
+            onClick={() => onPageChange(page - 1)}
+            className="h-7 w-7 inline-flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
+            aria-label="Previous page"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+          <span className="px-2">
+            Page <span className="font-medium text-gray-800">{page}</span> of {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={!canNext}
+            onClick={() => onPageChange(page + 1)}
+            className="h-7 w-7 inline-flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
+            aria-label="Next page"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserCell({ user }: { user: UserLite | null }) {
+  if (!user) return <span className="text-gray-400">Unassigned</span>;
+  const initial = (user.firstName?.[0] ?? user.email[0] ?? "?").toUpperCase();
+  return (
+    <div className="flex items-center gap-2">
+      {user.avatar ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={user.avatar} alt="" className="h-6 w-6 rounded-full" />
+      ) : (
+        <span className="h-6 w-6 rounded-full bg-blue-500 text-white text-[11px] font-semibold flex items-center justify-center">
+          {initial}
+        </span>
+      )}
+      <span className="text-gray-700 truncate">
+        {user.firstName} {user.lastName}
+      </span>
+    </div>
+  );
+}

@@ -55,7 +55,8 @@ function resolveClientSecret(envName: string, devFallback: string): string {
 
 const QUIKSCALE_BASE = resolveAppUrl("QUIKSCALE_URL", "http://localhost:3002"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
-const QUIKCONSTRUCTION_BASE = resolveAppUrl("QUIKCONSTRUCTION_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKTRACK_BASE = resolveAppUrl("QUIKTRACK_URL", "http://localhost:3004"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKCONSTRUCTION_BASE = resolveAppUrl("QUIKCONSTRUCTION_URL", "http://localhost:3006"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 
 const APPS = [
@@ -87,6 +88,22 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("ADMIN_OAUTH_CLIENT_SECRET", "admin-dev-secret-change-in-prod"),
       redirectUris: [
         `${ADMIN_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quiktrack",
+    name: "QuikTrack",
+    description: "Project management — Spaces, Sprints, Kanban, Task Table, Timeline, Pages, Timesheet, Reports.",
+    baseUrl: QUIKTRACK_BASE,
+    iconUrl: "/app-icons/quiktrack.png",
+    status: "active",
+    oauth: {
+      clientId: "quiktrack",
+      clientSecretPlain: resolveClientSecret("QUIKTRACK_OAUTH_CLIENT_SECRET", "quiktrack-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKTRACK_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },
@@ -194,6 +211,7 @@ For the source of truth on secret values, see ~/Desktop/QuikIT-Secrets/ (vault).
 Generate fresh secrets with:  openssl rand -base64 32
 Then re-run this seed with the env vars set:
   QUIKSCALE_OAUTH_CLIENT_SECRET=... ADMIN_OAUTH_CLIENT_SECRET=... \\
+  QUIKTRACK_OAUTH_CLIENT_SECRET=... \\
   QUIKCONSTRUCTION_OAUTH_CLIENT_SECRET=... QUIKVC_OAUTH_CLIENT_SECRET=... \\
   npx tsx prisma/seed-oauth.ts
 `);

@@ -25,7 +25,7 @@ datasource db {
   //   quikit                  — App, Org, OrgMember, UserAppAccess, OrgAppAccess, OAuth IdP
   //   public                  — shared glue (teams, session events, billing, …)
   //   app_quikscale | app_quikconstruction | app_quikvc — business-app data
-  schemas   = ["auth", "quikit", "public", "app_quikscale", "app_quikconstruction", "app_quikvc"]
+  schemas   = ["auth", "quikit", "public", "app_quikscale", "app_quikconstruction", "app_quikvc", "app_quiktrack"]
 }
 
 // ============================================================================
@@ -303,6 +303,11 @@ model Org {
   vcSourcedOpportunities VCSourcedOpportunity[]
   vcNotifications        VCNotification[]
   vcAuditLogs            VCAuditLog[]
+
+  // QuikTrack module — back-relations (top-level scoped models only).
+  qtProjects QtProject[]
+  qtTeams    QtTeam[]
+  qtIssues   QtIssue[]
 
   @@index([slug])
   @@index([status])
@@ -5419,4 +5424,458 @@ model VCAuditLog {
   @@index([orgId, userId, createdAt])
   @@index([orgId, outcome, createdAt])
   @@schema("app_quikvc")
+}
+
+// ============================================================================
+// QUIKTRACK MODULE (app_quiktrack schema)
+// ============================================================================
+// Project management — Spaces, Sprints, Kanban, Task Table, Timeline, Pages,
+// Timesheet, Reports. Tenant→Org rename: every Qt* model uses `orgId`. Only
+// the top-level scoped models (QtProject, QtTeam, QtIssue) declare the
+// `org Org @relation` and have a back-relation on Org; child models keep
+// `orgId String` as a denormalized column without a relation field, matching
+// the KPINote / KPILog pattern.
+
+model QtProject {
+  id          String  @id @default(cuid())
+  orgId       String
+  projectKey  String
+  name        String
+  description String?
+  projectType String  @default("software")
+  icon        String?
+  color       String? @default("#2563eb")
+  status      String  @default("active")
+  startDate   DateTime?
+  endDate     DateTime?
+  leadUserId  String?
+  isDeleted   Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+
+  org             Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members         QtProjectMember[]
+  teams           QtProjectTeam[]
+  statuses        QtIssueStatus[]
+  issueTypes      QtIssueType[]
+  issues          QtIssue[]
+  sprints         QtSprint[]
+  pages           QtPage[]
+  docs            QtDoc[]
+
+  @@unique([orgId, projectKey])
+  @@index([orgId, status])
+  @@index([leadUserId])
+  @@schema("app_quiktrack")
+}
+
+model QtProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  role      String   @default("MEMBER")
+  invitedBy String?
+  joinedAt  DateTime @default(now())
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId, role])
+  @@index([userId])
+  @@schema("app_quiktrack")
+}
+
+model QtProjectTeam {
+  id        String   @id @default(cuid())
+  projectId String
+  teamId    String
+  addedBy   String?
+  addedAt   DateTime @default(now())
+
+  project QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team    QtTeam    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, teamId])
+  @@index([teamId])
+  @@schema("app_quiktrack")
+}
+
+model QtTeam {
+  id          String  @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  color       String? @default("#2563eb")
+  leadUserId  String?
+  isDeleted   Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+
+  org          Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members      QtTeamMember[]
+  projectTeams QtProjectTeam[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+model QtTeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      String   @default("MEMBER")
+  joinedAt  DateTime @default(now())
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team QtTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@schema("app_quiktrack")
+}
+
+model QtSprint {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  goal        String?
+  status      String   @default("PLANNING")
+  startDate   DateTime?
+  endDate     DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+
+  project QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues  QtIssue[]
+
+  @@index([projectId, status])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueStatus {
+  id         String   @id @default(cuid())
+  projectId  String
+  name       String
+  color      String   @default("#94a3b8")
+  category   String   @default("BACKLOG")
+  orderIndex Int      @default(0)
+  isHidden   Boolean  @default(false)
+  isDeleted  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues  QtIssue[]
+
+  @@unique([projectId, name])
+  @@index([projectId, orderIndex])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueType {
+  id         String   @id @default(cuid())
+  projectId  String
+  name       String
+  color      String   @default("#64748b")
+  icon       String?
+  orderIndex Int      @default(0)
+  isDeleted  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@schema("app_quiktrack")
+}
+
+model QtIssue {
+  id             String   @id @default(cuid())
+  orgId          String
+  projectId      String
+  key            String
+  title          String
+  description    String?
+  type           String   @default("TASK")
+  statusId       String
+  priority       String   @default("MEDIUM")
+  parentId       String?
+  epicId         String?
+  sprintId       String?
+  assigneeId     String?
+  reporterId     String?
+  startDate      DateTime?
+  dueDate        DateTime?
+  eta            Float?
+  storyPoints    Int?
+  orderInColumn  Int      @default(0)
+  isDeleted      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String?
+  updatedBy      String?
+
+  org              Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project          QtProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status           QtIssueStatus    @relation(fields: [statusId], references: [id])
+  sprint           QtSprint?        @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  parent           QtIssue?         @relation("IssueParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children         QtIssue[]        @relation("IssueParent")
+  epic             QtIssue?         @relation("IssueEpic", fields: [epicId], references: [id], onDelete: SetNull)
+  epicChildren     QtIssue[]        @relation("IssueEpic")
+  comments         QtIssueComment[]
+  history          QtIssueHistory[]
+  outgoingLinks    QtIssueLink[]    @relation("IssueLinkSource")
+  incomingLinks    QtIssueLink[]    @relation("IssueLinkTarget")
+  timesheetEntries QtTimesheetEntry[]
+
+  @@unique([projectId, key])
+  @@index([orgId])
+  @@index([projectId, statusId])
+  @@index([projectId, type])
+  @@index([assigneeId])
+  @@index([epicId])
+  @@index([parentId])
+  @@index([sprintId])
+  @@index([startDate, dueDate])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueComment {
+  id        String   @id @default(cuid())
+  orgId     String
+  projectId String
+  issueId   String
+  userId    String
+  body      String
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  editedAt  DateTime?
+
+  issue QtIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([issueId, createdAt])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueHistory {
+  id        String   @id @default(cuid())
+  orgId     String
+  projectId String
+  issueId   String
+  userId    String?
+  field     String
+  oldValue  String?
+  newValue  String?
+  createdAt DateTime @default(now())
+
+  issue QtIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([issueId, createdAt])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueLink {
+  id            String   @id @default(cuid())
+  orgId         String
+  projectId     String
+  sourceIssueId String
+  targetIssueId String
+  type          String   @default("RELATES_TO")
+  createdAt     DateTime @default(now())
+  createdBy     String?
+
+  sourceIssue QtIssue @relation("IssueLinkSource", fields: [sourceIssueId], references: [id], onDelete: Cascade)
+  targetIssue QtIssue @relation("IssueLinkTarget", fields: [targetIssueId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceIssueId, targetIssueId, type])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([targetIssueId])
+  @@schema("app_quiktrack")
+}
+
+model QtPage {
+  id           String   @id @default(cuid())
+  projectId    String
+  title        String
+  content      String
+  authorId     String
+  parentPageId String?
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String?
+  updatedBy    String?
+
+  project  QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent   QtPage?   @relation("QtPageParent", fields: [parentPageId], references: [id], onDelete: SetNull)
+  children QtPage[]  @relation("QtPageParent")
+
+  @@index([projectId])
+  @@index([authorId])
+  @@schema("app_quiktrack")
+}
+
+model QtDoc {
+  id          String   @id @default(cuid())
+  orgId       String
+  projectId   String
+  title       String
+  content     String
+  templateKey String?
+  createdBy   String?
+  updatedBy   String?
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([projectId, isDeleted, updatedAt])
+  @@schema("app_quiktrack")
+}
+
+model QtTimesheetEntry {
+  id             String   @id @default(cuid())
+  orgId          String
+  userId         String
+  projectId      String
+  issueId        String
+  parentIssueId  String?
+  entryDate      DateTime
+  hours          Float
+  description    String?
+  isDeleted      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String?
+  updatedBy      String?
+
+  issue QtIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([projectId])
+  @@index([issueId])
+  @@index([userId, entryDate])
+  @@schema("app_quiktrack")
+}
+
+model QtTimesheetWeeklySummary {
+  id         String   @id @default(cuid())
+  orgId      String
+  issueId    String
+  userId     String
+  year       Int
+  weekNumber Int
+  totalHours Float    @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([issueId, userId, year, weekNumber])
+  @@index([orgId, year, weekNumber])
+  @@schema("app_quiktrack")
+}
+
+model QtDashboard {
+  id           String   @id @default(cuid())
+  orgId        String
+  userId       String
+  dashboardKey String
+  config       Json
+  starred      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, dashboardKey])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+model QtUserViewPref {
+  id            String   @id @default(cuid())
+  orgId         String
+  userId        String
+  projectId     String?
+  viewKey       String
+  hiddenColumns String[] @default([])
+  columnOrder   String[] @default([])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, projectId, viewKey])
+  @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+model QtUserActivity {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  projectId String
+  kind      String
+  ref       String   @default("")
+  title     String
+  meta      String?
+  href      String
+  icon      String?
+  color     String?
+  viewedAt  DateTime @default(now())
+
+  @@unique([userId, projectId, kind, ref])
+  @@index([orgId, userId, viewedAt])
+  @@schema("app_quiktrack")
+}
+
+model QtNotificationPref {
+  id        String   @id @default(cuid())
+  userId    String
+  eventKey  String
+  channel   String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, eventKey, channel])
+  @@index([userId])
+  @@schema("app_quiktrack")
+}
+
+model QtInvitation {
+  id         String    @id @default(cuid())
+  orgId      String
+  email      String
+  projectId  String?
+  role       String    @default("MEMBER")
+  token      String    @unique
+  invitedBy  String
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+  isDeleted  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([orgId, email])
+  @@index([token])
+  @@schema("app_quiktrack")
 }

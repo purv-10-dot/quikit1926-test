@@ -1,0 +1,98 @@
+@import "@quikit/ui/styles";
+
+/* App-specific styles AFTER the shared import. Keep this file small —
+   prefer Tailwind utility classes in components. Anything reusable belongs
+   in @quikit/ui, not here. */
+
+/* Always-visible horizontal scrollbar for the spaces list view.
+   Default Windows / WebKit scrollbars auto-hide on overlay-mode trackpads,
+   making the spreadsheet feel "stuck" when content overflows. */
+.qt-list-scroll::-webkit-scrollbar {
+  height: 12px;
+  width: 12px;
+}
+.qt-list-scroll::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-top: 1px solid #e5e7eb;
+}
+.qt-list-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 6px;
+  border: 2px solid #f3f4f6;
+}
+.qt-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+.qt-list-scroll {
+  scrollbar-color: #cbd5e1 #f3f4f6;
+  scrollbar-width: thin;
+}
+
+/* Shimmer for skeleton loading rows. Two-tone moving gradient — used by both
+   the List view and the Task Table during initial load and load-more. */
+@keyframes qt-shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.qt-shimmer {
+  background: linear-gradient(90deg, #f3f4f6 0%, #e5e7eb 50%, #f3f4f6 100%);
+  background-size: 800px 100%;
+  animation: qt-shimmer 1.4s infinite linear;
+}
+
+/* Tippy.js — used only by the rich-text editor's slash menu. We don't import
+   tippy's default CSS (it draws a chunky black bubble); these rules strip the
+   wrapper so the inner React menu controls the entire visual treatment. */
+.tippy-box {
+  background: transparent !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+.tippy-box > .tippy-content {
+  padding: 0 !important;
+}
+.tippy-box > .tippy-arrow {
+  display: none !important;
+}
+
+/* Read-mode rendering of TipTap output for issue descriptions / docs.
+   Tailwind's preflight strips list markers + heading sizes, so the raw
+   editor HTML reads as plain text without these rules. Mirrors the styling
+   the editor applies in edit mode so what-you-see is what-you-get. */
+.qt-rich-content { line-height: 1.55; }
+.qt-rich-content h1 { font-size: 1.5rem; font-weight: 700; margin: 0.85rem 0 0.4rem; color: #111827; }
+.qt-rich-content h2 { font-size: 1.25rem; font-weight: 600; margin: 0.85rem 0 0.4rem; color: #111827; }
+.qt-rich-content h3 { font-size: 1.05rem; font-weight: 600; margin: 0.7rem 0 0.3rem; color: #111827; }
+.qt-rich-content h4, .qt-rich-content h5, .qt-rich-content h6 { font-weight: 600; margin: 0.6rem 0 0.25rem; color: #111827; }
+.qt-rich-content p { margin: 0.4rem 0; }
+.qt-rich-content ul { list-style: disc; padding-left: 1.4rem; margin: 0.4rem 0; }
+.qt-rich-content ol { list-style: decimal; padding-left: 1.4rem; margin: 0.4rem 0; }
+.qt-rich-content li { margin: 0.15rem 0; }
+.qt-rich-content strong { font-weight: 600; color: #111827; }
+.qt-rich-content em { font-style: italic; }
+.qt-rich-content blockquote {
+  border-left: 3px solid #93c5fd; padding: 0.25rem 0.75rem; margin: 0.5rem 0;
+  color: #4b5563; font-style: italic;
+}
+.qt-rich-content code {
+  background: #f3f4f6; padding: 0 0.25rem; border-radius: 3px;
+  font-size: 0.85em; font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.qt-rich-content pre {
+  background: #111827; color: #e5e7eb; padding: 0.75rem; border-radius: 4px;
+  margin: 0.5rem 0; font-size: 0.8em; overflow-x: auto;
+}
+.qt-rich-content pre code { background: transparent; padding: 0; color: inherit; }
+.qt-rich-content a { color: #2563eb; text-decoration: underline; }
+.qt-rich-content table {
+  border-collapse: collapse; width: 100%; margin: 0.5rem 0;
+  border: 1px solid #d1d5db;
+}
+.qt-rich-content th, .qt-rich-content td {
+  border: 1px solid #d1d5db; padding: 0.4rem 0.6rem; vertical-align: top;
+}
+.qt-rich-content th { background: #f9fafb; font-weight: 600; }
+.qt-rich-content img { max-width: 100%; height: auto; border-radius: 4px; margin: 0.5rem 0; }
+.qt-rich-content hr { border: 0; border-top: 1px solid #e5e7eb; margin: 0.75rem 0; }
