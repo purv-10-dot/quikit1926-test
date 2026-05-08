@@ -1,0 +1,241 @@
+/* QuikIT shared base — @tailwind directives, Inter font, --color-/accent-
+   CSS variables. postcss-import (postcss.config.js) inlines this at PostCSS
+   time so the @tailwind directives are present in the same parsed file as
+   the @layer components block below. */
+@import "@quikit/ui/styles/globals.css";
+
+/* =============================================================
+   QuikSocial Design System — CSS Custom Properties
+   Source of truth for all --qs-* tokens. Values mirror the v1
+   product (see apps/web/src/lib/constants/design-tokens.md for
+   the line-by-line origin of each value).
+   Tailwind config references these vars; never hardcode hex values
+   in components — use Tailwind classes or reference these vars directly.
+   ============================================================= */
+
+:root {
+  /* --- Glass surface system ---
+     v1 GlassCard reference: bg-[#212121]/[0.14] backdrop-blur-xl
+     border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.25)].
+     The DARK tint (#212121 @ 14%) is what gives v1 its visible
+     frame against the pale-green hills background. The previous
+     v2 white tint at 6% was nearly invisible. */
+  --qs-glass-bg:           rgba(33, 33, 33, 0.14);
+  --qs-glass-border:       rgba(255, 255, 255, 0.10);
+  --qs-glass-bg-hover:     rgba(33, 33, 33, 0.20);
+
+  /* Larger / heavier glass surface (empty-states, modals).
+     v1 EmptyStateGlassCard exact values. */
+  --qs-glass-bg-strong:    rgba(33, 33, 33, 0.12);
+  --qs-glass-border-strong: rgba(255, 255, 255, 0.18);
+
+  /* --- Input surfaces --- */
+  --qs-input-bg:           rgba(255, 255, 255, 0.08);
+  --qs-input-border:       rgba(255, 255, 255, 0.15);
+
+  /* --- Text scale --- */
+  --qs-text-primary:       #FFFFFF;
+  --qs-text-secondary:     rgba(255, 255, 255, 0.65);
+  --qs-text-muted:         rgba(255, 255, 255, 0.40);
+
+  /* --- Sidebar (v1 .glass.glass-sidebar — see app/globals.css:353 in
+       the v1 git index). The 24% tint plus saturate(180%) blur is what
+       lets the green hills push through as a saturated tint instead
+       of reading as a flat dark panel. --- */
+  --qs-sidebar-bg:         rgba(33, 33, 33, 0.24);
+  --qs-sidebar-blur:       blur(22px) saturate(180%);
+  --qs-sidebar-border:     rgba(255, 255, 255, 0.16);
+  --qs-sidebar-shadow:     0 8px 32px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --qs-sidebar-width:      248px;
+  --qs-sidebar-width-collapsed: 72px;
+
+  /* --- Buttons --- */
+  --qs-btn-primary-bg:     #FFFFFF;
+  --qs-btn-primary-text:   #0A0A0A;
+  --qs-btn-secondary-bg:   rgba(255, 255, 255, 0.10);
+
+  /* --- Post status colors --- */
+  --qs-status-published:   #22C55E;
+  --qs-status-review:      #F59E0B;
+  --qs-status-scheduled:   #3B82F6;
+  --qs-status-failed:      #EF4444;
+  --qs-status-draft:       #6B7280;
+  --qs-status-overdue:     #F97316;
+
+  /* --- Shape tokens (v1 rounded-2xl = 16px on cards;
+       rounded-3xl = 24px on modals & dropdowns). --- */
+  --qs-card-radius:        16px;
+  --qs-card-radius-lg:     24px;
+  --qs-input-radius:       10px;
+  --qs-btn-radius:         10px;
+
+  /* --- Backdrop blur (v1 backdrop-blur-xl = 24px). --- */
+  --qs-backdrop-blur:      blur(24px);
+  --qs-backdrop-blur-md:   blur(20px);
+
+  /* --- Card depth shadows (v1 GlassCard / EmptyStateGlassCard). --- */
+  --qs-glass-shadow:       0 8px 32px rgba(0, 0, 0, 0.25);
+  --qs-glass-shadow-lg:    0 25px 60px rgba(0, 0, 0, 0.25);
+
+  /* --- Tag gradient (tone attributes, hashtags) --- */
+  --qs-tag-gradient:       linear-gradient(135deg, #F472B6, #FB923C);
+}
+
+/* =============================================================
+   Base resets
+   ============================================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  /* Background fills the full viewport — UI layers sit on top */
+  background-color: #0a0a0a;
+  color: var(--qs-text-primary);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* =============================================================
+   Global placeholder color — every <input>, <textarea>, and
+   contenteditable on the app sits on top of the green-hills
+   background, so the browser-default dark placeholder is
+   illegible. This rule applies the v1 muted-white placeholder
+   to every input regardless of whether it uses .qs-input.
+   Inline component styles with their own ::placeholder rule
+   still win via specificity.
+   ============================================================= */
+input::placeholder,
+textarea::placeholder {
+  color: var(--qs-text-muted);
+  opacity: 1; /* Firefox sets opacity 0.54 by default */
+}
+input::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder {
+  color: var(--qs-text-muted);
+}
+input::-moz-placeholder,
+textarea::-moz-placeholder {
+  color: var(--qs-text-muted);
+  opacity: 1;
+}
+input:-ms-input-placeholder,
+textarea:-ms-input-placeholder {
+  color: var(--qs-text-muted);
+}
+
+/* =============================================================
+   Utility layer — reusable glass component classes
+   Use these as @apply targets in component CSS, or apply them
+   directly in JSX via className.
+   ============================================================= */
+
+@layer components {
+  /* Glass card — the primary surface for panels, cards, modals.
+     Mirrors v1 GlassCard exactly: dark 14% fill, white-10 hairline
+     border, 24px backdrop blur, deep drop shadow. */
+  .qs-glass-card {
+    background: var(--qs-glass-bg);
+    border: 1px solid var(--qs-glass-border);
+    border-radius: var(--qs-card-radius);
+    backdrop-filter: var(--qs-backdrop-blur);
+    -webkit-backdrop-filter: var(--qs-backdrop-blur);
+    box-shadow: var(--qs-glass-shadow);
+  }
+
+  /* Heavier glass surface (modals, empty states, dropdown panels). */
+  .qs-glass-card-lg {
+    background: var(--qs-glass-bg-strong);
+    border: 1px solid var(--qs-glass-border-strong);
+    border-radius: var(--qs-card-radius-lg);
+    backdrop-filter: var(--qs-backdrop-blur-md);
+    -webkit-backdrop-filter: var(--qs-backdrop-blur-md);
+    box-shadow: var(--qs-glass-shadow-lg);
+  }
+
+  /* Glass input */
+  .qs-input {
+    background: var(--qs-input-bg);
+    border: 1px solid var(--qs-input-border);
+    border-radius: var(--qs-input-radius);
+    color: var(--qs-text-primary);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .qs-input::placeholder {
+    color: var(--qs-text-muted);
+  }
+  .qs-input:focus {
+    border-color: rgba(255, 255, 255, 0.35);
+  }
+
+  /* Primary button (white fill, dark text) */
+  .qs-btn-primary {
+    background: var(--qs-btn-primary-bg);
+    color: var(--qs-btn-primary-text);
+    border-radius: var(--qs-btn-radius);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.15s ease;
+  }
+  .qs-btn-primary:hover {
+    opacity: 0.9;
+  }
+
+  /* Secondary button (glass fill) */
+  .qs-btn-secondary {
+    background: var(--qs-btn-secondary-bg);
+    color: var(--qs-text-primary);
+    border-radius: var(--qs-btn-radius);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--qs-glass-border);
+    transition: background 0.15s ease;
+  }
+  .qs-btn-secondary:hover {
+    background: var(--qs-glass-bg-hover);
+  }
+
+  /* Tag / pill with gradient (tone attributes, hashtags) */
+  .qs-tag {
+    background: var(--qs-tag-gradient);
+    color: #ffffff;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 2px 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+
+/* Skeleton shimmer used by lazy image thumbs in the catalog. Defined
+   globally so both products and services pages share the keyframe. */
+@keyframes qs-skeleton {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: -200% 50%; }
+}
+
+/* Pulse keyframe used by every page-level loading skeleton (brand picker,
+   content-hub cards, dashboard KPIs, brands grid, approval queue, etc.).
+   Pages may still inline-redeclare it locally — both definitions agree. */
+@keyframes qs-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}

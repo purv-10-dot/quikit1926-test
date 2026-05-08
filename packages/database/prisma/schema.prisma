@@ -24,8 +24,8 @@ datasource db {
   //   auth                    — User, Account, Session, VerificationToken (central auth)
   //   quikit                  — App, Org, OrgMember, UserAppAccess, OrgAppAccess, OAuth IdP
   //   public                  — shared glue (teams, session events, billing, …)
-  //   app_quikscale | app_quikconstruction | app_quikvc — business-app data
-  schemas   = ["auth", "quikit", "public", "app_quikscale", "app_quikconstruction", "app_quikvc", "app_quiktrack"]
+  //   app_quikscale | app_quikconstruction | app_quikvc | app_quiktrack | app_quiksocial — business-app data
+  schemas   = ["auth", "quikit", "public", "app_quikscale", "app_quikconstruction", "app_quikvc", "app_quiktrack", "app_quiksocial"]
 }
 
 // ============================================================================
@@ -308,6 +308,12 @@ model Org {
   qtProjects QtProject[]
   qtTeams    QtTeam[]
   qtIssues   QtIssue[]
+
+  // QuikSocial module — back-relation on the top-level scoped model only.
+  // Child models (Post, Campaign, Product, Service, AssetLibrary, etc.) keep
+  // `orgId String` as a denormalized column without a relation field, matching
+  // the QuikTrack pattern.
+  brands Brand[]
 
   @@index([slug])
   @@index([status])
@@ -5878,4 +5884,399 @@ model QtInvitation {
   @@index([orgId, email])
   @@index([token])
   @@schema("app_quiktrack")
+}
+
+// ============================================================================
+// QUIKSOCIAL MODULE (app_quiksocial schema)
+// ============================================================================
+// AI-powered social media management — brands, posts, campaigns, scheduling.
+// Tenant→Org rename: every model uses `orgId`. Only `Brand` (the top-level
+// scoped model) declares the `org Org @relation` and has a back-relation on
+// Org; child models keep `orgId String` as a denormalized column without a
+// relation field, matching the QuikTrack pattern.
+
+model Brand {
+  id                     String    @id @default(cuid())
+  orgId                  String
+  name                   String
+  industry               String
+  websiteUrl             String?
+  logoUrl                String?
+  about                  String?
+  tagline                String?
+  brandStory             String?
+  productDescription     String?
+  servicesDescription    String?
+  additionalInfo         String?
+  competitorDiff         String?
+  brandVoice             String?
+  writing_style          String?
+  country                String?
+  isDefault              Boolean   @default(false)
+  primaryColors          String[]  @default([])
+  secondaryColors        String[]  @default([])
+  accentColor            String?
+  brandTone              String[]  @default([])
+  brandValues            String[]  @default([])
+  keySellingPoints       String[]  @default([])
+  keywords               String[]  @default([])
+  hashtags               String[]  @default([])
+  preferredWords         String[]  @default([])
+  thingsToAvoid          String[]  @default([])
+  targetAudience         Json?
+  brandTypography        Json?
+  pendingScrapeData      Json?
+  analysisStatus         String?
+  analysisError          String?
+  lastAnalyzedAt         DateTime?
+  defaultEmailTemplateId String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  createdBy              String?
+  updatedBy              String?
+
+  org                Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assets             AssetLibrary[]
+  memberships        BrandMembership[]
+  brandInviteAssigns BrandInviteAssignment[]
+  campaigns          Campaign[]
+  posts              Post[]
+  products           Product[]
+  services           Service[]
+  socialAccounts     SocialAccount[]
+  userPreferences    UserPreference[]
+
+  @@index([orgId])
+  @@index([orgId, country])
+  @@index([orgId, createdBy])
+  @@index([orgId, isDefault])
+  @@schema("app_quiksocial")
+}
+
+model BrandInvite {
+  id                String    @id @default(cuid())
+  orgId             String
+  email             String
+  invitedBy         String
+  status            String    @default("pending")
+  inviteToken       String?   @unique
+  acceptedByUserId  String?
+  acceptedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  assignments BrandInviteAssignment[]
+
+  @@index([orgId])
+  @@index([orgId, email, status])
+  @@index([orgId, invitedBy, status])
+  @@schema("app_quiksocial")
+}
+
+model BrandInviteAssignment {
+  id        String   @id @default(cuid())
+  orgId     String
+  inviteId  String
+  brandId   String
+  workspace String
+  role      String
+  createdAt DateTime @default(now())
+
+  invite BrandInvite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  brand  Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([inviteId, brandId])
+  @@index([inviteId])
+  @@index([orgId])
+  @@index([orgId, brandId])
+  @@schema("app_quiksocial")
+}
+
+model BrandMembership {
+  id        String   @id @default(cuid())
+  orgId     String
+  brandId   String
+  userId    String
+  email     String
+  workspace String?
+  role      String   @default("member")
+  invitedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, brandId])
+  @@index([orgId])
+  @@index([orgId, brandId])
+  @@index([orgId, brandId, role])
+  @@index([orgId, email])
+  @@index([orgId, userId])
+  @@schema("app_quiksocial")
+}
+
+model AssetLibrary {
+  id           String    @id @default(cuid())
+  orgId        String
+  brandId      String
+  name         String
+  description  String?
+  type         String
+  url          String
+  thumbnailUrl String?
+  fileSize     Int?
+  dimensions   String?
+  duration     Int?
+  format       String?
+  category     String?
+  tags         String[]  @default([])
+  timesUsed    Int       @default(0)
+  lastUsedAt   DateTime?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdBy    String?
+  updatedBy    String?
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, brandId, isActive, createdAt(sort: Desc)])
+  @@index([orgId, brandId, type])
+  @@index([orgId, type])
+  @@schema("app_quiksocial")
+}
+
+model Campaign {
+  id                  String    @id @default(cuid())
+  orgId               String
+  brandId             String
+  name                String
+  describeConcept     String?
+  objective           String
+  status              String    @default("draft")
+  startDate           DateTime
+  endDate             DateTime
+  frequency           String
+  weeklyDay           Int?
+  monthlyDate         Int?
+  postTime            String    @default("09:00")
+  timezone            String    @default("UTC")
+  totalPosts          Int       @default(0)
+  generatedPosts      Int       @default(0)
+  failedPosts         Int       @default(0)
+  includeLogo         Boolean   @default(true)
+  productIds          String[]  @default([])
+  serviceIds          String[]  @default([])
+  assetIds            String[]  @default([])
+  themeRotationPlan   Json?
+  brandColorPrimary   String?
+  brandColorSecondary String?
+  brandColorAccent    String?
+  celeryTaskId        String?
+  templateId          String?
+  clonedFromId        String?
+  lastGeneratedAt     DateTime?
+  attachedProduct     Json?
+  attachedService     Json?
+  attachedAsset       Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  createdBy           String?
+  updatedBy           String?
+
+  brand       Brand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  clonedFrom  Campaign?  @relation("CampaignClone", fields: [clonedFromId], references: [id], onDelete: SetNull)
+  clones      Campaign[] @relation("CampaignClone")
+  posts       Post[]
+
+  @@index([orgId])
+  @@index([orgId, brandId])
+  @@index([orgId, brandId, status])
+  @@index([orgId, startDate, endDate])
+  @@index([orgId, status])
+  @@schema("app_quiksocial")
+}
+
+model Post {
+  id                          String    @id @default(cuid())
+  orgId                       String
+  brandId                     String
+  campaignId                  String?
+  socialAccountId             String?
+  moderatedById               String?
+  title                       String?
+  content                     String
+  prompt                      String?
+  platform                    String
+  status                      String    @default("draft")
+  rejectionNote               String?
+  scheduledFor                DateTime?
+  requestedPublishTime        DateTime?
+  approvedAt                  DateTime?
+  moderatedAt                 DateTime?
+  moderationStatus            String?
+  moderationNote              String?
+  publishedAt                 DateTime?
+  publishedMediaId            String?
+  permalink                   String?
+  failedReason                String?
+  lockedAt                    DateTime?
+  isAiGenerated               Boolean   @default(false)
+  aiImageUrl                  String?
+  imageUrls                   String[]  @default([])
+  videoUrl                    String?
+  aiVideoUrl                  String?
+  aiVideoTranscript           String?
+  youtubeTitle                String?
+  youtubeDescription          String?
+  youtubePrivacy              String?
+  pinterestBoardId            String?
+  pinterestLink               String?
+  selectedProductIds          String[]  @default([])
+  selectedServiceIds          String[]  @default([])
+  selectedAssetIds            String[]  @default([])
+  selectedAssetUrlsById       Json?
+  displayImagesByVariantLabel Json?
+  platformPostIds             Json?
+  attachedProduct             Json?
+  attachedService             Json?
+  attachedAsset               Json?
+  storeidead                  Json?
+  newPostCreateMeta           Json?
+  likes                       Int       @default(0)
+  comments                    Int       @default(0)
+  shares                      Int       @default(0)
+  reactions                   Int       @default(0)
+  engagementUpdatedAt         DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+  createdBy                   String?
+  updatedBy                   String?
+
+  brand         Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  campaign      Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  socialAccount SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([orgId, brandId, scheduledFor])
+  @@index([orgId, brandId, status])
+  @@index([orgId, campaignId, status])
+  @@index([orgId, createdBy])
+  @@index([orgId, moderationStatus])
+  @@index([orgId, publishedAt])
+  @@index([orgId, status])
+  @@index([orgId, status, scheduledFor, approvedAt, lockedAt])
+  @@schema("app_quiksocial")
+}
+
+model Product {
+  id                  String   @id @default(cuid())
+  orgId               String
+  brandId             String
+  name                String
+  description         String?
+  price               String?
+  currency            String?
+  sku                 String?
+  category            String?
+  tone                String?
+  imageUrls           String[] @default([])
+  videoUrls           String[] @default([])
+  tags                String[] @default([])
+  idealCustomerTitles String[] @default([])
+  problemsSolved      String[] @default([])
+  proofPoints         String[] @default([])
+  isActive            Boolean  @default(true)
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  createdBy           String?
+  updatedBy           String?
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, brandId])
+  @@index([orgId, brandId, isActive, createdAt(sort: Desc)])
+  @@index([orgId, isActive])
+  @@schema("app_quiksocial")
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  orgId       String
+  brandId     String
+  name        String
+  description String?
+  pricing     String?
+  currency    String?
+  duration    String?
+  category    String?
+  imageUrls   String[] @default([])
+  videoUrls   String[] @default([])
+  tags        String[] @default([])
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, brandId])
+  @@index([orgId, brandId, isActive, createdAt(sort: Desc)])
+  @@index([orgId, isActive])
+  @@schema("app_quiksocial")
+}
+
+model SocialAccount {
+  id             String    @id @default(cuid())
+  orgId          String
+  brandId        String?
+  userId         String
+  platform       String
+  accountId      String
+  pageId         String?
+  accountName    String
+  profilePicture String?
+  accessToken    String
+  refreshToken   String?
+  expiresAt      DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdBy      String?
+  updatedBy      String?
+
+  brand Brand? @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  posts Post[]
+
+  @@unique([orgId, userId, platform, accountId])
+  @@index([orgId])
+  @@index([orgId, brandId])
+  @@index([orgId, isActive])
+  @@index([orgId, platform])
+  @@schema("app_quiksocial")
+}
+
+model UserPreference {
+  id              String   @id @default(cuid())
+  orgId           String
+  userId          String
+  activeBrandId   String?
+  backgroundImage String   @default("New_light_green_background_final.webp")
+  defaultPostTime String   @default("09:00")
+  aiPreferences   Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  activeBrand Brand? @relation(fields: [activeBrandId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, userId])
+  @@index([userId])
+  @@schema("app_quiksocial")
 }
