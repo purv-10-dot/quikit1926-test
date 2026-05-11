@@ -3,3 +3,4 @@ export function toErrorMessage(error: unknown, fallback = "Operation failed"): s
   if (typeof error === "string") return error;
   return fallback;
 }
+
