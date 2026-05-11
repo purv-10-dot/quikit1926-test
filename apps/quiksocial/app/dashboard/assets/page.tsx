@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { unwrap } from "@/lib/utils/api-fetch";
 import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
-import { useSession } from "next-auth/react";
+import { useActiveBrandId } from "@/hooks/useActiveBrandId";
 import {
   Plus,
   Trash2,
@@ -915,7 +915,7 @@ function TabBar({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AssetsPage() {
-  const { data: session } = useSession();
+  const activeBrandId = useActiveBrandId();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({ total: 0 });
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -924,8 +924,7 @@ export default function AssetsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
 
-  const brandId =
-    (session?.user as { activeBrandId?: string })?.activeBrandId ?? "";
+  const brandId = activeBrandId ?? "";
 
   // Get types param for current tab
   function tabTypes(): string[] {

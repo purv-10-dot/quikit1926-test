@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { unwrap } from "@/lib/utils/api-fetch";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useActiveBrandId } from "@/hooks/useActiveBrandId";
 import { Pagination } from "@/components/ui/Pagination";
 import {
   Plus,
@@ -833,7 +833,7 @@ function ProductCard({
 const PAGE_SIZE = 15;
 
 export default function ProductsPage() {
-  const { data: session } = useSession();
+  const activeBrandId = useActiveBrandId();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
@@ -864,8 +864,7 @@ export default function ProductsPage() {
     [router, searchParams],
   );
 
-  const brandId =
-    (session?.user as { activeBrandId?: string })?.activeBrandId ?? "";
+  const brandId = activeBrandId ?? "";
 
   const fetchProducts = useCallback(async () => {
     if (!brandId) return;

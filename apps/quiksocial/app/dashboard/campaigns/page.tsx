@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { unwrap } from "@/lib/utils/api-fetch";
 import Link from "next/link";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useSession } from "next-auth/react";
+import { useActiveBrandId } from "@/hooks/useActiveBrandId";
 import {
   Plus,
   Copy,
@@ -1416,8 +1416,8 @@ function GlassSelect({
 // ---------------------------------------------------------------------------
 
 export default function CampaignsPage() {
-  const { data: session } = useSession();
-  const brandId = (session?.user as any)?.activeBrandId ?? "";
+  const activeBrandId = useActiveBrandId();
+  const brandId = activeBrandId ?? "";
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);

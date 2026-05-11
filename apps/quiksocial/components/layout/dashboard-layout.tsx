@@ -2,6 +2,7 @@
 
 import { unwrap } from "@/lib/utils/api-fetch";
 import { signOut, useSession } from "next-auth/react";
+import { useActiveBrandId } from "@/hooks/useActiveBrandId";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState, useEffect, useRef, type ReactNode } from "react";
@@ -179,6 +180,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
+  const sessionActiveBrandId = useActiveBrandId();
   const { wizardActive } = useBrandCreation();
 
   // Fresh-signup onboarding — when a brand-new user lands on the brand
@@ -325,7 +327,7 @@ export default function DashboardLayout({
           return;
         }
 
-        const sessionActive = (session?.user as any)?.activeBrandId ?? null;
+        const sessionActive = sessionActiveBrandId ?? null;
 
         // Pick the active brand: prefer the session id; fall back to the
         // first (most recent) brand if the session id doesn't match
@@ -376,7 +378,7 @@ export default function DashboardLayout({
     };
     // Re-run when the session loads or its activeBrandId changes — that's
     // the moment we actually have the value to match against the brands list.
-  }, [session?.user?.id, (session?.user as any)?.activeBrandId]);
+  }, [session?.user?.id, sessionActiveBrandId]);
 
   // Close brand selector on outside click
   useEffect(() => {

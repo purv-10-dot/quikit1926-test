@@ -70,7 +70,9 @@ async function exchangeFacebookCode(
   });
 
   const res = await fetch(`${META_GRAPH_BASE}/oauth/access_token?${params}`);
-  const data = (await res.json()) as Record<string, unknown> & {
+  const text = await res.text();
+  console.log("[integrations callback] Raw response:", text.substring(0, 500));
+  const data = JSON.parse(text) as Record<string, unknown> & {
     access_token?: string;
     expires_in?: number;
     error?: { message?: string };

@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { unwrap } from "@/lib/utils/api-fetch";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useActiveBrandId } from "@/hooks/useActiveBrandId";
 import { ExternalLink, Loader2, CheckCircle2, Unlink } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -465,8 +466,8 @@ export default function IntegrationsPage() {
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
 
-  const brandId =
-    (session?.user as { activeBrandId?: string })?.activeBrandId ?? "";
+  const activeBrandId = useActiveBrandId();
+  const brandId = activeBrandId ?? "";
 
   const brandName =
     (session?.user as { activeBrandName?: string })?.activeBrandName ?? "your workspace";

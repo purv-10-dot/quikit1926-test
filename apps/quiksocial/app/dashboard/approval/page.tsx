@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { unwrap } from "@/lib/utils/api-fetch";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
+import { useActiveBrandId } from "@/hooks/useActiveBrandId";
 import { useRouter } from "next/navigation";
 import { useWorkspaceRole } from "@/hooks/useWorkspaceRole";
 import {
@@ -891,8 +892,8 @@ function InviteFormModal({
 export default function ApprovalPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const sessionBrandId = (session?.user as any)?.activeBrandId as string | null;
-  const callerId = (session?.user as any)?.id as string | undefined;
+  const sessionBrandId = useActiveBrandId();
+  const callerId = (session?.user as { id?: string })?.id;
 
   // Members are redirected away — they don't have an Invite User page.
   const { isAdmin, isLoading: roleLoading } = useWorkspaceRole(sessionBrandId);

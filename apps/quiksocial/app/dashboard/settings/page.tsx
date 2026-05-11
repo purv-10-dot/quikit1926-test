@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { unwrap } from "@/lib/utils/api-fetch";
 import { useEffect, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
+import { useActiveBrandId } from "@/hooks/useActiveBrandId";
 import {
   Settings,
   User,
@@ -1204,8 +1204,7 @@ function WhatsNewTab() {
 // ---------------------------------------------------------------------------
 
 export default function SettingsPage() {
-  const { data: session } = useSession();
-  const sessionBrandId = (session?.user as any)?.activeBrandId as string | null;
+  const sessionBrandId = useActiveBrandId();
 
   const [activeTab, setActiveTab] = useState<TabId>("profile");
   const [user, setUser] = useState<UserProfile | null>(null);

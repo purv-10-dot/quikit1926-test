@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "db:generate": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
-    "db:push": "prisma db push --schema=../../packages/database/prisma/schema.prisma"
+    "db:push": "prisma db push --schema=../../packages/database/prisma/schema.prisma",
+    "db:seed:dummy": "tsx --env-file=.env.local scripts/seed-dummy.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.967.0",

@@ -12,6 +12,9 @@
  */
 
 export async function register() {
+  // Skip Sentry in dev — its dependency graph (@sentry/node → @prisma/instrumentation
+  // → @opentelemetry/instrumentation) adds seconds to every route's first compile.
+  if (process.env.NODE_ENV === "development") return;
   if (process.env.NEXT_RUNTIME === "nodejs") {
     await import("./sentry.server.config");
   }

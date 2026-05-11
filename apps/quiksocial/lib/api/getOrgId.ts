@@ -7,4 +7,4 @@ import { authOptions } from "@/lib/auth";
  * QuikIT used `tenantId`); the value it returns is the `orgId` column used
  * across every app.
  */
-export const getOrgId = createGetTenantId(authOptions, { appSlug: "quiksocial" });
+export const getOrgId = createGetTenantId(authOptions, {});

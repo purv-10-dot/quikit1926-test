@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { unwrap } from "@/lib/utils/api-fetch";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useActiveBrandId } from "@/hooks/useActiveBrandId";
 import { Pagination } from "@/components/ui/Pagination";
 import {
   Plus,
@@ -812,7 +812,7 @@ function ServiceCard({
 const PAGE_SIZE = 15;
 
 export default function ServicesPage() {
-  const { data: session } = useSession();
+  const activeBrandId = useActiveBrandId();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [services, setServices] = useState<Service[]>([]);
@@ -842,8 +842,7 @@ export default function ServicesPage() {
     [router, searchParams],
   );
 
-  const brandId =
-    (session?.user as { activeBrandId?: string })?.activeBrandId ?? "";
+  const brandId = activeBrandId ?? "";
 
   const fetchServices = useCallback(async () => {
     if (!brandId) return;

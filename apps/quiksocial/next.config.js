@@ -7,6 +7,13 @@ const nextConfig = {
     serverActions: {
       allowedOrigins: ["localhost:3006"],
     },
+    instrumentationHook: true,
+  },
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "res.cloudinary.com" },
+      { protocol: "http", hostname: "localhost" },
+    ],
   },
   webpack: (config) => {
     config.ignoreWarnings = [
@@ -17,6 +24,10 @@ const nextConfig = {
     return config;
   },
   async headers() {
+    const aiHttp = process.env.AI_SERVICE_URL || "";
+    const aiWs = process.env.AI_SERVICE_WS_URL || "";
+    const connectSrc = ["'self'", aiHttp, aiWs].filter(Boolean).join(" ");
+
     return [
       {
         source: "/:path*",
@@ -31,7 +42,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
               "font-src 'self' fonts.gstatic.com",
               "img-src 'self' data: blob: https:",
-              "connect-src 'self'",
+              `connect-src ${connectSrc}`,
               "frame-ancestors 'none'",
             ].join("; "),
           },
