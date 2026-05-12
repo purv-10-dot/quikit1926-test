@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Sliders,
   List as ListIcon,
+  BarChart3,
 } from "lucide-react";
 import { ComingSoonRow } from "./coming-soon-row";
 import { FiltersSection } from "./filters-section";
@@ -325,7 +326,8 @@ export function Sidebar() {
               /> */}
             </div>
           )}
-          <NavRow href="/timesheet" icon={Clock} label="Timesheet" />
+          <NavRow href="/timesheet" icon={Clock} label="Timesheet" active={isActive("/timesheet")} />
+          <NavRow href="/reports" icon={BarChart3} label="Reports" active={isActive("/reports")} />
           <NavRow
             icon={SettingsIcon}
             label="Operations"
