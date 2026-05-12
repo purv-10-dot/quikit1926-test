@@ -96,3 +96,16 @@
 .qt-rich-content th { background: #f9fafb; font-weight: 600; }
 .qt-rich-content img { max-width: 100%; height: auto; border-radius: 4px; margin: 0.5rem 0; }
 .qt-rich-content hr { border: 0; border-top: 1px solid #e5e7eb; margin: 0.75rem 0; }
+
+/* Always-visible horizontal scrollbar for the timesheet grid (matches the
+   Jira/Tempo scrollbar that sits permanently below the table). */
+.qt-timesheet-scroll::-webkit-scrollbar { height: 12px; }
+.qt-timesheet-scroll::-webkit-scrollbar-track { background: #f3f4f6; }
+.qt-timesheet-scroll::-webkit-scrollbar-thumb {
+  background: #9ca3af; border-radius: 6px; border: 2px solid #f3f4f6;
+}
+.qt-timesheet-scroll::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+.qt-timesheet-scroll {
+  scrollbar-color: #9ca3af #f3f4f6;
+  scrollbar-width: auto;
+}

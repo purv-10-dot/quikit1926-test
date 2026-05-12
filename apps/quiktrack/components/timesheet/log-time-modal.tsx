@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { X, ChevronDown } from "lucide-react";
-import { parseDurationToHours } from "@/lib/utils/timesheetPeriod";
+import { parseDurationToHours, formatHours } from "@/lib/utils/timesheetPeriod";
+import { WorkItemPicker } from "./work-item-picker";
 
 interface ProjectOption {
   id: string;
@@ -15,36 +16,55 @@ interface IssueOption {
   type: string;
 }
 
-/**
- * Modal for logging a new time entry from the timesheet view.
- * - When `lockedProjectId` is set (per-project view), the project picker is
- *   replaced with a label and only the task picker / duration / date are
- *   editable.
- * - When `lockedDate` is set (cell-level "log on this day"), the date picker
- *   is hidden.
- * - Issues + subtasks are flat-listed in one dropdown — both can receive
- *   time logs.
- */
 export function LogTimeModal({
   lockedProjectId,
   lockedDate,
+  lockedIssueId,
+  lockedIssueLabel,
+  editEntryId,
   onClose,
   onLogged,
 }: {
   lockedProjectId?: string;
   lockedDate?: Date;
+  lockedIssueId?: string;
+  lockedIssueLabel?: string;
+  editEntryId?: string;
   onClose: () => void;
   onLogged: () => void;
 }) {
+  const isEdit = Boolean(editEntryId);
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [projectId, setProjectId] = useState(lockedProjectId ?? "");
   const [issues, setIssues] = useState<IssueOption[]>([]);
-  const [issueId, setIssueId] = useState("");
+  const [issueId, setIssueId] = useState(lockedIssueId ?? "");
   const [date, setDate] = useState(() => toDateInput(lockedDate ?? new Date()));
   const [duration, setDuration] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Prefill from existing entry when editing.
+  useEffect(() => {
+    if (!editEntryId) return;
+    let alive = true;
+    void fetch(`/api/timesheets/${editEntryId}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive || !j?.success) return;
+        const e = j.data as {
+          projectId: string; issueId: string; entryDate: string;
+          hours: number; description: string | null;
+        };
+        setProjectId(e.projectId);
+        setIssueId(e.issueId);
+        setDate(toDateInput(new Date(e.entryDate)));
+        setDuration(formatHours(e.hours));
+        setDescription(e.description ?? "");
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [editEntryId]);
 
   // Load projects when no project is locked.
   useEffect(() => {
@@ -63,9 +83,10 @@ export function LogTimeModal({
       .catch(() => undefined);
   }, [lockedProjectId]);
 
-  // Load issues for the active project.
+  // Load issues for the active project (skip when issue is locked).
   useEffect(() => {
     if (!projectId) return;
+    if (lockedIssueId) return;
     let alive = true;
     void fetch(
       `/api/issues?projectId=${encodeURIComponent(projectId)}&excludeType=EPIC&limit=200`,
@@ -85,7 +106,7 @@ export function LogTimeModal({
     return () => {
       alive = false;
     };
-  }, [projectId]);
+  }, [projectId, lockedIssueId]);
 
   async function save() {
     setError(null);
@@ -100,15 +121,16 @@ export function LogTimeModal({
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/timesheets", {
-        method: "POST",
+      const url = isEdit ? `/api/timesheets/${editEntryId}` : "/api/timesheets";
+      const method = isEdit ? "PATCH" : "POST";
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projectId,
-          issueId,
+          projectId, issueId,
           entryDate: new Date(date).toISOString(),
           hours,
-          description: description.trim() || undefined,
+          description: description.trim() || (isEdit ? null : undefined),
         }),
       }).then((r) => r.json());
       if (!res?.success) {
@@ -125,7 +147,9 @@ export function LogTimeModal({
     <div className="fixed inset-0 bg-black/50 z-[80] flex items-start justify-center pt-24 px-4">
       <div className="bg-white border border-gray-200 rounded-md shadow-xl w-full max-w-md p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-gray-900">Log time</h3>
+          <h3 className="text-base font-semibold text-gray-900">
+            {isEdit ? "Edit time record" : "Log time"}
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -157,15 +181,18 @@ export function LogTimeModal({
           )}
 
           <Field label="Work item">
-            <Select value={issueId} onChange={setIssueId} disabled={!projectId}>
-              <option value="">— Pick a task or subtask —</option>
-              {issues.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.key} — {i.title}
-                  {i.type === "SUBTASK" ? " (subtask)" : ""}
-                </option>
-              ))}
-            </Select>
+            {lockedIssueId ? (
+              <div className="w-full h-9 px-3 inline-flex items-center text-sm text-gray-800 border border-gray-200 rounded bg-gray-50">
+                {lockedIssueLabel ?? lockedIssueId}
+              </div>
+            ) : (
+              <WorkItemPicker
+                issues={issues}
+                value={issueId}
+                onChange={setIssueId}
+                disabled={!projectId}
+              />
+            )}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
@@ -221,7 +248,7 @@ export function LogTimeModal({
             disabled={submitting || !duration.trim() || !issueId}
             className="h-8 px-3 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500"
           >
-            Save
+            {isEdit ? "Update" : "Save"}
           </button>
         </div>
       </div>

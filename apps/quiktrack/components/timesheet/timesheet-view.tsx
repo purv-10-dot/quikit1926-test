@@ -7,7 +7,9 @@ import {
   ChevronRight,
   ChevronDown,
   Download,
-  Plus,
+  Menu,
+  MoreHorizontal,
+  CheckSquare,
 } from "lucide-react";
 import {
   type Period,
@@ -16,17 +18,22 @@ import {
   getPeriodRange,
   isToday,
   isWeekend,
-  parseDurationToHours,
   shiftAnchor,
 } from "@/lib/utils/timesheetPeriod";
 import { LogTimeModal } from "./log-time-modal";
+import { WorklogPopover, type EntryDetail } from "./worklog-popover";
+import { DeleteWorklogConfirm } from "./delete-worklog-confirm";
+import { SplitWorklogModal } from "./split-worklog-modal";
+import { TimesheetCell } from "./timesheet-cell";
 
-type GroupBy = "user" | "project" | "issue";
+type GroupBy = "user" | "project" | "issue" | "user-issue";
 
 interface RowMeta {
   id: string;
   label: string;
   secondary?: string | null;
+  parentId?: string | null;
+  kind?: "user" | "issue" | "project";
   meta?: { color?: string | null; icon?: string | null; type?: string | null };
 }
 interface Cell {
@@ -41,27 +48,42 @@ interface GridResponse {
 const ROW_HEADER: Record<GroupBy, string> = {
   user: "User",
   project: "Project",
-  issue: "Issue",
+  issue: "Work item",
+  "user-issue": "User / Work item",
 };
 
-/** Tempo-style decimal display: 1.5, 0.33, 8 — empty cells render as blank. */
+const GROUP_BY_LABEL: Record<GroupBy, string> = {
+  user: "User",
+  project: "Project",
+  issue: "Work item",
+  "user-issue": "User → Work item",
+};
+
 function formatDecimal(hours: number): string {
   if (!Number.isFinite(hours) || hours <= 0) return "";
-  // Two-decimal cap, but trim trailing zeros so "1.50" → "1.5", "8.00" → "8".
   const fixed = hours.toFixed(2);
   return fixed.replace(/\.?0+$/, "");
 }
 
-/**
- * Shared timesheet grid. Used both inside a project (`groupBy="user"`,
- * rows = project members) and at the global level (`groupBy="project"`,
- * rows = projects in the tenant).
- *
- * Supports inline edit on cells the current user owns — typing a duration
- * (e.g. "2h 30m") and pressing Enter merges any existing entries for that
- * day/issue into one and stores the new total. Other users' rows are
- * read-only.
- */
+function formatDayHeader(d: Date): string {
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = d.toLocaleDateString(undefined, { month: "short" });
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}/${month}/${year}`;
+}
+
+function escapeCsv(s: string): string {
+  if (/[",\n]/.test(s)) return `"${s.replaceAll('"', '""')}"`;
+  return s;
+}
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 export function TimesheetView({
   projectId,
   groupBy: defaultGroupBy,
@@ -71,15 +93,29 @@ export function TimesheetView({
 }) {
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
-  // Group-by is locked to "issue" everywhere for now — the API + UI still
-  // accept "user" and "project" if we surface a switcher again later.
-  const [groupBy] = useState<GroupBy>(defaultGroupBy);
+
+  const [groupBy, setGroupBy] = useState<GroupBy>(defaultGroupBy);
   const [period, setPeriod] = useState<Period>("week");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [grid, setGrid] = useState<GridResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
   const [logOpen, setLogOpen] = useState(false);
   const [logDate, setLogDate] = useState<Date | undefined>(undefined);
+  const [logIssueId, setLogIssueId] = useState<string | undefined>(undefined);
+  const [logIssueLabel, setLogIssueLabel] = useState<string | undefined>(undefined);
+  const [editEntryId, setEditEntryId] = useState<string | null>(null);
+
+  const [popover, setPopover] = useState<{
+    entryIds: string[];
+    date: Date;
+    issueId: string;
+    issueLabel: string;
+    anchor?: { top: number; left: number; width: number; height: number };
+  } | null>(null);
+  const [deleteState, setDeleteState] = useState<EntryDetail | null>(null);
+  const [splitState, setSplitState] = useState<EntryDetail | null>(null);
 
   const range = useMemo(() => getPeriodRange(period, anchor), [period, anchor]);
 
@@ -104,16 +140,18 @@ export function TimesheetView({
     void refresh();
   }, [refresh]);
 
+  // Totals — in user-issue mode, skip child rows so parent + child don't double-count.
   const totalsByDate = useMemo(() => {
     const t: Record<string, number> = {};
     if (!grid) return t;
     for (const rowId of Object.keys(grid.cells)) {
+      if (groupBy === "user-issue" && rowId.includes("::")) continue;
       for (const k of Object.keys(grid.cells[rowId]!)) {
         t[k] = (t[k] ?? 0) + (grid.cells[rowId]![k]!.hours ?? 0);
       }
     }
     return t;
-  }, [grid]);
+  }, [grid, groupBy]);
 
   const totalsByRow = useMemo(() => {
     const t: Record<string, number> = {};
@@ -126,119 +164,292 @@ export function TimesheetView({
     return t;
   }, [grid]);
 
-  const grandTotal = useMemo(
-    () => Object.values(totalsByRow).reduce((s, h) => s + h, 0),
-    [totalsByRow],
-  );
+  const grandTotal = useMemo(() => {
+    if (!grid) return 0;
+    let s = 0;
+    for (const rowId of Object.keys(totalsByRow)) {
+      if (groupBy === "user-issue" && rowId.includes("::")) continue;
+      s += totalsByRow[rowId] ?? 0;
+    }
+    return s;
+  }, [grid, totalsByRow, groupBy]);
 
-  // Working-day capacity for the period — 8h × non-weekend days. Used for
-  // the "Total X of Y" indicator in the toolbar (Tempo-style).
   const capacity = useMemo(
     () => range.days.filter((d) => !isWeekend(d)).length * 8,
     [range.days],
   );
 
-  function exportCsv() {
-    if (!grid) return;
-    const lines: string[] = [];
-    const header = ["Row", ...range.days.map((d) => dateKey(d)), "Total"];
-    lines.push(header.join(","));
-    for (const row of grid.rows) {
-      const rowData = grid.cells[row.id] ?? {};
-      const cols = range.days.map((d) => {
-        const c = rowData[dateKey(d)];
-        return c ? String(c.hours) : "";
-      });
-      lines.push([escapeCsv(row.label), ...cols, String(totalsByRow[row.id] ?? 0)].join(","));
+  const openLogFor = useCallback(
+    (opts?: { date?: Date; issueId?: string; issueLabel?: string }) => {
+      setLogDate(opts?.date);
+      setLogIssueId(opts?.issueId);
+      setLogIssueLabel(opts?.issueLabel);
+      setEditEntryId(null);
+      setLogOpen(true);
+    },
+    [],
+  );
+
+  function openPopover(opts: {
+    entryIds: string[];
+    date: Date;
+    issueId: string;
+    issueLabel: string;
+    anchor?: { top: number; left: number; width: number; height: number };
+  }) {
+    setPopover(opts);
+  }
+
+  function toggleCollapse(id: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // ============================== Export helpers ==============================
+
+  function exportRows(): string[][] {
+    if (!grid) return [];
+    const header = [
+      "User",
+      "Work Item",
+      "Key",
+      "Logged",
+      ...range.days.map((d) => formatDayHeader(d)),
+    ];
+    const out: string[][] = [header];
+    const userById = new Map<string, string>();
+    for (const r of grid.rows) {
+      if (groupBy === "user-issue" && !r.parentId) userById.set(r.id, r.label);
     }
-    const totalRow = ["TOTAL", ...range.days.map((d) => String(totalsByDate[dateKey(d)] ?? 0)), String(grandTotal)];
-    lines.push(totalRow.join(","));
+    for (const row of grid.rows) {
+      const isChild = Boolean(row.parentId);
+      const rowData = grid.cells[row.id] ?? {};
+      const user =
+        groupBy === "user-issue"
+          ? isChild
+            ? userById.get(row.parentId ?? "") ?? ""
+            : row.label
+          : row.kind === "user"
+          ? row.label
+          : "";
+      const workItem = isChild
+        ? row.label
+        : groupBy === "issue"
+        ? row.label
+        : groupBy === "user-issue"
+        ? ""
+        : row.label;
+      const key = row.secondary ?? "";
+      const logged = formatDecimal(totalsByRow[row.id] ?? 0);
+      const dayCols = range.days.map((d) => {
+        const c = rowData[dateKey(d)];
+        return c ? formatDecimal(c.hours) : "";
+      });
+      out.push([user, workItem, key, logged, ...dayCols]);
+    }
+    const totalRow = [
+      "Total",
+      "",
+      "",
+      formatDecimal(grandTotal),
+      ...range.days.map((d) => formatDecimal(totalsByDate[dateKey(d)] ?? 0)),
+    ];
+    out.push(totalRow);
+    return out;
+  }
+
+  function downloadCsv() {
+    const rows = exportRows();
+    const lines = rows.map((r) => r.map(escapeCsv).join(","));
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `timesheet-${range.from.toISOString().slice(0, 10)}-to-${range.to.toISOString().slice(0, 10)}.csv`;
+    a.download = `timesheet-${range.from.toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
+  function downloadXls() {
+    const rows = exportRows();
+    const html = `<table border="1">${rows
+      .map(
+        (r, i) =>
+          `<tr>${r
+            .map((c) =>
+              i === 0
+                ? `<th>${escapeHtml(c)}</th>`
+                : `<td>${escapeHtml(c)}</td>`,
+            )
+            .join("")}</tr>`,
+      )
+      .join("")}</table>`;
+    const blob = new Blob([html], { type: "application/vnd.ms-excel" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `timesheet-${range.from.toISOString().slice(0, 10)}.xls`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadPdf() {
+    const rows = exportRows();
+    const win = window.open("", "_blank");
+    if (!win) return;
+    const html = `<!doctype html><html><head><title>Timesheet</title><style>
+      body { font-family: -apple-system, sans-serif; padding: 16px; font-size: 12px; }
+      h1 { font-size: 16px; margin: 0 0 12px; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #d1d5db; padding: 4px 6px; text-align: left; }
+      th { background: #f3f4f6; }
+      tr:last-child td { font-weight: 600; background: #f9fafb; }
+    </style></head><body>
+      <h1>Timesheet — ${escapeHtml(range.label)}</h1>
+      <table>${rows
+        .map(
+          (r, i) =>
+            `<tr>${r
+              .map((c) =>
+                i === 0
+                  ? `<th>${escapeHtml(c)}</th>`
+                  : `<td>${escapeHtml(c)}</td>`,
+              )
+              .join("")}</tr>`,
+        )
+        .join("")}</table>
+      <script>window.onload = () => window.print();</script>
+    </body></html>`;
+    win.document.write(html);
+    win.document.close();
+  }
+
+  function printableView() {
+    window.print();
+  }
+
+  async function downloadRawData() {
+    const params = new URLSearchParams({
+      from: range.from.toISOString(),
+      to: range.to.toISOString(),
+    });
+    if (projectId) params.set("projectId", projectId);
+    const res = await fetch(`/api/timesheets?${params.toString()}`).then((r) => r.json());
+    if (!res?.success) return;
+    type Raw = {
+      id: string;
+      entryDate: string;
+      hours: number;
+      description: string | null;
+      project?: { name: string } | null;
+      issue?: { key: string; title: string } | null;
+    };
+    const items: Raw[] = res.data ?? [];
+    const header = ["Date", "Project", "Work Item", "Hours", "Description"];
+    const lines = [header.join(",")];
+    for (const e of items) {
+      lines.push(
+        [
+          new Date(e.entryDate).toISOString().slice(0, 10),
+          escapeCsv(e.project?.name ?? ""),
+          escapeCsv(e.issue ? `${e.issue.key} ${e.issue.title}` : ""),
+          String(e.hours),
+          escapeCsv(e.description ?? ""),
+        ].join(","),
+      );
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `timesheet-raw-${range.from.toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ============================== Render ==============================
+
+  const visibleRows = useMemo(
+    () =>
+      grid?.rows.filter((r) => !(r.parentId && collapsed.has(r.parentId))) ?? [],
+    [grid, collapsed],
+  );
+
+  const showKeyColumn = groupBy === "issue" || groupBy === "user-issue";
+  const fixedColumnCount = showKeyColumn ? 3 : 2;
+
   return (
     <div className="px-6 py-4">
-      {/* Toolbar — Tempo-style: range navigator on the left, Group By in the
-          middle, period + total + Log time on the right. */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setAnchor((a) => shiftAnchor(period, a, -1))}
-            className="h-7 w-7 inline-flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50"
-            aria-label="Previous"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
-          <div className="px-2 h-7 inline-flex items-center text-xs font-medium text-gray-800 border border-gray-300 rounded">
-            {range.label}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-3">
+          <div className="inline-flex items-center gap-1 border border-gray-300 rounded h-9 px-1">
+            <button
+              type="button"
+              onClick={() => setAnchor((a) => shiftAnchor(period, a, -1))}
+              className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+              aria-label="Previous"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <div className="px-2 inline-flex items-center text-sm font-medium text-gray-800 select-none">
+              <span className="mr-1.5 text-gray-400">📅</span>
+              {range.label}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAnchor((a) => shiftAnchor(period, a, 1))}
+              className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+              aria-label="Next"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setAnchor((a) => shiftAnchor(period, a, 1))}
-            className="h-7 w-7 inline-flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50"
-            aria-label="Next"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setAnchor(new Date())}
-            className="h-7 px-2.5 text-[11px] text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
-          >
-            Today
-          </button>
+          <GroupByPills value={groupBy} onChange={setGroupBy} />
         </div>
 
-
         <div className="flex items-center gap-2">
-          <PeriodSwitcher value={period} onChange={setPeriod} />
-          <span className="text-[11px] text-gray-500 px-2">
-            Total Hours{" "}
-            <span className="font-semibold text-gray-800">
-              {formatHours(grandTotal)}
-            </span>{" "}
-            of <span className="font-semibold text-gray-800">{capacity}h</span>
+          <span className="hidden md:inline text-[11px] text-gray-500 px-1">
+            Total{" "}
+            <span className="font-semibold text-gray-800">{formatHours(grandTotal)}</span> of{" "}
+            <span className="font-semibold text-gray-800">{capacity}h</span>
           </span>
           <button
             type="button"
-            onClick={() => {
-              setLogDate(undefined);
-              setLogOpen(true);
-            }}
-            className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+            className="h-9 w-9 inline-flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded"
+            aria-label="View options"
           >
-            <Plus className="h-3 w-3" />
-            Log time
+            <Menu className="h-4 w-4" />
           </button>
+          <PeriodSwitcher value={period} onChange={setPeriod} />
+          <MoreMenu
+            onCsv={downloadCsv}
+            onXls={downloadXls}
+            onPdf={downloadPdf}
+            onPrintable={printableView}
+            onRaw={() => void downloadRawData()}
+          />
           <button
             type="button"
-            onClick={exportCsv}
-            className="inline-flex items-center gap-1 h-7 px-2.5 text-[11px] text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+            onClick={() => openLogFor()}
+            className="inline-flex items-center h-9 px-4 text-sm font-semibold text-white bg-blue-700 rounded hover:bg-blue-800"
           >
-            <Download className="h-3 w-3" />
-            Export
+            Log Time
           </button>
         </div>
       </div>
 
-      {/* Grid — Tempo style: row identity (Issue / User / Project) + Key (when
-          grouping by issue) + per-row Logged total + per-day cells. Sticky
-          left rail keeps the row label visible while scrolling the days. */}
-      <div className="overflow-x-auto border border-gray-200 rounded bg-white">
+      <div className="qt-timesheet-scroll overflow-x-scroll overflow-y-hidden border border-gray-200 rounded bg-white">
         <table className="min-w-full text-[11px]">
           <thead className="bg-white border-b border-gray-200">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-gray-600 sticky left-0 bg-white z-10 min-w-[220px]">
+              <th className="px-3 py-2 text-left font-medium text-gray-600 sticky left-0 bg-white z-10 min-w-[260px]">
                 {ROW_HEADER[groupBy]}
               </th>
-              {groupBy === "issue" && (
+              {showKeyColumn && (
                 <th className="px-3 py-2 text-left font-medium text-gray-600 sticky bg-white z-10 min-w-[80px]">
                   Key
                 </th>
@@ -268,13 +479,11 @@ export function TimesheetView({
               <>
                 {Array.from({ length: 4 }).map((_, i) => (
                   <tr key={`sk-${i}`} className="border-b border-gray-100">
-                    {Array.from({ length: range.days.length + (groupBy === "issue" ? 3 : 2) }).map(
-                      (_, j) => (
-                        <td key={j} className="px-3 py-2.5">
-                          <span className="qt-shimmer block h-3 rounded" />
-                        </td>
-                      ),
-                    )}
+                    {Array.from({ length: range.days.length + fixedColumnCount }).map((_, j) => (
+                      <td key={j} className="px-3 py-2.5">
+                        <span className="qt-shimmer block h-3 rounded" />
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </>
@@ -282,26 +491,68 @@ export function TimesheetView({
             {grid && grid.rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={range.days.length + (groupBy === "issue" ? 3 : 2)}
+                  colSpan={range.days.length + fixedColumnCount}
                   className="px-3 py-6 text-center text-gray-400"
                 >
                   No time logged in this period.
                 </td>
               </tr>
             )}
-            {grid?.rows.map((row) => {
-              const editable = groupBy === "user" && row.id === currentUserId;
+            {visibleRows.map((row) => {
+              const isChild = Boolean(row.parentId);
+              const isParent =
+                !isChild && (groupBy === "user-issue" || groupBy === "user");
+              const issueIdForRow =
+                groupBy === "user-issue" && isChild
+                  ? row.id.split("::")[1] ?? row.id
+                  : row.id;
+              const editable =
+                (groupBy === "user" && row.id === currentUserId) ||
+                (groupBy === "user-issue" &&
+                  isChild &&
+                  row.parentId === currentUserId);
+              const issueClickable =
+                groupBy === "issue" || (groupBy === "user-issue" && isChild);
+              const issueLabel = row.secondary
+                ? `${row.secondary} · ${row.label}`
+                : row.label;
+              const isParentCollapsed = isParent && collapsed.has(row.id);
+
               return (
-                <tr
-                  key={row.id}
-                  className="border-b border-gray-100 hover:bg-gray-50/70"
-                >
-                  <td className="px-3 py-1.5 text-gray-900 sticky left-0 bg-white z-10 truncate max-w-[260px]">
-                    {row.label}
+                <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50/70">
+                  <td
+                    className={`px-3 py-2 text-gray-900 sticky left-0 bg-white z-10 truncate max-w-[360px] ${
+                      isChild ? "pl-10" : ""
+                    }`}
+                  >
+                    {isParent && groupBy === "user-issue" ? (
+                      <button
+                        type="button"
+                        onClick={() => toggleCollapse(row.id)}
+                        className="inline-flex items-center gap-2 text-left hover:text-blue-700"
+                      >
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 transition-transform ${
+                            isParentCollapsed ? "-rotate-90" : ""
+                          }`}
+                        />
+                        <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold">
+                          {(row.label || "U").trim().charAt(0).toUpperCase()}
+                        </span>
+                        <span className="font-medium text-sm">{row.label}</span>
+                      </button>
+                    ) : isChild ? (
+                      <span className="inline-flex items-center gap-2">
+                        <CheckSquare className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                        <span className="text-gray-800 text-sm truncate">{row.label}</span>
+                      </span>
+                    ) : (
+                      <span>{row.label}</span>
+                    )}
                   </td>
-                  {groupBy === "issue" && (
+                  {showKeyColumn && (
                     <td className="px-3 py-1.5 text-blue-600 sticky bg-white z-10 font-medium">
-                      {row.secondary}
+                      {isChild ? row.secondary : !isParent ? row.secondary : ""}
                     </td>
                   )}
                   <td className="px-3 py-1.5 text-right font-semibold text-gray-900 sticky bg-white z-10">
@@ -309,16 +560,36 @@ export function TimesheetView({
                   </td>
                   {range.days.map((d) => {
                     const k = dateKey(d);
-                    const cell = grid.cells[row.id]?.[k];
+                    const cell = grid?.cells[row.id]?.[k];
+                    const onOpenLog = (
+                      anchor?: { top: number; left: number; width: number; height: number },
+                    ) => {
+                      if (cell && cell.entryIds.length > 0 && issueClickable) {
+                        openPopover({
+                          entryIds: cell.entryIds,
+                          date: d,
+                          issueId: issueIdForRow,
+                          issueLabel,
+                          anchor,
+                        });
+                      } else if (issueClickable) {
+                        openLogFor({
+                          date: d,
+                          issueId: issueIdForRow,
+                          issueLabel,
+                        });
+                      } else {
+                        openLogFor({ date: d });
+                      }
+                    };
                     return (
-                      <Cell
+                      <TimesheetCell
                         key={k}
                         cell={cell}
                         editable={editable}
                         date={d}
-                        rowId={row.id}
-                        projectScope={projectId}
                         onChanged={refresh}
+                        onOpenLog={onOpenLog}
                       />
                     );
                   })}
@@ -328,7 +599,7 @@ export function TimesheetView({
             {grid && grid.rows.length > 0 && (
               <tr className="bg-gray-50 border-t-2 border-gray-200">
                 <td
-                  colSpan={groupBy === "issue" ? 2 : 1}
+                  colSpan={showKeyColumn ? 2 : 1}
                   className="px-3 py-2 sticky left-0 bg-gray-50 z-10 font-semibold text-gray-700 text-[11px]"
                 >
                   Total
@@ -356,13 +627,140 @@ export function TimesheetView({
         <LogTimeModal
           lockedProjectId={projectId}
           lockedDate={logDate}
-          onClose={() => setLogOpen(false)}
+          lockedIssueId={editEntryId ? undefined : logIssueId}
+          lockedIssueLabel={editEntryId ? undefined : logIssueLabel}
+          editEntryId={editEntryId ?? undefined}
+          onClose={() => {
+            setLogOpen(false);
+            setEditEntryId(null);
+          }}
           onLogged={() => {
             setLogOpen(false);
+            setEditEntryId(null);
             void refresh();
           }}
         />
       )}
+      {popover && (
+        <WorklogPopover
+          entryIds={popover.entryIds}
+          date={popover.date}
+          issueLabel={popover.issueLabel}
+          anchor={popover.anchor}
+          onChanged={() => void refresh()}
+          onClose={() => setPopover(null)}
+          onLog={() => {
+            const opts = {
+              date: popover.date,
+              issueId: popover.issueId,
+              issueLabel: popover.issueLabel,
+            };
+            setPopover(null);
+            openLogFor(opts);
+          }}
+          onEdit={(entryId) => {
+            setPopover(null);
+            setEditEntryId(entryId);
+            setLogIssueId(undefined);
+            setLogIssueLabel(undefined);
+            setLogDate(undefined);
+            setLogOpen(true);
+          }}
+          onDelete={(entry) => {
+            setPopover(null);
+            setDeleteState(entry);
+          }}
+          onSplit={(entry) => {
+            setPopover(null);
+            setSplitState(entry);
+          }}
+        />
+      )}
+      {deleteState && (
+        <DeleteWorklogConfirm
+          entry={deleteState}
+          onClose={() => setDeleteState(null)}
+          onDeleted={() => {
+            setDeleteState(null);
+            void refresh();
+          }}
+        />
+      )}
+      {splitState && (
+        <SplitWorklogModal
+          entry={splitState}
+          lockedProjectId={projectId}
+          onClose={() => setSplitState(null)}
+          onSplit={() => {
+            setSplitState(null);
+            void refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function GroupByPills({
+  value,
+  onChange,
+}: {
+  value: GroupBy;
+  onChange: (g: GroupBy) => void;
+}) {
+  // Two pills act as the two levels of grouping; tapping pill 1 swaps to
+  // single-level mode and pill 2 toggles into hierarchical user→issue.
+  const primary: "user" | "project" | "issue" =
+    value === "user-issue" ? "user" : (value as "user" | "project" | "issue");
+  const isHierarchical = value === "user-issue";
+
+  const [open1, setOpen1] = useState(false);
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-gray-500">Group By</span>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen1((v) => !v)}
+          className="inline-flex items-center gap-1 h-9 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+        >
+          <span className="text-gray-400">1.</span> {primary === "user" ? "User" : primary === "project" ? "Project" : "Work Item"}
+          <ChevronDown className="h-3 w-3 text-gray-500" />
+        </button>
+        {open1 && (
+          <div className="absolute left-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+            {(["user", "project", "issue"] as const).map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => {
+                  onChange(g === "user" && isHierarchical ? "user-issue" : g);
+                  setOpen1(false);
+                }}
+                className={`w-full px-3 py-1.5 text-xs text-left hover:bg-gray-50 ${
+                  g === primary ? "text-blue-700 bg-blue-50 font-medium" : "text-gray-700"
+                }`}
+              >
+                {g === "user" ? "User" : g === "project" ? "Project" : "Work Item"}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() =>
+          onChange(isHierarchical ? primary : primary === "user" ? "user-issue" : "user-issue")
+        }
+        className={`inline-flex items-center gap-1 h-9 px-3 text-xs font-medium border rounded ${
+          isHierarchical
+            ? "border-blue-300 bg-blue-50 text-blue-700"
+            : "border-gray-300 text-gray-700 hover:bg-gray-50"
+        }`}
+      >
+        <span className="text-gray-400">2.</span> Work Item
+      </button>
     </div>
   );
 }
@@ -375,14 +773,15 @@ function PeriodSwitcher({
   onChange: (p: Period) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const LABEL: Record<Period, string> = { week: "Week", month: "Days", quarter: "Quarter" };
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 h-8 px-3 text-xs text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+        className="inline-flex items-center gap-1 h-9 px-3 text-sm text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
       >
-        Display by: {value.charAt(0).toUpperCase() + value.slice(1)}
+        {LABEL[value]}
         <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
       </button>
       {open && (
@@ -399,7 +798,7 @@ function PeriodSwitcher({
                 p === value ? "text-blue-700 bg-blue-50 font-medium" : "text-gray-700"
               }`}
             >
-              {p.charAt(0).toUpperCase() + p.slice(1)}
+              {LABEL[p]}
             </button>
           ))}
         </div>
@@ -408,115 +807,106 @@ function PeriodSwitcher({
   );
 }
 
-function Cell({
-  cell,
-  editable,
-  date,
-  rowId: _rowId,
-  projectScope: _projectScope,
-  onChanged,
+function MoreMenu({
+  onCsv,
+  onXls,
+  onPdf,
+  onPrintable,
+  onRaw,
 }: {
-  cell: Cell | undefined;
-  editable: boolean;
-  date: Date;
-  rowId: string;
-  projectScope?: string;
-  onChanged: () => Promise<void> | void;
+  onCsv: () => void;
+  onXls: () => void;
+  onPdf: () => void;
+  onPrintable: () => void;
+  onRaw: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const weekend = isWeekend(date);
-  const today = isToday(date);
-
-  async function commit() {
-    const trimmed = draft.trim();
-    setEditing(false);
-    if (!trimmed) {
-      // Empty input on a cell with entries → wipe them.
-      if (cell && cell.entryIds.length > 0) {
-        await Promise.all(
-          cell.entryIds.map((id) =>
-            fetch(`/api/timesheets/${id}`, { method: "DELETE" }).then((r) => r.json()),
-          ),
-        );
-        await onChanged();
-      }
-      return;
-    }
-    const hours = parseDurationToHours(trimmed);
-    if (hours === null || hours <= 0) return;
-    if (cell && cell.entryIds.length === 1) {
-      // Fast path: PATCH the single existing entry to the new total.
-      await fetch(`/api/timesheets/${cell.entryIds[0]}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hours }),
-      }).then((r) => r.json());
-      await onChanged();
-      return;
-    }
-    // Multi-entry cells aren't safe to inline-edit (we'd lose the per-issue
-    // breakdown), so we open the log-time modal instead.
-    if (cell && cell.entryIds.length > 1) {
-      window.alert("This day has multiple entries. Use Log time to add another.");
-      return;
-    }
-    // No entries — open Log time pre-targeted to this date so the user can
-    // pick the issue.
-    window.dispatchEvent(
-      new CustomEvent("qt-timesheet:log", { detail: { date: date.toISOString() } }),
-    );
-  }
-
-  if (!editable) {
-    return (
-      <td
-        className={`px-1.5 py-1.5 text-center text-gray-700 border-l border-gray-100 ${
-          weekend ? "bg-gray-50/60" : ""
-        } ${today ? "bg-rose-50/40" : ""}`}
-      >
-        {cell ? formatDecimal(cell.hours) : ""}
-      </td>
-    );
-  }
-
+  const [open, setOpen] = useState(false);
   return (
-    <td
-      onClick={() => {
-        if (editing) return;
-        setDraft(cell ? formatDecimal(cell.hours) : "");
-        setEditing(true);
-      }}
-      className={`px-1.5 py-1.5 text-center cursor-text hover:bg-blue-50 border-l border-gray-100 ${
-        weekend ? "bg-gray-50/60" : ""
-      } ${today ? "bg-rose-50/40" : ""}`}
-    >
-      {editing ? (
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => void commit()}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            if (e.key === "Escape") {
-              setDraft("");
-              setEditing(false);
-            }
-          }}
-          placeholder="0"
-          className="w-full max-w-[44px] mx-auto h-6 px-1 text-[11px] text-center border border-blue-500 rounded focus:outline-none"
-        />
-      ) : cell ? (
-        <span className="text-gray-900">{formatDecimal(cell.hours)}</span>
-      ) : (
-        <span className="text-gray-300"></span>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="h-9 w-9 inline-flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded"
+        aria-label="More"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+          <ExportRow
+            badge="PDF"
+            badgeClass="bg-red-100 text-red-700"
+            label="PDF Summary"
+            onClick={() => {
+              setOpen(false);
+              onPdf();
+            }}
+          />
+          <ExportRow
+            badge="XLS"
+            badgeClass="bg-emerald-100 text-emerald-700"
+            label="XLS Report Data"
+            onClick={() => {
+              setOpen(false);
+              onXls();
+            }}
+          />
+          <ExportRow
+            badge="CSV"
+            badgeClass="bg-blue-100 text-blue-700"
+            label="CSV Report Data"
+            onClick={() => {
+              setOpen(false);
+              onCsv();
+            }}
+          />
+          <ExportRow
+            badge="PRT"
+            badgeClass="bg-gray-200 text-gray-700"
+            label="Printable View"
+            onClick={() => {
+              setOpen(false);
+              onPrintable();
+            }}
+          />
+          <ExportRow
+            badge="RAW"
+            badgeClass="bg-purple-100 text-purple-700"
+            label="Download Raw Data"
+            onClick={() => {
+              setOpen(false);
+              onRaw();
+            }}
+          />
+        </div>
       )}
-    </td>
+    </div>
   );
 }
 
-function escapeCsv(s: string): string {
-  if (/[",\n]/.test(s)) return `"${s.replaceAll('"', '""')}"`;
-  return s;
+function ExportRow({
+  badge,
+  badgeClass,
+  label,
+  onClick,
+}: {
+  badge: string;
+  badgeClass: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-gray-50"
+    >
+      <span
+        className={`inline-flex items-center justify-center text-[9px] font-bold w-8 h-4 rounded ${badgeClass}`}
+      >
+        {badge}
+      </span>
+      <span className="text-gray-700">{label}</span>
+    </button>
+  );
 }

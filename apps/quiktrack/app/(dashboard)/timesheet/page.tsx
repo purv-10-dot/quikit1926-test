@@ -10,7 +10,7 @@ export default function GlobalTimesheetPage() {
           month, or quarter.
         </p>
       </div>
-      <TimesheetView groupBy="issue" />
+      <TimesheetView groupBy="user-issue" />
     </div>
   );
 }
