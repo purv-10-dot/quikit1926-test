@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(netstat -an 2>&1)",
+      "PowerShell($env:PGPASSWORD = \"postgres\"; & \"C:\\\\Program Files\\\\PostgreSQL\\\\17\\\\bin\\\\psql.exe\" -U postgres -c \"SELECT current_user, version\\(\\);\" 2>&1)",
+      "PowerShell(Start-Process powershell -ArgumentList \"-Command Restart-Service -Name 'postgresql-x64-17' -Force\" -Verb RunAs -Wait 2>&1; Start-Sleep -Seconds 4; Get-Service -Name \"postgresql-x64-17\" | Select-Object Name, Status)",
+      "PowerShell(Add-Type -AssemblyName System.Security; $bytes = New-Object Byte[] 32; [Security.Cryptography.RNGCryptoServiceProvider]::Create\\(\\).GetBytes\\($bytes\\); [Convert]::ToBase64String\\($bytes\\))",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx prisma *)",
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:3005\" -UseBasicParsing -TimeoutSec 30 | Select-Object StatusCode, @{n='FinalUrl';e={$_.BaseResponse.ResponseUri.ToString\\(\\)}})",
+      "PowerShell($port = \\(netstat -ano | findstr \"LISTENING\" | findstr \":3005\"\\)[0] -match \"\\(\\\\d+\\)$\"; $pid = $Matches[1]; Write-Output \"PID: $pid\"; tasklist /FI \"PID eq $pid\" 2>&1)",
+      "PowerShell(cd \"C:\\\\Users\\\\user\\\\OneDrive - MoreYeahs IT Technologies Pvt Ltd\\\\Documents\\\\QuikAdmin\"; node -e \"const { PrismaClient } = require\\('@prisma/client'\\); const db = new PrismaClient\\(\\); db.membership.findFirst\\({ where: { id: 'cmoihuv2r0031fuxcxirqqgm8' }, select: { invitationToken: true } }\\).then\\(r => console.log\\(r?.invitationToken\\)\\).finally\\(\\(\\) => db.\\\\$disconnect\\(\\)\\)\")",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(node -e \"const p = require\\('./node_modules/next-auth/package.json'\\); console.log\\(p.version\\)\")",
+      "PowerShell($response = Invoke-WebRequest -Uri \"http://localhost:3005/api/roles?appSlug=quiksocial\" -UseBasicParsing -ErrorAction SilentlyContinue; $response.Content)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3005/api/roles?appSlug=quiksocial\" -UseBasicParsing; $r.Content } catch { $_.Exception.Response | ForEach-Object { $stream = $_.GetResponseStream\\(\\); $reader = New-Object System.IO.StreamReader\\($stream\\); $reader.ReadToEnd\\(\\) } })",
+      "Bash(npm run *)",
+      "PowerShell($job = Start-Job { Invoke-WebRequest -Uri \"http://localhost:3005/login\" -UseBasicParsing -TimeoutSec 90 }; Start-Sleep -Seconds 45; Receive-Job $job -ErrorAction SilentlyContinue | Select-Object StatusCode, @{n='Body';e={$_.Content.Substring\\(0,[Math]::Min\\(200,$_.Content.Length\\)\\)}})",
+      "PowerShell($tcp = New-Object System.Net.Sockets.TcpClient; try { $tcp.Connect\\(\"localhost\", 3005\\); \"TCP connected: $\\($tcp.Connected\\)\"; $tcp.Close\\(\\) } catch { \"TCP failed: $_\" })",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":3005 \")",
+      "Bash(findstr LISTENING)"
+    ]
+  }
+}
