@@ -5833,6 +5833,27 @@ model QtUserViewPref {
   @@schema("app_quiktrack")
 }
 
+// Product feedback collected from the "Share your thoughts" modal in the
+// project header. Optional projectId records which space the user was on
+// when they sent it. category ∈ "question" | "comment" | "bug" | "improvement".
+model QtFeedback {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String
+  projectId   String?
+  category    String
+  content     String   @db.Text
+  contactOk   Boolean  @default(false)
+  researchOk  Boolean  @default(false)
+  url         String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([userId])
+  @@schema("app_quiktrack")
+}
+
 model QtUserActivity {
   id        String   @id @default(cuid())
   orgId     String
