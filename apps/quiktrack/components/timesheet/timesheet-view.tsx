@@ -730,7 +730,7 @@ function GroupByPills({
         </button>
         {open1 && (
           <div className="absolute left-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
-            {(["user", "project", "issue"] as const).map((g) => (
+            {(["user", "issue"] as const).map((g) => (
               <button
                 key={g}
                 type="button"
@@ -742,7 +742,7 @@ function GroupByPills({
                   g === primary ? "text-blue-700 bg-blue-50 font-medium" : "text-gray-700"
                 }`}
               >
-                {g === "user" ? "User" : g === "project" ? "Project" : "Work Item"}
+                {g === "user" ? "User" : "Work Item"}
               </button>
             ))}
           </div>
