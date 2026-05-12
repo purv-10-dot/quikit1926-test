@@ -191,6 +191,8 @@ export function LogTimeModal({
                 value={issueId}
                 onChange={setIssueId}
                 disabled={!projectId}
+                projectId={projectId || undefined}
+                onCreated={(issue) => setIssues((prev) => [issue, ...prev])}
               />
             )}
           </Field>

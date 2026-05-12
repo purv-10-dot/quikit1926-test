@@ -179,6 +179,8 @@ export function SplitWorklogModal({ entry, lockedProjectId, onClose, onSplit }: 
               value={issueId}
               onChange={setIssueId}
               disabled={!projectId}
+              projectId={projectId || undefined}
+              onCreated={(issue) => setIssues((prev) => [issue, ...prev])}
             />
           </Field>
 
