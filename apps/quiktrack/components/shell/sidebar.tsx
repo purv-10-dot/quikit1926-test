@@ -177,7 +177,6 @@ export function Sidebar() {
           <div
             ref={plansAnchorRef}
             className="relative"
-            onMouseEnter={() => setPlansOpen(true)}
           >
             <NavRow
               href="/plans"

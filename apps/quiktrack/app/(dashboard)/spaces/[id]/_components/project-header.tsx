@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { recordActivity } from "@/lib/utils/history";
 import { AddPeopleModal } from "@/components/add-people-modal";
+import { ShareFeedbackModal } from "@/components/share-feedback-modal";
 import {
   UserPlus,
   MoreHorizontal,
@@ -12,6 +13,7 @@ import {
   Zap,
   Link as LinkIcon,
   Maximize2,
+  Minimize2,
   Globe,
   Calendar as CalendarIcon,
   List as ListIcon,
@@ -56,6 +58,46 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const [project, setProject] = useState<Project | null>(null);
   const [addPeopleOpen, setAddPeopleOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [autoOpen, setAutoOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const autoRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!autoOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (autoRef.current && !autoRef.current.contains(e.target as Node)) setAutoOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [autoOpen]);
+
+  function toggleFullscreen() {
+    const next = !fullscreen;
+    setFullscreen(next);
+    window.dispatchEvent(new CustomEvent("qt:fullscreen", { detail: { on: next } }));
+  }
+
+  // Listen back so an Escape key or another component flipping state keeps
+  // the icon in sync.
+  useEffect(() => {
+    function onFs(e: Event) {
+      const d = (e as CustomEvent<{ on?: boolean }>).detail;
+      if (typeof d?.on === "boolean") setFullscreen(d.on);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && fullscreen) {
+        setFullscreen(false);
+        window.dispatchEvent(new CustomEvent("qt:fullscreen", { detail: { on: false } }));
+      }
+    }
+    window.addEventListener("qt:fullscreen", onFs as EventListener);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("qt:fullscreen", onFs as EventListener);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [fullscreen]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && projectId) {
@@ -155,14 +197,52 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
             <button className="p-1.5 rounded border border-gray-200 hover:bg-gray-100" aria-label="Share">
               <Share2 className="h-3.5 w-3.5 text-gray-600" />
             </button>
-            <button className="p-1.5 rounded border border-gray-200 hover:bg-gray-100" aria-label="Automation">
-              <Zap className="h-3.5 w-3.5 text-gray-600" />
-            </button>
-            <button className="p-1.5 rounded border border-gray-200 hover:bg-gray-100" aria-label="Link">
+            <div ref={autoRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setAutoOpen((v) => !v)}
+                className={`p-1.5 rounded border ${autoOpen ? "border-blue-300 bg-blue-50" : "border-gray-200 hover:bg-gray-100"}`}
+                aria-label="Automation"
+              >
+                <Zap className={`h-3.5 w-3.5 ${autoOpen ? "text-blue-600" : "text-gray-600"}`} />
+              </button>
+              {autoOpen && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-gray-200 rounded-md shadow-xl z-30 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex items-center justify-center h-9 w-9 rounded bg-blue-50 text-blue-600 shrink-0">
+                      <Zap className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">Automation</h3>
+                      <p className="mt-1 text-xs text-gray-600 leading-snug">
+                        Coming soon — automate manual tasks so your team can focus on what matters.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setFeedbackOpen(true)}
+              className="p-1.5 rounded border border-gray-200 hover:bg-gray-100"
+              aria-label="Share feedback"
+              title="Share feedback"
+            >
               <LinkIcon className="h-3.5 w-3.5 text-gray-600" />
             </button>
-            <button className="p-1.5 rounded border border-gray-200 hover:bg-gray-100" aria-label="Fullscreen">
-              <Maximize2 className="h-3.5 w-3.5 text-gray-600" />
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="p-1.5 rounded border border-gray-200 hover:bg-gray-100"
+              aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+              title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+            >
+              {fullscreen ? (
+                <Minimize2 className="h-3.5 w-3.5 text-gray-600" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5 text-gray-600" />
+              )}
             </button>
           </div>
         </div>
@@ -196,6 +276,9 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
           projectName={project.name}
           onClose={() => setAddPeopleOpen(false)}
         />
+      )}
+      {feedbackOpen && (
+        <ShareFeedbackModal projectId={projectId} onClose={() => setFeedbackOpen(false)} />
       )}
     </div>
   );
