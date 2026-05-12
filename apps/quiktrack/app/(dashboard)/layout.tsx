@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Header } from "@/components/shell/header";
+import { RouteProgress } from "@/components/shell/route-progress";
 import { SessionGuard } from "@/components/session-guard";
 import { IssueCreatedToast } from "@/components/issue-created-toast";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
@@ -47,6 +48,9 @@ export default function DashboardLayout({
         </div>
         <IssueCreatedToast />
       </div>
+      <Suspense fallback={null}>
+        <RouteProgress />
+      </Suspense>
     </SessionGuard>
   );
 }

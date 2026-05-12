@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   Download,
   CheckCircle2,
@@ -83,20 +84,54 @@ export function ReportsView() {
   const [assigneeId, setAssigneeId] = useState("");
   const [startDate, setStartDate] = useState("");
 
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [summary, setSummary] = useState<Summary>({
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
+  // React Query handles deduping, caching, abort-on-stale and keep-previous-
+  // data automatically — no manual AbortController / debounce needed.
+  const query = useQuery({
+    queryKey: [
+      "reports.tasks",
+      { month, projectId, statusName, assigneeId, startDate, page, pageSize },
+    ],
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams();
+      if (month) params.set("month", month);
+      if (projectId) params.set("projectId", projectId);
+      if (statusName) params.set("statusName", statusName);
+      if (assigneeId) params.set("assigneeId", assigneeId);
+      if (startDate) params.set("startDate", startDate);
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
+      const res = await fetch(`/api/reports/tasks?${params.toString()}`, { signal });
+      const j = await res.json();
+      if (!j?.success) throw new Error(j?.error ?? "Failed");
+      return j.data as {
+        tasks: Task[];
+        summary: Summary;
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+      };
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 30 * 1000,
+  });
+
+  const tasks = query.data?.tasks ?? [];
+  const summary: Summary = query.data?.summary ?? {
     total: 0,
     pending: 0,
     closed: 0,
     estHours: 0,
     actualHours: 0,
-  });
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalRows, setTotalRows] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  };
+  const totalRows = query.data?.total ?? 0;
+  const totalPages = query.data?.totalPages ?? 1;
+  const isInitialLoading = query.isLoading && !query.data;
+  const isRefetching = query.isFetching && !!query.data;
 
   // Filter dropdown sources, hydrated from the loaded task set so we don't
   // need separate listing endpoints.
@@ -119,38 +154,11 @@ export function ReportsView() {
     return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [tasks]);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (month) params.set("month", month);
-      if (projectId) params.set("projectId", projectId);
-      if (statusName) params.set("statusName", statusName);
-      if (assigneeId) params.set("assigneeId", assigneeId);
-      if (startDate) params.set("startDate", startDate);
-      params.set("page", String(page));
-      params.set("pageSize", String(pageSize));
-      const res = await fetch(`/api/reports/tasks?${params.toString()}`).then((r) => r.json());
-      if (res?.success) {
-        setTasks(res.data.tasks);
-        setSummary(res.data.summary);
-        setTotalPages(res.data.totalPages ?? 1);
-        setTotalRows(res.data.total ?? 0);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [month, projectId, statusName, assigneeId, startDate, page, pageSize]);
-
   // Reset to page 1 whenever a filter changes so the user doesn't get
   // stranded on a now-empty page.
   useEffect(() => {
     setPage(1);
   }, [month, projectId, statusName, assigneeId, startDate, pageSize]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   function clearFilters() {
     setProjectId("");
@@ -296,7 +304,12 @@ export function ReportsView() {
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
+      <div className="relative bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
+        {isRefetching && (
+          <div className="absolute left-0 right-0 top-0 h-0.5 bg-blue-100 overflow-hidden z-10">
+            <div className="h-full w-1/3 bg-blue-500 qt-progress-slide" />
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -311,13 +324,9 @@ export function ReportsView() {
                 <th className="px-4 py-3 text-left">Status</th>
               </tr>
             </thead>
-            <tbody>
-              {loading && tasks.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-500">
-                    Loading…
-                  </td>
-                </tr>
+            <tbody className={isRefetching ? "opacity-60 transition-opacity" : "transition-opacity"}>
+              {isInitialLoading ? (
+                <ReportRowSkeleton rows={pageSize} />
               ) : tasks.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4">
@@ -449,6 +458,29 @@ export function ReportsView() {
       )}
     </div>
   );
+}
+
+function ReportRowSkeleton({ rows = 8 }: { rows?: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <tr key={`sk-${i}`} className="border-b border-gray-100">
+          <td className="px-4 py-3"><Bar w="w-4" /></td>
+          <td className="px-4 py-3"><div className="flex items-center gap-2"><Bar w="w-12" /><Bar w="w-48" /></div></td>
+          <td className="px-4 py-3"><Bar w="w-24" /></td>
+          <td className="px-4 py-3"><div className="flex items-center gap-2"><span className="qt-shimmer block h-6 w-6 rounded-full" /><Bar w="w-20" /></div></td>
+          <td className="px-4 py-3"><Bar w="w-20" /></td>
+          <td className="px-4 py-3"><div className="flex justify-end"><Bar w="w-10" /></div></td>
+          <td className="px-4 py-3"><div className="flex justify-end"><Bar w="w-10" /></div></td>
+          <td className="px-4 py-3"><Bar w="w-16" round="rounded-full" /></td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function Bar({ w, round = "rounded" }: { w: string; round?: string }) {
+  return <span className={`qt-shimmer inline-block h-3 ${round} ${w}`} />;
 }
 
 function StatCard({

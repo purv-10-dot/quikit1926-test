@@ -95,57 +95,43 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
   const pageSize = Math.min(100, Math.max(5, Number(url.searchParams.get("pageSize") ?? 10)));
 
-  // Compute the headline counters against the full filtered set, then return
-  // only the requested page of rows. This keeps the stat cards accurate while
-  // bounding the response size.
-  const [total, statusGroups, etaAgg, allIssueIds] = await Promise.all([
+  // First wave: page + every summary metric in one parallel batch. Closed
+  // count is a relation filter on category=DONE so we avoid pulling status
+  // ids client-side. Actual-time aggregate uses a relation filter on the
+  // timesheet table so we don't need to materialize the full issue id list.
+  const [total, closedCount, etaAgg, actualTotalAgg, tasks] = await Promise.all([
     db.qtIssue.count({ where }),
+    db.qtIssue.count({ where: { ...where, status: { category: "DONE" } } }),
+    db.qtIssue.aggregate({ where, _sum: { eta: true } }),
+    db.qtTimesheetEntry.aggregate({
+      where: {
+        orgId,
+        isDeleted: false,
+        issue: where,
+      },
+      _sum: { hours: true },
+    }),
     db.qtIssue.findMany({
       where,
-      select: { id: true, statusId: true },
+      orderBy: [{ createdAt: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        key: true,
+        title: true,
+        type: true,
+        assigneeId: true,
+        projectId: true,
+        statusId: true,
+        startDate: true,
+        dueDate: true,
+        eta: true,
+        createdAt: true,
+      },
     }),
-    db.qtIssue.aggregate({ where, _sum: { eta: true } }),
-    db.qtIssue.findMany({ where, select: { id: true } }),
   ]);
-
-  const allStatusIds = Array.from(new Set(statusGroups.map((s) => s.statusId).filter(Boolean) as string[]));
-  const allStatuses = allStatusIds.length
-    ? await db.qtIssueStatus.findMany({
-        where: { id: { in: allStatusIds } },
-        select: { id: true, category: true },
-      })
-    : [];
-  const categoryById = new Map(allStatuses.map((s) => [s.id, s.category] as const));
-  const closedCount = statusGroups.filter(
-    (s) => s.statusId && categoryById.get(s.statusId) === "DONE",
-  ).length;
   const pendingCount = total - closedCount;
-  const actualTotalAgg = allIssueIds.length
-    ? await db.qtTimesheetEntry.aggregate({
-        where: { orgId, isDeleted: false, issueId: { in: allIssueIds.map((r) => r.id) } },
-        _sum: { hours: true },
-      })
-    : null;
-
-  const tasks = await db.qtIssue.findMany({
-    where,
-    orderBy: [{ createdAt: "desc" }],
-    skip: (page - 1) * pageSize,
-    take: pageSize,
-    select: {
-      id: true,
-      key: true,
-      title: true,
-      type: true,
-      assigneeId: true,
-      projectId: true,
-      statusId: true,
-      startDate: true,
-      dueDate: true,
-      eta: true,
-      createdAt: true,
-    },
-  });
 
   // Hydrate references in one batch.
   const projIds = Array.from(new Set(tasks.map((t) => t.projectId)));

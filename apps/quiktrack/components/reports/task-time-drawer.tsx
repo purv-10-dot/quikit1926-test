@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   X,
   Maximize2,
   Minimize2,
   Download,
-  ChevronDown,
   Clock,
+  User as UserIcon,
 } from "lucide-react";
 import { ReportsEmptyState } from "./empty-state";
 import { Pagination } from "./pagination";
+import { FilterDropdown } from "./filter-dropdown";
 
 interface UserRef {
   id: string;
@@ -55,33 +57,33 @@ export function TaskTimeDrawer({
   taskId: string;
   onClose: () => void;
 }) {
-  const [data, setData] = useState<DrawerData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [assigneeId, setAssigneeId] = useState<string>("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  async function load() {
-    setLoading(true);
-    try {
+  const query = useQuery({
+    queryKey: ["reports.taskTime", taskId, { assigneeId, page, pageSize }],
+    queryFn: async ({ signal }) => {
       const params = new URLSearchParams();
       if (assigneeId) params.set("assigneeId", assigneeId);
       params.set("page", String(page));
       params.set("pageSize", String(pageSize));
       const res = await fetch(
         `/api/reports/task-time/${taskId}?${params.toString()}`,
-      ).then((r) => r.json());
-      if (res?.success) setData(res.data);
-    } finally {
-      setLoading(false);
-    }
-  }
+        { signal },
+      );
+      const j = await res.json();
+      if (!j?.success) throw new Error(j?.error ?? "Failed");
+      return j.data as DrawerData;
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 30 * 1000,
+  });
 
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId, assigneeId, page, pageSize]);
+  const data = query.data;
+  const loading = query.isLoading && !query.data;
+  const isRefetching = query.isFetching && !!query.data;
 
   useEffect(() => {
     setPage(1);
@@ -181,21 +183,14 @@ export function TaskTimeDrawer({
         </header>
 
         <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <select
-              value={assigneeId}
-              onChange={(e) => setAssigneeId(e.target.value)}
-              className="h-9 pl-3 pr-9 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white"
-            >
-              <option value="">All assignees</option>
-              {assigneeOptions.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500 pointer-events-none" />
-          </div>
+          <FilterDropdown
+            label="All assignees"
+            icon={UserIcon}
+            value={assigneeId}
+            onChange={setAssigneeId}
+            options={assigneeOptions.map((u) => ({ value: u.id, label: u.name }))}
+            minWidth={180}
+          />
           <div className="ml-auto inline-flex items-center gap-3 text-xs text-gray-600">
             <span className="inline-flex items-center gap-1">
               <Clock className="h-3.5 w-3.5 text-blue-500" />
@@ -218,9 +213,14 @@ export function TaskTimeDrawer({
           </div>
         </div>
 
+        {isRefetching && (
+          <div className="relative h-0.5 bg-blue-100 overflow-hidden">
+            <div className="absolute inset-y-0 w-1/3 bg-blue-500 qt-progress-slide" />
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="p-6 text-sm text-gray-500">Loading…</div>
+            <DrawerSkeleton />
           ) : !data || data.entries.length === 0 ? (
             <ReportsEmptyState
               title="No time logged yet"
@@ -319,6 +319,35 @@ export function TaskTimeDrawer({
           )}
         </div>
       </aside>
+    </div>
+  );
+}
+
+function DrawerSkeleton() {
+  return (
+    <div className="p-5 space-y-5">
+      <div className="space-y-2">
+        <span className="qt-shimmer block h-3 w-24 rounded" />
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3">
+            <span className="qt-shimmer block h-6 w-6 rounded-full" />
+            <span className="qt-shimmer block h-3 w-32 rounded" />
+            <span className="qt-shimmer block h-1.5 flex-1 max-w-[160px] rounded" />
+            <span className="qt-shimmer block h-3 w-10 rounded ml-auto" />
+          </div>
+        ))}
+      </div>
+      <div className="space-y-2">
+        <span className="qt-shimmer block h-3 w-20 rounded" />
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="grid grid-cols-[80px_1fr_1fr_60px] gap-3">
+            <span className="qt-shimmer block h-3 rounded" />
+            <span className="qt-shimmer block h-3 rounded" />
+            <span className="qt-shimmer block h-3 rounded" />
+            <span className="qt-shimmer block h-3 rounded ml-auto w-10" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
