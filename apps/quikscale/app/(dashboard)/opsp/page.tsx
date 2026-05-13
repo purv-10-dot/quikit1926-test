@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { FInput } from "./components/RichEditor";
 import { Card } from "./components/Card";
 import { populateCatCache } from "./components/category";
-import { TargetsModal, GoalsModal, ActionsModal, RocksModal, KeyThrustsModal, KeyInitiativesModal, AccountabilityModal, QuarterlyPrioritiesModal } from "./components/modals";
+import { ActionsModal, RocksModal, KeyThrustsModal, KeyInitiativesModal, AccountabilityModal, QuarterlyPrioritiesModal } from "./components/modals";
 import { Eye, Check, AlertTriangle, Loader2 } from "lucide-react";
 import { fiscalYearLabel, getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { OPSPSetupWizard } from "./components/SetupWizard";
@@ -20,6 +20,7 @@ import { AccountabilitySection } from "./components/AccountabilitySection";
 import { useOPSPForm, type FormData } from "./hooks/useOPSPForm";
 import { OPSPPreview } from "./components/OPSPPreview";
 import { validateOPSP, type ValidationError } from "./lib/validateOPSP";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 /* ═══════════════════════════════════════════════
    Main Page
@@ -44,8 +45,6 @@ export default function OPSPPage() {
   } = useOPSPForm({ urlYear, urlQuarter });
 
   // UI-only state (modal opens, year picker, finalize confirm) stays on the page.
-  const [targetsOpen, setTargetsOpen] = useState(false);
-  const [goalsOpen, setGoalsOpen] = useState(false);
   const [rocksOpen, setRocksOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [keyThrustsOpen, setKeyThrustsOpen] = useState(false);
@@ -106,8 +105,13 @@ export default function OPSPPage() {
   /* ── Field helpers ──
      "reviewed" is a stronger lock than "finalized" — once the OPSP review has
      been submitted, the form remains read-only and is still presented as
-     "Finalized" in the header (a reviewed OPSP is by definition finalized). */
-  const isLocked = form.status === "finalized" || form.status === "reviewed";
+     "Finalized" in the header (a reviewed OPSP is by definition finalized).
+     v2: a user with OPSP.History.EditFinalize:update can edit even
+     finalized/reviewed OPSPs (the History page Edit button stays enabled). */
+  const myPerms = useMyPermissions();
+  const canEditFinalized = myPerms.has("OPSP.History.EditFinalize", "update");
+  const statusLocked = form.status === "finalized" || form.status === "reviewed";
+  const isLocked = statusLocked && !canEditFinalized;
 
   const set = <K extends keyof FormData>(key: K, value: FormData[K]) => {
     if (isLocked && key !== "status") return; // read-only guard
@@ -356,12 +360,6 @@ export default function OPSPPage() {
       )}
 
       {/* ── Modals ── */}
-      <TargetsModal open={targetsOpen} onClose={() => setTargetsOpen(false)}
-        rows={form.targetRows} onChange={r => set("targetRows", r)} targetYears={form.targetYears}
-        fiscalYear={form.year} fiscalYearStart={fiscalYearStart} readOnly={isFinalized} />
-      <GoalsModal open={goalsOpen} onClose={() => setGoalsOpen(false)}
-        rows={form.goalRows} onChange={r => set("goalRows", r)}
-        targetRows={form.targetRows} readOnly={isFinalized} />
       <ActionsModal open={actionsOpen} onClose={() => setActionsOpen(false)}
         rows={form.actionsQtr} onChange={r => set("actionsQtr", r)}
         fiscalYear={form.year} fiscalQuarter={form.quarter}
@@ -432,14 +430,12 @@ export default function OPSPPage() {
             <TargetsSection
               form={form}
               set={set}
-              onExpandTargets={() => setTargetsOpen(true)}
               onExpandKeyThrusts={() => setKeyThrustsOpen(true)}
             />
 
             <GoalsSection
               form={form}
               set={set}
-              onExpandGoals={() => setGoalsOpen(true)}
               onExpandKeyInitiatives={() => setKeyInitiativesOpen(true)}
             />
           </div>

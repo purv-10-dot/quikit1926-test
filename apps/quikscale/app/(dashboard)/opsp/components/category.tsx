@@ -29,13 +29,21 @@ interface CatMeta {
   dataType: string;
   symbol: string | null;
   currency: string | null;
-  /// "Cumulative" | "Standalone" | "CumulativeTillExit" | "Manual"
+  /// "Cumulative" | "CumulativeTillEnd" | "Standalone" — distribution shape.
+  categoryType: string;
+  /// "Manual" | "Automatic" — fill mode.
   breakdownType: string;
 }
 export const catMetaCache = new Map<string, CatMeta>();
 
 export function populateCatCache(
-  data: { name: string; dataType: string; currency: string | null; breakdownType?: string }[],
+  data: {
+    name: string;
+    dataType: string;
+    currency: string | null;
+    categoryType?: string;
+    breakdownType?: string;
+  }[],
 ) {
   data.forEach((c) => {
     const symbol =
@@ -46,7 +54,8 @@ export function populateCatCache(
       dataType: c.dataType,
       symbol,
       currency: c.currency,
-      breakdownType: c.breakdownType ?? "Cumulative",
+      categoryType: c.categoryType ?? "Cumulative",
+      breakdownType: c.breakdownType ?? "Automatic",
     });
   });
 }
@@ -123,26 +132,49 @@ export function CategorySelect({
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("Number");
   const [newCurrency, setNewCurrency] = useState("NONE");
-  // Two-tier picker:
-  //   - Mode: Manual | Automatic
-  //   - When Automatic, AutoType picks one of the three distribution rules
-  // Persisted breakdownType is computed as:
-  //   Manual    → "Manual"
-  //   Automatic → newAutoType  ("Cumulative" | "Standalone" | "CumulativeTillExit")
-  const [newMode, setNewMode] = useState<"manual" | "automatic">("automatic");
-  const [newAutoType, setNewAutoType] = useState<"Cumulative" | "Standalone" | "CumulativeTillExit">("Cumulative");
+  // Two-axis picker — drives the OPSP modal matrix.
+  //   - categoryType: Cumulative | CumulativeTillEnd | Standalone (distribution shape)
+  //   - breakdownType: Manual | Automatic (fill mode)
+  const [newCategoryType, setNewCategoryType] =
+    useState<"Cumulative" | "CumulativeTillEnd" | "Standalone">("Cumulative");
+  const [newBreakdownType, setNewBreakdownType] = useState<"Manual" | "Automatic">("Automatic");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [dropPos, setDropPos] = useState<{ top?: number; bottom?: number; left: number; width: number }>({ left: 0, width: 224 });
   const [flipUp, setFlipUp] = useState(false);
+  // When the add-form panel can't fit above or below the trigger, slide it to
+  // the right/left so the whole form stays visible.
+  const [sidePanel, setSidePanel] = useState<null | "right" | "left">(null);
 
-  const computePosition = useCallback(() => {
+  const computePosition = useCallback((isAdding: boolean) => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
+    const requiredHeight = isAdding ? 420 : 240;
     const spaceBelow = window.innerHeight - rect.bottom;
-    const flip = spaceBelow < 300;
+    const spaceAbove = rect.top;
+
+    // Side-panel placement: only when adding AND neither vertical option fits.
+    if (isAdding && spaceBelow < requiredHeight && spaceAbove < requiredHeight) {
+      const spaceRight = window.innerWidth - rect.right;
+      const side: "right" | "left" = spaceRight >= 232 ? "right" : "left";
+      setSidePanel(side);
+      setFlipUp(false);
+      const clampedTop = Math.max(
+        8,
+        Math.min(rect.top, window.innerHeight - requiredHeight - 8),
+      );
+      setDropPos({
+        top: clampedTop,
+        left: side === "right" ? rect.right + 4 : Math.max(8, rect.left - 224 - 4),
+        width: 224,
+      });
+      return;
+    }
+
+    setSidePanel(null);
+    const flip = spaceBelow < requiredHeight;
     setFlipUp(flip);
     if (flip) {
       setDropPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left, width: 224 });
@@ -150,6 +182,12 @@ export function CategorySelect({
       setDropPos({ top: rect.bottom + 4, left: rect.left, width: 224 });
     }
   }, []);
+
+  // Recompute placement when the panel switches between browse and add modes
+  // so a near-bottom dropdown that opens the add form re-flows to the side.
+  useEffect(() => {
+    if (open) computePosition(adding);
+  }, [adding, open, computePosition]);
 
   function fetchCats() {
     fetch("/api/categories")
@@ -179,8 +217,8 @@ export function CategorySelect({
     setNewName("");
     setNewType("Number");
     setNewCurrency("NONE");
-    setNewMode("automatic");
-    setNewAutoType("Cumulative");
+    setNewCategoryType("Cumulative");
+    setNewBreakdownType("Automatic");
     setError("");
   }
 
@@ -207,7 +245,6 @@ export function CategorySelect({
     setSaving(true);
     setError("");
     try {
-      const breakdownType = newMode === "manual" ? "Manual" : newAutoType;
       const res = await fetch("/api/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -215,7 +252,8 @@ export function CategorySelect({
           name: trimmed,
           dataType: newType,
           currency: effectiveCurrency,
-          breakdownType,
+          categoryType: newCategoryType,
+          breakdownType: newBreakdownType,
         }),
       });
       const json = await res.json();
@@ -235,7 +273,7 @@ export function CategorySelect({
       <WithTooltip content={open ? "" : displayCategory(value) || ""} className="relative block w-full">
         <button
           ref={triggerRef}
-          onClick={() => { if (!open) computePosition(); setOpen(!open); }}
+          onClick={() => { if (!open) computePosition(false); setOpen(!open); }}
           className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 bg-white hover:bg-gray-50 gap-1"
         >
           <span
@@ -263,7 +301,11 @@ export function CategorySelect({
             style={{
               width: dropPos.width,
               left: dropPos.left,
-              ...(flipUp ? { bottom: dropPos.bottom } : { top: dropPos.top }),
+              ...(sidePanel
+                ? { top: dropPos.top, maxHeight: "calc(100vh - 16px)", overflowY: "auto" }
+                : flipUp
+                  ? { bottom: dropPos.bottom }
+                  : { top: dropPos.top }),
             }}
           >
             <div className="max-h-40 overflow-y-auto">
@@ -346,49 +388,51 @@ export function CategorySelect({
                       ))}
                     </select>
                   )}
-                  {/* Breakdown — drives auto-fill semantics in OPSP forms.
-                      Mode: Manual (no auto-fill, user types every cell) or
-                      Automatic (Projected splits across periods). When
-                      Automatic, the dropdown chooses how it splits. */}
-                  <div className="flex items-center gap-3 px-0.5">
-                    <label className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="newCatMode"
-                        value="manual"
-                        checked={newMode === "manual"}
-                        onChange={() => setNewMode("manual")}
-                        disabled={saving}
-                        className="accent-accent-600"
-                      />
-                      Manual
-                    </label>
-                    <label className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="newCatMode"
-                        value="automatic"
-                        checked={newMode === "automatic"}
-                        onChange={() => setNewMode("automatic")}
-                        disabled={saving}
-                        className="accent-accent-600"
-                      />
-                      Automatic
-                    </label>
+                  {/* Two independent axes — Category Type drives distribution
+                      shape, Breakdown Type drives whether the user fills
+                      every cell manually or the helper distributes Projected. */}
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Category Type
+                    </p>
+                    <div className="flex items-center gap-2 flex-wrap px-0.5">
+                      {(["Cumulative", "CumulativeTillEnd", "Standalone"] as const).map((v) => (
+                        <label key={v} className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="newCatCategoryType"
+                            value={v}
+                            checked={newCategoryType === v}
+                            onChange={() => setNewCategoryType(v)}
+                            disabled={saving}
+                            className="accent-accent-600"
+                          />
+                          {v === "CumulativeTillEnd" ? "Cumulative Till End" : v}
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                  {newMode === "automatic" && (
-                    <select
-                      value={newAutoType}
-                      onChange={(e) => setNewAutoType(e.target.value as typeof newAutoType)}
-                      disabled={saving}
-                      title="Distribution — how Projected splits across years/quarters/weeks"
-                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:opacity-50"
-                    >
-                      <option value="Cumulative">Cumulative</option>
-                      <option value="Standalone">Standalone</option>
-                      <option value="CumulativeTillExit">Cumulative Till Exit</option>
-                    </select>
-                  )}
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Breakdown Type
+                    </p>
+                    <div className="flex items-center gap-3 px-0.5">
+                      {(["Manual", "Automatic"] as const).map((v) => (
+                        <label key={v} className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="newCatBreakdownType"
+                            value={v}
+                            checked={newBreakdownType === v}
+                            onChange={() => setNewBreakdownType(v)}
+                            disabled={saving}
+                            className="accent-accent-600"
+                          />
+                          {v}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                   {error && <p className="text-red-500 text-xs">{error}</p>}
                   <div className="flex gap-2">
                     <button

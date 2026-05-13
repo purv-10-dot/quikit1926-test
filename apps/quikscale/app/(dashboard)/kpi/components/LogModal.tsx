@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useUpdateKPI, useUpdateWeeklyValue, useNotes, useAddNote } from "@/lib/hooks/useKPI";
+import { useUpdateKPI, useUpdateWeeklyValuesBatch, useNotes, useAddNote } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
 import type { KPIRow, WeeklyValue, User } from "@/lib/types/kpi";
 import { fiscalYearLabel, weekDateLabel, ALL_WEEKS } from "@/lib/utils/fiscal";
@@ -216,8 +216,9 @@ function EditTab({
   }
 
   // Auto-seed empty per-owner rows on first render (handles legacy KPIs that
-  // were saved before `weeklyOwnerTargets` existed).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // were saved before `weeklyOwnerTargets` existed). Intentionally fires only
+  // when isTeamKPI flips — re-running on every computeAllOwnerBreakdowns /
+  // setForm change would create an infinite loop with the setForm inside.
   useEffect(() => {
     if (!isTeamKPI) return;
     setForm(f => {
@@ -225,6 +226,7 @@ function EditTab({
       if (!needsSeed) return f;
       return { ...f, weeklyOwnerBreakdown: computeAllOwnerBreakdowns(f) };
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTeamKPI]);
 
   const contributionSum = Object.values(form.ownerContributions).reduce(
@@ -935,7 +937,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
   const metadataReadOnly = !canEditMetadata;
 
   const updateKPI = useUpdateKPI(kpi.id);
-  const updateWeekly = useUpdateWeeklyValue(kpi.id);
+  const updateWeeklyBatch = useUpdateWeeklyValuesBatch(kpi.id);
 
   // Edit form state (lifted up for unified save)
   const [editForm, setEditForm] = useState<EditFormState>(() => {
@@ -1159,8 +1161,16 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
       if (!metadataReadOnly) {
         await updateKPI.mutateAsync(kpiPayload);
       }
-      // Step 2: weekly values in parallel, after metadata is committed.
-      await Promise.all(weeklyInputs.map(input => updateWeekly.mutateAsync(input)));
+      // Step 2: weekly values in ONE batched request. Server upserts all rows,
+      // reports per-input failures (permission denied / past-week gate / etc.)
+      // back in the response so we can surface partial saves.
+      if (weeklyInputs.length > 0) {
+        const batchResult = await updateWeeklyBatch.mutateAsync(weeklyInputs);
+        if (batchResult.failed > 0) {
+          const firstErr = batchResult.results.find(r => !r.ok)?.error ?? "Some weekly values could not be saved";
+          throw new Error(`${batchResult.failed} of ${batchResult.results.length} weeks failed: ${firstErr}`);
+        }
+      }
 
       onRefresh();
       onClose();

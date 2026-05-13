@@ -125,6 +125,34 @@ export async function updateWeeklyValue(kpiId: string, input: WeeklyValueInput):
   return response.data.data!;
 }
 
+// Batch upsert — one network call for many (weekNumber, userId) rows.
+// Returns per-input results; resolves even on partial failures so the UI can
+// surface which rows didn't apply (permission denied / past-week gate / etc.).
+export interface WeeklyValueBatchResult {
+  weekNumber: number;
+  userId: string;
+  ok: boolean;
+  error?: string;
+}
+export interface WeeklyValueBatchResponse {
+  applied: number;
+  failed: number;
+  results: WeeklyValueBatchResult[];
+}
+export async function updateWeeklyValuesBatch(
+  kpiId: string,
+  inputs: WeeklyValueInput[],
+): Promise<WeeklyValueBatchResponse> {
+  const response = await axios.post<ApiResponse<WeeklyValueBatchResponse>>(
+    `${API_BASE}/${kpiId}/weekly/batch`,
+    { inputs },
+  );
+  if (!response.data.success) {
+    throw new Error(response.data.error || "Failed to save weekly values");
+  }
+  return response.data.data!;
+}
+
 // Get weekly values for a KPI
 export async function getWeeklyValues(kpiId: string): Promise<WeeklyValueResponse[]> {
   const response = await axios.get<ApiResponse<WeeklyValueResponse[]>>(`${API_BASE}/${kpiId}/weekly`);

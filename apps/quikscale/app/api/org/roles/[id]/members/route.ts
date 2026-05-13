@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
+import { assertReconcileLeavesAdminPopulated, AdminLockoutError } from "@/lib/api/preventAdminLockout";
 
 const putBodySchema = z.object({
   /** Full desired set of userIds assigned to this role. Server reconciles. */
@@ -116,6 +117,16 @@ export async function PUT(
     }
 
     const desired = Array.from(new Set(parsed.data.userIds));
+
+    // v2: refuse to reconcile the admin role to an empty membership.
+    try {
+      await assertReconcileLeavesAdminPopulated({ orgId, roleId: role.id, nextUserIds: desired });
+    } catch (e) {
+      if (e instanceof AdminLockoutError) {
+        return NextResponse.json({ success: false, error: e.message }, { status: 409 });
+      }
+      throw e;
+    }
 
     const result = await db.$transaction(async (tx) => {
       // 1. Filter desired set to users with QuikScale UserAppAccess.

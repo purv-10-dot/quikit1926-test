@@ -23,7 +23,7 @@ import { FInput } from "./RichEditor";
 import { CategorySelect, ProjectedInput, parseProjectedValue, combineProjectedValue, getScaleAbbrs, displayCategory, catMetaCache } from "./category";
 import { OwnerSelect, WithTooltip } from "./pickers";
 import { getScales } from "@/lib/utils/currency";
-import { calculateBreakdown, type BreakdownType } from "@quikit/shared";
+import { calculateBreakdown, type BreakdownType } from "@/lib/utils/breakdownCalc";
 import type { TargetRow, GoalRow, RockRow, ActionRow, ThrustRow, KeyInitiativeRow, KPIAcctRow, QPriorRow } from "../types";
 
 /* ── Scale abbreviation → full label (for multiplier lookup) ── */
@@ -64,19 +64,34 @@ function fmtNum(n: number): string {
 }
 
 /**
- * Distribute a Projected value across `periodCount` period cells, using the
- * category's `breakdownType` setting (Cumulative / Standalone / CumulativeTillExit /
- * Manual).
+ * Bridge the DB-stored `categoryType` (post-rename) to the legacy enum used
+ * by `calculateBreakdown`. The helper kept `CumulativeTillExit` to avoid a
+ * cascade rename — this is the only allowed conversion site.
+ */
+export function categoryTypeToBreakdown(categoryType: string | undefined): BreakdownType {
+  switch (categoryType) {
+    case "CumulativeTillEnd":
+      return "CumulativeTillExit";
+    case "Standalone":
+      return "Standalone";
+    case "Cumulative":
+    default:
+      return "Cumulative";
+  }
+}
+
+/**
+ * Distribute a Projected value across `periodCount` period cells.
+ *
+ * Gated on `breakdownType === "Automatic"`. Manual rows return `null` so
+ * the caller writes only the cell the user touched.
  *
  * Operates on the displayed (typed-as) numeric value, not the resolved
- * underlying numeric. So if the user typed "1" with scale "L" (= 100000 INR),
- * we calculateBreakdown(type, 1, n) and then pair each cell value back with
- * the same scale for display: each cell ends up as e.g. "0.25 L", "0.50 L",
- * etc. for currency, or a plain stringified number for Number/Percentage.
+ * underlying numeric. Currency rows keep their scale suffix.
  *
  * Returns:
- *   - `null`                — when projected is empty / unparseable / type=Manual
- *                             (caller should leave cells alone in this case)
+ *   - `null`                — when projected is empty / unparseable / breakdownType
+ *                             is Manual (caller should leave cells alone)
  *   - `string[]` of length `periodCount` — one value per cell, formatted to
  *                             match the category's display shape
  */
@@ -91,9 +106,10 @@ export function breakdownProjected(
   const meta = catMetaCache.get(categoryName);
   if (!meta) return null;
 
-  const breakdownType = (meta.breakdownType ?? "Cumulative") as BreakdownType;
-  // Manual → no auto-fill; let the user type every cell themselves.
-  if (breakdownType === "Manual") return null;
+  // Manual rows opt out of auto-fill regardless of categoryType.
+  if (meta.breakdownType !== "Automatic") return null;
+
+  const bridgeType = categoryTypeToBreakdown(meta.categoryType);
 
   const isCurrency = meta.dataType === "Currency";
   const currency = meta.currency ?? "USD";
@@ -117,18 +133,17 @@ export function breakdownProjected(
       : "Number";
 
   const slices = calculateBreakdown(
-    breakdownType,
+    bridgeType,
     displayedNum,
     periodCount,
     { measurementUnit },
   );
+  if (!slices) return null;
 
   // Format each slice back into the cell's storage shape.
   return slices.map((v) => {
     if (v === 0) return "";
     if (isCurrency) {
-      // combineProjectedValue takes the displayed numeric + scale and
-      // produces the canonical "<num> <scale>" string the cell stores.
       return combineProjectedValue(String(v), scale);
     }
     return String(v);
@@ -136,21 +151,15 @@ export function breakdownProjected(
 }
 
 /**
- * When the user edits a single period cell on a **Cumulative** row, rebalance
- * the OTHER period cells so the sum still equals Projected.
+ * When the user edits a single period cell on an **Automatic + Cumulative**
+ * row, rebalance the OTHER period cells so the sum still equals Projected.
  *
- *   - Cumulative   → redistribute (Projected − editedValue) equally across
- *                    other cells; last absorbs rounding residue. Negative
- *                    remainder (user typed > Projected) → others go to 0.
- *   - Standalone / CumulativeTillExit / Manual → return `null` (caller keeps
- *                    the user's typed value as-is, no rebalance).
+ * Rebalance only applies when:
+ *   - `breakdownType === "Automatic"` (Manual rows leave cells alone)
+ *   - `categoryType === "Cumulative"` (Standalone/TillEnd have different semantics)
  *
  * Operates on the displayed numeric value (same as `breakdownProjected`)
  * so currency rows preserve the Projected's scale across all cells.
- *
- * @param values   Current cell values (parallel to `keys`)
- * @param edited   Index of the cell the user just edited
- * @param newVal   Raw value the user typed for that cell
  *
  * Returns a new `string[]` of length `values.length`, OR `null` when no
  * rebalance applies (then the caller should write only the edited cell).
@@ -164,7 +173,8 @@ function redistributeOnCellEdit(opts: {
 }): string[] | null {
   const meta = catMetaCache.get(opts.categoryName);
   if (!meta) return null;
-  if (meta.breakdownType !== "Cumulative") return null;
+  if (meta.breakdownType !== "Automatic") return null;
+  if (meta.categoryType !== "Cumulative") return null;
 
   const trimmedProj = (opts.projected ?? "").trim();
   if (!trimmedProj) return null;
@@ -238,30 +248,45 @@ function redistributeOnCellEdit(opts: {
 }
 
 /**
- * Compute "is this row balanced?" using the category's breakdownType:
- *   - Cumulative / Manual → sum of period cells must equal Projected
- *                           (Manual leaves auto-fill off, but the user still has
- *                            to make the cells add up to Projected by hand —
- *                            the validation matches the original behaviour)
- *   - CumulativeTillExit  → last period cell must equal Projected (intermediate
- *                           cells are running totals, not separate amounts)
- *   - Standalone          → every period cell must equal Projected
+ * Compute "is this row balanced?" using the two-axis matrix:
+ *
+ *   | breakdownType | categoryType        | mode | check                       |
+ *   |---------------|---------------------|------|-----------------------------|
+ *   | Automatic     | (any)               | auto | always balanced (calc owns) |
+ *   | Manual        | Cumulative          | sum  | Σ cells === Projected       |
+ *   | Manual        | CumulativeTillEnd   | last | last cell === Projected     |
+ *   | Manual        | Standalone          | each | always balanced (dropdown)  |
  *
  * Returns:
  *   - effective: the value to compare against `projected` (sum / last / first
- *                depending on type) — used by ValidationBar to render progress
+ *                depending on mode) — used by ValidationBar to render progress
  *   - isBalanced / isOver: traffic-light states for the row
- *   - mode: which comparison was used (drives the UI label below)
+ *   - mode: which comparison was used; "auto" and "each" suppress ValidationBar
  */
 function computeRowBalance(
   categoryName: string,
   values: number[],
   projected: number,
-): { effective: number; isBalanced: boolean; isOver: boolean; mode: "sum" | "last" | "each" } {
+): { effective: number; isBalanced: boolean; isOver: boolean; mode: "sum" | "last" | "each" | "auto" } {
   const meta = catMetaCache.get(categoryName);
-  const type = (meta?.breakdownType ?? "Cumulative") as BreakdownType;
+  // Default to Automatic + Cumulative when meta is missing — same fallback as
+  // breakdownProjected. Auto rows are always balanced from the validator's
+  // perspective (the calculator keeps the row in sync).
+  const breakdownType = meta?.breakdownType ?? "Automatic";
+  const categoryType = meta?.categoryType ?? "Cumulative";
 
-  if (type === "CumulativeTillExit") {
+  if (breakdownType === "Automatic") {
+    const sum = values.reduce((a, b) => a + b, 0);
+    return { effective: sum, isBalanced: true, isOver: false, mode: "auto" };
+  }
+
+  // Manual rows — branch by categoryType.
+  if (categoryType === "Standalone") {
+    const firstNonZero = values.find(v => v > 0) ?? 0;
+    return { effective: firstNonZero, isBalanced: true, isOver: false, mode: "each" };
+  }
+
+  if (categoryType === "CumulativeTillEnd") {
     const last = values[values.length - 1] ?? 0;
     return {
       effective: last,
@@ -270,13 +295,8 @@ function computeRowBalance(
       mode: "last",
     };
   }
-  if (type === "Standalone") {
-    const allMatch = values.length > 0 && values.every(v => Math.abs(v - projected) < 0.01);
-    const anyOver = values.some(v => v > projected + 0.01);
-    const firstNonZero = values.find(v => v > 0) ?? 0;
-    return { effective: firstNonZero, isBalanced: allMatch, isOver: anyOver, mode: "each" };
-  }
-  // Cumulative + Manual → sum check (the original enforcement)
+
+  // Manual + Cumulative → sum check.
   const sum = values.reduce((a, b) => a + b, 0);
   return {
     effective: sum,
@@ -333,8 +353,11 @@ function ValidationBar({ effective, projected, categoryName, mode }: {
   effective: number;
   projected: number;
   categoryName: string;
-  mode: "sum" | "last" | "each";
+  mode: "sum" | "last" | "each" | "auto";
 }) {
+  // Auto + each modes are always balanced by construction — no need to render
+  // the progress bar (the row passes validation regardless of cell values).
+  if (mode === "auto" || mode === "each") return null;
   if (projected <= 0 || effective === 0) return null;
 
   const pct = Math.min((effective / projected) * 100, 100);
@@ -363,8 +386,8 @@ function ValidationBar({ effective, projected, categoryName, mode }: {
   }
 
   // Under — show progress. Label tells the user what's being measured.
-  const progressLabel =
-    mode === "last" ? "End year" : mode === "each" ? "Each cell" : "Filled";
+  // mode is narrowed to "sum" | "last" here (auto/each early-returned above).
+  const progressLabel = mode === "last" ? "End year" : "Filled";
   return (
     <div className="pl-1 pt-0.5 pb-0.5 space-y-0.5">
       <div className="flex items-center justify-between">
@@ -379,6 +402,52 @@ function ValidationBar({ effective, projected, categoryName, mode }: {
           style={{ width: `${pct}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Cell renderer for Manual + Standalone rows.
+ *
+ * Standalone semantics say every period cell holds the Projected value
+ * (rendered as-is, preserving currency scale suffix). Manual fill mode
+ * shouldn't let the user free-type into the cell — instead they pick from
+ * a 3-option dropdown:
+ *   - "Select…" (empty)
+ *   - the Projected value (verbatim, including scale like "1 L")
+ *   - "0"
+ *
+ * Picks resolve to either the projected string or "0" — no parsing or
+ * rebalance — and the parent stores them as-is.
+ */
+function StandaloneManualSelect({
+  value,
+  projected,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  projected: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const projTrim = (projected ?? "").trim();
+  const valTrim = (value ?? "").trim();
+  // The select holds the displayed pick label so React renders the right option.
+  const selectValue =
+    valTrim === "" ? "" : valTrim === "0" ? "0" : projTrim;
+  return (
+    <div className={`flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-accent-400 overflow-hidden ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : ""}`}>
+      <select
+        value={selectValue}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-1 min-w-0 w-0 bg-transparent focus:outline-none text-sm text-gray-700 px-2 py-1.5 cursor-pointer"
+      >
+        <option value="">Select…</option>
+        {projTrim && <option value={projTrim}>{projTrim}</option>}
+        <option value="0">0</option>
+      </select>
     </div>
   );
 }
@@ -532,6 +601,23 @@ export function TargetsModal({
                     const disabled = !v.hasCategory || !v.hasProjected;
                     const currency = v.meta?.currency ?? "USD";
                     const availScales = isCurrency ? getScaleAbbrs(currency) : [];
+                    const isManualStandalone =
+                      v.meta?.breakdownType === "Manual" && v.meta?.categoryType === "Standalone";
+                    if (isManualStandalone) {
+                      return (
+                        <StandaloneManualSelect
+                          key={k}
+                          value={String(row[k] ?? "")}
+                          projected={row.projected}
+                          disabled={disabled}
+                          onChange={(val) => {
+                            const next = [...rows];
+                            next[i] = { ...next[i], [k]: val };
+                            onChange(next);
+                          }}
+                        />
+                      );
+                    }
                     const { num: fieldNum, scale: fieldScale } = isCurrency
                       ? parseProjectedValue(String(row[k] ?? ""), currency)
                       : { num: String(row[k] ?? ""), scale: "" };
@@ -547,9 +633,8 @@ export function TargetsModal({
                           onChange={(e) => {
                             const next = [...rows];
                             const val = isCurrency ? combineProjectedValue(e.target.value, fieldScale) : e.target.value;
-                            // For Cumulative rows, rebalance the OTHER year cells
-                            // so the row sum stays equal to Projected. Standalone /
-                            // CumulativeTillExit / Manual leave the other cells alone.
+                            // Only Automatic+Cumulative rows rebalance; others
+                            // write only the edited cell.
                             const editedIdx = keys.indexOf(k);
                             const currentValues = keys.map((kk) => String(row[kk] ?? ""));
                             const rebalanced = redistributeOnCellEdit({
@@ -688,6 +773,8 @@ export function GoalsModal({
   onChange,
   targetRows,
   readOnly = false,
+  nudges,
+  onClearNudge,
 }: {
   open: boolean;
   onClose: () => void;
@@ -695,6 +782,15 @@ export function GoalsModal({
   onChange: (r: GoalRow[]) => void;
   targetRows: TargetRow[];
   readOnly?: boolean;
+  /** Per-row carry-forward nudges seeded from the previous quarter. */
+  nudges?: Array<{
+    rowIndex: number;
+    period: "q1" | "q2" | "q3" | "q4";
+    oldValue: string;
+    gap: number;
+  }>;
+  /** Called after the user types over a nudged cell — drops just that chip. */
+  onClearNudge?: (rowIndex: number, period: "q1" | "q2" | "q3" | "q4") => void;
 }) {
   if (!open) return null;
   const qCols: (keyof GoalRow)[] = ["q1", "q2", "q3", "q4"];
@@ -810,11 +906,53 @@ export function GoalsModal({
                     const disabled = !v.hasCategory || !v.hasProjected;
                     const currency = v.meta?.currency ?? "USD";
                     const availScales = isCurrency ? getScaleAbbrs(currency) : [];
+                    const qKey = k as "q1" | "q2" | "q3" | "q4";
+                    const nudge = nudges?.find((n) => n.rowIndex === i && n.period === qKey);
+                    const isManualStandalone =
+                      v.meta?.breakdownType === "Manual" && v.meta?.categoryType === "Standalone";
+
+                    // Common wrapper — stacks input + nudge chip vertically so
+                    // the chip lives under its own cell in the grid.
+                    // Chip text shows sign-correct gap + source quarter
+                    // (e.g. "+2 from Q1" for under-achievement,
+                    // "−5 from Q1" for over-achievement on a Cumulative row).
+                    const wrap = (cell: React.ReactNode) => {
+                      const prevQLabel: Record<string, string> = { q2: "Q1", q3: "Q2", q4: "Q3" };
+                      const prevQ = nudge ? prevQLabel[nudge.period] ?? "" : "";
+                      const sign = nudge && nudge.gap > 0 ? "+" : nudge && nudge.gap < 0 ? "−" : "";
+                      return (
+                        <div key={k} className="flex flex-col gap-0.5 min-w-0">
+                          {cell}
+                          {nudge && nudge.gap !== 0 && (
+                            <span className="text-[10px] text-amber-600 font-medium px-1 leading-tight">
+                              {sign}{Math.abs(nudge.gap)} from {prevQ}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    };
+
+                    if (isManualStandalone) {
+                      return wrap(
+                        <StandaloneManualSelect
+                          value={String(row[k] ?? "")}
+                          projected={row.projected}
+                          disabled={disabled}
+                          onChange={(val) => {
+                            const next = [...rows];
+                            next[i] = { ...next[i], [k]: val };
+                            if (nudge) onClearNudge?.(i, qKey);
+                            onChange(next);
+                          }}
+                        />,
+                      );
+                    }
+
                     const { num: fieldNum, scale: fieldScale } = isCurrency
                       ? parseProjectedValue(String(row[k] ?? ""), currency)
                       : { num: String(row[k] ?? ""), scale: "" };
-                    return (
-                      <div key={k} className={`flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-accent-400 overflow-hidden ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : ""}`}>
+                    return wrap(
+                      <div className={`flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-accent-400 overflow-hidden ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : ""}`}>
                         {isCurrency && symbol && (
                           <span className="pl-2 text-gray-500 text-xs select-none flex-shrink-0">{symbol}</span>
                         )}
@@ -825,7 +963,6 @@ export function GoalsModal({
                           onChange={(e) => {
                             const next = [...rows];
                             const val = isCurrency ? combineProjectedValue(e.target.value, fieldScale) : e.target.value;
-                            // Cumulative-only rebalance — see TargetsModal comment.
                             const editedIdx = qCols.indexOf(k);
                             const currentValues = qCols.map((kk) => String(row[kk] ?? ""));
                             const rebalanced = redistributeOnCellEdit({
@@ -844,6 +981,7 @@ export function GoalsModal({
                             } else {
                               next[i] = { ...next[i], [k]: val };
                             }
+                            if (nudge) onClearNudge?.(i, qKey);
                             onChange(next);
                           }}
                           placeholder={qPlaceholder}
@@ -871,7 +1009,7 @@ export function GoalsModal({
                         {isPct && (
                           <span className="pr-2 pl-0.5 text-gray-500 text-sm flex-shrink-0 select-none">%</span>
                         )}
-                      </div>
+                      </div>,
                     );
                   })}
                 </div>
@@ -1052,6 +1190,23 @@ export function ActionsModal({
                     const disabled = !v.hasCategory || !v.hasProjected;
                     const currency = v.meta?.currency ?? "USD";
                     const availScales = isCurrency ? getScaleAbbrs(currency) : [];
+                    const isManualStandalone =
+                      v.meta?.breakdownType === "Manual" && v.meta?.categoryType === "Standalone";
+                    if (isManualStandalone) {
+                      return (
+                        <StandaloneManualSelect
+                          key={k}
+                          value={String(row[k] ?? "")}
+                          projected={row.projected}
+                          disabled={disabled}
+                          onChange={(val) => {
+                            const next = [...rows];
+                            next[i] = { ...next[i], [k]: val };
+                            onChange(next);
+                          }}
+                        />
+                      );
+                    }
                     const { num: fieldNum, scale: fieldScale } = isCurrency
                       ? parseProjectedValue(String(row[k] ?? ""), currency)
                       : { num: String(row[k] ?? ""), scale: "" };
@@ -1067,7 +1222,6 @@ export function ActionsModal({
                           onChange={(e) => {
                             const next = [...rows];
                             const val = isCurrency ? combineProjectedValue(e.target.value, fieldScale) : e.target.value;
-                            // Cumulative-only rebalance — see TargetsModal comment.
                             const editedIdx = mCols.indexOf(k);
                             const currentValues = mCols.map((kk) => String(row[kk] ?? ""));
                             const rebalanced = redistributeOnCellEdit({

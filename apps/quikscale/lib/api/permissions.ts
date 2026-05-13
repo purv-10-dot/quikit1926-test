@@ -1,20 +1,24 @@
 /**
- * Server-side permission gate for the dynamic-roles system.
+ * Server-side permission gate for the dynamic-roles v2 system.
+ *
+ * Storage model:
+ *   - Roles                          → `app_quikscale.AppRole`
+ *   - User → role mapping             → `app_quikscale.UserAppRole`
+ *   - Role grants (resource, action)  → `app_quikscale.RolePermission`
+ *   - Sidebar visibility (navKey)     → `app_quikscale.RoleNavigation`
+ *   - Per-user additive grants        → `app_quikscale.UserPermissionExtra`
+ *
+ * Permission decision (post-v2):
+ *   effective = role grants UNION per-user extras
+ *
+ * The `isSystem=true` flag on the admin role no longer bypasses
+ * permission checks — admin is editable like any other role. The flag
+ * only protects against rename/delete (see `app/api/org/roles/[id]/route.ts`).
  *
  * Usage at the top of any handler:
  *
  *   const allowed = await userCan(userId, orgId, "KPI", "create");
  *   if (!allowed) return forbidden();
- *
- * The check resolves the user's AppRole via the `app_quikscale.UserAppRole`
- * join table (filtered to the QuikScale `appId`). System roles
- * (`isSystem=true && name="admin"`) bypass the permission table entirely.
- *
- * Storage model (post 2026-05-06 rename):
- *   - Roles → `app_quikscale.AppRole`           (was CustomRole)
- *   - User → role mapping → `app_quikscale.UserAppRole`
- *     (replaces the `appRoleId` column that used to live on
- *      `quikit.UserAppAccess`).
  */
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
@@ -24,7 +28,7 @@ import {
   isNavKey,
   type Resource,
   type Action,
-} from "@quikit/shared";
+} from "@/lib/api/permissionsRegistry";
 
 export const QUIKSCALE_APP_SLUG = "quikscale";
 
@@ -39,36 +43,24 @@ async function getQuikScaleAppId(): Promise<string | null> {
   return cachedAppId;
 }
 
-interface AccessRow {
-  roleId: string;
-  role: { id: string; isSystem: boolean; name: string };
-}
-
-/** Resolve the user's currently-assigned AppRole in the org. */
-async function loadAccess(userId: string, orgId: string): Promise<AccessRow | null> {
-  const appId = await getQuikScaleAppId();
-  if (!appId) return null;
-  const ua = await db.userAppRole.findFirst({
-    where: { userId, orgId, role: { appId } },
-    select: {
-      role: { select: { id: true, name: true, isSystem: true } },
-    },
-  });
-  if (!ua) return null;
-  return { roleId: ua.role.id, role: ua.role };
-}
-
+/** True for the protected admin role row (rename/delete guard). NOT a bypass. */
 export function isAdminRole(role: { isSystem: boolean; name: string } | null | undefined): boolean {
   return !!role && role.isSystem && role.name === "admin";
 }
 
+/* ───────────────────────── Class-level checks ───────────────────────── */
+
 /**
- * Class-level check: does this user have `action` rights on `resource` in
- * this tenant's QuikScale instance?
+ * Does this user have `action` rights on `resource` in this tenant's
+ * QuikScale instance?
  *
+ * Resolves via:
+ *   1. Any RolePermission row whose role belongs to the user (UserAppRole join).
+ *   2. OR any UserPermissionExtra row scoped to (userId, orgId).
+ *
+ * No admin bypass — admin gets access via its (seeded) RolePermission grants.
  * Instance-level rules (e.g. "user can edit only their own KPIs") still
- * live in the per-feature permission helpers (`canEditKPI`, etc.) — this
- * function is the gate one level above them.
+ * live in the per-feature permission helpers above this layer.
  */
 export async function userCan(
   userId: string,
@@ -78,87 +70,140 @@ export async function userCan(
 ): Promise<boolean> {
   if (!isResource(resource) || !isAction(action)) return false;
 
-  const access = await loadAccess(userId, orgId);
-  if (!access) return false;
-  if (isAdminRole(access.role)) return true;
+  const appId = await getQuikScaleAppId();
+  if (!appId) return false;
 
-  const grant = await db.rolePermission.findUnique({
-    where: { roleId_resource_action: { roleId: access.roleId, resource, action } },
+  // 1. Role grants via UserAppRole join. One query — Prisma compiles to a
+  //    single SELECT with EXISTS subqueries.
+  const roleHit = await db.rolePermission.findFirst({
+    where: {
+      resource,
+      action,
+      role: {
+        appId,
+        members: { some: { userId, orgId } },
+      },
+    },
     select: { id: true },
   });
-  return !!grant;
+  if (roleHit) return true;
+
+  // 2. Per-user additive grant.
+  const extraHit = await db.userPermissionExtra.findFirst({
+    where: { userId, orgId, resource, action },
+    select: { id: true },
+  });
+  return !!extraHit;
 }
 
-/** Same idea, for navigation visibility. */
+/**
+ * Sidebar-visibility check — same shape as `userCan`. Role grants only;
+ * navigation is intentionally not per-user-extendable.
+ */
 export async function userHasNav(
   userId: string,
   orgId: string,
   navKey: string,
 ): Promise<boolean> {
   if (!isNavKey(navKey)) return false;
-  const access = await loadAccess(userId, orgId);
-  if (!access) return false;
-  if (isAdminRole(access.role)) return true;
 
-  const row = await db.roleNavigation.findUnique({
-    where: { roleId_navKey: { roleId: access.roleId, navKey } },
+  const appId = await getQuikScaleAppId();
+  if (!appId) return false;
+
+  const hit = await db.roleNavigation.findFirst({
+    where: {
+      navKey,
+      role: {
+        appId,
+        members: { some: { userId, orgId } },
+      },
+    },
     select: { id: true },
   });
-  return !!row;
+  return !!hit;
 }
 
-/**
- * Effective permission set for the current user. Used by the client-side
- * gate (`/api/me/permissions` returns this object so the sidebar + buttons
- * can render decisively without a per-action round-trip).
- */
+/* ───────────────────────── Client-side effective set ───────────────────────── */
+
 export interface MyPermissions {
+  /** True iff the user holds ANY role with `isSystem && name === "admin"`. */
   isAdmin: boolean;
+  /** Convenience: primary role id (first one assigned to the user). */
   roleId: string | null;
+  /** Convenience: primary role name. */
   roleName: string | null;
-  /** Set of `${resource}:${action}` strings for fast O(1) lookup on the client. */
+  /** `${resource}:${action}` strings — UNION of role grants + user extras. */
   permissions: string[];
-  /** navKeys this user can see in the sidebar. */
+  /** Subset of `permissions` granted via `UserPermissionExtra` (not the role). */
+  extras: string[];
+  /** navKeys this user can see in the sidebar (role grants only). */
   navigation: string[];
 }
 
+/**
+ * Compute the effective permission set for `userId` in `orgId`.
+ * Used by `/api/me/permissions` to power the client-side gate.
+ */
 export async function loadMyPermissions(userId: string, orgId: string): Promise<MyPermissions> {
   const empty: MyPermissions = {
     isAdmin: false,
     roleId: null,
     roleName: null,
     permissions: [],
+    extras: [],
     navigation: [],
   };
 
   const appId = await getQuikScaleAppId();
   if (!appId) return empty;
 
-  const ua = await db.userAppRole.findFirst({
-    where: { userId, orgId, role: { appId } },
-    select: {
-      role: {
-        select: {
-          id: true,
-          name: true,
-          isSystem: true,
-          permissions: { select: { resource: true, action: true } },
-          navigations: { select: { navKey: true } },
+  const [userRoles, extras] = await Promise.all([
+    db.userAppRole.findMany({
+      where: { userId, orgId, role: { appId } },
+      select: {
+        role: {
+          select: {
+            id: true,
+            name: true,
+            isSystem: true,
+            permissions: { select: { resource: true, action: true } },
+            navigations: { select: { navKey: true } },
+          },
         },
       },
-    },
-  });
+      orderBy: { assignedAt: "asc" },
+    }),
+    db.userPermissionExtra.findMany({
+      where: { userId, orgId },
+      select: { resource: true, action: true },
+    }),
+  ]);
 
-  if (!ua) return empty;
-  const role = ua.role;
-  const isAdmin = isAdminRole(role);
+  if (userRoles.length === 0 && extras.length === 0) return empty;
+
+  const primary = userRoles[0]?.role ?? null;
+  const isAdmin = !!userRoles.find((ur) => isAdminRole(ur.role));
+
+  const permSet = new Set<string>();
+  const navSet = new Set<string>();
+  for (const ur of userRoles) {
+    for (const p of ur.role.permissions) permSet.add(`${p.resource}:${p.action}`);
+    for (const n of ur.role.navigations) navSet.add(n.navKey);
+  }
+  const extrasArr: string[] = [];
+  for (const e of extras) {
+    const key = `${e.resource}:${e.action}`;
+    extrasArr.push(key);
+    permSet.add(key);
+  }
 
   return {
     isAdmin,
-    roleId: role.id,
-    roleName: role.name,
-    permissions: role.permissions.map((p: { resource: string; action: string }) => `${p.resource}:${p.action}`),
-    navigation: role.navigations.map((n: { navKey: string }) => n.navKey),
+    roleId: primary?.id ?? null,
+    roleName: primary?.name ?? null,
+    permissions: Array.from(permSet),
+    extras: extrasArr,
+    navigation: Array.from(navSet),
   };
 }
 

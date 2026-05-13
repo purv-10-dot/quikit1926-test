@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Menu, Settings, Shield } from "lucide-react";
+import { Menu, Settings } from "lucide-react";
 import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
 
 interface HeaderProps {
@@ -39,10 +39,6 @@ export function Header({ onMenuClick }: HeaderProps) {
     router.push("/settings");
   }
 
-  function handleUserPermission() {
-    router.push("/org-setup/roles");
-  }
-
   return (
     <header className="relative z-[100] bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
       {/* Left — mobile menu + welcome */}
@@ -69,7 +65,6 @@ export function Header({ onMenuClick }: HeaderProps) {
           onExitImpersonation={handleExitImpersonation}
           items={[
             { label: "Settings", icon: Settings, onClick: handleSettings },
-            { label: "User Permission", icon: Shield, onClick: handleUserPermission },
           ]}
           avatarClassName="bg-accent-600"
         />

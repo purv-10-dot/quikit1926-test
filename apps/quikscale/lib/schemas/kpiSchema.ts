@@ -121,6 +121,13 @@ export const weeklyValueSchema = z.object({
   userId: z.string().cuid().optional().nullable(),
 });
 
+// Batch update — one network call, many (kpiId, userId, weekNumber) upserts.
+// Server runs per-input validation, permission check, past-week gate, and
+// returns per-input results so the client can surface partial failures.
+export const weeklyValueBatchSchema = z.object({
+  inputs: z.array(weeklyValueSchema).min(1).max(13 * 50), // up to 50 owners × 13 weeks
+});
+
 // KPI Note Schema
 export const kpiNoteSchema = z.object({
   content: z.string().min(1, "Note content is required").max(5000),

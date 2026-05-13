@@ -15,7 +15,7 @@ export const PUT = withOrgAuth<RouteParams>(async ({ orgId }, request, { params 
 
   const parsed = updateCategorySchema.safeParse(await request.json());
   if (!parsed.success) return validationError(parsed);
-  const { name, dataType, currency, description, breakdownType } = parsed.data;
+  const { name, dataType, currency, description, categoryType, breakdownType } = parsed.data;
 
   const trimmedName = name?.trim();
 
@@ -28,6 +28,7 @@ export const PUT = withOrgAuth<RouteParams>(async ({ orgId }, request, { params 
         dataType,
         currency: dataType === "Currency" ? (currency || null) : null,
         description: description?.trim() || null,
+        categoryType,
         breakdownType,
       },
     });

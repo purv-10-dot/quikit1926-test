@@ -368,23 +368,29 @@ function CatProjTable({
   rows,
   showHeader = true,
   maxRows = 6,
+  compact = false,
 }: {
   rows: { category: string; projected: string }[];
   showHeader?: boolean;
   maxRows?: number;
+  /** Reduces row padding + minHeight so up to 10 rows fit in the standard cell. */
+  compact?: boolean;
 }) {
   // Per user request: render only rows with data — drop empty placeholder rows.
   // If form has 3 filled rows out of 5, table shows 3. Avoids "—" filler clutter.
   const visible = rows.filter((r) => r.category && r.category.trim()).slice(0, maxRows);
   if (visible.length === 0) return null;
+  const cellOverride = compact
+    ? { paddingVertical: 2, paddingHorizontal: 5, minHeight: 14 }
+    : null;
   return (
     <View style={s.catProjOuter}>
       {showHeader && (
         <View style={{ ...s.catProjRow, ...s.catProjHeader }}>
-          <View style={s.catProjCellCat}>
+          <View style={{ ...s.catProjCellCat, ...(cellOverride ?? {}) }}>
             <Text style={s.catProjHeaderText}>Category</Text>
           </View>
-          <View style={s.catProjCellProj}>
+          <View style={{ ...s.catProjCellProj, ...(cellOverride ?? {}) }}>
             <Text style={s.catProjHeaderText}>Projected</Text>
           </View>
         </View>
@@ -394,12 +400,12 @@ function CatProjTable({
           key={i}
           style={{ ...s.catProjRow, ...(i === visible.length - 1 ? s.catProjRowLast : {}) }}
         >
-          <View style={s.catProjCellCat}>
+          <View style={{ ...s.catProjCellCat, ...(cellOverride ?? {}) }}>
             <Text style={{ ...s.cellBodyText, ...(!r.category ? s.cellEmpty : {}) }}>
               {r.category || "—"}
             </Text>
           </View>
-          <View style={s.catProjCellProj}>
+          <View style={{ ...s.catProjCellProj, ...(cellOverride ?? {}) }}>
             <Text style={{ ...s.cellBodyText, ...(!r.projected ? s.cellEmpty : {}) }}>
               {r.projected || "—"}
             </Text>
@@ -604,6 +610,15 @@ export function OPSPDocument({
   const kpis5 = (form.kpiAccountability ?? []).filter((r) => r.kpi && r.kpi.trim());
   const priorities5 = (form.quarterlyPriorities ?? []).filter((r) => r.priority && r.priority.trim());
 
+  /* ── Goals compaction: when the user has more than the default 6 goal rows,
+   * we render the Goals table in compact mode (tighter padding + minHeight) so
+   * all 7-10 rows still fit inside the standard 85mm Goals cell. This keeps
+   * Page 1 layout intact — no continuation page, no empty whitespace pages. */
+  const filledGoalsCount = (form.goalRows ?? []).filter(
+    (r) => r.category && r.category.trim(),
+  ).length;
+  const goalsOverflow = filledGoalsCount > 6;
+
   return (
     <Document>
       {/* ════════════════ PAGE 1 — PEOPLE ════════════════ */}
@@ -707,7 +722,9 @@ export function OPSPDocument({
                   <SectionHeader title="Goals (1 Yr.)" sub="(What)" />
                 </View>
               </View>
-              {/* §1.4 body row — column weights MUST match the header above (40/55/55) */}
+              {/* §1.4 body row — column weights MUST match the header above (40/55/55).
+                  Height stays fixed at 85mm; Goals table switches to compact mode
+                  when row count > 6 so all rows still fit. */}
               <View style={{ flexDirection: "row", height: "85mm" }}>
                 <View
                   style={{
@@ -749,7 +766,11 @@ export function OPSPDocument({
                     overflow: "hidden",
                   }}
                 >
-                  <CatProjTable rows={form.goalRows ?? []} />
+                  <CatProjTable
+                    rows={form.goalRows ?? []}
+                    maxRows={10}
+                    compact={goalsOverflow}
+                  />
                 </View>
               </View>
 

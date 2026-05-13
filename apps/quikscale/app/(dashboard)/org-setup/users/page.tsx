@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import {
   Plus,
   X,
@@ -21,6 +21,8 @@ import {
   RightPanelSubmitButton,
   Pagination,
 } from "@quikit/ui";
+import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
+import { RolesTab } from "./components/RolesTab";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -30,7 +32,11 @@ interface OrgUser {
   lastName: string;
   email: string;
   avatar: string | null;
+  /** Legacy OrgMember.role — still rendered in the table for back-compat. */
   role: string;
+  /** Dynamic AppRole the user holds in QuikScale (post-v2 system). */
+  appRoleId: string | null;
+  appRoleName: string | null;
   teamId: string | null;
   teamIds: string[];
   teamNames: string[];
@@ -44,12 +50,23 @@ interface OrgTeam {
   name: string;
 }
 
+interface AppRoleOption {
+  id: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  isDefault: boolean;
+}
+
 type FormState = {
   firstName: string;
   lastName: string;
   email: string;
   password: string;
+  /** Legacy role — sent to POST/PUT for back-compat (always "member" for new users). */
   role: string;
+  /** Selected AppRole.id — assigned post-create via PATCH /role. null = use server default. */
+  appRoleId: string | null;
   teamIds: string[];
   status: string;
 };
@@ -60,6 +77,7 @@ const EMPTY_FORM: FormState = {
   email: "",
   password: "",
   role: "member",
+  appRoleId: null,
   teamIds: [],
   status: "active",
 };
@@ -269,12 +287,14 @@ function UserPanel({
   onSaved,
   editUser,
   teams,
+  appRoles,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: (u: OrgUser) => void;
   editUser: OrgUser | null;
   teams: OrgTeam[];
+  appRoles: AppRoleOption[];
 }) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -292,6 +312,7 @@ function UserPanel({
               email: editUser.email,
               password: "",
               role: editUser.role,
+              appRoleId: editUser.appRoleId,
               teamIds:
                 editUser.teamIds ?? (editUser.teamId ? [editUser.teamId] : []),
               status: editUser.status,
@@ -336,11 +357,13 @@ function UserPanel({
     setSaving(true);
     setError("");
     try {
+      // Legacy `role` field still required for back-compat with OrgMember.role.
+      // The authoritative role assignment is the AppRole (PATCH below).
       const payload: Record<string, unknown> = {
         firstName: form.firstName,
         lastName: form.lastName,
         email: form.email,
-        role: form.role,
+        role: "member",
         teamIds: form.teamIds,
       };
       if (!editUser) payload.password = form.password;
@@ -362,7 +385,33 @@ function UserPanel({
         return;
       }
 
-      onSaved(json.data);
+      const savedUser = json.data as OrgUser;
+
+      // Apply the chosen AppRole via PATCH /role. The POST endpoint already
+      // auto-assigns the default User role (or admin if org has zero admins),
+      // so we only PATCH when the form's choice differs from what came back.
+      if (form.appRoleId && form.appRoleId !== savedUser.appRoleId) {
+        try {
+          const patchRes = await fetch(
+            `/api/org/users/${savedUser.userId}/role`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ roleId: form.appRoleId }),
+            },
+          );
+          const patchJson = await patchRes.json();
+          if (patchJson.success && patchJson.data?.appRole) {
+            savedUser.appRoleId = patchJson.data.appRole.id;
+            savedUser.appRoleName = patchJson.data.appRole.name;
+          }
+        } catch {
+          // Non-fatal — user was created/updated successfully, role assignment failed.
+          // The admin can fix it via the role dropdown later.
+        }
+      }
+
+      onSaved(savedUser);
       onClose();
     } finally {
       setSaving(false);
@@ -371,7 +420,7 @@ function UserPanel({
 
   if (!open) return null;
 
-  const selectedRole = ROLES.find((r) => r.value === form.role) ?? ROLES[2];
+  const selectedAppRole = appRoles.find((r) => r.id === form.appRoleId) ?? null;
 
   return (
     <RightPanel
@@ -461,7 +510,7 @@ function UserPanel({
         />
       </div>
 
-      {/* Role */}
+      {/* Role — dynamic AppRole list from /api/org/roles */}
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">
           Role <span className="text-red-400">*</span>
@@ -472,43 +521,87 @@ function UserPanel({
             onClick={() => setRoleOpen((o) => !o)}
             className="w-full flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-accent-400"
           >
-            <span
-              className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${selectedRole.color}`}
-            >
-              {selectedRole.label}
-            </span>
+            {selectedAppRole ? (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${
+                    selectedAppRole.isSystem
+                      ? "bg-amber-100 text-amber-700"
+                      : selectedAppRole.isDefault
+                        ? "bg-accent-100 text-accent-700"
+                        : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {selectedAppRole.name}
+                </span>
+                {selectedAppRole.isDefault && (
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-accent-600">
+                    Default
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-400">
+                {appRoles.length === 0 ? "Loading roles…" : "Use org default"}
+              </span>
+            )}
             <ChevronDown className="h-4 w-4 text-gray-400" />
           </button>
           {roleOpen && (
-            <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg w-full">
-              {ROLES.map((r) => (
+            <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg w-full max-h-64 overflow-y-auto">
+              {/* "Use org default" — clears the explicit selection so the
+                  server's auto-assignment runs (User by default; admin if zero
+                  admins exist). */}
+              <button
+                type="button"
+                onClick={() => {
+                  set("appRoleId", null);
+                  setRoleOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 ${form.appRoleId === null ? "bg-accent-50" : ""}`}
+              >
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-gray-100 text-gray-600">
+                  Use org default
+                </span>
+                <span className="text-xs text-gray-400">
+                  Picks the role marked Default
+                </span>
+              </button>
+              {appRoles.length === 0 && (
+                <p className="px-4 py-3 text-xs text-gray-400">
+                  No roles available yet.
+                </p>
+              )}
+              {appRoles.map((r) => (
                 <button
-                  key={r.value}
+                  key={r.id}
                   type="button"
                   onClick={() => {
-                    set("role", r.value);
+                    set("appRoleId", r.id);
                     setRoleOpen(false);
                   }}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 ${form.role === r.value ? "bg-accent-50" : ""}`}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 ${form.appRoleId === r.id ? "bg-accent-50" : ""}`}
                 >
                   <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${r.color}`}
+                    className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold flex-shrink-0 ${
+                      r.isSystem
+                        ? "bg-amber-100 text-amber-700"
+                        : r.isDefault
+                          ? "bg-accent-100 text-accent-700"
+                          : "bg-gray-100 text-gray-700"
+                    }`}
                   >
-                    {r.label}
+                    {r.name}
                   </span>
-                  {r.value === "admin" && (
-                    <span className="text-xs text-gray-400">Full access</span>
-                  )}
-                  {r.value === "manager" && (
-                    <span className="text-xs text-gray-400">
-                      Manage team data
+                  {r.description ? (
+                    <span className="text-xs text-gray-400 truncate">
+                      {r.description}
                     </span>
-                  )}
-                  {r.value === "member" && (
-                    <span className="text-xs text-gray-400">
-                      View &amp; edit own data
-                    </span>
-                  )}
+                  ) : r.isSystem ? (
+                    <span className="text-xs text-gray-400">System role</span>
+                  ) : r.isDefault ? (
+                    <span className="text-xs text-gray-400">Default for new users</span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -610,6 +703,9 @@ function ConfirmDialog({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgUsersPage() {
+  const [tab, setTab] = useState<"users" | "roles">("users");
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+
   const crud = useTableCRUD<OrgUser>({
     apiEndpoint: "/api/org/users",
     idKey: "userId",
@@ -617,6 +713,7 @@ export default function OrgUsersPage() {
   });
 
   const [teams, setTeams] = useState<OrgTeam[]>([]);
+  const [appRoles, setAppRoles] = useState<AppRoleOption[]>([]);
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -625,6 +722,16 @@ export default function OrgUsersPage() {
     "remove"
   );
   const filterRef = useRef<HTMLDivElement>(null);
+
+  // Fetch the AppRoles list — drives the Role dropdown in the Add/Edit panel.
+  useEffect(() => {
+    fetch("/api/org/roles")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setAppRoles(json.data as AppRoleOption[]);
+      })
+      .catch(() => {});
+  }, []);
 
   // Fetch teams alongside users
   useEffect(() => {
@@ -705,6 +812,32 @@ export default function OrgUsersPage() {
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
+      {/* ── Tabs ── */}
+      <div className="flex items-center gap-1 px-6 pt-3 border-b border-gray-200 bg-white flex-shrink-0">
+        {(
+          [
+            { key: "users", label: "Users" },
+            { key: "roles", label: "User Management" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors ${
+              tab === t.key
+                ? "border-accent-600 text-accent-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "roles" && <RolesTab />}
+
+      {tab === "users" && (
+      <>
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -866,10 +999,12 @@ export default function OrgUsersPage() {
                   : u.teamId
                     ? ["—"]
                     : [];
+                const isExpanded = expandedUserId === u.userId;
                 return (
+                  <Fragment key={u.userId}>
                   <tr
-                    key={u.userId}
-                    className="hover:bg-gray-50/60 transition-colors group"
+                    onClick={() => setExpandedUserId(isExpanded ? null : u.userId)}
+                    className="hover:bg-gray-50/60 transition-colors group cursor-pointer"
                   >
                     {/* User */}
                     <td className="px-4 py-3">
@@ -882,6 +1017,9 @@ export default function OrgUsersPage() {
                         <span className="text-sm font-medium text-gray-800 whitespace-nowrap">
                           {full}
                         </span>
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                        />
                       </div>
                     </td>
                     {/* Email */}
@@ -918,7 +1056,7 @@ export default function OrgUsersPage() {
                       {formatSignIn(u.lastSignInAt)}
                     </td>
                     {/* Actions */}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => crud.openEdit(u)}
@@ -953,6 +1091,17 @@ export default function OrgUsersPage() {
                       </div>
                     </td>
                   </tr>
+                  {isExpanded && (
+                    <tr key={u.userId + "-expand"}>
+                      <td colSpan={7} className="p-0">
+                        <UserPermissionsPanel
+                          userId={u.userId}
+                          onClose={() => setExpandedUserId(null)}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })
             )}
@@ -970,6 +1119,8 @@ export default function OrgUsersPage() {
           />
         )}
       </div>
+      </>
+      )}
 
       {/* ── Panel ── */}
       <UserPanel
@@ -978,6 +1129,7 @@ export default function OrgUsersPage() {
         onSaved={handleSaved}
         editUser={crud.editItem}
         teams={teams}
+        appRoles={appRoles}
       />
 
       {/* ── Confirm Dialog ── */}

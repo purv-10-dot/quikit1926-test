@@ -152,7 +152,37 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   const isFirstLoad = useRef(true);
   const skipNextSave = useRef(false);
 
-  /* ── Load on mount: check OPSP config first, then load data ── */
+  /* ── Reload when year/quarter changes ── */
+  const loadForPeriod = useCallback(async (year: number, quarter: string) => {
+    setLoading(true);
+    // Synchronously reset to a clean baseline for the new period so a racing
+    // autosave can't persist stale state under the new (year, quarter) primary key.
+    skipNextSave.current = true;
+    setForm({ ...defaultForm(), year, quarter });
+
+    try {
+      const res = await fetch(`/api/opsp?year=${year}&quarter=${quarter}`);
+      if (res.status === 401) {
+        const draft = localStorage.getItem(`opsp_draft_${year}_${quarter}`);
+        if (draft) {
+          try {
+            skipNextSave.current = true;
+            setForm(() => ({ ...defaultForm(), ...normalizeLoadedOPSP(JSON.parse(draft)), year, quarter } as FormData));
+          } catch {}
+        }
+      } else {
+        const json = await res.json();
+        if (typeof json.fiscalYearStart === "number") setFiscalYearStart(json.fiscalYearStart);
+        if (json.data) {
+          skipNextSave.current = true;
+          setForm(() => ({ ...defaultForm(), ...normalizeLoadedOPSP(json.data), year, quarter } as FormData));
+        }
+      }
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  /* ── Load on mount: check OPSP config first, then delegate to loadForPeriod ── */
   useEffect(() => {
     (async () => {
       try {
@@ -177,57 +207,12 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
           }
         }
 
-        // 2. Load the OPSP data for the current period
-        const res = await fetch(`/api/opsp?year=${form.year}&quarter=${form.quarter}`);
-        if (res.status === 401) {
-          // No session (preview mode) — try localStorage
-          const draft = localStorage.getItem(`opsp_draft_${form.year}_${form.quarter}`);
-          if (draft) {
-            try {
-              skipNextSave.current = true;
-              setForm(prev => ({ ...defaultForm(), ...normalizeLoadedOPSP(JSON.parse(draft)) } as FormData));
-            } catch {}
-          }
-        } else {
-          const json = await res.json();
-          if (typeof json.fiscalYearStart === "number") setFiscalYearStart(json.fiscalYearStart);
-          if (json.data) {
-            skipNextSave.current = true;
-            const normalized = normalizeLoadedOPSP(json.data);
-            setForm(prev => ({ ...defaultForm(), ...normalized, year: json.data.year ?? prev.year, quarter: json.data.quarter ?? prev.quarter } as FormData));
-          }
-        }
+        // 2. Delegate to loadForPeriod so direct URL → Q2/Q3/Q4 also triggers CF.
+        await loadForPeriod(form.year, form.quarter);
       } catch {}
-      setLoading(false);
       isFirstLoad.current = false;
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /* ── Reload when year/quarter changes ── */
-  const loadForPeriod = useCallback(async (year: number, quarter: string) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/opsp?year=${year}&quarter=${quarter}`);
-      if (res.status === 401) {
-        const draft = localStorage.getItem(`opsp_draft_${year}_${quarter}`);
-        skipNextSave.current = true;
-        setForm(() => {
-          if (draft) {
-            try { return { ...defaultForm(), ...normalizeLoadedOPSP(JSON.parse(draft)), year, quarter } as FormData; } catch {}
-          }
-          return { ...defaultForm(), year, quarter };
-        });
-      } else {
-        const json = await res.json();
-        if (typeof json.fiscalYearStart === "number") setFiscalYearStart(json.fiscalYearStart);
-        skipNextSave.current = true;
-        setForm(() => json.data
-          ? ({ ...defaultForm(), ...normalizeLoadedOPSP(json.data), year, quarter } as FormData)
-          : { ...defaultForm(), year, quarter });
-      }
-    } catch {}
-    setLoading(false);
   }, []);
 
   /* ── Autosave with 1.5s debounce ── */
@@ -260,29 +245,32 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [form, save]);
 
-  /* ── Cascade: Targets → Goals → Actions (reactive, force-sync) ── */
-  // Targets y1 (current year) → Goals category + projected, plus auto-fill q1–q4
-  // using the category's breakdownType. When source clears → wipe quarters.
+  /* ── Cascade: Targets → Goals → Actions ──
+   *
+   * First-fill semantics: when a Target row has a Category + Projected and
+   * the matching Goal row is still empty, we seed it. Once the user touches
+   * the Goal row, subsequent Target edits don't overwrite their input.
+   *
+   * (Same shape applies for Goals → Actions.)
+   *
+   * Period cells (q1-q4 / m1-m3) are filled in the background via
+   * `breakdownProjected` so validation still computes against a coherent
+   * distribution, even though the matrix UI has been removed.
+   */
   useEffect(() => {
     setForm(prev => {
       const next = [...prev.goalRows];
       let changed = false;
       for (let i = 0; i < Math.min(prev.targetRows.length, next.length); i++) {
         const t = prev.targetRows[i];
-        const hasSrc = !!(t.category.trim() && t.projected.trim() && t.y1.trim());
-        const newCat = hasSrc ? t.category : "";
-        const newProj = hasSrc ? t.y1 : "";
-        if (next[i].category !== newCat || next[i].projected !== newProj) {
-          if (hasSrc) {
-            const autofill = breakdownProjected(newCat, newProj, 4);
-            const qPatch = autofill
-              ? { q1: autofill[0] ?? "", q2: autofill[1] ?? "", q3: autofill[2] ?? "", q4: autofill[3] ?? "" }
-              : {};
-            next[i] = { ...next[i], category: newCat, projected: newProj, ...qPatch };
-          } else {
-            // Source cleared → reset entire Goals row
-            next[i] = { category: "", projected: "", q1: "", q2: "", q3: "", q4: "" };
-          }
+        const hasSrc = !!(t.category.trim() && t.projected.trim());
+        // Only seed empty Goal rows — preserve any user edits.
+        if (hasSrc && !next[i].category.trim() && !next[i].projected.trim()) {
+          const autofill = breakdownProjected(t.category, t.projected, 4);
+          const qPatch = autofill
+            ? { q1: autofill[0] ?? "", q2: autofill[1] ?? "", q3: autofill[2] ?? "", q4: autofill[3] ?? "" }
+            : {};
+          next[i] = { ...next[i], category: t.category, projected: t.projected, ...qPatch };
           changed = true;
         }
       }
@@ -290,36 +278,25 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     });
   }, [form.targetRows]);
 
-  // Goals current-quarter column → Actions category + projected, plus auto-fill
-  // m1–m3 by breakdownType. When source clears → wipe months.
   useEffect(() => {
-    const qKey = form.quarter.toLowerCase() as keyof GoalRow; // "q1" | "q2" | "q3" | "q4"
     setForm(prev => {
       const next = [...prev.actionsQtr];
       let changed = false;
       for (let i = 0; i < Math.min(prev.goalRows.length, next.length); i++) {
         const g = prev.goalRows[i];
-        const qVal = String(g[qKey] ?? "").trim();
-        const hasSrc = !!(g.category.trim() && g.projected.trim() && qVal);
-        const newCat = hasSrc ? g.category : "";
-        const newProj = hasSrc ? qVal : "";
-        if (next[i].category !== newCat || next[i].projected !== newProj) {
-          if (hasSrc) {
-            const autofill = breakdownProjected(newCat, newProj, 3);
-            const mPatch = autofill
-              ? { m1: autofill[0] ?? "", m2: autofill[1] ?? "", m3: autofill[2] ?? "" }
-              : {};
-            next[i] = { ...next[i], category: newCat, projected: newProj, ...mPatch };
-          } else {
-            // Source cleared → reset entire Actions row
-            next[i] = { category: "", projected: "", m1: "", m2: "", m3: "" };
-          }
+        const hasSrc = !!(g.category.trim() && g.projected.trim());
+        if (hasSrc && !next[i].category.trim() && !next[i].projected.trim()) {
+          const autofill = breakdownProjected(g.category, g.projected, 3);
+          const mPatch = autofill
+            ? { m1: autofill[0] ?? "", m2: autofill[1] ?? "", m3: autofill[2] ?? "" }
+            : {};
+          next[i] = { ...next[i], category: g.category, projected: g.projected, ...mPatch };
           changed = true;
         }
       }
       return changed ? { ...prev, actionsQtr: next } : prev;
     });
-  }, [form.goalRows, form.quarter]);
+  }, [form.goalRows]);
 
   /* ── Setup-wizard completion: seed plan range, form, and re-fetch fresh OPSP ── */
   const completeSetup = useCallback((data: { year: number; quarter: string; targetYears: number }) => {

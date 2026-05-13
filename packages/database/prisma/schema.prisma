@@ -54,6 +54,7 @@ model App {
   moduleFlags  AppModuleFlag[]
   healthChecks AppHealthCheck[]
   tenantAccess OrgAppAccess[]
+  appRoles     AppRole[]
 
   @@index([slug])
   @@index([status])
@@ -315,6 +316,11 @@ model Org {
   // the QuikTrack pattern.
   brands Brand[]
 
+  // Dynamic roles & permissions (v2) — see app_quikscale section.
+  appRoles             AppRole[]
+  userAppRoles         UserAppRole[]
+  userPermissionExtras UserPermissionExtra[]
+
   @@index([slug])
   @@index([status])
   @@schema("quikit")
@@ -390,6 +396,10 @@ model User {
   dailyHuddleAbsences   ClientDailyHuddleAbsence[]
   weeklyMeetingAbsences ClientWeeklyMeetingAbsence[]
   weeklyDashboardNAs    ClientWeeklyMeetingDashboardNA[]
+
+  // Dynamic roles & permissions (v2)
+  appRoles         UserAppRole[]
+  permissionExtras UserPermissionExtra[]
 
   @@index([email])
   @@schema("auth")
@@ -570,6 +580,23 @@ model Team {
   @@index([deletedAt])
   @@schema("public")
 }
+
+// ============================================================================
+// ============================================================================
+//                                  QUIKSCALE
+//
+// Performance OS — KPI, Priority, WWW, OPSP, Meeting Rhythm, Categories,
+// and the Dynamic Roles & Permissions v2 system. All models below this
+// banner live in @@schema("app_quikscale").
+//
+// See apps/quikscale/CLAUDE_INDEX.md and apps/quikscale/userManagement.md
+// for the architecture overview.
+// ============================================================================
+// ============================================================================
+
+// ============================================================================
+// ACCOUNTABILITY FUNCTIONS
+// ============================================================================
 
 model AccountabilityFunction {
   id       String @id @default(cuid())
@@ -818,8 +845,9 @@ model WWWItem {
   id       String @id @default(cuid())
   orgId String
 
-  who  String
-  what String
+  who    String
+  whoIds String[] @default([])
+  what   String
   when DateTime
 
   linkedPriorityId String?
@@ -887,6 +915,14 @@ model CategoryMaster {
   currency    String? // e.g. "INR", "USD" — only when dataType = "Currency"
   description String? @db.Text
 
+  /// Distribution shape — drives the row balance/validation matrix in OPSP modals.
+  /// One of: "Cumulative" | "CumulativeTillEnd" | "Standalone".
+  categoryType  String @default("Cumulative")
+
+  /// Fill mode — "Manual" requires the user to enter every cell;
+  /// "Automatic" lets `calculateBreakdown` distribute Projected across periods.
+  breakdownType String @default("Automatic")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   createdBy String
@@ -899,6 +935,112 @@ model CategoryMaster {
   @@unique([orgId, nameKey, dataType, currency], name: "category_tenant_name_type_currency_uniq")
   @@index([orgId])
   @@index([dataType])
+  @@schema("app_quikscale")
+}
+
+// ============================================================================
+// DYNAMIC ROLES & PERMISSIONS (v2)
+// ============================================================================
+//
+// Per-tenant, per-app role definitions + grant grid + user-level extras.
+// See apps/quikscale/rolesAndPermissions.md and rolesAndPermissions-AppRole.md.
+//
+// Storage shape:
+//   AppRole              — one row per (orgId, appId, name). Admin role is
+//                          seeded with isSystem=true (protects rename/delete,
+//                          NO permission bypass — admins are editable like
+//                          other roles).
+//   UserAppRole          — join: which users hold which role(s) in this org.
+//   RolePermission       — entity × action grants. (resource, action) pairs;
+//                          resource keys are dot-namespaced (e.g.
+//                          "OPSP.History.EditFinalize").
+//   RoleNavigation       — sidebar-visibility whitelist by navKey.
+//   UserPermissionExtra  — per-user additive grants on top of role grants.
+//                          Effective permission = role grants UNION extras.
+
+model AppRole {
+  id          String   @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+
+  org         Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  app         App              @relation(fields: [appId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  navigations RoleNavigation[]
+  members     UserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@schema("app_quikscale")
+}
+
+model UserAppRole {
+  id         String   @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime @default(now())
+  assignedBy String?
+
+  role AppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Org     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@schema("app_quikscale")
+}
+
+model RolePermission {
+  id       String @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+
+  role AppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@schema("app_quikscale")
+}
+
+model RoleNavigation {
+  id     String @id @default(cuid())
+  roleId String
+  navKey String
+
+  role AppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@schema("app_quikscale")
+}
+
+/// Per-user additive permission grants — applied ON TOP of the user's role
+/// grants. Used by admins to extend an individual user's access without
+/// changing the role for everyone on it.
+model UserPermissionExtra {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  grantedBy String?
+  createdAt DateTime @default(now())
+
+  org  Org  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
   @@schema("app_quikscale")
 }
 
@@ -1320,6 +1462,7 @@ model OPSPData {
   keyInitiatives        Json? // [{desc, owner}] ×5 — 1 Year Priorities, matches keyThrusts shape
   criticalNumGoals      Json? // {title,bullets:String[4]}
   balancingCritNumGoals Json?
+
 
   // People-section bottom
   processItems Json? // String[3]
