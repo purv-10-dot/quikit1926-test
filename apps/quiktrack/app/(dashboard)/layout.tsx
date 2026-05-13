@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Header } from "@/components/shell/header";
 import { RouteProgress } from "@/components/shell/route-progress";
+import { KanTour } from "@/components/tour/kan-tour";
 import { SessionGuard } from "@/components/session-guard";
 import { IssueCreatedToast } from "@/components/issue-created-toast";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
@@ -51,6 +52,7 @@ export default function DashboardLayout({
       <Suspense fallback={null}>
         <RouteProgress />
       </Suspense>
+      <KanTour />
     </SessionGuard>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useIsFetching } from "@tanstack/react-query";
+import { LoaderMark } from "./loader-mark";
 
 /**
  * Global page-transition loader. Listens for clicks on internal links and
@@ -107,102 +108,10 @@ export function RouteProgress() {
       role="status"
       aria-live="polite"
       aria-label="Loading page"
-      className="fixed inset-0 z-[200] bg-white/70 backdrop-blur-sm flex flex-col items-center justify-center qt-route-fade-in"
+      className="fixed inset-0 z-[200] bg-white/80 flex items-center justify-center qt-route-fade-in"
     >
-      <LoaderMark />
-      <p className="mt-4 text-xs font-medium text-gray-500 tracking-wide uppercase">
-        Loading
-        <span className="qt-route-dot">.</span>
-        <span className="qt-route-dot qt-route-dot-2">.</span>
-        <span className="qt-route-dot qt-route-dot-3">.</span>
-      </p>
+      <LoaderMark size={140} />
     </div>
   );
 }
 
-function LoaderMark() {
-  return (
-    <div className="relative h-24 w-24">
-      {/* Soft pulsing halo */}
-      <span className="absolute inset-2 rounded-full bg-gradient-to-br from-blue-400/20 via-violet-400/20 to-pink-400/20 blur-2xl qt-route-pulse" />
-
-      {/* Outer ring — slow clockwise sweep */}
-      <svg
-        className="absolute inset-0 h-full w-full qt-route-spin-slow"
-        viewBox="0 0 96 96"
-        fill="none"
-        aria-hidden="true"
-      >
-        <defs>
-          <linearGradient id="qt-loader-grad-a" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#3b82f6" />
-            <stop offset="50%" stopColor="#8b5cf6" />
-            <stop offset="100%" stopColor="#ec4899" />
-          </linearGradient>
-          <linearGradient id="qt-loader-grad-b" x1="1" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#06b6d4" />
-            <stop offset="100%" stopColor="#3b82f6" />
-          </linearGradient>
-        </defs>
-        <circle cx="48" cy="48" r="40" stroke="#eef2ff" strokeWidth="4" />
-        <circle
-          cx="48"
-          cy="48"
-          r="40"
-          stroke="url(#qt-loader-grad-a)"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeDasharray="90 250"
-        />
-      </svg>
-
-      {/* Inner ring — faster counter-clockwise sweep */}
-      <svg
-        className="absolute inset-0 h-full w-full qt-route-spin-reverse"
-        viewBox="0 0 96 96"
-        fill="none"
-        aria-hidden="true"
-      >
-        <circle
-          cx="48"
-          cy="48"
-          r="28"
-          stroke="url(#qt-loader-grad-b)"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeDasharray="40 180"
-          opacity="0.9"
-        />
-      </svg>
-
-      {/* Orbiting micro-dots — three task-cards going around */}
-      <div className="absolute inset-0 qt-route-spin-slow">
-        <span className="absolute left-1/2 top-1 -translate-x-1/2 block h-2 w-2 rounded-sm bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.6)]" />
-        <span className="absolute right-1 top-1/2 -translate-y-1/2 block h-2 w-2 rounded-sm bg-violet-500 shadow-[0_0_10px_rgba(139,92,246,0.6)]" />
-        <span className="absolute left-1/2 bottom-1 -translate-x-1/2 block h-2 w-2 rounded-sm bg-pink-500 shadow-[0_0_10px_rgba(236,72,153,0.6)]" />
-      </div>
-
-      {/* Center stack — three task cards with a staggered check-in animation */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="relative h-9 w-9">
-          <span className="qt-route-card qt-route-card-1 absolute inset-0 rounded-md bg-gradient-to-br from-blue-500 to-violet-600 shadow-md" />
-          <span className="qt-route-card qt-route-card-2 absolute inset-0 rounded-md bg-gradient-to-br from-violet-500 to-pink-500 shadow-md" />
-          <span className="qt-route-card qt-route-card-3 absolute inset-0 rounded-md bg-gradient-to-br from-pink-500 to-orange-400 shadow-md" />
-          {/* Check mark on top */}
-          <svg
-            className="absolute inset-0 m-auto h-5 w-5 text-white drop-shadow"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M5 12 l5 5 l9-11" className="qt-route-check" />
-          </svg>
-        </div>
-      </div>
-    </div>
-  );
-}

@@ -155,7 +155,10 @@ export function Sidebar() {
   })();
 
   return (
-    <aside className="w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-[calc(100vh-48px)] overflow-y-auto">
+    <aside
+      data-tour="sidebar"
+      className="w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-[calc(100vh-48px)] overflow-y-auto"
+    >
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">
           <NavRow href="/" icon={User} label="For you" active={isActive("/")} />
@@ -196,6 +199,7 @@ export function Sidebar() {
           </div>
           <button
             type="button"
+            data-tour="spaces"
             onClick={() => setSpacesOpen((v) => !v)}
             className={`w-full flex items-center gap-2 px-3 h-8 text-sm rounded text-left ${isActive("/spaces") && spacesOpen
                 ? "bg-blue-50 text-blue-700 font-medium"
@@ -326,8 +330,12 @@ export function Sidebar() {
               /> */}
             </div>
           )}
-          <NavRow href="/timesheet" icon={Clock} label="Timesheet" active={isActive("/timesheet")} />
-          <NavRow href="/reports" icon={BarChart3} label="Reports" active={isActive("/reports")} />
+          <span data-tour="timesheet">
+            <NavRow href="/timesheet" icon={Clock} label="Timesheet" active={isActive("/timesheet")} />
+          </span>
+          <span data-tour="reports">
+            <NavRow href="/reports" icon={BarChart3} label="Reports" active={isActive("/reports")} />
+          </span>
           <NavRow
             icon={SettingsIcon}
             label="Operations"

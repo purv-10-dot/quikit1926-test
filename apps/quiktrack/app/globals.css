@@ -168,6 +168,207 @@
   animation: qt-route-check-draw 2.4s ease-in-out infinite;
 }
 
+/* Jira-style sonar pulse rings — three expanding circles in stagger. */
+@keyframes qt-jira-pulse {
+  0%   { transform: scale(0.55); opacity: 0.75; }
+  80%  { transform: scale(1.05); opacity: 0;    }
+  100% { transform: scale(1.05); opacity: 0;    }
+}
+.qt-jira-pulse   { animation: qt-jira-pulse 1.8s ease-out infinite; }
+.qt-jira-pulse-1 { animation-delay: 0s;   }
+.qt-jira-pulse-2 { animation-delay: 0.4s; }
+.qt-jira-pulse-3 { animation-delay: 0.8s; }
+
+/* Center chevron pair — gentle float + fan-and-reseat. */
+@keyframes qt-jira-mark-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2px); }
+}
+.qt-jira-mark-float { animation: qt-jira-mark-float 2s ease-in-out infinite; }
+
+@keyframes qt-jira-chev-a {
+  0%, 100% { transform: translateY(0)   rotate(0deg); }
+  50%      { transform: translateY(-1.5px) rotate(-2deg); }
+}
+@keyframes qt-jira-chev-b {
+  0%, 100% { transform: translateY(0)   rotate(0deg); }
+  50%      { transform: translateY(1.5px)  rotate(2deg);  }
+}
+.qt-jira-chev-a { transform-origin: 20px 20px; animation: qt-jira-chev-a 2s ease-in-out infinite; }
+.qt-jira-chev-b { transform-origin: 20px 24px; animation: qt-jira-chev-b 2s ease-in-out infinite; }
+
+/* === Cartoon mascot loader (Quikie) =============================== */
+
+/* Vertical bounce — the parent container hops up. ease-out on the way
+   up, ease-in coming down so the landing reads as a thump. */
+@keyframes qt-mascot-bounce {
+  0%   { transform: translateY(0);     animation-timing-function: ease-out; }
+  45%  { transform: translateY(-22px); animation-timing-function: ease-in;  }
+  90%  { transform: translateY(0);     animation-timing-function: ease-out; }
+  100% { transform: translateY(0); }
+}
+.qt-mascot-bounce { animation: qt-mascot-bounce 1.2s infinite; }
+
+/* Squash on landing, stretch at apex — keeps the bounce reading
+   physical and "alive" without moving the mascot's center of mass. */
+@keyframes qt-mascot-squash {
+  0%   { transform: scale(1.06, 0.92); transform-origin: 50% 100%; }
+  20%  { transform: scale(0.96, 1.06); }
+  45%  { transform: scale(0.92, 1.10); }
+  80%  { transform: scale(1.00, 1.00); }
+  100% { transform: scale(1.06, 0.92); transform-origin: 50% 100%; }
+}
+.qt-mascot-squash { animation: qt-mascot-squash 1.2s infinite; transform-origin: 50% 100%; }
+
+/* Ground shadow grows/dims as Quikie launches, shrinks/darkens on land. */
+@keyframes qt-mascot-shadow {
+  0%   { transform: translateX(-50%) scaleX(1);    opacity: 0.35; }
+  45%  { transform: translateX(-50%) scaleX(0.6);  opacity: 0.18; }
+  90%  { transform: translateX(-50%) scaleX(1);    opacity: 0.35; }
+  100% { transform: translateX(-50%) scaleX(1);    opacity: 0.35; }
+}
+.qt-mascot-shadow { animation: qt-mascot-shadow 1.2s infinite; }
+
+/* Quick double-blink once per bounce cycle. */
+@keyframes qt-mascot-blink {
+  0%, 92%, 100% { transform: scaleY(0); }
+  94%, 98%      { transform: scaleY(1); }
+}
+.qt-mascot-blink {
+  transform-origin: 50px 52px;
+  transform: scaleY(0);
+  animation: qt-mascot-blink 1.2s infinite;
+}
+
+/* Tiny checkmark draws itself on the held checklist every loop. */
+@keyframes qt-mascot-check {
+  0%, 35%   { stroke-dasharray: 16; stroke-dashoffset: 16; }
+  55%, 95%  { stroke-dasharray: 16; stroke-dashoffset: 0;  }
+  100%      { stroke-dasharray: 16; stroke-dashoffset: 16; }
+}
+.qt-mascot-check { animation: qt-mascot-check 1.2s ease-in-out infinite; }
+
+/* Sparkles around the mascot — twinkle in/out on staggered beats. */
+@keyframes qt-mascot-spark {
+  0%, 100% { transform: scale(0.4) rotate(0deg);  opacity: 0;   }
+  50%      { transform: scale(1)   rotate(90deg); opacity: 0.9; }
+}
+.qt-mascot-spark-1 { animation: qt-mascot-spark 1.4s ease-in-out infinite; animation-delay: 0s;    }
+.qt-mascot-spark-2 { animation: qt-mascot-spark 1.4s ease-in-out infinite; animation-delay: 0.3s;  }
+.qt-mascot-spark-3 { animation: qt-mascot-spark 1.4s ease-in-out infinite; animation-delay: 0.6s;  }
+
+/* === Kan mascot — idle pose, used in the in-app tour =============== */
+@keyframes qt-kan-idle {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+.qt-kan-idle { animation: qt-kan-idle 2.6s ease-in-out infinite; }
+
+@keyframes qt-kan-wave {
+  0%, 100% { transform: rotate(0deg); }
+  20%      { transform: rotate(-18deg); }
+  40%      { transform: rotate(8deg); }
+  60%      { transform: rotate(-12deg); }
+  80%      { transform: rotate(4deg); }
+}
+.qt-kan-wave { animation: qt-kan-wave 2.2s ease-in-out infinite; }
+
+@keyframes qt-kan-blink {
+  0%, 92%, 100% { transform: scaleY(0); }
+  94%, 98%      { transform: scaleY(1); }
+}
+.qt-kan-blink {
+  transform-origin: 60px 52px;
+  transform: scaleY(0);
+  animation: qt-kan-blink 3s infinite;
+}
+
+/* Tour ring — soft pulsing outline on the spotlighted target. */
+@keyframes qt-tour-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(38, 132, 255, 0.55); }
+  50%      { box-shadow: 0 0 0 8px rgba(38, 132, 255, 0); }
+}
+.qt-tour-ring { animation: qt-tour-ring 1.6s ease-out infinite; }
+
+/* Tour bubble slide-in from below. */
+@keyframes qt-tour-slide-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.qt-tour-slide-in { animation: qt-tour-slide-in 0.35s ease-out both; }
+
+/* Kan's clipboard — subtle tilt so she feels "actively presenting". */
+@keyframes qt-kan-clipboard {
+  0%, 100% { transform: rotate(0deg)    translateY(0);   }
+  50%      { transform: rotate(-2deg)   translateY(-1px); }
+}
+.qt-kan-clipboard {
+  transform-origin: 70px 114px;
+  animation: qt-kan-clipboard 2.6s ease-in-out infinite;
+}
+
+/* Kan's clipboard checkmark draws itself every cycle. */
+@keyframes qt-kan-check {
+  0%, 25%   { stroke-dasharray: 14; stroke-dashoffset: 14; }
+  55%, 90%  { stroke-dasharray: 14; stroke-dashoffset: 0;  }
+  100%      { stroke-dasharray: 14; stroke-dashoffset: 14; }
+}
+.qt-kan-check { animation: qt-kan-check 2.6s ease-in-out infinite; }
+
+/* === Abstract loader — stacked task cards with sequential check === */
+@keyframes qt-load-card-1 {
+  0%,  100% { transform: translate(-28px, 16px) rotate(-12deg) scale(0.92); opacity: 0.85; }
+  40%       { transform: translate(-34px, 8px)  rotate(-14deg) scale(0.92); opacity: 0.85; }
+  70%       { transform: translate(-28px, 16px) rotate(-12deg) scale(0.92); opacity: 0.85; }
+}
+@keyframes qt-load-card-2 {
+  0%,  100% { transform: translate(0, 8px) rotate(0deg) scale(0.96); opacity: 0.95; }
+  50%       { transform: translate(0, -2px) rotate(-1deg) scale(0.96); opacity: 0.95; }
+  80%       { transform: translate(0, 8px) rotate(0deg) scale(0.96); opacity: 0.95; }
+}
+@keyframes qt-load-card-3 {
+  0%,  100% { transform: translate(28px, -4px) rotate(12deg) scale(1.02); opacity: 1; }
+  45%       { transform: translate(38px, -14px) rotate(15deg) scale(1.06); opacity: 1; }
+  90%       { transform: translate(28px, -4px) rotate(12deg) scale(1.02); opacity: 1; }
+}
+.qt-load-card   { transform-origin: center; }
+.qt-load-card-1 { animation: qt-load-card-1 2.4s ease-in-out infinite; z-index: 1; }
+.qt-load-card-2 { animation: qt-load-card-2 2.4s ease-in-out infinite; z-index: 2; }
+.qt-load-card-3 { animation: qt-load-card-3 2.4s ease-in-out infinite; z-index: 3; }
+
+/* Check mark draws in once per cycle (synced with the top card lift). */
+@keyframes qt-load-check {
+  0%, 30%  { stroke-dasharray: 16; stroke-dashoffset: 16; }
+  55%, 90% { stroke-dasharray: 16; stroke-dashoffset: 0;  }
+  100%     { stroke-dasharray: 16; stroke-dashoffset: 16; }
+}
+.qt-load-check { animation: qt-load-check 2.4s ease-in-out infinite; }
+
+/* Wide aurora glow behind the loader — gently breathes in/out. */
+@keyframes qt-load-aurora {
+  0%, 100% { transform: scale(0.92); opacity: 0.55; }
+  50%      { transform: scale(1.08); opacity: 0.9;  }
+}
+.qt-load-aurora { animation: qt-load-aurora 3s ease-in-out infinite; }
+
+/* Soft glowing halo around the front (active) card. */
+@keyframes qt-load-front-halo {
+  0%, 100% { transform: scale(0.95); opacity: 0.35; }
+  50%      { transform: scale(1.10); opacity: 0.8;  }
+}
+.qt-load-front-halo { animation: qt-load-front-halo 2.4s ease-in-out infinite; }
+
+/* Twinkles around the stack — small stars fading in/out on staggered beats. */
+@keyframes qt-load-twinkle {
+  0%, 100% { transform: scale(0.3) rotate(0deg);  opacity: 0; }
+  45%      { transform: scale(1)   rotate(90deg); opacity: 1; }
+  60%      { transform: scale(0.9) rotate(120deg); opacity: 0.8; }
+}
+.qt-load-twinkle-1 { animation: qt-load-twinkle 1.6s ease-in-out infinite; animation-delay: 0s;    }
+.qt-load-twinkle-2 { animation: qt-load-twinkle 1.6s ease-in-out infinite; animation-delay: 0.4s; }
+.qt-load-twinkle-3 { animation: qt-load-twinkle 1.6s ease-in-out infinite; animation-delay: 0.8s; }
+.qt-load-twinkle-4 { animation: qt-load-twinkle 1.6s ease-in-out infinite; animation-delay: 1.2s; }
+
 @keyframes qt-route-pulse {
   0%, 100% { transform: scale(0.85); opacity: 0.55; }
   50%      { transform: scale(1.15); opacity: 1; }
