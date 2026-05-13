@@ -22,6 +22,20 @@ export const middleware = createMiddleware({
   postLoginRoute: "/apps",
   publicRoutes: AUTH_URL ? launcherPublicRoutes : ["/login", ...launcherPublicRoutes],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
+  // Super-admin routes — bypass the org-selection gate so super admins
+  // without any OrgMember rows can still reach the launcher + super-admin
+  // panels to bootstrap orgs.
+  superAdminRoutes: [
+    "/apps",
+    "/app-registry",
+    "/organizations",
+    "/broadcasts",
+    "/platform-users",
+    "/audit",
+    "/plans",
+    "/analytics",
+    "/feature-flags",
+  ],
 });
 
 export const config = {

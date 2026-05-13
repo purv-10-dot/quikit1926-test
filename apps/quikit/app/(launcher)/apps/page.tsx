@@ -134,7 +134,12 @@ export default function AppLauncherPage() {
   // API doesn't depend on the JWT cookie (NextAuth's session.update from the
   // dropdown is async — cookie may not be re-issued by the time this fires).
   useEffect(() => {
-    if (!selectedOrg?.orgId) return;
+    if (!selectedOrg?.orgId) {
+      // No org selected (e.g. super-admin with zero memberships) — bail out
+      // of the loading state so the empty/super-admin guidance can render.
+      setLoadingApps(false);
+      return;
+    }
     setLoadingApps(true);
     fetch(`/api/apps/launcher?orgId=${encodeURIComponent(selectedOrg.orgId)}`)
       .then((r) => r.json())

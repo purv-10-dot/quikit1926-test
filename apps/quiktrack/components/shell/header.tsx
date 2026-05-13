@@ -77,6 +77,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
         <GlobalSearchPopover ref={searchRef} />
         <button
           type="button"
+          data-tour="create"
           onClick={() => setCreateOpen(true)}
           className="inline-flex items-center gap-1 h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shrink-0"
         >
