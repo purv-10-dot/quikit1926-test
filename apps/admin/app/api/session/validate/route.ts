@@ -3,8 +3,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-const ADMIN_APP_SLUG = "admin-portal";
-
+/**
+ * Mirrors apps/admin/app/api/session/validate/route.ts.
+ * Re-validates that the current session's user still has an active membership
+ * for the selected org. Polled by the shared SessionGuard.
+ */
 export async function GET() {
   const session = await getServerSession(authOptions);
 
@@ -17,38 +20,13 @@ export async function GET() {
     return NextResponse.json({ valid: true, hasTenant: false });
   }
 
-  // Check 1: Is the membership still active?
   const membership = await db.orgMember.findFirst({
-    where: {
-      userId: session.user.id,
-      orgId,
-      status: "active",
-    },
+    where: { userId: session.user.id, orgId, status: "active" },
+    select: { role: true },
   });
 
   if (!membership) {
     return NextResponse.json({ valid: false, reason: "deactivated" });
-  }
-
-  // Check 2: Does the user still have Admin Portal app access?
-  const app = await db.app.findUnique({
-    where: { slug: ADMIN_APP_SLUG },
-  });
-
-  if (app) {
-    const appAccess = await db.userAppAccess.findUnique({
-      where: {
-        userId_orgId_appId: {
-          userId: session.user.id,
-          orgId,
-          appId: app.id,
-        },
-      },
-    });
-
-    if (!appAccess) {
-      return NextResponse.json({ valid: false, reason: "app_access_revoked" });
-    }
   }
 
   return NextResponse.json({ valid: true, hasTenant: true });

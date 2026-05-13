@@ -1,185 +1,156 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { z } from "zod";
 import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
-import { updateMemberSchema } from "@/lib/schemas/memberSchema";
+import { invalidateMembershipCache, invalidateUserPermissionCache } from "@/lib/redis";
+import { assignNamedRolesForAccess } from "@/lib/roles-helpers";
 
-export const GET = withAdminAuth<{ id: string }>(async ({ orgId }, _request, { params }) => {
+const patchSchema = z.object({
+  appAccess: z.array(z.object({ appSlug: z.string(), role: z.string() })).optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+});
+
+export const DELETE = withAdminAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
-  const membershipId = params.id;
 
   const membership = await db.orgMember.findFirst({
-    where: { id: membershipId, orgId },
-    include: {
+    where: { id: params.id, orgId },
+  });
+
+  if (!membership) {
+    return NextResponse.json(
+      { success: false, error: "Member not found" },
+      { status: 404 },
+    );
+  }
+
+  await db.$transaction([
+    db.userAppAccess.deleteMany({ where: { userId: membership.userId, orgId } }),
+    // db.userAppRole.deleteMany — pending schema migration; see MIGRATION_NOTES.md.
+    db.orgMember.update({
+      where: { id: params.id },
+      data: { status: "inactive", invitationToken: null },
+    }),
+  ]);
+
+  await Promise.all([
+    invalidateMembershipCache(membership.userId, orgId),
+    invalidateUserPermissionCache(orgId, membership.userId),
+  ]);
+
+  return NextResponse.json({ success: true, data: null });
+});
+
+export const PATCH = withAdminAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+  const blocked = await gateModuleApi("admin", "members", orgId);
+  if (blocked) return blocked as NextResponse;
+
+  const body = await req.json().catch(() => null);
+  if (!body) {
+    return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+  }
+
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0].message },
+      { status: 400 },
+    );
+  }
+
+  const membership = await db.orgMember.findFirst({
+    where: { id: params.id, orgId },
+    select: {
+      id: true,
+      userId: true,
+      status: true,
+      role: true,
       user: {
         select: {
-          id: true,
           firstName: true,
           lastName: true,
           email: true,
           avatar: true,
-          lastSignInAt: true,
-          createdAt: true,
+          appAccess: {
+            where: { orgId },
+            select: { role: true, app: { select: { slug: true } } },
+          },
         },
       },
     },
   });
 
   if (!membership) {
-    return NextResponse.json(
-      { success: false, error: "Member not found" },
-      { status: 404 }
-    );
+    return NextResponse.json({ success: false, error: "Member not found" }, { status: 404 });
   }
 
-  const userTeams = await db.userTeam.findMany({
-    where: { orgId, userId: membership.userId },
-    include: { team: { select: { id: true, name: true, color: true } } },
+  const { appAccess, status } = parsed.data;
+
+  let newRoleAssignments: { userId: string; appId: string; roleName: string }[] = [];
+
+  await db.$transaction(async (tx) => {
+    if (status !== undefined) {
+      await tx.orgMember.update({
+        where: { id: params.id },
+        data: { status },
+      });
+    }
+
+    if (appAccess !== undefined) {
+      await tx.userAppAccess.deleteMany({ where: { userId: membership.userId, orgId } });
+      // tx.userAppRole.deleteMany pending schema migration; see MIGRATION_NOTES.md.
+
+      if (appAccess.length > 0) {
+        const apps = await tx.app.findMany({
+          where: { slug: { in: appAccess.map((a) => a.appSlug) } },
+          select: { id: true, slug: true },
+        });
+        await tx.userAppAccess.createMany({
+          data: apps.map((app) => ({
+            userId: membership.userId,
+            orgId,
+            appId: app.id,
+            role: appAccess.find((a) => a.appSlug === app.slug)?.role ?? "member",
+            grantedBy: userId,
+          })),
+          skipDuplicates: true,
+        });
+
+        newRoleAssignments = apps.map((app) => ({
+          userId: membership.userId,
+          appId: app.id,
+          roleName: appAccess.find((a) => a.appSlug === app.slug)?.role ?? "",
+        }));
+      }
+    }
   });
 
-  const appAccess = await db.userAppAccess.findMany({
-    where: { orgId, userId: membership.userId },
-    include: { app: { select: { id: true, name: true, slug: true, iconUrl: true } } },
-  });
+  if (newRoleAssignments.length > 0) {
+    await assignNamedRolesForAccess(orgId, newRoleAssignments).catch(() => {});
+  }
+
+  await Promise.all([
+    invalidateMembershipCache(membership.userId, orgId),
+    invalidateUserPermissionCache(orgId, membership.userId),
+  ]);
+
+  const updatedStatus = status ?? (membership.status === "invited" ? "pending" : membership.status);
+  const updatedApps = appAccess
+    ? appAccess.map((a) => ({ slug: a.appSlug, role: a.role }))
+    : membership.user.appAccess.map((a) => ({ slug: a.app.slug, role: a.role }));
 
   return NextResponse.json({
     success: true,
     data: {
-      membershipId: membership.id,
-      userId: membership.userId,
-      firstName: membership.user.firstName,
-      lastName: membership.user.lastName,
+      id: membership.id,
+      name: `${membership.user.firstName} ${membership.user.lastName}`.replace(/ -$/, "").trim(),
       email: membership.user.email,
-      avatar: membership.user.avatar,
+      avatar: membership.user.avatar ?? null,
+      apps: updatedApps,
       role: membership.role,
-      status: membership.status,
-      customPermissions: membership.customPermissions,
-      invitedAt: membership.invitedAt?.toISOString() ?? null,
-      acceptedAt: membership.acceptedAt?.toISOString() ?? null,
-      lastSignInAt: membership.user.lastSignInAt?.toISOString() ?? null,
-      userCreatedAt: membership.user.createdAt.toISOString(),
-      teams: userTeams.map((ut) => ({
-        id: ut.team.id,
-        name: ut.team.name,
-        color: ut.team.color,
-      })),
-      apps: appAccess.map((a) => ({
-        id: a.app.id,
-        name: a.app.name,
-        slug: a.app.slug,
-        iconUrl: a.app.iconUrl,
-        role: a.role,
-      })),
+      status: updatedStatus,
     },
-  });
-});
-
-export const PATCH = withAdminAuth<{ id: string }>(async ({ orgId }, request: NextRequest, { params }) => {
-  const blocked = await gateModuleApi("admin", "members", orgId);
-  if (blocked) return blocked as NextResponse;
-  const membershipId = params.id;
-
-  const membership = await db.orgMember.findFirst({
-    where: { id: membershipId, orgId },
-  });
-
-  if (!membership) {
-    return NextResponse.json(
-      { success: false, error: "Member not found" },
-      { status: 404 }
-    );
-  }
-
-  const body = await request.json();
-  const parsed = updateMemberSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" },
-      { status: 400 },
-    );
-  }
-  const { role, status, teamIds, customPermissions } = parsed.data;
-
-  // Update membership fields
-  const updateData: Record<string, unknown> = {};
-  if (role) updateData.role = role;
-  if (status) updateData.status = status;
-  if (customPermissions !== undefined) updateData.customPermissions = customPermissions;
-
-  const updated = await db.orgMember.update({
-    where: { id: membershipId },
-    data: updateData,
-  });
-
-  // Update team assignments if provided
-  if (teamIds !== undefined) {
-    // Validate all teamIds belong to this tenant
-    if (teamIds.length > 0) {
-      const validTeams = await db.team.findMany({
-        where: { id: { in: teamIds }, orgId },
-        select: { id: true },
-      });
-      const validTeamIds = new Set(validTeams.map((t) => t.id));
-      const invalidIds = teamIds.filter((id: string) => !validTeamIds.has(id));
-      if (invalidIds.length > 0) {
-        return NextResponse.json(
-          { success: false, error: "One or more team IDs are invalid" },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Atomic delete + create in a transaction
-    await db.$transaction([
-      db.userTeam.deleteMany({
-        where: { orgId, userId: membership.userId },
-      }),
-      ...(teamIds.length > 0
-        ? [
-            db.userTeam.createMany({
-              data: teamIds.map((teamId: string) => ({
-                orgId,
-                userId: membership.userId,
-                teamId,
-              })),
-            }),
-          ]
-        : []),
-    ]);
-  }
-
-  return NextResponse.json({
-    success: true,
-    data: updated,
-  });
-});
-
-export const DELETE = withAdminAuth<{ id: string }>(async ({ orgId }, _request, { params }) => {
-  const blocked = await gateModuleApi("admin", "members", orgId);
-  if (blocked) return blocked as NextResponse;
-  const membershipId = params.id;
-
-  const membership = await db.orgMember.findFirst({
-    where: { id: membershipId, orgId },
-  });
-
-  if (!membership) {
-    return NextResponse.json(
-      { success: false, error: "Member not found" },
-      { status: 404 }
-    );
-  }
-
-  // Soft deactivate — don't hard delete
-  await db.orgMember.update({
-    where: { id: membershipId },
-    data: { status: "inactive" },
-  });
-
-  return NextResponse.json({
-    success: true,
-    message: "Member deactivated",
   });
 });

@@ -5,10 +5,8 @@ const nextConfig = {
   transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database", "@quikit/redis"],
   experimental: {
     serverActions: {
-      allowedOrigins: ["localhost:3005"],
+      allowedOrigins: ["localhost:3002", "localhost:3005"],
     },
-    // Wires up Sentry via apps/admin/instrumentation.ts on server startup.
-    instrumentationHook: true,
   },
   async headers() {
     return [
@@ -25,7 +23,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
               "font-src 'self' fonts.gstatic.com",
               "img-src 'self' data: blob: https:",
-              "connect-src 'self' https://*.sentry.io",
+              "connect-src 'self'",
               "frame-ancestors 'none'",
             ].join("; "),
           },

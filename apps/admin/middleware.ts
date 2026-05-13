@@ -1,7 +1,7 @@
 import { createMiddleware } from "@quikit/auth/middleware";
 
 /**
- * Org admin portal — central auth when NEXT_PUBLIC_AUTH_URL is set (shared JWT).
+ * admin-next portal middleware — mirrors apps/admin/middleware.ts.
  * Non-admin members are redirected with reason=unauthorized.
  */
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
@@ -12,7 +12,6 @@ export const middleware = createMiddleware({
   publicRoutes: ["/login", "/select-org", "/invitations"],
   requireAdmin: true,
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
-  // /select-org retired — fall through to launcher /apps when token has no orgId.
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
 

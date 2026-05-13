@@ -1,35 +1,65 @@
 import { vi } from "vitest";
-import { mockDeep, mockReset, type DeepMockProxy } from "vitest-mock-extended";
-import type { PrismaClient } from "@prisma/client";
 
-// Deep-mocked Prisma client. Every model and method is auto-stubbed; each
-// test configures the return values it needs via e.g.
-// `mockDb.orgMember.findFirst.mockResolvedValue(...)`.
-export const mockDb: DeepMockProxy<PrismaClient> = mockDeep<PrismaClient>();
+// Mock session store
+let _session: Record<string, unknown> | null = null;
 
-// The codebase has TWO import paths for the Prisma client:
-//   - `import { db } from "@quikit/database"` (auth packages, some libs)
-//   - `import { db } from "@/lib/db"` (admin internal re-export)
-// We must mock both, otherwise code importing via the re-export gets the
-// real client. Both mocks point at the same `mockDb` instance so tests have
-// a single control surface.
-//
-// We avoid `vi.importActual("@quikit/database")` because the database package
-// instantiates a real PrismaClient at module scope, which fails without
-// DATABASE_URL. Instead, we re-export Prisma types from @prisma/client
-// directly (which does NOT trigger client construction).
-
-vi.mock("@quikit/database", async () => {
-  const prismaClient = await vi.importActual<typeof import("@prisma/client")>(
-    "@prisma/client"
-  );
-  return { ...prismaClient, db: mockDb };
-});
-
-vi.mock("@/lib/db", () => ({
-  db: mockDb,
-}));
-
-export function resetMockDb() {
-  mockReset(mockDb);
+export function setSession(session: Record<string, unknown> | null) {
+  _session = session;
 }
+
+// Mock Prisma DB
+export const mockDb = {
+  membership: {
+    findMany: vi.fn(),
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    upsert: vi.fn(),
+    count: vi.fn(),
+    delete: vi.fn(),
+  },
+  team: {
+    findMany: vi.fn(),
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    count: vi.fn(),
+  },
+  user: {
+    findUnique: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
+  userTeam: {
+    createMany: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  app: {
+    findMany: vi.fn(),
+    findUnique: vi.fn(),
+  },
+  userAppAccess: {
+    findMany: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    delete: vi.fn(),
+    groupBy: vi.fn(),
+  },
+  apiCall: {
+    create: vi.fn().mockResolvedValue({}),
+  },
+  $transaction: vi.fn((ops: unknown[]) => Promise.all(ops)),
+};
+
+// Wire mocks into modules
+vi.mock("@quikit/database", () => ({ db: mockDb }));
+vi.mock("@/lib/db", () => ({ db: mockDb }));
+
+vi.mock("next-auth", () => ({
+  default: vi.fn(),
+  getServerSession: vi.fn(() => Promise.resolve(_session)),
+}));

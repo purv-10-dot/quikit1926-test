@@ -1,323 +1,189 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { Card } from "@/components/ui/card";
-import { Button, Input } from "@quikit/ui";
-import { Badge } from "@/components/ui/badge";
-import { ROLE_LABELS } from "@/lib/constants";
-import { CheckCircle, XCircle, Loader2, Check } from "lucide-react";
-import { checkPasswordRules, isPasswordValid, PASSWORD_MIN_LENGTH } from "@/lib/passwordPolicy";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { signIn } from "next-auth/react";
+import {
+  Loader2, XCircle, AlertCircle, CheckCircle2,
+  Mail, Chrome, Building2,
+} from "lucide-react";
 
-interface InvitationData {
-  orgName: string;
-  orgLogo: string | null;
-  orgColor: string | null;
-  email: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-  /** "sso" | "native" | null (legacy invites) */
-  inviteMethod: string | null;
-  needsPassword: boolean;
-}
+type State =
+  | { status: "loading" }
+  | { status: "valid"; firstName: string; orgName: string; email: string }
+  | { status: "revoked" }
+  | { status: "used" }
+  | { status: "missing" };
 
-export default function AcceptInvitationPage() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const token = searchParams.get("token");
-
-  const [invitation, setInvitation] = useState<InvitationData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [isExpired, setIsExpired] = useState(false);
-
-  // FRD FR-SA-009 Set-Password screen state.
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  const [accepting, setAccepting] = useState(false);
-  const [accepted, setAccepted] = useState(false);
-  const [requesting, setRequesting] = useState(false);
-  const [requestSent, setRequestSent] = useState(false);
+function AcceptContent() {
+  const params = useSearchParams();
+  const token = params.get("token");
+  const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
-    if (!token) {
-      setError("No invitation token provided");
-      setLoading(false);
-      return;
-    }
-
-    async function fetchInvitation() {
-      const res = await fetch(`/api/invitations/accept?token=${token}`);
-      const json = await res.json();
-      if (json.success) {
-        setInvitation(json.data);
-      } else {
-        setError(json.error || "Invalid invitation");
-        if (res.status === 410) setIsExpired(true);
-      }
-      setLoading(false);
-    }
-    fetchInvitation();
+    if (!token) { setState({ status: "missing" }); return; }
+    fetch(`/api/invitations/check?token=${token}`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.valid) {
+          setState({ status: "valid", firstName: res.firstName, orgName: res.orgName, email: res.email });
+        } else {
+          setState({ status: res.reason === "used" ? "used" : "revoked" });
+        }
+      })
+      .catch(() => setState({ status: "revoked" }));
   }, [token]);
 
-  async function handleRequestResend() {
-    if (!token) return;
-    setRequesting(true);
-    try {
-      const res = await fetch("/api/invitations/request-resend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      const json = await res.json();
-      if (json.success) setRequestSent(true);
-      else setError(json.error || "Failed to request resend");
-    } finally {
-      setRequesting(false);
-    }
+  function handleGoogle() {
+    signIn("google", { callbackUrl: `/invitations/oauth-activate?token=${token}` });
   }
 
-  // FR-SA-009 — submit Current/New/Confirm. Validation mirrors BRV-006 / BRV-007.
-  async function submitAccept(opts: { skip: boolean }) {
-    setError("");
-
-    if (!opts.skip && invitation?.needsPassword) {
-      if (!currentPassword) {
-        setError("Please enter your default password to proceed.");
-        return;
-      }
-      if (!isPasswordValid(password)) {
-        setError("New password does not meet the requirements below.");
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError("Passwords do not match. Please re-enter.");
-        return;
-      }
-    }
-
-    setAccepting(true);
-
-    const res = await fetch("/api/invitations/accept", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token,
-        skip: opts.skip,
-        currentPassword: opts.skip ? undefined : currentPassword,
-        password: opts.skip ? undefined : password,
-      }),
-    });
-
-    const json = await res.json();
-    if (json.success) {
-      setAccepted(true);
-    } else {
-      setError(json.error || "Failed to accept invitation");
-    }
-    setAccepting(false);
+  function handleMicrosoft() {
+    signIn("azure-ad", { callbackUrl: `/invitations/oauth-activate?token=${token}` });
   }
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-        <Loader2 className="h-8 w-8 animate-spin text-[var(--color-text-tertiary)]" />
-      </div>
-    );
-  }
-
-  // FR-SA-010 — after Set-Password (or Skip) the user is sent to the Quikit
-  // login screen. SSO accept currently never reaches the password screen, so
-  // this branch covers both: success → /login.
-  if (accepted) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-        <Card className="w-full max-w-md text-center">
-          <CheckCircle className="h-12 w-12 mx-auto text-[var(--color-success)] mb-4" />
-          <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">
-            Welcome to {invitation?.orgName}!
-          </h2>
-          <p className="text-sm text-[var(--color-text-secondary)] mb-6">
-            Your invitation has been accepted. You can now sign in.
-          </p>
-          <Button onClick={() => router.push("/login")} className="w-full">
-            Sign In
-          </Button>
-        </Card>
-      </div>
-    );
-  }
-
-  if (error && !invitation) {
-    if (isExpired) {
-      return (
-        <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-          <Card className="w-full max-w-md text-center">
-            <XCircle className="h-12 w-12 mx-auto text-[var(--color-danger)] mb-4" />
-            <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">
-              Invitation Expired
-            </h2>
-            <p className="text-sm text-[var(--color-text-secondary)] mb-6">
-              This invitation link is no longer valid. Click below to ask the
-              administrator to send you a fresh invitation.
-            </p>
-            {requestSent ? (
-              <p className="text-sm text-[var(--color-success)]">
-                ✓ Your request has been sent. The administrator will follow up shortly.
-              </p>
-            ) : (
-              <Button
-                onClick={handleRequestResend}
-                loading={requesting}
-                className="w-full"
-              >
-                Request a new invitation
-              </Button>
-            )}
-          </Card>
-        </div>
-      );
-    }
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-        <Card className="w-full max-w-md text-center">
-          <XCircle className="h-12 w-12 mx-auto text-[var(--color-danger)] mb-4" />
-          <h2 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">
-            Invalid Invitation
-          </h2>
-          <p className="text-sm text-[var(--color-text-secondary)]">{error}</p>
-        </Card>
-      </div>
-    );
-  }
-
-  const isNative = invitation?.inviteMethod === "native" || invitation?.needsPassword;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-secondary)]">
-      <Card className="w-full max-w-md">
-        <div className="text-center mb-6">
-          <div
-            className="inline-flex items-center justify-center h-12 w-12 rounded-xl text-white font-bold text-lg mb-4"
-            style={{ backgroundColor: invitation?.orgColor || "#6366f1" }}
-          >
-            {invitation?.orgName?.charAt(0)?.toUpperCase()}
-          </div>
-          <h2 className="text-xl font-bold text-[var(--color-text-primary)]">
-            Join {invitation?.orgName}
-          </h2>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-1">
-            You&apos;ve been invited as{" "}
-            <Badge variant={invitation?.role}>
-              {ROLE_LABELS[invitation?.role || ""] || invitation?.role}
-            </Badge>
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-secondary)] px-4">
+      <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-8 shadow-xl text-center">
+
+        <div className="mb-6 flex justify-center">
+          <span className="text-2xl font-extrabold text-[var(--color-secondary)]">QuikIT</span>
         </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submitAccept({ skip: false });
-          }}
-          className="space-y-4"
-        >
-          <div className="rounded-lg bg-[var(--color-bg-secondary)] p-3 text-sm">
-            <p className="text-[var(--color-text-secondary)]">
-              <strong className="text-[var(--color-text-primary)]">{invitation?.firstName} {invitation?.lastName}</strong>
-              <br />
-              {invitation?.email}
+        {state.status === "loading" && (
+          <>
+            <Loader2 className="mx-auto h-10 w-10 animate-spin text-[var(--color-secondary)]" />
+            <p className="mt-4 text-sm text-[var(--color-text-secondary)]">Verifying your invitation…</p>
+          </>
+        )}
+
+        {state.status === "valid" && (
+          <>
+            <div className="flex justify-center mb-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-secondary-light)]">
+                <Building2 className="h-7 w-7 text-[var(--color-secondary)]" />
+              </div>
+            </div>
+            <h1 className="text-xl font-bold text-[var(--color-text-primary)]">
+              You've been invited!
+            </h1>
+            <p className="mt-2 text-sm text-[var(--color-text-secondary)] mb-8">
+              Hi <strong className="text-[var(--color-text-primary)]">{state.firstName}</strong>, join{" "}
+              <strong className="text-[var(--color-text-primary)]">{state.orgName}</strong> on QuikIT.
+              Choose how you'd like to sign in.
             </p>
-          </div>
 
-          {isNative && (
-            <>
-              {/* FR-SA-009 — Current Password defaults to "Quikit2026" the
-                  user received in their invitation email. */}
-              <Input
-                id="current-password"
-                label="Current Password"
-                type="password"
-                placeholder="Enter your default password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-              />
-              <Input
-                id="password"
-                label="New Password"
-                type="password"
-                placeholder={`Min ${PASSWORD_MIN_LENGTH} characters`}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              <PasswordRules password={password} />
-              <Input
-                id="confirm-password"
-                label="Confirm Password"
-                type="password"
-                placeholder="Re-enter password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-              />
-            </>
-          )}
-
-          {error && (
-            <p className="text-sm text-[var(--color-danger)]">{error}</p>
-          )}
-
-          <div className="space-y-2">
-            <Button type="submit" className="w-full" loading={accepting}>
-              {isNative ? "Save & Continue" : "Accept Invitation"}
-            </Button>
-            {/* FR-SA-009 — Skip keeps the default password and proceeds to login.
-                Only offered for native invites (SSO has no password to skip). */}
-            {isNative && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full"
-                disabled={accepting}
-                onClick={() => void submitAccept({ skip: true })}
+            <div className="flex flex-col gap-3">
+              {/* Email / Password */}
+              <a
+                href={`/invitations/setup?token=${token}`}
+                className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] px-4 py-3 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-secondary)] hover:bg-[var(--color-secondary-light)] transition-colors"
               >
-                Skip for now
-              </Button>
-            )}
-          </div>
-        </form>
-      </Card>
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-neutral-100)]">
+                  <Mail className="h-4 w-4 text-[var(--color-text-secondary)]" />
+                </span>
+                <span className="flex-1 text-left">
+                  Continue with Email
+                  <span className="block text-xs text-[var(--color-text-tertiary)] font-normal">{state.email}</span>
+                </span>
+              </a>
+
+              {/* Google */}
+              <button
+                onClick={handleGoogle}
+                className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] px-4 py-3 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-secondary)] hover:bg-[var(--color-secondary-light)] transition-colors"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-neutral-100)]">
+                  <Chrome className="h-4 w-4 text-[var(--color-text-secondary)]" />
+                </span>
+                <span className="flex-1 text-left">Continue with Google</span>
+              </button>
+
+              {/* Microsoft */}
+              <button
+                onClick={handleMicrosoft}
+                className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] px-4 py-3 text-sm font-medium text-[var(--color-text-primary)] hover:border-[var(--color-secondary)] hover:bg-[var(--color-secondary-light)] transition-colors"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-neutral-100)]">
+                  {/* Microsoft "4 squares" icon using divs */}
+                  <span className="grid grid-cols-2 gap-0.5 h-4 w-4">
+                    <span className="bg-[#f25022] rounded-sm" />
+                    <span className="bg-[#7fba00] rounded-sm" />
+                    <span className="bg-[#00a4ef] rounded-sm" />
+                    <span className="bg-[#ffb900] rounded-sm" />
+                  </span>
+                </span>
+                <span className="flex-1 text-left">Continue with Microsoft</span>
+              </button>
+            </div>
+
+            <p className="mt-6 text-xs text-[var(--color-text-tertiary)]">
+              By continuing you agree to QuikIT's Terms of Service.
+            </p>
+          </>
+        )}
+
+        {state.status === "revoked" && (
+          <>
+            <div className="flex justify-center mb-5">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
+                <XCircle className="h-8 w-8 text-red-500" />
+              </div>
+            </div>
+            <h1 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">Access Revoked</h1>
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              Your invitation has been revoked by the organisation administrator.
+              This link is no longer valid. Please contact your administrator if you believe this is a mistake.
+            </p>
+          </>
+        )}
+
+        {state.status === "used" && (
+          <>
+            <div className="flex justify-center mb-5">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
+                <CheckCircle2 className="h-8 w-8 text-blue-500" />
+              </div>
+            </div>
+            <h1 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">Already Accepted</h1>
+            <p className="text-sm text-[var(--color-text-secondary)] mb-6">
+              This invitation has already been accepted. Log in to access your organisation.
+            </p>
+            <a
+              href="/login"
+              className="inline-flex items-center justify-center w-full rounded-xl bg-[var(--color-secondary)] px-4 py-2.5 text-sm font-medium text-white hover:bg-[var(--color-secondary-dark)] transition-colors"
+            >
+              Go to Login
+            </a>
+          </>
+        )}
+
+        {state.status === "missing" && (
+          <>
+            <div className="flex justify-center mb-5">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-50">
+                <AlertCircle className="h-8 w-8 text-amber-500" />
+              </div>
+            </div>
+            <h1 className="text-xl font-bold text-[var(--color-text-primary)] mb-2">Invalid Link</h1>
+            <p className="text-sm text-[var(--color-text-secondary)]">
+              This invitation link is invalid. Please use the original link from your invitation email.
+            </p>
+          </>
+        )}
+
+        <p className="mt-6 text-xs text-[var(--color-text-tertiary)]">
+          Questions? Contact your organisation administrator.
+        </p>
+      </div>
     </div>
   );
 }
 
-function PasswordRules({ password }: { password: string }) {
-  const r = checkPasswordRules(password);
-  const items: { ok: boolean; label: string }[] = [
-    { ok: r.minLength, label: `At least ${PASSWORD_MIN_LENGTH} characters` },
-    { ok: r.hasLetter, label: "At least one letter" },
-    { ok: r.hasDigit, label: "At least one digit" },
-    { ok: r.hasSymbol, label: "At least one symbol" },
-  ];
+export default function InvitationAcceptPage() {
   return (
-    <ul className="space-y-1 text-xs">
-      {items.map((item) => (
-        <li
-          key={item.label}
-          className={
-            item.ok
-              ? "flex items-center gap-1.5 text-[var(--color-success)]"
-              : "flex items-center gap-1.5 text-[var(--color-text-tertiary)]"
-          }
-        >
-          <Check className={`h-3 w-3 ${item.ok ? "opacity-100" : "opacity-30"}`} />
-          {item.label}
-        </li>
-      ))}
-    </ul>
+    <Suspense>
+      <AcceptContent />
+    </Suspense>
   );
 }

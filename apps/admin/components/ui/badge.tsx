@@ -1,31 +1,28 @@
 import { cn } from "@/lib/utils";
 
-const badgeVariants: Record<string, string> = {
-  default: "bg-[var(--color-neutral-100)] text-[var(--color-text-secondary)]",
-  active: "bg-[var(--color-success-light)] text-[var(--color-success-dark)]",
-  invited: "bg-[var(--color-warning-light)] text-[var(--color-warning-dark)]",
-  inactive: "bg-[var(--color-neutral-200)] text-[var(--color-neutral-500)]",
-  declined: "bg-[var(--color-danger-light)] text-[var(--color-danger-dark)]",
-  admin: "bg-[var(--color-secondary-light)] text-[var(--color-secondary-dark)]",
-  super_admin: "bg-[var(--color-secondary-light)] text-[var(--color-secondary-dark)]",
-  manager: "bg-blue-50 text-blue-700",
-  employee: "bg-[var(--color-neutral-100)] text-[var(--color-neutral-600)]",
-  executive: "bg-purple-50 text-purple-700",
-  coach: "bg-teal-50 text-teal-700",
-};
+type BadgeVariant = "default" | "success" | "warning" | "danger" | "info" | "neutral";
 
 interface BadgeProps {
-  variant?: string;
-  className?: string;
   children: React.ReactNode;
+  variant?: BadgeVariant;
+  className?: string;
 }
 
-export function Badge({ variant = "default", className, children }: BadgeProps) {
+const variantClasses: Record<BadgeVariant, string> = {
+  default: "bg-[var(--color-secondary-light)] text-[var(--color-secondary)]",
+  success: "bg-[var(--color-success-light)] text-green-700",
+  warning: "bg-amber-50 text-amber-700",
+  danger: "bg-red-50 text-red-600",
+  info: "bg-blue-50 text-blue-600",
+  neutral: "bg-[var(--color-neutral-100)] text-[var(--color-text-secondary)]",
+};
+
+export default function Badge({ children, variant = "default", className }: BadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium",
-        badgeVariants[variant] || badgeVariants.default,
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+        variantClasses[variant],
         className
       )}
     >

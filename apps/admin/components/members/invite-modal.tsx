@@ -110,11 +110,17 @@ function RoleSelect({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+type InviteMethod = "sso" | "native";
+
 export default function InviteModal({
   open, onClose, defaultAppSlug, provisionedApps, onSuccess,
 }: InviteModalProps) {
   const [name, setName]                   = useState("");
   const [email, setEmail]                 = useState("");
+  // Mirrors the super-admin's first-Org-Admin invite flow: caller picks
+  // SSO (Google/Microsoft auto sign-in) or Native (default password +
+  // Set-Password screen on first login).
+  const [inviteMethod, setInviteMethod]   = useState<InviteMethod>("sso");
   const [selectedSlugs, setSelectedSlugs] = useState<string[]>(defaultAppSlug ? [defaultAppSlug] : []);
   const [rolePerApp, setRolePerApp]       = useState<Record<string, string>>({});
   const [rolesPerApp, setRolesPerApp]     = useState<Record<string, AppRoleOption[]>>({});
@@ -127,6 +133,7 @@ export default function InviteModal({
 
     setName("");
     setEmail("");
+    setInviteMethod("sso");
     setError(null);
     setRolesPerApp({});
     setRolePerApp({});
@@ -186,6 +193,7 @@ export default function InviteModal({
         body: JSON.stringify({
           name,
           email,
+          inviteMethod,
           appAccess: selectedSlugs.map((slug) => ({
             appSlug: slug,
             role:    rolePerApp[slug] ?? getDefaultRoleName(rolesPerApp[slug] ?? []),
@@ -257,6 +265,40 @@ export default function InviteModal({
                 placeholder="jane@company.com"
                 className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)] focus:bg-[var(--color-bg-primary)] transition-colors"
               />
+            </div>
+          </div>
+
+          {/* Invitation method — same SSO/Native split the super-admin uses
+              when inviting the first Org Admin. */}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium text-[var(--color-text-primary)]">
+              Invitation Method
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["sso", "native"] as const).map((method) => {
+                const active = inviteMethod === method;
+                return (
+                  <button
+                    key={method}
+                    type="button"
+                    onClick={() => setInviteMethod(method)}
+                    className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left transition-all ${
+                      active
+                        ? "border-[var(--color-secondary)] bg-[var(--color-secondary-light)]"
+                        : "border-[var(--color-border)] bg-[var(--color-bg-secondary)] hover:border-[var(--color-secondary)]"
+                    }`}
+                  >
+                    <span className={`text-sm font-medium ${active ? "text-[var(--color-secondary)]" : "text-[var(--color-text-primary)]"}`}>
+                      {method === "sso" ? "SSO (Google / Microsoft)" : "Native (Email + Password)"}
+                    </span>
+                    <span className="text-xs text-[var(--color-text-secondary)]">
+                      {method === "sso"
+                        ? "User signs in via their existing provider."
+                        : "User receives a temp password and is forced to change it on first login."}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

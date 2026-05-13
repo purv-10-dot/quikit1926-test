@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { ROLE_HIERARCHY } from "@/lib/constants";
 
-const ADMIN_MIN_LEVEL = ROLE_HIERARCHY["admin"];
-
+/**
+ * Mirrors apps/admin/app/api/org/memberships/route.ts.
+ * Lists the orgs the current user belongs to — used by the /select-org page.
+ *
+ * Response shape includes both `orgId` (preferred) and `tenantId` (back-compat
+ * for any client code that hasn't been renamed yet).
+ */
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -21,9 +25,6 @@ export async function GET() {
           name: true,
           slug: true,
           description: true,
-          logoUrl: true,
-          brandColor: true,
-          plan: true,
           status: true,
         },
       },
@@ -31,24 +32,16 @@ export async function GET() {
     orderBy: { createdAt: "asc" },
   });
 
-  // Only show orgs where user has admin-level access
-  const adminOrgs = memberships
-    .filter((m) => {
-      const level = ROLE_HIERARCHY[m.role as keyof typeof ROLE_HIERARCHY] ?? 0;
-      return level >= ADMIN_MIN_LEVEL;
-    })
-    .map((m) => ({
-      membershipId: m.id,
-      orgId: m.org.id,
-      name: m.org.name,
-      slug: m.org.slug,
-      description: m.org.description,
-      logoUrl: m.org.logoUrl,
-      brandColor: m.org.brandColor,
-      plan: m.org.plan,
-      role: m.role,
-      status: m.status,
-    }));
+  const data = memberships.map((m) => ({
+    membershipId: m.id,
+    orgId: m.org.id,
+    tenantId: m.org.id, // back-compat alias
+    name: m.org.name,
+    slug: m.org.slug,
+    description: m.org.description,
+    role: m.role,
+    status: m.status,
+  }));
 
-  return NextResponse.json({ success: true, data: adminOrgs });
+  return NextResponse.json({ success: true, data });
 }

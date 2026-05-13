@@ -1,10 +1,10 @@
 /**
- * admin-next member-level API wrapper — like withAdminAuth but does not
- * require admin role. Accepts any user with an active OrgMember row in the
- * selected org. Used by routes that the launcher / member apps page hit.
+ * admin member-level API wrapper — like withAdminAuth but does not require
+ * admin role. Accepts any user with an active OrgMember row in the selected
+ * org. Used by routes that the launcher / member apps page hit.
  *
  * Uses session-based auth (getServerSession) so the JWT recheck cycle from
- * @quikit/auth applies — matches apps/admin patterns.
+ * @quikit/auth applies.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -77,7 +77,7 @@ export function withMemberAuth<Params = Record<string, never>>(handler: Handler<
     void logApiCall({
       orgId: orgIdForLog,
       userId: userIdForLog,
-      appSlug: "admin-next",
+      appSlug: "admin",
       method: req.method,
       path: req.nextUrl.pathname,
       statusCode: response.status,

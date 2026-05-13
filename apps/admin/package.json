@@ -3,45 +3,42 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node -e \"console.log('[admin] SKIPPED — admin-next is serving :3002. Use npm run dev:original to restore.')\"",
-    "dev:original": "next dev -p 3002",
+    "dev": "next dev -p 3002",
     "prebuild": "prisma generate --schema=../../packages/database/prisma/schema.prisma",
     "build": "next build",
-    "start": "node -e \"console.log('[admin] SKIPPED — admin-next is serving production. Use npm run start:original to restore.')\"",
-    "start:original": "next start -p 3005",
+    "start": "next start -p 3005",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@quikit/auth": "*",
     "@quikit/database": "*",
     "@quikit/shared": "*",
     "@quikit/ui": "*",
-    "@sentry/nextjs": "^10.48.0",
     "@tanstack/react-query": "^5.28.0",
-    "canvas-confetti": "^1.9.4",
-    "class-variance-authority": "^0.7.1",
-    "framer-motion": "^10.18.0",
+    "bcryptjs": "^2.4.3",
+    "clsx": "^2.1.1",
     "lucide-react": "^0.294.0",
     "next": "14.0.4",
     "next-auth": "^4.24.0",
     "next-themes": "^0.2.1",
+    "nodemailer": "^7.0.13",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "tailwind-merge": "^2.6.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/canvas-confetti": "^1.9.0",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.10.4",
+    "@types/nodemailer": "^7.0.0",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^6.0.1",
-    "@vitest/ui": "^4.1.4",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.55.0",
     "eslint-config-next": "14.0.4",
@@ -49,7 +46,6 @@
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
-    "vitest": "^4.1.4",
-    "vitest-mock-extended": "^4.0.0"
+    "vitest": "^4.1.4"
   }
 }

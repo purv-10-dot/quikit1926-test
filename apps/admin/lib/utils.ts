@@ -1,37 +1,41 @@
-import { type ClassValue, clsx } from "clsx";
+import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { format, parseISO } from "date-fns";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatDate(date: Date | string): string {
-  const dateObj = typeof date === "string" ? parseISO(date) : date;
-  return format(dateObj, "MMM d, yyyy");
-}
-
-export function formatRelativeDate(date: Date | string): string {
-  const dateObj = typeof date === "string" ? parseISO(date) : date;
-  const now = new Date();
-  const diffInSeconds = Math.floor((now.getTime() - dateObj.getTime()) / 1000);
-
-  if (diffInSeconds < 60) return "just now";
-  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-  if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
-
-  return formatDate(dateObj);
-}
-
-export function generateInitials(firstName: string, lastName: string): string {
-  return `${firstName?.charAt(0) || ""}${lastName?.charAt(0) || ""}`.toUpperCase();
-}
-
-export function slugify(text: string): string {
-  return text
+export function slugify(str: string): string {
+  return str
     .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/[\s_]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+export function formatRelativeDate(date: Date | string | null | undefined): string {
+  if (!date) return "Never";
+  const d = typeof date === "string" ? new Date(date) : date;
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 30) return d.toLocaleDateString();
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (minutes > 0) return `${minutes}m ago`;
+  return "Just now";
+}
+
+export function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
 }

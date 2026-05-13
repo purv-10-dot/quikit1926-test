@@ -1,25 +1,25 @@
-import { cn, generateInitials } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 
 interface AvatarProps {
+  name: string;
   src?: string | null;
-  firstName?: string;
-  lastName?: string;
   size?: "sm" | "md" | "lg";
   className?: string;
 }
 
 const sizeClasses = {
-  sm: "h-8 w-8 text-xs",
-  md: "h-10 w-10 text-sm",
+  sm: "h-7 w-7 text-xs",
+  md: "h-9 w-9 text-sm",
   lg: "h-12 w-12 text-base",
 };
 
-export function Avatar({ src, firstName = "", lastName = "", size = "md", className }: AvatarProps) {
+export default function Avatar({ name, src, size = "md", className }: AvatarProps) {
   if (src) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={src}
-        alt={`${firstName} ${lastName}`}
+        alt={name}
         className={cn("rounded-full object-cover", sizeClasses[size], className)}
       />
     );
@@ -28,12 +28,12 @@ export function Avatar({ src, firstName = "", lastName = "", size = "md", classN
   return (
     <div
       className={cn(
-        "flex items-center justify-center rounded-full bg-[var(--color-secondary-light)] text-[var(--color-secondary-dark)] font-medium",
+        "flex items-center justify-center rounded-full bg-[var(--color-secondary)] font-semibold text-white",
         sizeClasses[size],
         className
       )}
     >
-      {generateInitials(firstName, lastName)}
+      {getInitials(name)}
     </div>
   );
 }

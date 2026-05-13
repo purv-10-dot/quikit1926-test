@@ -1,24 +1,20 @@
-// Core constants imported from shared package (single source of truth)
-export {
-  ROLES,
-  type Role,
-  ROLE_HIERARCHY,
-  ROLE_LABELS,
-  MEMBERSHIP_STATUS,
-  TENANT_PLANS,
-} from "@quikit/shared";
+export { ROLES, ROLE_HIERARCHY, ROLE_LABELS, MEMBERSHIP_STATUS, TENANT_PLANS } from "@quikit/shared";
 
-// PAGES & PATHS (app-specific)
 export const PATHS = {
-  HOME: "/",
-  LOGIN: "/login",
-  SELECT_ORG: "/select-org",
-  DASHBOARD: "/dashboard",
-
-  MEMBERS: "/dashboard/members",
-  TEAMS: "/dashboard/teams",
-  APPS: "/dashboard/apps",
-  SETTINGS: "/dashboard/settings",
-  ROLES: "/dashboard/roles",
-  AUDIT: "/dashboard/audit",
+  home: "/",
+  login: "/login",
+  selectOrg: "/select-org",
+  launcher: "/launcher",
+  dashboard: "/dashboard",
+  members: "/dashboard/members",
+  member: (id: string) => `/dashboard/members/${id}`,
+  teams: "/dashboard/teams",
+  team: (id: string) => `/dashboard/teams/${id}`,
+  apps: "/dashboard/apps",
+  app: (appId: string) => `/dashboard/apps/${appId}`,
+  roles: "/dashboard/roles",
+  role: (roleId: string) => `/dashboard/roles/${roleId}`,
+  settings: "/dashboard/settings",
+  auditLog: "/dashboard/audit-log",
+  invitationAccept: "/invitations/accept",
 } as const;

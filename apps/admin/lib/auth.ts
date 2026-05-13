@@ -2,13 +2,12 @@ import { createOAuthClientOptions, createAuthOptions } from "@quikit/auth";
 import "@quikit/auth/types";
 
 /**
- * Admin app auth configuration.
+ * admin-next auth configuration — mirrors apps/admin/lib/auth.ts.
  *
- * When QUIKIT_URL is set, Admin authenticates via QuikIT's OAuth2 flow.
- * When unset, falls back to direct CredentialsProvider.
+ * When QUIKIT_URL + client creds are set, this app authenticates via
+ * QuikIT's OAuth2 flow (shared JWT across all QuikIT apps). When unset,
+ * falls back to direct CredentialsProvider for local-only dev.
  */
-// Accept both env names — operators sometimes provision the IdP base URL
-// under the OIDC-conventional alias QUIKIT_ISSUER_URL.
 const QUIKIT_URL = process.env.QUIKIT_URL ?? process.env.QUIKIT_ISSUER_URL;
 const QUIKIT_CLIENT_ID = process.env.QUIKIT_CLIENT_ID;
 const QUIKIT_CLIENT_SECRET = process.env.QUIKIT_CLIENT_SECRET;
