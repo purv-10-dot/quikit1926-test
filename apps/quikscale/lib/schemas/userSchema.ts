@@ -56,10 +56,26 @@ export const createOrgUserSchema = z.object({
   firstName: z.string().min(1, "First name is required").max(100),
   lastName:  z.string().min(1, "Last name is required").max(100),
   email:     z.string().email("Invalid email").max(200),
-  password:  z.string().min(8, "Password must be at least 8 characters").max(200),
+  /**
+   * Password is required ONLY when creating a brand-new auth.User. When the
+   * caller passes `linkExistingUserId`, the user already has credentials —
+   * we skip user.create and just grant them quikscale access.
+   */
+  password:  z.string().min(8, "Password must be at least 8 characters").max(200).optional(),
   role:      z.enum(USER_ROLE_VALUES).optional(),
   teamIds:   z.array(z.string()).optional(),
   teamId:    z.string().nullable().optional(),
-});
+  /**
+   * When provided, the endpoint treats this as a "link existing org member
+   * to quikscale" call: skip user/orgMember create, just grant
+   * UserAppAccess + seed default AppRole + apply team memberships.
+   * The userId MUST already have an OrgMember row for the active org —
+   * verified server-side before granting.
+   */
+  linkExistingUserId: z.string().min(1).optional(),
+}).refine(
+  (d) => d.linkExistingUserId || (d.password && d.password.length >= 8),
+  { message: "Password is required for new users", path: ["password"] },
+);
 
 export type CreateOrgUserInput = z.infer<typeof createOrgUserSchema>;
