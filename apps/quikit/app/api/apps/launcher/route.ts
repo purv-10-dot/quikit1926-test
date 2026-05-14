@@ -70,9 +70,10 @@ export async function GET(req: NextRequest) {
 
   const memberIsAdmin = isSuperAdmin || ADMIN_TIER_ROLES.has(String(memberRole ?? ""));
 
-  // Apps in catalog (active only)
+  // Apps in catalog (active only). Exclude `quikit` itself — it IS the
+  // launcher; showing it as a tenant tile is nonsensical.
   const allApps = await db.app.findMany({
-    where: { status: { not: "disabled" } },
+    where: { status: { not: "disabled" }, slug: { not: "quikit" } },
     select: {
       id: true,
       name: true,

@@ -10,6 +10,7 @@ import {
   MEMBERSHIP_ROLES,
   MEMBERSHIP_ROLE_LABELS,
 } from "@quikit/shared";
+import { assignAppRoles } from "@quikit/auth/assign-app-roles";
 import bcrypt from "bcryptjs";
 
 /**
@@ -143,6 +144,19 @@ export const POST = withSuperAdminAuth<{ id: string }>(
           })),
           skipDuplicates: true,
         });
+
+        // Mirror UserAppAccess into per-app UserAppRole rows for RBAC v2
+        // apps (quikscale, quiktrack). Apps without RBAC v2 tables are
+        // silently skipped inside the helper.
+        await assignAppRoles(
+          db,
+          orgId,
+          appIds.map((appId) => ({
+            userId: user.id,
+            appId,
+            roleName: userAppRole === "admin" ? "Admin" : "",
+          })),
+        ).catch(() => {});
       }
 
       logAudit({
