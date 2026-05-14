@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-const withOrgAuth = withOrgAuthForModule("opsp.history");
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+const auth = withOrgAuthForResource("opsp.history", "OPSP.History");
 
 /**
  * GET /api/opsp/history?year=2026
@@ -9,7 +9,7 @@ const withOrgAuth = withOrgAuthForModule("opsp.history");
  * Returns all OPSP records for the logged-in user's tenant for the given
  * fiscal year, plus available fiscal years and tenant fiscal config.
  */
-export const GET = withOrgAuth(async ({ orgId }, req) => {
+export const GET = auth.view(async ({ orgId }, req) => {
   const org = await db.org.findUnique({
     where: { id: orgId },
     select: { fiscalYearStart: true },

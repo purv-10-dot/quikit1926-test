@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-const withOrgAuth = withOrgAuthForModule("priority");
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+const auth = withOrgAuthForResource("priority", "Priority");
 import { updatePrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { canEditPriority } from "@/lib/api/priorityPermissions";
@@ -32,7 +32,7 @@ const PRIORITY_SELECT = {
   },
 };
 
-export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = auth.view<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const priority = await db.priority.findFirst({
     where: { id: params.id },
     select: PRIORITY_SELECT,
@@ -43,7 +43,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params 
   return NextResponse.json({ success: true, data: priority });
 });
 
-export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existing = await db.priority.findUnique({
     where: { id: params.id },
     select: { orgId: true, createdBy: true, owner: true },
@@ -102,7 +102,7 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
   return NextResponse.json({ success: true, data: updated });
 });
 
-export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.priority.findUnique({
     where: { id: params.id },
     select: { orgId: true, createdBy: true, owner: true },

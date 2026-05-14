@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-const withOrgAuth = withOrgAuthForModule("opsp.categories");
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+const auth = withOrgAuthForResource("opsp.categories", "OPSP.Categories");
 import { validationError } from "@/lib/api/validationError";
 import { updateCategorySchema } from "@/lib/schemas/categorySchema";
 
@@ -9,7 +9,7 @@ type RouteParams = { id: string };
 
 // PUT /api/categories/[id] — update a category
 // Enforces the same (orgId, nameKey, dataType, currency) uniqueness as create.
-export const PUT = withOrgAuth<RouteParams>(async ({ orgId }, request, { params }) => {
+export const PUT = auth.update<RouteParams>(async ({ orgId }, request, { params }) => {
   const existing = await db.categoryMaster.findFirst({ where: { id: params.id, orgId } });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
@@ -50,7 +50,7 @@ export const PUT = withOrgAuth<RouteParams>(async ({ orgId }, request, { params 
 }, { fallbackErrorMessage: "Failed to update category" });
 
 // DELETE /api/categories/[id] — delete a category
-export const DELETE = withOrgAuth<RouteParams>(async ({ orgId }, _request, { params }) => {
+export const DELETE = auth.delete<RouteParams>(async ({ orgId }, _request, { params }) => {
   const existing = await db.categoryMaster.findFirst({ where: { id: params.id, orgId } });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
 
