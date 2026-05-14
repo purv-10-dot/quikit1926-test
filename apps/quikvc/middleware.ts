@@ -5,30 +5,47 @@ import { createMiddleware } from "@quikit/auth/middleware";
 /**
  * QuikVC middleware.
  *
- * SSO via @quikit/auth — orgId comes from the QuikIT OAuth token.
- * Unauthenticated users are bounced to /login which auto-triggers signIn("quikit").
+ * Wraps the @quikit/auth factory so unauthenticated traffic gets routed
+ * through the launcher's hand-off flow (the launcher mints a JWT, then
+ * `/auth-handoff` exchanges it for our session cookie on this subdomain).
  *
  * Dev escape hatch: set QUIKVC_DEV_BYPASS=1 in .env.local to skip the
- * middleware entirely — pairs with `lib/dev-session.ts` which falls back to
- * the seeded ValleyNXT tenant when getServerSession returns null. Strictly
- * opt-in (was previously enabled for any non-production env, which is too
- * loose for preview / staging deployments).
+ * middleware entirely — pairs with `lib/dev-session.ts` which falls back
+ * to the seeded ValleyNXT tenant when getServerSession returns null.
  */
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
 const QUIKIT_URL = process.env.NEXT_PUBLIC_QUIKIT_URL;
+const APP_SLUG = "quikvc";
 
-const realMiddleware = createMiddleware({
+const factoryMiddleware = createMiddleware({
   loginRoute: "/login",
   selectOrgRoute: "/select-org",
-  publicRoutes: ["/login", "/select-org", "/invitations"],
+  publicRoutes: ["/login", "/select-org", "/invitations", "/auth-handoff"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
-  // /select-org retired — fall through to launcher /apps when token has no orgId.
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
 
 function isDevBypassEnabled(): boolean {
   const v = (process.env.QUIKVC_DEV_BYPASS ?? "").toLowerCase().trim();
   return v === "1" || v === "true" || v === "yes";
+}
+
+async function realMiddleware(request: NextRequest) {
+  const res = await factoryMiddleware(request);
+  if (QUIKIT_URL && (res.status === 307 || res.status === 308)) {
+    const dest = res.headers.get("location") ?? "";
+    const launcherLogin = AUTH_URL ? `${AUTH_URL}/login` : "";
+    if (launcherLogin && dest.startsWith(launcherLogin)) {
+      const handoff = new URL("/apps", QUIKIT_URL);
+      handoff.searchParams.set("handoff", APP_SLUG);
+      handoff.searchParams.set(
+        "to",
+        request.nextUrl.pathname + request.nextUrl.search,
+      );
+      return NextResponse.redirect(handoff);
+    }
+  }
+  return res;
 }
 
 export const middleware = isDevBypassEnabled()

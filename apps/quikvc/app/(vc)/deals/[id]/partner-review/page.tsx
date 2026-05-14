@@ -46,7 +46,7 @@ export default async function PartnerReviewPage({ params }: { params: { id: stri
   const askLakhs = deal.application.fundingAsk
     ? Number(deal.application.fundingAsk / BigInt(10_000_000))
     : 0;
-  const memo = deal.icMemos?.[0];
+  const memo = deal.icMemos ?? null;
 
   return (
     <div className="px-6 py-6 max-w-6xl mx-auto">

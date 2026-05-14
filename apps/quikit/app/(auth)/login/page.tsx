@@ -12,7 +12,11 @@ export default function LoginPage({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const auth = process.env.NEXT_PUBLIC_AUTH_URL?.replace(/\/$/, "");
-  if (auth) {
+  const launcher = process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/$/, "");
+  // Only redirect when NEXT_PUBLIC_AUTH_URL points at a DIFFERENT host.
+  // If it's the launcher's own URL, render LoginPageClient instead — otherwise
+  // we'd redirect /login → /login → loop.
+  if (auth && auth !== launcher) {
     const q = new URLSearchParams();
     for (const [key, raw] of Object.entries(searchParams)) {
       if (raw === undefined) continue;

@@ -71,9 +71,23 @@ export async function middleware(request: NextRequest) {
   // out so the new user can set their password.
   const isLogin = pathname.startsWith("/login");
   const isInvite = pathname.startsWith("/invite");
-  const isPublic = isLogin || isInvite;
+  const isHandoff = pathname.startsWith("/auth-handoff");
+  const isPublic = isLogin || isInvite || isHandoff;
 
   if (!token && !isPublic && !request.nextUrl.searchParams.get("preview")) {
+    // Cookies don't share across *.vercel.app subdomains. Redirect via the
+    // launcher's handoff flow: launcher mints a short-lived JWT, our
+    // `/auth-handoff` route exchanges it for a NextAuth session cookie on
+    // this subdomain.
+    const launcher = process.env.NEXT_PUBLIC_QUIKIT_URL;
+    if (launcher) {
+      const handoff = new URL("/apps", launcher);
+      handoff.searchParams.set("handoff", "quikconstruction");
+      handoff.searchParams.set("to", pathname + request.nextUrl.search);
+      const res = NextResponse.redirect(handoff);
+      res.headers.set("x-request-id", requestId);
+      return res;
+    }
     const url = new URL("/login", request.url);
     url.searchParams.set("callbackUrl", pathname);
     const res = NextResponse.redirect(url);

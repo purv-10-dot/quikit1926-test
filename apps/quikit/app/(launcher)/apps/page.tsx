@@ -148,6 +148,28 @@ export default function AppLauncherPage() {
       .finally(() => setLoadingApps(false));
   }, [selectedOrg?.orgId]);
 
+  // Deep-link handoff (Flow B): if the URL has `?handoff=<slug>&to=<path>`,
+  // auto-launch that app once the orgs + apps lists have loaded. This makes
+  // bookmarks like `https://quikscale.vercel.app/dashboard` work — the app's
+  // middleware redirects unauthenticated users here with the handoff intent,
+  // and we transparently mint + redirect back.
+  useEffect(() => {
+    if (loadingOrgs || loadingApps) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get("handoff");
+    if (!slug) return;
+    const to = params.get("to") ?? "/";
+    const target = apps.find((a) => a.slug === slug);
+    if (!target) {
+      // Unknown app — clean the URL and stay on /apps.
+      window.history.replaceState({}, "", "/apps");
+      return;
+    }
+    // Fire and forget; handleLaunch will window.location.href away.
+    void handleLaunch(target, to);
+  }, [loadingOrgs, loadingApps, apps]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function selectOrgInSession(orgId: string, role: string) {
     try {
       await fetch("/api/org/select", {
@@ -167,7 +189,7 @@ export default function AppLauncherPage() {
     await selectOrgInSession(org.orgId, org.role);
   }
 
-  function handleLaunch(app: AppInfo) {
+  async function handleLaunch(app: AppInfo, to: string = "/") {
     // Guard against the silent-reload trap: if `app.baseUrl` is "" or
     // missing, `window.location.href = ""` re-navigates to the current
     // page, which looks identical to "click does nothing". Surface a real
@@ -186,7 +208,34 @@ export default function AppLauncherPage() {
       );
       return;
     }
-    window.location.href = url;
+
+    // Token hand-off: mint a short-lived JWT on the launcher, ship it in
+    // the URL to the target app. The target's /auth-handoff route verifies
+    // it and sets its own NextAuth session cookie on its own subdomain.
+    // (Necessary because cookies don't share across *.vercel.app subdomains.)
+    try {
+      const res = await fetch("/api/launch-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appSlug: app.slug,
+          orgId: selectedOrg?.orgId,
+          to,
+        }),
+      });
+      const j = await res.json();
+      if (!j.success) {
+        window.alert(j.error ?? "Failed to launch app");
+        return;
+      }
+      const handoffUrl = `${url}/auth-handoff?token=${encodeURIComponent(j.data.token)}`;
+      window.location.href = handoffUrl;
+    } catch (err) {
+      console.error("[launcher] launch-token mint failed", err);
+      // Fall back to direct nav. User will see the app's own login bounce —
+      // not ideal but at least the URL bar updates.
+      window.location.href = url;
+    }
   }
 
   const matchesSearch = (a: AppInfo) =>

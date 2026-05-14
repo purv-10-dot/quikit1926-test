@@ -7,7 +7,13 @@ import { createMiddleware } from "@quikit/auth/middleware";
  */
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL?.replace(/\/$/, "");
 
+// If NEXT_PUBLIC_AUTH_URL points at THIS host, the launcher serves /login
+// itself. Detected at request time via header; below we just check origin.
+// The build can't know the request origin, so we always treat /login as
+// public on the launcher — the page exists either way (legacy /login is
+// kept for self-hosted deploys).
 const launcherPublicRoutes = [
+  "/login",
   "/select-org",
   "/api/oauth/authorize",
   "/api/oauth/token",
@@ -16,12 +22,20 @@ const launcherPublicRoutes = [
   "/.well-known/openid-configuration",
 ];
 
+// Only set centralLoginUrl when AUTH_URL points at a DIFFERENT host.
+// (When AUTH_URL === launcher's own URL, redirecting /login → /login loops.)
+function isSelfHosted(authUrl: string | undefined): boolean {
+  if (!authUrl) return true;
+  const launcherUrl = process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/$/, "");
+  return launcherUrl === authUrl;
+}
+
 export const middleware = createMiddleware({
   loginRoute: "/login",
   selectOrgRoute: "/select-org",
   postLoginRoute: "/apps",
-  publicRoutes: AUTH_URL ? launcherPublicRoutes : ["/login", ...launcherPublicRoutes],
-  centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
+  publicRoutes: launcherPublicRoutes,
+  centralLoginUrl: isSelfHosted(AUTH_URL) ? undefined : `${AUTH_URL}/login`,
   // Super-admin routes — bypass the org-selection gate so super admins
   // without any OrgMember rows can still reach the launcher + super-admin
   // panels to bootstrap orgs.
