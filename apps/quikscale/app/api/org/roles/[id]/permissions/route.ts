@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
-import { isResource, isAction } from "@quikit/shared";
+import { isResource, isAction, isValidPermissionPair } from "@/lib/api/permissionsRegistry";
 
 const grantSchema = z.object({
   resource: z.string().refine(isResource, "Unknown resource"),
   action: z.string().refine(isAction, "Unknown action"),
-});
+}).refine(
+  (g) => isValidPermissionPair(g.resource, g.action),
+  { message: "(resource, action) pair is not valid for this leaf" },
+);
 
 const putBodySchema = z.object({
   /** Full desired set. Server replaces the existing rows with this list. */
@@ -67,12 +70,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (!role) {
       return NextResponse.json({ success: false, error: "Role not found" }, { status: 404 });
     }
-    if (role.isSystem) {
-      return NextResponse.json(
-        { success: false, error: "System role permissions cannot be modified (admin bypasses checks)" },
-        { status: 400 },
-      );
-    }
+    // v2: admin permissions are editable like any other role. `isSystem`
+    // only protects against rename/delete now (see [id]/route.ts).
 
     // Dedupe in case the client sends duplicates.
     const seen = new Set<string>();

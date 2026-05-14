@@ -1,0 +1,263 @@
+/**
+ * Local permission tree registry — single source of truth for the
+ * QuikScale Roles & Permissions v2 system.
+ *
+ * Lives here (not in `@quikit/shared`) because the user has scoped
+ * out-of-scope edits under `packages/shared/**`. The legacy shared
+ * `permissionsRegistry.ts` referenced in old docs was never written.
+ *
+ * Shape:
+ *   PERMISSION_TREE → Module[] → SubModule[] → leaves[{ resource, label, actions }]
+ *
+ * Resource keys are dot-namespaced so the tree maps onto a flat
+ * `RolePermission(resource, action)` storage table. The Tree only
+ * exists in code — the DB never sees the hierarchy.
+ *
+ * Add a new module/leaf here, run `prisma generate` if you also added
+ * any DB-backed concept, and the Manage Permission UI re-renders
+ * automatically.
+ */
+
+/* ───────────────────────── Action vocabulary ───────────────────────── */
+
+export const ACTIONS = ["view", "create", "update", "delete"] as const;
+export type Action = (typeof ACTIONS)[number];
+
+/* ───────────────────────── Tree types ───────────────────────── */
+
+export interface PermissionLeaf {
+  /** Stable identifier stored in `RolePermission.resource`. Dot-namespaced. */
+  resource: string;
+  /** Human-readable label rendered in the matrix. */
+  label: string;
+  /**
+   * Which actions are valid for this leaf. Usually `ACTIONS` (full CRUD-V),
+   * but binary leaves like `OPSP.History.EditFinalize` declare `["update"]`
+   * so the UI only renders one checkbox and the server rejects garbage pairs.
+   */
+  actions: readonly Action[];
+}
+
+export interface PermissionSubModule {
+  key: string;
+  label: string;
+  leaves: PermissionLeaf[];
+  /**
+   * Optional deeper nesting — used by `OPSP.History` whose child
+   * `EditFinalize` is a sub-sub-permission inside the History submodule.
+   */
+  subModules?: PermissionSubModule[];
+}
+
+export interface PermissionModule {
+  key: string;
+  label: string;
+  /** Direct leaves when the module has no submodules (typical case). */
+  leaves?: PermissionLeaf[];
+  /** Subtree when the module fans out (e.g. OPSP → Create / History / Review / Categories). */
+  subModules?: PermissionSubModule[];
+}
+
+/* ───────────────────────── The tree ───────────────────────── */
+
+export const PERMISSION_TREE: PermissionModule[] = [
+  {
+    key: "Dashboard",
+    label: "Dashboard",
+    leaves: [{ resource: "Dashboard", label: "Dashboard", actions: ["view"] }],
+  },
+  {
+    key: "KPI",
+    label: "KPI",
+    leaves: [
+      { resource: "KPI", label: "Individual KPI", actions: ACTIONS },
+      { resource: "TeamKPI", label: "Team KPI", actions: ACTIONS },
+    ],
+  },
+  {
+    key: "Priority",
+    label: "Priority",
+    leaves: [{ resource: "Priority", label: "Priority", actions: ACTIONS }],
+  },
+  {
+    key: "OrgSetup",
+    label: "Org Setup",
+    leaves: [
+      { resource: "Team", label: "Teams", actions: ACTIONS },
+      { resource: "User", label: "Users", actions: ACTIONS },
+      { resource: "Quarter", label: "Quarter Settings", actions: ACTIONS },
+    ],
+  },
+  {
+    key: "WWW",
+    label: "WWW",
+    leaves: [{ resource: "WWW", label: "WWW", actions: ACTIONS }],
+  },
+  {
+    key: "ClientMeetings",
+    label: "Meeting Rhythm",
+    leaves: [
+      { resource: "ClientMaster", label: "Client Master", actions: ACTIONS },
+      { resource: "ClientMember", label: "Client Members", actions: ACTIONS },
+      { resource: "DailyHuddle", label: "Daily Huddle", actions: ACTIONS },
+      { resource: "WeeklyMeeting", label: "Weekly Meeting", actions: ACTIONS },
+    ],
+  },
+  {
+    key: "OPSP",
+    label: "OPSP",
+    subModules: [
+      {
+        key: "OPSP.Create",
+        label: "Create OPSP",
+        leaves: [{ resource: "OPSP.Create", label: "Create OPSP", actions: ACTIONS }],
+      },
+      {
+        key: "OPSP.History",
+        label: "OPSP History",
+        leaves: [{ resource: "OPSP.History", label: "OPSP History", actions: ACTIONS }],
+        // Sub-sub permission: gates the Edit button on the History page
+        // (and the editor lock) for OPSPs whose status is finalized/reviewed.
+        subModules: [
+          {
+            key: "OPSP.History.EditFinalize",
+            label: "Edit after Finalize",
+            leaves: [
+              {
+                resource: "OPSP.History.EditFinalize",
+                label: "Edit after Finalize",
+                actions: ["update"],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        key: "OPSP.Review",
+        label: "OPSP Review",
+        leaves: [{ resource: "OPSP.Review", label: "OPSP Review", actions: ACTIONS }],
+      },
+      {
+        key: "OPSP.Categories",
+        label: "Category Mgmt",
+        leaves: [{ resource: "OPSP.Categories", label: "Category Mgmt", actions: ACTIONS }],
+      },
+    ],
+  },
+];
+
+/* ───────────────────────── Navigation registry ───────────────────────── */
+
+/**
+ * Sidebar items the `RoleNavigation` table whitelists by key.
+ * Mirrors (and is kept in sync with) `packages/shared/lib/moduleRegistry.ts`
+ * but as a flat list keyed for permission storage rather than a hierarchy.
+ */
+export const NAV_ITEMS = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "kpi.individual", label: "Individual KPI" },
+  { key: "kpi.teams", label: "Teams KPI" },
+  { key: "priority", label: "Priority" },
+  { key: "www", label: "WWW" },
+  { key: "orgSetup.teams", label: "Teams" },
+  { key: "orgSetup.users", label: "Users" },
+  { key: "orgSetup.quarters", label: "Quarter Settings" },
+  { key: "clientMeetings.dashboard", label: "Meeting Dashboard" },
+  { key: "clientMeetings.clients", label: "Client Master" },
+  { key: "clientMeetings.members", label: "Client Members" },
+  { key: "clientMeetings.dailyHuddle", label: "Daily Huddle" },
+  { key: "clientMeetings.weeklyMeeting", label: "Weekly Meeting" },
+  { key: "opsp.create", label: "Create OPSP" },
+  { key: "opsp.history", label: "OPSP History" },
+  { key: "opsp.review", label: "OPSP Review" },
+  { key: "opsp.categories", label: "Category Mgmt" },
+] as const;
+
+export type NavKey = (typeof NAV_ITEMS)[number]["key"];
+export const NAV_KEYS: readonly string[] = NAV_ITEMS.map((n) => n.key);
+
+/* ───────────────────────── Derived helpers ───────────────────────── */
+
+/** Walk every leaf in the tree once. */
+export function* walkLeaves(): Generator<PermissionLeaf> {
+  function* walkSubs(subs: readonly PermissionSubModule[]): Generator<PermissionLeaf> {
+    for (const sub of subs) {
+      for (const leaf of sub.leaves) yield leaf;
+      if (sub.subModules) yield* walkSubs(sub.subModules);
+    }
+  }
+  for (const mod of PERMISSION_TREE) {
+    if (mod.leaves) for (const leaf of mod.leaves) yield leaf;
+    if (mod.subModules) yield* walkSubs(mod.subModules);
+  }
+}
+
+/** Flat list of every (resource, action) pair the tree allows. */
+export function allPermissionPairs(): Array<{ resource: string; action: Action }> {
+  const out: Array<{ resource: string; action: Action }> = [];
+  for (const leaf of walkLeaves()) {
+    for (const action of leaf.actions) out.push({ resource: leaf.resource, action });
+  }
+  return out;
+}
+
+/** Set of every resource key the tree exposes. Built once, lazy. */
+const _resourceSet: Set<string> = (() => {
+  const s = new Set<string>();
+  for (const leaf of walkLeaves()) s.add(leaf.resource);
+  return s;
+})();
+
+export const RESOURCES: readonly string[] = Array.from(_resourceSet);
+
+/** Resource is intentionally a `string` alias — keys are open-ended dot paths. */
+export type Resource = string;
+
+/** True when `s` is a known resource in the tree. */
+export function isResource(s: string): s is Resource {
+  return _resourceSet.has(s);
+}
+
+/** True when `s` is one of the four action verbs. */
+export function isAction(s: string): s is Action {
+  return (ACTIONS as readonly string[]).includes(s);
+}
+
+/** True when `s` is a known nav key. */
+export function isNavKey(s: string): boolean {
+  return NAV_KEYS.includes(s);
+}
+
+/**
+ * True when `(resource, action)` is a VALID pair per the registry — i.e.
+ * the leaf exists AND lists this action in its `actions` array.
+ *
+ * The Manage Permission PUT endpoint uses this to reject garbage like
+ * `(resource: "OPSP.History.EditFinalize", action: "delete")` (the leaf
+ * only declares `["update"]`).
+ */
+export function isValidPermissionPair(resource: string, action: string): boolean {
+  if (!isAction(action)) return false;
+  for (const leaf of walkLeaves()) {
+    if (leaf.resource === resource) {
+      return (leaf.actions as readonly string[]).includes(action);
+    }
+  }
+  return false;
+}
+
+/* ───────────────────────── Legacy resource mapping ───────────────────────── */
+
+/**
+ * Pre-v2 RolePermission rows used a flat `OPSP` resource for everything
+ * under the OPSP module. The v2 tree splits that into 4 submodules.
+ *
+ * This map drives the one-time backfill in `seedAdminAppRole.ts`:
+ * for every row with a legacy key, we insert equivalent rows for the
+ * new dot-namespaced resources and then delete the legacy row.
+ */
+export const LEGACY_RESOURCE_BACKFILL: Record<string, string[]> = {
+  OPSP: ["OPSP.Create", "OPSP.History", "OPSP.Review", "OPSP.Categories"],
+  // Old "Individual" resource → new "KPI"
+  Individual: ["KPI"],
+};

@@ -3,20 +3,17 @@
 /**
  * ActionsSection — "ACTIONS (QTR) / Rocks / Critical #" + "THEME / Scoreboard / Celebration / Reward"
  *
- * Extracted from `page.tsx` in Phase 3 of the OPSP decomposition.
- * The actionsQtr rows inherit category+projected from goalRows (locked rows
- * using the current quarter's goal value); that cascade is owned by
- * useOPSPForm — this component only renders the locked state when active.
+ * actionsQtr rows are first-fill seeded from goalRows by useOPSPForm, but
+ * remain user-editable (no locked state).
  */
 
-import { Lock, Maximize2 } from "lucide-react";
+import { Maximize2 } from "lucide-react";
 import { Card, CardH } from "./Card";
 import { FInput, FTextarea } from "./RichEditor";
 import { CritBlock } from "./CritBlock";
-import { CategorySelect, ProjectedInput, displayCategory } from "./category";
+import { CategorySelect, ProjectedInput } from "./category";
 import { WithTooltip, OwnerSelect } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
-import type { GoalRow } from "../types";
 
 interface Props {
   form: FormData;
@@ -46,90 +43,41 @@ export function ActionsSection({
             <span className="col-span-3">Category</span>
             <span className="col-span-2 text-right">Projected</span>
           </div>
-          {form.actionsQtr.map((row, i) => {
-            const g = i < form.goalRows.length ? form.goalRows[i] : null;
-            const qKey = form.quarter.toLowerCase() as keyof GoalRow;
-            const gQVal = g ? String(g[qKey] ?? "").trim() : "";
-            const inherited = !!(
-              g &&
-              g.category.trim() &&
-              g.projected.trim() &&
-              gQVal
-            );
-            return (
-              <div
-                key={i}
-                className="grid grid-cols-5 gap-1.5 items-start py-0.5"
-              >
-                <div className="col-span-3 min-w-0">
-                  {inherited ? (
-                    <div className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 bg-gray-50 gap-1 cursor-not-allowed">
-                      <WithTooltip
-                        content={displayCategory(row.category) || ""}
-                        className="relative flex-1 min-w-0"
-                      >
-                        <span className="block text-sm whitespace-nowrap truncate text-left text-gray-500">
-                          {displayCategory(row.category) || "—"}
-                        </span>
-                      </WithTooltip>
-                      <WithTooltip
-                        content="Locked — set in Goals"
-                        className="relative flex-shrink-0"
-                      >
-                        <Lock className="h-3 w-3 text-gray-400" />
-                      </WithTooltip>
-                    </div>
-                  ) : (
-                    <CategorySelect
-                      value={row.category}
-                      onChange={(v) => {
-                        const next = [...form.actionsQtr];
-                        next[i] = {
-                          ...next[i],
-                          category: v,
-                          projected: "",
-                          m1: "",
-                          m2: "",
-                          m3: "",
-                        };
-                        set("actionsQtr", next);
-                      }}
-                    />
-                  )}
-                </div>
-                <div className="col-span-2 min-w-0">
-                  {inherited ? (
-                    <div className="flex items-center border border-gray-200 rounded bg-gray-50 overflow-hidden cursor-not-allowed">
-                      <WithTooltip
-                        content={row.projected || ""}
-                        className="relative flex-1 min-w-0"
-                      >
-                        <span className="block text-sm text-gray-500 truncate px-2 py-1.5">
-                          {row.projected || "—"}
-                        </span>
-                      </WithTooltip>
-                      <WithTooltip
-                        content="Locked — set in Goals"
-                        className="relative flex-shrink-0 mr-1.5"
-                      >
-                        <Lock className="h-3 w-3 text-gray-400" />
-                      </WithTooltip>
-                    </div>
-                  ) : (
-                    <ProjectedInput
-                      categoryName={row.category}
-                      value={row.projected}
-                      onChange={(v) => {
-                        const next = [...form.actionsQtr];
-                        next[i] = { ...next[i], projected: v };
-                        set("actionsQtr", next);
-                      }}
-                    />
-                  )}
-                </div>
+          {form.actionsQtr.map((row, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-5 gap-1.5 items-start py-0.5"
+            >
+              <div className="col-span-3 min-w-0">
+                <CategorySelect
+                  value={row.category}
+                  onChange={(v) => {
+                    const next = [...form.actionsQtr];
+                    next[i] = {
+                      ...next[i],
+                      category: v,
+                      projected: "",
+                      m1: "",
+                      m2: "",
+                      m3: "",
+                    };
+                    set("actionsQtr", next);
+                  }}
+                />
               </div>
-            );
-          })}
+              <div className="col-span-2 min-w-0">
+                <ProjectedInput
+                  categoryName={row.category}
+                  value={row.projected}
+                  onChange={(v) => {
+                    const next = [...form.actionsQtr];
+                    next[i] = { ...next[i], projected: v };
+                    set("actionsQtr", next);
+                  }}
+                />
+              </div>
+            </div>
+          ))}
         </div>
         {/* Rocks — 3-column table (rank | Quarterly Priority | Who/OwnerSelect). Matches Key Thrusts/Capabilities pattern. */}
         <div className="border-t border-gray-100 pt-3">

@@ -102,7 +102,8 @@ export function useWeeklyValues(kpiId: string) {
   });
 }
 
-// Update weekly value (autosave)
+// Update weekly value (single-week — kept for callers that still upsert one
+// row at a time; new code should prefer useUpdateWeeklyValuesBatch).
 export function useUpdateWeeklyValue(kpiId: string) {
   const queryClient = useQueryClient();
 
@@ -114,6 +115,23 @@ export function useUpdateWeeklyValue(kpiId: string) {
       queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
       queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
       // Dashboard pulls weekly values + progress%; keep it fresh after a save.
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Batch update weekly values — one network call per Save click. Same cache
+// invalidation as the single-week variant.
+export function useUpdateWeeklyValuesBatch(kpiId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (inputs: WeeklyValueInput[]) =>
+      kpiService.updateWeeklyValuesBatch(kpiId, inputs),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
+      queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
+      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });

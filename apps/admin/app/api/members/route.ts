@@ -1,193 +1,150 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { randomBytes } from "crypto";
+import bcrypt from "bcryptjs";
+import { z } from "zod";
 import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
-import { sendInvitationEmail } from "@/lib/email";
-import { ROLE_LABELS } from "@/lib/constants";
-import { inviteMemberSchema } from "@/lib/schemas/memberSchema";
-import { writeAuditLog } from "@/lib/audit";
+import { sendOnboardingInvitationEmail } from "@/lib/email";
+import { assignNamedRolesForAccess } from "@/lib/roles-helpers";
 import {
   DEFAULT_INVITE_PASSWORD,
   INVITE_METHOD,
   MEMBERSHIP_ROLE_LABELS,
+  MEMBERSHIP_ROLES,
   type SsoProvider,
 } from "@quikit/shared";
 import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
-import bcrypt from "bcryptjs";
-import crypto from "crypto";
 
-export const GET = withAdminAuth(async ({ orgId }, request: NextRequest) => {
+const inviteSchema = z.object({
+  name: z.string().min(2, "Full name is required").max(100),
+  email: z.string().email("Invalid email address"),
+  // Match the super-admin onboarding flow: caller picks SSO or Native.
+  inviteMethod: z
+    .enum([INVITE_METHOD.SSO, INVITE_METHOD.NATIVE])
+    .default(INVITE_METHOD.SSO),
+  // Membership role on the org. Defaults to "member" — the Org Admin who's
+  // doing the inviting can promote to app_admin or org_admin if needed.
+  role: z
+    .enum([
+      MEMBERSHIP_ROLES.MEMBER,
+      MEMBERSHIP_ROLES.APP_ADMIN,
+      MEMBERSHIP_ROLES.ORG_ADMIN,
+    ])
+    .default(MEMBERSHIP_ROLES.MEMBER),
+  appAccess: z
+    .array(z.object({ appSlug: z.string(), role: z.string() }))
+    .optional()
+    .default([]),
+});
+
+export const GET = withAdminAuth(async ({ orgId }) => {
   const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
 
-  // Pagination
-  const { searchParams } = new URL(request.url);
-  const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
-  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50", 10) || 50));
-  const skip = (page - 1) * limit;
-
-  const [memberships, total] = await Promise.all([
-    db.orgMember.findMany({
-      where: { orgId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            avatar: true,
-            lastSignInAt: true,
-            userTeams: {
-              where: { orgId },
-              include: { team: { select: { name: true } } },
-            },
+  const memberships = await db.orgMember.findMany({
+    where: { orgId },
+    select: {
+      id: true,
+      role: true,
+      status: true,
+      inviteMethod: true,
+      user: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+          appAccess: {
+            where: { orgId },
+            select: { appId: true, role: true, app: { select: { slug: true } } },
           },
         },
       },
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: limit,
-    }),
-    db.orgMember.count({ where: { orgId } }),
-  ]);
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
-  const memberData = memberships.map((m) => ({
-    id: m.userId,
-    membershipId: m.id,
-    firstName: m.user.firstName,
-    lastName: m.user.lastName,
+  const data = memberships.map((m) => ({
+    id: m.id,
+    name: `${m.user.firstName} ${m.user.lastName}`.replace(/ -$/, "").trim(),
     email: m.user.email,
-    avatar: m.user.avatar,
+    avatar: m.user.avatar ?? null,
+    apps: m.user.appAccess.map((a) => ({ slug: a.app.slug, role: a.role })),
     role: m.role,
-    status: m.status,
-    teamNames: m.user.userTeams.map((ut) => ut.team.name),
-    lastSignInAt: m.user.lastSignInAt?.toISOString() ?? null,
-    invitedAt: m.invitedAt?.toISOString() ?? null,
-    acceptedAt: m.acceptedAt?.toISOString() ?? null,
+    inviteMethod: m.inviteMethod ?? null,
+    status: m.status === "invited" ? "pending" : m.status,
   }));
 
-  return NextResponse.json({
-    success: true,
-    data: memberData,
-    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
-  });
+  return NextResponse.json({ success: true, data });
 });
 
-export const POST = withAdminAuth(async ({ orgId, userId: inviterId }, request: NextRequest) => {
+export const POST = withAdminAuth(async ({ orgId, userId }, req) => {
   const blocked = await gateModuleApi("admin", "members", orgId);
   if (blocked) return blocked as NextResponse;
 
-  const body = await request.json();
-  const parsed = inviteMemberSchema.safeParse(body);
+  const body = await req.json().catch(() => null);
+  if (!body) {
+    return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+  }
+
+  const parsed = inviteSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" },
-      { status: 400 }
+      { success: false, error: parsed.error.errors[0].message },
+      { status: 400 },
     );
   }
-  const { firstName, lastName, role, inviteMethod, appIds } = parsed.data;
 
-  // Normalise email to lowercase at the API boundary — the OAuth signIn
-  // callback always lowercases the address it receives from Google/Microsoft,
-  // so storing a mixed-case copy makes that lookup miss the row.
-  const email = parsed.data.email.trim().toLowerCase();
+  const { name, email: rawEmail, appAccess, inviteMethod, role: memberRole } = parsed.data;
+  const email = rawEmail.toLowerCase();
+  const [firstName, ...rest] = name.trim().split(/\s+/);
+  const lastName = rest.join(" ") || "-";
+  const appSlugs = appAccess.map((a) => a.appSlug);
+  const isNative = inviteMethod === INVITE_METHOD.NATIVE;
 
-  // FR-SA-004 — for SSO invites, the email must classify as Google or Microsoft.
-  // Uses MX-record lookup for custom corporate domains so we don't need a
-  // hardcoded allow-list — `Pravin.Sharma@quikit.ai` resolves to Microsoft via
-  // its MX records ending in `mail.protection.outlook.com`.
+  // FR-SA-004 — for SSO invites, the email must classify as Google or
+  // Microsoft (or MX-resolve to one). Reject up-front so we never persist
+  // an invite that can't actually be accepted.
   let ssoProvider: SsoProvider | null = null;
-  if (inviteMethod === INVITE_METHOD.SSO) {
+  if (!isNative) {
     ssoProvider = await classifySsoProviderAsync(email);
     if (!ssoProvider) {
       return NextResponse.json(
-        { success: false, error: "SSO invitations require a Google or Microsoft email address." },
-        { status: 422 }
-      );
-    }
-  }
-
-  // Tenant lookup is needed for domain allowlist check, branding, AND email send.
-  const org = await db.org.findUnique({
-    where: { id: orgId },
-    select: { name: true, logoUrl: true, brandColor: true, allowedEmailDomains: true },
-  });
-
-  // Domain allowlist enforcement (empty list = unrestricted).
-  if (org?.allowedEmailDomains && org.allowedEmailDomains.length > 0) {
-    const emailDomain = email.split("@")[1]?.toLowerCase() ?? "";
-    const allowed = org.allowedEmailDomains.map((d) => d.toLowerCase());
-    if (!allowed.includes(emailDomain)) {
-      return NextResponse.json(
         {
           success: false,
-          error: `Email domain not allowed for this organisation. Permitted domains: ${allowed.join(", ")}`,
+          error:
+            "SSO invitations require a Google or Microsoft email address. Switch to Native invite to use email + password.",
         },
-        { status: 422 }
+        { status: 422 },
       );
     }
   }
 
-  // FR-OA-002 — when inviting an App Admin, every selected appId must
-  // actually be provisioned for this org (OrgAppAccess.enabled). Reject
-  // anything that's not on the org's allowed list to prevent admins from
-  // smuggling access to apps they don't own.
-  if (appIds.length > 0) {
-    const provisioned = await db.orgAppAccess.findMany({
-      where: { orgId, appId: { in: appIds }, enabled: true },
-      select: { appId: true },
-    });
-    const provisionedIds = new Set(provisioned.map((p) => p.appId));
-    const missing = appIds.filter((id) => !provisionedIds.has(id));
-    if (missing.length > 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "One or more selected applications are not available to this organisation.",
-        },
-        { status: 422 }
-      );
-    }
+  // FR-OA-002 — App Admin must be assigned at least one app.
+  if (memberRole === MEMBERSHIP_ROLES.APP_ADMIN && appSlugs.length === 0) {
+    return NextResponse.json(
+      { success: false, error: "Select at least one application for the App Admin." },
+      { status: 400 },
+    );
   }
 
-  // BRV-010 — duplicate-invite guard. We respond with the same generic success
-  // payload to defeat email enumeration but log the duplicate so a real admin
-  // can notice. (Form-level uniqueness is also enforced by the UI.)
-  let user = await db.user.findUnique({ where: { email } });
-
-  if (user) {
-    const existingMembership = await db.orgMember.findUnique({
-      where: { orgId_userId: { orgId, userId: user.id } },
-    });
-
-    if (existingMembership && (existingMembership.status === "active" || existingMembership.status === "invited")) {
-      await writeAuditLog({
-        orgId,
-        actorId: inviterId,
-        action: "DUPLICATE_INVITE",
-        entityType: "Membership",
-        entityId: existingMembership.id,
-        reason: `status=${existingMembership.status}`,
-        ipAddress: request.headers.get("x-forwarded-for"),
-        userAgent: request.headers.get("user-agent"),
-      });
-      return NextResponse.json({
-        success: true,
-        message: `Invitation sent to ${email}`,
-      });
-    }
+  const [org, existingUser] = await Promise.all([
+    db.org.findUnique({ where: { id: orgId }, select: { name: true, brandColor: true } }),
+    db.user.findUnique({
+      where: { email },
+      select: { id: true, firstName: true, lastName: true, email: true, password: true },
+    }),
+  ]);
+  if (!org) {
+    return NextResponse.json({ success: false, error: "Organisation not found" }, { status: 404 });
   }
 
-  const invitationToken = crypto.randomUUID();
-
-  // Create user if they don't exist. For native invites, seed the system
-  // default password (FRD BR-004) and flag the User so the first login
-  // routes through the Set-Password screen (FR-SA-009 / BR-008). SSO users
-  // never get a password — they authenticate via OAuth.
+  // Create the User if new. Native seeds with DEFAULT_INVITE_PASSWORD +
+  // mustChangePassword so the Set-Password screen fires on first login
+  // (FR-SA-009 / BR-008). SSO users get no password.
+  let user = existingUser;
   if (!user) {
-    const isNative = inviteMethod === INVITE_METHOD.NATIVE;
     user = await db.user.create({
       data: {
         email,
@@ -196,115 +153,180 @@ export const POST = withAdminAuth(async ({ orgId, userId: inviterId }, request: 
         password: isNative ? await bcrypt.hash(DEFAULT_INVITE_PASSWORD, 10) : null,
         mustChangePassword: isNative,
       },
+      select: { id: true, firstName: true, lastName: true, email: true, password: true },
+    });
+  } else if (isNative && !user.password) {
+    // Existing user re-invited via native flow with no password yet — seed
+    // the default password so they can complete the Set-Password screen.
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        password: await bcrypt.hash(DEFAULT_INVITE_PASSWORD, 10),
+        mustChangePassword: true,
+      },
     });
   }
 
-  // Resolve app names for the email body (FRD §4 — every invite lists apps).
-  let appNames: string[] = [];
-  if (appIds.length > 0) {
-    const apps = await db.app.findMany({
-      where: { id: { in: appIds } },
-      select: { name: true },
-    });
-    appNames = apps.map((a) => a.name);
+  // Resolve appIds in parallel with the duplicate-membership check.
+  const [existingMembership, apps] = await Promise.all([
+    db.orgMember.findUnique({ where: { orgId_userId: { orgId, userId: user.id } } }),
+    appSlugs.length > 0
+      ? db.app.findMany({
+          where: { slug: { in: appSlugs } },
+          select: { id: true, slug: true, name: true },
+        })
+      : Promise.resolve([] as { id: string; slug: string; name: string }[]),
+  ]);
+
+  if (existingMembership && existingMembership.status !== "inactive") {
+    return NextResponse.json(
+      { success: false, error: "This user is already a member of your organisation" },
+      { status: 409 },
+    );
   }
 
-  // Create or upsert the membership. Persist FRD-required fields (inviteMethod,
-  // inviteProvider, inviteAppIds) so accept-time grants are scoped correctly.
-  const membership = await db.orgMember.upsert({
-    where: { orgId_userId: { orgId, userId: user.id } },
-    create: {
+  // BRV-005 — selected apps must be provisioned for this org (matches what
+  // the super-admin direct-add enforces on its end).
+  if (apps.length > 0) {
+    const provisioned = await db.orgAppAccess.findMany({
+      where: { orgId, appId: { in: apps.map((a) => a.id) }, enabled: true },
+      select: { appId: true },
+    });
+    const provisionedIds = new Set(provisioned.map((p) => p.appId));
+    const missing = apps.filter((a) => !provisionedIds.has(a.id));
+    if (missing.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Apps not provisioned for this organisation: ${missing.map((a) => a.slug).join(", ")}`,
+        },
+        { status: 422 },
+      );
+    }
+  }
+
+  const invitationToken = randomBytes(32).toString("hex");
+  const appIdList = apps.map((a) => a.id);
+
+  const membership = await db.$transaction(async (tx) => {
+    // Re-invite a previously removed member: reset the existing row instead
+    // of creating a duplicate. Carry the new inviteMethod + provider.
+    const m = existingMembership
+      ? await tx.orgMember.update({
+          where: { id: existingMembership.id },
+          data: {
+            role: memberRole,
+            status: "invited",
+            invitationToken,
+            invitedAt: new Date(),
+            acceptedAt: null,
+            inviteMethod,
+            inviteProvider: ssoProvider,
+            inviteAppIds: appIdList,
+            createdBy: userId,
+          },
+        })
+      : await tx.orgMember.create({
+          data: {
+            orgId,
+            userId: user.id,
+            role: memberRole,
+            status: "invited",
+            invitationToken,
+            invitedAt: new Date(),
+            inviteMethod,
+            inviteProvider: ssoProvider,
+            inviteAppIds: appIdList,
+            createdBy: userId,
+          },
+        });
+
+    if (apps.length > 0) {
+      // App Admin's per-app role is "admin"; everyone else is "member".
+      const userAppRoleDefault =
+        memberRole === MEMBERSHIP_ROLES.APP_ADMIN ? "admin" : "member";
+      await tx.userAppAccess.createMany({
+        data: apps.map((app) => ({
+          userId: user.id,
+          orgId,
+          appId: app.id,
+          role:
+            appAccess.find((a) => a.appSlug === app.slug)?.role ?? userAppRoleDefault,
+          grantedBy: userId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    return m;
+  });
+
+  if (apps.length > 0) {
+    await assignNamedRolesForAccess(
       orgId,
-      userId: user.id,
-      role,
-      status: "invited",
-      invitationToken,
-      invitedAt: new Date(),
-      inviteMethod,
-      inviteProvider: ssoProvider,
-      inviteAppIds: appIds,
-      createdBy: inviterId,
-    },
-    update: {
-      role,
-      status: "invited",
-      invitationToken,
-      invitedAt: new Date(),
-      inviteMethod,
-      inviteProvider: ssoProvider,
-      inviteAppIds: appIds,
-      createdBy: inviterId,
-    },
-  });
-
-  // Get inviter name for email
-  const inviter = await db.user.findUnique({
-    where: { id: inviterId },
-    select: { firstName: true, lastName: true },
-  });
-
-  // FR-SA-005 / FR-SA-008 — branch on inviteMethod inside the email service.
-  const roleLabel =
-    MEMBERSHIP_ROLE_LABELS[role as keyof typeof MEMBERSHIP_ROLE_LABELS] ||
-    ROLE_LABELS[role] ||
-    role;
-  const sendResult = await sendInvitationEmail({
-    to: email,
-    firstName,
-    orgName: org?.name || "Organisation",
-    orgLogoUrl: org?.logoUrl ?? null,
-    orgBrandColor: org?.brandColor ?? null,
-    inviterName: inviter ? `${inviter.firstName} ${inviter.lastName}` : "An admin",
-    role: roleLabel,
-    appNames,
-    token: invitationToken,
-    inviteMethod,
-    ssoProvider,
-  });
-
-  // FRD §8 Auditability — log the membership creation AND the email lifecycle
-  // separately so the admin dashboard can show "invited at X / email sent on
-  // attempt 2 / delivery failed on attempt 3" without scraping logs.
-  const ipAddress = request.headers.get("x-forwarded-for");
-  const userAgent = request.headers.get("user-agent");
-  await writeAuditLog({
-    orgId,
-    actorId: inviterId,
-    action: "INVITED",
-    entityType: "Membership",
-    entityId: membership.id,
-    newValues: { email, role, firstName, lastName, inviteMethod, ssoProvider, appIds },
-    ipAddress,
-    userAgent,
-  });
-  await writeAuditLog({
-    orgId,
-    actorId: inviterId,
-    action: sendResult.success ? "INVITE_EMAIL_SENT" : "INVITE_EMAIL_FAILED",
-    entityType: "Membership",
-    entityId: membership.id,
-    newValues: {
-      to: email,
-      attempts: sendResult.attempts,
-      error: sendResult.success ? undefined : String(sendResult.error ?? "unknown"),
-    },
-    ipAddress,
-    userAgent,
-  });
-
-  // FRD §7 — when delivery fails after all retries, surface a warning so the
-  // UI can prompt "email could not be delivered, use Resend Invite to retry"
-  // instead of pretending success.
-  if (!sendResult.success) {
-    return NextResponse.json({
-      success: true,
-      message: `Invitation created for ${email}, but the email could not be delivered. Use Resend Invite to retry.`,
-      warning: "email_delivery_failed",
-    });
+      apps.map((app) => ({
+        userId: user.id,
+        appId: app.id,
+        roleName: appAccess.find((a) => a.appSlug === app.slug)?.role ?? "",
+      })),
+    ).catch(() => {});
   }
 
-  return NextResponse.json({
-    success: true,
-    message: `Invitation sent to ${email}`,
-  });
+  // Resolve inviter name for the email body (best-effort).
+  const inviter = await db.user
+    .findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true, email: true },
+    })
+    .catch(() => null);
+  const inviterName = inviter
+    ? `${inviter.firstName} ${inviter.lastName}`.trim() || inviter.email
+    : "QuikIT Admin";
+
+  // Send the canonical SSO / Native onboarding email. Best-effort — never
+  // fails the API on email errors.
+  const roleLabel = MEMBERSHIP_ROLE_LABELS[memberRole] ?? String(memberRole);
+  try {
+    const result = await sendOnboardingInvitationEmail({
+      to: email,
+      firstName,
+      orgName: org.name,
+      orgLogoUrl: null,
+      orgBrandColor: org.brandColor ?? null,
+      inviterName,
+      role: roleLabel,
+      appNames: apps.map((a) => a.name),
+      token: invitationToken,
+      inviteMethod,
+      ssoProvider,
+    });
+    if (!result.success) {
+      console.error(
+        "[invite email] delivery failed after",
+        result.attempts,
+        "attempts:",
+        result.error,
+      );
+    }
+  } catch (err) {
+    console.error("[invite email] threw:", err);
+  }
+
+  return NextResponse.json(
+    {
+      success: true,
+      data: {
+        id: membership.id,
+        name: `${user.firstName} ${user.lastName}`.replace(/ -$/, "").trim(),
+        email: user.email,
+        avatar: null,
+        apps: appAccess.map((a) => ({ slug: a.appSlug, role: a.role })),
+        role: membership.role,
+        inviteMethod,
+        ssoProvider,
+        status: "pending",
+      },
+    },
+    { status: 201 },
+  );
 });

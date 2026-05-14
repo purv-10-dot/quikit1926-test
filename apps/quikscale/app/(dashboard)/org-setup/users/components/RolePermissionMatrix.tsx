@@ -1,0 +1,689 @@
+"use client";
+
+/**
+ * Permission matrix for a single AppRole.
+ *
+ * Layout:
+ *   Entity                          │ View │ Create │ Update │ Delete
+ *   ─────────────────────────────────┼──────┼────────┼────────┼───────
+ *   ⌄ Dashboard       (0/1)         │  ☐   │   —    │   —    │  —     ← single-leaf, inline checkboxes
+ *   ⌄ KPI             (4/8)         │  ▣   │   ▣    │   ▣    │  ▣     ← tristate module toggles
+ *     └ Individual KPI               │  ☐   │   ☐    │   ☐    │  ☐     ← leaf rows under module
+ *     └ Team KPI                     │  ☑   │   ☑    │   ☑    │  ☑
+ *   ⌄ OPSP           (2/13)         │  ▣   │   ▣    │   ▣    │  ▣
+ *       ⌄ OPSP History (1/4)        │  ☑   │   ☐    │   ▣    │  ☐
+ *           └ Edit after Finalize    │  —   │   —    │   ☑    │  —     ← sub-sub, binary leaf
+ *
+ * Ticking a module-level checkbox toggles that action across every leaf in
+ * the module's entire subtree. Tristate (indeterminate) when some leaves
+ * have it and others don't.
+ *
+ * Two tabs: Entities (table above) + Navigation (sidebar-key list per role).
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, Loader2, Save, Undo2, Shield, Info } from "lucide-react";
+import {
+  PERMISSION_TREE,
+  NAV_ITEMS,
+  ACTIONS,
+  type Action,
+  type PermissionLeaf,
+  type PermissionModule,
+  type PermissionSubModule,
+} from "@/lib/api/permissionsRegistry";
+
+interface RoleDetail {
+  id: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  isDefault: boolean;
+  permissions: Array<{ resource: string; action: string }>;
+  navigations: Array<{ navKey: string }>;
+}
+
+/* ─────────────────────── helpers (subtree walking) ─────────────────────── */
+
+interface NodeWithChildren {
+  leaves?: readonly PermissionLeaf[];
+  subModules?: readonly PermissionSubModule[];
+}
+
+function* walkAllLeaves(node: NodeWithChildren): Generator<PermissionLeaf> {
+  if (node.leaves) for (const leaf of node.leaves) yield leaf;
+  if (node.subModules) {
+    for (const sub of node.subModules) yield* walkAllLeaves(sub);
+  }
+}
+
+function actionStats(
+  node: NodeWithChildren,
+  action: Action,
+  grants: Set<string>,
+): { on: number; total: number } {
+  let on = 0;
+  let total = 0;
+  for (const leaf of walkAllLeaves(node)) {
+    if ((leaf.actions as readonly Action[]).includes(action)) {
+      total++;
+      if (grants.has(`${leaf.resource}:${action}`)) on++;
+    }
+  }
+  return { on, total };
+}
+
+function aggregateCounts(node: NodeWithChildren, grants: Set<string>) {
+  let on = 0;
+  let all = 0;
+  for (const leaf of walkAllLeaves(node)) {
+    for (const action of leaf.actions) {
+      all++;
+      if (grants.has(`${leaf.resource}:${action}`)) on++;
+    }
+  }
+  return { on, all };
+}
+
+/* ─────────────────────── tristate checkbox ─────────────────────── */
+
+function TristateCheckbox({
+  on,
+  total,
+  onChange,
+  title,
+}: {
+  on: number;
+  total: number;
+  onChange: (makeOn: boolean) => void;
+  title?: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const allOn = total > 0 && on === total;
+  const some = on > 0 && on < total;
+
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = some;
+  }, [some]);
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={allOn}
+      onChange={() => onChange(!allOn)}
+      title={title}
+      className="h-4 w-4 rounded border-gray-300 accent-accent-600 cursor-pointer"
+    />
+  );
+}
+
+/* ─────────────────────── main component ─────────────────────── */
+
+export function RolePermissionMatrix({ roleId }: { roleId: string }) {
+  const [tab, setTab] = useState<"entities" | "navigation">("entities");
+  const [role, setRole] = useState<RoleDetail | null>(null);
+  const [grants, setGrants] = useState<Set<string>>(new Set());
+  const [savedGrants, setSavedGrants] = useState<Set<string>>(new Set());
+  const [navs, setNavs] = useState<Set<string>>(new Set());
+  const [savedNavs, setSavedNavs] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(PERMISSION_TREE.map((m) => m.key)),
+  );
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetch(`/api/org/roles/${roleId}`);
+        const json = await res.json();
+        if (!mounted) return;
+        if (!json.success) {
+          setError("Failed to load role");
+          return;
+        }
+        const r = json.data as RoleDetail;
+        setRole(r);
+        const gkeys = new Set(r.permissions.map((p) => `${p.resource}:${p.action}`));
+        setGrants(gkeys);
+        setSavedGrants(new Set(gkeys));
+        const nkeys = new Set((r.navigations ?? []).map((n) => n.navKey));
+        setNavs(nkeys);
+        setSavedNavs(new Set(nkeys));
+      } catch {
+        if (mounted) setError("Network error loading role");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [roleId]);
+
+  const grantsDiff = useMemo(() => diffSets(grants, savedGrants), [grants, savedGrants]);
+  const navsDiff = useMemo(() => diffSets(navs, savedNavs), [navs, savedNavs]);
+  const dirty = grantsDiff.total + navsDiff.total > 0;
+
+  /* ─── toggle helpers ─── */
+
+  function toggleGrant(resource: string, action: Action) {
+    setGrants((prev) => {
+      const next = new Set(prev);
+      const key = `${resource}:${action}`;
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  /** Tick or untick `action` across every leaf in `node`'s subtree. */
+  function bulkSetAction(node: NodeWithChildren, action: Action, makeOn: boolean) {
+    setGrants((prev) => {
+      const next = new Set(prev);
+      for (const leaf of walkAllLeaves(node)) {
+        if (!(leaf.actions as readonly Action[]).includes(action)) continue;
+        const key = `${leaf.resource}:${action}`;
+        if (makeOn) next.add(key);
+        else next.delete(key);
+      }
+      return next;
+    });
+  }
+
+  /** Toggle every action on a single leaf (label click). */
+  function toggleLeafRow(leaf: PermissionLeaf) {
+    setGrants((prev) => {
+      const next = new Set(prev);
+      const keys = leaf.actions.map((a) => `${leaf.resource}:${a}`);
+      const allOn = keys.every((k) => next.has(k));
+      if (allOn) for (const k of keys) next.delete(k);
+      else for (const k of keys) next.add(k);
+      return next;
+    });
+  }
+
+  function toggleExpanded(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleNav(navKey: string) {
+    setNavs((prev) => {
+      const next = new Set(prev);
+      if (next.has(navKey)) next.delete(navKey);
+      else next.add(navKey);
+      return next;
+    });
+  }
+
+  function discard() {
+    setGrants(new Set(savedGrants));
+    setNavs(new Set(savedNavs));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError("");
+    try {
+      const tasks: Promise<Response>[] = [];
+      if (grantsDiff.total > 0) {
+        tasks.push(
+          fetch(`/api/org/roles/${roleId}/permissions`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              permissions: Array.from(grants).map((k) => {
+                const [resource, action] = k.split(":");
+                return { resource, action };
+              }),
+            }),
+          }),
+        );
+      }
+      if (navsDiff.total > 0) {
+        tasks.push(
+          fetch(`/api/org/roles/${roleId}/navigation`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ navKeys: Array.from(navs) }),
+          }),
+        );
+      }
+      const responses = await Promise.all(tasks);
+      const failed = responses.find((r) => !r.ok);
+      if (failed) {
+        const j = await failed.json().catch(() => ({}));
+        setError(j.error || "Failed to save");
+        return;
+      }
+      setSavedGrants(new Set(grants));
+      setSavedNavs(new Set(navs));
+    } catch {
+      setError("Network error saving");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-16">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="px-6 pt-4 pb-0 flex-shrink-0">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+            Permissions — {role?.name}
+            {role?.isSystem && <Shield className="h-4 w-4 text-amber-500" />}
+            {role?.isDefault && (
+              <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded bg-accent-100 text-accent-700">
+                Default
+              </span>
+            )}
+          </h2>
+        </div>
+        <div className="flex items-center gap-1 border-b border-gray-200 -mb-px">
+          {(
+            [
+              { key: "entities", label: "Entities" },
+              { key: "navigation", label: "Navigation" },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
+                tab === t.key
+                  ? "border-accent-600 text-accent-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tip banner */}
+      <div className="px-6 py-2 flex-shrink-0">
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-gray-900 text-gray-200 text-[11px]">
+          <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+          <span>
+            Tick an action to grant it. <strong>Module-level</strong> ticks select all leaves under
+            that module. Clicking the entity name toggles the whole row. Save commits both Entities
+            and Navigation in one go.
+          </span>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className={`flex-1 overflow-auto px-6 ${dirty ? "pb-20" : "pb-6"}`}>
+        {error && (
+          <p className="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+            {error}
+          </p>
+        )}
+        {tab === "entities" ? (
+          <EntitiesTable
+            grants={grants}
+            expanded={expanded}
+            onToggleExpanded={toggleExpanded}
+            onToggleGrant={toggleGrant}
+            onToggleLeafRow={toggleLeafRow}
+            onBulkSetAction={bulkSetAction}
+          />
+        ) : (
+          <NavigationList navs={navs} onToggle={toggleNav} />
+        )}
+      </div>
+
+      {/* Sticky bottom bar */}
+      {dirty && (
+        <div className="bg-white border-t border-gray-200 shadow-md px-6 py-3 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-accent-100 text-accent-700 font-bold">
+              {grantsDiff.total + navsDiff.total}
+            </span>
+            <span className="text-gray-700 font-medium">
+              unsaved change{grantsDiff.total + navsDiff.total === 1 ? "" : "s"}
+            </span>
+            {grantsDiff.total > 0 && (
+              <span className="text-gray-400">
+                · entities: <span className="text-gray-700 font-medium">{grantsDiff.total}</span>
+              </span>
+            )}
+            {navsDiff.total > 0 && (
+              <span className="text-gray-400">
+                · navigation: <span className="text-gray-700 font-medium">{navsDiff.total}</span>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={discard}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <Undo2 className="h-3.5 w-3.5" /> Discard
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg bg-accent-600 hover:bg-accent-700 text-white disabled:opacity-50"
+            >
+              <Save className="h-3.5 w-3.5" /> {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────── Entities table ───────────────────────── */
+
+interface RowHandlers {
+  grants: Set<string>;
+  expanded: Set<string>;
+  onToggleExpanded: (key: string) => void;
+  onToggleGrant: (resource: string, action: Action) => void;
+  onToggleLeafRow: (leaf: PermissionLeaf) => void;
+  onBulkSetAction: (node: NodeWithChildren, action: Action, makeOn: boolean) => void;
+}
+
+function EntitiesTable(props: RowHandlers) {
+  return (
+    <table className="w-full border-collapse table-fixed">
+      <colgroup>
+        <col style={{ width: "auto" }} />
+        {ACTIONS.map((a) => (
+          <col key={a} style={{ width: "11%" }} />
+        ))}
+      </colgroup>
+      <thead className="sticky top-0 bg-gray-50 z-10">
+        <tr className="border-b border-gray-200">
+          <th className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">
+            Entity
+          </th>
+          {ACTIONS.map((a) => (
+            <th
+              key={a}
+              className="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-4 py-3"
+            >
+              {a}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {PERMISSION_TREE.map((mod) => (
+          <ModuleRows key={mod.key} mod={mod} {...props} />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ModuleRows({ mod, ...handlers }: { mod: PermissionModule } & RowHandlers) {
+  const { grants, expanded, onToggleExpanded, onBulkSetAction } = handlers;
+  const isOpen = expanded.has(mod.key);
+  const totals = aggregateCounts(mod, grants);
+  const hasChildren = !!(mod.subModules?.length) || (mod.leaves?.length ?? 0) > 1;
+
+  return (
+    <>
+      <tr className="border-b border-gray-100 bg-gray-50/40 hover:bg-gray-50 transition-colors">
+        <td className="px-4 py-2.5">
+          <button
+            onClick={() => onToggleExpanded(mod.key)}
+            className="flex items-center gap-2 text-sm font-semibold text-gray-800 hover:text-gray-900 text-left"
+          >
+            {hasChildren && (
+              isOpen ? (
+                <ChevronDown className="h-4 w-4 text-gray-400" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-gray-400" />
+              )
+            )}
+            {!hasChildren && <span className="w-4" />}
+            <span>{mod.label}</span>
+            <span
+              className={`inline-flex items-center justify-center min-w-[28px] h-5 px-1.5 rounded-full text-[10px] font-bold ${
+                totals.on === 0
+                  ? "bg-gray-200 text-gray-600"
+                  : totals.on === totals.all
+                    ? "bg-accent-100 text-accent-700"
+                    : "bg-amber-100 text-amber-700"
+              }`}
+            >
+              {totals.on}/{totals.all}
+            </span>
+          </button>
+        </td>
+        {ACTIONS.map((action) => (
+          <ModuleActionCell
+            key={action}
+            node={mod}
+            action={action}
+            grants={grants}
+            onBulkSet={(makeOn) => onBulkSetAction(mod, action, makeOn)}
+          />
+        ))}
+      </tr>
+
+      {/* Children — leaves and submodules */}
+      {isOpen && hasChildren && (
+        <>
+          {mod.leaves && mod.leaves.length > 1 &&
+            mod.leaves.map((leaf) => (
+              <LeafRow key={leaf.resource} leaf={leaf} depth={1} {...handlers} />
+            ))}
+          {mod.subModules?.map((sub) => (
+            <SubModuleRows key={sub.key} sub={sub} depth={1} {...handlers} />
+          ))}
+        </>
+      )}
+    </>
+  );
+}
+
+function SubModuleRows({
+  sub,
+  depth,
+  ...handlers
+}: { sub: PermissionSubModule; depth: number } & RowHandlers) {
+  const { grants, expanded, onToggleExpanded, onBulkSetAction } = handlers;
+  const hasChildren = !!(sub.subModules?.length) || sub.leaves.length > 1;
+  const isOpen = expanded.has(sub.key);
+
+  // Single-leaf submodule with NO children — flatten into its leaf row.
+  if (!hasChildren && sub.leaves.length === 1) {
+    return <LeafRow leaf={sub.leaves[0]} depth={depth} {...handlers} />;
+  }
+
+  return (
+    <>
+      <tr className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+        <td className="px-4 py-2" style={{ paddingLeft: depth * 24 + 16 }}>
+          <button
+            onClick={() => onToggleExpanded(sub.key)}
+            className="flex items-center gap-2 text-sm font-medium text-gray-700 text-left"
+          >
+            {isOpen ? (
+              <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
+            )}
+            <span>{sub.label}</span>
+          </button>
+        </td>
+        {ACTIONS.map((action) => (
+          <ModuleActionCell
+            key={action}
+            node={sub}
+            action={action}
+            grants={grants}
+            onBulkSet={(makeOn) => onBulkSetAction(sub, action, makeOn)}
+          />
+        ))}
+      </tr>
+      {isOpen && (
+        <>
+          {sub.leaves.length > 1 &&
+            sub.leaves.map((leaf) => (
+              <LeafRow key={leaf.resource} leaf={leaf} depth={depth + 1} {...handlers} />
+            ))}
+          {sub.subModules?.map((deeper) => (
+            <SubModuleRows key={deeper.key} sub={deeper} depth={depth + 1} {...handlers} />
+          ))}
+        </>
+      )}
+    </>
+  );
+}
+
+function LeafRow({
+  leaf,
+  depth,
+  grants,
+  onToggleGrant,
+  onToggleLeafRow,
+}: {
+  leaf: PermissionLeaf;
+  depth: number;
+} & RowHandlers) {
+  return (
+    <tr className="border-b border-gray-100 hover:bg-gray-50/70 transition-colors">
+      <td className="px-4 py-2" style={{ paddingLeft: depth * 24 + 16 }}>
+        <button
+          onClick={() => onToggleLeafRow(leaf)}
+          className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900 text-left"
+          title="Toggle all actions on this row"
+        >
+          <span className="text-gray-300">└</span>
+          <span>{leaf.label}</span>
+        </button>
+      </td>
+      {ACTIONS.map((a) => {
+        const supported = (leaf.actions as readonly Action[]).includes(a);
+        if (!supported) {
+          return (
+            <td key={a} className="text-center text-gray-300 text-xs px-4 py-2">
+              —
+            </td>
+          );
+        }
+        const checked = grants.has(`${leaf.resource}:${a}`);
+        return (
+          <td key={a} className="text-center px-4 py-2">
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => onToggleGrant(leaf.resource, a)}
+              className="h-4 w-4 rounded border-gray-300 accent-accent-600 cursor-pointer"
+            />
+          </td>
+        );
+      })}
+    </tr>
+  );
+}
+
+/** Module/submodule header cell — tristate checkbox covering every leaf in the subtree. */
+function ModuleActionCell({
+  node,
+  action,
+  grants,
+  onBulkSet,
+}: {
+  node: NodeWithChildren;
+  action: Action;
+  grants: Set<string>;
+  onBulkSet: (makeOn: boolean) => void;
+}) {
+  const { on, total } = actionStats(node, action, grants);
+  if (total === 0) {
+    return (
+      <td className="text-center text-gray-300 text-xs px-4 py-2.5">—</td>
+    );
+  }
+  return (
+    <td className="text-center px-4 py-2.5">
+      <TristateCheckbox on={on} total={total} onChange={onBulkSet} title={`Tick all ${action} under this module`} />
+    </td>
+  );
+}
+
+/* ───────────────────────── Navigation list ───────────────────────── */
+
+function NavigationList({
+  navs,
+  onToggle,
+}: {
+  navs: Set<string>;
+  onToggle: (navKey: string) => void;
+}) {
+  const groups = useMemo(() => {
+    const map = new Map<string, Array<{ key: string; label: string }>>();
+    for (const item of NAV_ITEMS) {
+      const moduleKey = item.key.includes(".") ? item.key.split(".")[0] : item.key;
+      if (!map.has(moduleKey)) map.set(moduleKey, []);
+      map.get(moduleKey)!.push({ key: item.key, label: item.label });
+    }
+    return Array.from(map.entries());
+  }, []);
+
+  return (
+    <div className="space-y-3 py-3">
+      {groups.map(([moduleKey, items]) => (
+        <div key={moduleKey} className="bg-white border border-gray-200 rounded-xl px-5 py-3">
+          <p className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+            {moduleKey}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+            {items.map((item) => (
+              <label
+                key={item.key}
+                className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={navs.has(item.key)}
+                  onChange={() => onToggle(item.key)}
+                  className="h-4 w-4 rounded border-gray-300 accent-accent-600"
+                />
+                <span>{item.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ───────────────────────── helpers ───────────────────────── */
+
+function diffSets(current: Set<string>, baseline: Set<string>) {
+  let added = 0;
+  let removed = 0;
+  for (const k of current) if (!baseline.has(k)) added++;
+  for (const k of baseline) if (!current.has(k)) removed++;
+  return { added, removed, total: added + removed };
+}

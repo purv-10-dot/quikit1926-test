@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
-import { isNavKey } from "@quikit/shared";
+import { isNavKey } from "@/lib/api/permissionsRegistry";
 
 const putBodySchema = z.object({
   /** Full desired set of navKeys. Server replaces existing rows. */
@@ -64,12 +64,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (!role) {
       return NextResponse.json({ success: false, error: "Role not found" }, { status: 404 });
     }
-    if (role.isSystem) {
-      return NextResponse.json(
-        { success: false, error: "System role navigation cannot be modified" },
-        { status: 400 },
-      );
-    }
+    // v2: admin navigation is editable. `isSystem` only protects rename/delete.
 
     const desired = Array.from(new Set(parsed.data.navKeys));
 

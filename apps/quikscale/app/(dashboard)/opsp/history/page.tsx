@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Pencil, ChevronDown, FileText, AlertCircle } from "lucide-react";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface OPSPRecord {
   id: string;
@@ -30,6 +31,10 @@ const QUARTERS = ["Q1", "Q2", "Q3", "Q4"] as const;
 
 export default function OPSPHistoryPage() {
   const router = useRouter();
+  // v2 permission gate — when granted, the Edit button stays enabled even
+  // after the OPSP is finalized/reviewed, and the editor unlocks the form.
+  const myPerms = useMyPermissions();
+  const canEditFinalized = myPerms.has("OPSP.History.EditFinalize", "update");
 
   const [opsps, setOpsps] = useState<OPSPRecord[]>([]);
   const [fiscalYearStart, setFiscalYearStart] = useState<number>(1);
@@ -329,19 +334,32 @@ export default function OPSPHistoryPage() {
                                         <Eye className="h-3 w-3" />
                                         Preview
                                       </button>
-                                      <button
-                                        onClick={() => opsp.status === "draft" && handleEdit(year, q)}
-                                        disabled={opsp.status !== "draft"}
-                                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-medium rounded-lg transition-colors ${
-                                          opsp.status !== "draft"
-                                            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                            : "bg-blue-600 text-white hover:bg-blue-700"
-                                        }`}
-                                        title={opsp.status !== "draft" ? "OPSP is finalized and cannot be edited" : "Edit this OPSP"}
-                                      >
-                                        <Pencil className="h-3 w-3" />
-                                        Edit
-                                      </button>
+                                      {(() => {
+                                        const isDraft = opsp.status === "draft";
+                                        // v2: a user with OPSP.History.EditFinalize:update can edit
+                                        // finalized/reviewed OPSPs too.
+                                        const editable = isDraft || canEditFinalized;
+                                        const titleText = !editable
+                                          ? "OPSP is finalized and cannot be edited"
+                                          : !isDraft
+                                            ? "Edit this finalized OPSP (extended permission)"
+                                            : "Edit this OPSP";
+                                        return (
+                                          <button
+                                            onClick={() => editable && handleEdit(year, q)}
+                                            disabled={!editable}
+                                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-medium rounded-lg transition-colors ${
+                                              !editable
+                                                ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                                : "bg-blue-600 text-white hover:bg-blue-700"
+                                            }`}
+                                            title={titleText}
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                            Edit
+                                          </button>
+                                        );
+                                      })()}
                                     </div>
                                   </div>
                                 ) : (

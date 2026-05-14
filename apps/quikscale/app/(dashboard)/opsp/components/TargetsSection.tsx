@@ -19,34 +19,23 @@ import type { FormData } from "../hooks/useOPSPForm";
 interface Props {
   form: FormData;
   set: <K extends keyof FormData>(key: K, value: FormData[K]) => void;
-  onExpandTargets: () => void;
   onExpandKeyThrusts: () => void;
 }
 
 export function TargetsSection({
   form,
   set,
-  onExpandTargets,
   onExpandKeyThrusts,
 }: Props) {
   return (
     <Card className="flex flex-col gap-3 flex-1 min-w-[300px]">
       <div>
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <p className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1">
-              TARGETS (3–5 YRS.)
-              <Info className="h-3 w-3 text-gray-400 flex-shrink-0" />
-            </p>
-            <p className="text-xs text-gray-500">(Where)</p>
-          </div>
-          <button
-            onClick={onExpandTargets}
-            data-expand="true"
-            className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded p-0.5"
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </button>
+        <div className="mb-3">
+          <p className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1">
+            TARGETS (3–5 YRS.)
+            <Info className="h-3 w-3 text-gray-400 flex-shrink-0" />
+          </p>
+          <p className="text-xs text-gray-500">(Where)</p>
         </div>
         <div className="grid grid-cols-5 gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
           <span className="col-span-3">Category</span>

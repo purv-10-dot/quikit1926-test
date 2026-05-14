@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { ArrowLeftRight } from "lucide-react";
 import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
 
-export function Header() {
+/**
+ * Header — mirrors apps/admin/components/dashboard/header.tsx.
+ * Uses the real @quikit/ui AppSwitcher + UserMenu with globalSignOut so the
+ * QuikIT IdP session is terminated alongside the local session.
+ */
+export default function Header() {
   const { data: session, update: updateSession } = useSession();
   const router = useRouter();
 
@@ -18,17 +23,6 @@ export function Header() {
       quikitUrl: process.env.NEXT_PUBLIC_QUIKIT_URL,
       localSignOut: () => signOut({ redirect: false }),
     });
-  }
-
-  async function handleExitImpersonation() {
-    try {
-      const r = await fetch("/api/auth/impersonate/exit", { method: "POST" });
-      const j = await r.json();
-      const redirect = j?.data?.redirectUrl || "/";
-      window.location.href = redirect;
-    } catch {
-      window.location.href = "/";
-    }
   }
 
   async function handleSwitchOrg() {
@@ -45,11 +39,10 @@ export function Header() {
           user={{ name: fullName, email }}
           isImpersonating={isImpersonating}
           onSignOut={handleSignOut}
-          onExitImpersonation={handleExitImpersonation}
           items={[
             { label: "Switch Organisation", icon: ArrowLeftRight, onClick: handleSwitchOrg },
           ]}
-          avatarClassName="bg-accent-600"
+          avatarClassName="bg-[var(--color-secondary)]"
         />
       </div>
     </header>

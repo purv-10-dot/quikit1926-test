@@ -1,13 +1,13 @@
 /**
- * Admin app wrapper that combines requireAdmin + API-call logging.
+ * admin API auth wrapper.
  *
- * Every route that uses this wrapper:
- *   - Short-circuits with 401/403 if the caller isn't an admin
- *   - Logs a row in ApiCall after the response (fire-and-forget)
- *   - Captures orgId + userId from the auth result so analytics can slice by tenant
- *
- * Migration path: replace `requireAdmin()` inside a route body with
- * `withAdminAuth(async ({ orgId, userId }, req, ctx) => { ... })`
+ * Each route that uses this wrapper:
+ *   - Short-circuits with 401/403 if the caller isn't an admin (uses shared
+ *     @quikit/auth createRequireAdmin factory).
+ *   - Logs a row in ApiCall after the response (fire-and-forget, via
+ *     @quikit/shared/apiLogging — same row shape every other app writes).
+ *   - Captures orgId + userId from the auth result so analytics can slice
+ *     by tenant.
  */
 
 import { NextRequest, NextResponse } from "next/server";

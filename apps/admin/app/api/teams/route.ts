@@ -1,132 +1,140 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { z } from "zod";
 import { withAdminAuth } from "@/lib/api/withAdminAuth";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { db } from "@/lib/db";
-import { createTeamSchema } from "@/lib/schemas/teamSchema";
-import { slugify } from "@/lib/utils";
+import { teamSelect, formatTeam } from "@/lib/teams-helpers";
+import { assignNamedRolesForAccess } from "@/lib/roles-helpers";
 
-export const GET = withAdminAuth(async ({ orgId }, request: NextRequest) => {
-  const blocked = await gateModuleApi("admin", "teams", orgId);
-  if (blocked) return blocked as NextResponse;
+function slugify(str: string): string {
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
 
-  // Pagination
-  const { searchParams } = new URL(request.url);
-  const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
-  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "50", 10) || 50));
-  const skip = (page - 1) * limit;
-
-  const [teams, total] = await Promise.all([
-    db.team.findMany({
-      where: { orgId },
-      include: {
-        userTeams: {
-          include: {
-            user: {
-              select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
-            },
-          },
-        },
-        parentTeam: { select: { id: true, name: true } },
-        childTeams: { select: { id: true, name: true, color: true } },
-      },
-      orderBy: { name: "asc" },
-      skip,
-      take: limit,
-    }),
-    db.team.count({ where: { orgId } }),
-  ]);
-
-  // Resolve head names
-  const headIds = teams.map((t) => t.headId).filter(Boolean) as string[];
-  const heads = headIds.length > 0
-    ? await db.user.findMany({
-        where: { id: { in: headIds } },
-        select: { id: true, firstName: true, lastName: true },
-      })
-    : [];
-  const headMap = new Map(heads.map((h) => [h.id, h]));
-
-  const data = teams.map((t) => {
-    const head = t.headId ? headMap.get(t.headId) : null;
-    return {
-      id: t.id,
-      name: t.name,
-      description: t.description,
-      slug: t.slug,
-      color: t.color,
-      headId: t.headId,
-      headName: head ? `${head.firstName} ${head.lastName}` : null,
-      parentTeamId: t.parentTeamId,
-      parentTeamName: t.parentTeam?.name ?? null,
-      childTeams: t.childTeams,
-      memberCount: t.userTeams.length,
-      members: t.userTeams.map((ut) => ({
-        id: ut.user.id,
-        firstName: ut.user.firstName,
-        lastName: ut.user.lastName,
-        email: ut.user.email,
-        avatar: ut.user.avatar,
-      })),
-      createdAt: t.createdAt.toISOString(),
-    };
-  });
-
-  return NextResponse.json({
-    success: true,
-    data,
-    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
-  });
+const createTeamSchema = z.object({
+  name: z.string().min(1, "Team name is required").max(100),
+  // appSlugs are still accepted from the wizard for UX but team→app linking
+  // requires the TeamApp model (deferred — see MIGRATION_NOTES.md). We grant
+  // the same apps to each selected member via UserAppAccess instead.
+  appSlugs: z.array(z.string()).min(1, "Select at least one app"),
+  members: z
+    .array(
+      z.object({
+        membershipId: z.string(),
+        roles: z.record(z.string(), z.string()),
+      }),
+    )
+    .optional()
+    .default([]),
 });
 
-export const POST = withAdminAuth(async ({ orgId, userId }, request: NextRequest) => {
+export const GET = withAdminAuth(async ({ orgId }) => {
   const blocked = await gateModuleApi("admin", "teams", orgId);
   if (blocked) return blocked as NextResponse;
-  const body = await request.json();
+
+  const teams = await db.team.findMany({
+    where: { orgId },
+    select: teamSelect(orgId),
+    orderBy: { createdAt: "desc" },
+  });
+
+  return NextResponse.json({ success: true, data: teams.map(formatTeam) });
+});
+
+export const POST = withAdminAuth(async ({ orgId, userId }, req) => {
+  const blocked = await gateModuleApi("admin", "teams", orgId);
+  if (blocked) return blocked as NextResponse;
+
+  const body = await req.json().catch(() => null);
+  if (!body) {
+    return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+  }
 
   const parsed = createTeamSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { success: false, error: parsed.error.errors[0].message },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
-  const { name, description, color, headId, parentTeamId } = parsed.data;
+  const { name, appSlugs, members } = parsed.data;
 
-  // Check unique name per tenant
-  const existing = await db.team.findFirst({
-    where: {
-      orgId,
-      name: { equals: name, mode: "insensitive" },
-    },
+  const base = slugify(name) || "team";
+  const existing = await db.team.findMany({
+    where: { orgId, slug: { startsWith: base } },
+    select: { slug: true },
   });
+  const existingSlugs = new Set(existing.map((t) => t.slug));
+  let slug = base;
+  let counter = 1;
+  while (existingSlugs.has(slug)) slug = `${base}-${counter++}`;
 
-  if (existing) {
-    return NextResponse.json(
-      { success: false, error: "A team with this name already exists" },
-      { status: 409 }
-    );
+  const membershipIds = members.map((m) => m.membershipId);
+  const [memberships, apps] = await Promise.all([
+    membershipIds.length > 0
+      ? db.orgMember.findMany({
+          where: { id: { in: membershipIds }, orgId },
+          select: { id: true, userId: true },
+        })
+      : Promise.resolve([] as { id: string; userId: string }[]),
+    db.app.findMany({
+      where: { slug: { in: appSlugs } },
+      select: { id: true, slug: true },
+    }),
+  ]);
+
+  const membershipToUser = new Map(memberships.map((m) => [m.id, m.userId]));
+  const slugToAppId = new Map(apps.map((a) => [a.slug, a.id]));
+
+  const userTeamData: { orgId: string; userId: string; teamId: string }[] = [];
+  const appAccessData: {
+    userId: string;
+    orgId: string;
+    appId: string;
+    role: string;
+    grantedBy: string;
+  }[] = [];
+
+  for (const member of members) {
+    const uid = membershipToUser.get(member.membershipId);
+    if (!uid) continue;
+    userTeamData.push({ orgId, userId: uid, teamId: "" });
+    for (const [appSlug, role] of Object.entries(member.roles)) {
+      const appId = slugToAppId.get(appSlug);
+      if (appId) appAccessData.push({ userId: uid, orgId, appId, role, grantedBy: userId });
+    }
   }
 
-  const baseSlug = slugify(name);
-  const slug = `${baseSlug}-${Date.now()}`;
+  const full = await db.$transaction(async (tx) => {
+    const team = await tx.team.create({
+      data: { orgId, name, slug, createdBy: userId },
+    });
 
-  const team = await db.team.create({
-    data: {
+    if (userTeamData.length > 0) {
+      await tx.userTeam.createMany({
+        data: userTeamData.map((r) => ({ ...r, teamId: team.id })),
+        skipDuplicates: true,
+      });
+    }
+
+    if (appAccessData.length > 0) {
+      await tx.userAppAccess.createMany({
+        data: appAccessData,
+        skipDuplicates: true,
+      });
+    }
+
+    // Team→app linking pending TeamApp schema migration — see MIGRATION_NOTES.md.
+
+    return tx.team.findUnique({ where: { id: team.id }, select: teamSelect(orgId) });
+  });
+
+  if (appAccessData.length > 0) {
+    await assignNamedRolesForAccess(
       orgId,
-      name,
-      description,
-      slug,
-      color: color || "#0066cc",
-      headId,
-      parentTeamId,
-      createdBy: userId,
-    },
-  });
+      appAccessData.map((a) => ({ userId: a.userId, appId: a.appId, roleName: a.role })),
+    ).catch(() => {});
+  }
 
-  return NextResponse.json({
-    success: true,
-    data: { ...team, memberCount: 0, members: [] },
-  });
+  return NextResponse.json({ success: true, data: formatTeam(full!) }, { status: 201 });
 });

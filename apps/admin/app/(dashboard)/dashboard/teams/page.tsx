@@ -1,316 +1,338 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Card } from "@/components/ui/card";
-import { Button, FilterPicker, Input, SlidePanel } from "@quikit/ui";
-import type { FilterOption } from "@quikit/ui";
-import { Badge } from "@/components/ui/badge";
-import { Avatar } from "@/components/ui/avatar";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  FolderTree,
-  Plus,
-  Users,
-  ChevronRight,
-  Loader2,
-  Search,
+  Plus, Search, Users, LayoutGrid, MoreVertical,
+  Pencil, Trash2,
+  MessageSquare, CheckSquare, TrendingUp, HardHat, UserCog,
 } from "lucide-react";
+import CreateTeamModal, { type TeamRow } from "@/components/teams/create-team-modal";
+import EditTeamModal from "@/components/teams/edit-team-modal";
 
-interface Team {
-  id: string;
-  name: string;
-  description: string | null;
-  color: string | null;
-  headId: string | null;
-  headName: string | null;
-  parentTeamId: string | null;
-  parentTeamName: string | null;
-  childTeams: { id: string; name: string; color: string | null }[];
-  memberCount: number;
-  members: { id: string; firstName: string; lastName: string; avatar: string | null }[];
-  createdAt: string;
-}
+const APP_META: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
+  quiksocial:      { icon: MessageSquare, color: "text-blue-500",   bg: "bg-blue-50",   label: "QuikSocial" },
+  quiktrack:       { icon: CheckSquare,   color: "text-green-500",  bg: "bg-green-50",  label: "QuikTrack" },
+  quikscale:       { icon: TrendingUp,    color: "text-purple-500", bg: "bg-purple-50", label: "QuikScale" },
+  constructionerp: { icon: HardHat,       color: "text-amber-500",  bg: "bg-amber-50",  label: "ConstructionERP" },
+  hrms:            { icon: UserCog,       color: "text-rose-500",   bg: "bg-rose-50",   label: "HRMS" },
+};
 
-export default function TeamsPage() {
-  const router = useRouter();
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState("");
-  const [form, setForm] = useState({
-    name: "",
-    description: "",
-    color: "#6366f1",
-    parentTeamId: "",
-  });
+function TeamCard({
+  team,
+  onEdit,
+  onDelete,
+}: {
+  team: TeamRow;
+  onEdit: (team: TeamRow) => void;
+  onDelete: (team: TeamRow) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef                 = useRef<HTMLDivElement>(null);
 
-  async function fetchTeams() {
-    const res = await fetch("/api/teams");
-    const json = await res.json();
-    if (json.success) setTeams(json.data);
-    setLoading(false);
-  }
+  const initials = (name: string) =>
+    name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
 
   useEffect(() => {
-    fetchTeams();
+    function handler(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setCreating(true);
-    setCreateError("");
-
-    const res = await fetch("/api/teams", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: form.name,
-        description: form.description || null,
-        color: form.color,
-        parentTeamId: form.parentTeamId || null,
-      }),
-    });
-
-    const json = await res.json();
-    if (json.success) {
-      setCreateOpen(false);
-      setForm({ name: "", description: "", color: "#6366f1", parentTeamId: "" });
-      fetchTeams();
-    } else {
-      setCreateError(json.error || "Failed to create team");
-    }
-    setCreating(false);
-  }
-
-  const filtered = teams.filter((t) =>
-    t.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  // Build tree: root teams first
-  const rootTeams = filtered.filter((t) => !t.parentTeamId);
-  const childMap = new Map<string, Team[]>();
-  filtered.forEach((t) => {
-    if (t.parentTeamId) {
-      const children = childMap.get(t.parentTeamId) || [];
-      children.push(t);
-      childMap.set(t.parentTeamId, children);
-    }
-  });
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-[var(--color-text-tertiary)]" />
-      </div>
-    );
-  }
-
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Teams</h1>
-          <p className="text-sm text-[var(--color-text-secondary)] mt-1">
-            {teams.length} team{teams.length !== 1 ? "s" : ""}
+    <div className="relative flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-5 hover:border-[var(--color-secondary)] hover:shadow-sm transition-all">
+
+      {/* Top row: color swatch + name + menu */}
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: team.color }} />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-[var(--color-text-primary)] truncate">{team.name}</p>
+          <p className="text-xs text-[var(--color-text-tertiary)] mt-0.5">
+            {team.memberCount} member{team.memberCount !== 1 ? "s" : ""}
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Create Team
-        </Button>
-      </div>
 
-      <div className="mb-4">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-text-tertiary)]" />
-          <input
-            type="text"
-            placeholder="Search teams..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-10 pl-9 pr-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
-          />
+        {/* 3-dot menu */}
+        <div ref={menuRef} className="relative shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
+
+          {menuOpen && (
+            <div className="absolute right-0 top-8 z-20 w-36 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-1 shadow-xl">
+              <button
+                onClick={() => { setMenuOpen(false); onEdit(team); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)] transition-colors"
+              >
+                <Pencil className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" />
+                Edit
+              </button>
+              <button
+                onClick={() => { setMenuOpen(false); onDelete(team); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {teams.length === 0 ? (
-        <Card className="text-center py-12">
-          <FolderTree className="h-10 w-10 mx-auto text-[var(--color-text-tertiary)] mb-3" />
-          <p className="text-sm text-[var(--color-text-secondary)] mb-4">
-            No teams yet. Create your first team to get started.
-          </p>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4" /> Create Team
-          </Button>
-        </Card>
+      {/* App badges */}
+      {team.apps.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {team.apps.map(({ slug, name }) => {
+            const meta = APP_META[slug];
+            const Icon = meta?.icon ?? LayoutGrid;
+            return (
+              <span
+                key={slug}
+                title={name}
+                className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${meta?.bg ?? "bg-[var(--color-neutral-100)]"} ${meta?.color ?? "text-[var(--color-text-secondary)]"}`}
+              >
+                <Icon className="h-3 w-3" />
+                {meta?.label ?? name}
+              </span>
+            );
+          })}
+        </div>
       ) : (
-        <div className="space-y-3">
-          {rootTeams.map((team) => (
-            <TeamNode
-              key={team.id}
-              team={team}
-              childMap={childMap}
-              onNavigate={(id) => router.push(`/dashboard/teams/${id}`)}
-              depth={0}
-            />
-          ))}
-          {/* Show orphaned teams (parent filtered out) */}
-          {filtered
-            .filter((t) => t.parentTeamId && !filtered.find((p) => p.id === t.parentTeamId))
-            .map((team) => (
-              <TeamNode
-                key={team.id}
-                team={team}
-                childMap={childMap}
-                onNavigate={(id) => router.push(`/dashboard/teams/${id}`)}
-                depth={0}
-              />
-            ))}
-        </div>
+        <p className="text-xs text-[var(--color-text-tertiary)]">No apps assigned</p>
       )}
 
-      <SlidePanel
-        open={createOpen}
-        onClose={() => { setCreateOpen(false); setCreateError(""); }}
-        title="Create Team"
-        subtitle="Add a new team to the organization"
-        footer={
-          <div className="flex items-center justify-end gap-2">
-            <button type="button" onClick={() => setCreateOpen(false)} className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-100">Cancel</button>
-            <button type="submit" form="create-team-form" disabled={creating} className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50">{creating ? "Creating..." : "Create Team"}</button>
+      {/* Member avatar stack */}
+      {team.members.length > 0 && (
+        <div className="flex items-center gap-2">
+          <div className="flex -space-x-2">
+            {team.members.slice(0, 4).map((m, i) => (
+              <span
+                key={i}
+                title={m.name}
+                className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[var(--color-bg-primary)] bg-[var(--color-secondary-light)] text-[10px] font-semibold text-[var(--color-secondary)]"
+              >
+                {initials(m.name || "?")}
+              </span>
+            ))}
+            {team.memberCount > 4 && (
+              <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-[var(--color-bg-primary)] bg-[var(--color-neutral-100)] text-[10px] font-semibold text-[var(--color-text-secondary)]">
+                +{team.memberCount - 4}
+              </span>
+            )}
           </div>
-        }
-      >
-        <form id="create-team-form" onSubmit={handleCreate} className="space-y-5">
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1.5">Team Name</label>
-            <input
-              id="team-name"
-              placeholder="e.g. Engineering"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1.5">Description</label>
-            <textarea
-              placeholder="What does this team do?"
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={2}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-400 resize-none"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1.5">Color</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={form.color}
-                  onChange={(e) => setForm({ ...form, color: e.target.value })}
-                  className="h-10 w-10 rounded-lg border border-gray-200 cursor-pointer"
-                />
-                <span className="text-sm text-gray-500">{form.color}</span>
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1.5">Parent Team</label>
-              <FilterPicker
-                value={form.parentTeamId || ""}
-                onChange={(val) => setForm({ ...form, parentTeamId: val || "" })}
-                options={teams.map((t): FilterOption => ({ value: t.id, label: t.name }))}
-                allLabel="None (root team)"
-                placeholder="Select parent team"
-              />
-            </div>
-          </div>
-          {createError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{createError}</p>}
-        </form>
-      </SlidePanel>
+          {team.members[0]?.name && (
+            <span className="text-xs text-[var(--color-text-tertiary)] truncate">
+              {team.members[0].name}
+              {team.memberCount > 1 ? ` + ${team.memberCount - 1} more` : ""}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function TeamNode({
-  team,
-  childMap,
-  onNavigate,
-  depth,
-}: {
-  team: Team;
-  childMap: Map<string, Team[]>;
-  onNavigate: (id: string) => void;
-  depth: number;
-}) {
-  const children = childMap.get(team.id) || [];
+export default function TeamsPage() {
+  const [teams, setTeams]               = useState<TeamRow[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [search, setSearch]             = useState("");
+  const [createOpen, setCreateOpen]     = useState(false);
+  const [editTarget, setEditTarget]     = useState<TeamRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TeamRow | null>(null);
+
+  const loadTeams = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/teams", { signal });
+      const json = await res.json();
+      if (json.success) setTeams(json.data);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") return;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadTeams(controller.signal);
+    return () => controller.abort();
+  }, [loadTeams]);
+
+  function handleCreated(team: TeamRow) {
+    setTeams((prev) => [team, ...prev]);
+  }
+
+  function handleUpdated(updated: TeamRow) {
+    setTeams((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setTeams((prev) => prev.filter((t) => t.id !== target.id));
+    try {
+      const res  = await fetch(`/api/teams/${target.id}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({ success: false }));
+      if (!json.success) setTeams((prev) => [target, ...prev]);
+    } catch {
+      setTeams((prev) => [target, ...prev]);
+    }
+  }
+
+  const filtered = teams.filter((t) =>
+    !search || t.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div style={{ marginLeft: depth * 24 }}>
-      <Card
-        className="flex items-center gap-4 cursor-pointer hover:border-[var(--color-secondary)] hover:shadow-md transition-all"
-        onClick={() => onNavigate(team.id)}
-      >
-        <div
-          className="h-10 w-10 rounded-lg flex items-center justify-center text-white font-bold text-sm shrink-0"
-          style={{ backgroundColor: team.color || "#6366f1" }}
-        >
-          {team.name.charAt(0).toUpperCase()}
+    <div className="space-y-6">
+      {/* Page header */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Teams</h1>
+          <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">
+            Organise <span className="text-[var(--color-secondary)]">members</span> into departments and groups
+          </p>
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="font-semibold text-[var(--color-text-primary)] truncate">
-              {team.name}
-            </p>
-            {team.parentTeamName && (
-              <span className="text-xs text-[var(--color-text-tertiary)]">
-                in {team.parentTeamName}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 mt-0.5">
-            <span className="flex items-center gap-1 text-xs text-[var(--color-text-secondary)]">
-              <Users className="h-3 w-3" /> {team.memberCount} member{team.memberCount !== 1 ? "s" : ""}
-            </span>
-            {team.headName && (
-              <span className="text-xs text-[var(--color-text-tertiary)]">
-                Lead: {team.headName}
-              </span>
-            )}
-          </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-2 rounded-lg bg-[var(--color-secondary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-secondary-dark)] transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Create Team
+          </button>
         </div>
-        <div className="flex -space-x-2">
-          {team.members.slice(0, 3).map((m) => (
-            <Avatar
-              key={m.id}
-              src={m.avatar}
-              firstName={m.firstName}
-              lastName={m.lastName}
-              size="sm"
-              className="ring-2 ring-[var(--color-bg-primary)]"
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search teams…"
+          className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-2 pl-9 pr-3 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)]"
+        />
+      </div>
+
+      {/* Loading skeleton */}
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-5 space-y-4 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="h-3 w-3 rounded-full bg-[var(--color-neutral-100)]" />
+                <div className="h-4 w-32 rounded bg-[var(--color-neutral-100)]" />
+              </div>
+              <div className="flex gap-2">
+                <div className="h-5 w-20 rounded-full bg-[var(--color-neutral-100)]" />
+                <div className="h-5 w-20 rounded-full bg-[var(--color-neutral-100)]" />
+              </div>
+              <div className="flex gap-1">
+                {[1, 2, 3].map((j) => (
+                  <div key={j} className="h-7 w-7 rounded-full bg-[var(--color-neutral-100)]" />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+      ) : filtered.length > 0 ? (
+        /* ── List view ──────────────────────────────────────────────────── */
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((team) => (
+            <TeamCard
+              key={team.id}
+              team={team}
+              onEdit={setEditTarget}
+              onDelete={setDeleteTarget}
             />
           ))}
-          {team.memberCount > 3 && (
-            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-[var(--color-neutral-200)] text-xs font-medium text-[var(--color-text-secondary)] ring-2 ring-[var(--color-bg-primary)]">
-              +{team.memberCount - 3}
-            </div>
-          )}
         </div>
-        <ChevronRight className="h-5 w-5 text-[var(--color-text-tertiary)] shrink-0" />
-      </Card>
-      {children.map((child) => (
-        <TeamNode
-          key={child.id}
-          team={child}
-          childMap={childMap}
-          onNavigate={onNavigate}
-          depth={depth + 1}
-        />
-      ))}
+      ) : teams.length === 0 ? (
+        <div className="rounded-xl border border-[var(--color-border)] border-dashed bg-[var(--color-bg-primary)] py-20 flex flex-col items-center gap-3">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-neutral-100)]">
+            <Users className="h-6 w-6 text-[var(--color-text-tertiary)]" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-medium text-[var(--color-text-primary)]">No teams created yet</p>
+            <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+              Create teams to organise members and define permissions by department
+            </p>
+          </div>
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="mt-2 flex items-center gap-2 rounded-lg bg-[var(--color-secondary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-secondary-dark)] transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Create your first team
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] py-16 flex flex-col items-center gap-2">
+          <p className="text-sm font-medium text-[var(--color-text-primary)]">No teams match &ldquo;{search}&rdquo;</p>
+          <p className="text-sm text-[var(--color-text-secondary)]">Try a different name</p>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setDeleteTarget(null); }}
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-primary)] p-6 shadow-2xl mx-4">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
+                <Trash2 className="h-6 w-6 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-[var(--color-text-primary)]">Delete Team?</h3>
+                <p className="mt-1.5 text-sm text-[var(--color-text-secondary)]">
+                  <strong className="text-[var(--color-text-primary)]">{deleteTarget.name}</strong> will be permanently deleted.
+                  Members will not lose their app access.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="flex-1 rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <CreateTeamModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSuccess={handleCreated}
+      />
+
+      <EditTeamModal
+        open={editTarget !== null}
+        teamId={editTarget?.id ?? null}
+        onClose={() => setEditTarget(null)}
+        onSuccess={handleUpdated}
+      />
     </div>
   );
 }

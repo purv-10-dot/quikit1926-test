@@ -3,88 +3,66 @@
 /**
  * GoalsSection — "GOALS (1 YR.) / Key Initiatives / Critical #"
  *
- * Extracted from `page.tsx` in Phase 3 of the OPSP decomposition.
- * Goals inherit category+projected from targetRows (locked rows); that
- * cascade logic is owned by useOPSPForm and this component only renders
- * the locked state (Lock icon + gray row) when inheritance is active.
+ * goalRows are seeded (first-fill) from targetRows by useOPSPForm but remain
+ * fully editable. Rows are dynamic: 6 by default, user can add up to 10 via
+ * the "+ Add New" button. The scroll viewport keeps the card height fixed.
  */
 
-import { Info, Lock, Maximize2 } from "lucide-react";
+import { Info, Maximize2, Plus, X } from "lucide-react";
 import { Card } from "./Card";
 import { FInput } from "./RichEditor";
 import { CritBlock } from "./CritBlock";
-import { CategorySelect, ProjectedInput, displayCategory } from "./category";
+import { CategorySelect, ProjectedInput } from "./category";
 import { WithTooltip, OwnerSelect } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
 
 interface Props {
   form: FormData;
   set: <K extends keyof FormData>(key: K, value: FormData[K]) => void;
-  onExpandGoals: () => void;
   onExpandKeyInitiatives: () => void;
 }
+
+const MAX_GOAL_ROWS = 10;
+const MIN_GOAL_ROWS = 6;
+const emptyGoalRow = () => ({
+  category: "",
+  projected: "",
+  q1: "",
+  q2: "",
+  q3: "",
+  q4: "",
+});
 
 export function GoalsSection({
   form,
   set,
-  onExpandGoals,
   onExpandKeyInitiatives,
 }: Props) {
   return (
     <Card className="flex flex-col gap-3 flex-1 min-w-[300px]">
       <div>
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <p className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1">
-              GOALS (1 YR.)
-              <Info className="h-3 w-3 text-gray-400 flex-shrink-0" />
-            </p>
-            <p className="text-xs text-gray-500">(What)</p>
+        <div className="mb-3">
+          <p className="text-xs font-bold text-gray-800 uppercase tracking-wide flex items-center gap-1">
+            GOALS (1 YR.)
+            <Info className="h-3 w-3 text-gray-400 flex-shrink-0" />
+          </p>
+          <p className="text-xs text-gray-500">(What)</p>
+        </div>
+        <div className="grid grid-cols-[1fr_auto] gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
+          <div className="grid grid-cols-5 gap-1.5">
+            <span className="col-span-3">Category</span>
+            <span className="col-span-2 text-right">Projected</span>
           </div>
-          <button
-            onClick={onExpandGoals}
-            data-expand="true"
-            className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded p-0.5"
-          >
-            <Maximize2 className="h-3.5 w-3.5" />
-          </button>
+          <span className="w-5" />
         </div>
-        <div className="grid grid-cols-5 gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
-          <span className="col-span-3">Category</span>
-          <span className="col-span-2 text-right">Projected</span>
-        </div>
-        {form.goalRows.slice(0, 6).map((row, i) => {
-          const t = i < form.targetRows.length ? form.targetRows[i] : null;
-          const inherited = !!(
-            t &&
-            t.category.trim() &&
-            t.projected.trim() &&
-            t.y1.trim()
-          );
-          return (
+        <div className="max-h-[268px] overflow-y-auto pr-1">
+          {form.goalRows.slice(0, MAX_GOAL_ROWS).map((row, i) => (
             <div
               key={i}
-              className="grid grid-cols-5 gap-1.5 items-start py-0.5"
+              className="grid grid-cols-[1fr_auto] gap-1.5 items-start py-0.5 group"
             >
-              <div className="col-span-3 min-w-0">
-                {inherited ? (
-                  <div className="w-full flex items-center justify-between border border-gray-200 rounded px-2 py-1.5 bg-gray-50 gap-1 cursor-not-allowed">
-                    <WithTooltip
-                      content={displayCategory(row.category) || ""}
-                      className="relative flex-1 min-w-0"
-                    >
-                      <span className="block text-sm whitespace-nowrap truncate text-left text-gray-500">
-                        {displayCategory(row.category) || "—"}
-                      </span>
-                    </WithTooltip>
-                    <WithTooltip
-                      content="Locked — set in Targets"
-                      className="relative flex-shrink-0"
-                    >
-                      <Lock className="h-3 w-3 text-gray-400" />
-                    </WithTooltip>
-                  </div>
-                ) : (
+              <div className="grid grid-cols-5 gap-1.5 items-start">
+                <div className="col-span-3 min-w-0">
                   <CategorySelect
                     value={row.category}
                     onChange={(v) => {
@@ -101,27 +79,8 @@ export function GoalsSection({
                       set("goalRows", next);
                     }}
                   />
-                )}
-              </div>
-              <div className="col-span-2 min-w-0">
-                {inherited ? (
-                  <div className="flex items-center border border-gray-200 rounded bg-gray-50 overflow-hidden cursor-not-allowed">
-                    <WithTooltip
-                      content={row.projected || ""}
-                      className="relative flex-1 min-w-0"
-                    >
-                      <span className="block text-sm text-gray-500 truncate px-2 py-1.5">
-                        {row.projected || "—"}
-                      </span>
-                    </WithTooltip>
-                    <WithTooltip
-                      content="Locked — set in Targets"
-                      className="relative flex-shrink-0 mr-1.5"
-                    >
-                      <Lock className="h-3 w-3 text-gray-400" />
-                    </WithTooltip>
-                  </div>
-                ) : (
+                </div>
+                <div className="col-span-2 min-w-0">
                   <ProjectedInput
                     categoryName={row.category}
                     value={row.projected}
@@ -131,11 +90,39 @@ export function GoalsSection({
                       set("goalRows", next);
                     }}
                   />
-                )}
+                </div>
               </div>
+              {form.goalRows.length > MIN_GOAL_ROWS ? (
+                <button
+                  type="button"
+                  aria-label="Remove row"
+                  onClick={() => {
+                    const next = [...form.goalRows];
+                    next.splice(i, 1);
+                    set("goalRows", next);
+                  }}
+                  className="w-5 h-7 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <span className="w-5" />
+              )}
             </div>
-          );
-        })}
+          ))}
+        </div>
+        {form.goalRows.length < MAX_GOAL_ROWS && (
+          <button
+            type="button"
+            onClick={() =>
+              set("goalRows", [...form.goalRows, emptyGoalRow()])
+            }
+            className="mt-2 inline-flex items-center gap-1 text-xs text-accent-600 hover:text-accent-700 font-medium"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add New
+          </button>
+        )}
       </div>
       {/* Key Initiatives — 3-column table (rank | description | owner), matches Key Thrusts/Capabilities */}
       <div className="border-t border-gray-100 pt-3">

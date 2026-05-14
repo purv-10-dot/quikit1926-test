@@ -6,7 +6,7 @@ const withOrgAuth = withOrgAuthForModule("orgSetup.users");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createOrgUserSchema } from "@/lib/schemas/userSchema";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
-import { seedAdminAppRole, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
+import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
 
 
 type MembershipWithTeams = {
@@ -87,16 +87,26 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
   // Build a userId → appRole map in a single query. Roles now live in
   // app_quikscale.UserAppRole (a join table) instead of as a column on
   // quikit.UserAppAccess.
+  //
+  // The UserAppRole model is optional infrastructure — when it isn't present
+  // in the generated Prisma client (schema not yet migrated in this env),
+  // skip the lookup so the user list still loads. The appRole fields on
+  // each row are advisory; the Users page doesn't read them.
   const appRoleByUserId = new Map<string, { id: string; name: string } | null>();
-  if (appId && memberships.length > 0) {
-    const userIds = memberships.map(m => m.user.id);
-    const userRoles = await db.userAppRole.findMany({
-      where: { orgId, userId: { in: userIds } },
-      select: { userId: true, role: { select: { id: true, name: true, appId: true } } },
-    });
-    for (const ur of userRoles) {
-      if (ur.role.appId !== appId) continue; // ignore other apps' roles
-      appRoleByUserId.set(ur.userId, { id: ur.role.id, name: ur.role.name });
+  const userAppRoleDelegate = (db as unknown as { userAppRole?: { findMany: (args: unknown) => Promise<Array<{ userId: string; role: { id: string; name: string; appId: string } }>> } }).userAppRole;
+  if (appId && memberships.length > 0 && userAppRoleDelegate) {
+    try {
+      const userIds = memberships.map(m => m.user.id);
+      const userRoles = await userAppRoleDelegate.findMany({
+        where: { orgId, userId: { in: userIds } },
+        select: { userId: true, role: { select: { id: true, name: true, appId: true } } },
+      });
+      for (const ur of userRoles) {
+        if (ur.role.appId !== appId) continue; // ignore other apps' roles
+        appRoleByUserId.set(ur.userId, { id: ur.role.id, name: ur.role.name });
+      }
+    } catch {
+      // UserAppRole table missing or query failed — leave map empty.
     }
   }
 
@@ -163,14 +173,19 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     },
   });
 
-  // ── Auto-grant QuikScale access + admin AppRole ────────────────────────
-  // When a user is created via this endpoint, give them QuikScale access
-  // and assign the org's admin AppRole (auto-creating the role + all its
-  // RolePermission / RoleNavigation entries on first call).
+  // ── Auto-grant QuikScale access + default AppRole ──────────────────────
+  // When a user is invited via this endpoint:
+  //   1. Grant UserAppAccess (idempotent)
+  //   2. Seed both default roles (admin + User) for this org — idempotent.
+  //   3. Assign the new user to the User role (the org's default for invitees).
+  //      Admin role is reserved for the org creator + explicit admin promotion
+  //      via PATCH /api/org/users/[id]/role.
+  // If the org has zero admin members (edge case — should not happen in
+  // normal flow), the FIRST invited user falls back to admin to avoid a
+  // permanently-locked org.
   const appId = await getQuikScaleAppId();
   let appRole: { id: string; name: string } | null = null;
   if (appId) {
-    // 1. Grant UserAppAccess (idempotent)
     const existingAccess = await db.userAppAccess.findFirst({
       where: { orgId, appId, userId: newUserId },
       select: { id: true },
@@ -187,13 +202,19 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       });
     }
 
-    // 2. Ensure admin AppRole + permissions + navigation exist for the org
-    const adminRoleId = await seedAdminAppRole(orgId);
+    const { adminRoleId, userRoleId } = await seedAllDefaultRoles(orgId);
 
-    // 3. Link user → admin role (idempotent)
-    await ensureUserOnRole(newUserId, orgId, adminRoleId, userId);
+    // Safety: if no admins exist on this org yet, the new user becomes the
+    // first admin instead of a regular user. Prevents an admin-less org.
+    const adminMemberCount = await db.userAppRole.count({
+      where: { orgId, roleId: adminRoleId },
+    });
+    const targetRoleId = adminMemberCount === 0 ? adminRoleId : userRoleId;
+    const targetRoleName = adminMemberCount === 0 ? "admin" : "User";
 
-    appRole = { id: adminRoleId, name: "admin" };
+    await ensureUserOnRole(newUserId, orgId, targetRoleId, userId);
+
+    appRole = { id: targetRoleId, name: targetRoleName };
   }
 
   return NextResponse.json(

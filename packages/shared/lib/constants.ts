@@ -12,6 +12,17 @@ export type Role = (typeof ROLES)[keyof typeof ROLES];
 export const ROLE_HIERARCHY: Record<string, number> = {
   [ROLES.SUPER_ADMIN]: 6,
   [ROLES.ADMIN]: 5,
+  // v4 MEMBERSHIP_ROLES mapped into the legacy hierarchy. `org_admin` is
+  // the new name for the legacy "admin" tier (same authority), so it gets
+  // level 5. `app_admin` sits between admin and executive — it carries
+  // admin-tier authority within its scoped apps but not org-wide. `member`
+  // is the new default and lines up with `employee` at level 2.
+  // Without these entries the shared `createRequireAdmin` factory would
+  // 403 every org_admin/app_admin/member request even though the
+  // middleware (which uses ADMIN_TIER_ROLES below) lets them through.
+  org_admin: 5,
+  app_admin: 4,
+  member: 2,
   [ROLES.EXECUTIVE]: 4,
   [ROLES.MANAGER]: 3,
   [ROLES.EMPLOYEE]: 2,

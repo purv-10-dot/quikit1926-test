@@ -2,8 +2,11 @@
  * OPSP pre-finalize validation.
  *
  * Two checks:
- *  1. Projection vs breakdown — Targets (5y), Goals (4q), Actions (3m) sums must
- *     equal projected (within 0.01 tolerance) when both projected + all parts filled.
+ *  1. Projection vs breakdown — only enforced for Manual rows. The matrix:
+ *       - Automatic + any         → skip (calculateBreakdown owns the row)
+ *       - Manual    + Standalone  → skip (StandaloneManualSelect enforces values)
+ *       - Manual    + Cumulative  → Σ cells === Projected
+ *       - Manual    + CumulativeTillEnd → last cell === Projected
  *  2. Owner missing — for Key Thrusts, Key Initiatives, and Rocks: any row with a
  *     description but no owner is flagged.
  *
@@ -12,6 +15,7 @@
  */
 import type { FormData } from "../hooks/useOPSPForm";
 import { resolveProjected } from "../components/modals";
+import { catMetaCache } from "../components/category";
 
 export interface ValidationError {
   /** "Targets" | "Goals" | "Actions" | "Key Thrusts" | "Key Initiatives" | "Rocks" */
@@ -27,6 +31,8 @@ const partKeys = {
   actions: ["m1", "m2", "m3"] as const,
 };
 
+const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+
 function checkBreakdown(
   section: string,
   rows: Array<Record<string, string>>,
@@ -41,25 +47,63 @@ function checkBreakdown(
     const partVals = parts.map((k) => resolveProjected(cat, String(row[k] ?? "")) ?? 0);
     const anyPart = parts.some((k) => String(row[k] ?? "").trim() !== "");
     const allParts = parts.every((k) => String(row[k] ?? "").trim() !== "");
-    const sum = partVals.reduce((a, b) => a + b, 0);
 
-    // Skip fully empty rows
+    // Skip fully empty rows.
     if (!projectedStr && !anyPart) return;
 
-    if (projected !== null && projected > 0 && !allParts) {
-      errors.push({
-        section,
-        row: i + 1,
-        message: `Row ${i + 1}: missing breakdown values (some ${parts.join("/")} empty)`,
-      });
+    const meta = catMetaCache.get(cat);
+    // Default to Automatic + Cumulative when meta is missing — same fallback
+    // as the modals. Auto rows are calculator-owned, so no validation fires.
+    const breakdownType = meta?.breakdownType ?? "Automatic";
+    const categoryType = meta?.categoryType ?? "Cumulative";
+
+    if (breakdownType === "Automatic") return;
+    if (categoryType === "Standalone") return; // dropdown enforces cell values
+
+    // ── Manual + Cumulative — sum check ──
+    if (categoryType === "Cumulative") {
+      if (projected !== null && projected > 0 && !allParts) {
+        errors.push({
+          section,
+          row: i + 1,
+          message: `${section} row ${i + 1}${cat ? ` (${cat})` : ""}: missing breakdown values for ${parts.join("/")}.`,
+        });
+        return;
+      }
+      if (projected !== null && allParts) {
+        const sum = partVals.reduce((a, b) => a + b, 0);
+        if (Math.abs(projected - sum) >= 0.01) {
+          errors.push({
+            section,
+            row: i + 1,
+            message: `${section} row ${i + 1}${cat ? ` (${cat})` : ""}: ${parts.map((p) => p.toUpperCase()).join("+")} add up to ${fmt.format(sum)}, but Projected is ${fmt.format(projected)} — short by ${fmt.format(projected - sum)}.`,
+          });
+        }
+      }
       return;
     }
-    if (projected !== null && allParts && Math.abs(projected - sum) >= 0.01) {
-      errors.push({
-        section,
-        row: i + 1,
-        message: `Row ${i + 1}: ${parts.map((p) => p.toUpperCase()).join("+")} sum (${sum}) ≠ Projected (${projected})`,
-      });
+
+    // ── Manual + CumulativeTillEnd — last cell check ──
+    if (categoryType === "CumulativeTillEnd") {
+      if (projected !== null && projected > 0 && !allParts) {
+        errors.push({
+          section,
+          row: i + 1,
+          message: `${section} row ${i + 1}${cat ? ` (${cat})` : ""}: missing breakdown values for ${parts.join("/")}.`,
+        });
+        return;
+      }
+      if (projected !== null && allParts) {
+        const last = partVals[partVals.length - 1] ?? 0;
+        if (Math.abs(projected - last) >= 0.01) {
+          const lastKey = parts[parts.length - 1].toUpperCase();
+          errors.push({
+            section,
+            row: i + 1,
+            message: `${section} row ${i + 1}${cat ? ` (${cat})` : ""}: the final period (${lastKey} = ${fmt.format(last)}) should match Projected (${fmt.format(projected)}).`,
+          });
+        }
+      }
     }
   });
   return errors;

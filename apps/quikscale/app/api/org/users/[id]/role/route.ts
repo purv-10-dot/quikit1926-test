@@ -7,6 +7,7 @@ import {
   seedAdminAppRole,
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
+import { assertWouldNotEmptyAdmin, AdminLockoutError } from "@/lib/api/preventAdminLockout";
 
 const bodySchema = z.object({
   /** AppRole.id, or null to revoke. Special value "admin" auto-seeds + uses
@@ -93,6 +94,18 @@ export async function PATCH(
         );
       }
       targetRoleId = role.id;
+    }
+
+    // v2: refuse if this swap would leave 0 users on the admin role.
+    // No-ops when the user isn't currently an admin, OR when there are
+    // other admins remaining.
+    try {
+      await assertWouldNotEmptyAdmin({ orgId, userId: params.id });
+    } catch (e) {
+      if (e instanceof AdminLockoutError) {
+        return NextResponse.json({ success: false, error: e.message }, { status: 409 });
+      }
+      throw e;
     }
 
     // Wipe any existing UserAppRole rows for this user (in this org), then

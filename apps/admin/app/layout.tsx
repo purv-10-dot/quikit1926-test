@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
-import { Providers } from "@/components/providers";
-import { SentryInit } from "./sentry-init";
 import "./globals.css";
+import Providers from "@/components/providers";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -12,20 +13,21 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "QuikScale Admin",
-  description: "Organisation management portal for QuikScale",
+  title: "admin-next — Organisation Management",
+  description: "Manage your organisation's members, teams, apps, and settings.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const session = await getServerSession(authOptions);
+
   return (
     <html lang="en" suppressHydrationWarning className={jakarta.variable}>
       <body className="font-sans antialiased">
-        <SentryInit />
-        <Providers>{children}</Providers>
+        <Providers session={session}>{children}</Providers>
       </body>
     </html>
   );
