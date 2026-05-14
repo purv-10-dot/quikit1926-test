@@ -90,12 +90,15 @@ export async function GET(req: NextRequest) {
   // Org-level entitlement uses SPARSE storage with DEFAULT-OFF semantics:
   //   - No OrgAppAccess row for (orgId, appId) → app is hidden (default off)
   //   - Row with enabled:true → app explicitly granted by super-admin
-  //   - Row with enabled:false → legacy/redundant (treated same as no row)
+  //   - Row with enabled:false → treated same as no row
   //
-  // Platform super-admins (User.isSuperAdmin) bypass this gate and see every
-  // app (still subject to the per-app requiresOrgAdmin role check below) so
-  // they can still operate on freshly-created orgs.
-  const orgAllows = orgId && !isSuperAdmin
+  // Super admins are NOT bypassed any more — they see exactly what the
+  // selected org is provisioned for. Managing the access matrix happens
+  // via /organizations/[id] (super-admin UI), not by overloading the
+  // launcher. When the selected org has 0 provisioned apps, the launcher
+  // renders its existing empty state and points the super-admin at the
+  // super-admin panel.
+  const orgAllows = orgId
     ? await db.orgAppAccess.findMany({
         where: { orgId, enabled: true },
         select: { appId: true },
@@ -117,18 +120,19 @@ export async function GET(req: NextRequest) {
   const userAppRoles = new Map(userAccess.map((u) => [u.appId, u.role]));
 
   // Visibility (FRD-compliant, post-onboarding-FRD):
-  //   - Super Admin → sees every active app (still subject to requiresOrgAdmin)
-  //   - Org Admin → sees every app the org is provisioned for
-  //   - App Admin / User (Member) → only apps they have an explicit
-  //     UserAppAccess row for (FR-OA-002 / FR-OA-003)
-  //   - In every case, OrgAppAccess.enabled must be true (or super admin)
-  //     and requiresOrgAdmin gates admin-tier apps
+  //   - Every user (including super admin) only sees apps the SELECTED ORG
+  //     is provisioned for (OrgAppAccess.enabled = true). Super admin
+  //     manages the access matrix via /organizations/[id] in super-admin UI.
+  //   - Org Admin → sees every provisioned app in the selected org
+  //   - App Admin / User (Member) → only provisioned apps where the user
+  //     has an explicit UserAppAccess row (FR-OA-002 / FR-OA-003)
+  //   - `requiresOrgAdmin` apps (e.g. Admin Portal) still gate on the
+  //     caller's membership role within the selected org.
   const visibleApps = allApps.filter((app) => {
-    if (!isSuperAdmin && !orgAllowedAppIds.has(app.id)) return false;
+    if (!orgAllowedAppIds.has(app.id)) return false;
     if (app.requiresOrgAdmin && !memberIsAdmin) return false;
-    // Per-user scoping for non-admin tiers. Super admin and org admin keep
-    // full org visibility; everyone else (App Admin, User/Member, legacy
-    // roles) must have a UserAppAccess row.
+    // Per-user scoping for non-admin tiers. Org admin / super admin still
+    // see every provisioned app — others need an explicit UserAppAccess row.
     if (!isSuperAdmin && !memberIsAdmin && !userAppRoles.has(app.id)) {
       return false;
     }
