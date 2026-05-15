@@ -1,4 +1,7 @@
 import { type NextAuthOptions } from "next-auth";
+// Side-effect import: loads the next-auth module augmentation in types.ts
+// so the Session.user shape inside this file recognizes firstName/lastName.
+import "./types";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
@@ -682,13 +685,31 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
             return { ...session, user: { ...session.user, id: "" as string, email: "" } as never };
           }
         }
+        // Compose display name from firstName/lastName if the token carries
+        // them (the launcher's hand-off mint includes profile fields so the
+        // consumer app's header / avatar can render real names instead of
+        // the generic "User" placeholder).
+        const firstName = token.firstName as string | undefined;
+        const lastName = token.lastName as string | undefined;
+        const composedName =
+          (token.name as string | undefined) ??
+          (firstName || lastName
+            ? `${firstName ?? ""} ${lastName ?? ""}`.trim()
+            : undefined);
+
         session.user = {
           ...session.user,
           id: token.id as string,
           email: token.email as string,
           orgId: token.orgId as string | undefined,
           membershipRole: token.membershipRole as string | undefined,
-          isSuperAdmin: false,
+          // Mirror the token's super-admin claim through to the session so
+          // platform super-admins see correct UI affordances inside consumer
+          // apps. (Was hardcoded to false; restored to token-driven value.)
+          isSuperAdmin: Boolean(token.isSuperAdmin),
+          name: composedName,
+          firstName,
+          lastName,
           impersonating: token.impersonating,
           impersonatorUserId: token.impersonatorUserId,
           impersonatorEmail: token.impersonatorEmail,

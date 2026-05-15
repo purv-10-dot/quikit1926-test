@@ -65,6 +65,8 @@ interface OrgInfo {
   slug: string;
   role: string;
   plan: string;
+  /** OrgMember.status — "active" is selectable; others render disabled. */
+  status: string;
 }
 
 // (Tab type, STATUS_CONFIG, ICON_FALLBACKS, and the AppCard component were
@@ -114,11 +116,16 @@ export default function AppLauncherPage() {
       .then((r) => r.json())
       .then((j) => {
         if (j.success) {
-          const active = j.data.filter((o: { status: string }) => o.status === "active");
-          setOrgs(active);
-          // Auto-select first org (or the one from session)
+          // Keep ALL memberships so non-active ones (invited/pending) render
+          // in the switcher as disabled rather than silently vanishing — the
+          // old `=== "active"` filter made added-but-pending members look
+          // like the add never happened.
+          const all: OrgInfo[] = j.data;
+          const active = all.filter((o) => o.status === "active");
+          setOrgs(all);
+          // Auto-select only among ACTIVE orgs (you can't enter a pending one).
           const sessionOrgId = session?.user?.orgId;
-          const match = active.find((o: OrgInfo) => o.orgId === sessionOrgId);
+          const match = active.find((o) => o.orgId === sessionOrgId);
           setSelectedOrg(match ?? active[0] ?? null);
           // Update session if needed
           if (active[0] && !sessionOrgId) {
@@ -148,6 +155,28 @@ export default function AppLauncherPage() {
       .finally(() => setLoadingApps(false));
   }, [selectedOrg?.orgId]);
 
+  // Deep-link handoff (Flow B): if the URL has `?handoff=<slug>&to=<path>`,
+  // auto-launch that app once the orgs + apps lists have loaded. This makes
+  // bookmarks like `https://quikscale.vercel.app/dashboard` work — the app's
+  // middleware redirects unauthenticated users here with the handoff intent,
+  // and we transparently mint + redirect back.
+  useEffect(() => {
+    if (loadingOrgs || loadingApps) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get("handoff");
+    if (!slug) return;
+    const to = params.get("to") ?? "/";
+    const target = apps.find((a) => a.slug === slug);
+    if (!target) {
+      // Unknown app — clean the URL and stay on /apps.
+      window.history.replaceState({}, "", "/apps");
+      return;
+    }
+    // Fire and forget; handleLaunch will window.location.href away.
+    void handleLaunch(target, to);
+  }, [loadingOrgs, loadingApps, apps]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function selectOrgInSession(orgId: string, role: string) {
     try {
       await fetch("/api/org/select", {
@@ -162,12 +191,15 @@ export default function AppLauncherPage() {
   }
 
   async function switchOrg(org: OrgInfo) {
+    // Non-active memberships (invited/pending) are shown disabled — guard
+    // here too so a stray call can't select an org the user can't enter.
+    if (org.status !== "active") return;
     setSelectedOrg(org);
     setOrgDropdownOpen(false);
     await selectOrgInSession(org.orgId, org.role);
   }
 
-  function handleLaunch(app: AppInfo) {
+  async function handleLaunch(app: AppInfo, to: string = "/") {
     // Guard against the silent-reload trap: if `app.baseUrl` is "" or
     // missing, `window.location.href = ""` re-navigates to the current
     // page, which looks identical to "click does nothing". Surface a real
@@ -186,7 +218,34 @@ export default function AppLauncherPage() {
       );
       return;
     }
-    window.location.href = url;
+
+    // Token hand-off: mint a short-lived JWT on the launcher, ship it in
+    // the URL to the target app. The target's /auth-handoff route verifies
+    // it and sets its own NextAuth session cookie on its own subdomain.
+    // (Necessary because cookies don't share across *.vercel.app subdomains.)
+    try {
+      const res = await fetch("/api/launch-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appSlug: app.slug,
+          orgId: selectedOrg?.orgId,
+          to,
+        }),
+      });
+      const j = await res.json();
+      if (!j.success) {
+        window.alert(j.error ?? "Failed to launch app");
+        return;
+      }
+      const handoffUrl = `${url}/auth-handoff?token=${encodeURIComponent(j.data.token)}`;
+      window.location.href = handoffUrl;
+    } catch (err) {
+      console.error("[launcher] launch-token mint failed", err);
+      // Fall back to direct nav. User will see the app's own login bounce —
+      // not ideal but at least the URL bar updates.
+      window.location.href = url;
+    }
   }
 
   const matchesSearch = (a: AppInfo) =>
@@ -240,24 +299,44 @@ export default function AppLauncherPage() {
                     <>
                       <div className="fixed inset-0 z-[999]" onClick={() => setOrgDropdownOpen(false)} />
                       <div className="absolute right-0 top-full mt-1 z-[1000] bg-zinc-900/95 border border-white/10 backdrop-blur-md rounded-xl shadow-2xl w-64 py-1">
-                        {orgs.map((org) => (
+                        {orgs.map((org) => {
+                          const isActive = org.status === "active";
+                          return (
                           <button
                             key={org.orgId}
                             onClick={() => switchOrg(org)}
-                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors ${
+                            disabled={!isActive}
+                            title={
+                              isActive
+                                ? undefined
+                                : `Membership ${org.status} — not yet accessible`
+                            }
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                              !isActive
+                                ? "opacity-50 cursor-not-allowed"
+                                : "hover:bg-white/5"
+                            } ${
                               selectedOrg?.orgId === org.orgId ? "bg-indigo-500/10" : ""
                             }`}
                           >
                             <Building2 className="h-4 w-4 text-zinc-400 flex-shrink-0" />
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-medium text-zinc-100 truncate">{org.name}</p>
-                              <p className="text-[10px] text-zinc-500 uppercase">{org.role} · {org.plan}</p>
+                              <p className="text-[10px] text-zinc-500 uppercase">
+                                {org.role} · {org.plan}
+                                {!isActive && (
+                                  <span className="ml-1 text-amber-400 normal-case font-semibold">
+                                    · {org.status}
+                                  </span>
+                                )}
+                              </p>
                             </div>
-                            {selectedOrg?.orgId === org.orgId && (
+                            {selectedOrg?.orgId === org.orgId && isActive && (
                               <CheckCircle2 className="h-4 w-4 text-indigo-400 flex-shrink-0" />
                             )}
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </>
                   )}

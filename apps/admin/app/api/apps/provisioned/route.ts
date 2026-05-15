@@ -19,7 +19,13 @@ import { db } from "@/lib/db";
 export const GET = withAdminAuth(async ({ orgId }) => {
   const [allApps, accessRows] = await Promise.all([
     db.app.findMany({
-      where: { status: { not: "disabled" }, requiresOrgAdmin: false },
+      // Exclude `quikit` (the launcher IS the platform, not a tenant app)
+      // and admin-tier apps (gated by OrgMember.role, not the access matrix).
+      where: {
+        status: { not: "disabled" },
+        requiresOrgAdmin: false,
+        slug: { not: "quikit" },
+      },
       select: { id: true, name: true, slug: true, baseUrl: true, iconUrl: true, description: true },
       orderBy: { name: "asc" },
     }),

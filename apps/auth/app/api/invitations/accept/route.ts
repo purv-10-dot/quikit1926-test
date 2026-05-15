@@ -7,6 +7,7 @@ import {
   INVITE_METHOD,
   MEMBERSHIP_ROLES,
 } from "@quikit/shared";
+import { assignAppRoles } from "@quikit/auth/assign-app-roles";
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -235,6 +236,20 @@ export async function POST(request: NextRequest) {
       })),
       skipDuplicates: true,
     });
+
+    // Mirror UserAppAccess into per-app UserAppRole rows so RBAC v2 apps
+    // (quikscale, quiktrack) can resolve permissions from day one. Apps
+    // without RBAC v2 tables are silently skipped inside the helper.
+    await assignAppRoles(
+      db,
+      membership.orgId,
+      grantAppIds.map((appId) => ({
+        userId: membership.user.id,
+        appId,
+        // Empty string → helper falls back to "Admin" (system default).
+        roleName: userAppRole === "admin" ? "Admin" : "",
+      })),
+    ).catch(() => {});
   }
 
   return NextResponse.json({

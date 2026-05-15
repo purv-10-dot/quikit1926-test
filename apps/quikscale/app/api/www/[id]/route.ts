@@ -3,12 +3,12 @@ import { db } from "@/lib/db";
 import { updateWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { canEditWWW } from "@/lib/api/wwwPermissions";
 import { notifyWWWReassignment } from "@/lib/services/wwwNotifications";
-const withOrgAuth = withOrgAuthForModule("www");
+const auth = withOrgAuthForResource("www", "WWW");
 
-export const PUT = withOrgAuth<{ id: string }>(
+export const PUT = auth.update<{ id: string }>(
   async ({ orgId, userId }, request, { params }) => {
     // Cast the select-arg to bypass cached Prisma types that may not yet
     // know about `whoIds` (column exists post-migration). The runtime DB
@@ -140,7 +140,7 @@ export const PUT = withOrgAuth<{ id: string }>(
   { fallbackErrorMessage: "Failed to update WWW item" },
 );
 
-export const DELETE = withOrgAuth<{ id: string }>(
+export const DELETE = auth.delete<{ id: string }>(
   async ({ orgId, userId }, _request, { params }) => {
     const existing = await db.wWWItem.findFirst({
       where: { id: params.id, orgId },

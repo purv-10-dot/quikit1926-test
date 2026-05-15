@@ -5,6 +5,8 @@ import { getOrgId } from "@/lib/api/getOrgId";
 import { toErrorMessage } from "@/lib/api/errors";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { logApiCall } from "@quikit/shared/apiLogging";
+import { userCan, forbidden } from "@/lib/api/permissions";
+import type { Resource, Action } from "@/lib/api/permissionsRegistry";
 
 /**
  * Context passed to a route handler after the auth + tenant guard succeeds.
@@ -45,6 +47,14 @@ export interface WithTenantAuthOptions {
    * a single place: flip this string on once per route group.
    */
   moduleKey?: string;
+  /**
+   * RBAC v2 permission gate. When set, the wrapper calls `userCan(userId,
+   * orgId, resource, action)` after the auth + module gate. If the user
+   * lacks the permission, returns 403. Use the per-HTTP-verb helpers
+   * (`withOrgAuthForResource`) for the common case of one resource per
+   * route with verb → action mapping.
+   */
+  permission?: { resource: Resource; action: Action };
 }
 
 export function withOrgAuth<Params = Record<string, never>>(
@@ -71,17 +81,24 @@ export function withOrgAuth<Params = Record<string, never>>(
           response = NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
         } else {
           orgIdForLog = orgId;
+          let blocked: NextResponse | null = null;
           if (options.moduleKey) {
-            const blocked = await gateModuleApi("quikscale", options.moduleKey, orgId);
-            if (blocked) {
-              response = blocked as NextResponse;
-            } else {
-              response = await handler(
-                { session, userId: session.user.id, orgId },
-                req,
-                routeCtx ?? ({ params: {} as Params })
-              );
-            }
+            const ff = await gateModuleApi("quikscale", options.moduleKey, orgId);
+            if (ff) blocked = ff as NextResponse;
+          }
+          // RBAC v2 enforcement — runs after module gate so disabled modules
+          // 404 before we ever ask whether the user has perms on them.
+          if (!blocked && options.permission) {
+            const allowed = await userCan(
+              session.user.id,
+              orgId,
+              options.permission.resource,
+              options.permission.action,
+            );
+            if (!allowed) blocked = forbidden();
+          }
+          if (blocked) {
+            response = blocked;
           } else {
             response = await handler(
               { session, userId: session.user.id, orgId },
@@ -133,4 +150,33 @@ export function withOrgAuthForModule(moduleKey: string) {
     handler: Parameters<typeof withOrgAuth<Params>>[0],
     options: WithTenantAuthOptions = {},
   ) => withOrgAuth<Params>(handler, { moduleKey, ...options });
+}
+
+/**
+ * Per-resource curry factory. Each method-bound wrapper hard-codes the
+ * RBAC v2 action so route files don't have to repeat it per handler:
+ *
+ *   const auth = withOrgAuthForResource("kpi", "KPI");
+ *   export const GET    = auth.view(async ({ orgId }, req) => { ... });
+ *   export const POST   = auth.create(async ({ orgId }, req) => { ... });
+ *   export const PATCH  = auth.update(async ({ orgId }, req) => { ... });
+ *   export const DELETE = auth.delete(async ({ orgId }, req) => { ... });
+ */
+export function withOrgAuthForResource(moduleKey: string, resource: Resource) {
+  const wrap = (action: Action) =>
+    <Params = Record<string, never>>(
+      handler: Parameters<typeof withOrgAuth<Params>>[0],
+      options: WithTenantAuthOptions = {},
+    ) =>
+      withOrgAuth<Params>(handler, {
+        moduleKey,
+        permission: { resource, action },
+        ...options,
+      });
+  return {
+    view: wrap("view"),
+    create: wrap("create"),
+    update: wrap("update"),
+    delete: wrap("delete"),
+  };
 }

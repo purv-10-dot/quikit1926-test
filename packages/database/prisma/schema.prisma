@@ -25,7 +25,7 @@ model App {
   /// any future ops/billing surface. Default false for product apps.
   requiresOrgAdmin Boolean          @default(false)
   appRoles         AppRole[]
-  qtAppRoles       QtAppRole[]      @relation("QtAppRoleApp")
+  AppRole          QtAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
   oauthClient      OAuthClient?
@@ -208,8 +208,7 @@ model Org {
   userPermissionExtras    UserPermissionExtra[]
   wwwItems                WWWItem[]
   brands                  Brand[]
-  qtAppRoles              QtAppRole[]              @relation("QtAppRoleOrg")
-  qtProjectRoles          QtProjectRole[]          @relation("QtProjectRoleOrg")
+  AppRole                 QtAppRole[]
   QtDashboard             QtDashboard[]
   QtDoc                   QtDoc[]
   QtInvitation            QtInvitation[]
@@ -219,8 +218,8 @@ model Org {
   QtTimesheetEntry        QtTimesheetEntry[]
   QtUserActivity          QtUserActivity[]
   QtUserViewPref          QtUserViewPref[]
-  qtUserAppRoles          QtUserAppRole[]          @relation("QtUserAppRoleOrg")
-  qtUserPermissionExtras  QtUserPermissionExtra[]  @relation("QtUserPermissionExtraOrg")
+  UserAppRole             QtUserAppRole[]
+  UserPermissionExtra     QtUserPermissionExtra[]
   vcApplications          VCApplication[]
   vcAuditLogs             VCAuditLog[]
   vcCapitalCalls          VCCapitalCall[]
@@ -323,8 +322,8 @@ model User {
   talentAssessed          TalentAssessment[]               @relation("TalentAssessed")
   appRoles                UserAppRole[]
   permissionExtras        UserPermissionExtra[]
-  qtAppRoles              QtUserAppRole[]                  @relation("QtUserAppRoleUser")
-  qtPermissionExtras      QtUserPermissionExtra[]          @relation("QtUserPermissionExtraUser")
+  UserAppRole             QtUserAppRole[]
+  UserPermissionExtra     QtUserPermissionExtra[]
   accounts                Account[]
   sessions                Session[]
   verificationTokens      VerificationToken[]
@@ -5770,6 +5769,88 @@ model QtFeedback {
   @@schema("app_quiktrack")
 }
 
+model QtAppRole {
+  id             String             @id
+  orgId          String
+  appId          String
+  name           String
+  description    String?
+  isSystem       Boolean            @default(false)
+  isDefault      Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime
+  createdBy      String?
+  App            App                @relation(fields: [appId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Org            Org                @relation(fields: [orgId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  RoleNavigation QtRoleNavigation[]
+  RolePermission QtRolePermission[]
+  UserAppRole    QtUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quiktrack")
+}
+
+model QtRoleNavigation {
+  id      String    @id
+  roleId  String
+  navKey  String
+  AppRole QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@map("RoleNavigation")
+  @@schema("app_quiktrack")
+}
+
+model QtRolePermission {
+  id       String    @id
+  roleId   String
+  resource String
+  action   String
+  AppRole  QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quiktrack")
+}
+
+model QtUserAppRole {
+  id         String    @id
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  Org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  AppRole    QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  User       User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quiktrack")
+}
+
+model QtUserPermissionExtra {
+  id        String   @id
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  grantedBy String?
+  createdAt DateTime @default(now())
+  Org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quiktrack")
+}
 
 /// Radio-style tri-state used by every format / punctuality / quality flag.
 enum ClientMeetingFlag {

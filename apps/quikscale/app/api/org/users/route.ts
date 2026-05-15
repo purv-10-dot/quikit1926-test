@@ -125,32 +125,57 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       { status: 400 }
     );
   }
-  const { firstName, lastName, email, password, role = "member", teamIds = [], teamId } = parsed.data;
+  const { firstName, lastName, email, password, role = "member", teamIds = [], teamId, linkExistingUserId } = parsed.data;
   const resolvedTeamIds: string[] = teamIds.length ? teamIds : teamId ? [teamId] : [];
 
-  const existingUser = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } });
   let newUserId: string;
 
-  if (existingUser) {
-    const existingMembership = await db.orgMember.findUnique({
-      where: { orgId_userId: { orgId, userId: existingUser.id } },
+  if (linkExistingUserId) {
+    // Path A: link an existing org member into QuikScale. The user picked
+    // them from the email autocomplete dropdown. They already have a
+    // password + OrgMember row; we only need to grant UserAppAccess +
+    // AppRole + team memberships (handled below).
+    const member = await db.orgMember.findUnique({
+      where: { orgId_userId: { orgId, userId: linkExistingUserId } },
+      select: { userId: true },
     });
-    if (existingMembership)
-      return NextResponse.json({ success: false, error: "This user is already a member of the organisation" }, { status: 409 });
-
-    await db.orgMember.create({
-      data: { orgId, userId: existingUser.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
-    });
-    newUserId = existingUser.id;
+    if (!member) {
+      return NextResponse.json(
+        { success: false, error: "User is not a member of this organisation" },
+        { status: 404 },
+      );
+    }
+    newUserId = member.userId;
   } else {
-    const hashedPassword = await bcrypt.hash(password.trim(), 12);
-    const user = await db.user.create({
-      data: { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim().toLowerCase(), password: hashedPassword },
-    });
-    await db.orgMember.create({
-      data: { orgId, userId: user.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
-    });
-    newUserId = user.id;
+    const existingUser = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+
+    if (existingUser) {
+      const existingMembership = await db.orgMember.findUnique({
+        where: { orgId_userId: { orgId, userId: existingUser.id } },
+      });
+      if (existingMembership)
+        return NextResponse.json({ success: false, error: "This user is already a member of the organisation. Pick them from the email dropdown to grant QuikScale access." }, { status: 409 });
+
+      await db.orgMember.create({
+        data: { orgId, userId: existingUser.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
+      });
+      newUserId = existingUser.id;
+    } else {
+      if (!password) {
+        return NextResponse.json(
+          { success: false, error: "Password is required for new users" },
+          { status: 400 },
+        );
+      }
+      const hashedPassword = await bcrypt.hash(password.trim(), 12);
+      const user = await db.user.create({
+        data: { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim().toLowerCase(), password: hashedPassword },
+      });
+      await db.orgMember.create({
+        data: { orgId, userId: user.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
+      });
+      newUserId = user.id;
+    }
   }
 
   for (const teamId of resolvedTeamIds) {

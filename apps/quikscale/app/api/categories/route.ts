@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-const withOrgAuth = withOrgAuthForModule("opsp.categories");
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+const auth = withOrgAuthForResource("opsp.categories", "OPSP.Categories");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { validationError } from "@/lib/api/validationError";
 import { createCategorySchema } from "@/lib/schemas/categorySchema";
 
 // GET /api/categories — list all categories for tenant
-export const GET = withOrgAuth(async ({ orgId }, request) => {
+export const GET = auth.view(async ({ orgId }, request) => {
   const search = request.nextUrl.searchParams.get("search") || undefined;
   const dataType = request.nextUrl.searchParams.get("dataType") || undefined;
   const { page, limit, skip, take } = parsePagination(request);
@@ -32,7 +32,7 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
 // POST /api/categories — create a new category
 // Duplicate rule: (orgId, lowercased name, dataType, currency) must be unique.
 // A P2002 from Prisma surfaces as a friendly 409.
-export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
+export const POST = auth.create(async ({ orgId, userId }, request) => {
   const parsed = createCategorySchema.safeParse(await request.json());
   if (!parsed.success) return validationError(parsed);
   const { name, dataType, currency, description, categoryType, breakdownType } = parsed.data;

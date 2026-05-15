@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { UserMenu, globalSignOut } from "@quikit/ui";
 
 /* ─── Types ─── */
@@ -78,20 +79,42 @@ const navigation: NavItem[] = [
   ]},
 ];
 
-/** Apply the disabled set to the nav: hide disabled leaves, and hide parents
- *  that have no remaining children (or that are themselves disabled). */
-function filterNavigation(items: NavItem[], disabled: Set<string>): NavItem[] {
+/** Apply BOTH gates to the nav:
+ *   1. Feature flag — the org has the module enabled
+ *   2. RBAC v2 nav permission — the user's role whitelists this navKey
+ *
+ *  If `permsLoading` is true (initial fetch in flight), we fall back to
+ *  feature-flag-only filtering so the sidebar isn't empty during the
+ *  permissions round-trip. Once permissions arrive the sidebar re-renders
+ *  with the trimmed set.
+ *
+ *  Hiding a parent when all its children are hidden cascades naturally —
+ *  children get filtered first, parent collapses if visibleChildren is 0. */
+function filterNavigation(
+  items: NavItem[],
+  disabled: Set<string>,
+  hasNav: (key: string) => boolean,
+  permsLoading: boolean,
+  isAdminBypass: boolean,
+): NavItem[] {
+  const canSee = (key: string) => {
+    // While perms are loading, only enforce the feature flag — otherwise the
+    // user briefly sees an empty sidebar. Admin users bypass nav perms.
+    if (permsLoading || isAdminBypass) return true;
+    return hasNav(key);
+  };
   return items
     .map((item) => {
-      // Cascade via isModuleEnabled — checks item + ancestors
       if (!isModuleEnabled(item.moduleKey, disabled)) return null;
       if (item.children) {
-        const visibleChildren = item.children.filter((c) =>
-          isModuleEnabled(c.moduleKey, disabled),
+        const visibleChildren = item.children.filter(
+          (c) => isModuleEnabled(c.moduleKey, disabled) && canSee(c.moduleKey),
         );
         if (visibleChildren.length === 0) return null;
         return { ...item, children: visibleChildren };
       }
+      // Leaf: also check nav permission.
+      if (!canSee(item.moduleKey)) return null;
       return item;
     })
     .filter((x): x is NavItem => x !== null);
@@ -198,7 +221,14 @@ interface SidebarContentProps {
 }
 function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarContentProps) {
   const disabled = useDisabledModules();
-  const visibleNav = filterNavigation(navigation, disabled);
+  const perms = useMyPermissions();
+  const visibleNav = filterNavigation(
+    navigation,
+    disabled,
+    perms.hasNav,
+    perms.loading,
+    perms.isAdmin,
+  );
   const { data: session } = useSession();
   const router = useRouter();
 

@@ -3,8 +3,8 @@ import { db } from "@/lib/db";
 import { updateKPISchema } from "@/lib/schemas/kpiSchema";
 import { ApiResponse } from "@/lib/services/kpiService";
 import { canEditKPI } from "@/lib/api/kpiPermissions";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-const withOrgAuth = withOrgAuthForModule("kpi");
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+const auth = withOrgAuthForResource("kpi", "KPI");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 
 /**
@@ -105,7 +105,7 @@ async function syncChildTargetToParent(parentKpiId: string) {
 }
 
 
-export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params }) => {
+export const GET = auth.view<{ id: string }>(async ({ orgId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({
     where: { id: params.id },
     select: {
@@ -129,7 +129,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params }
   return NextResponse.json({ success: true, data: kpi });
 }, { fallbackErrorMessage: "Failed to fetch KPI" });
 
-export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const existingKPI = await db.kPI.findUnique({ where: { id: params.id } });
   if (!existingKPI) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
   if (existingKPI.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
@@ -340,7 +340,7 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
   return NextResponse.json({ success: true, data: updatedKPI, message: "KPI updated successfully" });
 }, { fallbackErrorMessage: "Failed to update KPI" });
 
-export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const kpi = await db.kPI.findUnique({ where: { id: params.id } });
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
   if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });

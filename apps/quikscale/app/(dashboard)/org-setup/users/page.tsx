@@ -69,6 +69,12 @@ type FormState = {
   appRoleId: string | null;
   teamIds: string[];
   status: string;
+  /**
+   * Set when the admin picks an existing org member from the email
+   * autocomplete dropdown. Triggers the "link existing user → grant
+   * QuikScale access" backend path; password field is hidden in this mode.
+   */
+  linkExistingUserId: string | null;
 };
 
 const EMPTY_FORM: FormState = {
@@ -80,7 +86,19 @@ const EMPTY_FORM: FormState = {
   appRoleId: null,
   teamIds: [],
   status: "active",
+  linkExistingUserId: null,
 };
+
+/* ─── Email autocomplete row ─── */
+interface ExistingMemberHit {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  avatar: string | null;
+  status: string;
+  hasQuikScaleAccess: boolean;
+}
 
 const ROLES = [
   { value: "admin", label: "Admin", color: "bg-purple-100 text-purple-700" },
@@ -316,12 +334,72 @@ function UserPanel({
               teamIds:
                 editUser.teamIds ?? (editUser.teamId ? [editUser.teamId] : []),
               status: editUser.status,
+              linkExistingUserId: null,
             }
           : EMPTY_FORM
       );
       setError("");
+      setEmailSuggestions([]);
+      setEmailDropOpen(false);
     }
   }, [open, editUser]);
+
+  /* ─ Email autocomplete state ─
+     When admin types in the email field (and we're in CREATE mode), debounce
+     a search against /api/org/users/search. Hits are existing OrgMembers of
+     this org — they may already belong via QuikVC / QuikTrack / etc. and
+     just need a UserAppAccess row for QuikScale. */
+  const [emailSuggestions, setEmailSuggestions] = useState<ExistingMemberHit[]>([]);
+  const [emailDropOpen, setEmailDropOpen] = useState(false);
+  const emailBoxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (editUser) return; // Edit mode: don't autocomplete (email locked anyway)
+    if (form.linkExistingUserId) return; // already linked — don't search
+    const q = form.email.trim();
+    if (q.length < 2) {
+      setEmailSuggestions([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/org/users/search?email=${encodeURIComponent(q)}`);
+        const json = await res.json();
+        if (json.success) {
+          setEmailSuggestions(json.data as ExistingMemberHit[]);
+          setEmailDropOpen(true);
+        }
+      } catch {
+        // network error — silently ignore; user can still submit fresh create
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [form.email, form.linkExistingUserId, editUser]);
+
+  useEffect(() => {
+    function h(e: MouseEvent) {
+      if (emailBoxRef.current && !emailBoxRef.current.contains(e.target as Node))
+        setEmailDropOpen(false);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  function pickExisting(hit: ExistingMemberHit) {
+    setForm((p) => ({
+      ...p,
+      firstName: hit.firstName,
+      lastName: hit.lastName,
+      email: hit.email,
+      password: "",
+      linkExistingUserId: hit.userId,
+    }));
+    setEmailDropOpen(false);
+  }
+
+  function clearLink() {
+    setForm((p) => ({ ...p, linkExistingUserId: null }));
+  }
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -349,7 +427,7 @@ function UserPanel({
       setError("Email is required.");
       return;
     }
-    if (!editUser && !form.password.trim()) {
+    if (!editUser && !form.linkExistingUserId && !form.password.trim()) {
       setError("Password is required for new users.");
       return;
     }
@@ -366,9 +444,10 @@ function UserPanel({
         role: "member",
         teamIds: form.teamIds,
       };
-      if (!editUser) payload.password = form.password;
+      if (!editUser && !form.linkExistingUserId) payload.password = form.password;
       if (editUser && form.password.trim()) payload.password = form.password;
       if (editUser) payload.status = form.status;
+      if (!editUser && form.linkExistingUserId) payload.linkExistingUserId = form.linkExistingUserId;
 
       const url = editUser
         ? `/api/org/users/${editUser.userId}`
@@ -445,8 +524,8 @@ function UserPanel({
         </RightPanelFooter>
       }
     >
-      {/* Name row */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Name row — disabled when linking existing (values prefilled from user record) */}
+      <div className="grid grid-cols-2 gap-4" style={form.linkExistingUserId ? { opacity: 0.6, pointerEvents: "none" } : undefined}>
         <div>
           <label className="text-xs font-medium text-gray-600 block mb-1.5">
             First Name <span className="text-red-400">*</span>
@@ -473,21 +552,101 @@ function UserPanel({
         </div>
       </div>
 
-      {/* Email */}
+      {/* Email — typeahead against existing org members in CREATE mode */}
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">
           Email Address <span className="text-red-400">*</span>
         </label>
-        <input
-          type="email"
-          value={form.email}
-          onChange={(e) => set("email", e.target.value)}
-          placeholder="jane@company.com"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400"
-        />
+        <div ref={emailBoxRef} className="relative">
+          <input
+            type="email"
+            value={form.email}
+            onChange={(e) => {
+              if (form.linkExistingUserId) clearLink();
+              set("email", e.target.value);
+            }}
+            onFocus={() => {
+              if (!editUser && emailSuggestions.length > 0) setEmailDropOpen(true);
+            }}
+            disabled={!!editUser}
+            placeholder="jane@company.com"
+            className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400 ${
+              form.linkExistingUserId
+                ? "border-accent-300 bg-accent-50"
+                : "border-gray-200"
+            } ${editUser ? "bg-gray-50 text-gray-500" : ""}`}
+          />
+          {form.linkExistingUserId && (
+            <button
+              type="button"
+              onClick={() => {
+                clearLink();
+                setForm((p) => ({ ...p, firstName: "", lastName: "", email: "" }));
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-accent-700 hover:text-accent-900 px-2 py-0.5 rounded bg-white border border-accent-200"
+              title="Clear and create new user instead"
+            >
+              Clear
+            </button>
+          )}
+          {!editUser && emailDropOpen && emailSuggestions.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
+              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 border-b border-gray-100">
+                Existing members in this org
+              </div>
+              {emailSuggestions.map((hit) => {
+                const disabled = hit.hasQuikScaleAccess;
+                return (
+                  <button
+                    key={hit.userId}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => !disabled && pickExisting(hit)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-left ${
+                      disabled
+                        ? "opacity-60 cursor-not-allowed"
+                        : "hover:bg-accent-50"
+                    }`}
+                  >
+                    <div
+                      className={`h-7 w-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${avatarColor(
+                        `${hit.firstName} ${hit.lastName}`,
+                      )}`}
+                    >
+                      {initials(hit.firstName, hit.lastName)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium text-gray-800 truncate">
+                        {hit.firstName} {hit.lastName}
+                      </div>
+                      <div className="text-[11px] text-gray-500 truncate">
+                        {hit.email}
+                      </div>
+                    </div>
+                    {disabled ? (
+                      <span className="text-[10px] font-semibold text-gray-400 flex-shrink-0">
+                        Already in QuikScale
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold text-accent-600 flex-shrink-0">
+                        Add to QuikScale
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {form.linkExistingUserId && (
+          <p className="text-[11px] text-accent-700 mt-1.5">
+            Linking existing org member — password not required.
+          </p>
+        )}
       </div>
 
-      {/* Password */}
+      {/* Password — hidden when linking an existing org member */}
+      {!form.linkExistingUserId && (
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">
           Password{" "}
@@ -509,6 +668,7 @@ function UserPanel({
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400"
         />
       </div>
+      )}
 
       {/* Role — dynamic AppRole list from /api/org/roles */}
       <div>

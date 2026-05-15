@@ -39,10 +39,13 @@ export async function GET() {
   return NextResponse.json(
     { success: true, data: orgs },
     {
-      // Per-user membership list. Short browser cache keeps the select-org
-      // UI snappy without going stale on role / org changes.
-      // See docs/plans/P1-2-cache-control-headers.md.
-      headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" },
+      // Per-user membership list. NEVER cache: an admin adding the user to a
+      // new org must reflect on their very next /apps load. The previous
+      // `max-age=30, stale-while-revalidate=60` served a pre-add snapshot
+      // (SWR returns stale on the first post-expiry request), so a freshly
+      // added org silently failed to appear in the launcher's org switcher.
+      // Mirrors the launcher endpoint, which is no-store for the same reason.
+      headers: { "Cache-Control": "private, no-store, no-cache, must-revalidate, max-age=0" },
     },
   );
 }

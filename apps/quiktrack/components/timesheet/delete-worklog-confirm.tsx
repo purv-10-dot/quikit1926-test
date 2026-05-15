@@ -60,7 +60,7 @@ export function DeleteWorklogConfirm({ entry, onClose, onDeleted }: Props) {
         </div>
 
         <p className="mt-4 text-xs text-gray-500">
-          This will permanently remove the entry from the timesheet. It can't be undone.
+          This will permanently remove the entry from the timesheet. It cannot be undone.
         </p>
 
         {error && <div className="mt-2 text-xs text-red-600">{error}</div>}

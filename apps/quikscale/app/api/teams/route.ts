@@ -3,9 +3,10 @@ import { db } from "@/lib/db";
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { validationError } from "@/lib/api/validationError";
-import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+const auth = withOrgAuthForResource("orgSetup.teams", "Team");
 
-export const GET = withOrgAuth(
+export const GET = auth.view(
   async ({ orgId }, request) => {
     const { page, limit, skip, take } = parsePagination(request);
     const where = { orgId };
@@ -26,7 +27,7 @@ export const GET = withOrgAuth(
   { fallbackErrorMessage: "Failed to fetch teams" },
 );
 
-export const POST = withOrgAuth(
+export const POST = auth.create(
   async ({ orgId }, request) => {
     const parsed = createTeamSchema.safeParse(await request.json());
     if (!parsed.success) return validationError(parsed);

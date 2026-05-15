@@ -5,6 +5,11 @@ declare module "next-auth" {
     user: {
       id: string;
       email: string;
+      /** Given name. Populated by createOAuthClientOptions session callback
+       *  from the launcher hand-off JWE. Used by consumer-app headers. */
+      firstName?: string;
+      /** Family name. Mirrors firstName above. */
+      lastName?: string;
       orgId?: string;
       membershipRole?: string;
       membershipInvalid?: boolean;
@@ -38,6 +43,9 @@ declare module "next-auth/jwt" {
   interface JWT {
     id?: string;
     email?: string;
+    firstName?: string;
+    lastName?: string;
+    name?: string;
     orgId?: string;
     membershipRole?: string;
     membershipCheckedAt?: number;

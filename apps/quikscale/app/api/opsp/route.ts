@@ -3,11 +3,11 @@ import { db } from "@/lib/db";
 import { opspUpsertSchema, opspFinalizeSchema } from "@/lib/schemas/opspSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-const withOrgAuth = withOrgAuthForModule("opsp");
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+const auth = withOrgAuthForResource("opsp.create", "OPSP.Create");
 
 /* ── GET: load OPSP data for current user + year + quarter ── */
-export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
+export const GET = auth.view(async ({ orgId, userId }, req) => {
   const { searchParams } = req.nextUrl;
   const year    = parseInt(searchParams.get("year") ?? String(new Date().getFullYear()));
   const quarter = searchParams.get("quarter") ?? "Q1";
@@ -37,7 +37,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
 });
 
 /* ── PUT: upsert (autosave) ── */
-export const PUT = withOrgAuth(async ({ orgId, userId }, req) => {
+export const PUT = auth.update(async ({ orgId, userId }, req) => {
   const parsed = opspUpsertSchema.safeParse(await req.json());
   if (!parsed.success) return validationError(parsed, "Invalid OPSP payload");
   const { year, quarter, ...fields } = parsed.data;
@@ -79,7 +79,7 @@ export const PUT = withOrgAuth(async ({ orgId, userId }, req) => {
 });
 
 /* ── POST: finalize ── */
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
+export const POST = auth.create(async ({ orgId, userId }, req) => {
   const parsedFinalize = opspFinalizeSchema.safeParse(await req.json());
   if (!parsedFinalize.success) return validationError(parsedFinalize, "Invalid OPSP payload");
   const { year, quarter } = parsedFinalize.data;
