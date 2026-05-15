@@ -23,8 +23,8 @@ const nextConfig = {
    * Unset MARKETING_ORIGIN → no rewrites (clean rollback).
    */
   async rewrites() {
-    const MKT = process.env.MARKETING_ORIGIN;
-    if (!MKT) return { beforeFiles: [] };
+    const MKT =
+      process.env.MARKETING_ORIGIN || "https://quikit-marketing.vercel.app";
     const exact = [
       "/",
       "/blog",
