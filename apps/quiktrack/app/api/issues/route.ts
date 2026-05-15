@@ -5,6 +5,7 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createIssueSchema } from "@/lib/validation/issue";
 import { getDefaultStatusId } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
+import { userCan, forbidden } from "@/lib/api/permissions";
 
 async function userIsProjectMember(
   userId: string,
@@ -325,6 +326,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
 });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
+  if (!(await userCan(userId, orgId, "Issue", "create"))) return forbidden();
   const parsed = createIssueSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

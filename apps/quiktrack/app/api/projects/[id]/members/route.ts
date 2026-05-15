@@ -8,6 +8,9 @@ export const GET = withProjectAccess<{ id: string }>(
   async ({ projectId }) => {
     const members = await db.qtProjectMember.findMany({
       where: { projectId, isDeleted: false },
+      include: {
+        projectRole: { select: { id: true, name: true } },
+      },
       orderBy: { joinedAt: "asc" },
     });
 
@@ -32,6 +35,10 @@ export const GET = withProjectAccess<{ id: string }>(
       id: m.id,
       userId: m.userId,
       role: m.role,
+      projectRoleId: m.projectRoleId,
+      projectRole: m.projectRole,
+      status: "active",
+      teams: [] as string[],
       joinedAt: m.joinedAt,
       user: userById.get(m.userId) ?? null,
     }));

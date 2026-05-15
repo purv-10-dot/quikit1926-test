@@ -19,7 +19,9 @@ export default function DashboardLayout({
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const pathname = usePathname();
-  const isSettings = /^\/spaces\/[^/]+\/settings/.test(pathname ?? "");
+  const isSettings =
+    /^\/spaces\/[^/]+\/settings/.test(pathname ?? "") ||
+    /^\/settings(\/|$)/.test(pathname ?? "");
 
   // Pages (like the project header's fullscreen button) dispatch this event
   // to hide both the top header and the sidebar for a distraction-free view.

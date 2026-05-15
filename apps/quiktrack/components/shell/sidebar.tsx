@@ -27,6 +27,7 @@ import { FiltersSection } from "./filters-section";
 import { MoreSpacesPopover } from "./more-spaces-popover";
 import { PlansPopover } from "./plans-popover";
 import { RecentPopover } from "./recent-popover";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface NavRowProps {
   href?: string;
@@ -100,6 +101,10 @@ interface SpaceItem {
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const perms = useMyPermissions();
+  // While the perm fetch is in flight, render the full sidebar (avoids a
+  // flash of empty nav on first paint). Once loaded, filter by hasNav.
+  const canSee = (key: string) => perms.loading || perms.hasNav(key);
   const [recentOpen, setRecentOpen] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
   const plansAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -161,7 +166,9 @@ export function Sidebar() {
     >
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">
-          <NavRow href="/" icon={User} label="For you" active={isActive("/")} />
+          {canSee("home") && (
+            <NavRow href="/" icon={User} label="For you" active={isActive("/")} />
+          )}
           <div ref={recentRowRef}>
             <NavRow
               icon={Clock}
@@ -178,25 +185,26 @@ export function Sidebar() {
           />
           <ComingSoonRow icon={Star} label="Starred" description="Star spaces, dashboards, and views to pin them here." />
           <ComingSoonRow icon={AppWindow} label="Apps" description="Browse and install apps that extend QuikTrack." />
-          <div
-            ref={plansAnchorRef}
-            className="relative"
-          >
-            <NavRow
-              href="/plans"
-              icon={Map}
-              label="Plans"
-              expandable
-              expanded={plansOpen}
-              onToggle={() => setPlansOpen((v) => !v)}
-            />
-            {plansOpen && (
-              <PlansPopover
-                anchorRef={plansAnchorRef}
-                onClose={() => setPlansOpen(false)}
+          {canSee("plans") && (
+            <div ref={plansAnchorRef} className="relative">
+              <NavRow
+                href="/plans"
+                icon={Map}
+                label="Plans"
+                expandable
+                expanded={plansOpen}
+                onToggle={() => setPlansOpen((v) => !v)}
               />
-            )}
-          </div>
+              {plansOpen && (
+                <PlansPopover
+                  anchorRef={plansAnchorRef}
+                  onClose={() => setPlansOpen(false)}
+                />
+              )}
+            </div>
+          )}
+          {canSee("spaces") && (
+          <>
           <button
             type="button"
             data-tour="spaces"
@@ -282,12 +290,15 @@ export function Sidebar() {
               </button>
             </>
           )}
+          </>
+          )}
         </div>
 
         <div className="my-2 mx-3 border-t border-gray-200" />
 
         <div className="px-2 space-y-0.5">
           <FiltersSection />
+          {canSee("dashboards") && (
           <NavRow
             href="/dashboards"
             icon={LayoutDashboard}
@@ -301,7 +312,8 @@ export function Sidebar() {
               />
             }
           />
-          {dashboardsOpen && (
+          )}
+          {canSee("dashboards") && dashboardsOpen && (
             <div className=" pr-2 space-y-1.5 mb-1">
               {/* <div className="text-[10px] font-semibold uppercase tracking-wsider text-gray-400 mt-1">
                 Starred
@@ -330,12 +342,16 @@ export function Sidebar() {
               /> */}
             </div>
           )}
-          <span data-tour="timesheet">
-            <NavRow href="/timesheet" icon={Clock} label="Timesheet" active={isActive("/timesheet")} />
-          </span>
-          <span data-tour="reports">
-            <NavRow href="/reports" icon={BarChart3} label="Reports" active={isActive("/reports")} />
-          </span>
+          {canSee("timesheet") && (
+            <span data-tour="timesheet">
+              <NavRow href="/timesheet" icon={Clock} label="Timesheet" active={isActive("/timesheet")} />
+            </span>
+          )}
+          {canSee("reports") && (
+            <span data-tour="reports">
+              <NavRow href="/reports" icon={BarChart3} label="Reports" active={isActive("/reports")} />
+            </span>
+          )}
           <NavRow
             icon={SettingsIcon}
             label="Operations"

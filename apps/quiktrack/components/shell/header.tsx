@@ -5,7 +5,8 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { Bell, HelpCircle, Settings, Plus, PanelLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bell, HelpCircle, Settings, Plus, PanelLeft, ShieldCheck } from "lucide-react";
 import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
 import { CreateIssueModal } from "@/components/create-issue-modal";
 import { HelpPanel } from "@/components/help-panel";
@@ -13,6 +14,7 @@ import {
   GlobalSearchPopover,
   type GlobalSearchPopoverHandle,
 } from "@/components/global-search-popover";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -20,6 +22,8 @@ interface HeaderProps {
 
 export function Header({ onToggleSidebar }: HeaderProps) {
   const { data: session } = useSession();
+  const router = useRouter();
+  const perms = useMyPermissions();
   const params = useParams();
   const currentProjectId = typeof params?.id === "string" ? params.id : undefined;
   const [createOpen, setCreateOpen] = useState(false);
@@ -75,15 +79,17 @@ export function Header({ onToggleSidebar }: HeaderProps) {
 
       <div className="flex-1 max-w-2xl mx-auto flex items-center gap-2">
         <GlobalSearchPopover ref={searchRef} />
-        <button
-          type="button"
-          data-tour="create"
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex items-center gap-1 h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          Create
-        </button>
+        {(perms.loading || perms.has("Issue", "create")) && (
+          <button
+            type="button"
+            data-tour="create"
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-1 h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            Create
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-1">
@@ -105,6 +111,17 @@ export function Header({ onToggleSidebar }: HeaderProps) {
           user={{ name: fullName, email }}
           onSignOut={handleSignOut}
           avatarClassName="bg-blue-600"
+          items={
+            perms.isAdmin
+              ? [
+                  {
+                    label: "User Permission",
+                    icon: ShieldCheck,
+                    onClick: () => router.push("/org-setup/users"),
+                  },
+                ]
+              : []
+          }
         />
       </div>
       <CreateIssueModal

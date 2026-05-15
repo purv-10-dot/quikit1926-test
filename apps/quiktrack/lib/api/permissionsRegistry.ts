@@ -161,25 +161,80 @@ export const NAV_KEYS: readonly string[] = NAV_ITEMS.map((n) => n.key);
 
 /* ───────────────────────── Derived helpers ───────────────────────── */
 
+/** Walk every leaf in the tree once. */
+export function* walkLeaves(): Generator<PermissionLeaf> {
+  function* walkSubs(subs: readonly PermissionSubModule[]): Generator<PermissionLeaf> {
+    for (const sub of subs) {
+      for (const leaf of sub.leaves) yield leaf;
+      if (sub.subModules) yield* walkSubs(sub.subModules);
+    }
+  }
+  for (const mod of PERMISSION_TREE) {
+    if (mod.leaves) for (const leaf of mod.leaves) yield leaf;
+    if (mod.subModules) yield* walkSubs(mod.subModules);
+  }
+}
+
 /** Flat list of every (resource, action) tuple the tree declares. */
 export function flattenPermissions(): Array<{ resource: string; action: Action }> {
   const out: Array<{ resource: string; action: Action }> = [];
-  const walkSub = (sub: PermissionSubModule) => {
-    for (const leaf of sub.leaves) {
-      for (const action of leaf.actions) out.push({ resource: leaf.resource, action });
-    }
-    sub.subModules?.forEach(walkSub);
-  };
-  for (const mod of PERMISSION_TREE) {
-    mod.leaves?.forEach((leaf) => {
-      for (const action of leaf.actions) out.push({ resource: leaf.resource, action });
-    });
-    mod.subModules?.forEach(walkSub);
+  for (const leaf of walkLeaves()) {
+    for (const action of leaf.actions) out.push({ resource: leaf.resource, action });
   }
   return out;
 }
 
+/** Alias used by the seeders and matrix UI — same data as `flattenPermissions`. */
+export const allPermissionPairs = flattenPermissions;
+
 /** Set of every resource string declared anywhere in the tree. */
-export const ALL_RESOURCES: ReadonlySet<string> = new Set(
-  flattenPermissions().map((p) => p.resource),
-);
+const _resourceSet: Set<string> = (() => {
+  const s = new Set<string>();
+  for (const leaf of walkLeaves()) s.add(leaf.resource);
+  return s;
+})();
+
+export const ALL_RESOURCES: ReadonlySet<string> = _resourceSet;
+export const RESOURCES: readonly string[] = Array.from(_resourceSet);
+
+export type Resource = string;
+
+/** True when `s` is a known resource in the tree. */
+export function isResource(s: string): s is Resource {
+  return _resourceSet.has(s);
+}
+
+/** True when `s` is one of the four action verbs. */
+export function isAction(s: string): s is Action {
+  return (ACTIONS as readonly string[]).includes(s);
+}
+
+/** True when `s` is a known nav key. */
+export function isNavKey(s: string): boolean {
+  return NAV_KEYS.includes(s);
+}
+
+/**
+ * True when `(resource, action)` is a VALID pair per the registry — leaf
+ * exists AND lists `action` in its `actions` array. The matrix PUT endpoint
+ * uses this to reject garbage pairs (e.g. `Board:create` — Board only allows
+ * `view`/`update`).
+ */
+export function isValidPermissionPair(resource: string, action: string): boolean {
+  if (!isAction(action)) return false;
+  for (const leaf of walkLeaves()) {
+    if (leaf.resource === resource) {
+      return (leaf.actions as readonly string[]).includes(action);
+    }
+  }
+  return false;
+}
+
+/* ───────────────────────── Legacy resource mapping ───────────────────────── */
+
+/**
+ * Empty for QuikTrack today — kept for parity with QuikScale's seeder API so
+ * `backfillLegacyResources` can no-op cleanly. Populate when/if a resource
+ * key gets renamed in the future.
+ */
+export const LEGACY_RESOURCE_BACKFILL: Record<string, string[]> = {};

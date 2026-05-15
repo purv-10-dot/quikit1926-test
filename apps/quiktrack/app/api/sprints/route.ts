@@ -2,6 +2,7 @@
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createSprintSchema } from "@/lib/validation/sprint";
+import { userCan, forbidden } from "@/lib/api/permissions";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
@@ -90,6 +91,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
 });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
+  if (!(await userCan(userId, orgId, "Sprint", "create"))) return forbidden();
   const parsed = createSprintSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
