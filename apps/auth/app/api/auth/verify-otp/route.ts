@@ -9,6 +9,7 @@ import {
   RESET_TOKEN_TTL_SECONDS,
 } from "@/lib/otp-store";
 import { rateLimitAsync, getClientIp } from "@quikit/shared/rateLimit";
+import { withCors, preflight } from "@/lib/cors";
 
 /**
  * POST /api/auth/verify-otp
@@ -38,7 +39,7 @@ const GENERIC_FAILURE = {
   error: "Invalid or expired code.",
 };
 
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   try {
     // Per-IP throttle on the verify path itself — defends against rapid-fire
     // OTP guessing against many emails. The per-user 5-attempt counter is the
@@ -101,4 +102,9 @@ export async function POST(req: NextRequest) {
     console.error("[verify-otp] failed:", error);
     return NextResponse.json(GENERIC_FAILURE, { status: 400 });
   }
+}
+
+export const POST = withCors(postHandler);
+export function OPTIONS(req: NextRequest) {
+  return preflight(req);
 }

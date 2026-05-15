@@ -10,6 +10,7 @@ import {
   OTP_TTL_SECONDS,
 } from "@/lib/otp-store";
 import { rateLimitAsync, getClientIp } from "@quikit/shared/rateLimit";
+import { withCors, preflight } from "@/lib/cors";
 
 /**
  * POST /api/auth/forgot-password
@@ -30,7 +31,7 @@ const Body = z.object({
 
 const FAIL_CLOSED = process.env.NODE_ENV === "production";
 
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   // Always end with this shape so callers can start a 3-min countdown timer
   // regardless of whether the email mapped to a real user. The timer is the
   // anti-enumeration cover.
@@ -102,4 +103,9 @@ export async function POST(req: NextRequest) {
     console.error("[forgot-password] unexpected error:", error);
     return NextResponse.json(successPayload);
   }
+}
+
+export const POST = withCors(postHandler);
+export function OPTIONS(req: NextRequest) {
+  return preflight(req);
 }
