@@ -26,8 +26,19 @@ export default function Header() {
   }
 
   async function handleSwitchOrg() {
+    // Org switching is owned by the central launcher (quik-it /apps), not a
+    // per-app page. The local /select-org route is pre-cutover legacy and
+    // redirects to admin-local paths that no longer fit the handoff flow.
+    // Mirror middleware.ts's `centralSelectOrgUrl` so the user picks an org
+    // on the launcher and is handed back via the normal SSO handoff.
     await updateSession({ orgId: null });
-    router.push("/select-org");
+    const launcher = process.env.NEXT_PUBLIC_QUIKIT_URL;
+    if (launcher) {
+      window.location.href = `${launcher}/apps`;
+    } else {
+      // Defensive fallback only if the launcher URL isn't configured.
+      router.push("/select-org");
+    }
   }
 
   return (
