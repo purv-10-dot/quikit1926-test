@@ -65,6 +65,8 @@ interface OrgInfo {
   slug: string;
   role: string;
   plan: string;
+  /** OrgMember.status — "active" is selectable; others render disabled. */
+  status: string;
 }
 
 // (Tab type, STATUS_CONFIG, ICON_FALLBACKS, and the AppCard component were
@@ -114,11 +116,16 @@ export default function AppLauncherPage() {
       .then((r) => r.json())
       .then((j) => {
         if (j.success) {
-          const active = j.data.filter((o: { status: string }) => o.status === "active");
-          setOrgs(active);
-          // Auto-select first org (or the one from session)
+          // Keep ALL memberships so non-active ones (invited/pending) render
+          // in the switcher as disabled rather than silently vanishing — the
+          // old `=== "active"` filter made added-but-pending members look
+          // like the add never happened.
+          const all: OrgInfo[] = j.data;
+          const active = all.filter((o) => o.status === "active");
+          setOrgs(all);
+          // Auto-select only among ACTIVE orgs (you can't enter a pending one).
           const sessionOrgId = session?.user?.orgId;
-          const match = active.find((o: OrgInfo) => o.orgId === sessionOrgId);
+          const match = active.find((o) => o.orgId === sessionOrgId);
           setSelectedOrg(match ?? active[0] ?? null);
           // Update session if needed
           if (active[0] && !sessionOrgId) {
@@ -184,6 +191,9 @@ export default function AppLauncherPage() {
   }
 
   async function switchOrg(org: OrgInfo) {
+    // Non-active memberships (invited/pending) are shown disabled — guard
+    // here too so a stray call can't select an org the user can't enter.
+    if (org.status !== "active") return;
     setSelectedOrg(org);
     setOrgDropdownOpen(false);
     await selectOrgInSession(org.orgId, org.role);
@@ -289,24 +299,44 @@ export default function AppLauncherPage() {
                     <>
                       <div className="fixed inset-0 z-[999]" onClick={() => setOrgDropdownOpen(false)} />
                       <div className="absolute right-0 top-full mt-1 z-[1000] bg-zinc-900/95 border border-white/10 backdrop-blur-md rounded-xl shadow-2xl w-64 py-1">
-                        {orgs.map((org) => (
+                        {orgs.map((org) => {
+                          const isActive = org.status === "active";
+                          return (
                           <button
                             key={org.orgId}
                             onClick={() => switchOrg(org)}
-                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors ${
+                            disabled={!isActive}
+                            title={
+                              isActive
+                                ? undefined
+                                : `Membership ${org.status} — not yet accessible`
+                            }
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                              !isActive
+                                ? "opacity-50 cursor-not-allowed"
+                                : "hover:bg-white/5"
+                            } ${
                               selectedOrg?.orgId === org.orgId ? "bg-indigo-500/10" : ""
                             }`}
                           >
                             <Building2 className="h-4 w-4 text-zinc-400 flex-shrink-0" />
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-medium text-zinc-100 truncate">{org.name}</p>
-                              <p className="text-[10px] text-zinc-500 uppercase">{org.role} · {org.plan}</p>
+                              <p className="text-[10px] text-zinc-500 uppercase">
+                                {org.role} · {org.plan}
+                                {!isActive && (
+                                  <span className="ml-1 text-amber-400 normal-case font-semibold">
+                                    · {org.status}
+                                  </span>
+                                )}
+                              </p>
                             </div>
-                            {selectedOrg?.orgId === org.orgId && (
+                            {selectedOrg?.orgId === org.orgId && isActive && (
                               <CheckCircle2 className="h-4 w-4 text-indigo-400 flex-shrink-0" />
                             )}
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </>
                   )}
