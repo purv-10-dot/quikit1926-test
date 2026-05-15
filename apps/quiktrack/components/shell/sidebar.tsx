@@ -169,6 +169,7 @@ export function Sidebar() {
           {canSee("home") && (
             <NavRow href="/" icon={User} label="For you" active={isActive("/")} />
           )}
+          {/* TODO: Recent + Plans + Starred + Apps — coming soon. Restore when ready.
           <div ref={recentRowRef}>
             <NavRow
               icon={Clock}
@@ -203,6 +204,7 @@ export function Sidebar() {
               )}
             </div>
           )}
+          */}
           {canSee("spaces") && (
           <>
           <button
@@ -352,6 +354,8 @@ export function Sidebar() {
               <NavRow href="/reports" icon={BarChart3} label="Reports" active={isActive("/reports")} />
             </span>
           )}
+          {/* TODO: coming soon — Operations / Customers / Customer experiences.
+              Restore the full subtree once these modules are implemented.
           <NavRow
             icon={SettingsIcon}
             label="Operations"
@@ -369,6 +373,7 @@ export function Sidebar() {
           )}
           <ComingSoonRow icon={User} label="Customers" description="Track customer accounts linked to your projects." />
           <ComingSoonRow icon={Users} label="Customer experiences" description="Customer-facing portals and feedback flows." />
+          */}
         </div>
 
         <div className="my-2 mx-3 border-t border-gray-200" />
