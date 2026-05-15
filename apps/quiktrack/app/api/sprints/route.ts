@@ -2,7 +2,7 @@
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createSprintSchema } from "@/lib/validation/sprint";
-import { userCan, forbidden } from "@/lib/api/permissions";
+import { userCanInProject, forbidden } from "@/lib/api/permissions";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
@@ -91,7 +91,6 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
 });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  if (!(await userCan(userId, orgId, "Sprint", "create"))) return forbidden();
   const parsed = createSprintSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(
@@ -115,8 +114,11 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     select: { role: true },
   });
   const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-  if (!isAdmin && (!member || member.role === "VIEWER")) {
-    return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+  if (!isAdmin && !member) {
+    return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
+  }
+  if (!isAdmin && !(await userCanInProject(userId, orgId, project.id, "Sprint", "create"))) {
+    return forbidden();
   }
   const sprint = await db.qtSprint.create({
     data: {

@@ -16,6 +16,7 @@ interface Project {
 const NAV: { key: string; label: string; href: (id: string) => string; tag?: string }[] = [
   { key: "details", label: "Details", href: (id) => `/spaces/${id}/settings` },
   { key: "access", label: "Access", href: (id) => `/spaces/${id}/settings/access` },
+  { key: "user-management", label: "User Management", href: (id) => `/spaces/${id}/settings/user-management` },
   { key: "types", label: "Types and workflows", href: (id) => `/spaces/${id}/settings/types` },
   { key: "hierarchies", label: "Hierarchies", href: (id) => `/spaces/${id}/settings/hierarchies`, tag: "TRY" },
   { key: "fields", label: "Fields", href: (id) => `/spaces/${id}/settings/fields` },

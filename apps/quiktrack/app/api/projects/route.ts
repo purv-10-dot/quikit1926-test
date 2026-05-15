@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createProjectSchema } from "@/lib/validation/project";
-import { seedProjectDefaults } from "@/lib/services/projectDefaults";
+import { seedProjectDefaults, getStarterProjectRoleId } from "@/lib/services/projectDefaults";
 import { userCan, forbidden } from "@/lib/api/permissions";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
@@ -130,7 +130,20 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         invitedBy: userId,
       },
     });
-    await seedProjectDefaults(tx, p.id);
+    await seedProjectDefaults(tx, p.id, orgId, userId);
+    // Assign the creator the seeded "Project Admin" project role so Layer 2
+    // grants are populated alongside Layer 3 membership.
+    const adminRoleId = await getStarterProjectRoleId(tx, p.id, "Project Admin");
+    if (adminRoleId) {
+      await tx.qtProjectUserRole.create({
+        data: {
+          projectId: p.id,
+          userId,
+          projectRoleId: adminRoleId,
+          assignedBy: userId,
+        },
+      });
+    }
     return p;
   });
 

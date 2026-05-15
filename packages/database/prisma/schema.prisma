@@ -209,6 +209,7 @@ model Org {
   wwwItems                WWWItem[]
   brands                  Brand[]
   AppRole                 QtAppRole[]
+  QtProjectRole           QtProjectRole[]
   QtDashboard             QtDashboard[]
   QtDoc                   QtDoc[]
   QtInvitation            QtInvitation[]
@@ -324,6 +325,7 @@ model User {
   permissionExtras        UserPermissionExtra[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
+  qtProjectUserRoles      QtProjectUserRole[]
   accounts                Account[]
   sessions                Session[]
   verificationTokens      VerificationToken[]
@@ -4829,11 +4831,12 @@ model QtProject {
   statuses    QtIssueStatus[]
   issueTypes  QtIssueType[]
   pages       QtPage[]
-  org          Org               @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  members      QtProjectMember[]
-  teams        QtProjectTeam[]
-  sprints      QtSprint[]
-  projectRoles QtProjectRole[]
+  org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members          QtProjectMember[]
+  teams            QtProjectTeam[]
+  sprints          QtSprint[]
+  projectRoles     QtProjectRole[]
+  projectUserRoles QtProjectUserRole[]
 
   @@unique([orgId, projectKey])
   @@index([orgId, status])
@@ -4842,25 +4845,22 @@ model QtProject {
 }
 
 model QtProjectMember {
-  id            String         @id @default(cuid())
-  projectId     String
-  userId        String
-  role          String         @default("MEMBER")
-  /// Optional FK to a dynamic project role (QtProjectRole). Coexists with
-  /// the legacy `role` string for back-compat — new code reads
-  /// projectRoleId first, falls back to role if null.
-  projectRoleId String?
-  invitedBy     String?
-  joinedAt      DateTime       @default(now())
-  isDeleted     Boolean        @default(false)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  project       QtProject      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectRole   QtProjectRole? @relation(fields: [projectRoleId], references: [id], onDelete: SetNull)
+  id        String    @id @default(cuid())
+  projectId String
+  userId    String
+  /// Legacy enum (PROJECT_ADMIN / MEMBER / VIEWER) kept for back-compat with
+  /// existing withProjectAccess checks. Dynamic per-project role assignment
+  /// lives in QtProjectUserRole.
+  role      String    @default("MEMBER")
+  invitedBy String?
+  joinedAt  DateTime  @default(now())
+  isDeleted Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  project   QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
   @@index([projectId, role])
-  @@index([projectRoleId])
   @@index([userId])
   @@schema("app_quiktrack")
 }
@@ -4885,8 +4885,8 @@ model QtAppRole {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
   createdBy   String?
-  app         App                @relation("QtAppRoleApp", fields: [appId], references: [id], onDelete: Cascade)
-  org         Org                @relation("QtAppRoleOrg", fields: [orgId], references: [id], onDelete: Cascade)
+  app         App                @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
   navigations QtRoleNavigation[]
   permissions QtRolePermission[]
   members     QtUserAppRole[]
@@ -4898,20 +4898,20 @@ model QtAppRole {
 }
 
 model QtProjectRole {
-  id          String             @id @default(cuid())
+  id          String                    @id @default(cuid())
   orgId       String
   projectId   String
   name        String
   description String?
-  isDefault   Boolean            @default(false)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  isDefault   Boolean                   @default(false)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
   createdBy   String?
-  org         Org                @relation("QtProjectRoleOrg", fields: [orgId], references: [id], onDelete: Cascade)
-  project     QtProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  permissions QtRolePermission[]
-  navigations QtRoleNavigation[]
-  members     QtProjectMember[]
+  org         Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project     QtProject                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  permissions QtProjectRolePermission[]
+  navigations QtProjectRoleNavigation[]
+  members     QtProjectUserRole[]
 
   @@unique([projectId, name])
   @@index([orgId])
@@ -4919,40 +4919,79 @@ model QtProjectRole {
   @@schema("app_quiktrack")
 }
 
-/// Permission grant for either an app-wide role (roleId → QtAppRole) OR a
-/// project-scoped role (projectRoleId → QtProjectRole). Exactly one of the
-/// two is set on each row.
+/// Permission grant for an app-wide role (Layer 1). Project-scoped role
+/// grants live in QtProjectRolePermission — separate table per the
+/// schema rule (no polymorphic columns on existing tables).
 model QtRolePermission {
-  id            String         @id @default(cuid())
-  roleId        String?
-  projectRoleId String?
-  resource      String
-  action        String
-  role          QtAppRole?     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  projectRole   QtProjectRole? @relation(fields: [projectRoleId], references: [id], onDelete: Cascade)
+  id       String    @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, resource, action])
-  @@unique([projectRoleId, resource, action])
   @@index([roleId])
-  @@index([projectRoleId])
   @@map("RolePermission")
   @@schema("app_quiktrack")
 }
 
-/// Navigation grant for either an app-wide role OR a project-scoped role.
+/// Navigation grant for an app-wide role (Layer 1).
 model QtRoleNavigation {
-  id            String         @id @default(cuid())
-  roleId        String?
-  projectRoleId String?
-  navKey        String
-  role          QtAppRole?     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  projectRole   QtProjectRole? @relation(fields: [projectRoleId], references: [id], onDelete: Cascade)
+  id     String    @id @default(cuid())
+  roleId String
+  navKey String
+  role   QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, navKey])
-  @@unique([projectRoleId, navKey])
   @@index([roleId])
-  @@index([projectRoleId])
   @@map("RoleNavigation")
+  @@schema("app_quiktrack")
+}
+
+/// Permission grant for a project-scoped role (Layer 2). Separate table from
+/// QtRolePermission so the FK to QtProjectRole stays strict.
+model QtProjectRolePermission {
+  id            String        @id @default(cuid())
+  projectRoleId String
+  resource      String
+  action        String
+  projectRole   QtProjectRole @relation(fields: [projectRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([projectRoleId, resource, action])
+  @@index([projectRoleId])
+  @@schema("app_quiktrack")
+}
+
+/// Navigation grant for a project-scoped role (Layer 2). Reserved for future
+/// per-project sidebar filtering — not consumed by the current sidebar.
+model QtProjectRoleNavigation {
+  id            String        @id @default(cuid())
+  projectRoleId String
+  navKey        String
+  projectRole   QtProjectRole @relation(fields: [projectRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([projectRoleId, navKey])
+  @@index([projectRoleId])
+  @@schema("app_quiktrack")
+}
+
+/// Per-(project, user) dynamic role assignment (Layer 2). Replaces the
+/// QtProjectMember.projectRoleId column that was rolled back. Membership
+/// presence stays in QtProjectMember; the dynamic role lives here.
+model QtProjectUserRole {
+  id            String        @id @default(cuid())
+  projectId     String
+  userId        String
+  projectRoleId String
+  assignedAt    DateTime      @default(now())
+  assignedBy    String?
+  project       QtProject     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectRole   QtProjectRole @relation(fields: [projectRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId, projectId])
+  @@index([projectRoleId])
   @@schema("app_quiktrack")
 }
 
@@ -4963,9 +5002,9 @@ model QtUserAppRole {
   roleId     String
   assignedAt DateTime  @default(now())
   assignedBy String?
-  org        Org       @relation("QtUserAppRoleOrg", fields: [orgId], references: [id], onDelete: Cascade)
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   role       QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  user       User      @relation("QtUserAppRoleUser", fields: [userId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, orgId, roleId])
   @@index([roleId])
@@ -4984,8 +5023,8 @@ model QtUserPermissionExtra {
   action    String
   grantedBy String?
   createdAt DateTime @default(now())
-  org       Org      @relation("QtUserPermissionExtraOrg", fields: [orgId], references: [id], onDelete: Cascade)
-  user      User     @relation("QtUserPermissionExtraUser", fields: [userId], references: [id], onDelete: Cascade)
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, userId, resource, action])
   @@index([userId, orgId])
@@ -5766,89 +5805,6 @@ model QtFeedback {
 
   @@index([orgId, createdAt])
   @@index([userId])
-  @@schema("app_quiktrack")
-}
-
-model QtAppRole {
-  id             String             @id
-  orgId          String
-  appId          String
-  name           String
-  description    String?
-  isSystem       Boolean            @default(false)
-  isDefault      Boolean            @default(false)
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime
-  createdBy      String?
-  App            App                @relation(fields: [appId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  Org            Org                @relation(fields: [orgId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  RoleNavigation QtRoleNavigation[]
-  RolePermission QtRolePermission[]
-  UserAppRole    QtUserAppRole[]
-
-  @@unique([orgId, appId, name])
-  @@index([orgId, appId])
-  @@map("AppRole")
-  @@schema("app_quiktrack")
-}
-
-model QtRoleNavigation {
-  id      String    @id
-  roleId  String
-  navKey  String
-  AppRole QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([roleId, navKey])
-  @@index([roleId])
-  @@map("RoleNavigation")
-  @@schema("app_quiktrack")
-}
-
-model QtRolePermission {
-  id       String    @id
-  roleId   String
-  resource String
-  action   String
-  AppRole  QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([roleId, resource, action])
-  @@index([roleId])
-  @@map("RolePermission")
-  @@schema("app_quiktrack")
-}
-
-model QtUserAppRole {
-  id         String    @id
-  userId     String
-  orgId      String
-  roleId     String
-  assignedAt DateTime  @default(now())
-  assignedBy String?
-  Org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  AppRole    QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  User       User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([userId, orgId, roleId])
-  @@index([roleId])
-  @@index([userId, orgId])
-  @@map("UserAppRole")
-  @@schema("app_quiktrack")
-}
-
-model QtUserPermissionExtra {
-  id        String   @id
-  orgId     String
-  userId    String
-  resource  String
-  action    String
-  grantedBy String?
-  createdAt DateTime @default(now())
-  Org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@unique([orgId, userId, resource, action])
-  @@index([userId, orgId])
-  @@map("UserPermissionExtra")
   @@schema("app_quiktrack")
 }
 

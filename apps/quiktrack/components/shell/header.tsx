@@ -14,6 +14,7 @@ import {
   GlobalSearchPopover,
   type GlobalSearchPopoverHandle,
 } from "@/components/global-search-popover";
+import { SettingsPopover } from "@/components/shell/settings-popover";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface HeaderProps {
@@ -28,6 +29,8 @@ export function Header({ onToggleSidebar }: HeaderProps) {
   const currentProjectId = typeof params?.id === "string" ? params.id : undefined;
   const [createOpen, setCreateOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<GlobalSearchPopoverHandle>(null);
 
   // "/" anywhere outside an input focuses the global search box.
@@ -104,9 +107,24 @@ export function Header({ onToggleSidebar }: HeaderProps) {
         >
           <HelpCircle className="h-4 w-4" />
         </button>
-        <Link href="/settings" className="p-2 rounded hover:bg-gray-100 text-gray-600" aria-label="Settings">
-          <Settings className="h-4 w-4" />
-        </Link>
+        <div className="relative">
+          <button
+            ref={settingsBtnRef}
+            type="button"
+            onClick={() => setSettingsOpen((v) => !v)}
+            className={`p-2 rounded text-gray-600 ${settingsOpen ? "bg-gray-100" : "hover:bg-gray-100"}`}
+            aria-label="Settings"
+            aria-haspopup="menu"
+            aria-expanded={settingsOpen}
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+          <SettingsPopover
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            anchorRef={settingsBtnRef}
+          />
+        </div>
         <UserMenu
           user={{ name: fullName, email }}
           onSignOut={handleSignOut}
