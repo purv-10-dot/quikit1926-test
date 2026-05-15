@@ -21,7 +21,7 @@ const APP_SLUG = "admin";
 
 const factoryMiddleware = createMiddleware({
   loginRoute: "/login",
-  publicRoutes: ["/login", "/select-org", "/invitations", "/auth-handoff"],
+  publicRoutes: ["/login", "/invitations", "/auth-handoff"],
   requireAdmin: true,
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,

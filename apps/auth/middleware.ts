@@ -9,7 +9,7 @@ import { getToken } from "next-auth/jwt";
  * - Unauthenticated users can freely hit all (auth) pages.
  * - Authenticated users hitting /login get bounced to the launcher
  *   (NEXT_PUBLIC_LAUNCHER_URL) or admin panel if they are super admin.
- * - /select-org stays accessible as long as the session is valid.
+ *   Org selection happens on the launcher /apps, not a page here.
  */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -74,9 +74,15 @@ export async function middleware(req: NextRequest) {
       const adminUrl = process.env.NEXT_PUBLIC_ADMIN_URL;
       if (adminUrl) return NextResponse.redirect(adminUrl);
     }
-    const launcherUrl = process.env.NEXT_PUBLIC_LAUNCHER_URL;
-    if (launcherUrl) return NextResponse.redirect(launcherUrl);
-    return NextResponse.redirect(new URL("/select-org", req.url));
+    const launcherUrl =
+      process.env.NEXT_PUBLIC_LAUNCHER_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL;
+    if (launcherUrl) {
+      const apps = `${launcherUrl.replace(/\/+$/, "").replace(/\/apps$/, "")}/apps`;
+      return NextResponse.redirect(apps);
+    }
+    // No launcher URL configured (shouldn't happen in any real deploy) —
+    // let the authenticated user stay rather than bounce to a removed page.
+    return NextResponse.next();
   }
 
   if (!token && !isPublic) {

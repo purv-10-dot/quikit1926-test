@@ -9,7 +9,7 @@ import { createMiddleware } from "@quikit/auth/middleware";
  */
 export const middleware = createMiddleware({
   loginRoute: "/login",
-  publicRoutes: ["/login", "/select-org", "/invitations"],
+  publicRoutes: ["/login", "/invitations"],
 });
 
 export const config = {

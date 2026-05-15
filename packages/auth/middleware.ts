@@ -15,7 +15,9 @@ export interface MiddlewareConfig {
   /** Absolute URL to central login (e.g., "http://localhost:3004/login").
    *  When set, unauthenticated users are redirected here instead of a local login page. */
   centralLoginUrl?: string;
-  /** Absolute URL to central select-org page (e.g., "http://localhost:3004/select-org"). */
+  /** Absolute URL to the central launcher /apps (org picker lives there),
+   *  e.g. "https://quik-it-auth.vercel.app/apps". No-org / revoked-membership
+   *  users are redirected here instead of a per-app select-org page. */
   centralSelectOrgUrl?: string;
   /** Route to redirect authenticated users hitting /login when no callbackUrl is set.
    *  Defaults to selectOrgRoute, then "/dashboard". */
@@ -161,7 +163,8 @@ export function createMiddleware(config: MiddlewareConfig) {
       if (isSuperAdminRoute && token.isSuperAdmin) {
         return NextResponse.next();
       }
-      // Redirect to central select-org or local select-org
+      // Redirect to the central launcher /apps (cross-domain) or, on the
+      // launcher itself, its local /apps org picker.
       if (config.centralSelectOrgUrl) {
         return safeRedirect(config.centralSelectOrgUrl);
       }

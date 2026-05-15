@@ -8,7 +8,7 @@ test("plain member sees team KPIs but cannot edit them", async ({ page }) => {
   await page.getByLabel(/email/i).fill(MEMBER_EMAIL);
   await page.getByLabel(/password/i).fill(MEMBER_PASSWORD);
   await page.getByRole("button", { name: /sign in|log ?in/i }).click();
-  await page.waitForURL(/\/(dashboard|select-org)/);
+  await page.waitForURL(/\/dashboard/);
 
   await page.goto("/kpi/teams");
   await expect(page.getByText(/team/i).first()).toBeVisible({ timeout: 10_000 });

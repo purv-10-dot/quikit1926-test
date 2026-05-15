@@ -12,7 +12,8 @@ import { useRouter } from "next/navigation";
  * `User.mustChangePassword` so subsequent logins go straight to the
  * dashboard (BR-008).
  *
- * Routed from `/select-org` when `mustChangePassword` is true.
+ * Reached when `mustChangePassword` is true (the sign-in flow routes here
+ * before the user is sent on to the launcher).
  */
 export default function SetPasswordPage() {
   const router = useRouter();

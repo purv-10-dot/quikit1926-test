@@ -3,7 +3,6 @@ export { ROLES, ROLE_HIERARCHY, ROLE_LABELS, MEMBERSHIP_STATUS, TENANT_PLANS } f
 export const PATHS = {
   home: "/",
   login: "/login",
-  selectOrg: "/select-org",
   launcher: "/launcher",
   dashboard: "/dashboard",
   members: "/dashboard/members",

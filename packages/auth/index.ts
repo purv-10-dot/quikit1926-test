@@ -243,8 +243,8 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
        * id. The post-login profile-confirmation form reads this to
        * pre-populate its inputs. We deliberately do NOT write the names
        * to the User row here — keeping firstName/lastName empty until
-       * the user clicks Continue is what makes /select-org route them
-       * to the form in the first place (matches credentials behavior).
+       * the user clicks Continue is what makes the post-login profile
+       * gate route them to the form (matches credentials behavior).
        */
       async signIn({ user, account }) {
         if (account?.provider === "google" || account?.provider === "azure-ad") {
@@ -367,7 +367,7 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           // above (which runs only for OAuth providers), so credentials
           // logins would otherwise leave invited memberships in status
           // "invited" — token.orgId stays undefined and the launcher
-          // bounces the user between /apps ↔ /select-org indefinitely.
+          // /apps can never resolve an org for them.
           // The user has authenticated against their stored password, so
           // we treat that as proof of identity equivalent to clicking the
           // accept-invite link.
@@ -403,9 +403,9 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           }
 
           // Auto-select first active org on initial sign-in so the user is
-          // dropped straight onto the launcher (/apps) without an interstitial
-          // /select-org step. Multi-org users can still switch orgs from the
-          // launcher header — /select-org is reachable on demand, not forced.
+          // dropped straight onto the launcher (/apps) with an org already
+          // resolved. Multi-org users switch orgs from the launcher's
+          // /apps org dropdown on demand.
           const firstMembership = await db.orgMember.findFirst({
             where: { userId: user.id, status: "active" },
             orderBy: { createdAt: "asc" },

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 
 /**
  * Mirrors apps/admin/app/api/org/memberships/route.ts.
- * Lists the orgs the current user belongs to — used by the /select-org page.
+ * Lists the orgs the current user belongs to — used by the launcher /apps org switcher.
  *
  * Response shape includes both `orgId` (preferred) and `tenantId` (back-compat
  * for any client code that hasn't been renamed yet).

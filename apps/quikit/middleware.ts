@@ -3,7 +3,8 @@ import { createMiddleware } from "@quikit/auth/middleware";
 /**
  * Launcher (3000) + OAuth IdP. When NEXT_PUBLIC_AUTH_URL points at `apps/auth` (3004),
  * `/login` is NOT public — unauthenticated traffic is sent to central credentials login only.
- * Org picker stays on this host (`/select-org`), not on the auth service.
+ * Org selection happens inline on the launcher `/apps` page (no separate
+ * select-org route any more).
  */
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL?.replace(/\/$/, "");
 
@@ -14,7 +15,6 @@ const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL?.replace(/\/$/, "");
 // kept for self-hosted deploys).
 const launcherPublicRoutes = [
   "/login",
-  "/select-org",
   "/api/oauth/authorize",
   "/api/oauth/token",
   "/api/oauth/userinfo",
@@ -32,7 +32,10 @@ function isSelfHosted(authUrl: string | undefined): boolean {
 
 export const middleware = createMiddleware({
   loginRoute: "/login",
-  selectOrgRoute: "/select-org",
+  // The launcher's /apps page IS the org picker. Treat it as the
+  // select-org route so the factory lets no-org users land there
+  // (and doesn't loop them back out).
+  selectOrgRoute: "/apps",
   postLoginRoute: "/apps",
   publicRoutes: launcherPublicRoutes,
   centralLoginUrl: isSelfHosted(AUTH_URL) ? undefined : `${AUTH_URL}/login`,

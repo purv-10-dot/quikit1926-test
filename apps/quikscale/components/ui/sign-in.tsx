@@ -12,7 +12,6 @@ import {
   TrendingUp, Target, BarChart3, Zap,
 } from "lucide-react";
 import { AnimatePresence, motion, useInView, Variants, Transition } from "framer-motion";
-import { useRouter } from "next/navigation";
 import { signIn as nextAuthSignIn } from "next-auth/react";
 import type { GlobalOptions as ConfettiGlobalOptions, CreateTypes as ConfettiInstance, Options as ConfettiOptions } from "canvas-confetti";
 import confetti from "canvas-confetti";
@@ -139,7 +138,6 @@ interface SignInComponentProps {
 }
 
 export const SignInComponent = ({ logo, brandName = "QuikIT" }: SignInComponentProps) => {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -183,7 +181,11 @@ export const SignInComponent = ({ logo, brandName = "QuikIT" }: SignInComponentP
       if (result?.ok) {
         fireConfetti();
         setModalStatus("success");
-        setTimeout(() => router.push("/select-org"), 1400);
+        // Org selection lives on the central launcher /apps (cross-domain).
+        const launcher = (process.env.NEXT_PUBLIC_QUIKIT_URL ?? "").replace(/\/+$/, "");
+        setTimeout(() => {
+          window.location.href = launcher ? `${launcher}/apps` : "/";
+        }, 1400);
       } else {
         setModalErrorMessage(result?.error === "Invalid credentials" ? "Invalid email or password." : "Sign in failed. Please try again.");
         setModalStatus("error");

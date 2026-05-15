@@ -14,7 +14,12 @@ export default async function DashboardLayout({
   const session = await getServerSession(authOptions);
 
   if (!session) redirect("/login");
-  if (!session.user.orgId) redirect("/select-org");
+  if (!session.user.orgId) {
+    // Org selection lives on the central launcher /apps, not a local page.
+    // (Middleware normally catches this first; this is defense-in-depth.)
+    const launcher = (process.env.NEXT_PUBLIC_QUIKIT_URL ?? "").replace(/\/+$/, "");
+    redirect(launcher ? `${launcher}/apps` : "/login");
+  }
 
   return (
     <SessionGuard>

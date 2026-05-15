@@ -30,9 +30,11 @@ function OAuthActivateContent() {
         });
         const activateJson = await activateRes.json();
         if (!activateJson.success) {
-          // Already accepted — just send to select-org
+          // Already accepted — send to the central launcher /apps, which
+          // resolves the org and hands the user back.
           if (activateRes.status === 409) {
-            router.push("/select-org");
+            const launcher = (process.env.NEXT_PUBLIC_QUIKIT_URL ?? "").replace(/\/+$/, "");
+            window.location.href = launcher ? `${launcher}/apps` : "/";
             return;
           }
           setError(activateJson.error ?? "Failed to activate invitation.");

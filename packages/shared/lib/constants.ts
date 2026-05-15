@@ -193,7 +193,6 @@ export const TENANT_PLANS = {
 export const PATHS = {
   HOME: "/",
   LOGIN: "/login",
-  SELECT_ORG: "/select-org",
   DASHBOARD: "/dashboard",
   ORGANISATIONS: "/dashboard/organisations",
   MEMBERS: "/dashboard/members",
