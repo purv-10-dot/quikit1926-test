@@ -78,7 +78,7 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
 
     const [org, app] = await Promise.all([
       db.org.findUnique({ where: { id: orgId }, select: { id: true, name: true } }),
-      db.app.findUnique({ where: { id: appId }, select: { id: true, slug: true, name: true } }),
+      db.app.findUnique({ where: { id: appId }, select: { id: true, slug: true, name: true, baseUrl: true } }),
     ]);
     if (!org || !app) {
       return NextResponse.json({ success: false, error: "Unknown organization or app" }, { status: 404 });
@@ -118,6 +118,33 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
       create: { orgId, appId, enabled: true, reason, updatedBy: auth.userId },
       select: { id: true, enabled: true, reason: true, updatedAt: true },
     });
+
+    // Eagerly provision the app's default roles for this org so the admin
+    // panel's role dropdown is populated the moment access is granted —
+    // not lazily on first app open. Fire-and-forget: a slow/unreachable
+    // target must never block or fail the grant (the app's own lazy seed
+    // remains the fallback). Currently only QuikScale has this seeded
+    // role system; add slugs here as other apps adopt it.
+    if (app.slug === "quikscale") {
+      const base = (
+        process.env.QUIKSCALE_URL ??
+        app.baseUrl ??
+        ""
+      ).replace(/\/+$/, "");
+      const internalSecret = process.env.INTERNAL_SECRET;
+      if (base && internalSecret) {
+        void fetch(`${base}/api/internal/provision-roles`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-secret": internalSecret,
+          },
+          body: JSON.stringify({ orgId }),
+        }).catch(() => {
+          // Non-fatal — lazy seed on first QuikScale load still covers it.
+        });
+      }
+    }
 
     logAudit({
       orgId,
