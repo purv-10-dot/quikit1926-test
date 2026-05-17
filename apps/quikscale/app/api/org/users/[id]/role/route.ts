@@ -8,6 +8,7 @@ import {
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
 import { assertWouldNotEmptyAdmin, AdminLockoutError } from "@/lib/api/preventAdminLockout";
+import { syncLegacyAdminRole } from "@/lib/api/syncLegacyAdminRole";
 
 const bodySchema = z.object({
   /** AppRole.id, or null to revoke. Special value "admin" auto-seeds + uses
@@ -77,15 +78,18 @@ export async function PATCH(
       );
     }
 
-    // Resolve the target AppRole.
+    // Resolve the target AppRole. `isV2Admin` drives the Phase-2 legacy
+    // OrgMember.role sync below (revoke → false).
     let targetRoleId: string | null = null;
+    let isV2Admin = false;
     if (requestedRoleId === "admin") {
       // Convenience path — auto-seed the admin role on demand.
       targetRoleId = await seedAdminAppRole(orgId);
+      isV2Admin = true;
     } else if (requestedRoleId) {
       const role = await db.appRole.findFirst({
         where: { id: requestedRoleId, orgId, appId },
-        select: { id: true },
+        select: { id: true, isSystem: true, name: true },
       });
       if (!role) {
         return NextResponse.json(
@@ -94,6 +98,7 @@ export async function PATCH(
         );
       }
       targetRoleId = role.id;
+      isV2Admin = role.isSystem && role.name === "admin";
     }
 
     // v2: refuse if this swap would leave 0 users on the admin role.
@@ -117,6 +122,11 @@ export async function PATCH(
     if (targetRoleId) {
       await ensureUserOnRole(params.id, orgId, targetRoleId, actorId);
     }
+
+    // Phase-2: keep legacy OrgMember.role in lock-step with the v2 admin
+    // grant so the shared role-tier requireAdmin() agrees without relying
+    // on the Phase-1 read-time bridge.
+    await syncLegacyAdminRole({ orgId, userId: params.id, isV2Admin });
 
     // Hydrate response — include the role's id + name (or null if revoked).
     const role = targetRoleId
