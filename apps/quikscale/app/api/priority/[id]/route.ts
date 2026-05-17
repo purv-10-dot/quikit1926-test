@@ -4,7 +4,6 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("priority", "Priority");
 import { updatePrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
-import { canEditPriority } from "@/lib/api/priorityPermissions";
 
 
 const PRIORITY_SELECT = {
@@ -51,17 +50,9 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
   if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
   if (existing.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-  // Edit permission: creator, assignee, admin, or super-admin
-  const canEdit = await canEditPriority(userId, orgId, {
-    createdBy: existing.createdBy,
-    owner: existing.owner,
-  });
-  if (!canEdit) {
-    return NextResponse.json(
-      { success: false, error: "Only the creator, assignee, or an admin can edit this priority." },
-      { status: 403 },
-    );
-  }
+  // Legacy instance-level edit gate (canEditPriority: creator / assignee /
+  // legacy admin) removed per product spec — RBAC v2 `Priority:update`
+  // (enforced by `auth.update`) is the sole guard now.
 
   const parsed = updatePrioritySchema.safeParse(await req.json());
   if (!parsed.success) {
@@ -110,17 +101,8 @@ export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, _req
   if (!existing) return NextResponse.json({ success: false, error: "Priority not found" }, { status: 404 });
   if (existing.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-  // Edit permission: creator, assignee, admin, or super-admin
-  const canEdit = await canEditPriority(userId, orgId, {
-    createdBy: existing.createdBy,
-    owner: existing.owner,
-  });
-  if (!canEdit) {
-    return NextResponse.json(
-      { success: false, error: "Only the creator, assignee, or an admin can delete this priority." },
-      { status: 403 },
-    );
-  }
+  // Legacy instance-level delete gate removed per product spec. RBAC v2
+  // `Priority:delete` (enforced by `auth.delete`) is the sole guard now.
 
   // Soft delete
   await db.priority.update({

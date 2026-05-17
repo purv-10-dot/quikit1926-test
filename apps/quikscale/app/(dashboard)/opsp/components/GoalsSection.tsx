@@ -13,6 +13,7 @@ import { Card } from "./Card";
 import { FInput } from "./RichEditor";
 import { CritBlock } from "./CritBlock";
 import { CategorySelect, ProjectedInput } from "./category";
+import { breakdownProjected } from "./modals";
 import { WithTooltip, OwnerSelect } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
 
@@ -86,7 +87,21 @@ export function GoalsSection({
                     value={row.projected}
                     onChange={(v) => {
                       const next = [...form.goalRows];
-                      next[i] = { ...next[i], projected: v };
+                      // Automatic categories: auto-fill q1..q4.
+                      // Manual categories: breakdownProjected returns null →
+                      // leave the quarter cells alone (user fills via modal).
+                      const autofill = breakdownProjected(row.category, v, 4, {
+                        force: true,
+                      });
+                      const qPatch = autofill
+                        ? {
+                            q1: autofill[0] ?? "",
+                            q2: autofill[1] ?? "",
+                            q3: autofill[2] ?? "",
+                            q4: autofill[3] ?? "",
+                          }
+                        : {};
+                      next[i] = { ...next[i], projected: v, ...qPatch };
                       set("goalRows", next);
                     }}
                   />

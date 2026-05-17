@@ -97,6 +97,7 @@ export const PERMISSION_TREE: PermissionModule[] = [
     key: "ClientMeetings",
     label: "Meeting Rhythm",
     leaves: [
+      { resource: "ClientMeetings.Dashboard", label: "Meeting Dashboard", actions: ["view"] },
       { resource: "ClientMaster", label: "Client Master", actions: ACTIONS },
       { resource: "ClientMember", label: "Client Members", actions: ACTIONS },
       { resource: "DailyHuddle", label: "Daily Huddle", actions: ACTIONS },
@@ -144,37 +145,72 @@ export const PERMISSION_TREE: PermissionModule[] = [
       },
     ],
   },
+  {
+    key: "Analytics",
+    label: "Analytics",
+    leaves: [
+      { resource: "Analytics.Scorecard", label: "Scorecard", actions: ["view"] },
+      { resource: "Analytics.Individual", label: "Individual", actions: ["view"] },
+      { resource: "Analytics.Teams", label: "Teams", actions: ["view"] },
+      { resource: "Analytics.Trends", label: "Trends", actions: ["view"] },
+    ],
+  },
+  {
+    key: "People",
+    label: "People",
+    leaves: [
+      { resource: "People.Cycle", label: "Cycle", actions: ACTIONS },
+      { resource: "People.Goals", label: "Goals", actions: ACTIONS },
+      { resource: "People.Self", label: "Self-Assessment", actions: ACTIONS },
+      { resource: "People.Reviews", label: "Reviews", actions: ACTIONS },
+      { resource: "People.OneOnOne", label: "1:1s", actions: ACTIONS },
+      { resource: "People.Feedback", label: "Feedback", actions: ACTIONS },
+      { resource: "People.Talent", label: "Talent", actions: ACTIONS },
+    ],
+  },
 ];
 
-/* ───────────────────────── Navigation registry ───────────────────────── */
+/* ───────────────────────── Sidebar → resource mapping ───────────────────────── */
 
 /**
- * Sidebar items the `RoleNavigation` table whitelists by key.
- * Mirrors (and is kept in sync with) `packages/shared/lib/moduleRegistry.ts`
- * but as a flat list keyed for permission storage rather than a hierarchy.
+ * Sidebar visibility is derived from entity `view` grants. Each sidebar leaf's
+ * `moduleKey` (defined in `components/dashboard/sidebar.tsx`) maps to a single
+ * resource here — the sidebar item is visible iff the user has `view` on it.
+ *
+ * Keep keys in sync with the `moduleKey` strings in the sidebar navigation
+ * constant. A `moduleKey` without a mapping here falls back to feature-flag
+ * gating only (see `filterNavigation`).
  */
-export const NAV_ITEMS = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "kpi.individual", label: "Individual KPI" },
-  { key: "kpi.teams", label: "Teams KPI" },
-  { key: "priority", label: "Priority" },
-  { key: "www", label: "WWW" },
-  { key: "orgSetup.teams", label: "Teams" },
-  { key: "orgSetup.users", label: "Users" },
-  { key: "orgSetup.quarters", label: "Quarter Settings" },
-  { key: "clientMeetings.dashboard", label: "Meeting Dashboard" },
-  { key: "clientMeetings.clients", label: "Client Master" },
-  { key: "clientMeetings.members", label: "Client Members" },
-  { key: "clientMeetings.dailyHuddle", label: "Daily Huddle" },
-  { key: "clientMeetings.weeklyMeeting", label: "Weekly Meeting" },
-  { key: "opsp.create", label: "Create OPSP" },
-  { key: "opsp.history", label: "OPSP History" },
-  { key: "opsp.review", label: "OPSP Review" },
-  { key: "opsp.categories", label: "Category Mgmt" },
-] as const;
-
-export type NavKey = (typeof NAV_ITEMS)[number]["key"];
-export const NAV_KEYS: readonly string[] = NAV_ITEMS.map((n) => n.key);
+export const NAV_RESOURCE: Record<string, string> = {
+  dashboard: "Dashboard",
+  "kpi.individual": "KPI",
+  "kpi.teams": "TeamKPI",
+  priority: "Priority",
+  "orgSetup.teams": "Team",
+  "orgSetup.users": "User",
+  "orgSetup.quarters": "Quarter",
+  www: "WWW",
+  "clientMeetings.dashboard": "ClientMeetings.Dashboard",
+  "clientMeetings.clients": "ClientMaster",
+  "clientMeetings.members": "ClientMember",
+  "clientMeetings.dailyHuddle": "DailyHuddle",
+  "clientMeetings.weeklyMeeting": "WeeklyMeeting",
+  "opsp.create": "OPSP.Create",
+  "opsp.history": "OPSP.History",
+  "opsp.review": "OPSP.Review",
+  "opsp.categories": "OPSP.Categories",
+  "analytics.scorecard": "Analytics.Scorecard",
+  "analytics.individual": "Analytics.Individual",
+  "analytics.teams": "Analytics.Teams",
+  "analytics.trends": "Analytics.Trends",
+  "people.cycle": "People.Cycle",
+  "people.goals": "People.Goals",
+  "people.self": "People.Self",
+  "people.reviews": "People.Reviews",
+  "people.oneOnOne": "People.OneOnOne",
+  "people.feedback": "People.Feedback",
+  "people.talent": "People.Talent",
+};
 
 /* ───────────────────────── Derived helpers ───────────────────────── */
 
@@ -221,11 +257,6 @@ export function isResource(s: string): s is Resource {
 /** True when `s` is one of the four action verbs. */
 export function isAction(s: string): s is Action {
   return (ACTIONS as readonly string[]).includes(s);
-}
-
-/** True when `s` is a known nav key. */
-export function isNavKey(s: string): boolean {
-  return NAV_KEYS.includes(s);
 }
 
 /**

@@ -12,7 +12,6 @@ import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/
 import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
-import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import {
   buildBreakdown,
@@ -24,7 +23,15 @@ import { WeekRow } from "./WeekRow";
 import { StatsTab } from "./StatsTab";
 import { User as UserIcon, Calendar, CalendarDays } from "lucide-react";
 
-interface Props { kpi: KPIRow; onClose: () => void; onRefresh: () => void; initialTab?: Tab; }
+interface Props {
+  kpi: KPIRow;
+  onClose: () => void;
+  onRefresh: () => void;
+  initialTab?: Tab;
+  /** RBAC v2: false makes the entire drawer read-only — every input is
+   *  disabled and Save Changes is hidden. Defaults to true. */
+  canUpdate?: boolean;
+}
 
 type Tab = "edit" | "updates" | "stats";
 
@@ -248,11 +255,9 @@ function EditTab({
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">{errors._}</div>
       )}
 
-      {readOnly && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
-          Read-only — only the creator, assignee, team head, or an admin can edit this KPI&apos;s metadata. Weekly values may still be editable by assigned owners.
-        </div>
-      )}
+      {/* Legacy instance-level banner removed per product spec. The RBAC v2
+          banner (rendered at the LogModal root when !canUpdate) covers the
+          only case where the form is now read-only. */}
 
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -910,7 +915,7 @@ function UpdatesTab({
 
 // ── LogModal ──────────────────────────────────────────────────────────────────
 
-export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Props) {
+export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canUpdate = true }: Props) {
   const [tab, setTab] = useState<Tab>(initialTab);
   const { data: session } = useSession();
   const { data: users = [] } = useUsers();
@@ -928,13 +933,17 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
     !!(session?.user as { isSuperAdmin?: boolean } | undefined)?.isSuperAdmin;
   const isTeamHeadActor = isTeamKPI && !!kpi.team?.headId && kpi.team.headId === currentUserId;
   // Shortcut used throughout: can the actor edit ANY owner's row?
-  const canEditAnyOwner = isAdminActor || isTeamHeadActor;
+  // ANDed with RBAC `update` so a no-update user can't edit weekly cells
+  // even if they'd otherwise pass the instance-level check.
+  const canEditAnyOwner = canUpdate && (isAdminActor || isTeamHeadActor);
 
-  // Edit tab metadata permission (creator / assignee / team head / admin / super-admin).
-  // Note: weekly-value cell editing has its own per-owner rules below — this
-  // only gates the KPI metadata form (name, target, description, etc.).
-  const canEditMetadata = useCanEditKPI(kpi);
-  const metadataReadOnly = !canEditMetadata;
+  // Metadata edit is now gated solely by the RBAC v2 `update` permission.
+  // The legacy instance-level rule (creator / assignee / team-head / legacy
+  // admin) has been removed at the user's request — anyone with module-level
+  // `KPI:update` can edit any KPI. Row-level visibility (lib/api/visibility.ts)
+  // ensures non-admins only see their own KPIs in the list, so they can only
+  // open and edit those.
+  const metadataReadOnly = !canUpdate;
 
   const updateKPI = useUpdateKPI(kpi.id);
   const updateWeeklyBatch = useUpdateWeeklyValuesBatch(kpi.id);
@@ -1271,8 +1280,14 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
           ))}
         </div>
 
-        {/* Tab content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        {/* Tab content. `<fieldset disabled>` natively disables every input,
+            select, textarea and button inside when RBAC denies `update`. */}
+        <fieldset disabled={!canUpdate} className={`flex-1 overflow-y-auto px-6 py-5 ${!canUpdate ? "opacity-70" : ""}`}>
+          {!canUpdate && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-4">
+              Read-only — your role doesn&apos;t grant update access on this KPI.
+            </div>
+          )}
           {tab === "edit" && (
             <EditTab form={editForm} setForm={setEditForm} errors={editErrors} users={users} isTeamKPI={isTeamKPI} kpiOwners={kpi.owners as Array<{ id: string; firstName: string; lastName: string }> | undefined} readOnly={metadataReadOnly} />
           )}
@@ -1290,7 +1305,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
             />
           )}
           {tab === "stats" && <StatsTab kpi={statsKpi} />}
-        </div>
+        </fieldset>
 
         {/* Footer – always Cancel + Save Changes */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 flex-shrink-0">
@@ -1305,19 +1320,21 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates" }: Pr
             >
               Cancel
             </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-            >
-              {saving && (
-                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              )}
-              Save Changes
-            </button>
+            {canUpdate && (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              >
+                {saving && (
+                  <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                )}
+                Save Changes
+              </button>
+            )}
           </div>
         </div>
       </div>

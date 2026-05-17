@@ -9,6 +9,7 @@ import { SessionGuard } from "@/components/session-guard";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
 import { FeatureDisabledToast, ImpersonationBanner } from "@quikit/ui";
 import { QuarterRequiredGuard } from "@/components/quarter-required-guard";
+import { Toaster } from "sonner";
 
 export default function DashboardLayout({
   children,
@@ -22,6 +23,7 @@ export default function DashboardLayout({
     <ThemeApplier />
     <ImpersonationBanner />
     <FeatureDisabledToast />
+    <Toaster richColors position="top-right" />
     <FilterProvider>
       <div className="flex h-screen bg-[var(--color-bg-secondary)]">
         {/* Sidebar - always visible on desktop, drawer on mobile */}

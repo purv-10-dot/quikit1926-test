@@ -36,7 +36,6 @@ export function RolesTab() {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newIsDefault, setNewIsDefault] = useState(false);
   const [confirmDeleteRole, setConfirmDeleteRole] = useState<RoleRow | null>(null);
 
   async function load(preferSelectedId?: string) {
@@ -76,7 +75,7 @@ export function RolesTab() {
       const res = await fetch("/api/org/roles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed, isDefault: newIsDefault }),
+        body: JSON.stringify({ name: trimmed }),
       });
       const json = await res.json();
       if (!json.success) {
@@ -85,7 +84,6 @@ export function RolesTab() {
       }
       const created = json.data as RoleRow;
       setNewName("");
-      setNewIsDefault(false);
       setCreating(false);
       await load(created.id);
     } catch {
@@ -141,15 +139,6 @@ export function RolesTab() {
               placeholder="Role name"
               className="w-full text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-400"
             />
-            <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={newIsDefault}
-                onChange={(e) => setNewIsDefault(e.target.checked)}
-                className="accent-accent-600 h-3.5 w-3.5"
-              />
-              Default for new users
-            </label>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleCreate}
@@ -162,7 +151,6 @@ export function RolesTab() {
                 onClick={() => {
                   setCreating(false);
                   setNewName("");
-                  setNewIsDefault(false);
                 }}
                 className="px-2 py-1.5 text-[11px] text-gray-500 hover:bg-gray-100 rounded-md"
               >
@@ -241,7 +229,11 @@ export function RolesTab() {
       {/* ── Right pane: matrix ── */}
       <main className="flex-1 min-w-0 bg-white overflow-hidden">
         {selectedId ? (
-          <RolePermissionMatrix key={selectedId} roleId={selectedId} />
+          <RolePermissionMatrix
+            key={selectedId}
+            roleId={selectedId}
+            onRenamed={() => load(selectedId)}
+          />
         ) : (
           <div className="h-full flex items-center justify-center text-sm text-gray-400">
             Select a role on the left to edit its permissions.

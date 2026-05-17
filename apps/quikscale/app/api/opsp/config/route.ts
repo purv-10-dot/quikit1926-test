@@ -45,10 +45,14 @@ export const GET = withOrgAuth(async ({ orgId, userId }) => {
   const targetYears = earliest.targetYears ?? 5;
   const endYear = startYear + targetYears - 1;
 
-  // List of "{year}:{quarter}" keys that have been review-submitted.
-  // Drives the quarter unlock logic in the OPSP create page.
+  // List of "{year}:{quarter}" keys whose status unlocks the *next* quarter
+  // in the OPSP create page's picker. A quarter qualifies once it's been
+  // finalized — review submission is no longer required to begin filling the
+  // next quarter (kept inclusive of "reviewed" since that's a strictly later
+  // state). Field name stays `reviewedQuarters` for backward compat with the
+  // client; the semantic is "completed enough to unlock the next one".
   const reviewed = await db.oPSPData.findMany({
-    where: { orgId, userId, status: "reviewed" },
+    where: { orgId, userId, status: { in: ["finalized", "reviewed"] } },
     select: { year: true, quarter: true },
   });
   const reviewedQuarters = reviewed.map((r) => `${r.year}:${r.quarter}`);

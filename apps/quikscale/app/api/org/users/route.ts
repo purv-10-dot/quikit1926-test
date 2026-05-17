@@ -59,13 +59,33 @@ const USER_TEAMS_INCLUDE = (orgId: string) => ({
 
 // GET /api/org/users
 // Returns the membership list plus the dynamic `appRole` (AppRole) each
-// user has been assigned in this tenant's QuikScale app. Used by both the
-// Org Setup → Users page and the new Roles & Permissions Users list.
+// user has been assigned in this tenant's QuikScale app.
+//
+// SCOPE: only users who have a `app_quikscale.UserAppRole` row for THIS
+// org + the QuikScale app appear. Org members who only have access to
+// other apps (e.g. QuikTrack via UserAppAccess but no QuikScale role)
+// are filtered out — they shouldn't show up on the QuikScale Users page.
 export const GET = withOrgAuth(async ({ orgId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
-  const where = { orgId };
+  const appId = await getQuikScaleAppId();
 
-  const [memberships, total, appId] = await Promise.all([
+  // Without a QuikScale App row registered the filter would let everyone
+  // through. Fail safe to an empty list — admins should register the app
+  // first via the seeder, then re-load this page.
+  if (!appId) {
+    return NextResponse.json(paginatedResponse([], 0, page, limit));
+  }
+
+  const where = {
+    orgId,
+    user: {
+      appRoles: {
+        some: { orgId, role: { appId } },
+      },
+    },
+  };
+
+  const [memberships, total] = await Promise.all([
     db.orgMember.findMany({
       where,
       include: {
@@ -81,7 +101,6 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
       take,
     }),
     db.orgMember.count({ where }),
-    getQuikScaleAppId(),
   ]);
 
   // Build a userId → appRole map in a single query. Roles now live in
@@ -125,7 +144,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       { status: 400 }
     );
   }
-  const { firstName, lastName, email, password, role = "member", teamIds = [], teamId, linkExistingUserId } = parsed.data;
+  const { firstName, lastName, email, password, role = "member", teamIds = [], teamId, linkExistingUserId, invitationMethod = "native" } = parsed.data;
   const resolvedTeamIds: string[] = teamIds.length ? teamIds : teamId ? [teamId] : [];
 
   let newUserId: string;
@@ -161,15 +180,24 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       });
       newUserId = existingUser.id;
     } else {
-      if (!password) {
+      // SSO invites get no password — `auth.User.password` is nullable so the
+      // credentials provider can't authenticate them; only OAuth (Google /
+      // Microsoft) will work. Native invites take the existing path.
+      const isSso = invitationMethod === "sso";
+      if (!isSso && !password) {
         return NextResponse.json(
           { success: false, error: "Password is required for new users" },
           { status: 400 },
         );
       }
-      const hashedPassword = await bcrypt.hash(password.trim(), 12);
+      const hashedPassword = isSso ? null : await bcrypt.hash(password!.trim(), 12);
       const user = await db.user.create({
-        data: { firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim().toLowerCase(), password: hashedPassword },
+        data: {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim().toLowerCase(),
+          password: hashedPassword,
+        },
       });
       await db.orgMember.create({
         data: { orgId, userId: user.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },

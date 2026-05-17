@@ -18,14 +18,15 @@
  * the module's entire subtree. Tristate (indeterminate) when some leaves
  * have it and others don't.
  *
- * Two tabs: Entities (table above) + Navigation (sidebar-key list per role).
+ * Sidebar visibility is derived from the `view` grants in this matrix via
+ * the `NAV_RESOURCE` map in `lib/api/permissionsRegistry.ts` — there is no
+ * separate navigation tab.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Save, Undo2, Shield, Info } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Save, Undo2, Shield, Info, Pencil, Check, X } from "lucide-react";
 import {
   PERMISSION_TREE,
-  NAV_ITEMS,
   ACTIONS,
   type Action,
   type PermissionLeaf,
@@ -40,7 +41,6 @@ interface RoleDetail {
   isSystem: boolean;
   isDefault: boolean;
   permissions: Array<{ resource: string; action: string }>;
-  navigations: Array<{ navKey: string }>;
 }
 
 /* ─────────────────────── helpers (subtree walking) ─────────────────────── */
@@ -120,19 +120,28 @@ function TristateCheckbox({
 
 /* ─────────────────────── main component ─────────────────────── */
 
-export function RolePermissionMatrix({ roleId }: { roleId: string }) {
-  const [tab, setTab] = useState<"entities" | "navigation">("entities");
+export function RolePermissionMatrix({
+  roleId,
+  onRenamed,
+}: {
+  roleId: string;
+  /** Notify parent (RolesTab) so the left rail refetches with the new name. */
+  onRenamed?: () => void;
+}) {
   const [role, setRole] = useState<RoleDetail | null>(null);
   const [grants, setGrants] = useState<Set<string>>(new Set());
   const [savedGrants, setSavedGrants] = useState<Set<string>>(new Set());
-  const [navs, setNavs] = useState<Set<string>>(new Set());
-  const [savedNavs, setSavedNavs] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(PERMISSION_TREE.map((m) => m.key)),
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Inline rename state for non-system roles.
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -152,9 +161,6 @@ export function RolePermissionMatrix({ roleId }: { roleId: string }) {
         const gkeys = new Set(r.permissions.map((p) => `${p.resource}:${p.action}`));
         setGrants(gkeys);
         setSavedGrants(new Set(gkeys));
-        const nkeys = new Set((r.navigations ?? []).map((n) => n.navKey));
-        setNavs(nkeys);
-        setSavedNavs(new Set(nkeys));
       } catch {
         if (mounted) setError("Network error loading role");
       } finally {
@@ -167,8 +173,7 @@ export function RolePermissionMatrix({ roleId }: { roleId: string }) {
   }, [roleId]);
 
   const grantsDiff = useMemo(() => diffSets(grants, savedGrants), [grants, savedGrants]);
-  const navsDiff = useMemo(() => diffSets(navs, savedNavs), [navs, savedNavs]);
-  const dirty = grantsDiff.total + navsDiff.total > 0;
+  const dirty = grantsDiff.total > 0;
 
   /* ─── toggle helpers ─── */
 
@@ -217,57 +222,78 @@ export function RolePermissionMatrix({ roleId }: { roleId: string }) {
     });
   }
 
-  function toggleNav(navKey: string) {
-    setNavs((prev) => {
-      const next = new Set(prev);
-      if (next.has(navKey)) next.delete(navKey);
-      else next.add(navKey);
-      return next;
-    });
-  }
-
   function discard() {
     setGrants(new Set(savedGrants));
-    setNavs(new Set(savedNavs));
+  }
+
+  function startRename() {
+    if (!role || role.isSystem) return;
+    setDraftName(role.name);
+    setRenameError("");
+    setRenaming(true);
+  }
+
+  function cancelRename() {
+    setRenaming(false);
+    setDraftName("");
+    setRenameError("");
+  }
+
+  async function commitRename() {
+    if (!role) return;
+    const trimmed = draftName.trim();
+    if (!trimmed) {
+      setRenameError("Name is required");
+      return;
+    }
+    if (trimmed === role.name) {
+      cancelRename();
+      return;
+    }
+    setRenameSaving(true);
+    setRenameError("");
+    try {
+      const res = await fetch(`/api/org/roles/${roleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        setRenameError(json.error || "Failed to rename");
+        return;
+      }
+      setRole({ ...role, name: trimmed });
+      setRenaming(false);
+      setDraftName("");
+      onRenamed?.();
+    } catch {
+      setRenameError("Network error renaming");
+    } finally {
+      setRenameSaving(false);
+    }
   }
 
   async function handleSave() {
     setSaving(true);
     setError("");
     try {
-      const tasks: Promise<Response>[] = [];
-      if (grantsDiff.total > 0) {
-        tasks.push(
-          fetch(`/api/org/roles/${roleId}/permissions`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              permissions: Array.from(grants).map((k) => {
-                const [resource, action] = k.split(":");
-                return { resource, action };
-              }),
-            }),
+      const res = await fetch(`/api/org/roles/${roleId}/permissions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          permissions: Array.from(grants).map((k) => {
+            const [resource, action] = k.split(":");
+            return { resource, action };
           }),
-        );
-      }
-      if (navsDiff.total > 0) {
-        tasks.push(
-          fetch(`/api/org/roles/${roleId}/navigation`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ navKeys: Array.from(navs) }),
-          }),
-        );
-      }
-      const responses = await Promise.all(tasks);
-      const failed = responses.find((r) => !r.ok);
-      if (failed) {
-        const j = await failed.json().catch(() => ({}));
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
         setError(j.error || "Failed to save");
         return;
       }
       setSavedGrants(new Set(grants));
-      setSavedNavs(new Set(navs));
     } catch {
       setError("Network error saving");
     } finally {
@@ -288,35 +314,63 @@ export function RolePermissionMatrix({ roleId }: { roleId: string }) {
       {/* Header */}
       <div className="px-6 pt-4 pb-0 flex-shrink-0">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-            Permissions — {role?.name}
-            {role?.isSystem && <Shield className="h-4 w-4 text-amber-500" />}
+          <h2 className="text-base font-bold text-gray-900 flex items-center gap-2 min-w-0">
+            <span className="flex-shrink-0">Permissions —</span>
+            {renaming && role && !role.isSystem ? (
+              <span className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename();
+                    if (e.key === "Escape") cancelRename();
+                  }}
+                  disabled={renameSaving}
+                  maxLength={64}
+                  className="text-sm font-semibold border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:opacity-50"
+                />
+                <button
+                  onClick={commitRename}
+                  disabled={renameSaving || !draftName.trim()}
+                  className="p-1 rounded text-green-600 hover:bg-green-50 disabled:opacity-50"
+                  title="Save name"
+                >
+                  <Check className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={cancelRename}
+                  disabled={renameSaving}
+                  className="p-1 rounded text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                  title="Cancel"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                {renameError && (
+                  <span className="text-[10px] text-red-600 ml-1">{renameError}</span>
+                )}
+              </span>
+            ) : (
+              <>
+                <span className="truncate">{role?.name}</span>
+                {role?.isSystem && <Shield className="h-4 w-4 text-amber-500 flex-shrink-0" />}
+                {role && !role.isSystem && (
+                  <button
+                    onClick={startRename}
+                    className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex-shrink-0"
+                    title="Rename role"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </>
+            )}
             {role?.isDefault && (
-              <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded bg-accent-100 text-accent-700">
+              <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded bg-accent-100 text-accent-700 flex-shrink-0">
                 Default
               </span>
             )}
           </h2>
-        </div>
-        <div className="flex items-center gap-1 border-b border-gray-200 -mb-px">
-          {(
-            [
-              { key: "entities", label: "Entities" },
-              { key: "navigation", label: "Navigation" },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
-                tab === t.key
-                  ? "border-accent-600 text-accent-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -326,8 +380,8 @@ export function RolePermissionMatrix({ roleId }: { roleId: string }) {
           <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
           <span>
             Tick an action to grant it. <strong>Module-level</strong> ticks select all leaves under
-            that module. Clicking the entity name toggles the whole row. Save commits both Entities
-            and Navigation in one go.
+            that module. Clicking the entity name toggles the whole row. Sidebar visibility follows
+            the <strong>View</strong> column automatically.
           </span>
         </div>
       </div>
@@ -339,18 +393,14 @@ export function RolePermissionMatrix({ roleId }: { roleId: string }) {
             {error}
           </p>
         )}
-        {tab === "entities" ? (
-          <EntitiesTable
-            grants={grants}
-            expanded={expanded}
-            onToggleExpanded={toggleExpanded}
-            onToggleGrant={toggleGrant}
-            onToggleLeafRow={toggleLeafRow}
-            onBulkSetAction={bulkSetAction}
-          />
-        ) : (
-          <NavigationList navs={navs} onToggle={toggleNav} />
-        )}
+        <EntitiesTable
+          grants={grants}
+          expanded={expanded}
+          onToggleExpanded={toggleExpanded}
+          onToggleGrant={toggleGrant}
+          onToggleLeafRow={toggleLeafRow}
+          onBulkSetAction={bulkSetAction}
+        />
       </div>
 
       {/* Sticky bottom bar */}
@@ -358,21 +408,11 @@ export function RolePermissionMatrix({ roleId }: { roleId: string }) {
         <div className="bg-white border-t border-gray-200 shadow-md px-6 py-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2 text-xs">
             <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-accent-100 text-accent-700 font-bold">
-              {grantsDiff.total + navsDiff.total}
+              {grantsDiff.total}
             </span>
             <span className="text-gray-700 font-medium">
-              unsaved change{grantsDiff.total + navsDiff.total === 1 ? "" : "s"}
+              unsaved change{grantsDiff.total === 1 ? "" : "s"}
             </span>
-            {grantsDiff.total > 0 && (
-              <span className="text-gray-400">
-                · entities: <span className="text-gray-700 font-medium">{grantsDiff.total}</span>
-              </span>
-            )}
-            {navsDiff.total > 0 && (
-              <span className="text-gray-400">
-                · navigation: <span className="text-gray-700 font-medium">{navsDiff.total}</span>
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -627,54 +667,6 @@ function ModuleActionCell({
     <td className="text-center px-4 py-2.5">
       <TristateCheckbox on={on} total={total} onChange={onBulkSet} title={`Tick all ${action} under this module`} />
     </td>
-  );
-}
-
-/* ───────────────────────── Navigation list ───────────────────────── */
-
-function NavigationList({
-  navs,
-  onToggle,
-}: {
-  navs: Set<string>;
-  onToggle: (navKey: string) => void;
-}) {
-  const groups = useMemo(() => {
-    const map = new Map<string, Array<{ key: string; label: string }>>();
-    for (const item of NAV_ITEMS) {
-      const moduleKey = item.key.includes(".") ? item.key.split(".")[0] : item.key;
-      if (!map.has(moduleKey)) map.set(moduleKey, []);
-      map.get(moduleKey)!.push({ key: item.key, label: item.label });
-    }
-    return Array.from(map.entries());
-  }, []);
-
-  return (
-    <div className="space-y-3 py-3">
-      {groups.map(([moduleKey, items]) => (
-        <div key={moduleKey} className="bg-white border border-gray-200 rounded-xl px-5 py-3">
-          <p className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
-            {moduleKey}
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
-            {items.map((item) => (
-              <label
-                key={item.key}
-                className="flex items-center gap-2 text-sm text-gray-700 hover:text-gray-900 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={navs.has(item.key)}
-                  onChange={() => onToggle(item.key)}
-                  className="h-4 w-4 rounded border-gray-300 accent-accent-600"
-                />
-                <span>{item.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 

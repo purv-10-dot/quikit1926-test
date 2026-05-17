@@ -9,6 +9,9 @@
  * The returned set is the UNION of role-granted permissions and user-level
  * extras — same logic as the server-side `userCan()` check.
  *
+ * Sidebar visibility is derived from `view` grants via the `NAV_RESOURCE`
+ * map in `lib/api/permissionsRegistry.ts` — there is no separate nav set.
+ *
  * Cached via React Query so multiple components hitting `useMyPermissions()`
  * share one fetch. The cache stays for 5 minutes — short enough that
  * permission changes from another tab/admin propagate without manual
@@ -25,7 +28,6 @@ interface MyPermissionsResponse {
     roleName: string | null;
     permissions: string[]; // `resource:action`
     extras: string[];
-    navigation: string[];
   };
 }
 
@@ -39,7 +41,6 @@ async function fetchMyPermissions(): Promise<MyPermissionsResponse["data"]> {
       roleName: null,
       permissions: [],
       extras: [],
-      navigation: [],
     };
   }
   const json: MyPermissionsResponse = await res.json();
@@ -50,7 +51,6 @@ async function fetchMyPermissions(): Promise<MyPermissionsResponse["data"]> {
       roleName: null,
       permissions: [],
       extras: [],
-      navigation: [],
     };
   }
   return json.data;
@@ -61,12 +61,9 @@ export interface MyPermissionsApi {
   roleName: string | null;
   /** True when the (resource, action) pair is granted (role or extra). */
   has(resource: string, action: string): boolean;
-  /** True when the navKey appears in the role's nav whitelist. */
-  hasNav(navKey: string): boolean;
   /** Raw lists in case a caller needs them. */
   permissions: string[];
   extras: string[];
-  navigation: string[];
   /** Set to true while the initial fetch is in flight. */
   loading: boolean;
 }
@@ -79,16 +76,13 @@ export function useMyPermissions(): MyPermissionsApi {
   });
 
   const permSet = new Set(data?.permissions ?? []);
-  const navSet = new Set(data?.navigation ?? []);
 
   return {
     isAdmin: !!data?.isAdmin,
     roleName: data?.roleName ?? null,
     has: (resource: string, action: string) => permSet.has(`${resource}:${action}`),
-    hasNav: (navKey: string) => navSet.has(navKey),
     permissions: data?.permissions ?? [],
     extras: data?.extras ?? [],
-    navigation: data?.navigation ?? [],
     loading: isLoading,
   };
 }

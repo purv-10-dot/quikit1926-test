@@ -23,9 +23,13 @@ interface Props {
   onSelectionChange?: (teamId: string, ids: Set<string>) => void;
   /** Page-level "clear selection" trigger (broadcast to every KPITable — bumps seq to reset). */
   clearSelectionTrigger?: number;
+  /** RBAC v2 — false disables row checkboxes + toasts. Defaults to true. */
+  canDelete?: boolean;
+  /** RBAC v2 — false makes opened edit drawers read-only. Defaults to true. */
+  canUpdate?: boolean;
 }
 
-export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpanded, onHiddenColsChange, showColTrigger, onSelectionChange, clearSelectionTrigger }: Props) {
+export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpanded, onHiddenColsChange, showColTrigger, onSelectionChange, clearSelectionTrigger, canDelete = true, canUpdate = true }: Props) {
   const [expanded, setExpanded] = useState<boolean>(defaultExpanded ?? kpis.length > 0);
   const [editKPI, setEditKPI] = useState<KPIRow | null>(null);
 
@@ -117,6 +121,8 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
                 showColTrigger={showColTrigger}
                 onSelectionChange={(ids) => onSelectionChange?.(team.id, ids)}
                 clearSelectionTrigger={clearSelectionTrigger}
+                canDelete={canDelete}
+                canUpdate={canUpdate}
               />
             </div>
           )}

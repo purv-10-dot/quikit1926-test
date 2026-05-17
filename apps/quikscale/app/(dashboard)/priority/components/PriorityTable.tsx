@@ -9,13 +9,16 @@ import { PriorityLogsModal } from "./PriorityLogsModal";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useTableSort } from "@/lib/store";
 import { ColMenu } from "@/components/table/ColMenu";
+import { SortIndicator } from "@/components/table/SortIndicator";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { Pagination } from "@quikit/ui";
+import { toast } from "sonner";
 
 import { STATUS_PICKER_OPTIONS, statusDotColor } from "@/lib/constants/status";
 
@@ -167,9 +170,13 @@ interface Props {
    *  `min-width: max-content`. Use this in dashboard previews where the
    *  number of week columns is small and we want to fill horizontal space. */
   fillWidth?: boolean;
+  /** RBAC v2 — false disables row checkboxes + toasts. Defaults to true. */
+  canDelete?: boolean;
+  /** RBAC v2 — false makes opened edit drawers read-only. Defaults to true. */
+  canUpdate?: boolean;
 }
 
-export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quarter, defaultYear, defaultQuarter, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, fillWidth }: Props) {
+export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quarter, defaultYear, defaultQuarter, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, fillWidth, canDelete = true, canUpdate = true }: Props) {
   const priorities = maxRows != null ? prioritiesAll.slice(0, maxRows) : prioritiesAll;
   const paginationEnabled = page != null && pageSize != null && total != null && onPageChange != null;
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil((total as number) / (pageSize as number))) : 1;
@@ -191,8 +198,21 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const currentWeek = useCurrentWeek(year, quarter);
   const weekLabels = useWeekLabels(year, quarter);
 
-  // Table preferences (freeze + hidden cols + sort) persisted per user in DB
-  const { frozenCol, setFrozenCol, hiddenCols, hideCol, showCol, showAllCols, sort, setSort } = useTablePrefs("priority");
+  // Freeze + hidden cols stay in the DB-backed user pref. Sort moved to the
+  // global Redux tables slice (lib/store) so it shares the same persistence
+  // pattern as KPI and WWW. The "sort" / "setSort" fields on useTablePrefs are
+  // intentionally unused here.
+  const { frozenCol, setFrozenCol, hiddenCols, hideCol, showCol, showAllCols } = useTablePrefs("priority");
+  const { sortBy: redSortBy, sortOrder: redSortOrder, setSort: setRedSort } = useTableSort("priority");
+  const sort = redSortBy ? `${redSortBy}:${redSortOrder}` : null;
+  const setSort = (next: string | null) => {
+    if (!next) {
+      setRedSort({ sortBy: "", sortOrder: "asc" });
+      return;
+    }
+    const [col, dir] = next.split(":") as [string, "asc" | "desc"];
+    setRedSort({ sortBy: col, sortOrder: dir });
+  };
 
   function toggleSelect(id: string) {
     setSelectedIds(prev => {
@@ -390,10 +410,20 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                       boxShadow: isBoundary ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                     }}>
                     {colKey === "_cb" ? (
-                      <input type="checkbox"
-                        checked={selectedIds.size === priorities.length && priorities.length > 0}
-                        onChange={toggleAll}
-                        className="rounded border-gray-300 text-blue-600 cursor-pointer" />
+                      <label
+                        onClickCapture={(e) => {
+                          if (!canDelete) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toast.error("You don't have permission to delete");
+                          }
+                        }}
+                      >
+                        <input type="checkbox"
+                          checked={selectedIds.size === priorities.length && priorities.length > 0}
+                          onChange={toggleAll} disabled={!canDelete}
+                          className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
+                      </label>
                     ) : (
                       <div className="flex items-center justify-between gap-1">
                         <span className="inline-flex items-center gap-1">
@@ -402,12 +432,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                               <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                             </svg>
                           )}
-                          {label}
-                          {isSorted && (
-                            <svg className="h-2.5 w-2.5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d={sortDir === "asc" ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
-                            </svg>
-                          )}
+                          <span className={isSorted ? "text-accent-700" : ""}>{label}</span>
+                          <SortIndicator active={!!isSorted} direction={sortDir} />
                         </span>
                         {showMenu && (
                           <ColMenu
@@ -462,10 +488,20 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                   {COL_ORDER.includes("_cb") && (
                     <td className="sticky z-[25] border-r border-gray-100 px-2 py-1.5 bg-inherit"
                       style={{ left: getLeftOffset("_cb"), width: 40, minWidth: 40 }}>
-                      <input type="checkbox"
-                        checked={selectedIds.has(priority.id)}
-                        onChange={() => toggleSelect(priority.id)}
-                        className="rounded border-gray-300 text-blue-600 cursor-pointer" />
+                      <label
+                        onClickCapture={(e) => {
+                          if (!canDelete) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toast.error("You don't have permission to delete");
+                          }
+                        }}
+                      >
+                        <input type="checkbox"
+                          checked={selectedIds.has(priority.id)}
+                          onChange={() => toggleSelect(priority.id)} disabled={!canDelete}
+                          className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
+                      </label>
                     </td>
                   )}
 
@@ -717,6 +753,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
           priority={editPriority}
           onClose={() => setEditPriority(null)}
           onSuccess={() => { setEditPriority(null); onRefresh(); }}
+          canUpdate={canUpdate}
         />
       )}
 

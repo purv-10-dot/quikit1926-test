@@ -9,7 +9,7 @@ const patchRoleSchema = z.object({
   isDefault: z.boolean().optional(),
 });
 
-// GET /api/org/roles/[id] — fetch one role with full permission + nav lists.
+// GET /api/org/roles/[id] — fetch one role with full permission list.
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const auth = await requireAdmin();
@@ -20,7 +20,6 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       where: { id: params.id, orgId },
       include: {
         permissions: { select: { resource: true, action: true } },
-        navigations: { select: { navKey: true } },
         _count: { select: { members: true } },
       },
     });
@@ -113,8 +112,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // DELETE /api/org/roles/[id] — delete a non-system role.
-// CASCADE clears RolePermission + RoleNavigation. UserAppAccess.appRoleId
-// rows pointing at it become NULL (FK ON DELETE SET NULL).
+// CASCADE clears RolePermission + UserAppRole rows for this role.
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const auth = await requireAdmin();

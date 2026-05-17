@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { updateKPISchema } from "@/lib/schemas/kpiSchema";
 import { ApiResponse } from "@/lib/services/kpiService";
-import { canEditKPI } from "@/lib/api/kpiPermissions";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("kpi", "KPI");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
@@ -134,20 +133,10 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
   if (!existingKPI) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
   if (existingKPI.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-  // Edit permission: creator, owner/assignee, team head, admin, or super-admin
-  const canEdit = await canEditKPI(userId, orgId, {
-    kpiLevel: existingKPI.kpiLevel,
-    createdBy: existingKPI.createdBy,
-    owner: existingKPI.owner,
-    ownerIds: existingKPI.ownerIds as string[] | null,
-    teamId: existingKPI.teamId,
-  });
-  if (!canEdit) {
-    return NextResponse.json(
-      { success: false, error: "Only the creator, assignee, team head, or an admin can edit this KPI." },
-      { status: 403 },
-    );
-  }
+  // Legacy instance-level edit gate (canEditKPI: creator / assignee / team-head / legacy admin)
+  // removed per product spec — anyone with RBAC v2 `KPI:update` (enforced
+  // by `auth.update`) can edit any KPI. Row visibility (visibility.ts) still
+  // restricts non-admins to their own rows in the list.
 
   const body = await req.json();
   const validated = updateKPISchema.parse(body);
@@ -345,20 +334,8 @@ export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, req,
   if (!kpi) return NextResponse.json({ success: false, error: "KPI not found" }, { status: 404 });
   if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-  // Edit permission: creator, owner/assignee, team head, admin, or super-admin
-  const canEdit = await canEditKPI(userId, orgId, {
-    kpiLevel: kpi.kpiLevel,
-    createdBy: kpi.createdBy,
-    owner: kpi.owner,
-    ownerIds: kpi.ownerIds as string[] | null,
-    teamId: kpi.teamId,
-  });
-  if (!canEdit) {
-    return NextResponse.json(
-      { success: false, error: "Only the creator, assignee, team head, or an admin can delete this KPI." },
-      { status: 403 },
-    );
-  }
+  // Legacy instance-level delete gate removed per product spec. RBAC v2
+  // `KPI:delete` (enforced by `auth.delete`) is the sole guard now.
 
   const oldValue = JSON.stringify(kpi);
   const now = new Date();

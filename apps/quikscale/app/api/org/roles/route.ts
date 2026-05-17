@@ -32,7 +32,7 @@ export async function GET() {
         isDefault: true,
         createdAt: true,
         updatedAt: true,
-        _count: { select: { permissions: true, navigations: true, members: true } },
+        _count: { select: { permissions: true, members: true } },
       },
       // System roles first (admin pinned at top), then alphabetical.
       orderBy: [{ isSystem: "desc" }, { name: "asc" }],

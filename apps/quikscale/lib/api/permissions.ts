@@ -5,10 +5,13 @@
  *   - Roles                          → `app_quikscale.AppRole`
  *   - User → role mapping             → `app_quikscale.UserAppRole`
  *   - Role grants (resource, action)  → `app_quikscale.RolePermission`
- *   - Sidebar visibility (navKey)     → `app_quikscale.RoleNavigation`
  *   - Per-user additive grants        → `app_quikscale.UserPermissionExtra`
  *
- * Permission decision (post-v2):
+ * Sidebar visibility is derived from entity `view` grants via
+ * `NAV_RESOURCE` in `permissionsRegistry.ts` — there is no separate
+ * navigation permission table.
+ *
+ * Permission decision:
  *   effective = role grants UNION per-user extras
  *
  * The `isSystem=true` flag on the admin role no longer bypasses
@@ -25,7 +28,6 @@ import { NextResponse } from "next/server";
 import {
   isResource,
   isAction,
-  isNavKey,
   type Resource,
   type Action,
 } from "@/lib/api/permissionsRegistry";
@@ -96,33 +98,6 @@ export async function userCan(
   return !!extraHit;
 }
 
-/**
- * Sidebar-visibility check — same shape as `userCan`. Role grants only;
- * navigation is intentionally not per-user-extendable.
- */
-export async function userHasNav(
-  userId: string,
-  orgId: string,
-  navKey: string,
-): Promise<boolean> {
-  if (!isNavKey(navKey)) return false;
-
-  const appId = await getQuikScaleAppId();
-  if (!appId) return false;
-
-  const hit = await db.roleNavigation.findFirst({
-    where: {
-      navKey,
-      role: {
-        appId,
-        members: { some: { userId, orgId } },
-      },
-    },
-    select: { id: true },
-  });
-  return !!hit;
-}
-
 /* ───────────────────────── Client-side effective set ───────────────────────── */
 
 export interface MyPermissions {
@@ -136,8 +111,6 @@ export interface MyPermissions {
   permissions: string[];
   /** Subset of `permissions` granted via `UserPermissionExtra` (not the role). */
   extras: string[];
-  /** navKeys this user can see in the sidebar (role grants only). */
-  navigation: string[];
 }
 
 /**
@@ -151,7 +124,6 @@ export async function loadMyPermissions(userId: string, orgId: string): Promise<
     roleName: null,
     permissions: [],
     extras: [],
-    navigation: [],
   };
 
   const appId = await getQuikScaleAppId();
@@ -167,7 +139,6 @@ export async function loadMyPermissions(userId: string, orgId: string): Promise<
             name: true,
             isSystem: true,
             permissions: { select: { resource: true, action: true } },
-            navigations: { select: { navKey: true } },
           },
         },
       },
@@ -185,10 +156,8 @@ export async function loadMyPermissions(userId: string, orgId: string): Promise<
   const isAdmin = !!userRoles.find((ur) => isAdminRole(ur.role));
 
   const permSet = new Set<string>();
-  const navSet = new Set<string>();
   for (const ur of userRoles) {
     for (const p of ur.role.permissions) permSet.add(`${p.resource}:${p.action}`);
-    for (const n of ur.role.navigations) navSet.add(n.navKey);
   }
   const extrasArr: string[] = [];
   for (const e of extras) {
@@ -203,7 +172,6 @@ export async function loadMyPermissions(userId: string, orgId: string): Promise<
     roleName: primary?.name ?? null,
     permissions: Array.from(permSet),
     extras: extrasArr,
-    navigation: Array.from(navSet),
   };
 }
 

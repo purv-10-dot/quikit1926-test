@@ -17,8 +17,10 @@ import { WeekTooltip } from "./WeekTooltip";
 import { DescTooltip } from "./DescTooltip";
 import { NameTooltip } from "./NameTooltip";
 import { ColMenu } from "@/components/table/ColMenu";
+import { SortIndicator } from "@/components/table/SortIndicator";
 import { X } from "lucide-react";
 import { Pagination } from "@quikit/ui";
+import { toast } from "sonner";
 export { HiddenColsMenu } from "./HiddenColsMenu";
 
 // ── Lock icon for freeze boundary ────────────────────────────────────────────
@@ -67,9 +69,20 @@ interface Props {
    *  number of week columns is small and we want to fill the available
    *  horizontal space rather than leaving empty space on the right. */
   fillWidth?: boolean;
+  /** RBAC v2: false hides bulk-delete checkbox interaction and toasts a
+   *  warning when the user attempts to click. Defaults to true. */
+  canDelete?: boolean;
+  /** RBAC v2: false makes opened edit drawers read-only. Pass-through to
+   *  KPIDrawer so it can compose with instance-level rules. Defaults to true. */
+  canUpdate?: boolean;
+  /** Current server-side sort — when provided, the matching header shows an
+   *  up/down arrow next to its label. Values are the BACKEND keys (e.g.
+   *  "name", "owner", "progressPercent"), i.e. SORT_KEYS[col]. */
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
 }
 
-export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth }: Props) {
+export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, onPageChange, onPageSizeChange, onSort, onRefresh, onSelectionChange, clearSelectionTrigger, onHiddenColsChange, showColTrigger, hideColumns, maxRows, readOnly, fillWidth, canDelete = true, canUpdate = true, sortBy, sortOrder }: Props) {
   const kpis = maxRows != null ? kpisAll.slice(0, maxRows) : kpisAll;
   const allCols = [...ALL_STATIC_COLS, ...ALL_WEEKS.map(w => `week${w}`)];
   const headerRowRef = useRef<HTMLTableRowElement>(null);
@@ -168,8 +181,19 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
               {!hideCheckbox && (
                 <th data-col-key="_checkbox" className="sticky z-[35] px-2 py-2 bg-accent-50 border-b border-r border-gray-200"
                   style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
-                  <input type="checkbox" checked={selectedIds.size === kpis.length && kpis.length > 0}
-                    onChange={toggleAll} className="rounded border-gray-300 text-blue-600" />
+                  <label
+                    onClickCapture={(e) => {
+                      if (!canDelete) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toast.error("You don't have permission to delete");
+                      }
+                    }}
+                  >
+                    <input type="checkbox" checked={selectedIds.size === kpis.length && kpis.length > 0}
+                      onChange={toggleAll} disabled={!canDelete}
+                      className={`rounded border-gray-300 text-blue-600 ${!canDelete ? "opacity-40 cursor-not-allowed" : ""}`} />
+                  </label>
                 </th>
               )}
               {!hideLog && (
@@ -185,11 +209,13 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
               {visibleStaticCols.map(col => {
                 const w = getColWidth(col);
                 const sortable = !!SORT_KEYS[col];
+                const isSorted = sortable && sortBy === SORT_KEYS[col];
                 return (
                   <th key={col} data-col-key={col} className={thClass(col)} style={stickyStyle(col, w)}>
                     <div className="flex items-center gap-1 px-3 py-2 pr-2">
                       {frozenUpTo === col && <FreezeIcon />}
-                      <span className="flex-1 truncate min-w-0">{COL_LABELS[col]}</span>
+                      <span className={`flex-1 truncate min-w-0 ${isSorted ? "text-accent-700" : ""}`}>{COL_LABELS[col]}</span>
+                      <SortIndicator active={isSorted} direction={sortOrder} />
                       <ColMenu colKey={col}
                         onSort={sortable ? (d => onSort(SORT_KEYS[col], d)) : undefined}
                         onFreeze={() => handleFreezeCol(col)} onHide={() => handleHideCol(col)}
@@ -249,9 +275,19 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {!hideCheckbox && (
                     <td className="sticky z-[15] bg-white px-2 py-2 border-b border-r border-gray-100"
                       style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
-                      <input type="checkbox" checked={selectedIds.has(kpi.id)} disabled={readOnly}
-                        onChange={() => { if (!readOnly) toggleSelect(kpi.id); }}
-                        className={`rounded border-gray-300 text-blue-600 ${readOnly ? "opacity-40 cursor-not-allowed" : ""}`} />
+                      <label
+                        onClickCapture={(e) => {
+                          if (!canDelete && !readOnly) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toast.error("You don't have permission to delete");
+                          }
+                        }}
+                      >
+                        <input type="checkbox" checked={selectedIds.has(kpi.id)} disabled={readOnly || !canDelete}
+                          onChange={() => { if (!readOnly && canDelete) toggleSelect(kpi.id); }}
+                          className={`rounded border-gray-300 text-blue-600 ${readOnly || !canDelete ? "opacity-40 cursor-not-allowed" : ""}`} />
+                      </label>
                     </td>
                   )}
                   {/* Fixed: Log (hidable) */}
@@ -516,7 +552,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
         onPageSizeChange={onPageSizeChange}
       />
 
-      {logKPI && <LogModal kpi={logKPI} onClose={() => setLogKPI(null)} onRefresh={onRefresh} initialTab={logInitialTab} />}
+      {logKPI && <LogModal kpi={logKPI} onClose={() => setLogKPI(null)} onRefresh={onRefresh} initialTab={logInitialTab} canUpdate={canUpdate} />}
       {auditKPI && <KPILogsModal kpi={auditKPI} onClose={() => setAuditKPI(null)} />}
     </div>
   );

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useKPIs, useDeleteKPI } from "@/lib/hooks/useKPI";
+import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { KPIListParams } from "@/lib/schemas/kpiSchema";
@@ -18,6 +19,7 @@ import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, Dropd
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { AddButton } from "@quikit/ui";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
@@ -30,6 +32,7 @@ const FISCAL_QUARTER = getFiscalQuarter();
 export default function IndividualKPIPage() {
   const { data: session } = useSession();
   const [showAddModal, setShowAddModal] = useState(false);
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("KPI");
 
   // Year + quarter via shared FilterContext so they persist across module nav.
   // filterTeam / filterOwner are seeded from context on first mount (so the
@@ -43,16 +46,37 @@ export default function IndividualKPIPage() {
   // View Trash toggle — when true, list fetches ONLY soft-deleted rows (?includeDeleted=true)
   const [viewTrash, setViewTrash] = useState(false);
 
+  // Sort + search live in Redux so they persist across client-side navigation
+  // (and reload, via localStorage). Shared hooks keep every list page on the
+  // same contract — see lib/store/index.ts.
+  const { sortBy: reduxSortBy, sortOrder: reduxSortOrder, setSort } = useTableSort("kpi");
+  const [searchInput, setSearchInput, reduxSearch] = useDebouncedTableSearch("kpi");
+
   // Filters — merges context-driven year/quarter with page-local params like page + sort.
+  // sortBy: Redux holds a generic `string`; KPIListParams narrows it to a Zod
+  // enum. Cast here at the boundary — the value is validated server-side by
+  // the same enum, so an out-of-range string would 400 instead of leaking.
   const [filters, setFilters] = useState<Partial<KPIListParams> & { includeDeleted?: boolean }>({
     page: 1,
     pageSize: 10,
     year: ctxYear,
     quarter: ctxQuarter,
     kpiLevel: "individual", // Isolation: keep team KPIs out of the Individual KPI page
-    sortBy: "createdAt",
-    sortOrder: "desc",
+    sortBy: reduxSortBy as KPIListParams["sortBy"],
+    sortOrder: reduxSortOrder,
+    search: reduxSearch || undefined,
   });
+
+  // Sync Redux sort/search → filters so useKPIs refetches with new params.
+  useEffect(() => {
+    setFilters((f) => ({
+      ...f,
+      sortBy: reduxSortBy as KPIListParams["sortBy"],
+      sortOrder: reduxSortOrder,
+      search: reduxSearch || undefined,
+      page: 1,
+    }));
+  }, [reduxSortBy, reduxSortOrder, reduxSearch]);
   // Sync trash toggle into filters so useKPIs refetches with includeDeleted flag.
   useEffect(() => {
     setFilters((f) => ({ ...f, includeDeleted: viewTrash, page: 1 }));
@@ -212,7 +236,7 @@ export default function IndividualKPIPage() {
 
         <div className="flex items-center gap-2">
           {/* Bulk delete */}
-          {selectedKPIIds.size > 0 && (
+          {canDelete && selectedKPIIds.size > 0 && (
             <button
               onClick={handleBulkDelete}
               disabled={deleteKPI.isPending}
@@ -258,7 +282,8 @@ export default function IndividualKPIPage() {
             <input
               type="text"
               placeholder="Search..."
-              onChange={(e) => setFilters(f => ({ ...f, search: e.target.value || undefined, page: 1 }))}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
@@ -346,7 +371,7 @@ export default function IndividualKPIPage() {
             defaultExportColumnKeys={visibleColKeys}
           />
 
-          <AddButton onClick={() => setShowAddModal(true)}>Add KPI</AddButton>
+          {canCreate && <AddButton onClick={() => setShowAddModal(true)}>Add KPI</AddButton>}
         </div>
       </div>
 
@@ -364,7 +389,7 @@ export default function IndividualKPIPage() {
               icon={Target}
               title="Track your first KPI"
               message="KPIs are measurable goals your team tracks weekly. They keep everyone aligned on what matters and surface trends before they become problems."
-              action={{ label: "Add your first KPI", onClick: () => setShowAddModal(true) }}
+              action={canCreate ? { label: "Add your first KPI", onClick: () => setShowAddModal(true) } : undefined}
             />
           </div>
         ) : (
@@ -377,13 +402,17 @@ export default function IndividualKPIPage() {
             quarter={currentQuarter}
             onPageChange={(p) => setFilters(f => ({ ...f, page: p }))}
             onPageSizeChange={(size) => setFilters(f => ({ ...f, pageSize: size, page: 1 }))}
-            onSort={(col, dir) => setFilters(f => ({ ...f, sortBy: col as any, sortOrder: dir, page: 1 }))}
+            onSort={(col, dir) => setSort({ sortBy: col, sortOrder: dir })}
+            sortBy={reduxSortBy}
+            sortOrder={reduxSortOrder}
             onRefresh={refetch}
             onSelectionChange={handleSelectionChange}
             clearSelectionTrigger={clearSelectionTrigger}
             onHiddenColsChange={handleHiddenColsChange}
             showColTrigger={showColTrigger}
             hideColumns={["quarterlyGoal", "qtdGoal", "qtdAchieved", "weeklyGoal", "teamHead", "kpiOwner"]}
+            canDelete={canDelete}
+            canUpdate={canUpdate}
           />
         )}
       </div>

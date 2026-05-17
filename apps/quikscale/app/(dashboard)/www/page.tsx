@@ -10,13 +10,19 @@ import { FilterPicker, userToFilterOption, EmptyState, type ExportSelection } fr
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { STATUS_FILTER_OPTIONS } from "@/lib/constants/status";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { AddButton } from "@quikit/ui";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { Trophy } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
 
 export default function WWWPage() {
-  const [search, setSearch] = useState("");
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("WWW");
+  // Search is debounced + persisted via the shared tables slice (lib/store).
+  // `searchInput` is the controlled input value; `search` is the debounced
+  // value the filter logic below reads from.
+  const [searchInput, setSearchInput, search] = useDebouncedTableSearch("www");
   // WWW only honours the OWNER filter from the global context (no team scope
   // ever bleeds in — per product rule). And like KPI/Priority, the owner is
   // seeded from context on first mount but lives locally so clearing it here
@@ -44,9 +50,12 @@ export default function WWWPage() {
 
   const handleSelectionChange = useCallback((ids: Set<string>) => setSelectedIds(new Set(ids)), []);
 
-  // Table preferences for WWW (sort, hidden cols)
+  // Hidden cols come from the DB-backed user pref. Sort lives in the shared
+  // Redux tables slice (lib/store) — same pattern as KPI + Priority.
   const wwwPrefs = useTablePrefs("www");
-  const { sort: wwwSort, hiddenCols: wwwHidden } = wwwPrefs;
+  const { hiddenCols: wwwHidden } = wwwPrefs;
+  const { sortBy: wwwSortBy, sortOrder: wwwSortOrder } = useTableSort("www");
+  const wwwSort = wwwSortBy ? `${wwwSortBy}:${wwwSortOrder}` : null;
 
   const WWW_COL_LABELS: Record<string, string> = {
     who: "Who", when: "When", what: "What", revisedDate: "Revised Date", status: "Status", notes: "Notes",
@@ -147,7 +156,7 @@ export default function WWWPage() {
 
         <div className="flex items-center gap-2">
           {/* Bulk delete */}
-          {selectedIds.size > 0 && (
+          {canDelete && selectedIds.size > 0 && (
             <button
               onClick={handleBulkDelete}
               disabled={deleteWWW.isPending}
@@ -192,8 +201,8 @@ export default function WWWPage() {
             <input
               type="text"
               placeholder="Search..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
@@ -265,7 +274,7 @@ export default function WWWPage() {
             defaultExportColumnKeys={visibleWwwCols}
           />
 
-          <AddButton onClick={() => setShowAddModal(true)}>Add WWW</AddButton>
+          {canCreate && <AddButton onClick={() => setShowAddModal(true)}>Add WWW</AddButton>}
         </div>
       </div>
 
@@ -285,7 +294,7 @@ export default function WWWPage() {
               icon={Trophy}
               title="Log your first win"
               message="WWW (Who Will do What by When) captures commitments made in meetings. Track who owns what, when it's due, and whether it landed."
-              action={{ label: "Add your first WWW", onClick: () => setShowAddModal(true) }}
+              action={canCreate ? { label: "Add your first WWW", onClick: () => setShowAddModal(true) } : undefined}
             />
           </div>
         ) : (
@@ -298,6 +307,8 @@ export default function WWWPage() {
             total={filtered.length}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
+            canDelete={canDelete}
+            canUpdate={canUpdate}
           />
         )}
       </div>

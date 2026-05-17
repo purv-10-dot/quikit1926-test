@@ -22,6 +22,8 @@ import {
 } from "@quikit/ui";
 import { Users, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { toast } from "sonner";
 import { runExport } from "@/lib/export/xlsx";
 import { fmtAuditPayload, diffAuditPayload } from "@/lib/utils/auditLog";
 
@@ -68,6 +70,7 @@ function fmtWindow(s: string | null, e: string | null) {
 }
 
 export default function ClientsPage() {
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("ClientMaster");
   const { data: session } = useSession();
   const role = (session?.user as { membershipRole?: string } | undefined)?.membershipRole;
   const isAdmin = role === "owner" || role === "admin" || role === "super_admin" ||
@@ -312,7 +315,7 @@ export default function ClientsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selected.size > 0 && isAdmin && (
+          {selected.size > 0 && canDelete && (
             <button onClick={handleBulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
@@ -368,7 +371,7 @@ export default function ClientsPage() {
             defaultExportColumnKeys={visibleColKeys}
           />
 
-          {isAdmin && <AddButton onClick={openCreate}>Add New</AddButton>}
+          {canCreate && isAdmin && <AddButton onClick={openCreate}>Add New</AddButton>}
         </div>
       </div>
 
@@ -387,7 +390,7 @@ export default function ClientsPage() {
               icon={Users}
               title={search ? "No matches" : viewTrash ? "Trash is empty" : "Add your first client"}
               message={search ? "Try a different search term." : "Clients are the external organisations you run meeting rhythm for. Planned meeting windows power the Dashboard's punctuality and duration-followed metrics."}
-              action={!search && !viewTrash && isAdmin ? { label: "Add your first client", onClick: openCreate } : undefined}
+              action={!search && !viewTrash && canCreate && isAdmin ? { label: "Add your first client", onClick: openCreate } : undefined}
             />
           </div>
         ) : (
@@ -397,8 +400,18 @@ export default function ClientsPage() {
               <thead className="sticky top-0 bg-accent-50 z-10">
                 <tr>
                   <th className="w-10 px-3 py-3 border-b border-gray-200">
-                    <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleAll}
-                      className="rounded border-gray-300 text-blue-600 cursor-pointer" />
+                    <label
+                      onClickCapture={(e) => {
+                        if (!canDelete) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toast.error("You don't have permission to delete");
+                        }
+                      }}
+                    >
+                      <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleAll} disabled={!canDelete}
+                        className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
+                    </label>
                   </th>
                   <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Log</th>
                   <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">ID</th>
@@ -419,8 +432,18 @@ export default function ClientsPage() {
                 {pagedClients.map(r => (
                   <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
                     <td className="px-3 py-3 text-center">
-                      <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)}
-                        className="rounded border-gray-300 text-blue-600 cursor-pointer" />
+                      <label
+                        onClickCapture={(e) => {
+                          if (!canDelete) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toast.error("You don't have permission to delete");
+                          }
+                        }}
+                      >
+                        <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} disabled={!canDelete}
+                          className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
+                      </label>
                     </td>
                     <td className="px-3 py-3">
                       <button onClick={() => openLog(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
@@ -518,7 +541,13 @@ export default function ClientsPage() {
       </div>
 
       {/* Add/Edit drawer — fields per image 1. */}
-      {editing && (
+      {editing && (() => {
+        // RBAC v2: existing rows in edit mode require `update`; create mode
+        // requires `create` (already gated at the Add button, but defend the
+        // drawer too in case it's opened mid-session). Fields are disabled
+        // and Save is hidden when the role denies the action.
+        const drawerLocked = editing.id ? !canUpdate : !canCreate;
+        return (
         <RightPanel
           open
           onClose={() => setEditing(null)}
@@ -528,16 +557,24 @@ export default function ClientsPage() {
           footer={
             <RightPanelFooter>
               <RightPanelCancelButton onClick={() => setEditing(null)} />
-              <RightPanelSubmitButton
-                onClick={handleSubmit} saving={saving}
-                icon={editing.id ? "check" : "plus"}
-                label="Submit"
-              />
+              {!drawerLocked && (
+                <RightPanelSubmitButton
+                  onClick={handleSubmit} saving={saving}
+                  icon={editing.id ? "check" : "plus"}
+                  label="Submit"
+                />
+              )}
             </RightPanelFooter>
           }
         >
           {error && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">{error}</div>}
+          {drawerLocked && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+              Read-only — your role doesn&apos;t grant {editing.id ? "update" : "create"} access on Client Master.
+            </div>
+          )}
 
+          <fieldset disabled={drawerLocked} className={`space-y-4 ${drawerLocked ? "opacity-70" : ""}`}>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Team Members <span className="text-red-500">*</span></label>
             {memberPickerOptions.length === 0 ? (
@@ -607,8 +644,10 @@ export default function ClientsPage() {
               placeholder="Add any relevant description…"
               className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
           </div>
+          </fieldset>
         </RightPanel>
-      )}
+        );
+      })()}
 
       {/* Audit log modal */}
       {logOpen && (
