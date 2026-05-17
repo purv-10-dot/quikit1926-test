@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { resolveFiscalYearStart } from "@/lib/api/fiscalYearStart";
 const withOrgAuth = withOrgAuthForModule("opsp");
 
 /**
@@ -14,11 +15,9 @@ const withOrgAuth = withOrgAuthForModule("opsp");
  * - fiscalYearStart: tenant setting
  */
 export const GET = withOrgAuth(async ({ orgId, userId }) => {
-  const org = await db.org.findUnique({
-    where: { id: orgId },
-    select: { fiscalYearStart: true },
-  });
-  const fiscalYearStart = org?.fiscalYearStart ?? 1;
+  // Derived from the org's configured Quarter Settings (Q1 start month),
+  // not the stale Org.fiscalYearStart column.
+  const fiscalYearStart = await resolveFiscalYearStart(orgId);
 
   // Find the earliest OPSP record for this user in this tenant
   const earliest = await db.oPSPData.findFirst({

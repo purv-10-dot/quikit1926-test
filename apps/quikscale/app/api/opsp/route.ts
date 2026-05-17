@@ -4,6 +4,7 @@ import { opspUpsertSchema, opspFinalizeSchema } from "@/lib/schemas/opspSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { resolveFiscalYearStart } from "@/lib/api/fiscalYearStart";
 const auth = withOrgAuthForResource("opsp.create", "OPSP.Create");
 
 /**
@@ -111,11 +112,9 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   const year    = parseInt(searchParams.get("year") ?? String(new Date().getFullYear()));
   const quarter = searchParams.get("quarter") ?? "Q1";
 
-  // Fetch fiscalYearStart from tenant
-  const org = await db.org.findUnique({
-    where: { id: orgId },
-    select: { fiscalYearStart: true },
-  });
+  // Derived from configured Quarter Settings (Q1 start month), not the
+  // stale Org.fiscalYearStart column — see lib/api/fiscalYearStart.ts.
+  const fiscalYearStart = await resolveFiscalYearStart(orgId);
 
   const data = await db.oPSPData.findUnique({
     where: {
@@ -130,7 +129,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     return NextResponse.json({
       success: true,
       data,
-      fiscalYearStart: org?.fiscalYearStart ?? 1,
+      fiscalYearStart,
     });
   }
 
@@ -183,7 +182,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
             ? [...QUARTERLY_FIELDS, ...ANNUAL_FIELDS]
             : QUARTERLY_FIELDS,
         },
-        fiscalYearStart: org?.fiscalYearStart ?? 1,
+        fiscalYearStart,
       });
     }
   }
@@ -192,7 +191,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   return NextResponse.json({
     success: true,
     data: null,
-    fiscalYearStart: org?.fiscalYearStart ?? 1,
+    fiscalYearStart,
   });
 });
 
