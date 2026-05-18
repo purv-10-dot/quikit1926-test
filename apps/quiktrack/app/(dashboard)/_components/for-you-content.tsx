@@ -26,7 +26,7 @@ interface SpaceCard {
 }
 
 const TOP_N = 5;
-
+console.log("TOP_N", TOP_N);
 const TABS: { key: Tab; label: string; count?: number }[] = [
   { key: "recommended", label: "Recommended" },
   { key: "assigned", label: "Assigned to me", count: 0 },
