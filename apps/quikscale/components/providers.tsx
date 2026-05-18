@@ -4,7 +4,9 @@ import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { ConfirmProvider } from "@quikit/ui";
-import { useState } from "react";
+import { Provider as ReduxProvider } from "react-redux";
+import { useEffect, useState } from "react";
+import { store, initTablesPersistence } from "@/lib/store";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -19,13 +21,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
       })
   );
 
+  // Rehydrate Redux slices from localStorage AFTER mount so the first client
+  // render matches the SSR shell (no hydration mismatch). The init function
+  // itself is idempotent.
+  useEffect(() => {
+    initTablesPersistence();
+  }, []);
+
   return (
-    <SessionProvider>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-          <ConfirmProvider>{children}</ConfirmProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
-    </SessionProvider>
+    <ReduxProvider store={store}>
+      <SessionProvider>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+            <ConfirmProvider>{children}</ConfirmProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    </ReduxProvider>
   );
 }

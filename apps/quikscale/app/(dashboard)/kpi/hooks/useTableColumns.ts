@@ -31,7 +31,10 @@ export const SORT_KEYS: Record<string, string> = {
   progress: "progressPercent", owner: "owner", kpiName: "name",
   // teamHead and kpiOwner are not server-sortable — no entry = no sort menu option
   measurementUnit: "measurementUnit", targetValue: "target",
-  quarterlyGoal: "quarterlyGoal", qtdGoal: "qtdGoal", qtdAchieved: "qtdAchieved", weeklyGoal: "qtdGoal",
+  quarterlyGoal: "quarterlyGoal", qtdGoal: "qtdGoal", qtdAchieved: "qtdAchieved",
+  // weeklyGoal intentionally NOT sortable — it's a per-row computed value
+  // (kpi.weeklyTargets[currentWeek] or target/13 fallback). Pretending to sort
+  // by qtdGoal here was misleading and hid the bug from the user.
   description: "description",
 };
 

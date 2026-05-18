@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Search, Plus, Trash2, X, ChevronDown, Check } from "lucide-react";
 import { CURRENCIES } from "@/lib/utils/currency";
 import { AddButton } from "@quikit/ui";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { toast } from "sonner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -180,9 +182,15 @@ function CurrencyPicker({ value, onChange }: { value: string; onChange: (v: stri
 function CategoryPanel({
   editItem,
   onClose,
+  canCreate = true,
+  canUpdate = true,
 }: {
   editItem: CategoryItem | null;
   onClose: () => void;
+  /** RBAC v2 — when create or update is denied, the form becomes read-only
+   *  and Save is hidden. */
+  canCreate?: boolean;
+  canUpdate?: boolean;
 }) {
   const queryClient = useQueryClient();
 
@@ -290,6 +298,16 @@ function CategoryPanel({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-5">
+          {(() => {
+            const drawerLocked = editItem ? !canUpdate : !canCreate;
+            if (!drawerLocked) return null;
+            return (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                Read-only — your role doesn&apos;t grant {editItem ? "update" : "create"} access on Category Mgmt.
+              </div>
+            );
+          })()}
+          <fieldset disabled={editItem ? !canUpdate : !canCreate} className={`space-y-5 ${(editItem ? !canUpdate : !canCreate) ? "opacity-70" : ""}`}>
           {/* Category Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -386,6 +404,7 @@ function CategoryPanel({
             <p className="text-red-500 text-xs">{(saveMutation.error as Error).message}</p>
           )}
 
+          </fieldset>
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-1">
             <button
@@ -395,14 +414,16 @@ function CategoryPanel({
             >
               <X className="h-4 w-4" /> Cancel
             </button>
-            <button
-              type="submit"
-              disabled={saveMutation.isPending}
-              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" />
-              {saveMutation.isPending ? "Saving…" : editItem ? "Update" : "Submit"}
-            </button>
+            {(editItem ? canUpdate : canCreate) && (
+              <button
+                type="submit"
+                disabled={saveMutation.isPending}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" />
+                {saveMutation.isPending ? "Saving…" : editItem ? "Update" : "Submit"}
+              </button>
+            )}
           </div>
         </form>
       </div>
@@ -413,6 +434,7 @@ function CategoryPanel({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CategoryMgmtPage() {
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("OPSP.Categories");
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -484,7 +506,7 @@ export default function CategoryMgmtPage() {
             </div>
 
             {/* Bulk delete */}
-            {selected.size > 0 && (
+            {selected.size > 0 && canDelete && (
               <button
                 onClick={() => deleteMutation.mutate([...selected])}
                 disabled={deleteMutation.isPending}
@@ -495,7 +517,7 @@ export default function CategoryMgmtPage() {
               </button>
             )}
 
-            <AddButton onClick={openAdd}>Add Category</AddButton>
+            {canCreate && <AddButton onClick={openAdd}>Add Category</AddButton>}
           </div>
         </div>
       </div>
@@ -507,12 +529,22 @@ export default function CategoryMgmtPage() {
             <thead>
               <tr className="bg-accent-50 border-b border-gray-200">
                 <th className="w-10 px-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={allChecked}
-                    onChange={toggleAll}
-                    className="w-4 h-4 rounded border-gray-300 accent-blue-600"
-                  />
+                  <label
+                    onClickCapture={(e) => {
+                      if (!canDelete) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toast.error("You don't have permission to delete");
+                      }
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      onChange={toggleAll} disabled={!canDelete}
+                      className={`w-4 h-4 rounded border-gray-300 accent-blue-600 ${!canDelete ? "opacity-40 cursor-not-allowed" : ""}`}
+                    />
+                  </label>
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-16">ID</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Category Name</th>
@@ -544,12 +576,19 @@ export default function CategoryMgmtPage() {
                     className={`border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${isChecked ? "bg-accent-50" : ""}`}
                     onClick={() => openEdit(item)}
                   >
-                    <td className="w-10 px-3 py-3" onClick={e => { e.stopPropagation(); toggleOne(item.id); }}>
+                    <td className="w-10 px-3 py-3" onClick={e => {
+                      e.stopPropagation();
+                      if (!canDelete) {
+                        toast.error("You don't have permission to delete");
+                        return;
+                      }
+                      toggleOne(item.id);
+                    }}>
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() => toggleOne(item.id)}
-                        className="w-4 h-4 rounded border-gray-300 accent-blue-600"
+                        onChange={() => { if (canDelete) toggleOne(item.id); }} disabled={!canDelete}
+                        className={`w-4 h-4 rounded border-gray-300 accent-blue-600 ${!canDelete ? "opacity-40 cursor-not-allowed" : ""}`}
                       />
                     </td>
                     <td className="px-4 py-3 text-accent-600 font-semibold">{idx + 1}</td>
@@ -578,7 +617,7 @@ export default function CategoryMgmtPage() {
       </div>
 
       {/* Panel */}
-      {panelOpen && <CategoryPanel editItem={editItem} onClose={closePanel} />}
+      {panelOpen && <CategoryPanel editItem={editItem} onClose={closePanel} canCreate={canCreate} canUpdate={canUpdate} />}
     </div>
   );
 }

@@ -135,7 +135,9 @@ const MicrosoftIcon = () => (
 interface SignInComponentProps {
   logo?: React.ReactNode;
   brandName?: string;
-  /** Path to redirect after successful sign-in (default: "/select-org") */
+  /** Path/URL to redirect after successful sign-in (default: "/apps").
+   *  Apps without a local /apps (e.g. the auth IdP host) MUST pass an
+   *  absolute launcher URL here. */
   redirectPath?: string;
   /** Optional absolute/relative URL that overrides redirectPath (usually from ?callbackUrl=) */
   callbackUrl?: string | null;
@@ -169,7 +171,7 @@ interface SignInComponentProps {
 export const SignInComponent = ({
   logo,
   brandName = "QuikIT",
-  redirectPath = "/select-org",
+  redirectPath = "/apps",
   callbackUrl,
   initialError,
   hardNavigate = true,
@@ -252,9 +254,11 @@ export const SignInComponent = ({
    * After a successful credentials sign-in, ask the auth service whether the
    * user has a first/last name on file. If yes, redirect to the launcher as
    * before. If no (super-admin-added accounts start with empty names), close
-   * the loading modal and advance to the inline profile step. We swallow any
-   * fetch error and fall through to the normal redirect — the /select-org
-   * destination has its own profile gate as a safety net.
+   * the loading modal and advance to the inline profile step. This is the
+   * authoritative profile gate (the old /select-org interstitial that used
+   * to re-check is gone). On a transient fetch error we fall through to the
+   * redirect — the user is still authenticated and can set their name from
+   * settings; the login flow itself is never blocked.
    */
   const advancePostSignIn = async () => {
     try {
@@ -583,14 +587,12 @@ export const SignInComponent = ({
    * away to Google/Microsoft, comes back through `/api/auth/callback/<p>`,
    * and lands DIRECTLY on `/login?step=profile`.
    *
-   * We deliberately don't route through `/select-org` for OAuth — that
-   * was brittle in practice (intermediate redirects sometimes lost the
-   * `fromOAuth` flag depending on browser cache and NextAuth's URL
-   * handling). Going straight to the profile-confirmation form is
-   * unconditional and impossible to bypass. After the form is submitted
-   * the post-save navigation falls back to `redirectPath` (`/select-org`),
-   * which then gates on the now-populated DB names and ships the user to
-   * the launcher.
+   * OAuth goes straight to the profile-confirmation form (unconditional,
+   * impossible to bypass — historically intermediate redirects lost the
+   * `fromOAuth` flag depending on browser cache / NextAuth URL handling).
+   * After the form is submitted the post-save navigation falls back to
+   * `redirectPath` (the launcher `/apps`), which ships the user to the
+   * launcher with now-populated DB names.
    *
    * The "microsoft" prop name is the public-facing label; the NextAuth
    * provider id is `azure-ad`.

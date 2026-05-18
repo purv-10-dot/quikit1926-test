@@ -20,6 +20,7 @@
     "@quikit/shared": "*",
     "@quikit/ui": "*",
     "@react-pdf/renderer": "^4.5.1",
+    "@reduxjs/toolkit": "^2.12.0",
     "@sentry/nextjs": "^10.48.0",
     "@tanstack/react-query": "^5.28.0",
     "axios": "^1.6.2",
@@ -37,6 +38,8 @@
     "prom-client": "^15.1.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-redux": "^9.3.0",
+    "sonner": "^2.0.7",
     "xlsx": "^0.18.5",
     "zod": "^3.22.4"
   },

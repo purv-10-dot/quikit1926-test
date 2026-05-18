@@ -22,6 +22,8 @@ import {
 } from "@quikit/ui";
 import { Calendar, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { toast } from "sonner";
 import { runExport } from "@/lib/export/xlsx";
 import { fmtAuditPayload, fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
@@ -86,6 +88,7 @@ function statusBadge(s: Status) {
 function statusLabel(s: Status) { return STATUS_OPTS.find(o => o.value === s)?.label ?? s; }
 
 export default function DailyHuddlePage() {
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("DailyHuddle");
   const { year, quarter } = useFilterContext();
   const currentWeek = useCurrentWeek(year, quarter);
 
@@ -356,7 +359,7 @@ export default function DailyHuddlePage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selected.size > 0 && (
+          {selected.size > 0 && canDelete && (
             <button onClick={handleBulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
@@ -415,7 +418,7 @@ export default function DailyHuddlePage() {
             onExportClick={() => setExportOpen(true)}
           />
 
-          <AddButton onClick={openCreate} disabled={clients.length === 0}>Add New</AddButton>
+          {canCreate && <AddButton onClick={openCreate} disabled={clients.length === 0}>Add New</AddButton>}
         </div>
       </div>
 
@@ -436,7 +439,7 @@ export default function DailyHuddlePage() {
               message={clients.length === 0
                 ? "Daily huddles hang off clients. Create a client in Client Master, then log a huddle here."
                 : "Log your first daily huddle — capture call status, format adherence, and absent members."}
-              action={!search && !viewTrash && clients.length > 0 ? { label: "Log a huddle", onClick: openCreate } : undefined}
+              action={!search && !viewTrash && canCreate && clients.length > 0 ? { label: "Log a huddle", onClick: openCreate } : undefined}
             />
           </div>
         ) : (
@@ -446,8 +449,18 @@ export default function DailyHuddlePage() {
               <thead className="sticky top-0 bg-accent-50 z-10">
                 <tr>
                   <th className="w-10 px-3 py-3 border-b border-gray-200">
-                    <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleAll}
-                      className="rounded border-gray-300 text-blue-600 cursor-pointer" />
+                    <label
+                      onClickCapture={(e) => {
+                        if (!canDelete) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toast.error("You don't have permission to delete");
+                        }
+                      }}
+                    >
+                      <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={toggleAll} disabled={!canDelete}
+                        className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
+                    </label>
                   </th>
                   <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Log</th>
                   <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">ID</th>
@@ -471,8 +484,18 @@ export default function DailyHuddlePage() {
                 {pagedHuddles.map(r => (
                   <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
                     <td className="px-3 py-3 text-center">
-                      <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)}
-                        className="rounded border-gray-300 text-blue-600 cursor-pointer" />
+                      <label
+                        onClickCapture={(e) => {
+                          if (!canDelete) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toast.error("You don't have permission to delete");
+                          }
+                        }}
+                      >
+                        <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} disabled={!canDelete}
+                          className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
+                      </label>
                     </td>
                     <td className="px-3 py-3">
                       <button onClick={() => openDetail(r, "log")} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View log">
@@ -565,7 +588,9 @@ export default function DailyHuddlePage() {
       </div>
 
       {/* Drawer with Log + Edit tabs */}
-      {editing && (
+      {editing && (() => {
+        const drawerLocked = editing.id ? !canUpdate : !canCreate;
+        return (
         <RightPanel
           open
           onClose={() => setEditing(null)}
@@ -583,11 +608,13 @@ export default function DailyHuddlePage() {
             editing.tab === "edit" ? (
               <RightPanelFooter>
                 <RightPanelCancelButton onClick={() => setEditing(null)} />
-                <RightPanelSubmitButton
-                  onClick={handleSubmit} saving={saving}
-                  icon={editing.id ? "check" : "plus"}
-                  label="Submit"
-                />
+                {!drawerLocked && (
+                  <RightPanelSubmitButton
+                    onClick={handleSubmit} saving={saving}
+                    icon={editing.id ? "check" : "plus"}
+                    label="Submit"
+                  />
+                )}
               </RightPanelFooter>
             ) : null
           }
@@ -660,6 +687,12 @@ export default function DailyHuddlePage() {
           ) : (
             <>
               {error && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">{error}</div>}
+              {drawerLocked && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                  Read-only — your role doesn&apos;t grant {editing.id ? "update" : "create"} access on Daily Huddle.
+                </div>
+              )}
+              <fieldset disabled={drawerLocked} className={`space-y-4 ${drawerLocked ? "opacity-70" : ""}`}>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -799,10 +832,12 @@ export default function DailyHuddlePage() {
                   placeholder="Enter your content here…"
                   className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
               </div>
+              </fieldset>
             </>
           )}
         </RightPanel>
-      )}
+        );
+      })()}
 
       {/* From / To / Client export modal — replaces the legacy
           column-selection modal as the Export Data action. */}

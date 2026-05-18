@@ -73,8 +73,20 @@ export const createOrgUserSchema = z.object({
    * verified server-side before granting.
    */
   linkExistingUserId: z.string().min(1).optional(),
+  /**
+   * Authentication method for a brand-new user.
+   *   "native" → admin sets a password (existing flow).
+   *   "sso"    → no password collected; auth.User.password is stored as null
+   *              so only OAuth (Google / Microsoft) sign-in works. Ignored
+   *              when `linkExistingUserId` is set.
+   *  Defaults to "native" when omitted (back-compat with existing callers).
+   */
+  invitationMethod: z.enum(["native", "sso"]).optional(),
 }).refine(
-  (d) => d.linkExistingUserId || (d.password && d.password.length >= 8),
+  (d) =>
+    d.linkExistingUserId ||
+    d.invitationMethod === "sso" ||
+    (d.password && d.password.length >= 8),
   { message: "Password is required for new users", path: ["password"] },
 );
 

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useUpdatePriority, useUpdateWeeklyStatus } from "@/lib/hooks/usePriority";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { useCanEditPriority } from "@/lib/hooks/useCanEditPriority";
 import { useTeams } from "@/lib/hooks/useTeams";
 import type { PriorityRow } from "@/lib/types/priority";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
@@ -23,6 +22,9 @@ interface Props {
    * log-icon click in the Priority table.
    */
   logsOnly?: boolean;
+  /** RBAC v2 — false makes the drawer fully read-only (every input disabled,
+   *  Save Changes hidden). Defaults to true. */
+  canUpdate?: boolean;
 }
 
 const CURRENT_YEAR = getFiscalYear();
@@ -30,15 +32,18 @@ const WEEK_OPTIONS = Array.from({ length: 13 }, (_, i) => i + 1);
 
 const OVERALL_STATUS_OPTIONS = STATUS_SELECT_OPTIONS;
 
-export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = false }: Props) {
+export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = false, canUpdate = true }: Props) {
   // logsOnly mode forces the weekly-log view and locks everything read-only,
   // regardless of edit permission.
   const [tab, setTab] = useState<"edit" | "weekly" | "notes">(logsOnly ? "weekly" : "edit");
 
-  // Edit permission: creator, assignee, admin, or super-admin.
-  // In logsOnly mode we force-lock regardless.
-  const canEdit = useCanEditPriority(priority);
-  const readOnly = logsOnly || !canEdit;
+  // Legacy instance-level edit gate (creator / assignee / legacy admin)
+  // removed per product spec — anyone with RBAC v2 `Priority:update` can
+  // edit any priority. Row-level visibility (visibility.ts) restricts
+  // non-admins to their own rows in the list, so they only ever see their
+  // own to edit. The drawer is read-only only in logsOnly mode (icon-only
+  // view) or when the role doesn't grant `update`.
+  const readOnly = logsOnly || !canUpdate;
 
   // Past/future-week locks — same pattern as KPI. Past respects the
   // `canEditPastWeek` feature flag (admin opt-in); future is always disabled
@@ -188,22 +193,26 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
           </div>
         )}
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        {/* Body. `<fieldset disabled>` natively disables every input, select,
+            textarea and button inside when RBAC denies `update`. */}
+        <fieldset disabled={!canUpdate} className={`flex-1 overflow-y-auto px-6 py-5 ${!canUpdate ? "opacity-70" : ""}`}>
           {errors._ && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600 mb-4">
               {errors._}
+            </div>
+          )}
+          {!canUpdate && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-4">
+              Read-only — your role doesn&apos;t grant update access on this priority.
             </div>
           )}
 
           {/* ── Edit Tab ── */}
           {tab === "edit" && (
             <div className="space-y-4">
-              {readOnly && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
-                  Read-only — only the creator, assignee, or an admin can edit this priority.
-                </div>
-              )}
+              {/* Legacy instance-level banner removed per product spec.
+                  The RBAC v2 banner above (when !canUpdate) covers the only
+                  remaining read-only case. */}
               {/* Row 1: Priority Name (full width) */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -355,7 +364,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                 className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none" />
             </div>
           )}
-        </div>
+        </fieldset>
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-200 flex-shrink-0">
@@ -363,9 +372,8 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
             className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors">
             Cancel
           </button>
-          {tab !== "weekly" && !logsOnly && (
+          {canUpdate && tab !== "weekly" && !logsOnly && (
             <button onClick={handleSave} disabled={saving || readOnly}
-              title={readOnly ? "Only the creator, assignee, or an admin can edit this priority" : undefined}
               className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
               {saving && (
                 <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">

@@ -15,6 +15,12 @@ const nextConfig = {
     instrumentationHook: true,
   },
   async headers() {
+    // Marketing is now served in-app (one zone). Its _next chunks + assets
+    // are same-origin ('self'); only the forgot-password OTP calls remain
+    // cross-origin to the dedicated auth service — allow that in
+    // connect-src. Google Fonts (marketing typography) already covered.
+    const AUTHO =
+      process.env.NEXT_PUBLIC_AUTH_API_ORIGIN || "https://auth-quikit.vercel.app";
     return [
       {
         source: "/:path*",
@@ -30,7 +36,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' fonts.googleapis.com cdn.jsdelivr.net",
               "font-src 'self' fonts.gstatic.com",
               "img-src 'self' data: blob: https:",
-              "connect-src 'self' https://*.sentry.io",
+              `connect-src 'self' https://*.sentry.io ${AUTHO}`,
               "frame-ancestors 'none'",
             ].join("; "),
           },

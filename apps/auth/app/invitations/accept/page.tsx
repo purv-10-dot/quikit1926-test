@@ -27,11 +27,14 @@ export default function InvitationAcceptPage() {
 
   const launcherUrl =
     process.env.NEXT_PUBLIC_LAUNCHER_URL ?? "http://localhost:3001/apps";
+  // Normalize to exactly one trailing /apps regardless of whether the env
+  // value already includes it.
+  const launcherApps = `${launcherUrl.replace(/\/+$/, "").replace(/\/apps$/, "")}/apps`;
 
   return (
     <SignInComponent
       brandName="QuikIT"
-      redirectPath="/select-org"
+      redirectPath={launcherApps}
       hardNavigate
       initialStep="invitation"
       invitationToken={token}

@@ -224,9 +224,13 @@ export function AppSwitcher({ apiUrl = "/api/apps/switcher", prefetch = true }: 
     }
   });
 
-  // "View all apps" destination — prefer API-provided URL, then fall back to
-  // the current app's registered baseUrl if everything else is unknown.
-  const viewAllHref = quikitUrl ? `${quikitUrl}/apps` : "/apps";
+  // "View all apps" destination. Prefer the API-provided launcher URL;
+  // fall back to the build-time NEXT_PUBLIC_QUIKIT_URL (set on every app,
+  // points at the central launcher) so apps without a switcher API — e.g.
+  // admin — still link to the real launcher /apps and not their own local
+  // /apps. Bare relative "/apps" only as a last resort (launcher itself).
+  const launcherBase = (quikitUrl ?? process.env.NEXT_PUBLIC_QUIKIT_URL ?? "").replace(/\/+$/, "");
+  const viewAllHref = launcherBase ? `${launcherBase}/apps` : "/apps";
 
   return (
     <div className="relative" ref={popoverRef}>

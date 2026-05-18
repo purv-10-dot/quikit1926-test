@@ -20,6 +20,13 @@ const SCALE_ABBR: Record<string, string> = {
   Lakh: "L", Crore: "Cr", "Hundred Crore": "HCr",
 };
 
+type CatMeta = {
+  dataType: string;
+  currency: string | null;
+  categoryType: string;
+};
+type CatMetaMap = Map<string, CatMeta>;
+
 function resolveStoredValue(
   raw: string,
   catMeta: { dataType: string; currency: string | null } | undefined,
@@ -109,13 +116,19 @@ export async function GET(req: NextRequest) {
       entryMap.set(`${e.rowIndex}:${e.period}`, e);
     }
 
-    // 5a. Build category meta lookup so currency scales (K/M/L/Cr…) get applied.
+    // 5a. Build category meta lookup so currency scales (K/M/L/Cr…) get applied
+    // and so the cascade can switch its aggregation per categoryType.
     const cats = await db.categoryMaster.findMany({
       where: { orgId },
-      select: { name: true, dataType: true, currency: true },
+      select: { name: true, dataType: true, currency: true, categoryType: true },
     });
-    const catMetaMap = new Map<string, { dataType: string; currency: string | null }>();
-    for (const c of cats) catMetaMap.set(c.name, { dataType: c.dataType, currency: c.currency });
+    const catMetaMap: CatMetaMap = new Map();
+    for (const c of cats)
+      catMetaMap.set(c.name, {
+        dataType: c.dataType,
+        currency: c.currency,
+        categoryType: c.categoryType,
+      });
 
     // 5b. Merge source rows with review data
     const periodKeys = getPeriodKeys(horizon, opsp.targetYears);
@@ -127,6 +140,7 @@ export async function GET(req: NextRequest) {
         achievedPct: number | null;
         comment: string | null;
         autoPopulated?: boolean;
+        lastYearAchieved: number | null;
       }> = {};
 
       const meta = catMetaMap.get(row.category as string);
@@ -143,6 +157,9 @@ export async function GET(req: NextRequest) {
           gap: null,
           achievedPct: null,
           comment: entry?.comment ?? null,
+          // Populated by loadLastYearAchieved below. Default 0 per spec
+          // ("first quarter → 0" / no prior-year data → 0).
+          lastYearAchieved: 0,
         };
       }
 
@@ -150,6 +167,9 @@ export async function GET(req: NextRequest) {
         rowIndex: idx,
         category: (row.category as string) || "",
         projected: row.projected as string || "",
+        // Surface categoryType so the client can render the "Category Type"
+        // column and pick the right footer label (Cumulative / Exit / Average).
+        categoryType: meta?.categoryType ?? "Cumulative",
         periods,
       };
     });
@@ -158,6 +178,11 @@ export async function GET(req: NextRequest) {
     if (horizon === "yearly" || horizon === "3to5year") {
       await populateCascadeData(orgId, userId, year, rows, horizon, opsp.targetYears, catMetaMap);
     }
+
+    // 6b. Attach Last Year Same Period — used by the client's "Year Growth"
+    // column. For each row+period we look at the analogous period one year
+    // prior; missing prior-year data falls back to 0.
+    await loadLastYearAchieved(orgId, userId, year, quarter, horizon, rows, opsp.targetYears, catMetaMap);
 
     // 7. Get tenant fiscal config
     const org = await db.org.findUnique({
@@ -355,16 +380,80 @@ function getPeriodKeys(horizon: string, targetYears: number = 5): string[] {
 
 /* ── Cascade: auto-populate achieved from child horizon ── */
 
+/** Σ of all targets / achieveds. Used by plain Cumulative. */
+function calculateCumulativeTotal(
+  periods: { target: number; achieved: number | null }[],
+): { target: number; achieved: number; hasAchieved: boolean } {
+  const filled = periods.filter((p) => p.achieved != null);
+  const sumT = periods.reduce((a, b) => a + b.target, 0);
+  const sumA = filled.reduce((a, b) => a + (b.achieved ?? 0), 0);
+  return { target: sumT, achieved: sumA, hasAchieved: filled.length > 0 };
+}
+
 /**
- * Compute quarterly cumulative achieved for a given category from a quarter's
- * OPSP review entries. Returns { achieved, target } sums across m1/m2/m3.
+ * For `CumulativeTillEnd`, each per-period value is ALREADY a running
+ * cumulative total — e.g. m1=3 / m2=6 / m3=9 means "by end of M3 we expect 9",
+ * not "we expect 3+6+9 = 18". Summing would double-count, so the Exit value is
+ * simply the last period's target and the latest filled achieved (falling
+ * back to earlier periods if the final period hasn't been reported yet).
+ */
+function calculateCumulativeTillEndExit(
+  periods: { target: number; achieved: number | null }[],
+): { target: number; achieved: number; hasAchieved: boolean } {
+  if (periods.length === 0) return { target: 0, achieved: 0, hasAchieved: false };
+  const target = periods[periods.length - 1]?.target ?? 0;
+  let achieved = 0;
+  let hasAchieved = false;
+  for (let i = periods.length - 1; i >= 0; i--) {
+    if (periods[i].achieved != null) {
+      achieved = periods[i].achieved!;
+      hasAchieved = true;
+      break;
+    }
+  }
+  return { target, achieved, hasAchieved };
+}
+
+/** (Σ target) / N and (Σ achieved) / N — fixed denominator = period count. */
+function calculateStandaloneAverage(
+  periods: { target: number; achieved: number | null }[],
+): { target: number; achieved: number; hasAchieved: boolean } {
+  const filled = periods.filter((p) => p.achieved != null);
+  const n = periods.length || 1;
+  const sumT = periods.reduce((a, b) => a + b.target, 0);
+  const sumA = filled.reduce((a, b) => a + (b.achieved ?? 0), 0);
+  return { target: sumT / n, achieved: sumA / n, hasAchieved: filled.length > 0 };
+}
+
+/**
+ * Aggregate per-period (target, achieved) pairs into a single value per
+ * `categoryType`:
+ *
+ *   Cumulative         → SUM (e.g. m1+m2+m3, Q1+Q2+Q3+Q4, Y1+Y2+…)
+ *   CumulativeTillEnd  → LAST-FILLED (per-period values already running totals)
+ *   Standalone         → AVERAGE (with fixed denominator = period count)
+ *
+ * Used by the Yearly + 3-5yr cascade and by `buildTableRows` on the client.
+ */
+function aggregateByType(
+  categoryType: string,
+  periods: { target: number; achieved: number | null }[],
+): { target: number; achieved: number; hasAchieved: boolean } {
+  if (categoryType === "Standalone") return calculateStandaloneAverage(periods);
+  if (categoryType === "CumulativeTillEnd") return calculateCumulativeTillEndExit(periods);
+  return calculateCumulativeTotal(periods);
+}
+
+/**
+ * Compute the quarter "footer" (cumulative / exit / average) achieved for a
+ * given category from a quarter's OPSP review entries.
  */
 async function getQuarterCumulativeForCategory(
   orgId: string,
   opspId: string,
   category: string,
   sourceRows: Record<string, unknown>[],
-  catMetaMap?: Map<string, { dataType: string; currency: string | null }>,
+  catMetaMap?: CatMetaMap,
 ): Promise<{ target: number; achieved: number; gap: number; achievedPct: number; hasAchieved: boolean }> {
   // Find the actionsQtr rowIndex matching this category
   const rowIdx = sourceRows.findIndex(
@@ -372,6 +461,7 @@ async function getQuarterCumulativeForCategory(
   );
   if (rowIdx < 0) return { target: 0, achieved: 0, gap: 0, achievedPct: 0, hasAchieved: false };
   const meta = catMetaMap?.get(category);
+  const categoryType = meta?.categoryType ?? "Cumulative";
 
   const entries = await db.oPSPReviewEntry.findMany({
     where: {
@@ -384,28 +474,23 @@ async function getQuarterCumulativeForCategory(
     select: { period: true, targetValue: true, achievedValue: true },
   });
 
-  let cumTarget = 0;
-  let cumAchieved = 0;
-  let hasAchieved = false;
-
-  // Sum targets from OPSP source (m1, m2, m3 fields).
-  // Resolve scaled values ("10 K" → 10000) using category meta when present.
-  for (const pKey of ["m1", "m2", "m3"]) {
+  // Build per-period (target, achieved) pairs in m1..m3 order, then let
+  // aggregateByType collapse them to a single footer value.
+  const periods = (["m1", "m2", "m3"] as const).map((pKey) => {
     const sourceTarget = resolveStoredValue(sourceRows[rowIdx][pKey] as string, meta) ?? 0;
     const entry = entries.find((e) => e.period === pKey);
-    cumTarget += entry?.targetValue ? Number(entry.targetValue) : sourceTarget;
-    if (entry?.achievedValue != null) {
-      cumAchieved += Number(entry.achievedValue);
-      hasAchieved = true;
-    }
-  }
+    return {
+      target: entry?.targetValue ? Number(entry.targetValue) : sourceTarget,
+      achieved: entry?.achievedValue != null ? Number(entry.achievedValue) : null,
+    };
+  });
 
-  // Compute gap and achievedPct from the cumulative's own target (not the parent's target)
-  const rawGap = cumTarget - cumAchieved;
+  const agg = aggregateByType(categoryType, periods);
+  const rawGap = agg.target - agg.achieved;
   const gap = rawGap < 0 ? 0 : parseFloat(rawGap.toFixed(4));
-  const achievedPct = cumTarget > 0 ? parseFloat(((cumAchieved / cumTarget) * 100).toFixed(1)) : 0;
+  const achievedPct = agg.target > 0 ? parseFloat(((agg.achieved / agg.target) * 100).toFixed(1)) : 0;
 
-  return { target: cumTarget, achieved: cumAchieved, gap, achievedPct, hasAchieved };
+  return { target: agg.target, achieved: agg.achieved, gap, achievedPct, hasAchieved: agg.hasAchieved };
 }
 
 /**
@@ -416,19 +501,29 @@ async function populateCascadeData(
   orgId: string,
   userId: string,
   year: number,
-  rows: { rowIndex: number; category: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; gap: number | null; achievedPct: number | null; comment: string | null; autoPopulated?: boolean }> }[],
+  rows: { rowIndex: number; category: string; categoryType: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; gap: number | null; achievedPct: number | null; comment: string | null; autoPopulated?: boolean; lastYearAchieved: number | null }> }[],
   horizon: string,
   targetYears: number,
-  catMetaMap?: Map<string, { dataType: string; currency: string | null }>,
+  catMetaMap?: CatMetaMap,
 ) {
   if (horizon === "yearly") {
     // For each quarter period (q1-q4), find the matching quarter OPSP and compute cumulative
     const quarters = ["Q1", "Q2", "Q3", "Q4"];
     const periodKeys = ["q1", "q2", "q3", "q4"];
 
-    // Load all 4 quarter OPSPs for this user+year
+    // Load all 4 quarter OPSPs for this user+year. Accept BOTH "finalized"
+    // and "reviewed" — "reviewed" is a strictly later state (it implies the
+    // quarter was already finalized), and excluding it caused the Yearly
+    // Achieved column to silently empty out the moment a quarter's review
+    // was submitted.
     const quarterOpsps = await db.oPSPData.findMany({
-      where: { orgId, userId, year, quarter: { in: quarters }, status: "finalized" },
+      where: {
+        orgId,
+        userId,
+        year,
+        quarter: { in: quarters },
+        status: { in: ["finalized", "reviewed"] },
+      },
       select: { id: true, quarter: true, actionsQtr: true },
     });
 
@@ -466,8 +561,9 @@ async function populateCascadeData(
       }
     }
   } else if (horizon === "3to5year") {
-    // For each year period (y1..yN), compute the yearly cumulative
-    // Yearly cumulative = sum of Q1+Q2+Q3+Q4 cumulatives for that year
+    // For each year period (y1..yN), aggregate the four quarter footers per
+    // the row's categoryType. Cumulative → sum, CumulativeTillEnd → last,
+    // Standalone → average.
     const years = Array.from({ length: targetYears }, (_, i) => year + i);
     const periodKeys = Array.from({ length: targetYears }, (_, i) => `y${i + 1}`);
 
@@ -478,48 +574,163 @@ async function populateCascadeData(
         const targetYear = years[yi];
         const quarters = ["Q1", "Q2", "Q3", "Q4"];
 
-        // Load all quarter OPSPs for this year
+        // Load all quarter OPSPs for this year. Same status broadening as
+        // the yearly branch above — accept "reviewed" alongside "finalized".
         const quarterOpsps = await db.oPSPData.findMany({
-          where: { orgId, userId, year: targetYear, quarter: { in: quarters }, status: "finalized" },
+          where: {
+            orgId,
+            userId,
+            year: targetYear,
+            quarter: { in: quarters },
+            status: { in: ["finalized", "reviewed"] },
+          },
           select: { id: true, quarter: true, actionsQtr: true },
         });
 
-        let yearTarget = 0;
-        let yearAchieved = 0;
-        let yearHasAchieved = false;
+        // Compute the four quarterly footers (in quarter order) and let
+        // aggregateByType collapse them per the row's categoryType.
+        const opspByQ = new Map(quarterOpsps.map((o) => [o.quarter, o]));
+        const quartersInOrder = await Promise.all(
+          quarters.map(async (q) => {
+            const qOpsp = opspByQ.get(q);
+            if (!qOpsp) return { target: 0, achieved: null as number | null };
+            const sourceRows = extractSourceRows(
+              { actionsQtr: qOpsp.actionsQtr, goalRows: null, targetRows: null },
+              "quarter",
+            );
+            const cum = await getQuarterCumulativeForCategory(
+              orgId,
+              qOpsp.id,
+              row.category,
+              sourceRows,
+              catMetaMap,
+            );
+            return {
+              target: cum.target,
+              achieved: cum.hasAchieved ? cum.achieved : null,
+            };
+          }),
+        );
 
-        for (const qOpsp of quarterOpsps) {
-          const sourceRows = extractSourceRows(
-            { actionsQtr: qOpsp.actionsQtr, goalRows: null, targetRows: null },
-            "quarter",
-          );
+        const agg = aggregateByType(row.categoryType, quartersInOrder);
 
-          const cum = await getQuarterCumulativeForCategory(
-            orgId,
-            qOpsp.id,
-            row.category,
-            sourceRows,
-          );
-
-          if (cum.hasAchieved) {
-            yearTarget += cum.target;
-            yearAchieved += cum.achieved;
-            yearHasAchieved = true;
-          }
-        }
-
-        if (yearHasAchieved) {
-          const rawGap = yearTarget - yearAchieved;
+        if (agg.hasAchieved) {
+          const rawGap = agg.target - agg.achieved;
           const yearGap = rawGap < 0 ? 0 : parseFloat(rawGap.toFixed(4));
-          const yearPct = yearTarget > 0 ? parseFloat(((yearAchieved / yearTarget) * 100).toFixed(1)) : 0;
+          const yearPct = agg.target > 0 ? parseFloat(((agg.achieved / agg.target) * 100).toFixed(1)) : 0;
 
           const period = row.periods[periodKeys[yi]];
           if (period) {
-            period.achieved = yearAchieved;
+            period.achieved = agg.achieved;
             period.gap = yearGap;
             period.achievedPct = yearPct;
             period.autoPopulated = true;
           }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Populate each row's `lastYearAchieved` per period by looking at the same
+ * period one year prior. Falls back to 0 when no prior-year data exists
+ * ("first quarter → 0" per spec).
+ *
+ *   - Quarter tab    → Y-1 same-quarter OPSP's m-cell achievedValue
+ *   - Yearly tab     → for each q-cell, aggregate Y-1's matching quarter's
+ *                      m1/m2/m3 per the row's categoryType
+ *   - 3-5yr tab      → for each y(i), look at (year+i)-1 and aggregate that
+ *                      year's four quarter footers per the row's categoryType
+ */
+async function loadLastYearAchieved(
+  orgId: string,
+  userId: string,
+  year: number,
+  quarter: string,
+  horizon: string,
+  rows: { rowIndex: number; category: string; categoryType: string; periods: Record<string, { lastYearAchieved: number | null }> }[],
+  targetYears: number,
+  catMetaMap?: CatMetaMap,
+) {
+  if (horizon === "quarter") {
+    // Y-1 same-quarter OPSP, per-m-cell achievedValue.
+    const prior = await db.oPSPData.findUnique({
+      where: { orgId_userId_year_quarter: { orgId, userId, year: year - 1, quarter } },
+      select: { id: true, actionsQtr: true },
+    });
+    if (!prior) return; // already defaults to 0
+    const priorSource = extractSourceRows({ actionsQtr: prior.actionsQtr, goalRows: null, targetRows: null }, "quarter");
+    const entries = await db.oPSPReviewEntry.findMany({
+      where: { orgId, opspId: prior.id, horizon: "quarter" },
+      select: { rowIndex: true, period: true, achievedValue: true },
+    });
+    for (const row of rows) {
+      const priorIdx = priorSource.findIndex(
+        (r) => (r.category as string)?.toLowerCase() === row.category.toLowerCase(),
+      );
+      if (priorIdx < 0) continue;
+      for (const pKey of ["m1", "m2", "m3"]) {
+        const e = entries.find((x) => x.rowIndex === priorIdx && x.period === pKey);
+        if (e?.achievedValue != null && row.periods[pKey]) {
+          row.periods[pKey].lastYearAchieved = Number(e.achievedValue);
+        }
+      }
+    }
+    return;
+  }
+
+  if (horizon === "yearly") {
+    // For each q1..q4, aggregate Y-1's matching quarter (m1+m2+m3) per type.
+    const quarters = ["Q1", "Q2", "Q3", "Q4"] as const;
+    const qKeys = ["q1", "q2", "q3", "q4"] as const;
+    const priorOpsps = await db.oPSPData.findMany({
+      where: { orgId, userId, year: year - 1, quarter: { in: [...quarters] } },
+      select: { id: true, quarter: true, actionsQtr: true },
+    });
+    const priorByQ = new Map(priorOpsps.map((o) => [o.quarter, o]));
+    for (const row of rows) {
+      for (let i = 0; i < quarters.length; i++) {
+        const q = quarters[i];
+        const opsp = priorByQ.get(q);
+        if (!opsp) continue;
+        const src = extractSourceRows({ actionsQtr: opsp.actionsQtr, goalRows: null, targetRows: null }, "quarter");
+        const cum = await getQuarterCumulativeForCategory(orgId, opsp.id, row.category, src, catMetaMap);
+        if (cum.hasAchieved && row.periods[qKeys[i]]) {
+          row.periods[qKeys[i]].lastYearAchieved = cum.achieved;
+        }
+      }
+    }
+    return;
+  }
+
+  if (horizon === "3to5year") {
+    // For each y(i) cell, aggregate prior-year's four quarter footers per type.
+    const yKeys = Array.from({ length: targetYears }, (_, i) => `y${i + 1}`);
+    for (let yi = 0; yi < targetYears; yi++) {
+      const priorYear = year + yi - 1;
+      const quarters = ["Q1", "Q2", "Q3", "Q4"];
+      const opsps = await db.oPSPData.findMany({
+        where: { orgId, userId, year: priorYear, quarter: { in: quarters } },
+        select: { id: true, quarter: true, actionsQtr: true },
+      });
+      const opspByQ = new Map(opsps.map((o) => [o.quarter, o]));
+      for (const row of rows) {
+        const quartersInOrder = await Promise.all(
+          quarters.map(async (q) => {
+            const opsp = opspByQ.get(q);
+            if (!opsp) return { target: 0, achieved: null as number | null };
+            const src = extractSourceRows(
+              { actionsQtr: opsp.actionsQtr, goalRows: null, targetRows: null },
+              "quarter",
+            );
+            const cum = await getQuarterCumulativeForCategory(orgId, opsp.id, row.category, src, catMetaMap);
+            return { target: cum.target, achieved: cum.hasAchieved ? cum.achieved : null };
+          }),
+        );
+        const agg = aggregateByType(row.categoryType, quartersInOrder);
+        if (agg.hasAchieved && row.periods[yKeys[yi]]) {
+          row.periods[yKeys[yi]].lastYearAchieved = agg.achieved;
         }
       }
     }

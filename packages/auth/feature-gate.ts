@@ -80,7 +80,8 @@ export const getDisabledModules = cache(
  * Server-component gate. Call from a `layout.tsx` at the top of the module's
  * route subtree. Redirects to /dashboard with a `?feature_disabled=<key>`
  * query param when the module (or any ancestor) is disabled for the caller's
- * tenant. Also redirects to /select-org if the caller has no active tenant.
+ * tenant. Also redirects to the launcher /apps if the caller has no active
+ * tenant (org selection lives on the launcher, not a per-app page).
  *
  * Usage:
  *   // apps/quikscale/app/(dashboard)/kpi/layout.tsx
@@ -99,7 +100,8 @@ export async function gateModuleRoute(
   const session = await getServerSession(authOptions);
   const orgId = session?.user?.orgId;
   if (!orgId) {
-    redirect("/select-org");
+    const launcher = (process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL ?? "").replace(/\/+$/, "");
+    redirect(launcher ? `${launcher}/apps` : "/apps");
   }
   const disabled = await getDisabledModules(orgId, appSlug);
   if (!isModuleEnabled(moduleKey, disabled)) {
@@ -210,7 +212,8 @@ export async function gateTenantAppRoute(
   const session = await getServerSession(authOptions);
   const orgId = session?.user?.orgId;
   if (!orgId) {
-    redirect("/select-org");
+    const launcher = (process.env.QUIKIT_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL ?? "").replace(/\/+$/, "");
+    redirect(launcher ? `${launcher}/apps` : "/apps");
   }
   const blocked = await isTenantAppBlocked(orgId, appSlug);
   if (blocked) {

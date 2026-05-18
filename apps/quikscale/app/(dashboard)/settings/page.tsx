@@ -10,6 +10,7 @@ import {
 import { applyAccentColor } from "@quikit/ui/theme-applier";
 import { DropdownPicker } from "@quikit/ui";
 import { invalidateFeatureFlagsCache } from "@/lib/hooks/useFeatureFlags";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 /* ─── Constants ─────────────────────────────────────────────────────────────── */
 const ACCENT_PRESETS = [
@@ -93,8 +94,17 @@ interface FlagData {
 /* ─── Main Page ─────────────────────────────────────────────────────────────── */
 export default function SettingsPage() {
   const { data: session } = useSession();
+  const perms = useMyPermissions();
   const [activeTab, setActiveTab] = useState<TabKey>("profile");
-  const isAdmin = session?.user?.membershipRole === "admin" || session?.user?.membershipRole === "super_admin";
+  // Admin gate accepts EITHER the legacy OrgMember.role enum (set when the
+  // user was invited via the QuikIT shell) OR the v2 RBAC `admin` AppRole
+  // (assigned via the QuikScale Roles & Permissions UI). Without the v2
+  // branch, a user given the QuikScale admin role through the new system
+  // would still fail this check because their legacy enum stays "member".
+  const isAdmin =
+    session?.user?.membershipRole === "admin" ||
+    session?.user?.membershipRole === "super_admin" ||
+    perms.isAdmin;
 
   const visibleTabs = TABS.filter((t) => {
     if (t.key === "configurations") return isAdmin;

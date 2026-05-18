@@ -23,6 +23,7 @@ import {
 } from "@quikit/ui";
 import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -58,6 +59,8 @@ interface AppRoleOption {
   isDefault: boolean;
 }
 
+type InvitationMethod = "native" | "sso";
+
 type FormState = {
   firstName: string;
   lastName: string;
@@ -75,6 +78,13 @@ type FormState = {
    * QuikScale access" backend path; password field is hidden in this mode.
    */
   linkExistingUserId: string | null;
+  /**
+   * "native" → admin enters a password; user signs in with email+password.
+   * "sso"    → no password collected; user authenticates via Google/Microsoft.
+   *            Server stores `auth.User.password = null` so the password
+   *            credential provider can't log them in — only OAuth works.
+   */
+  invitationMethod: InvitationMethod;
 };
 
 const EMPTY_FORM: FormState = {
@@ -87,6 +97,7 @@ const EMPTY_FORM: FormState = {
   teamIds: [],
   status: "active",
   linkExistingUserId: null,
+  invitationMethod: "native",
 };
 
 /* ─── Email autocomplete row ─── */
@@ -131,8 +142,37 @@ function avatarColor(name: string) {
   return colors[Math.abs(hash) % colors.length];
 }
 
-function RoleBadge({ role }: { role: string }) {
-  const r = ROLES.find((x) => x.value === role) ?? ROLES[2];
+function RoleBadge({
+  appRoleName,
+  legacyRole,
+}: {
+  /** Dynamic role from app_quikscale.UserAppRole → AppRole.name. */
+  appRoleName: string | null;
+  /** Legacy OrgMember.role enum — used only as a fallback when no
+   *  UserAppRole row exists yet. */
+  legacyRole: string;
+}) {
+  // Prefer the dynamic AppRole name. This is the real role assigned to
+  // the user in QuikScale (admin / Member / Acountablity User / any custom
+  // role the admin created). The legacy `OrgMember.role` enum is kept only
+  // as a fallback for users that haven't been migrated to UserAppRole yet.
+  if (appRoleName) {
+    const lower = appRoleName.toLowerCase();
+    const cls =
+      lower === "admin"
+        ? "bg-amber-50 text-amber-700"
+        : lower === "member"
+          ? "bg-gray-100 text-gray-700"
+          : "bg-accent-50 text-accent-700";
+    return (
+      <span
+        className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${cls}`}
+      >
+        {appRoleName}
+      </span>
+    );
+  }
+  const r = ROLES.find((x) => x.value === legacyRole) ?? ROLES[2];
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${r.color}`}
@@ -306,6 +346,8 @@ function UserPanel({
   editUser,
   teams,
   appRoles,
+  canCreate = true,
+  canUpdate = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -313,7 +355,11 @@ function UserPanel({
   editUser: OrgUser | null;
   teams: OrgTeam[];
   appRoles: AppRoleOption[];
+  /** RBAC v2 — when denied, fields are disabled and Save is hidden. */
+  canCreate?: boolean;
+  canUpdate?: boolean;
 }) {
+  const drawerLocked = editUser ? !canUpdate : !canCreate;
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -335,6 +381,7 @@ function UserPanel({
                 editUser.teamIds ?? (editUser.teamId ? [editUser.teamId] : []),
               status: editUser.status,
               linkExistingUserId: null,
+              invitationMethod: "native",
             }
           : EMPTY_FORM
       );
@@ -427,7 +474,12 @@ function UserPanel({
       setError("Email is required.");
       return;
     }
-    if (!editUser && !form.linkExistingUserId && !form.password.trim()) {
+    if (
+      !editUser &&
+      !form.linkExistingUserId &&
+      form.invitationMethod === "native" &&
+      !form.password.trim()
+    ) {
       setError("Password is required for new users.");
       return;
     }
@@ -444,10 +496,19 @@ function UserPanel({
         role: "member",
         teamIds: form.teamIds,
       };
-      if (!editUser && !form.linkExistingUserId) payload.password = form.password;
+      if (
+        !editUser &&
+        !form.linkExistingUserId &&
+        form.invitationMethod === "native"
+      ) {
+        payload.password = form.password;
+      }
       if (editUser && form.password.trim()) payload.password = form.password;
       if (editUser) payload.status = form.status;
       if (!editUser && form.linkExistingUserId) payload.linkExistingUserId = form.linkExistingUserId;
+      if (!editUser && !form.linkExistingUserId) {
+        payload.invitationMethod = form.invitationMethod;
+      }
 
       const url = editUser
         ? `/api/org/users/${editUser.userId}`
@@ -515,15 +576,31 @@ function UserPanel({
       footer={
         <RightPanelFooter>
           <RightPanelCancelButton onClick={onClose} />
-          <RightPanelSubmitButton
-            onClick={handleSubmit}
-            saving={saving}
-            icon={editUser ? "check" : "plus"}
-            label={editUser ? "Update User" : "Add User"}
-          />
+          {!drawerLocked && (
+            <RightPanelSubmitButton
+              onClick={handleSubmit}
+              saving={saving}
+              icon={editUser ? "check" : "plus"}
+              label={
+                editUser
+                  ? "Update User"
+                  : form.linkExistingUserId
+                    ? "Grant QuikScale Access"
+                    : form.invitationMethod === "sso"
+                      ? "Send Invite"
+                      : "Add User"
+              }
+            />
+          )}
         </RightPanelFooter>
       }
     >
+      {drawerLocked && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-3">
+          Read-only — your role doesn&apos;t grant {editUser ? "update" : "create"} access on Users.
+        </div>
+      )}
+      <fieldset disabled={drawerLocked} className={`space-y-4 ${drawerLocked ? "opacity-70" : ""}`}>
       {/* Name row — disabled when linking existing (values prefilled from user record) */}
       <div className="grid grid-cols-2 gap-4" style={form.linkExistingUserId ? { opacity: 0.6, pointerEvents: "none" } : undefined}>
         <div>
@@ -568,11 +645,11 @@ function UserPanel({
             onFocus={() => {
               if (!editUser && emailSuggestions.length > 0) setEmailDropOpen(true);
             }}
-            disabled={!!editUser}
+            disabled={!!editUser || !!form.linkExistingUserId}
             placeholder="jane@company.com"
             className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400 ${
               form.linkExistingUserId
-                ? "border-accent-300 bg-accent-50"
+                ? "border-accent-300 bg-accent-50 text-gray-700"
                 : "border-gray-200"
             } ${editUser ? "bg-gray-50 text-gray-500" : ""}`}
           />
@@ -638,15 +715,79 @@ function UserPanel({
             </div>
           )}
         </div>
-        {form.linkExistingUserId && (
-          <p className="text-[11px] text-accent-700 mt-1.5">
-            Linking existing org member — password not required.
+        {form.linkExistingUserId ? (
+          <div className="mt-2 bg-accent-50 border border-accent-200 rounded-lg px-3 py-2 text-[11px] text-accent-800 leading-snug">
+            <strong className="font-semibold">Granting QuikScale access</strong> to existing user{" "}
+            <span className="font-medium">
+              {form.firstName} {form.lastName}
+            </span>
+            . They keep their existing password — no new invite email is sent. The role + teams
+            below apply to QuikScale only.{" "}
+            <button
+              type="button"
+              onClick={() => {
+                clearLink();
+                setForm((p) => ({ ...p, firstName: "", lastName: "", email: "" }));
+              }}
+              className="underline font-medium hover:text-accent-900"
+            >
+              Create a new user instead
+            </button>
+          </div>
+        ) : !editUser ? (
+          <p className="text-[11px] text-gray-400 mt-1.5">
+            Pick from the dropdown to grant QuikScale access to an existing QuikIT user without
+            re-creating their account.
           </p>
-        )}
+        ) : null}
       </div>
 
-      {/* Password — hidden when linking an existing org member */}
-      {!form.linkExistingUserId && (
+      {/* Invitation Method — only on create-new-user (not edit, not linking) */}
+      {!editUser && !form.linkExistingUserId && (
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1.5">
+            Invitation Method
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                {
+                  key: "native" as const,
+                  title: "Native (Email + Password)",
+                  hint: "Admin sets a password. User signs in with email + password.",
+                },
+                {
+                  key: "sso" as const,
+                  title: "SSO (Google / Microsoft)",
+                  hint: "No password. User signs in via their existing provider.",
+                },
+              ]
+            ).map((opt) => {
+              const active = form.invitationMethod === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => set("invitationMethod", opt.key)}
+                  className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${
+                    active
+                      ? "border-accent-500 bg-accent-50 ring-1 ring-accent-300"
+                      : "border-gray-200 bg-white hover:bg-gray-50"
+                  }`}
+                >
+                  <div className={`text-xs font-semibold ${active ? "text-accent-700" : "text-gray-800"}`}>
+                    {opt.title}
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-0.5 leading-snug">{opt.hint}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Password — hidden when linking an existing org member OR when SSO is selected */}
+      {!form.linkExistingUserId && (editUser || form.invitationMethod === "native") && (
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">
           Password{" "}
@@ -816,6 +957,7 @@ function UserPanel({
           {error}
         </p>
       )}
+      </fieldset>
     </RightPanel>
   );
 }
@@ -863,6 +1005,7 @@ function ConfirmDialog({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgUsersPage() {
+  const { canCreate, canUpdate } = useResourcePermissions("User");
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
@@ -1089,13 +1232,15 @@ export default function OrgUsersPage() {
             )}
           </div>
 
-          {/* Add User */}
-          <button
-            onClick={() => crud.openCreate()}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add User
-          </button>
+          {/* Add User — RBAC v2 gated */}
+          {canCreate && (
+            <button
+              onClick={() => crud.openCreate()}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add User
+            </button>
+          )}
         </div>
       </div>
 
@@ -1186,9 +1331,11 @@ export default function OrgUsersPage() {
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {u.email}
                     </td>
-                    {/* Role */}
+                    {/* Role — prefer the dynamic AppRole from
+                        app_quikscale.UserAppRole; fall back to the legacy
+                        OrgMember.role enum only if no UserAppRole exists. */}
                     <td className="px-4 py-3">
-                      <RoleBadge role={u.role} />
+                      <RoleBadge appRoleName={u.appRoleName} legacyRole={u.role} />
                     </td>
                     {/* Teams — chips */}
                     <td className="px-4 py-3">
@@ -1290,6 +1437,8 @@ export default function OrgUsersPage() {
         editUser={crud.editItem}
         teams={teams}
         appRoles={appRoles}
+        canCreate={canCreate}
+        canUpdate={canUpdate}
       />
 
       {/* ── Confirm Dialog ── */}

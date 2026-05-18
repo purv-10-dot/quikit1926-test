@@ -1,19 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { authOptions } from "@/lib/auth";
-import { toErrorMessage } from "@/lib/api/errors";
 import { generateQuartersSchema } from "@/lib/schemas/quarterSchema";
 import { addDays, generateQuarterDates } from "@/lib/utils/quarterGen";
-import { gateModuleApi } from "@quikit/auth/feature-gate";
+import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 
-async function getMembership(userId: string) {
-  return db.orgMember.findFirst({
-    where: { userId, status: "active" },
-    orderBy: { createdAt: "asc" },
-    include: { org: { select: { id: true, fiscalYearStart: true } } },
-  });
-}
+// Org resolution + auth + the orgSetup.quarters module gate now come from
+// the shared wrapper (same as ../[id]/route.ts), so `orgId` is the org the
+// user actually launched/selected (session.user.orgId, re-validated +
+// app-scoped) — NOT "their oldest active membership". The previous local
+// getMembership() picked first-active-by-createdAt, which leaked another
+// org's quarters to multi-org users (e.g. an Org Admin in several orgs).
+const withOrgAuth = withOrgAuthForModule("orgSetup.quarters");
 
 /* ─── Serialization ─────────────────────────────────────────────────────────── */
 
@@ -40,240 +38,214 @@ function serializeRow(
 
 /* ─── GET /api/org/quarters?year=2026 ───────────────────────────────────────── */
 
-export async function GET(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id)
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+export const GET = withOrgAuth(async ({ orgId }, request: NextRequest) => {
+  const yearParam = request.nextUrl.searchParams.get("year");
 
-    const membership = await getMembership(session.user.id);
-    if (!membership)
-      return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+  // Get all available fiscal years
+  const allYearsRaw = await db.quarterSetting.findMany({
+    where:    { orgId },
+    select:   { fiscalYear: true },
+    distinct: ["fiscalYear"],
+    orderBy:  { fiscalYear: "desc" },
+  });
+  const availableYears = allYearsRaw.map(r => r.fiscalYear);
 
-    const orgId = membership.orgId;
-    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", orgId);
-    if (blocked) return blocked;
+  // ── Future FY Visibility ──
+  // Gate: `enable_future_quarters` toggles visibility on/off.
+  // `future_days_limit` (FeatureFlag.value) controls HOW EARLY the next FY
+  // appears — it only surfaces when today is within N days of the latest
+  // quarter's end date. If unset or 0, the next FY is never shown (the flag
+  // alone isn't enough). Overlap is prevented server-side by the contiguity
+  // check in POST (startDate must be after the latest existing endDate).
+  let futureYearAvailable: number | null = null;
 
-    const yearParam = request.nextUrl.searchParams.get("year");
+  const [futureFlag, futureDaysFlag, latestEndRow] = await Promise.all([
+    db.featureFlag.findFirst({
+      where: { orgId, key: "enable_future_quarters" },
+      select: { enabled: true },
+    }),
+    db.featureFlag.findFirst({
+      where: { orgId, key: "future_days_limit" },
+      select: { value: true },
+    }),
+    db.quarterSetting.findFirst({
+      where: { orgId },
+      orderBy: { endDate: "desc" },
+      select: { endDate: true },
+    }),
+  ]);
+  const futureEnabled = futureFlag?.enabled ?? false;
+  const daysLimit     = parseInt(futureDaysFlag?.value ?? "0", 10) || 0;
 
-    // Get all available fiscal years
-    const allYearsRaw = await db.quarterSetting.findMany({
-      where:    { orgId },
-      select:   { fiscalYear: true },
-      distinct: ["fiscalYear"],
-      orderBy:  { fiscalYear: "desc" },
-    });
-    const availableYears = allYearsRaw.map(r => r.fiscalYear);
-
-    // ── Future FY Visibility ──
-    // Gate: `enable_future_quarters` toggles visibility on/off.
-    // `future_days_limit` (FeatureFlag.value) controls HOW EARLY the next FY
-    // appears — it only surfaces when today is within N days of the latest
-    // quarter's end date. If unset or 0, the next FY is never shown (the flag
-    // alone isn't enough). Overlap is prevented server-side by the contiguity
-    // check in POST (startDate must be after the latest existing endDate).
-    let futureYearAvailable: number | null = null;
-
-    const [futureFlag, futureDaysFlag, latestEndRow] = await Promise.all([
-      db.featureFlag.findFirst({
-        where: { orgId, key: "enable_future_quarters" },
-        select: { enabled: true },
-      }),
-      db.featureFlag.findFirst({
-        where: { orgId, key: "future_days_limit" },
-        select: { value: true },
-      }),
-      db.quarterSetting.findFirst({
-        where: { orgId },
-        orderBy: { endDate: "desc" },
-        select: { endDate: true },
-      }),
-    ]);
-    const futureEnabled = futureFlag?.enabled ?? false;
-    const daysLimit     = parseInt(futureDaysFlag?.value ?? "0", 10) || 0;
-
-    if (futureEnabled && daysLimit > 0 && latestEndRow) {
-      const highestExistingFY = availableYears[0] ?? null;
-      if (highestExistingFY !== null) {
-        const nextFY = highestExistingFY + 1;
-        if (!availableYears.includes(nextFY)) {
-          // Only surface the next FY when today is within `daysLimit` days of
-          // the latest quarter's end date (i.e. endDate - daysLimit <= today).
-          const threshold = new Date(latestEndRow.endDate);
-          threshold.setDate(threshold.getDate() - daysLimit);
-          if (new Date() >= threshold) {
-            futureYearAvailable = nextFY;
-            availableYears.unshift(nextFY);
-          }
+  if (futureEnabled && daysLimit > 0 && latestEndRow) {
+    const highestExistingFY = availableYears[0] ?? null;
+    if (highestExistingFY !== null) {
+      const nextFY = highestExistingFY + 1;
+      if (!availableYears.includes(nextFY)) {
+        // Only surface the next FY when today is within `daysLimit` days of
+        // the latest quarter's end date (i.e. endDate - daysLimit <= today).
+        const threshold = new Date(latestEndRow.endDate);
+        threshold.setDate(threshold.getDate() - daysLimit);
+        if (new Date() >= threshold) {
+          futureYearAvailable = nextFY;
+          availableYears.unshift(nextFY);
         }
       }
     }
-
-    // Fetch quarters (filtered by year if provided)
-    const where: Record<string, unknown> = { orgId };
-    if (yearParam) where.fiscalYear = parseInt(yearParam, 10);
-
-    const rows = await db.quarterSetting.findMany({
-      where,
-      orderBy: [{ fiscalYear: "asc" }, { quarter: "asc" }],
-    });
-
-    // Resolve createdBy users
-    const userIds = [...new Set(rows.map(r => r.createdBy))];
-    const users   = await db.user.findMany({
-      where:  { id: { in: userIds } },
-      select: { id: true, firstName: true, lastName: true },
-    });
-    const userMap = Object.fromEntries(users.map(u => [u.id, u]));
-
-    // Determine which fiscal years are "locked" — i.e. have KPI, Priority, or
-    // OPSP data. Quarters for locked years cannot be deleted or have their
-    // start date changed to avoid orphaning existing records.
-    const realYears = availableYears.filter(y => y !== futureYearAvailable);
-    const dataChecks = await Promise.all(
-      realYears.map(async (year) => {
-        const [kpiCount, priorityCount, opspCount] = await Promise.all([
-          db.kPI.count({ where: { orgId, year, deletedAt: null } }),
-          db.priority.count({ where: { orgId, year, deletedAt: null } }),
-          db.oPSPData.count({ where: { orgId, year } }),
-        ]);
-        return { year, hasData: kpiCount > 0 || priorityCount > 0 || opspCount > 0 };
-      })
-    );
-    const hasDataByYear: Record<number, boolean> = Object.fromEntries(
-      dataChecks.map(({ year, hasData }) => [year, hasData])
-    );
-
-    return NextResponse.json({
-      success:        true,
-      data:           rows.map(r => serializeRow(r, userMap)),
-      availableYears: availableYears.sort((a, b) => b - a),
-      futureYearAvailable,
-      latestEndDate:  latestEndRow?.endDate.toISOString() ?? null,
-      hasDataByYear,
-    });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to fetch quarters") }, { status: 500 });
   }
-}
+
+  // Fetch quarters (filtered by year if provided)
+  const where: Record<string, unknown> = { orgId };
+  if (yearParam) where.fiscalYear = parseInt(yearParam, 10);
+
+  const rows = await db.quarterSetting.findMany({
+    where,
+    orderBy: [{ fiscalYear: "asc" }, { quarter: "asc" }],
+  });
+
+  // Resolve createdBy users
+  const userIds = [...new Set(rows.map(r => r.createdBy))];
+  const users   = await db.user.findMany({
+    where:  { id: { in: userIds } },
+    select: { id: true, firstName: true, lastName: true },
+  });
+  const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+
+  // Determine which fiscal years are "locked" — i.e. have KPI, Priority, or
+  // OPSP data. Quarters for locked years cannot be deleted or have their
+  // start date changed to avoid orphaning existing records.
+  const realYears = availableYears.filter(y => y !== futureYearAvailable);
+  const dataChecks = await Promise.all(
+    realYears.map(async (year) => {
+      const [kpiCount, priorityCount, opspCount] = await Promise.all([
+        db.kPI.count({ where: { orgId, year, deletedAt: null } }),
+        db.priority.count({ where: { orgId, year, deletedAt: null } }),
+        db.oPSPData.count({ where: { orgId, year } }),
+      ]);
+      return { year, hasData: kpiCount > 0 || priorityCount > 0 || opspCount > 0 };
+    })
+  );
+  const hasDataByYear: Record<number, boolean> = Object.fromEntries(
+    dataChecks.map(({ year, hasData }) => [year, hasData])
+  );
+
+  return NextResponse.json({
+    success:        true,
+    data:           rows.map(r => serializeRow(r, userMap)),
+    availableYears: availableYears.sort((a, b) => b - a),
+    futureYearAvailable,
+    latestEndDate:  latestEndRow?.endDate.toISOString() ?? null,
+    hasDataByYear,
+  });
+}, { fallbackErrorMessage: "Failed to fetch quarters" });
 
 /* ─── POST /api/org/quarters ────────────────────────────────────────────────── */
 
-export async function POST(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id)
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+export const POST = withOrgAuth(async ({ orgId, session }, request: NextRequest) => {
+  const userId = session.user!.id;
 
-    const membership = await getMembership(session.user.id);
-    if (!membership)
-      return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+  const org = await db.org.findUnique({
+    where: { id: orgId },
+    select: { fiscalYearStart: true },
+  });
+  const fiscalStartMonth = org?.fiscalYearStart ?? 4;
 
-    const { orgId } = membership;
-    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", orgId);
-    if (blocked) return blocked;
+  const parsed = generateQuartersSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 }
+    );
+  }
+  const { fiscalYear, startDate: startDateStr } = parsed.data;
 
-    const fiscalStartMonth = membership.org.fiscalYearStart ?? 4;
+  // Parse optional start date
+  const fyStartDate = startDateStr ? new Date(startDateStr) : undefined;
+  if (fyStartDate && isNaN(fyStartDate.getTime()))
+    return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
 
-    const parsed = generateQuartersSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
-        { status: 400 }
-      );
-    }
-    const { fiscalYear, startDate: startDateStr } = parsed.data;
+  // ── Future FY feature-flag gate ──
+  // `enable_future_quarters` is the single on/off switch. No proximity /
+  // days-limit check anymore — admins can create any future FY as long as
+  // the start date doesn't overlap an existing quarter (validated below).
+  const currentMonth = new Date().getMonth(); // 0-indexed
+  const currentFY = currentMonth >= (fiscalStartMonth - 1)
+    ? new Date().getFullYear()
+    : new Date().getFullYear() - 1;
 
-    // Parse optional start date
-    const fyStartDate = startDateStr ? new Date(startDateStr) : undefined;
-    if (fyStartDate && isNaN(fyStartDate.getTime()))
-      return NextResponse.json({ success: false, error: "Invalid start date" }, { status: 400 });
-
-    // ── Future FY feature-flag gate ──
-    // `enable_future_quarters` is the single on/off switch. No proximity /
-    // days-limit check anymore — admins can create any future FY as long as
-    // the start date doesn't overlap an existing quarter (validated below).
-    const currentMonth = new Date().getMonth(); // 0-indexed
-    const currentFY = currentMonth >= (fiscalStartMonth - 1)
-      ? new Date().getFullYear()
-      : new Date().getFullYear() - 1;
-
-    if (fiscalYear > currentFY) {
-      const futureFlag = await db.featureFlag.findFirst({
-        where: { orgId, key: "enable_future_quarters" },
-        select: { enabled: true },
-      });
-      if (!futureFlag?.enabled) {
-        return NextResponse.json(
-          { success: false, error: "Future quarters are disabled. Enable them in Settings > Configurations." },
-          { status: 403 }
-        );
-      }
-    }
-
-    // Check if quarters already exist for this FY
-    const existing = await db.quarterSetting.findMany({
-      where: { orgId, fiscalYear },
+  if (fiscalYear > currentFY) {
+    const futureFlag = await db.featureFlag.findFirst({
+      where: { orgId, key: "enable_future_quarters" },
+      select: { enabled: true },
     });
-    if (existing.length > 0)
+    if (!futureFlag?.enabled) {
       return NextResponse.json(
-        { success: false, error: `Quarters for FY ${fiscalYear}-${String(fiscalYear + 1).slice(-2)} already exist` },
-        { status: 409 }
+        { success: false, error: "Future quarters are disabled. Enable them in Settings > Configurations." },
+        { status: 403 }
       );
-
-    // ── Contiguity check ──
-    // Start date must be strictly after the latest existing quarter's endDate
-    // for this tenant. Prevents overlapping FYs (e.g. new FY start before the
-    // previous FY's Q4 end).
-    if (fyStartDate) {
-      const latest = await db.quarterSetting.findFirst({
-        where: { orgId },
-        orderBy: { endDate: "desc" },
-        select: { endDate: true, fiscalYear: true, quarter: true },
-      });
-      if (latest && fyStartDate.getTime() <= latest.endDate.getTime()) {
-        const minAllowed = addDays(latest.endDate, 1);
-        const fmt = (d: Date) => d.toISOString().slice(0, 10);
-        return NextResponse.json({
-          success: false,
-          error: `Start date must be after ${fmt(latest.endDate)} (FY ${latest.fiscalYear} ${latest.quarter} end). Earliest allowed: ${fmt(minAllowed)}.`,
-        }, { status: 400 });
-      }
     }
+  }
 
-    // Generate using day-count logic
-    const quarterDates = generateQuarterDates(fiscalYear, fiscalStartMonth, fyStartDate);
-
-    const created = await Promise.all(
-      quarterDates.map(q =>
-        db.quarterSetting.create({
-          data: {
-            orgId,
-            fiscalYear,
-            quarter:   q.quarter,
-            startDate: q.startDate,
-            endDate:   q.endDate,
-            createdBy: session.user!.id,
-          },
-        })
-      )
+  // Check if quarters already exist for this FY
+  const existing = await db.quarterSetting.findMany({
+    where: { orgId, fiscalYear },
+  });
+  if (existing.length > 0)
+    return NextResponse.json(
+      { success: false, error: `Quarters for FY ${fiscalYear}-${String(fiscalYear + 1).slice(-2)} already exist` },
+      { status: 409 }
     );
 
-    const userMap = {
-      [session.user.id]: {
-        firstName: session.user.name?.split(" ")[0] ?? "",
-        lastName: session.user.name?.split(" ").slice(1).join(" ") ?? "",
-      },
-    };
-
-    return NextResponse.json({
-      success: true,
-      data: created.map(r => serializeRow(r, userMap)),
-    }, { status: 201 });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to generate quarters") }, { status: 500 });
+  // ── Contiguity check ──
+  // Start date must be strictly after the latest existing quarter's endDate
+  // for this tenant. Prevents overlapping FYs (e.g. new FY start before the
+  // previous FY's Q4 end).
+  if (fyStartDate) {
+    const latest = await db.quarterSetting.findFirst({
+      where: { orgId },
+      orderBy: { endDate: "desc" },
+      select: { endDate: true, fiscalYear: true, quarter: true },
+    });
+    if (latest && fyStartDate.getTime() <= latest.endDate.getTime()) {
+      const minAllowed = addDays(latest.endDate, 1);
+      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+      return NextResponse.json({
+        success: false,
+        error: `Start date must be after ${fmt(latest.endDate)} (FY ${latest.fiscalYear} ${latest.quarter} end). Earliest allowed: ${fmt(minAllowed)}.`,
+      }, { status: 400 });
+    }
   }
-}
+
+  // Generate using day-count logic
+  const quarterDates = generateQuarterDates(fiscalYear, fiscalStartMonth, fyStartDate);
+
+  const created = await Promise.all(
+    quarterDates.map(q =>
+      db.quarterSetting.create({
+        data: {
+          orgId,
+          fiscalYear,
+          quarter:   q.quarter,
+          startDate: q.startDate,
+          endDate:   q.endDate,
+          createdBy: userId,
+        },
+      })
+    )
+  );
+
+  const userMap = {
+    [userId]: {
+      firstName: session.user?.name?.split(" ")[0] ?? "",
+      lastName: session.user?.name?.split(" ").slice(1).join(" ") ?? "",
+    },
+  };
+
+  return NextResponse.json({
+    success: true,
+    data: created.map(r => serializeRow(r, userMap)),
+  }, { status: 201 });
+}, { fallbackErrorMessage: "Failed to generate quarters" });
 
 /* ─── DELETE /api/org/quarters?year=YYYY ────────────────────────────────────
  *
@@ -282,40 +254,24 @@ export async function POST(request: NextRequest) {
  * continue to live at DELETE /api/org/quarters/[id].
  *
  * Caller must have the orgSetup.quarters module license (same gate as
- * POST/PUT). No cascade — rows in KPI / Priority / OPSP that reference
- * (fiscalYear, quarter) by value keep their values; the picker will just
- * drop the year from its DB-scoped list.
+ * POST/PUT, now enforced by the shared wrapper). No cascade — rows in
+ * KPI / Priority / OPSP that reference (fiscalYear, quarter) by value keep
+ * their values; the picker will just drop the year from its DB-scoped list.
  */
-export async function DELETE(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id)
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+export const DELETE = withOrgAuth(async ({ orgId }, request: NextRequest) => {
+  const yearParam = request.nextUrl.searchParams.get("year");
+  if (!yearParam)
+    return NextResponse.json({ success: false, error: "year query param required" }, { status: 400 });
+  const fiscalYear = parseInt(yearParam, 10);
+  if (!Number.isFinite(fiscalYear))
+    return NextResponse.json({ success: false, error: "Invalid fiscal year" }, { status: 400 });
 
-    const membership = await getMembership(session.user.id);
-    if (!membership)
-      return NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
+  const result = await db.quarterSetting.deleteMany({
+    where: { orgId, fiscalYear },
+  });
 
-    const { orgId } = membership;
-    const blocked = await gateModuleApi("quikscale", "orgSetup.quarters", orgId);
-    if (blocked) return blocked;
+  if (result.count === 0)
+    return NextResponse.json({ success: false, error: "No quarters found for that fiscal year" }, { status: 404 });
 
-    const yearParam = request.nextUrl.searchParams.get("year");
-    if (!yearParam)
-      return NextResponse.json({ success: false, error: "year query param required" }, { status: 400 });
-    const fiscalYear = parseInt(yearParam, 10);
-    if (!Number.isFinite(fiscalYear))
-      return NextResponse.json({ success: false, error: "Invalid fiscal year" }, { status: 400 });
-
-    const result = await db.quarterSetting.deleteMany({
-      where: { orgId, fiscalYear },
-    });
-
-    if (result.count === 0)
-      return NextResponse.json({ success: false, error: "No quarters found for that fiscal year" }, { status: 404 });
-
-    return NextResponse.json({ success: true, data: { fiscalYear, deleted: result.count } });
-  } catch (error: unknown) {
-    return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete fiscal year") }, { status: 500 });
-  }
-}
+  return NextResponse.json({ success: true, data: { fiscalYear, deleted: result.count } });
+}, { fallbackErrorMessage: "Failed to delete fiscal year" });

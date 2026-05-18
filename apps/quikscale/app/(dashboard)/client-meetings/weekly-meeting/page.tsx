@@ -31,6 +31,8 @@ import { ExportDataModal, type ExportRange } from "@/components/client-meetings/
 import { runExport } from "@/lib/export/xlsx";
 import type { ExportSelection } from "@quikit/ui";
 import { Download } from "lucide-react";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { toast } from "sonner";
 
 type Flag = "YES" | "NO" | "NA";
 type Status =
@@ -225,6 +227,7 @@ function pickerPlaceholder(clientId: string, count: number): string {
 }
 
 export default function WeeklyMeetingPage() {
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("WeeklyMeeting");
   const [rows, setRows] = useState<MeetingRow[]>([]);
   const [clients, setClients] = useState<ClientOpt[]>([]);
   const [clientDetail, setClientDetail] = useState<ClientDetail | null>(null);
@@ -778,7 +781,7 @@ export default function WeeklyMeetingPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selectedIds.size > 0 && (
+          {selectedIds.size > 0 && canDelete && (
             <button
               onClick={bulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors"
@@ -825,7 +828,7 @@ export default function WeeklyMeetingPage() {
             <Download className="h-3.5 w-3.5" /> Export Data
           </button>
 
-          <AddButton onClick={openCreate}>Add</AddButton>
+          {canCreate && <AddButton onClick={openCreate}>Add</AddButton>}
         </div>
       </div>
 
@@ -845,12 +848,22 @@ export default function WeeklyMeetingPage() {
               <thead className="bg-accent-50 text-gray-600 sticky top-0 z-10">
                 <tr>
                   <th className="px-2 py-2 w-8">
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={() => toggleSelectAll(visibleIds)}
-                      className="text-blue-600 border-gray-300"
-                    />
+                    <label
+                      onClickCapture={(e) => {
+                        if (!canDelete) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toast.error("You don't have permission to delete");
+                        }
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={() => toggleSelectAll(visibleIds)} disabled={!canDelete}
+                        className={`text-blue-600 border-gray-300 ${!canDelete ? "opacity-40 cursor-not-allowed" : ""}`}
+                      />
+                    </label>
                   </th>
                   <th className="px-1 py-2 w-8 text-center font-semibold">
                     Log
@@ -929,12 +942,22 @@ export default function WeeklyMeetingPage() {
                     className="border-t border-gray-100 hover:bg-blue-50/30"
                   >
                     <td className="px-2 py-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(r.id)}
-                        onChange={() => toggleSelect(r.id)}
-                        className="text-blue-600 border-gray-300"
-                      />
+                      <label
+                        onClickCapture={(e) => {
+                          if (!canDelete) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toast.error("You don't have permission to delete");
+                          }
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleSelect(r.id)} disabled={!canDelete}
+                          className={`text-blue-600 border-gray-300 ${!canDelete ? "opacity-40 cursor-not-allowed" : ""}`}
+                        />
+                      </label>
                     </td>
                     <td className="px-1 py-2 text-center">
                       <button
@@ -1072,33 +1095,45 @@ export default function WeeklyMeetingPage() {
             // persistence). Add-mode keeps the footer on both tabs so the user
             // can Submit from either; the Submit handler runs the create POST
             // and then batch-PATCHes any staged/typed score rows.
+            // RBAC v2: hide Save when the role doesn't grant the relevant action.
             isEdit && activeTab === "update" ? undefined : (
               <RightPanelFooter>
                 <RightPanelCancelButton onClick={() => setEditing(null)} />
-                <RightPanelSubmitButton
-                  onClick={save}
-                  saving={saving}
-                  icon={isEdit ? "check" : "plus"}
-                  label={isEdit ? "Update" : "Submit"}
-                />
+                {(isEdit ? canUpdate : canCreate) && (
+                  <RightPanelSubmitButton
+                    onClick={save}
+                    saving={saving}
+                    icon={isEdit ? "check" : "plus"}
+                    label={isEdit ? "Update" : "Submit"}
+                  />
+                )}
               </RightPanelFooter>
             )
           }
         >
-          {!editing ? null : activeTab === "update" ? (
-            <UpdateScoreGrid
-              members={activeMembers}
-              allAbsent={allAbsent}
-              needsClient={!hasClient}
-              meetingDate={editing.form.meetingDate}
-              scores={scores}
-              dirtyFor={scoreDirtyFor}
-              lockedFor={scoreLockedFor}
-              savingFor={scoreSavingFor}
-              onChange={updateScore}
-              onSaveRow={saveScore}
-              onEditRow={editScore}
-            />
+          {!editing ? null : (() => {
+            const drawerLocked = isEdit ? !canUpdate : !canCreate;
+            return activeTab === "update" ? (
+            <fieldset disabled={drawerLocked} className={drawerLocked ? "opacity-70" : ""}>
+              {drawerLocked && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 mb-3">
+                  Read-only — your role doesn&apos;t grant {isEdit ? "update" : "create"} access on Weekly Meeting.
+                </div>
+              )}
+              <UpdateScoreGrid
+                members={activeMembers}
+                allAbsent={allAbsent}
+                needsClient={!hasClient}
+                meetingDate={editing.form.meetingDate}
+                scores={scores}
+                dirtyFor={scoreDirtyFor}
+                lockedFor={scoreLockedFor}
+                savingFor={scoreSavingFor}
+                onChange={updateScore}
+                onSaveRow={saveScore}
+                onEditRow={editScore}
+              />
+            </fieldset>
           ) : (
             <>
               {error && (
@@ -1106,6 +1141,12 @@ export default function WeeklyMeetingPage() {
                   {error}
                 </div>
               )}
+              {drawerLocked && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  Read-only — your role doesn&apos;t grant {isEdit ? "update" : "create"} access on Weekly Meeting.
+                </div>
+              )}
+              <fieldset disabled={drawerLocked} className={drawerLocked ? "opacity-70" : ""}>
 
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Meeting Date">
@@ -1308,8 +1349,10 @@ export default function WeeklyMeetingPage() {
                   placeholder="Enter your content here..."
                 />
               </Field>
+              </fieldset>
             </>
-          )}
+          );
+          })()}
         </RightPanel>
 
         <RightPanel

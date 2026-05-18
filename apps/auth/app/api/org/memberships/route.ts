@@ -5,7 +5,7 @@ import { getUserIdFromRequest } from "@/lib/get-user-id-from-request";
 
 /**
  * GET /api/org/memberships — list all orgs the logged-in user belongs to.
- * Used by /select-org to render the picker.
+ * Used by the launcher /apps org switcher.
  */
 export async function GET(req: NextRequest) {
   try {

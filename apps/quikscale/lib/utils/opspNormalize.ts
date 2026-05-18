@@ -93,5 +93,54 @@ export function normalizeLoadedOPSP(
     while ((out.actionsQtr as unknown[]).length < 6)
       (out.actionsQtr as unknown[]).push({ category: "", projected: "", m1: "", m2: "", m3: "" });
   }
+
+  // Pad to default sizes for the Accountability + Quarterly Priorities tables
+  // so an inherited / cleared quarter still shows empty input rows (without
+  // these, a server-returned `[]` would render zero rows and the user can't
+  // type anything in).
+  out.kpiAccountability = normalizeKVRows(
+    out.kpiAccountability,
+    ["kpi", "goal"],
+    5,
+  );
+  out.quarterlyPriorities = normalizeKVRows(
+    out.quarterlyPriorities,
+    ["priority", "dueDate"],
+    5,
+  );
+
   return out;
+}
+
+/**
+ * Normalize a JSON-array field of homogeneous `{ k1: string, k2: string }`
+ * objects. Used for `kpiAccountability` ({kpi, goal}) and
+ * `quarterlyPriorities` ({priority, dueDate}).
+ *
+ *   - Non-array input        → `count` empty rows
+ *   - Shorter array          → padded to `count` rows
+ *   - Longer array           → truncated to `count` rows
+ *   - Malformed entries      → coerced to all-empty-strings
+ */
+function normalizeKVRows(
+  val: unknown,
+  fields: readonly string[],
+  count: number,
+): Array<Record<string, string>> {
+  const emptyRow = (): Record<string, string> =>
+    Object.fromEntries(fields.map((f) => [f, ""]));
+  if (!Array.isArray(val)) {
+    return Array.from({ length: count }, emptyRow);
+  }
+  const normalized: Array<Record<string, string>> = (val as unknown[]).map((item) => {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      const obj = item as Record<string, unknown>;
+      return Object.fromEntries(
+        fields.map((f) => [f, typeof obj[f] === "string" ? (obj[f] as string) : ""]),
+      );
+    }
+    return emptyRow();
+  });
+  while (normalized.length < count) normalized.push(emptyRow());
+  return normalized.slice(0, count);
 }

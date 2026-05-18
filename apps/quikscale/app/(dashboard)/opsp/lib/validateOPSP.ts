@@ -14,8 +14,9 @@
  * "wrong", just unfilled.
  */
 import type { FormData } from "../hooks/useOPSPForm";
-import { resolveProjected } from "../components/modals";
+import { resolveProjected, breakdownProjected } from "../components/modals";
 import { catMetaCache } from "../components/category";
+import type { TargetRow, GoalRow, ActionRow } from "../types";
 
 export interface ValidationError {
   /** "Targets" | "Goals" | "Actions" | "Key Thrusts" | "Key Initiatives" | "Rocks" */
@@ -126,6 +127,53 @@ function checkOwners(
   return errors;
 }
 
+/**
+ * Pre-finalize pass: for any row that has a Category + Projected but empty
+ * period cells (y/q/m), auto-fill the period cells via `breakdownProjected`
+ * with `force: true`. The matrix-modal UI that used to let users hand-enter
+ * Manual rows was removed, so without this pass any Manual+Cumulative or
+ * Manual+CumulativeTillEnd row would permanently fail validation.
+ *
+ * Rows that already have ANY period cell filled are left alone (the user
+ * has opted into a custom distribution and we shouldn't clobber it).
+ */
+export function backfillPeriods(form: FormData): FormData {
+  const yrs = Math.max(3, Math.min(5, form.targetYears ?? 5));
+  const targetParts = partKeys.targets.slice(0, yrs);
+
+  const fillRow = <R extends Record<string, string>>(
+    row: R,
+    parts: readonly string[],
+    periods: number,
+  ): R => {
+    const cat = (row.category ?? "").trim();
+    const proj = (row.projected ?? "").trim();
+    if (!cat || !proj) return row;
+    const anyFilled = parts.some((k) => String(row[k] ?? "").trim() !== "");
+    if (anyFilled) return row;
+    const slices = breakdownProjected(cat, proj, periods, { force: true });
+    if (!slices) return row;
+    const patch: Record<string, string> = {};
+    parts.forEach((k, idx) => {
+      patch[k] = slices[idx] ?? "";
+    });
+    return { ...row, ...patch };
+  };
+
+  return {
+    ...form,
+    targetRows: form.targetRows.map((r) =>
+      fillRow(r as unknown as Record<string, string>, targetParts, yrs),
+    ) as unknown as TargetRow[],
+    goalRows: form.goalRows.map((r) =>
+      fillRow(r as unknown as Record<string, string>, partKeys.goals, 4),
+    ) as unknown as GoalRow[],
+    actionsQtr: form.actionsQtr.map((r) =>
+      fillRow(r as unknown as Record<string, string>, partKeys.actions, 3),
+    ) as unknown as ActionRow[],
+  };
+}
+
 export function validateOPSP(form: FormData): ValidationError[] {
   // Honor the user-selected target horizon (3–5 yrs) — only validate those columns.
   const yrs = Math.max(3, Math.min(5, form.targetYears ?? 5));
@@ -134,7 +182,9 @@ export function validateOPSP(form: FormData): ValidationError[] {
     ...checkBreakdown("Targets", form.targetRows as unknown as Array<Record<string, string>>, targetParts),
     ...checkBreakdown("Goals", form.goalRows as unknown as Array<Record<string, string>>, partKeys.goals),
     ...checkBreakdown("Actions", form.actionsQtr as unknown as Array<Record<string, string>>, partKeys.actions),
-    ...checkOwners("Key Thrusts", form.keyThrusts),
+    // Key Thrusts no longer requires an owner — the column was removed from
+    // the UI (both inline + modal) per spec, so checking it would block
+    // Finalize for data that has no UI to fill the field.
     ...checkOwners("Key Initiatives", form.keyInitiatives),
     ...checkOwners("Rocks", form.rocks),
   ];

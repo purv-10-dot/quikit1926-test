@@ -49,6 +49,9 @@ interface Props {
    * log-icon click in WWWTable.
    */
   logsOnly?: boolean;
+  /** RBAC v2 — false makes the drawer fully read-only (every input disabled,
+   *  Save Changes hidden). Defaults to true. */
+  canUpdate?: boolean;
 }
 
 // ── Log Tab ──────────────────────────────────────────────────────────────────
@@ -406,7 +409,7 @@ function NotesHistory({ itemId, users }: { itemId: string; users: Array<{ id: st
 
 // ── WWWPanel ─────────────────────────────────────────────────────────────────
 
-export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly = false }: Props) {
+export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly = false, canUpdate = true }: Props) {
   // logsOnly forces the Log tab, hides tab bar, hides footer. Read-only.
   const [tab, setTab] = useState<Tab>(
     logsOnly ? "log" : (mode === "create" ? "edit" : (initialTab ?? "edit")),
@@ -417,7 +420,10 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
   // Edit mode: only the creator, assignee, or admin/super-admin may change the
   // item. Create mode is always allowed (anyone in the tenant can author a WWW).
   const canEditItem = useCanEditWWW(item);
-  const readOnly = mode === "edit" && !canEditItem;
+  // RBAC v2 layer: if the role doesn't grant `update`, the drawer is read-only
+  // in edit mode regardless of instance-level rules. Create mode is gated at
+  // the page level (Add button hidden when !canCreate).
+  const readOnly = mode === "edit" && (!canEditItem || !canUpdate);
 
   const initialWhoIds = (item?.whoIds && item.whoIds.length > 0)
     ? item.whoIds
@@ -560,14 +566,17 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
         tab === "edit" ? (
           <RightPanelFooter>
             <RightPanelCancelButton onClick={onClose} />
-            <RightPanelSubmitButton
-              onClick={handleSubmit}
-              saving={saving}
-              disabled={readOnly}
-              icon={mode === "create" ? "plus" : "check"}
-              label={mode === "create" ? "Create Item" : "Save Changes"}
-              title={readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
-            />
+            {/* RBAC v2: hide Save entirely when the role doesn't grant update. */}
+            {(mode === "create" || canUpdate) && (
+              <RightPanelSubmitButton
+                onClick={handleSubmit}
+                saving={saving}
+                disabled={readOnly}
+                icon={mode === "create" ? "plus" : "check"}
+                label={mode === "create" ? "Create Item" : "Save Changes"}
+                title={readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+              />
+            )}
           </RightPanelFooter>
         ) : null
       }

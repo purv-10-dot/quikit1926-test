@@ -21,6 +21,7 @@ import {
   RightPanelSubmitButton,
 } from "@quikit/ui";
 import { useTableCRUD } from "@/lib/hooks/useTableCRUD";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface TeamMember {
@@ -147,13 +148,19 @@ function TeamPanel({
   onSaved,
   editTeam,
   users,
+  canCreate = true,
+  canUpdate = true,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: (t: OrgTeam) => void;
   editTeam: OrgTeam | null;
   users: OrgUser[];
+  /** RBAC v2 — when denied, fields are disabled and Save is hidden. */
+  canCreate?: boolean;
+  canUpdate?: boolean;
 }) {
+  const drawerLocked = editTeam ? !canUpdate : !canCreate;
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -334,15 +341,23 @@ function TeamPanel({
       footer={
         <RightPanelFooter>
           <RightPanelCancelButton onClick={onClose} />
-          <RightPanelSubmitButton
-            onClick={handleSubmit}
-            saving={saving}
-            icon={editTeam ? "check" : "plus"}
-            label={editTeam ? "Update Team" : "Create Team"}
-          />
+          {!drawerLocked && (
+            <RightPanelSubmitButton
+              onClick={handleSubmit}
+              saving={saving}
+              icon={editTeam ? "check" : "plus"}
+              label={editTeam ? "Update Team" : "Create Team"}
+            />
+          )}
         </RightPanelFooter>
       }
     >
+      {drawerLocked && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-3">
+          Read-only — your role doesn&apos;t grant {editTeam ? "update" : "create"} access on Teams.
+        </div>
+      )}
+      <fieldset disabled={drawerLocked} className={`space-y-4 ${drawerLocked ? "opacity-70" : ""}`}>
       {/* Team Name */}
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">
@@ -657,6 +672,7 @@ function TeamPanel({
           {error}
         </p>
       )}
+      </fieldset>
     </RightPanel>
   );
 }
@@ -901,6 +917,7 @@ function MemberPickerPanel({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgTeamsPage() {
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("Team");
   const crud = useTableCRUD<OrgTeam>({
     apiEndpoint: "/api/org/teams",
     searchFields: ["name"],
@@ -1004,7 +1021,7 @@ export default function OrgTeamsPage() {
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
-          <AddButton onClick={() => crud.openCreate()}>New Team</AddButton>
+          {canCreate && <AddButton onClick={() => crud.openCreate()}>New Team</AddButton>}
         </div>
       </div>
 
@@ -1198,6 +1215,8 @@ export default function OrgTeamsPage() {
         onSaved={handleSaved}
         editTeam={crud.editItem}
         users={users}
+        canCreate={canCreate}
+        canUpdate={canUpdate}
       />
 
       {/* ── Member Picker ── */}

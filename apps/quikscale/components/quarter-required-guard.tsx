@@ -6,7 +6,7 @@ import { CalendarDays } from "lucide-react";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 
 // Pages that work without quarters — org setup is where you configure them
-const EXCLUDED_PREFIXES = ["/org-setup", "/settings", "/select-org"];
+const EXCLUDED_PREFIXES = ["/org-setup", "/settings"];
 
 export function QuarterRequiredGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

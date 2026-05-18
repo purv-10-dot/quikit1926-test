@@ -4,6 +4,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { consumeResetToken } from "@/lib/otp-store";
+import { withCors, preflight } from "@/lib/cors";
 
 /**
  * POST /api/auth/reset-password
@@ -26,7 +27,7 @@ const Body = z.object({
   password: z.string().min(8).max(200),
 });
 
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   try {
     let body: unknown;
     try {
@@ -76,4 +77,9 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+export const POST = withCors(postHandler);
+export function OPTIONS(req: NextRequest) {
+  return preflight(req);
 }

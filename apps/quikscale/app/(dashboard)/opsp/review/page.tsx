@@ -8,13 +8,10 @@ import {
   fiscalYearLabel,
   QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
-// Map achieved% to traffic-light bg color (same thresholds as KPI)
-function achievedPctColor(pct: number): string {
-  if (pct >= 120) return "bg-blue-600";
-  if (pct >= 100) return "bg-green-600";
-  if (pct >= 80)  return "bg-yellow-500";
-  return "bg-red-600";
-}
+import { achievedPctColor } from "./helpers";
+import { CriticalReviewSection } from "./CriticalReviewSection";
+
+type TopTab = "review" | "critical";
 import {
   TableSkeleton,
   EmptyState,
@@ -24,6 +21,7 @@ import {
   type DataTableColumn,
 } from "@quikit/ui";
 import { Clock, FileText, X, RotateCcw, AlertTriangle } from "lucide-react";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 
 /* ═══════════════════════════════════════════════
    Checkbox hook (shared for primary + secondary)
@@ -75,11 +73,15 @@ interface PeriodData {
   achievedPct: number | null;
   comment: string | null;
   autoPopulated?: boolean;
+  /** Achieved value from the same period one year ago (0 if no prior data). */
+  lastYearAchieved: number | null;
 }
 
 interface ReviewRow {
   rowIndex: number;
   category: string;
+  /** Raw DB value: "Cumulative" | "CumulativeTillEnd" | "Standalone". */
+  categoryType: string;
   projected: string;
   periods: Record<string, PeriodData>;
 }
@@ -107,6 +109,8 @@ interface ReviewData {
 interface TableRow {
   rowIndex: number;
   category: string;
+  /** Raw DB value: "Cumulative" | "CumulativeTillEnd" | "Standalone". */
+  categoryType: string;
   periodKey: string;
   periodLabel: string;
   target: number | null;
@@ -114,10 +118,15 @@ interface TableRow {
   gap: number | null;
   achievedPct: number | null;
   comment: string | null;
+  /** True for the footer row of each category group (Cumulative / Exit / Average). */
   isCumulative: boolean;
   isFirstInGroup: boolean;
   groupSize: number;
   autoPopulated?: boolean;
+  /** Achieved value from the same period one year ago (0 when no prior data). */
+  lastYearAchieved: number | null;
+  /** current.achieved − lastYearAchieved; null when current.achieved is null. */
+  yearGrowth: number | null;
 }
 
 interface SecondaryTableRow {
@@ -205,26 +214,183 @@ function computeMetrics(target: number | null, achieved: number | null) {
   return { gap, achievedPct };
 }
 
-function buildTableRows(rows: ReviewRow[], periodLabels: { key: string; label: string }[]): TableRow[] {
+/** Friendly footer-row label per categoryType. */
+function footerLabelFor(categoryType: string): string {
+  if (categoryType === "CumulativeTillEnd") return "Exit";
+  if (categoryType === "Standalone") return "Average";
+  return "Cumulative";
+}
+
+/** Σ of all targets / achieveds. Used by plain Cumulative. */
+function calculateCumulativeTotal(
+  periods: { target: number | null; achieved: number | null }[],
+): { target: number; achieved: number; hasAchieved: boolean } {
+  const filled = periods.filter((p) => p.achieved != null);
+  const sumT = periods.reduce((s, p) => s + (p.target ?? 0), 0);
+  const sumA = filled.reduce((s, p) => s + (p.achieved ?? 0), 0);
+  return { target: sumT, achieved: sumA, hasAchieved: filled.length > 0 };
+}
+
+/**
+ * For `CumulativeTillEnd`, each per-period value is ALREADY a running
+ * cumulative total — e.g. m1=3 / m2=6 / m3=9 means "by end of M3 we expect 9",
+ * not "we expect 3+6+9 = 18". Summing would double-count, so the Exit value
+ * is the last period's target and the latest filled achieved (falling back
+ * to earlier periods if the final one hasn't been reported yet).
+ */
+function calculateCumulativeTillEndExit(
+  periods: { target: number | null; achieved: number | null }[],
+): { target: number; achieved: number; hasAchieved: boolean } {
+  if (periods.length === 0) return { target: 0, achieved: 0, hasAchieved: false };
+  const target = periods[periods.length - 1]?.target ?? 0;
+  let achieved = 0;
+  let hasAchieved = false;
+  for (let i = periods.length - 1; i >= 0; i--) {
+    if (periods[i].achieved != null) {
+      achieved = periods[i].achieved!;
+      hasAchieved = true;
+      break;
+    }
+  }
+  return { target, achieved, hasAchieved };
+}
+
+/** (Σ target) / N and (Σ achieved) / N — fixed denominator = period count. */
+function calculateStandaloneAverage(
+  periods: { target: number | null; achieved: number | null }[],
+): { target: number; achieved: number; hasAchieved: boolean } {
+  const filled = periods.filter((p) => p.achieved != null);
+  const n = periods.length || 1;
+  const sumT = periods.reduce((s, p) => s + (p.target ?? 0), 0);
+  const sumA = filled.reduce((s, p) => s + (p.achieved ?? 0), 0);
+  return { target: sumT / n, achieved: sumA / n, hasAchieved: filled.length > 0 };
+}
+
+/**
+ * Aggregate a list of (target, achieved) pairs into a single value per the
+ * row's categoryType. Mirrors the API helper of the same name so the client
+ * computes the same footer locally.
+ *
+ *   Cumulative         → SUM
+ *   CumulativeTillEnd  → LAST-FILLED (per-period values already running totals)
+ *   Standalone         → AVERAGE (fixed denominator = period count)
+ *
+ * The chain Quarter → Yearly → 3-5yr applies the matching aggregation at
+ * each step, so a Standalone category averages across months → quarters →
+ * years, and a CumulativeTillEnd category takes the last-filled value at
+ * each step (so the Q1 Exit is m3, the Yearly cell is the last filled
+ * quarter, and the 3-5yr cell is the last filled year).
+ */
+function aggregateByType(
+  categoryType: string,
+  periods: { target: number | null; achieved: number | null }[],
+): { target: number; achieved: number; hasAchieved: boolean } {
+  if (categoryType === "Standalone") return calculateStandaloneAverage(periods);
+  if (categoryType === "CumulativeTillEnd") return calculateCumulativeTillEndExit(periods);
+  return calculateCumulativeTotal(periods);
+}
+
+/**
+ * Build table rows from the per-category period data.
+ *
+ *   - Quarter horizon → one row per (category, period) + one footer row
+ *     (Cumulative / Exit / Average) per category. 3 month rows + footer = 4
+ *     rows per category. The footer is where the user sees the per-type
+ *     aggregation (sum / last / average).
+ *   - Yearly + 3-5yr horizons → just ONE row per category. The Q1..Q4 (or
+ *     y1..yN) breakdown is hidden because Achieved on those views is purely
+ *     derived from the lower horizon (Quarter → Yearly → 3-5yr cascade), so
+ *     the period sub-rows added no editable info. Target / Achieved / Gap /
+ *     Achieved % / Last Year / Year Growth use the same type-aware
+ *     aggregation the footer would have used.
+ */
+function buildTableRows(
+  rows: ReviewRow[],
+  periodLabels: { key: string; label: string }[],
+  horizon: Horizon,
+): TableRow[] {
   const result: TableRow[] = [];
+  const collapse = horizon === "yearly" || horizon === "3to5year";
+
   for (const row of rows) {
     if (!row.category.trim()) continue;
-    const groupSize = periodLabels.length + 1;
-    let cumT = 0, cumA = 0, hasA = false;
-    periodLabels.forEach((pl, idx) => {
-      const pd = row.periods[pl.key] ?? { target: null, achieved: null, gap: null, achievedPct: null, comment: null };
-      // For auto-populated periods, use the API-provided gap/achievedPct (from source cumulative)
-      const metrics = pd.autoPopulated && pd.gap != null && pd.achievedPct != null
-        ? { gap: pd.gap, achievedPct: pd.achievedPct }
-        : computeMetrics(pd.target, pd.achieved);
-      if (pd.target != null) cumT += pd.target;
-      if (pd.achieved != null) { cumA += pd.achieved; hasA = true; }
-      result.push({ rowIndex: row.rowIndex, category: row.category, periodKey: pl.key, periodLabel: pl.label, target: pd.target, achieved: pd.achieved, gap: metrics.gap, achievedPct: metrics.achievedPct, comment: pd.comment, isCumulative: false, isFirstInGroup: idx === 0, groupSize, autoPopulated: pd.autoPopulated });
+
+    // Build the (target, achieved) pairs in period order — both horizons use
+    // them to compute the aggregate, the Quarter horizon also emits one
+    // result row per pair.
+    const periodPairs: { target: number | null; achieved: number | null }[] = [];
+    if (!collapse) {
+      const groupSize = periodLabels.length + 1;
+      periodLabels.forEach((pl, idx) => {
+        const pd = row.periods[pl.key] ?? { target: null, achieved: null, gap: null, achievedPct: null, comment: null, lastYearAchieved: 0 };
+        const metrics = pd.autoPopulated && pd.gap != null && pd.achievedPct != null
+          ? { gap: pd.gap, achievedPct: pd.achievedPct }
+          : computeMetrics(pd.target, pd.achieved);
+        periodPairs.push({ target: pd.target, achieved: pd.achieved });
+        const lastYr = pd.lastYearAchieved ?? 0;
+        const growth = pd.achieved == null ? null : pd.achieved - lastYr;
+        result.push({
+          rowIndex: row.rowIndex,
+          category: row.category,
+          categoryType: row.categoryType,
+          periodKey: pl.key,
+          periodLabel: pl.label,
+          target: pd.target,
+          achieved: pd.achieved,
+          gap: metrics.gap,
+          achievedPct: metrics.achievedPct,
+          comment: pd.comment,
+          isCumulative: false,
+          isFirstInGroup: idx === 0,
+          groupSize,
+          autoPopulated: pd.autoPopulated,
+          lastYearAchieved: lastYr,
+          yearGrowth: growth,
+        });
+      });
+    } else {
+      // Collapsed: still need the period pairs to compute the aggregate, just
+      // don't emit them as visible rows.
+      periodLabels.forEach((pl) => {
+        const pd = row.periods[pl.key];
+        periodPairs.push({ target: pd?.target ?? null, achieved: pd?.achieved ?? null });
+      });
+    }
+
+    // Aggregate per categoryType — drives the (collapsed) single row in
+    // Yearly/3-5yr, and the footer row in Quarter.
+    const agg = aggregateByType(row.categoryType, periodPairs);
+    const footerMetrics = computeMetrics(agg.target || null, agg.hasAchieved ? agg.achieved : null);
+    const lastYearAggSrc = periodLabels.map((pl) => ({
+      target: row.periods[pl.key]?.target ?? null,
+      achieved: row.periods[pl.key]?.lastYearAchieved ?? null,
+    }));
+    const lastYearAgg = aggregateByType(row.categoryType, lastYearAggSrc);
+    const aggLastYear = lastYearAgg.hasAchieved ? lastYearAgg.achieved : 0;
+    const aggGrowth = agg.hasAchieved ? agg.achieved - aggLastYear : null;
+    const aggAutoPopulated = periodLabels.some((pl) => row.periods[pl.key]?.autoPopulated);
+
+    result.push({
+      rowIndex: row.rowIndex,
+      category: row.category,
+      categoryType: row.categoryType,
+      periodKey: "cumulative",
+      periodLabel: footerLabelFor(row.categoryType),
+      target: agg.target || null,
+      achieved: agg.hasAchieved ? agg.achieved : null,
+      gap: footerMetrics.gap,
+      achievedPct: footerMetrics.achievedPct,
+      // On Yearly/3-5yr the collapsed row IS the first (and only) row, so it
+      // must own the Category Name + Category Type cells. On Quarter the
+      // footer sits below the period rows so those cells stay blank.
+      isCumulative: true,
+      comment: null,
+      isFirstInGroup: collapse,
+      groupSize: collapse ? 1 : periodLabels.length + 1,
+      autoPopulated: aggAutoPopulated,
+      lastYearAchieved: aggLastYear,
+      yearGrowth: aggGrowth,
     });
-    const cum = computeMetrics(cumT, hasA ? cumA : null);
-    // Cumulative row is auto-populated if ANY child period was auto-populated
-    const cumAutoPopulated = periodLabels.some((pl) => row.periods[pl.key]?.autoPopulated);
-    result.push({ rowIndex: row.rowIndex, category: row.category, periodKey: "cumulative", periodLabel: "Cumulative", target: cumT || null, achieved: hasA ? cumA : null, gap: cum.gap, achievedPct: cum.achievedPct, isCumulative: true, comment: null, isFirstInGroup: false, groupSize, autoPopulated: cumAutoPopulated });
   }
   return result;
 }
@@ -279,10 +445,13 @@ function LogsPopover({ opspId, horizon, rowIndex, onClose }: { opspId: string; h
    ═══════════════════════════════════════════════ */
 
 export default function OPSPReviewPage() {
+  const { canUpdate: canUpdateReview } = useResourcePermissions("OPSP.Review");
   const [year, setYear] = useState(getFiscalYear);
   const [quarter, setQuarter] = useState<string>(getFiscalQuarter);
   const [horizon, setHorizon] = useState<Horizon>("quarter");
   const [viewMode, setViewMode] = useState<ViewMode>("primary");
+  // Top-level Review / Critical Review tab.
+  const [topTab, setTopTab] = useState<TopTab>("review");
   const [data, setData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -338,15 +507,17 @@ export default function OPSPReviewPage() {
     finally { setLoading(false); }
   }, [year, quarter, horizon]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // Only fetch primary/secondary review data while on the Review tab.
+  // The Critical Review tab owns its own fetch in <CriticalReviewSection>.
+  useEffect(() => { if (topTab === "review") loadData(); }, [loadData, topTab]);
   useEffect(() => { setSecondaryEdits({}); }, [data, horizon]);
 
   // Re-fetch when tab regains focus (e.g. user finalized OPSP on another page)
   useEffect(() => {
-    function onFocus() { loadData(); }
+    function onFocus() { if (topTab === "review") loadData(); }
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [loadData]);
+  }, [loadData, topTab]);
 
   /* ── Derived data ── */
   const periodLabels = useMemo(() => {
@@ -356,8 +527,8 @@ export default function OPSPReviewPage() {
 
   const tableRows = useMemo(() => {
     if (!data?.rows) return [];
-    return buildTableRows(data.rows, periodLabels);
-  }, [data, periodLabels]);
+    return buildTableRows(data.rows, periodLabels, horizon);
+  }, [data, periodLabels, horizon]);
 
   const filteredRows = useMemo(() => {
     if (!search) return tableRows;
@@ -388,6 +559,12 @@ export default function OPSPReviewPage() {
   const labels = HORIZON_LABELS[horizon];
   const isFinalized = data?.opspStatus === "finalized";
   const isReviewed = data?.opspStatus === "reviewed";
+  // "Committed" = OPSP is locked and reviewable. A "reviewed" OPSP is a
+  // STRONGER lock than "finalized" (it implies the review was submitted),
+  // so the table must still render when status is "reviewed" — otherwise
+  // clicking Submit would flip the OPSP into a state where the page wrongly
+  // shows the "OPSP Not Finalized" warning.
+  const isCommitted = isFinalized || isReviewed;
   const hasOPSP = !!data?.opspId;
 
   /* ── Submit gate (Quarter horizon only) ──
@@ -413,7 +590,7 @@ export default function OPSPReviewPage() {
     return secondaryTableRows.every((r) => r.status && r.status.trim() !== "");
   }, [secondaryTableRows, horizon]);
 
-  const canSubmit = horizon === "quarter" && isFinalized && !isReviewed && allActionsAchieved && allRocksStatusFilled;
+  const canSubmit = canUpdateReview && horizon === "quarter" && isFinalized && !isReviewed && allActionsAchieved && allRocksStatusFilled;
   const [submittingReview, setSubmittingReview] = useState(false);
 
   const handleSubmitReview = useCallback(async () => {
@@ -552,7 +729,8 @@ export default function OPSPReviewPage() {
     [filteredRows],
   );
 
-  const primaryColumns: DataTableColumn<TableRow>[] = useMemo(() => [
+  const primaryColumns: DataTableColumn<TableRow>[] = useMemo(() => {
+    const cols: DataTableColumn<TableRow>[] = [
     {
       key: "_cb",
       label: (
@@ -606,15 +784,23 @@ export default function OPSPReviewPage() {
       label: "#",
       width: 44,
       align: "center",
-      render: (row) =>
-        row.isFirstInGroup ? (
+      render: (row) => {
+        if (!row.isFirstInGroup) return null;
+        // On Yearly / 3-5yr the row is read-only (Achieved is derived from
+        // the lower horizon) — render as plain text instead of an edit
+        // button so the modal can't be opened.
+        if (horizon !== "quarter") {
+          return <span className="text-gray-700 font-medium">{row.rowIndex + 1}</span>;
+        }
+        return (
           <button
             onClick={() => openPrimaryModal(row.rowIndex)}
             className="text-gray-900 hover:underline font-medium"
           >
             {row.rowIndex + 1}
           </button>
-        ) : null,
+        );
+      },
     },
     {
       key: "category",
@@ -623,6 +809,16 @@ export default function OPSPReviewPage() {
       render: (row) =>
         row.isFirstInGroup ? (
           <span className="font-medium text-gray-800 truncate block">{row.category}</span>
+        ) : null,
+    },
+    {
+      key: "categoryType",
+      label: "Category Type",
+      width: 130,
+      thClassName: "whitespace-nowrap",
+      render: (row) =>
+        row.isFirstInGroup ? (
+          <span className="text-gray-600 truncate block">{row.categoryType}</span>
         ) : null,
     },
     {
@@ -684,14 +880,47 @@ export default function OPSPReviewPage() {
         <span className="text-gray-500 truncate block">{row.comment || "—"}</span>
       ),
     },
-  ], [primarySel, primaryCategoryIdxs, logsRowIndex, data?.opspId, horizon, openPrimaryModal]);
+    {
+      key: "lastYearAchieved",
+      label: "Last Year Same Period",
+      width: 140,
+      align: "right",
+      thClassName: "whitespace-nowrap",
+      render: (row) => (
+        <span className="text-gray-700">
+          {row.lastYearAchieved != null ? row.lastYearAchieved.toLocaleString() : "0"}
+        </span>
+      ),
+    },
+    {
+      key: "yearGrowth",
+      label: "Year Growth",
+      width: 110,
+      align: "right",
+      thClassName: "whitespace-nowrap",
+      render: (row) => {
+        if (row.yearGrowth == null) return <span className="text-gray-400">—</span>;
+        const g = row.yearGrowth;
+        const sign = g > 0 ? "+" : g < 0 ? "−" : "";
+        const cls = g > 0 ? "text-green-600" : g < 0 ? "text-red-600" : "text-gray-500";
+        const display = sign + Math.abs(g).toLocaleString();
+        return <span className={cn("font-medium", cls)}>{display}</span>;
+      },
+    },
+    ];
+    // Hide the Period column on Yearly / 3-5yr — each category has only one
+    // row in those views, so the column adds no info (and the categoryType
+    // label "Cumulative / Exit / Average" already lives in the Cat Type column).
+    return horizon === "quarter" ? cols : cols.filter((c) => c.key !== "period");
+  }, [primarySel, primaryCategoryIdxs, logsRowIndex, data?.opspId, horizon, openPrimaryModal]);
 
   const secondaryIdxs = useMemo(
     () => filteredSecondary.map((r) => r.index),
     [filteredSecondary],
   );
 
-  const secondaryColumns: DataTableColumn<SecondaryTableRow>[] = useMemo(() => [
+  const secondaryColumns: DataTableColumn<SecondaryTableRow>[] = useMemo(() => {
+    const cols: DataTableColumn<SecondaryTableRow>[] = [
     {
       key: "_cb",
       label: (
@@ -787,7 +1016,11 @@ export default function OPSPReviewPage() {
         <span className="text-gray-500 truncate block">{row.comment || "—"}</span>
       ),
     },
-  ], [secondarySel, secondaryIdxs, logsRowIndex, data?.opspId, horizon, openSecondaryModal]);
+    ];
+    // 3-5yr (Key Thrusts) — owner column intentionally hidden per spec; the
+    // capability rows on this horizon don't carry per-row ownership.
+    return horizon === "3to5year" ? cols.filter((c) => c.key !== "who") : cols;
+  }, [secondarySel, secondaryIdxs, logsRowIndex, data?.opspId, horizon, openSecondaryModal]);
 
   /* ═══════════════════════════════════════════════
      Render
@@ -799,7 +1032,7 @@ export default function OPSPReviewPage() {
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-gray-800 whitespace-nowrap">OPSP Review</h1>
-          {!loading && hasOPSP && isFinalized && (
+          {!loading && hasOPSP && isCommitted && topTab === "review" && (
             <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
               {itemCount} {itemCount === 1 ? "item" : "items"}
             </span>
@@ -807,7 +1040,8 @@ export default function OPSPReviewPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Primary/Secondary toggle */}
+          {/* Primary/Secondary toggle + Submit + Search are Review-tab-only. */}
+          {topTab === "review" && (<>
           <button
             onClick={() => setViewMode("primary")}
             className={cn(
@@ -827,28 +1061,31 @@ export default function OPSPReviewPage() {
             {labels.secondary}
           </button>
 
-          {/* Submit — gated on all Achieved + all Rock statuses filled (quarter horizon) */}
-          <Button
-            size="sm"
-            disabled={!canSubmit || submittingReview}
-            onClick={handleSubmitReview}
-            className={!canSubmit && !isReviewed ? "opacity-50 cursor-not-allowed" : ""}
-            title={
-              isReviewed
-                ? "Review already submitted"
-                : horizon !== "quarter"
-                  ? "Submit available on Quarter view"
-                  : !isFinalized
-                    ? "Finalize the OPSP first"
-                    : !allActionsAchieved
-                      ? "Fill every Achieved value in Actions"
-                      : !allRocksStatusFilled
-                        ? "Set status on every Rock"
-                        : "Submit review"
-            }
-          >
-            {isReviewed ? "Submitted" : submittingReview ? "Submitting…" : "Submit"}
-          </Button>
+          {/* Submit — gated on RBAC `update`, all Achieved + all Rock statuses filled (quarter horizon).
+              Hidden entirely when the role doesn't grant update. */}
+          {canUpdateReview && (
+            <Button
+              size="sm"
+              disabled={!canSubmit || submittingReview}
+              onClick={handleSubmitReview}
+              className={!canSubmit && !isReviewed ? "opacity-50 cursor-not-allowed" : ""}
+              title={
+                isReviewed
+                  ? "Review already submitted"
+                  : horizon !== "quarter"
+                    ? "Submit available on Quarter view"
+                    : !isFinalized
+                      ? "Finalize the OPSP first"
+                      : !allActionsAchieved
+                        ? "Fill every Achieved value in Actions"
+                        : !allRocksStatusFilled
+                          ? "Set status on every Rock"
+                          : "Submit review"
+              }
+            >
+              {isReviewed ? "Submitted" : submittingReview ? "Submitting…" : "Submit"}
+            </Button>
+          )}
 
           {/* Search */}
           <div className="relative">
@@ -863,8 +1100,9 @@ export default function OPSPReviewPage() {
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
+          </>)}
 
-          {/* Year / Quarter picker (same as Priority/KPI) */}
+          {/* Year / Quarter picker (shared across Review + Critical Review tabs) */}
           <div className="relative" ref={yearRef}>
             <button
               onClick={() => setShowYearPicker((o) => !o)}
@@ -912,18 +1150,21 @@ export default function OPSPReviewPage() {
         </div>
       </div>
 
-      {/* ── Horizon Pills ── */}
-      <div className="px-6 pt-3 pb-2 bg-white border-b border-gray-100">
+      {/* ── Top-level tab strip: Review / Critical Review ── */}
+      <div className="px-6 pt-3 pb-2 bg-white border-b border-gray-100 flex-shrink-0">
         <div className="flex gap-2">
-          {HORIZON_TABS.map((tab) => (
+          {([
+            { key: "review",   label: "Review" },
+            { key: "critical", label: "Critical Review" },
+          ] as { key: TopTab; label: string }[]).map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setHorizon(tab.key)}
+              onClick={() => setTopTab(tab.key)}
               className={cn(
-                "px-4 py-1.5 text-xs font-medium rounded-full border transition-colors",
-                horizon === tab.key
-                  ? "bg-accent-600 text-white border-accent-600"
-                  : "border-gray-200 text-gray-600 hover:bg-gray-50",
+                "px-4 py-1.5 text-xs font-semibold rounded-md transition-colors",
+                topTab === tab.key
+                  ? "bg-accent-600 text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200",
               )}
             >
               {tab.label}
@@ -932,8 +1173,39 @@ export default function OPSPReviewPage() {
         </div>
       </div>
 
-      {/* ── Content Area — `min-h-0` so flex-1 shrinks to viewport and inner
-          scroller gets bounded height (required for vertical scroll). ── */}
+      {/* ── Horizon Pills — Review tab only ── */}
+      {topTab === "review" && (
+        <div className="px-6 pt-3 pb-2 bg-white border-b border-gray-100">
+          <div className="flex gap-2">
+            {HORIZON_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setHorizon(tab.key)}
+                className={cn(
+                  "px-4 py-1.5 text-xs font-medium rounded-full border transition-colors",
+                  horizon === tab.key
+                    ? "bg-accent-600 text-white border-accent-600"
+                    : "border-gray-200 text-gray-600 hover:bg-gray-50",
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Critical Review branch — completely independent of the
+            Review tab's content area. Owns its own data fetch + sub-tabs. ── */}
+      {topTab === "critical" && (
+        <div className="flex-1 overflow-hidden min-h-0">
+          <CriticalReviewSection year={year} quarter={quarter} />
+        </div>
+      )}
+
+      {/* ── Content Area (Review tab only) — `min-h-0` so flex-1 shrinks to viewport
+          and inner scroller gets bounded height (required for vertical scroll). ── */}
+      {topTab === "review" && (
       <div className="flex-1 overflow-hidden min-h-0">
         {loading ? (
           <TableSkeleton rows={10} cols={7} />
@@ -952,7 +1224,7 @@ export default function OPSPReviewPage() {
             icon={FileText}
             message={`No OPSP found for ${fiscalYearLabel(year)} · ${quarter}. Create one in Insert OPSP Data first.`}
           />
-        ) : !isFinalized ? (
+        ) : !isCommitted ? (
           /* ── OPSP exists but not finalized — prompt user ── */
           <div className="flex flex-col items-center justify-center h-full gap-4">
             <div className="flex items-center justify-center h-14 w-14 rounded-full bg-amber-50">
@@ -1015,6 +1287,7 @@ export default function OPSPReviewPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── Primary Panel (right slide-in, same as KPI LogModal) ── */}
       {primaryOpen && (

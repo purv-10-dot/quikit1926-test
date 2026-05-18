@@ -23,13 +23,28 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
   if (!clientId || !Number.isFinite(year) || !Number.isFinite(month))
     return NextResponse.json({ success: false, error: "clientId, year, month required" }, { status: 400 });
 
+  // ── Roster ──
+  // The per-member KPI scores entered on the Weekly Meeting *Update* tab live
+  // in `ClientWeeklyMemberScore`, which is keyed on `clientMemberId` (the
+  // standalone `ClientMember` entity — external members the client invites),
+  // NOT on `User.id`. So we build the roster from `Client.teamMembers` →
+  // `ClientTeamMember` → `ClientMember`, not from `Client.memberships`
+  // (tenant users). Same goes for the AB / NA flags: the Update tab writes to
+  // `ClientWeeklyMeetingTeamAbsence` / `…TeamDashboardNA`, not the User-keyed
+  // legacy tables.
   const client = await db.client.findFirst({
     where: { id: clientId, orgId, deletedAt: null },
     include: {
-      memberships: { where: { deletedAt: null }, include: { user: { select: { id: true, firstName: true, lastName: true } } } },
+      teamMembers: {
+        include: { member: { select: { id: true, name: true, deletedAt: true } } },
+      },
     },
   });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+
+  const roster = client.teamMembers
+    .map((tm) => tm.member)
+    .filter((m) => !m.deletedAt);
 
   const monthIdx = month - 1;
   const from  = new Date(Date.UTC(year, monthIdx, 1));
@@ -37,7 +52,12 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
 
   const meetings = await db.clientWeeklyMeeting.findMany({
     where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-    include: { absentMembers: true, dashboardNAMembers: true },
+    include: {
+      // ClientMember-keyed companions (the ones the Update tab writes to).
+      absentTeamMembers:      true,
+      dashboardNATeamMembers: true,
+      memberScores:           true,
+    },
     orderBy: { meetingDate: "asc" },
   });
   // No-data guard — same message as the daily / weekly exports so the
@@ -48,15 +68,26 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
       { status: 404 },
     );
 
-  const reports = client.memberships.map(m =>
+  // `computeMemberPunchIn` keys on a string `member.id` — it doesn't care
+  // whether that id is a `User.id` or a `ClientMember.id`. We pass the
+  // ClientMember.id consistently across the roster, absences, and scores.
+  const reports = roster.map((m) =>
     computeMemberPunchIn(
-      meetings.map(mtg => ({
-        id: mtg.id, meetingDate: mtg.meetingDate,
-        absentUserIds: mtg.absentMembers.map(a => a.userId),
-        dashboardNAUserIds: mtg.dashboardNAMembers.map(a => a.userId),
-        memberScores: [] as const,
+      meetings.map((mtg) => ({
+        id: mtg.id,
+        meetingDate: mtg.meetingDate,
+        absentUserIds:      mtg.absentTeamMembers.map((a) => a.clientMemberId),
+        dashboardNAUserIds: mtg.dashboardNATeamMembers.map((a) => a.clientMemberId),
+        memberScores: mtg.memberScores.map((s) => ({
+          userId: s.clientMemberId,
+          kpiWeeklyQTD:         s.kpiWeeklyQTD,
+          kpiCoding:            s.kpiCoding,
+          priorityNotes:        s.priorityNotes,
+          priorityStartEndDate: s.priorityStartEndDate,
+          priorityColor:        s.priorityColor,
+        })),
       })),
-      { id: m.userId, name: `${m.user.firstName} ${m.user.lastName}`.trim() },
+      { id: m.id, name: m.name },
     ),
   );
 
@@ -67,15 +98,28 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
   ws.addRow(header).eachCell(applyHeader);
 
   let rowIdx = 2;
-  reports.forEach(rep => {
+  reports.forEach((rep, repIdx) => {
     if (!rep.weeks.length) return;
+
+    // Visual separator before every member block except the first one.
+    if (repIdx > 0) {
+      ws.addRow([]);
+      rowIdx++;
+    }
+
     const startRow = rowIdx;
-    rep.weeks.forEach((w) => {
+
+    // ── Meeting rows ──
+    // Col 1 (Member Name) and col 8 (Total Weekly Avg) get the value only on
+    // the FIRST row of the block; the merge later collapses them across the
+    // whole block (meetings + Total Average row) so they read as one cell.
+    rep.weeks.forEach((w, weekIdx) => {
       const values = [w.kpiWeeklyQTD, w.kpiCoding, w.priorityNotes, w.priorityStartEndDate, w.priorityColor];
       const row = ws.addRow([
-        rep.memberName, w.meetingDate,
-        ...values.map(v => (typeof v === "number" ? `${v}%` : v)),
-        `${rep.WeeklyTotalAverage}%`,
+        weekIdx === 0 ? rep.memberName : "",
+        w.meetingDate,
+        ...values.map((v) => (typeof v === "number" ? `${v}%` : v)),
+        weekIdx === 0 ? `${rep.WeeklyTotalAverage}%` : "",
       ]);
       values.forEach((v, i) => {
         const cell = row.getCell(3 + i);
@@ -86,22 +130,45 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
           cell.alignment = { horizontal: "center" };
         }
       });
-      applyPctFill(row.getCell(8), rep.WeeklyTotalAverage, true);
+      if (weekIdx === 0) {
+        applyPctFill(row.getCell(8), rep.WeeklyTotalAverage, true);
+      }
       rowIdx++;
     });
-    const endRow = rowIdx - 1;
-    if (endRow > startRow) {
-      ws.mergeCells(startRow, 1, endRow, 1);
-      ws.mergeCells(startRow, 8, endRow, 8);
-    }
-    // Total row per member
-    const totRow = ws.addRow(["", "Total Average",
-      `${rep.totals.kpiWeeklyQTD}%`, `${rep.totals.kpiCoding}%`,
-      `${rep.totals.priorityNotes}%`, `${rep.totals.priorityStartEndDate}%`,
-      `${rep.totals.priorityColor}%`, "",
+
+    // ── Total Average row (inside the member block) ──
+    // Cols 1 + 8 left blank — they'll be merged with the meeting rows above.
+    const totRow = ws.addRow([
+      "",
+      "Total Average",
+      `${rep.totals.kpiWeeklyQTD}%`,
+      `${rep.totals.kpiCoding}%`,
+      `${rep.totals.priorityNotes}%`,
+      `${rep.totals.priorityStartEndDate}%`,
+      `${rep.totals.priorityColor}%`,
+      "",
     ]);
-    totRow.eachCell(c => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: EXCEL_COLORS.TOTAL } }; c.font = { bold: true }; c.alignment = { horizontal: "center" }; });
+    // Style cols 2-7 only — cols 1+8 are part of the merge above and will
+    // inherit the top-left cell's style.
+    for (let c = 2; c <= 7; c++) {
+      const cell = totRow.getCell(c);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: EXCEL_COLORS.TOTAL } };
+      cell.font = { bold: true };
+      cell.alignment = { horizontal: "center" };
+    }
     rowIdx++;
+
+    // ── Merge col 1 (Member Name) and col 8 (Total Weekly Avg) across the
+    // entire block (meetings + Total Average). Always fires — even a member
+    // with just one meeting still gets a 2-row merge so the layout stays
+    // consistent across the workbook.
+    const endRow = rowIdx - 1; // index of the Total Average row
+    ws.mergeCells(startRow, 1, endRow, 1);
+    ws.mergeCells(startRow, 8, endRow, 8);
+    // Re-center the merged Member Name cell so it reads cleanly across rows.
+    const mergedName = ws.getCell(startRow, 1);
+    mergedName.font = { bold: true };
+    mergedName.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
   });
 
   // Overall row

@@ -83,15 +83,19 @@ export function categoryTypeToBreakdown(categoryType: string | undefined): Break
 /**
  * Distribute a Projected value across `periodCount` period cells.
  *
- * Gated on `breakdownType === "Automatic"`. Manual rows return `null` so
- * the caller writes only the cell the user touched.
+ * Default behaviour gates on `breakdownType === "Automatic"`; Manual rows
+ * return `null` so the caller (the now-retired modals) writes only the cell
+ * the user touched. Pass `{ force: true }` from the main-page Projected
+ * inputs and the Targets→Goals→Actions cascade: there's no manual-entry UI
+ * for the period cells anymore, so leaving them empty would break
+ * finalization for any Manual+Cumulative / Manual+CumulativeTillEnd row.
  *
  * Operates on the displayed (typed-as) numeric value, not the resolved
  * underlying numeric. Currency rows keep their scale suffix.
  *
  * Returns:
- *   - `null`                — when projected is empty / unparseable / breakdownType
- *                             is Manual (caller should leave cells alone)
+ *   - `null`                — when projected is empty / unparseable, or when
+ *                             breakdownType is Manual and `force` is false
  *   - `string[]` of length `periodCount` — one value per cell, formatted to
  *                             match the category's display shape
  */
@@ -99,6 +103,7 @@ export function breakdownProjected(
   categoryName: string,
   projected: string,
   periodCount: number,
+  options?: { force?: boolean },
 ): string[] | null {
   const trimmed = (projected ?? "").trim();
   if (!trimmed) return null;
@@ -106,8 +111,8 @@ export function breakdownProjected(
   const meta = catMetaCache.get(categoryName);
   if (!meta) return null;
 
-  // Manual rows opt out of auto-fill regardless of categoryType.
-  if (meta.breakdownType !== "Automatic") return null;
+  // Manual rows opt out of auto-fill unless caller forces it.
+  if (!options?.force && meta.breakdownType !== "Automatic") return null;
 
   const bridgeType = categoryTypeToBreakdown(meta.categoryType);
 
@@ -1149,43 +1154,56 @@ export function ActionsModal({
                   style={{ display: "grid", gap: "12px", gridTemplateColumns: gridCols }}
                   className="items-start py-2 border-b border-gray-100"
                 >
-                  {v.isInherited ? (
-                    <InheritedCategory value={row.category} source="Goals" />
-                  ) : (
-                    <CategorySelect
-                      value={row.category}
-  
+                  {/* Category + Projected are always editable in the modal.
+                      The earlier "inherited from Goals → lock" UI was removed
+                      per spec — users can change category/projected on Action
+                      rows even when they were seeded from a Goal. */}
+                  <CategorySelect
+                    value={row.category}
+                    onChange={(val) => {
+                      const next = [...rows];
+                      next[i] = { ...next[i], category: val, projected: "", m1: "", m2: "", m3: "" };
+                      onChange(next);
+                    }}
+                  />
+                  <div className={!v.hasCategory ? "opacity-50 pointer-events-none" : ""}>
+                    <ProjectedInput
+                      categoryName={row.category}
+                      value={row.projected}
                       onChange={(val) => {
                         const next = [...rows];
-                        next[i] = { ...next[i], category: val, projected: "", m1: "", m2: "", m3: "" };
+                        // Auto-fill 3 month cells based on the category's
+                        // breakdownType when Projected is entered.
+                        const autofill = breakdownProjected(row.category, val, mCols.length);
+                        const mPatch: Partial<ActionRow> = {};
+                        if (autofill) {
+                          mCols.forEach((k, idx) => {
+                            (mPatch as Record<string, string>)[k as string] = autofill[idx] ?? "";
+                          });
+                        }
+                        next[i] = { ...next[i], projected: val, ...mPatch };
                         onChange(next);
                       }}
                     />
-                  )}
-                  {v.isInherited ? (
-                    <InheritedProjected value={row.projected} categoryName={row.category} source="Goals" />
-                  ) : (
-                    <div className={!v.hasCategory ? "opacity-50 pointer-events-none" : ""}>
-                      <ProjectedInput
-                        categoryName={row.category}
-                        value={row.projected}
-                        onChange={(val) => {
-                          const next = [...rows];
-                          // Auto-fill 3 month cells based on the category's
-                          // breakdownType when Projected is entered.
-                          const autofill = breakdownProjected(row.category, val, mCols.length);
-                          const mPatch: Partial<ActionRow> = {};
-                          if (autofill) {
-                            mCols.forEach((k, idx) => {
-                              (mPatch as Record<string, string>)[k as string] = autofill[idx] ?? "";
-                            });
-                          }
-                          next[i] = { ...next[i], projected: val, ...mPatch };
-                          onChange(next);
-                        }}
-                      />
-                    </div>
-                  )}
+                    {/* Parent Goal (1 YR.) hint — small grey label so the
+                        user knows the upstream Goal value while entering
+                        Action's Projected. Shows only when the Goal at the
+                        same row index has a matching category and a filled
+                        projected. */}
+                    {(() => {
+                      const g = i < goalRows.length ? goalRows[i] : null;
+                      if (!g || !g.category.trim() || !g.projected.trim()) return null;
+                      if (g.category !== row.category) return null;
+                      return (
+                        <p
+                          className="text-[10px] text-gray-400 mt-0.5 truncate"
+                          title={`Goal (1 YR): ${g.projected}`}
+                        >
+                          Goal: {g.projected}
+                        </p>
+                      );
+                    })()}
+                  </div>
                   {mCols.map((k) => {
                     const disabled = !v.hasCategory || !v.hasProjected;
                     const currency = v.meta?.currency ?? "USD";
@@ -1442,14 +1460,7 @@ export function KeyThrustsModal({
             <p className="text-base font-bold text-gray-900 uppercase tracking-wide">
               KEY THRUSTS / CAPABILITIES
             </p>
-            <p className="text-xs text-gray-500">
-              3–5 Year Priorities
-              {rows.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
-                <span className="text-red-600 font-medium ml-1">
-                  ({rows.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
-                </span>
-              )}
-            </p>
+            <p className="text-xs text-gray-500">3–5 Year Priorities</p>
           </div>
           <button
             onClick={onClose}
@@ -1462,7 +1473,6 @@ export function KeyThrustsModal({
           <div className="flex items-center gap-3 text-xs font-medium text-gray-500 pb-2 border-b border-gray-200 mb-2">
             <span className="w-8 flex-shrink-0 text-center">#</span>
             <span className="flex-1">Capability</span>
-            <span className="w-40 flex-shrink-0">Who</span>
           </div>
           {rows.map((row, i) => (
             <div
@@ -1493,16 +1503,6 @@ export function KeyThrustsModal({
                   />
                   <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.desc.length >= 70 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.desc.length}/70</span>
                 </div>
-              </div>
-              <div className="relative w-40 flex-shrink-0 pt-0.5">
-                <OwnerSelect
-                  value={row.owner}
-                  onChange={(v) => {
-                    const next = [...rows];
-                    next[i] = { ...next[i], owner: v };
-                    onChange(next);
-                  }}
-                />
               </div>
             </div>
           ))}

@@ -8,17 +8,162 @@ import { canEditWWW } from "@/lib/api/wwwPermissions";
 import { notifyWWWReassignment } from "@/lib/services/wwwNotifications";
 const auth = withOrgAuthForResource("www", "WWW");
 
+// ─── Response-shaping helper ──────────────────────────────────────────────
+// who_user / who_users are NOT Prisma relations on WWWItem — they're
+// synthesised by the handler from a separate User lookup. The helper here
+// only normalises dates and conditionally strips email; the caller is
+// responsible for assembling these fields before passing the item in.
+
+interface WWWUserFull {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+type WWWUserPublic = Omit<WWWUserFull, "email">;
+
+interface RawWWWForShape {
+  id: string;
+  orgId: string;
+  who: string;
+  whoIds: string[];
+  what: string;
+  when: Date;
+  originalDueDate: Date | null;
+  status: string;
+  notes: string | null;
+  category: string | null;
+  linkedPriorityId: string | null;
+  linkedKPIId: string | null;
+  revisedDates: string[];
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy: string;
+  updatedBy: string | null;
+  deletedAt: Date | null;
+  who_user: WWWUserFull | null;
+  who_users: WWWUserFull[];
+}
+
+interface ShapedWWWItem {
+  id: string;
+  orgId: string;
+  who: string;
+  whoIds: string[];
+  what: string;
+  when: string;
+  originalDueDate: string | null;
+  status: string;
+  notes: string | null;
+  category: string | null;
+  linkedPriorityId: string | null;
+  linkedKPIId: string | null;
+  revisedDates: string[];
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string | null;
+  deletedAt: string | null;
+  who_user: WWWUserFull | WWWUserPublic | null;
+  who_users: (WWWUserFull | WWWUserPublic)[];
+}
+
+type ShapeWWWOptions = { stripEmail: boolean };
+
+function publicUser(u: WWWUserFull): WWWUserPublic {
+  return { id: u.id, firstName: u.firstName, lastName: u.lastName };
+}
+
+function shapeWWWResponse(item: RawWWWForShape, opts: ShapeWWWOptions): ShapedWWWItem {
+  return {
+    id: item.id,
+    orgId: item.orgId,
+    who: item.who,
+    whoIds: item.whoIds,
+    what: item.what,
+    when: item.when.toISOString(),
+    originalDueDate: item.originalDueDate ? item.originalDueDate.toISOString() : null,
+    status: item.status,
+    notes: item.notes,
+    category: item.category,
+    linkedPriorityId: item.linkedPriorityId,
+    linkedKPIId: item.linkedKPIId,
+    revisedDates: item.revisedDates,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    createdBy: item.createdBy,
+    updatedBy: item.updatedBy,
+    deletedAt: item.deletedAt ? item.deletedAt.toISOString() : null,
+    who_user: opts.stripEmail
+      ? (item.who_user ? publicUser(item.who_user) : null)
+      : item.who_user,
+    who_users: opts.stripEmail ? item.who_users.map(publicUser) : item.who_users,
+  };
+}
+
+// ─── Route handlers ───────────────────────────────────────────────────────
+
+export const GET = auth.view<{ id: string }>(
+  async ({ orgId }, _request, { params }) => {
+    const item = (await db.wWWItem.findFirst({
+      where: { id: params.id, orgId },
+    })) as unknown as
+      | (Omit<RawWWWForShape, "whoIds" | "who_user" | "who_users"> & { whoIds?: string[] })
+      | null;
+
+    if (!item) {
+      return NextResponse.json(
+        { success: false, error: "WWW item not found" },
+        { status: 404 },
+      );
+    }
+    // Defense in depth — findFirst already filters by orgId above, but mirror
+    // the explicit cross-tenant 403 used by KPI/Priority summary endpoints.
+    if (item.orgId !== orgId) {
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
+    }
+
+    const finalIds =
+      item.whoIds && item.whoIds.length > 0
+        ? item.whoIds
+        : item.who
+          ? [item.who]
+          : [];
+
+    const assignees: WWWUserFull[] =
+      finalIds.length > 0
+        ? await db.user.findMany({
+            where: { id: { in: finalIds } },
+            select: { id: true, firstName: true, lastName: true, email: true },
+          })
+        : [];
+    const whoUser = assignees.find((u) => u.id === item.who) ?? null;
+    const whoUsers = finalIds
+      .map((id) => assignees.find((u) => u.id === id))
+      .filter((u): u is WWWUserFull => Boolean(u));
+
+    const raw: RawWWWForShape = { ...item, whoIds: finalIds, who_user: whoUser, who_users: whoUsers };
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...shapeWWWResponse(raw, { stripEmail: false }),
+        url: `/quikscale/www/${item.id}`,
+      },
+    });
+  },
+  { fallbackErrorMessage: "Failed to fetch WWW item" },
+);
+
 export const PUT = auth.update<{ id: string }>(
   async ({ orgId, userId }, request, { params }) => {
-    // Cast the select-arg to bypass cached Prisma types that may not yet
-    // know about `whoIds` (column exists post-migration). The runtime DB
-    // call accepts the field regardless.
-    const existing = (await db.wWWItem.findFirst({
+    // WWWItem currently stores only a single `who`. `whoIds[]` is preserved
+    // at the API boundary (request + response) but synthesized from `who`
+    // server-side.
+    const existing = await db.wWWItem.findFirst({
       where: { id: params.id, orgId },
-      select: ({ id: true, createdBy: true, who: true, what: true, whoIds: true } as unknown) as { id: true; createdBy: true; who: true; what: true },
-    })) as
-      | { id: string; createdBy: string; who: string; what: string; whoIds?: string[] }
-      | null;
+      select: { id: true, createdBy: true, who: true, what: true },
+    });
     if (!existing) {
       return NextResponse.json(
         { success: false, error: "WWW item not found" },
@@ -69,7 +214,6 @@ export const PUT = auth.update<{ id: string }>(
       where: { id: params.id },
       data: {
         who: nextWho ?? undefined,
-        ...(nextWhoIds ? ({ whoIds: nextWhoIds } as { whoIds: string[] }) : {}),
         what: what ?? undefined,
         when: when ? new Date(when) : undefined,
         status: status ?? undefined,
@@ -83,31 +227,31 @@ export const PUT = auth.update<{ id: string }>(
             : undefined,
         revisedDates: revisedDates ?? undefined,
         updatedBy: userId,
-      } as Parameters<typeof db.wWWItem.update>[0]["data"],
+      },
     });
 
-    const finalIds = (updated as unknown as { whoIds?: string[] }).whoIds && (updated as unknown as { whoIds: string[] }).whoIds.length > 0
-      ? (updated as unknown as { whoIds: string[] }).whoIds
-      : updated.who ? [updated.who] : [];
+    // Synthesize whoIds from the persisted single `who` (resp. from the
+    // requested update if it provided a list).
+    const finalIds = nextWhoIds ?? (updated.who ? [updated.who] : []);
 
-    const assignees = finalIds.length > 0
+    const assignees: WWWUserFull[] = finalIds.length > 0
       ? await db.user.findMany({
           where: { id: { in: finalIds } },
           select: { id: true, firstName: true, lastName: true, email: true },
         })
       : [];
     const whoUser = assignees.find(u => u.id === updated.who) ?? null;
+    const whoUsers = finalIds
+      .map((id) => assignees.find((u) => u.id === id))
+      .filter((u): u is WWWUserFull => Boolean(u));
 
-    const result = {
-      ...updated,
+    const raw: RawWWWForShape = {
+      ...(updated as unknown as Omit<RawWWWForShape, "whoIds" | "who_user" | "who_users">),
       whoIds: finalIds,
-      when: updated.when.toISOString(),
-      originalDueDate: updated.originalDueDate?.toISOString() ?? null,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
       who_user: whoUser,
-      who_users: finalIds.map(id => assignees.find(u => u.id === id)).filter(Boolean),
+      who_users: whoUsers,
     };
+    const result = shapeWWWResponse(raw, { stripEmail: false });
 
     await writeAuditLog({
       orgId,
@@ -121,9 +265,7 @@ export const PUT = auth.update<{ id: string }>(
     // Reassignment notification: union of (old ∪ new) assignees gets emailed
     // when the assignee list actually changes. notifyWWWReassignment is a
     // no-op when both lists are identical.
-    const previousIds = (existing.whoIds && existing.whoIds.length > 0)
-      ? existing.whoIds
-      : existing.who ? [existing.who] : [];
+    const previousIds = existing.who ? [existing.who] : [];
     notifyWWWReassignment({
       orgId,
       itemId: updated.id,

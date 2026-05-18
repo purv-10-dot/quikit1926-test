@@ -33,7 +33,7 @@ export default function LoginPage() {
   return (
     <SignInComponent
       brandName="QuikIT"
-      redirectPath="/select-org"
+      redirectPath={`${(process.env.NEXT_PUBLIC_LAUNCHER_URL ?? "http://localhost:3001").replace(/\/+$/, "")}/apps`}
       callbackUrl={callbackUrl}
       initialError={initialError}
       initialStep={initialStep}

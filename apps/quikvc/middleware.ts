@@ -19,8 +19,9 @@ const APP_SLUG = "quikvc";
 
 const factoryMiddleware = createMiddleware({
   loginRoute: "/login",
-  selectOrgRoute: "/select-org",
-  publicRoutes: ["/login", "/select-org", "/invitations", "/auth-handoff"],
+  // No local org picker — no-org users are sent to the launcher /apps
+  // via centralSelectOrgUrl (cross-domain handoff).
+  publicRoutes: ["/login", "/invitations", "/auth-handoff"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });

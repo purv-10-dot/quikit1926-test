@@ -8,6 +8,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
+import { isOrgAdmin } from "@/lib/api/visibility";
 
 const PRIORITY_SELECT = {
   id: true,
@@ -33,7 +34,7 @@ const PRIORITY_SELECT = {
 };
 
 // GET /api/priority — list priorities filtered by year + quarter
-export const GET = auth.view(async ({ orgId }, req) => {
+export const GET = auth.view(async ({ orgId, userId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const year = searchParams.get("year") ? parseInt(searchParams.get("year")!) : undefined;
   const quarter = searchParams.get("quarter") || undefined;
@@ -46,6 +47,12 @@ export const GET = auth.view(async ({ orgId }, req) => {
   where.deletedAt = includeDeleted ? { not: null } : null;
   if (year) where.year = year;
   if (quarter) where.quarter = quarter;
+
+  // Row-level visibility: admins see all priorities, non-admins see only
+  // priorities they own.
+  if (!(await isOrgAdmin(userId, orgId))) {
+    where.owner = userId;
+  }
 
   // Allowed sort fields
   const sortMap: Record<string, Record<string, "asc" | "desc">> = {

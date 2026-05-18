@@ -18,6 +18,7 @@ import {
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { NAV_RESOURCE } from "@/lib/api/permissionsRegistry";
 import { UserMenu, globalSignOut } from "@quikit/ui";
 
 /* ─── Types ─── */
@@ -81,7 +82,7 @@ const navigation: NavItem[] = [
 
 /** Apply BOTH gates to the nav:
  *   1. Feature flag — the org has the module enabled
- *   2. RBAC v2 nav permission — the user's role whitelists this navKey
+ *   2. Entity `view` permission — derived from RBAC v2 via NAV_RESOURCE
  *
  *  If `permsLoading` is true (initial fetch in flight), we fall back to
  *  feature-flag-only filtering so the sidebar isn't empty during the
@@ -93,15 +94,17 @@ const navigation: NavItem[] = [
 function filterNavigation(
   items: NavItem[],
   disabled: Set<string>,
-  hasNav: (key: string) => boolean,
+  hasView: (resource: string) => boolean,
   permsLoading: boolean,
   isAdminBypass: boolean,
 ): NavItem[] {
-  const canSee = (key: string) => {
-    // While perms are loading, only enforce the feature flag — otherwise the
-    // user briefly sees an empty sidebar. Admin users bypass nav perms.
+  const canSee = (moduleKey: string) => {
     if (permsLoading || isAdminBypass) return true;
-    return hasNav(key);
+    const resource = NAV_RESOURCE[moduleKey];
+    // Sidebar entries without a resource mapping fall through to feature-flag
+    // gating only — keeps stragglers visible instead of silently hiding them.
+    if (!resource) return true;
+    return hasView(resource);
   };
   return items
     .map((item) => {
@@ -113,7 +116,7 @@ function filterNavigation(
         if (visibleChildren.length === 0) return null;
         return { ...item, children: visibleChildren };
       }
-      // Leaf: also check nav permission.
+      // Leaf: also check view permission.
       if (!canSee(item.moduleKey)) return null;
       return item;
     })
@@ -225,7 +228,7 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
   const visibleNav = filterNavigation(
     navigation,
     disabled,
-    perms.hasNav,
+    (resource) => perms.has(resource, "view"),
     perms.loading,
     perms.isAdmin,
   );

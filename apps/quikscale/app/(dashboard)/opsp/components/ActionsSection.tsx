@@ -12,6 +12,7 @@ import { Card, CardH } from "./Card";
 import { FInput, FTextarea } from "./RichEditor";
 import { CritBlock } from "./CritBlock";
 import { CategorySelect, ProjectedInput } from "./category";
+import { breakdownProjected } from "./modals";
 import { WithTooltip, OwnerSelect } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
 
@@ -71,7 +72,20 @@ export function ActionsSection({
                   value={row.projected}
                   onChange={(v) => {
                     const next = [...form.actionsQtr];
-                    next[i] = { ...next[i], projected: v };
+                    // Automatic categories: auto-fill m1..m3.
+                    // Manual categories: breakdownProjected returns null →
+                    // leave the month cells alone (user fills via modal).
+                    const autofill = breakdownProjected(row.category, v, 3, {
+                      force: true,
+                    });
+                    const mPatch = autofill
+                      ? {
+                          m1: autofill[0] ?? "",
+                          m2: autofill[1] ?? "",
+                          m3: autofill[2] ?? "",
+                        }
+                      : {};
+                    next[i] = { ...next[i], projected: v, ...mPatch };
                     set("actionsQtr", next);
                   }}
                 />

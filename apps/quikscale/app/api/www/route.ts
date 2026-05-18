@@ -8,9 +8,10 @@ import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
+import { isOrgAdmin } from "@/lib/api/visibility";
 
 // GET /api/www — list all WWWItems for tenant
-export const GET = auth.view(async ({ orgId }, req) => {
+export const GET = auth.view(async ({ orgId, userId }, req) => {
   const searchParams = req.nextUrl.searchParams;
   const search = searchParams.get("search") || undefined;
   const status = searchParams.get("status") || undefined;
@@ -22,11 +23,26 @@ export const GET = auth.view(async ({ orgId }, req) => {
   const where: Record<string, unknown> = { orgId };
   where.deletedAt = includeDeleted ? { not: null } : null;
   if (status) where.status = status;
+
+  // Row-level visibility: admins see all WWW items, non-admins see only
+  // items where they are the `who` (assigned person).
+  const wwwAdminBypass = await isOrgAdmin(userId, orgId);
+  if (!wwwAdminBypass) {
+    where.who = userId;
+  }
+
   if (search) {
-    where.OR = [
+    const searchOr = [
       { what:  { contains: search, mode: "insensitive" } },
       { notes: { contains: search, mode: "insensitive" } },
     ];
+    // Don't blow away any prior OR (none here today, but guard anyway).
+    if (where.OR) {
+      where.AND = [{ OR: where.OR }, { OR: searchOr }];
+      delete where.OR;
+    } else {
+      where.OR = searchOr;
+    }
   }
 
   // Allowed sort fields
@@ -51,16 +67,10 @@ export const GET = auth.view(async ({ orgId }, req) => {
     db.wWWItem.count({ where }),
   ]);
 
-  // Build user map covering BOTH legacy single `who` and new `whoIds[]`.
-  // Note: cached Prisma types may not yet include `whoIds` until the dev
-  // server restarts and re-runs `prisma generate`. Read it via an unknown
-  // cast in the meantime — the column exists in the DB after migration.
+  // Single-`who` storage: synthesize `whoIds` and `who_users` from the
+  // persisted scalar so existing frontend consumers continue to work.
   const allIds = new Set<string>();
-  for (const i of items) {
-    if (i.who) allIds.add(i.who);
-    const ids = ((i as unknown as { whoIds?: string[] }).whoIds) ?? [];
-    for (const id of ids) allIds.add(id);
-  }
+  for (const i of items) if (i.who) allIds.add(i.who);
   const users = allIds.size
     ? await db.user.findMany({
         where: { id: { in: [...allIds] } },
@@ -70,8 +80,7 @@ export const GET = auth.view(async ({ orgId }, req) => {
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
   const result = items.map(item => {
-    const rawIds = (item as unknown as { whoIds?: string[] }).whoIds ?? [];
-    const ids = rawIds.length > 0 ? rawIds : item.who ? [item.who] : [];
+    const ids = item.who ? [item.who] : [];
     return {
       ...item,
       whoIds: ids,
@@ -115,11 +124,14 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     : who ? [who] : [];
   const primaryWho = resolvedIds[0]!;
 
+  // NOTE: WWWItem currently only stores a single `who`. The multi-assignee
+  // `whoIds[]` is preserved at the API boundary (request + response) but
+  // collapsed to `primaryWho` for persistence. If multi-assignee storage is
+  // ever needed, add `whoIds String[] @default([])` to the WWWItem model.
   const item = await db.wWWItem.create({
     data: {
       orgId,
       who: primaryWho,
-      ...({ whoIds: resolvedIds } as { whoIds: string[] }),
       what,
       when: new Date(when),
       status: status ?? "not-yet-started",
@@ -128,7 +140,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       originalDueDate: originalDueDate ? new Date(originalDueDate) : null,
       revisedDates: [],
       createdBy: userId,
-    } as Parameters<typeof db.wWWItem.create>[0]["data"],
+    },
   });
 
   // Hydrate full assignee list for the response.

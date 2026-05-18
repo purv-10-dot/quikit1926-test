@@ -10,6 +10,8 @@ import { invalidateFiscalYearsCache } from "@/lib/hooks/useFiscalYears";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, Pagination,
 } from "@quikit/ui";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { toast } from "sonner";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface QuarterRow {
@@ -79,11 +81,14 @@ function QuarterBadge({ quarter }: { quarter: string }) {
 /* ─── Edit Panel ─────────────────────────────────────────────────────────────── */
 function EditPanel({
   open, onClose, onSaved, row,
+  canUpdate = true,
 }: {
   open:    boolean;
   onClose: () => void;
   onSaved: (rows: QuarterRow[]) => void;
   row:     QuarterRow | null;
+  /** RBAC v2 — when denied, fields are disabled and Save is hidden. */
+  canUpdate?: boolean;
 }) {
   const [startDate, setStartDate] = useState("");
   const [saving,    setSaving]    = useState(false);
@@ -137,15 +142,23 @@ function EditPanel({
       footer={
         <RightPanelFooter>
           <RightPanelCancelButton onClick={onClose} />
-          <RightPanelSubmitButton
-            onClick={handleSubmit}
-            saving={saving}
-            icon="check"
-            label="Save & Recalculate"
-          />
+          {canUpdate && (
+            <RightPanelSubmitButton
+              onClick={handleSubmit}
+              saving={saving}
+              icon="check"
+              label="Save & Recalculate"
+            />
+          )}
         </RightPanelFooter>
       }
     >
+          {!canUpdate && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-3">
+              Read-only — your role doesn&apos;t grant update access on Quarter Settings.
+            </div>
+          )}
+          <fieldset disabled={!canUpdate} className={!canUpdate ? "opacity-70" : ""}>
           <div>
             <label className="text-xs font-medium text-gray-600 block mb-1.5">
               Start Date <span className="text-red-400">*</span>
@@ -209,6 +222,7 @@ function EditPanel({
           {error && (
             <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
           )}
+          </fieldset>
     </RightPanel>
   );
 }
@@ -483,6 +497,7 @@ function GenerateModal({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function QuarterSettingsPage() {
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("Quarter");
   const [rows,          setRows]          = useState<QuarterRow[]>([]);
   const [allYears,      setAllYears]      = useState<number[]>([]);
   const [loading,       setLoading]       = useState(true);
@@ -883,13 +898,15 @@ export default function QuarterSettingsPage() {
           </button>
           {moreOpen && (
             <div className="absolute right-0 top-full mt-2 z-40 bg-white border border-gray-200 rounded-xl shadow-lg py-1 w-48">
-              <button
-                onClick={() => { setGenerateOpen(true); setMoreOpen(false); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                <Plus className="h-3.5 w-3.5 text-accent-500" /> Initialize Quarters
-              </button>
-              {selectedYear !== null && (
+              {canCreate && (
+                <button
+                  onClick={() => { setGenerateOpen(true); setMoreOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <Plus className="h-3.5 w-3.5 text-accent-500" /> Initialize Quarters
+                </button>
+              )}
+              {selectedYear !== null && canDelete && (
                 fyHasData ? (
                   <span title="Data exists for this fiscal year — cannot delete"
                     className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 cursor-not-allowed">
@@ -918,6 +935,7 @@ export default function QuarterSettingsPage() {
         onClose={() => setPanelOpen(false)}
         onSaved={handleSaved}
         row={editRow}
+        canUpdate={canUpdate}
       />
 
       {/* ── Confirm Delete (single quarter) ── */}

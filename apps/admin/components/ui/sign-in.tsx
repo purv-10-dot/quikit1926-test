@@ -34,9 +34,10 @@ function SignInForm() {
       return;
     }
 
-    // Full page navigation so the middleware reads the new session cookie
-    // and handles the /select-org redirect correctly.
-    window.location.href = "/select-org";
+    // Full page navigation so the middleware reads the new session cookie.
+    // Org selection happens on the central launcher /apps, not a local page.
+    const launcher = (process.env.NEXT_PUBLIC_QUIKIT_URL ?? "").replace(/\/+$/, "");
+    window.location.href = launcher ? `${launcher}/apps` : "/";
   }
 
   return (

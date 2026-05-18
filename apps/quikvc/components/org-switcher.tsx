@@ -5,7 +5,7 @@
  *
  * Lives in the VC layout's top context bar. For users with active QuikVC
  * memberships in multiple tenants, lets them swap without going back to
- * /select-org. For single-tenant users, renders as a non-interactive label
+ * the launcher. For single-tenant users, renders as a non-interactive label
  * (no point dropping a dropdown that has one item).
  *
  * After switching, performs a hard navigation to /home so server components
@@ -29,8 +29,8 @@ const FOUNDER_ROLES = new Set(["founder"]);
 const INVESTOR_ROLES = new Set(["investor", "lp"]);
 
 /**
- * Where each role lands after a successful org switch. Mirrors the
- * landingPathForRole() in /select-org so swap behavior is consistent
+ * Where each role lands after a successful org switch. Kept consistent
+ * with the launcher's role-aware landing so swap behavior matches
  * regardless of entry point.
  */
 function landingPathForRole(role: string): string {
@@ -89,7 +89,7 @@ export default function OrgSwitcher({
         return;
       }
       await update({ orgId: org.orgId, membershipRole: org.role });
-      // Role-aware redirect — same logic as /select-org. The OrgSwitcher
+      // Role-aware redirect — same role→landing logic the launcher uses. The OrgSwitcher
       // lives in the (vc) layout so most callers land on /home, but a
       // tenant where this user is a founder/investor should route there.
       window.location.href = landingPathForRole(org.role);

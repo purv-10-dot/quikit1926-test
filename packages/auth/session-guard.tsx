@@ -69,7 +69,12 @@ export function createSessionGuard(config: SessionGuardConfig = {}) {
         if (!data.valid) { await handleInvalid(data.reason); return; }
         const updated = await update();
         if (updated?.user?.membershipInvalid) await handleInvalid("deactivated");
-        else if (updated && !updated.user?.orgId) router.push("/select-org");
+        else if (updated && !updated.user?.orgId) {
+          // Org selection lives on the central launcher, not a per-app page.
+          // Cross-domain → hard nav (router.push can't leave the origin).
+          const launcher = (process.env.NEXT_PUBLIC_QUIKIT_URL ?? "").replace(/\/+$/, "");
+          window.location.href = launcher ? `${launcher}/apps` : "/apps";
+        }
       }
       intervalRef.current = setInterval(poll, jitteredInterval());
       return () => { if (intervalRef.current) clearInterval(intervalRef.current); };

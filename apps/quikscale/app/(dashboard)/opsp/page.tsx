@@ -19,7 +19,7 @@ import { ActionsSection } from "./components/ActionsSection";
 import { AccountabilitySection } from "./components/AccountabilitySection";
 import { useOPSPForm, type FormData } from "./hooks/useOPSPForm";
 import { OPSPPreview } from "./components/OPSPPreview";
-import { validateOPSP, type ValidationError } from "./lib/validateOPSP";
+import { validateOPSP, backfillPeriods, type ValidationError } from "./lib/validateOPSP";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 /* ═══════════════════════════════════════════════
@@ -78,11 +78,16 @@ export default function OPSPPage() {
     };
   }, []);
 
-  // Re-fetch unlocked quarters when a review is submitted in another tab/page
+  // Re-fetch unlocked quarters when a quarter is finalized here OR a review
+  // is submitted elsewhere. Both events unlock the next quarter in the picker.
   useEffect(() => {
     const handler = () => { refreshReviewedQuarters(); };
     window.addEventListener("opsp-review-submitted", handler);
-    return () => window.removeEventListener("opsp-review-submitted", handler);
+    window.addEventListener("opsp-finalized", handler);
+    return () => {
+      window.removeEventListener("opsp-review-submitted", handler);
+      window.removeEventListener("opsp-finalized", handler);
+    };
   }, [refreshReviewedQuarters]);
 
   // Close year picker on outside click
@@ -110,8 +115,10 @@ export default function OPSPPage() {
      finalized/reviewed OPSPs (the History page Edit button stays enabled). */
   const myPerms = useMyPermissions();
   const canEditFinalized = myPerms.has("OPSP.History.EditFinalize", "update");
+  // RBAC v2: editing the OPSP requires `update`; admins bypass.
+  const canUpdateOPSPCreate = myPerms.isAdmin || myPerms.has("OPSP.Create", "update");
   const statusLocked = form.status === "finalized" || form.status === "reviewed";
-  const isLocked = statusLocked && !canEditFinalized;
+  const isLocked = (statusLocked && !canEditFinalized) || !canUpdateOPSPCreate;
 
   const set = <K extends keyof FormData>(key: K, value: FormData[K]) => {
     if (isLocked && key !== "status") return; // read-only guard
@@ -127,15 +134,25 @@ export default function OPSPPage() {
     });
   };
 
-  /* ── Finalize ── */
-  const isFinalized = isLocked;
+  /* ── Finalize ──
+     The header pill reflects the OPSP's *status*, not whether the current
+     user can edit. An admin with `OPSP.History.EditFinalize:update` may
+     still edit a reviewed OPSP, but the pill must continue to read
+     "Finalized" so they can see (and not accidentally re-finalize) the
+     committed state. */
+  const isFinalized = statusLocked;
   const confirmFinalize = async () => {
     await fetch("/api/opsp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ year: form.year, quarter: form.quarter }),
     });
-    set("status", "finalized");
+    // Only flip to "finalized" from "draft" — never downgrade a "reviewed"
+    // OPSP back to "finalized". The POST endpoint already guards this with
+    // `where: { ..., status: "draft" }`, but the client also needs the
+    // guard so the next autosave doesn't PUT status: "finalized" over a
+    // server-side "reviewed".
+    if (form.status === "draft") set("status", "finalized");
     setFinalizeConfirmOpen(false);
     window.dispatchEvent(new Event("opsp-finalized"));
   };
@@ -233,20 +250,21 @@ export default function OPSPPage() {
                       const isBeforeStart = form.year === planStartYear && qNum < startQNum;
                       const isSelected = form.quarter === q;
 
-                      // A quarter is locked until the prior quarter's review has
-                      // been submitted. Skip the gate for the plan's first quarter
-                      // and for quarters the user is already on / has been on.
+                      // A quarter is locked until the prior quarter is
+                      // finalized (review submission also counts). Skip the
+                      // gate for the plan's first quarter and for quarters
+                      // the user is already on / has been on.
                       const isPlanFirst =
                         form.year === planStartYear && qNum === startQNum;
                       const prevYear = qNum === 1 ? form.year - 1 : form.year;
                       const prevQ = qNum === 1 ? "Q4" : `Q${qNum - 1}`;
-                      const prevReviewed = reviewedQuarters.includes(`${prevYear}:${prevQ}`);
-                      const isLocked = !isBeforeStart && !isPlanFirst && !prevReviewed;
+                      const prevUnlocked = reviewedQuarters.includes(`${prevYear}:${prevQ}`);
+                      const isLocked = !isBeforeStart && !isPlanFirst && !prevUnlocked;
                       const disabled = isBeforeStart || isLocked;
                       return (
                         <button key={q}
                           disabled={disabled}
-                          title={isLocked ? `Submit ${prevQ} review to unlock ${q}` : undefined}
+                          title={isLocked ? `Finalize ${prevQ} to unlock ${q}` : undefined}
                           onClick={() => { if (!disabled) { setForm(prev => ({ ...prev, quarter: q })); loadForPeriod(form.year, q); setShowYearPicker(false); } }}
                           className={`text-xs px-2 py-1.5 rounded-lg transition-colors ${
                             isSelected
@@ -266,7 +284,13 @@ export default function OPSPPage() {
           </div>
           <button onClick={() => {
               if (isFinalized) return;
-              const errs = validateOPSP(form);
+              // Backfill any empty period cells (y/q/m) for rows that have
+              // Category + Projected. The matrix modals that used to host
+              // manual cell entry were removed, so without this pass Manual
+              // categories would always fail validation.
+              const filled = backfillPeriods(form);
+              if (filled !== form) setForm(filled);
+              const errs = validateOPSP(filled);
               if (errs.length > 0) {
                 setValidationErrors(errs);
                 return;

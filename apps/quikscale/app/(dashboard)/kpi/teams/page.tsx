@@ -17,6 +17,7 @@ import { KPIModal } from "../components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "../hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
 import { AddButton, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
@@ -26,6 +27,7 @@ import { getKPIs } from "@/lib/services/kpiService";
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
 export default function TeamsKPIPage() {
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("TeamKPI");
   // Year + quarter live in FilterContext so they persist across module nav.
   // `filterTeam` is also read so the Dashboard's Team-tab team selection
   // pre-seeds this page's multi-select filter on first mount.
@@ -190,7 +192,7 @@ export default function TeamsKPIPage() {
 
         <div className="flex items-center gap-2">
           {/* Bulk delete — page-level, union of every team section's selected KPIs */}
-          {unionSelectedIds.size > 0 && (
+          {canDelete && unionSelectedIds.size > 0 && (
             <button
               onClick={handleBulkDelete}
               disabled={deleteKPI.isPending}
@@ -376,8 +378,9 @@ export default function TeamsKPIPage() {
             quarter={quarter}
           />
 
-          {/* + Add KPI — single page-level button */}
-          {canAddTeamKPI && (
+          {/* + Add KPI — single page-level button. RBAC `create` AND legacy
+              admin/team-head check must both pass. */}
+          {canCreate && canAddTeamKPI && (
             <AddButton onClick={() => setShowAddKPI(true)}>Add KPI</AddButton>
           )}
         </div>
@@ -408,6 +411,8 @@ export default function TeamsKPIPage() {
               showColTrigger={showColTrigger}
               onSelectionChange={handleSectionSelectionChange}
               clearSelectionTrigger={clearSelectionTrigger}
+              canDelete={canDelete}
+              canUpdate={canUpdate}
             />
           ))
         )}

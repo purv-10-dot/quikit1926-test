@@ -14,7 +14,9 @@ import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type 
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { AddButton } from "@quikit/ui";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { Flag } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
@@ -25,6 +27,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 
 export default function PriorityPage() {
+  const { canCreate, canUpdate, canDelete } = useResourcePermissions("Priority");
   // Year + quarter via shared FilterContext (session-scoped persistence).
   // Team / Owner are seeded from context on first mount so the Dashboard's
   // selection hands off, but live locally — clearing here doesn't propagate
@@ -35,8 +38,10 @@ export default function PriorityPage() {
   const [filterOwner, setFilterOwner] = useState<string>(ctx.filterOwner);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Search + filter
-  const [search, setSearch] = useState("");
+  // Search + filter — search is debounced and persisted via the shared
+  // tables slice (lib/store). `searchInput` is the controlled input value;
+  // `search` is the debounced value the filter logic below reads from.
+  const [searchInput, setSearchInput, search] = useDebouncedTableSearch("priority");
   const [filterStatus, setFilterStatus] = useState("");
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
@@ -63,9 +68,13 @@ export default function PriorityPage() {
 
   const { data: users = [] } = useUsers(filterTeam || undefined);
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
-  // Table preferences (persisted per user in DB) — need sort for the API fetch here
+  // Hidden cols come from the DB-backed user pref. Sort now lives in the
+  // shared Redux tables slice (lib/store) — same pattern as KPI + WWW. The
+  // priorityPrefs hook is kept for hiddenCols only.
   const priorityPrefs = useTablePrefs("priority");
-  const { sort: prioritySort, hiddenCols: priorityHidden } = priorityPrefs;
+  const { hiddenCols: priorityHidden } = priorityPrefs;
+  const { sortBy: prioritySortBy, sortOrder: prioritySortOrder } = useTableSort("priority");
+  const prioritySort = prioritySortBy ? `${prioritySortBy}:${prioritySortOrder}` : null;
 
   // View Trash toggle
   const [viewTrash, setViewTrash] = useState(false);
@@ -156,7 +165,7 @@ export default function PriorityPage() {
 
         <div className="flex items-center gap-2">
           {/* Bulk delete */}
-          {selectedIds.size > 0 && (
+          {canDelete && selectedIds.size > 0 && (
             <button
               onClick={handleBulkDelete}
               disabled={deletePriority.isPending}
@@ -201,8 +210,8 @@ export default function PriorityPage() {
             <input
               type="text"
               placeholder="Search..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
@@ -287,7 +296,7 @@ export default function PriorityPage() {
             defaultExportColumnKeys={visiblePriorityCols}
           />
 
-          <AddButton onClick={() => setShowAddModal(true)}>Add Priority</AddButton>
+          {canCreate && <AddButton onClick={() => setShowAddModal(true)}>Add Priority</AddButton>}
         </div>
       </div>
 
@@ -307,7 +316,7 @@ export default function PriorityPage() {
               icon={Flag}
               title="Define your first priority"
               message={`Priorities are the 3-5 most important things your team will accomplish in ${fiscalYearLabel(year)} · ${quarter}. They turn strategy into focused execution.`}
-              action={{ label: "Add your first priority", onClick: () => setShowAddModal(true) }}
+              action={canCreate ? { label: "Add your first priority", onClick: () => setShowAddModal(true) } : undefined}
             />
           </div>
         ) : (
@@ -325,6 +334,8 @@ export default function PriorityPage() {
             total={filtered.length}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
+            canDelete={canDelete}
+            canUpdate={canUpdate}
           />
         )}
       </div>

@@ -22,7 +22,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { normalizeLoadedOPSP } from "@/lib/utils/opspNormalize";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
-import { breakdownProjected } from "../components/modals";
 import type {
   TargetRow,
   GoalRow,
@@ -151,6 +150,13 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstLoad = useRef(true);
   const skipNextSave = useRef(false);
+  // One-shot guards for the two cascades. Set true right before any
+  // `setForm(...)` inside `loadForPeriod` so the cascades that fire on the
+  // resulting render don't re-seed *inherited* data. Without these, opening
+  // Q2 (which inherits Q1's goalRows) would immediately seed `actionsQtr`
+  // from those inherited goals — clobbering the deliberate empty state.
+  const skipNextTargetsCascade = useRef(false);
+  const skipNextGoalsCascade = useRef(false);
 
   /* ── Reload when year/quarter changes ── */
   const loadForPeriod = useCallback(async (year: number, quarter: string) => {
@@ -158,6 +164,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     // Synchronously reset to a clean baseline for the new period so a racing
     // autosave can't persist stale state under the new (year, quarter) primary key.
     skipNextSave.current = true;
+    skipNextTargetsCascade.current = true;
+    skipNextGoalsCascade.current = true;
     setForm({ ...defaultForm(), year, quarter });
 
     try {
@@ -167,6 +175,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
         if (draft) {
           try {
             skipNextSave.current = true;
+            skipNextTargetsCascade.current = true;
+            skipNextGoalsCascade.current = true;
             setForm(() => ({ ...defaultForm(), ...normalizeLoadedOPSP(JSON.parse(draft)), year, quarter } as FormData));
           } catch {}
         }
@@ -175,6 +185,8 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
         if (typeof json.fiscalYearStart === "number") setFiscalYearStart(json.fiscalYearStart);
         if (json.data) {
           skipNextSave.current = true;
+          skipNextTargetsCascade.current = true;
+          skipNextGoalsCascade.current = true;
           setForm(() => ({ ...defaultForm(), ...normalizeLoadedOPSP(json.data), year, quarter } as FormData));
         }
       }
@@ -258,19 +270,40 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
    * distribution, even though the matrix UI has been removed.
    */
   useEffect(() => {
+    // Targets (3-5 YRS) → Goals (1 YR): live category-only binding.
+    //
+    //   - Only `category` propagates. Projected + per-period breakdown
+    //     (q1..q4) are intentionally NOT copied — the user enters them
+    //     fresh inside Goals (the section's UI shows the Target value as a
+    //     small hint so the user knows what range to stay under).
+    //   - When the Target category changes at a row, the matching Goal row's
+    //     category follows. Goal's `projected` + q-cells reset (same as the
+    //     CategorySelect onChange) so they don't get stranded against an
+    //     out-of-date category.
+    //   - Empty Target category does NOT overwrite a Goal — only a non-empty
+    //     source propagates.
+    //
+    // Skip flag fires on the render right after `loadForPeriod` so freshly
+    // hydrated rows don't trigger spurious resets.
+    if (skipNextTargetsCascade.current) {
+      skipNextTargetsCascade.current = false;
+      return;
+    }
     setForm(prev => {
       const next = [...prev.goalRows];
       let changed = false;
       for (let i = 0; i < Math.min(prev.targetRows.length, next.length); i++) {
         const t = prev.targetRows[i];
-        const hasSrc = !!(t.category.trim() && t.projected.trim());
-        // Only seed empty Goal rows — preserve any user edits.
-        if (hasSrc && !next[i].category.trim() && !next[i].projected.trim()) {
-          const autofill = breakdownProjected(t.category, t.projected, 4);
-          const qPatch = autofill
-            ? { q1: autofill[0] ?? "", q2: autofill[1] ?? "", q3: autofill[2] ?? "", q4: autofill[3] ?? "" }
-            : {};
-          next[i] = { ...next[i], category: t.category, projected: t.projected, ...qPatch };
+        if (t.category.trim() && next[i].category !== t.category) {
+          next[i] = {
+            ...next[i],
+            category: t.category,
+            projected: "",
+            q1: "",
+            q2: "",
+            q3: "",
+            q4: "",
+          };
           changed = true;
         }
       }
@@ -279,18 +312,27 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   }, [form.targetRows]);
 
   useEffect(() => {
+    // Goals (1 YR) → Actions (QTR): same live category-only binding as the
+    // Targets → Goals cascade. Action's `projected` + m-cells reset when the
+    // bound Goal category changes.
+    if (skipNextGoalsCascade.current) {
+      skipNextGoalsCascade.current = false;
+      return;
+    }
     setForm(prev => {
       const next = [...prev.actionsQtr];
       let changed = false;
       for (let i = 0; i < Math.min(prev.goalRows.length, next.length); i++) {
         const g = prev.goalRows[i];
-        const hasSrc = !!(g.category.trim() && g.projected.trim());
-        if (hasSrc && !next[i].category.trim() && !next[i].projected.trim()) {
-          const autofill = breakdownProjected(g.category, g.projected, 3);
-          const mPatch = autofill
-            ? { m1: autofill[0] ?? "", m2: autofill[1] ?? "", m3: autofill[2] ?? "" }
-            : {};
-          next[i] = { ...next[i], category: g.category, projected: g.projected, ...mPatch };
+        if (g.category.trim() && next[i].category !== g.category) {
+          next[i] = {
+            ...next[i],
+            category: g.category,
+            projected: "",
+            m1: "",
+            m2: "",
+            m3: "",
+          };
           changed = true;
         }
       }

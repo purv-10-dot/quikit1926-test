@@ -148,7 +148,21 @@ export const kpiListParamsSchema = z.object({
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional(),
   year: z.number().int().optional(),
   search: z.string().optional(),
-  sortBy: z.enum(["name", "createdAt", "progressPercent", "healthStatus"]).default("createdAt"),
+  sortBy: z
+    .enum([
+      "name",
+      "createdAt",
+      "progressPercent",
+      "healthStatus",
+      "owner",
+      "measurementUnit",
+      "target",
+      "quarterlyGoal",
+      "qtdGoal",
+      "qtdAchieved",
+      "description",
+    ])
+    .default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
 });
 

@@ -10,8 +10,8 @@ test("admin can log in and lands on dashboard", async ({ page }) => {
   await page.getByLabel(/password/i).fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: /sign in|log ?in/i }).click();
 
-  // After login, we should land on /dashboard (or /select-org if multi-tenant)
-  await expect(page).toHaveURL(/\/(dashboard|select-org)/, { timeout: 10_000 });
+  // After login, org is auto-selected in the jwt callback → land on /dashboard
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 10_000 });
 
   // Dashboard smoke — confirm at least the navigation is rendered
   await expect(page.getByRole("navigation").or(page.getByText(/dashboard/i))).toBeVisible();

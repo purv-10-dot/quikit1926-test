@@ -3,6 +3,7 @@
   "compilerOptions": {
     "jsx": "preserve",
     "incremental": true,
+    "resolveJsonModule": true,
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./*"],

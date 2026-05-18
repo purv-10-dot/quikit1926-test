@@ -13,7 +13,8 @@ import { Info, Maximize2 } from "lucide-react";
 import { Card } from "./Card";
 import { FInput, FTextarea } from "./RichEditor";
 import { CategorySelect, ProjectedInput } from "./category";
-import { WithTooltip, OwnerSelect } from "./pickers";
+import { breakdownProjected } from "./modals";
+import { WithTooltip } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
 
 interface Props {
@@ -71,7 +72,23 @@ export function TargetsSection({
                 value={row.projected}
                 onChange={(v) => {
                   const next = [...form.targetRows];
-                  next[i] = { ...next[i], projected: v };
+                  // Automatic categories: auto-fill y1..y{targetYears}.
+                  // Manual categories: breakdownProjected returns null → keep
+                  // existing year cells (user fills them via the modal).
+                  const autofill = breakdownProjected(
+                    row.category,
+                    v,
+                    form.targetYears,
+                    { force: true },
+                  );
+                  const yKeys = ["y1", "y2", "y3", "y4", "y5"] as const;
+                  const yPatch: Partial<Record<(typeof yKeys)[number], string>> = {};
+                  if (autofill) {
+                    yKeys.forEach((k, idx) => {
+                      yPatch[k] = autofill[idx] ?? "";
+                    });
+                  }
+                  next[i] = { ...next[i], projected: v, ...yPatch };
                   set("targetRows", next);
                 }}
               />
@@ -94,14 +111,7 @@ export function TargetsSection({
             <p className="text-xs font-bold text-gray-800 uppercase">
               Key Thrusts/Capabilities
             </p>
-            <p className="text-xs text-gray-500">
-              3–5 Year Priorities
-              {form.keyThrusts.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
-                <span className="text-red-600 font-medium ml-1">
-                  ({form.keyThrusts.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
-                </span>
-              )}
-            </p>
+            <p className="text-xs text-gray-500">3–5 Year Priorities</p>
           </div>
           <button
             onClick={onExpandKeyThrusts}
@@ -111,7 +121,7 @@ export function TargetsSection({
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
         </div>
-        {/* Side-by-side: number | description | owner */}
+        {/* Side-by-side: number | description (owner column removed per spec). */}
         <div className="divide-y divide-gray-100">
           {form.keyThrusts.map((row, i) => (
             <div key={i} className="flex items-center gap-1.5 py-1.5">
@@ -133,16 +143,6 @@ export function TargetsSection({
                   }}
                 />
               </WithTooltip>
-              <div className="relative w-[95px] flex-shrink-0">
-                <OwnerSelect
-                  value={row.owner}
-                  onChange={(v) => {
-                    const next = [...form.keyThrusts];
-                    next[i] = { ...next[i], owner: v };
-                    set("keyThrusts", next);
-                  }}
-                />
-              </div>
             </div>
           ))}
         </div>

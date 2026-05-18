@@ -35,6 +35,8 @@ export default function OPSPHistoryPage() {
   // after the OPSP is finalized/reviewed, and the editor unlocks the form.
   const myPerms = useMyPermissions();
   const canEditFinalized = myPerms.has("OPSP.History.EditFinalize", "update");
+  // RBAC v2: editing any OPSP from History requires `update` on OPSP.History.
+  const canUpdateHistory = myPerms.isAdmin || myPerms.has("OPSP.History", "update");
 
   const [opsps, setOpsps] = useState<OPSPRecord[]>([]);
   const [fiscalYearStart, setFiscalYearStart] = useState<number>(1);
@@ -337,7 +339,9 @@ export default function OPSPHistoryPage() {
                                       {(() => {
                                         const isDraft = opsp.status === "draft";
                                         // v2: a user with OPSP.History.EditFinalize:update can edit
-                                        // finalized/reviewed OPSPs too.
+                                        // finalized/reviewed OPSPs too. The base OPSP.History:update
+                                        // is also required — without it the Edit button is hidden.
+                                        if (!canUpdateHistory) return null;
                                         const editable = isDraft || canEditFinalized;
                                         const titleText = !editable
                                           ? "OPSP is finalized and cannot be edited"

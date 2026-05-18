@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
   await page.getByLabel(/email/i).fill(ADMIN_EMAIL);
   await page.getByLabel(/password/i).fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: /sign in|log ?in/i }).click();
-  await page.waitForURL(/\/(dashboard|select-org)/);
+  await page.waitForURL(/\/dashboard/);
 });
 
 test("OPSP Rocks round-trips through a full reload", async ({ page }) => {
