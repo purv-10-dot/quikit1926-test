@@ -46,12 +46,24 @@ export interface PermissionModule {
 
 /* ───────────────────────── The tree ───────────────────────── */
 
+/**
+ * Resources listed below are the ones actually enforced by `userCan` /
+ * `userCanInProject` in the API layer. Speculative entities (Docs, Teams,
+ * Dashboards, Feedback, …) were removed so the matrix UI only surfaces
+ * controls that move real bits. Add a row here as soon as a new
+ * `userCan(...)` check lands in the codebase.
+ *
+ * Real enforcement today:
+ *   Project        — POST/PATCH/DELETE /api/projects[/:id]
+ *   ProjectMember  — POST/PATCH/DELETE /api/projects/:id/members  (Layer 2 plan)
+ *   Sprint         — POST/PATCH/DELETE /api/sprints[/:id]
+ *   Issue          — POST/PATCH/DELETE /api/issues[/:id]
+ *   IssueComment   — POST/PATCH/DELETE /api/issues/:id/comments  (project-role seed)
+ *   Board          — view/update only (kanban state changes)
+ *   Timesheet      — POST /api/timesheets
+ *   Report         — read-only reports module
+ */
 export const PERMISSION_TREE: PermissionModule[] = [
-  {
-    key: "Home",
-    label: "Home",
-    leaves: [{ resource: "Home", label: "For you", actions: ["view"] }],
-  },
   {
     key: "Spaces",
     label: "Spaces (Projects)",
@@ -67,8 +79,6 @@ export const PERMISSION_TREE: PermissionModule[] = [
     leaves: [
       { resource: "Issue", label: "Issue", actions: ACTIONS },
       { resource: "IssueComment", label: "Comment", actions: ACTIONS },
-      { resource: "IssueStatus", label: "Issue Status", actions: ACTIONS },
-      { resource: "IssueType", label: "Issue Type", actions: ACTIONS },
     ],
   },
   {
@@ -79,26 +89,14 @@ export const PERMISSION_TREE: PermissionModule[] = [
     ],
   },
   {
-    key: "Timesheets",
-    label: "Timesheets",
+    key: "ProjectViews",
+    label: "Project views",
     leaves: [
-      { resource: "Timesheet", label: "Time Entry", actions: ACTIONS },
-      { resource: "TimesheetWeekly", label: "Weekly Summary", actions: ["view"] },
-    ],
-  },
-  {
-    key: "Reports",
-    label: "Reports",
-    leaves: [
-      { resource: "Report", label: "Reports", actions: ["view"] },
-      { resource: "Report.TaskTime", label: "Task-Time Report", actions: ["view"] },
-    ],
-  },
-  {
-    key: "Dashboards",
-    label: "Dashboards",
-    leaves: [
-      { resource: "Dashboard", label: "Dashboard", actions: ACTIONS },
+      { resource: "ProjectSummary", label: "Summary tab", actions: ["view"] },
+      { resource: "ProjectTimeline", label: "Timeline tab", actions: ["view"] },
+      { resource: "ProjectBacklog", label: "Backlog tab", actions: ["view"] },
+      { resource: "ProjectList", label: "List tab", actions: ["view"] },
+      { resource: "ProjectTaskTable", label: "Task Table tab", actions: ["view"] },
     ],
   },
   {
@@ -106,30 +104,20 @@ export const PERMISSION_TREE: PermissionModule[] = [
     label: "Docs",
     leaves: [
       { resource: "Doc", label: "Document", actions: ACTIONS },
-      { resource: "Page", label: "Page", actions: ACTIONS },
     ],
   },
   {
-    key: "Teams",
-    label: "Teams",
+    key: "Timesheets",
+    label: "Timesheets",
     leaves: [
-      { resource: "Team", label: "Team", actions: ACTIONS },
-      { resource: "TeamMember", label: "Team Member", actions: ACTIONS },
+      { resource: "Timesheet", label: "Time Entry", actions: ACTIONS },
     ],
   },
   {
-    key: "OrgSetup",
-    label: "Org Setup",
+    key: "Reports",
+    label: "Reports",
     leaves: [
-      { resource: "User", label: "Users", actions: ACTIONS },
-      { resource: "Invitation", label: "Invitations", actions: ACTIONS },
-    ],
-  },
-  {
-    key: "Feedback",
-    label: "Feedback",
-    leaves: [
-      { resource: "Feedback", label: "Share Feedback", actions: ["create", "view"] },
+      { resource: "Report", label: "Reports", actions: ["view"] },
     ],
   },
 ];
@@ -140,21 +128,39 @@ export const PERMISSION_TREE: PermissionModule[] = [
  * Sidebar items the `RoleNavigation` table whitelists by key.
  * Each key corresponds to a nav row rendered in the quiktrack sidebar.
  */
+// Pure-navigation entries — sidebar rows that have no entity counterpart in
+// the permission tree (no CRUD surface; their nav row IS the feature). For
+// nav items that *do* have an entity (Spaces / Timesheet / Reports / …),
+// visibility is derived automatically from the role's `view` grant via
+// ENTITY_TO_NAV below — no separate toggle needed.
 export const NAV_ITEMS = [
   { key: "home", label: "For you" },
-  { key: "spaces", label: "Spaces" },
-  { key: "spaces.templates", label: "Space Templates" },
-  { key: "issues", label: "Issues" },
-  { key: "boards", label: "Boards" },
-  { key: "timesheet", label: "Timesheet" },
-  { key: "reports", label: "Reports" },
   { key: "dashboards", label: "Dashboards" },
-  { key: "docs", label: "Docs" },
   { key: "plans", label: "Plans" },
-  { key: "teams", label: "Teams" },
-  { key: "orgSetup.users", label: "Users" },
-  { key: "orgSetup.invitations", label: "Invitations" },
 ] as const;
+
+/**
+ * Resource → navKey mapping. Granting a role `<entity>:view` is enough to
+ * surface its sidebar row — no duplicate nav checkbox required.
+ *
+ * Drives both the server-side `userHasNav(...)` resolver and the client
+ * `useMyPermissions().hasNav(...)` derivation.
+ */
+export const ENTITY_TO_NAV: Record<string, string> = {
+  Project: "spaces",
+  Timesheet: "timesheet",
+  Report: "reports",
+};
+
+/** Reverse lookup — derived from ENTITY_TO_NAV. */
+export const NAV_TO_ENTITY: Record<string, string> = Object.fromEntries(
+  Object.entries(ENTITY_TO_NAV).map(([entity, nav]) => [nav, entity]),
+);
+
+/** True when this navKey is purely nav (no entity to derive from). */
+export function isNavOnly(navKey: string): boolean {
+  return !(navKey in NAV_TO_ENTITY);
+}
 
 export type NavKey = (typeof NAV_ITEMS)[number]["key"];
 export const NAV_KEYS: readonly string[] = NAV_ITEMS.map((n) => n.key);

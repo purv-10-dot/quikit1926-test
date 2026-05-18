@@ -4887,9 +4887,10 @@ model QtAppRole {
   createdBy   String?
   app         App                @relation(fields: [appId], references: [id], onDelete: Cascade)
   org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  navigations QtRoleNavigation[]
-  permissions QtRolePermission[]
-  members     QtUserAppRole[]
+  navigations      QtRoleNavigation[]
+  permissions      QtRolePermission[]
+  fieldPermissions QtRoleFieldPermission[]
+  members          QtUserAppRole[]
 
   @@unique([orgId, appId, name])
   @@index([orgId, appId])
@@ -4945,6 +4946,24 @@ model QtRoleNavigation {
   @@unique([roleId, navKey])
   @@index([roleId])
   @@map("RoleNavigation")
+  @@schema("app_quiktrack")
+}
+
+/// Field-level permission grant for an app-wide role (Layer 1). Captures
+/// "what level can role X interact with field F on entity E" — one of
+/// hidden / readonly / editable / required. Absence of a row means default
+/// (today: "editable") so initial DB state matches today's behavior.
+model QtRoleFieldPermission {
+  id     String    @id @default(cuid())
+  roleId String
+  entity String
+  field  String
+  level  String    // "hidden" | "readonly" | "editable" | "required"
+  role   QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, entity, field])
+  @@index([roleId, entity])
+  @@map("RoleFieldPermission")
   @@schema("app_quiktrack")
 }
 

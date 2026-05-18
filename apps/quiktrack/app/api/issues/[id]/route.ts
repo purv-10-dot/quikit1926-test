@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { userCanInProject, forbidden } from "@/lib/api/permissions";
 import { updateIssueSchema } from "@/lib/validation/issue";
 import { emailIssueAssigned, emailIssueStatusChanged } from "@/lib/email/sendEmail";
 import {
@@ -87,17 +88,22 @@ export const PATCH = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const member = await db.qtProjectMember.findFirst({
-      where: { projectId: issue.projectId, userId, isDeleted: false },
-      select: { role: true },
-    });
     const tenantAdmin = await db.orgMember.findFirst({
       where: { userId, orgId, status: "active" },
       select: { role: true },
     });
     const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-    if (!isAdmin && (!member || member.role === "VIEWER")) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    if (!isAdmin) {
+      const member = await db.qtProjectMember.findFirst({
+        where: { projectId: issue.projectId, userId, isDeleted: false },
+        select: { id: true },
+      });
+      if (!member) {
+        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      }
+      if (!(await userCanInProject(userId, orgId, issue.projectId, "Issue", "update"))) {
+        return forbidden();
+      }
     }
     const parsed = updateIssueSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -263,17 +269,22 @@ export const DELETE = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const member = await db.qtProjectMember.findFirst({
-      where: { projectId: issue.projectId, userId, isDeleted: false },
-      select: { role: true },
-    });
     const tenantAdmin = await db.orgMember.findFirst({
       where: { userId, orgId, status: "active" },
       select: { role: true },
     });
     const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-    if (!isAdmin && (!member || member.role === "VIEWER")) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+    if (!isAdmin) {
+      const member = await db.qtProjectMember.findFirst({
+        where: { projectId: issue.projectId, userId, isDeleted: false },
+        select: { id: true },
+      });
+      if (!member) {
+        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      }
+      if (!(await userCanInProject(userId, orgId, issue.projectId, "Issue", "delete"))) {
+        return forbidden();
+      }
     }
     const result = await db.$transaction(async (tx) => {
       if (issue.type === "EPIC") {

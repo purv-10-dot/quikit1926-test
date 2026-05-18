@@ -384,9 +384,9 @@ export function Sidebar() {
         </div> */}
       </nav>
 
-      <div className="border-t border-gray-200 px-2 py-2">
+      {/* <div className="border-t border-gray-200 px-2 py-2">
         <NavRow icon={Sliders} label="Customize sidebar" />
-      </div>
+      </div> */}
       <MoreSpacesPopover
         open={moreOpen}
         onClose={() => setMoreOpen(false)}

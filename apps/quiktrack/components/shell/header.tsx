@@ -7,7 +7,7 @@ import { useParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Bell, HelpCircle, Settings, Plus, PanelLeft, ShieldCheck } from "lucide-react";
-import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
+import { UserMenu, globalSignOut } from "@quikit/ui";
 import { CreateIssueModal } from "@/components/create-issue-modal";
 import { HelpPanel } from "@/components/help-panel";
 import {
@@ -15,6 +15,7 @@ import {
   type GlobalSearchPopoverHandle,
 } from "@/components/global-search-popover";
 import { SettingsPopover } from "@/components/shell/settings-popover";
+import { AppSwitcherVertical } from "@/components/shell/app-switcher-vertical";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface HeaderProps {
@@ -60,7 +61,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
   return (
     <header className="h-12 bg-white border-b border-gray-200 px-3 flex items-center gap-3 sticky top-0 z-50">
       <div className="flex items-center gap-2">
-        <AppSwitcher />
+        <AppSwitcherVertical />
         <Link href="/" className="flex items-center px-1">
           <Image
             src="/header-icon.png"
