@@ -225,7 +225,7 @@ function computeMetrics(target: number | null, achieved: number | null) {
 
 /** Friendly footer-row label per categoryType. */
 function footerLabelFor(categoryType: string): string {
-  if (categoryType === "CumulativeTillEnd") return "Exit";
+  if (categoryType === "CumulativeTillEnd") return "Exit Number";
   if (categoryType === "Standalone") return "Average";
   return "Cumulative";
 }
@@ -1231,7 +1231,7 @@ export default function OPSPReviewPage() {
         <div className="flex gap-2">
           {([
             { key: "review",   label: "Review" },
-            { key: "critical", label: "#Critical Review" },
+            { key: "critical", label: "Critical # Review" },
           ] as { key: TopTab; label: string }[]).map((tab) => (
             <button
               key={tab.key}
