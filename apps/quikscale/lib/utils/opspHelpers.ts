@@ -164,3 +164,101 @@ export function resolveOwnerName(
   const u = users.find((x) => x.id === id);
   return u ? `${u.firstName} ${u.lastName}` : id;
 }
+
+/* ── Critical-Number tier resolution ─────────────────────────────────── */
+
+/**
+ * Critical-Number tier names. The 4 projected values entered in OPSP
+ * creation define the lower-bound thresholds for each tier; `resolveCritTier`
+ * places an achieved value into the highest tier whose projected ≤ achieved,
+ * defaulting to "red" when achieved falls below all four.
+ */
+export type CritTier = "superGreen" | "lightGreen" | "yellow" | "red";
+
+export const CRIT_TIER_LABELS: Record<CritTier, string> = {
+  superGreen: "Super Green",
+  lightGreen: "Light Green",
+  yellow: "Yellow",
+  red: "Red",
+};
+
+/** Bullet-index → tier mapping. CritCard.bullets is always [SG, LG, Y, R]. */
+export const CRIT_BULLET_TIERS: readonly CritTier[] = [
+  "superGreen",
+  "lightGreen",
+  "yellow",
+  "red",
+];
+
+/**
+ * Coerce a raw bullet/achieved value (may arrive as string from JSON
+ * storage, number, null, or undefined) to a finite number or null.
+ */
+export function toNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Resolve which Critical-Number tier an `achieved` value lands in, given
+ * the four projected thresholds entered during OPSP creation. Bullets are
+ * indexed as `[superGreen, lightGreen, yellow, red]`.
+ *
+ * Rule: returns the highest tier whose projected threshold ≤ achieved.
+ * If achieved is below every threshold (or all thresholds are missing),
+ * returns "red". If achieved itself is null/NaN, returns null (no tier).
+ *
+ * Examples (bullets = [120, 80, 60, 40]):
+ *   25  → red          (< 40)
+ *   45  → red          (≥ 40 but < 60 — "red" is still the highest match)
+ *   65  → yellow       (≥ 60 but < 80)
+ *   85  → lightGreen   (≥ 80 but < 120)
+ *   130 → superGreen   (≥ 120)
+ */
+export function resolveCritTier(
+  achieved: number | string | null | undefined,
+  bullets: ReadonlyArray<number | string | null | undefined>
+): CritTier | null {
+  const ach = toNum(achieved);
+  if (ach === null) return null;
+  // bullets[0..3] map to superGreen/lightGreen/yellow/red. Walk highest →
+  // lowest and return the first tier whose threshold is satisfied.
+  for (let i = 0; i < 4; i++) {
+    const threshold = toNum(bullets[i]);
+    if (threshold !== null && ach >= threshold) return CRIT_BULLET_TIERS[i];
+  }
+  return "red";
+}
+
+/**
+ * Tailwind classes for tinting a cell by Critical-Number tier. The
+ * background colors mirror the dot colors used in CritBlock so the
+ * review listing reads as the same visual language.
+ */
+export function critTierCellClasses(tier: CritTier | null): string {
+  switch (tier) {
+    case "superGreen":
+      return "bg-green-700 text-white";
+    case "lightGreen":
+      return "bg-green-500 text-white";
+    case "yellow":
+      return "bg-yellow-400 text-gray-900";
+    case "red":
+      return "bg-red-600 text-white";
+    default:
+      return "text-gray-400";
+  }
+}
+
+/**
+ * Dot color (hex) for each tier — matches CritBlock's `BULLET_TIERS`. Used
+ * by the review drawer / listing to render the small color swatch next to
+ * tier labels.
+ */
+export const CRIT_TIER_DOT_HEX: Record<CritTier, string> = {
+  superGreen: "#1a5c2e",
+  lightGreen: "#4caf50",
+  yellow: "#f5c518",
+  red: "#e53935",
+};

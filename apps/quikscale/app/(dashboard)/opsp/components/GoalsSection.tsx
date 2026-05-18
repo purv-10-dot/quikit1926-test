@@ -14,7 +14,7 @@ import { FInput } from "./RichEditor";
 import { CritBlock } from "./CritBlock";
 import { CategorySelect, ProjectedInput } from "./category";
 import { breakdownProjected } from "./modals";
-import { WithTooltip, OwnerSelect } from "./pickers";
+import { WithTooltip } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
 
 interface Props {
@@ -146,14 +146,7 @@ export function GoalsSection({
             <p className="text-xs font-bold text-gray-800 uppercase">
               Key Initiatives
             </p>
-            <p className="text-xs text-gray-500">
-              1 Year Priorities
-              {form.keyInitiatives.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
-                <span className="text-red-600 font-medium ml-1">
-                  ({form.keyInitiatives.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
-                </span>
-              )}
-            </p>
+            <p className="text-xs text-gray-500">1 Year Priorities</p>
           </div>
           <button
             onClick={onExpandKeyInitiatives}
@@ -184,16 +177,6 @@ export function GoalsSection({
                   }}
                 />
               </WithTooltip>
-              <div className="relative w-[95px] flex-shrink-0">
-                <OwnerSelect
-                  value={row.owner}
-                  onChange={(v) => {
-                    const next = [...form.keyInitiatives];
-                    next[i] = { ...next[i], owner: v };
-                    set("keyInitiatives", next);
-                  }}
-                />
-              </div>
             </div>
           ))}
         </div>

@@ -23,7 +23,12 @@ import { FInput } from "./RichEditor";
 import { CategorySelect, ProjectedInput, parseProjectedValue, combineProjectedValue, getScaleAbbrs, displayCategory, catMetaCache } from "./category";
 import { OwnerSelect, WithTooltip } from "./pickers";
 import { getScales } from "@/lib/utils/currency";
-import { calculateBreakdown, type BreakdownType } from "@/lib/utils/breakdownCalc";
+import {
+  calculateBreakdown,
+  type BreakdownType,
+  CATEGORY_TYPE_LABELS,
+  type CategoryType,
+} from "@/lib/utils/breakdownCalc";
 import type { TargetRow, GoalRow, RockRow, ActionRow, ThrustRow, KeyInitiativeRow, KPIAcctRow, QPriorRow } from "../types";
 
 /* ── Scale abbreviation → full label (for multiplier lookup) ── */
@@ -1076,7 +1081,8 @@ export function ActionsModal({
 }) {
   if (!open) return null;
   const mCols: (keyof ActionRow)[] = ["m1", "m2", "m3"];
-  const gridCols = "2fr 1fr 1fr 1fr 1fr";
+  // Columns: Category | Category Type | Projected | M1 | M2 | M3
+  const gridCols = "2fr 1fr 1fr 1fr 1fr 1fr";
   const qKey = fiscalQuarter.toLowerCase() as keyof GoalRow; // "q1" | "q2" | "q3" | "q4"
 
   // ── Pre-compute per-row validation ──
@@ -1136,6 +1142,7 @@ export function ActionsModal({
             className="text-xs font-medium text-gray-500 pb-2 border-b border-gray-200 mb-2"
           >
             <span>Category</span>
+            <span>Category Type</span>
             <span>Projected</span>
             {["Month 1", "Month 2", "Month 3"].map((m) => (
               <span key={m}>{m}</span>
@@ -1166,6 +1173,20 @@ export function ActionsModal({
                       onChange(next);
                     }}
                   />
+                  {/* Category Type — read-only chip derived from the selected
+                      category's `categoryType` metadata (looked up via
+                      `catMetaCache`). Empty placeholder when no category has
+                      been picked yet. */}
+                  <div className="flex items-center">
+                    {v.hasCategory && v.meta?.categoryType ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-100 text-gray-700 whitespace-nowrap">
+                        {CATEGORY_TYPE_LABELS[v.meta.categoryType as CategoryType] ??
+                          v.meta.categoryType}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </div>
                   <div className={!v.hasCategory ? "opacity-50 pointer-events-none" : ""}>
                     <ProjectedInput
                       categoryName={row.category}
@@ -1547,14 +1568,7 @@ export function KeyInitiativesModal({
             <p className="text-base font-bold text-gray-900 uppercase tracking-wide">
               KEY INITIATIVES
             </p>
-            <p className="text-xs text-gray-500">
-              1 Year Priorities
-              {rows.filter((r) => r.desc.trim() && !r.owner).length > 0 && (
-                <span className="text-red-600 font-medium ml-1">
-                  ({rows.filter((r) => r.desc.trim() && !r.owner).length} missing owner)
-                </span>
-              )}
-            </p>
+            <p className="text-xs text-gray-500">1 Year Priorities</p>
           </div>
           <button
             onClick={onClose}
@@ -1567,7 +1581,6 @@ export function KeyInitiativesModal({
           <div className="flex items-center gap-3 text-xs font-medium text-gray-500 pb-2 border-b border-gray-200 mb-2">
             <span className="w-8 flex-shrink-0 text-center">#</span>
             <span className="flex-1">Initiative</span>
-            <span className="w-40 flex-shrink-0">Who</span>
           </div>
           {rows.map((row, i) => (
             <div
@@ -1598,16 +1611,6 @@ export function KeyInitiativesModal({
                   />
                   <span className={`pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums ${row.desc.length >= 70 ? "text-red-600 font-semibold" : "text-gray-400"}`}>{row.desc.length}/70</span>
                 </div>
-              </div>
-              <div className="relative w-40 flex-shrink-0 pt-0.5">
-                <OwnerSelect
-                  value={row.owner}
-                  onChange={(v) => {
-                    const next = [...rows];
-                    next[i] = { ...next[i], owner: v };
-                    onChange(next);
-                  }}
-                />
               </div>
             </div>
           ))}

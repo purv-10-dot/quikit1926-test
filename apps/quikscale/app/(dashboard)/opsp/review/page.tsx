@@ -8,7 +8,7 @@ import {
   fiscalYearLabel,
   QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
-import { achievedPctColor } from "./helpers";
+import { achievedPctColor, formatReviewNumber } from "./helpers";
 import { CriticalReviewSection } from "./CriticalReviewSection";
 
 type TopTab = "review" | "critical";
@@ -73,8 +73,12 @@ interface PeriodData {
   achievedPct: number | null;
   comment: string | null;
   autoPopulated?: boolean;
-  /** Achieved value from the same period one year ago (0 if no prior data). */
+  /** Achieved value from the same period one year ago — null when no prior
+   *  data was found AND no manual entry exists. */
   lastYearAchieved: number | null;
+  /** Where `lastYearAchieved` came from. `"auto"` disables the drawer's
+   *  Last-Year-Same-Period field; `"manual"` + `"none"` keep it editable. */
+  lastYearSamePeriodSource: "auto" | "manual" | "none";
 }
 
 interface ReviewRow {
@@ -123,10 +127,15 @@ interface TableRow {
   isFirstInGroup: boolean;
   groupSize: number;
   autoPopulated?: boolean;
-  /** Achieved value from the same period one year ago (0 when no prior data). */
+  /** Achieved value from the same period one year ago — null when no prior
+   *  data was found AND no manual entry exists. */
   lastYearAchieved: number | null;
-  /** current.achieved − lastYearAchieved; null when current.achieved is null. */
+  /** Year-over-year growth as a percentage:
+   *  ((achieved − lastYearAchieved) / lastYearAchieved) × 100.
+   *  Null when achieved is null OR lastYearAchieved is null/0. */
   yearGrowth: number | null;
+  /** Drives the drawer's disabled state for the Last Year Same Period field. */
+  lastYearSamePeriodSource: "auto" | "manual" | "none";
 }
 
 interface SecondaryTableRow {
@@ -322,13 +331,21 @@ function buildTableRows(
     if (!collapse) {
       const groupSize = periodLabels.length + 1;
       periodLabels.forEach((pl, idx) => {
-        const pd = row.periods[pl.key] ?? { target: null, achieved: null, gap: null, achievedPct: null, comment: null, lastYearAchieved: 0 };
+        const pd = row.periods[pl.key] ?? {
+          target: null,
+          achieved: null,
+          gap: null,
+          achievedPct: null,
+          comment: null,
+          lastYearAchieved: null,
+          lastYearSamePeriodSource: "none" as const,
+        };
         const metrics = pd.autoPopulated && pd.gap != null && pd.achievedPct != null
           ? { gap: pd.gap, achievedPct: pd.achievedPct }
           : computeMetrics(pd.target, pd.achieved);
         periodPairs.push({ target: pd.target, achieved: pd.achieved });
-        const lastYr = pd.lastYearAchieved ?? 0;
-        const growth = pd.achieved == null ? null : pd.achieved - lastYr;
+        const lastYr = pd.lastYearAchieved;
+        const growth = computeYearGrowth(pd.achieved, lastYr);
         result.push({
           rowIndex: row.rowIndex,
           category: row.category,
@@ -346,6 +363,7 @@ function buildTableRows(
           autoPopulated: pd.autoPopulated,
           lastYearAchieved: lastYr,
           yearGrowth: growth,
+          lastYearSamePeriodSource: pd.lastYearSamePeriodSource,
         });
       });
     } else {
@@ -366,8 +384,10 @@ function buildTableRows(
       achieved: row.periods[pl.key]?.lastYearAchieved ?? null,
     }));
     const lastYearAgg = aggregateByType(row.categoryType, lastYearAggSrc);
-    const aggLastYear = lastYearAgg.hasAchieved ? lastYearAgg.achieved : 0;
-    const aggGrowth = agg.hasAchieved ? agg.achieved - aggLastYear : null;
+    const aggLastYear = lastYearAgg.hasAchieved ? lastYearAgg.achieved : null;
+    const aggGrowth = agg.hasAchieved
+      ? computeYearGrowth(agg.achieved, aggLastYear)
+      : null;
     const aggAutoPopulated = periodLabels.some((pl) => row.periods[pl.key]?.autoPopulated);
 
     result.push({
@@ -390,9 +410,31 @@ function buildTableRows(
       autoPopulated: aggAutoPopulated,
       lastYearAchieved: aggLastYear,
       yearGrowth: aggGrowth,
+      // Footer aggregates don't have a single per-period source — the drawer
+      // never opens against the footer row. "none" is a safe placeholder.
+      lastYearSamePeriodSource: "none",
     });
   }
   return result;
+}
+
+/**
+ * Year-over-year growth as a percentage.
+ *
+ *   growth% = ((achieved − lastYear) / lastYear) × 100
+ *
+ * Returns null when growth isn't computable:
+ *   - `achieved` is null (nothing to compare)
+ *   - `lastYear` is null OR 0 (no meaningful baseline — would divide by zero
+ *     or imply an "infinite" growth that the UI can't render usefully)
+ */
+function computeYearGrowth(
+  achieved: number | null,
+  lastYear: number | null,
+): number | null {
+  if (achieved == null) return null;
+  if (lastYear == null || lastYear === 0) return null;
+  return ((achieved - lastYear) / lastYear) * 100;
 }
 
 /* ═══════════════════════════════════════════════
@@ -471,14 +513,13 @@ export default function OPSPReviewPage() {
   const [primaryOpen, setPrimaryOpen] = useState(false);
   const [primaryIdx, setPrimaryIdx] = useState(0);
   const [primaryCategory, setPrimaryCategory] = useState("");
-  const [primaryEdits, setPrimaryEdits] = useState<Record<string, { target: number | null; achieved: number | null; comment: string }>>({});
+  const [primaryEdits, setPrimaryEdits] = useState<Record<string, { target: number | null; achieved: number | null; lastYearSamePeriod: number | null; comment: string }>>({});
   const [primaryActiveTab, setPrimaryActiveTab] = useState("");
 
   // Secondary modal
   const [secondaryOpen, setSecondaryOpen] = useState(false);
   const [secondaryIdx, setSecondaryIdx] = useState(0);
   const [secondaryDesc, setSecondaryDesc] = useState("");
-  const [secondaryOwner, setSecondaryOwner] = useState("");
   const [secondaryStatus, setSecondaryStatus] = useState("");
   const [secondaryComment, setSecondaryComment] = useState("");
 
@@ -624,7 +665,18 @@ export default function OPSPReviewPage() {
     const edits: typeof primaryEdits = {};
     for (const pl of periodLabels) {
       const pd = row.periods[pl.key];
-      edits[pl.key] = { target: pd?.target ?? null, achieved: pd?.achieved ?? null, comment: pd?.comment ?? "" };
+      // For "auto" source the lastYearAchieved comes from the prior-year
+      // entry and isn't editable — we leave the local state at null so the
+      // payload never tries to overwrite it. For "manual" we pre-fill the
+      // existing entry; for "none" we start empty so the user can enter one.
+      const initialLyp =
+        pd?.lastYearSamePeriodSource === "manual" ? (pd.lastYearAchieved ?? null) : null;
+      edits[pl.key] = {
+        target: pd?.target ?? null,
+        achieved: pd?.achieved ?? null,
+        lastYearSamePeriod: initialLyp,
+        comment: pd?.comment ?? "",
+      };
     }
     setPrimaryIdx(rowIndex);
     setPrimaryCategory(row.category);
@@ -648,7 +700,6 @@ export default function OPSPReviewPage() {
     if (!row) return;
     setSecondaryIdx(index);
     setSecondaryDesc(row.desc);
-    setSecondaryOwner(row.ownerName);
     setSecondaryStatus(row.status);
     setSecondaryComment(row.comment);
     setSecondaryOpen(true);
@@ -665,9 +716,21 @@ export default function OPSPReviewPage() {
           // Skip auto-populated periods — their achieved values are derived, not user-entered
           return !row?.periods[period]?.autoPopulated;
         })
-        .map(([period, vals]) => ({
-          period, targetValue: vals.target, achievedValue: vals.achieved, comment: vals.comment || null,
-        }));
+        .map(([period, vals]) => {
+          // Only persist `lastYearSamePeriod` when the source isn't "auto"
+          // — auto means the value comes from the prior-year entry and the
+          // drawer disables the input. Sending it would shadow the auto
+          // value if the source disappeared later.
+          const source = row?.periods[period]?.lastYearSamePeriodSource ?? "none";
+          const includeLyp = source !== "auto";
+          return {
+            period,
+            targetValue: vals.target,
+            achievedValue: vals.achieved,
+            ...(includeLyp ? { lastYearSamePeriod: vals.lastYearSamePeriod } : {}),
+            comment: vals.comment || null,
+          };
+        });
       const res = await fetch("/api/opsp/review", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -707,18 +770,38 @@ export default function OPSPReviewPage() {
     finally { setSaving(false); }
   }
 
-  /* ── Primary modal field update ── */
-  function updatePrimaryField(field: "achieved" | "comment", value: string) {
+  /* ── Primary modal field update ──
+     For numeric fields (`achieved`, `lastYearSamePeriod`) preserve the
+     distinction between "" → null (cleared) and "0" → 0 (explicit zero).
+     The earlier `parseFloat(v) || 0` collapsed 0 to 0 *and* swallowed NaN
+     to 0 — fine, but it also meant invalid input silently became 0.
+     Switching to a `Number()` + finite check makes the 0/null intent clear. */
+  function updatePrimaryField(
+    field: "achieved" | "lastYearSamePeriod" | "comment",
+    value: string,
+  ) {
     setPrimaryEdits((prev) => ({
       ...prev,
       [primaryActiveTab]: {
         ...prev[primaryActiveTab],
-        [field]: field === "achieved" ? (value === "" ? null : parseFloat(value) || 0) : value,
+        [field]:
+          field === "comment"
+            ? value
+            : value === ""
+              ? null
+              : Number.isFinite(Number(value))
+                ? Number(value)
+                : prev[primaryActiveTab]?.[field] ?? null,
       },
     }));
   }
 
-  const tabData = primaryEdits[primaryActiveTab] ?? { target: null, achieved: null, comment: "" };
+  const tabData = primaryEdits[primaryActiveTab] ?? {
+    target: null,
+    achieved: null,
+    lastYearSamePeriod: null,
+    comment: "",
+  };
   const { gap, achievedPct } = computeMetrics(tabData.target, tabData.achieved);
 
   /* ── Column definitions ── */
@@ -833,11 +916,11 @@ export default function OPSPReviewPage() {
     },
     {
       key: "target",
-      label: "Target (CR)",
+      label: "Target",
       width: 100,
       align: "right",
       render: (row) => (
-        <span className="text-gray-700">{row.target != null ? row.target.toLocaleString() : "—"}</span>
+        <span className="text-gray-700">{formatReviewNumber(row.target)}</span>
       ),
     },
     {
@@ -846,7 +929,7 @@ export default function OPSPReviewPage() {
       width: 100,
       align: "right",
       render: (row) => (
-        <span className="text-gray-700">{row.achieved != null ? row.achieved.toLocaleString() : "—"}</span>
+        <span className="text-gray-700">{formatReviewNumber(row.achieved)}</span>
       ),
     },
     {
@@ -855,7 +938,7 @@ export default function OPSPReviewPage() {
       width: 90,
       align: "right",
       render: (row) => (
-        <span className="text-gray-700">{row.gap != null ? row.gap.toLocaleString() : "—"}</span>
+        <span className="text-gray-700">{formatReviewNumber(row.gap)}</span>
       ),
     },
     {
@@ -887,8 +970,8 @@ export default function OPSPReviewPage() {
       align: "right",
       thClassName: "whitespace-nowrap",
       render: (row) => (
-        <span className="text-gray-700">
-          {row.lastYearAchieved != null ? row.lastYearAchieved.toLocaleString() : "0"}
+        <span className={cn("text-gray-700", row.lastYearAchieved == null && "text-gray-400")}>
+          {formatReviewNumber(row.lastYearAchieved)}
         </span>
       ),
     },
@@ -903,7 +986,8 @@ export default function OPSPReviewPage() {
         const g = row.yearGrowth;
         const sign = g > 0 ? "+" : g < 0 ? "−" : "";
         const cls = g > 0 ? "text-green-600" : g < 0 ? "text-red-600" : "text-gray-500";
-        const display = sign + Math.abs(g).toLocaleString();
+        // Round to 1 decimal place — keeps the cell narrow and readable.
+        const display = `${sign}${Math.abs(g).toFixed(1)}%`;
         return <span className={cn("font-medium", cls)}>{display}</span>;
       },
     },
@@ -987,14 +1071,6 @@ export default function OPSPReviewPage() {
       width: 280,
       render: (row) => (
         <span className="text-gray-800 truncate block">{row.desc}</span>
-      ),
-    },
-    {
-      key: "who",
-      label: "Who",
-      width: 150,
-      render: (row) => (
-        <span className="text-gray-600 truncate block">{row.ownerName || "—"}</span>
       ),
     },
     {
@@ -1155,7 +1231,7 @@ export default function OPSPReviewPage() {
         <div className="flex gap-2">
           {([
             { key: "review",   label: "Review" },
-            { key: "critical", label: "Critical Review" },
+            { key: "critical", label: "#Critical Review" },
           ] as { key: TopTab; label: string }[]).map((tab) => (
             <button
               key={tab.key}
@@ -1324,15 +1400,15 @@ export default function OPSPReviewPage() {
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
               <div>
-                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Target (CR)</label>
-                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{tabData.target ?? "—"}</div>
+                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Target</label>
+                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{formatReviewNumber(tabData.target)}</div>
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
                   Achieved{isTabAutoPopulated && <span className="ml-1 text-accent-500 normal-case font-normal">(auto-populated from quarterly review)</span>}
                 </label>
                 {isTabAutoPopulated ? (
-                  <div className="px-3 py-2 bg-accent-50 border border-accent-200 rounded-lg text-xs text-gray-700 font-medium">{tabData.achieved ?? "—"}</div>
+                  <div className="px-3 py-2 bg-accent-50 border border-accent-200 rounded-lg text-xs text-gray-700 font-medium">{formatReviewNumber(tabData.achieved)}</div>
                 ) : (
                   <input type="number" step="any" value={tabData.achieved ?? ""} onChange={(e) => updatePrimaryField("achieved", e.target.value)} placeholder="Enter value" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent" />
                 )}
@@ -1351,6 +1427,46 @@ export default function OPSPReviewPage() {
                 <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Comments</label>
                 <textarea value={tabData.comment ?? ""} onChange={(e) => updatePrimaryField("comment", e.target.value)} placeholder="Enter comment" rows={4} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent resize-none" />
               </div>
+              {/* Last Year Same Period — disabled when the prior-year OPSP
+                  Review supplies the value (source = "auto"). Otherwise the
+                  user can enter / clear it manually and the value persists on
+                  OPSPReviewEntry.lastYearSamePeriod. */}
+              {(() => {
+                const row = data?.rows.find((r) => r.rowIndex === primaryIdx);
+                const periodData = row?.periods[primaryActiveTab];
+                const source = periodData?.lastYearSamePeriodSource ?? "none";
+                const isAuto = source === "auto";
+                const autoValue = isAuto ? periodData?.lastYearAchieved ?? null : null;
+                const displayValue = isAuto
+                  ? (autoValue != null ? autoValue : "")
+                  : (tabData.lastYearSamePeriod ?? "");
+                return (
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                      Last Year Same Period
+                      {isAuto && (
+                        <span className="ml-1 text-accent-500 normal-case font-normal">
+                          (auto-filled from prior-year review)
+                        </span>
+                      )}
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={displayValue}
+                      onChange={(e) => updatePrimaryField("lastYearSamePeriod", e.target.value)}
+                      placeholder={isAuto ? "—" : "Enter value"}
+                      disabled={isAuto}
+                      className={cn(
+                        "w-full px-3 py-2 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent",
+                        isAuto
+                          ? "bg-accent-50 border-accent-200 text-gray-700 font-medium cursor-not-allowed"
+                          : "border-gray-200",
+                      )}
+                    />
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Footer */}
@@ -1382,10 +1498,6 @@ export default function OPSPReviewPage() {
               <div>
                 <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Company Quarterly Priority</label>
                 <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{secondaryDesc || "—"}</div>
-              </div>
-              <div>
-                <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Who</label>
-                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{secondaryOwner || "—"}</div>
               </div>
               <Select
                 label="Status"

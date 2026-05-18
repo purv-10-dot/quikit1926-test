@@ -6,25 +6,27 @@ import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
 /**
- * OPSP Critical Review API — handles the new top-level "Critical Review" tab
- * on the review screen.
+ * OPSP Critical Hash Review API — handles the top-level "Critical Hash
+ * Review" tab on the review screen.
  *
  * Coexists with the existing primary/secondary review routes; uses the SAME
- * `OPSPReviewEntry` table with a new sentinel `horizon = "critical"`.
+ * `OPSPReviewEntry` table with a sentinel `horizon = "critical"`.
  *
- * Encoding (per the approved plan):
- *   - `horizon`   = "critical"
- *   - `rowIndex`  = bullet index 0..3 (Green / Light Green / Yellow / Red)
- *   - `period`    = "<module>:<cardType>" where
- *                     module    ∈ { "actions", "year", "people" }
- *                     cardType  ∈ { "critical", "balancing" }
- *   - `category`  = the CritCard title (denormalised; for audit)
- *   - `targetValue` = parsed numeric Projected when bullet is numeric
+ * Encoding:
+ *   - `horizon`     = "critical"
+ *   - `rowIndex`    = 0 (sentinel — there is ONE entry per card; the tier is
+ *                     derived live by `resolveCritTier()` from the card's 4
+ *                     projected values rather than persisted as separate rows)
+ *   - `period`      = "<module>:<cardType>" where
+ *                       module    ∈ { "actions", "year", "people" }
+ *                       cardType  ∈ { "critical", "balancing" }
+ *   - `category`    = the CritCard title (denormalised; for audit)
+ *   - `targetValue` = unused (kept null — projections live on OPSPData)
  *   - `achievedValue` = manager-entered numeric Achieved
  *   - `comment`     = manager's plain-text comment (NOT JSON-wrapped)
  *
- * Unique key (orgId, opspId, "critical", rowIndex, period) tops out at
- * 24 rows per OPSP (4 bullets × 3 modules × 2 cardTypes).
+ * Unique key (orgId, opspId, "critical", rowIndex=0, period) tops out at
+ * 6 rows per OPSP (3 modules × 2 cardTypes).
  */
 
 /* ────────────────────────────── types ────────────────────────────── */
@@ -37,23 +39,25 @@ interface CritCardShape {
   bullets: string[];
 }
 
-// Module → OPSPData column mapping (documentation):
-//   actions → criticalNumProcess  / balancingCritNumProcess
-//   year    → criticalNumGoals    / balancingCritNumGoals
-//   people  → criticalNumAcct     / balancingCritNumAcct
+// Module → OPSPData column mapping:
+//   year    → criticalNumGoals    / balancingCritNumGoals       (tab "Year")
+//   actions → criticalNumProcess  / balancingCritNumProcess     (tab "Quarter")
+//   people  → criticalNumAcct     / balancingCritNumAcct        (tab "Individual")
 
 const MODULES: Module[] = ["actions", "year", "people"];
 const CARD_TYPES: CardType[] = ["critical", "balancing"];
 
-/** Coerce an unknown JSON blob to a safe CritCard shape. */
+/** Coerce an unknown JSON blob to a safe CritCard shape. Bullets are always
+ *  returned as strings (the UI parses them numerically via `toNum`). */
 function normalizeCritCard(raw: unknown): CritCardShape {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     const o = raw as Record<string, unknown>;
     const title = typeof o.title === "string" ? o.title : "";
     const bullets = Array.isArray(o.bullets)
-      ? o.bullets.map((b) => (typeof b === "string" ? b : ""))
+      ? o.bullets.map((b) =>
+          b == null ? "" : typeof b === "string" ? b : String(b),
+        )
       : [];
-    // Always pad to exactly 4 bullets so the UI can render 4 rows.
     while (bullets.length < 4) bullets.push("");
     return { title, bullets: bullets.slice(0, 4) };
   }
@@ -108,7 +112,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Build the {module: {critical, balancing}} map by normalising each JSON column.
     const modules = {
       actions: {
         critical:  normalizeCritCard(opsp.criticalNumProcess),
@@ -124,16 +127,15 @@ export async function GET(req: NextRequest) {
       },
     };
 
-    // Saved review rows for horizon="critical".
     const reviewRows = await db.oPSPReviewEntry.findMany({
       where: { orgId, opspId: opsp.id, horizon: "critical" },
-      select: { rowIndex: true, period: true, achievedValue: true, comment: true },
+      select: { period: true, achievedValue: true, comment: true },
     });
 
     const entries: Record<string, { achievedValue: number | null; comment: string | null }> = {};
     for (const r of reviewRows) {
-      // period = "<module>:<cardType>" → join with rowIndex for the lookup key
-      entries[`${r.period}:${r.rowIndex}`] = {
+      // period = "<module>:<cardType>" — one row per card.
+      entries[r.period] = {
         achievedValue: r.achievedValue != null ? Number(r.achievedValue) : null,
         comment: r.comment ?? null,
       };
@@ -174,14 +176,13 @@ function emptyModules() {
  *   year, quarter,
  *   module:        "actions" | "year" | "people",
  *   cardType:      "critical" | "balancing",
- *   bulletIndex:   0..3,
  *   category:      string,          (the CritCard title, for audit)
  *   achievedValue: number | null,
  *   comment:       string | null,
  * }
  *
- * Upserts a single OPSPReviewEntry. Achieved + Comment are saved together
- * (the client batches them per-row on input blur).
+ * Upserts a single OPSPReviewEntry per (module, cardType). Achieved +
+ * Comment are saved together.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -196,7 +197,6 @@ export async function POST(req: NextRequest) {
     const quarter = String(body.quarter ?? "");
     const moduleKey = String(body.module ?? "");
     const cardType = String(body.cardType ?? "");
-    const bulletIndex = Number(body.bulletIndex);
     const category = typeof body.category === "string" ? body.category : "";
     const achievedValue =
       body.achievedValue == null || body.achievedValue === ""
@@ -217,9 +217,6 @@ export async function POST(req: NextRequest) {
     }
     if (!CARD_TYPES.includes(cardType as CardType)) {
       return NextResponse.json({ success: false, error: "Invalid cardType" }, { status: 400 });
-    }
-    if (!Number.isInteger(bulletIndex) || bulletIndex < 0 || bulletIndex > 3) {
-      return NextResponse.json({ success: false, error: "Invalid bulletIndex (must be 0..3)" }, { status: 400 });
     }
     if (achievedValue !== null && !Number.isFinite(achievedValue)) {
       return NextResponse.json({ success: false, error: "Invalid achievedValue" }, { status: 400 });
@@ -244,7 +241,7 @@ export async function POST(req: NextRequest) {
           orgId,
           opspId: opsp.id,
           horizon: "critical",
-          rowIndex: bulletIndex,
+          rowIndex: 0,
           period,
         },
       },
@@ -259,7 +256,7 @@ export async function POST(req: NextRequest) {
         opspId: opsp.id,
         userId,
         horizon: "critical",
-        rowIndex: bulletIndex,
+        rowIndex: 0,
         category,
         period,
         achievedValue: achievedValue ?? undefined,
@@ -272,13 +269,10 @@ export async function POST(req: NextRequest) {
       orgId,
       actorId: userId,
       action: "UPDATE",
-      // "Review" entity type already covers the existing primary/secondary
-      // review writes. Critical Review entries share that bucket; the
-      // `changes` + `reason` fields below disambiguate.
       entityType: "Review",
       entityId: opsp.id,
-      changes: [`critical:${moduleKey}:${cardType}:bullet${bulletIndex}`],
-      reason: `OPSP Critical Review: ${moduleKey} ${cardType} bullet ${bulletIndex} (${category})`,
+      changes: [`critical:${moduleKey}:${cardType}`],
+      reason: `OPSP Critical Hash Review: ${moduleKey} ${cardType} (${category})`,
     });
 
     return NextResponse.json({
@@ -286,7 +280,6 @@ export async function POST(req: NextRequest) {
       data: {
         module: moduleKey,
         cardType,
-        bulletIndex,
         achievedValue: saved.achievedValue != null ? Number(saved.achievedValue) : null,
         comment: saved.comment ?? null,
       },

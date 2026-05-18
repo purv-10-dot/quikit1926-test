@@ -1207,6 +1207,10 @@ model OPSPReviewEntry {
   period        String
   targetValue   Decimal? @db.Decimal(20, 4)
   achievedValue Decimal? @db.Decimal(20, 4)
+  // Manually-entered "Last Year Same Period" — only populated when the prior
+  // year's OPSPReviewEntry doesn't supply an auto value (in which case the
+  // drawer disables the field). See app/api/opsp/review/route.ts.
+  lastYearSamePeriod Decimal? @db.Decimal(20, 4)
   comment       String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

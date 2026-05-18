@@ -18,10 +18,14 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CURRENCIES, getScales } from "@/lib/utils/currency";
 import { WithTooltip } from "./pickers";
+import {
+  CATEGORY_TYPE_LABELS,
+  CATEGORY_TYPE_INFO,
+} from "@/lib/utils/breakdownCalc";
 
 const DATA_TYPES = ["Number", "Percentage", "Currency"] as const;
 
@@ -132,12 +136,11 @@ export function CategorySelect({
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("Number");
   const [newCurrency, setNewCurrency] = useState("NONE");
-  // Two-axis picker — drives the OPSP modal matrix.
-  //   - categoryType: Cumulative | CumulativeTillEnd | Standalone (distribution shape)
-  //   - breakdownType: Manual | Automatic (fill mode)
+  // Category Type drives the OPSP modal distribution shape. The legacy
+  // Breakdown Type axis is always "Automatic" — the Manual radio was removed
+  // from the UI per spec, so we no longer track that state.
   const [newCategoryType, setNewCategoryType] =
     useState<"Cumulative" | "CumulativeTillEnd" | "Standalone">("Cumulative");
-  const [newBreakdownType, setNewBreakdownType] = useState<"Manual" | "Automatic">("Automatic");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -218,7 +221,6 @@ export function CategorySelect({
     setNewType("Number");
     setNewCurrency("NONE");
     setNewCategoryType("Cumulative");
-    setNewBreakdownType("Automatic");
     setError("");
   }
 
@@ -253,7 +255,9 @@ export function CategorySelect({
           dataType: newType,
           currency: effectiveCurrency,
           categoryType: newCategoryType,
-          breakdownType: newBreakdownType,
+          // Breakdown Type is always Automatic — Manual was removed from the
+          // UI per spec.
+          breakdownType: "Automatic",
         }),
       });
       const json = await res.json();
@@ -388,13 +392,23 @@ export function CategorySelect({
                       ))}
                     </select>
                   )}
-                  {/* Two independent axes — Category Type drives distribution
-                      shape, Breakdown Type drives whether the user fills
-                      every cell manually or the helper distributes Projected. */}
+                  {/* Category Type drives the OPSP modal distribution shape. */}
                   <div className="space-y-1">
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Category Type
-                    </p>
+                    <div className="flex items-center gap-1 px-0.5">
+                      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                        Category Type
+                      </p>
+                      <span
+                        className="inline-flex items-center cursor-help text-gray-400 hover:text-gray-600"
+                        title={
+                          `Cumulative — ${CATEGORY_TYPE_INFO.Cumulative}\n\n` +
+                          `Cumulative Till Exit — ${CATEGORY_TYPE_INFO.CumulativeTillEnd}\n\n` +
+                          `Standalone — ${CATEGORY_TYPE_INFO.Standalone}`
+                        }
+                      >
+                        <Info className="h-3 w-3" />
+                      </span>
+                    </div>
                     <div className="flex items-center gap-2 flex-wrap px-0.5">
                       {(["Cumulative", "CumulativeTillEnd", "Standalone"] as const).map((v) => (
                         <label key={v} className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
@@ -407,31 +421,13 @@ export function CategorySelect({
                             disabled={saving}
                             className="accent-accent-600"
                           />
-                          {v === "CumulativeTillEnd" ? "Cumulative Till End" : v}
+                          {CATEGORY_TYPE_LABELS[v]}
                         </label>
                       ))}
                     </div>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Breakdown Type
+                    <p className="text-[10px] italic text-gray-500 px-0.5 leading-snug">
+                      {CATEGORY_TYPE_INFO[newCategoryType]}
                     </p>
-                    <div className="flex items-center gap-3 px-0.5">
-                      {(["Manual", "Automatic"] as const).map((v) => (
-                        <label key={v} className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="newCatBreakdownType"
-                            value={v}
-                            checked={newBreakdownType === v}
-                            onChange={() => setNewBreakdownType(v)}
-                            disabled={saving}
-                            className="accent-accent-600"
-                          />
-                          {v}
-                        </label>
-                      ))}
-                    </div>
                   </div>
                   {error && <p className="text-red-500 text-xs">{error}</p>}
                   <div className="flex gap-2">

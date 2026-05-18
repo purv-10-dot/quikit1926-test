@@ -182,10 +182,9 @@ export function validateOPSP(form: FormData): ValidationError[] {
     ...checkBreakdown("Targets", form.targetRows as unknown as Array<Record<string, string>>, targetParts),
     ...checkBreakdown("Goals", form.goalRows as unknown as Array<Record<string, string>>, partKeys.goals),
     ...checkBreakdown("Actions", form.actionsQtr as unknown as Array<Record<string, string>>, partKeys.actions),
-    // Key Thrusts no longer requires an owner — the column was removed from
-    // the UI (both inline + modal) per spec, so checking it would block
-    // Finalize for data that has no UI to fill the field.
-    ...checkOwners("Key Initiatives", form.keyInitiatives),
+    // Key Thrusts + Key Initiatives no longer require an owner — the column
+    // was removed from the UI per spec, so checking them would block Finalize
+    // for data that has no UI to fill the field.
     ...checkOwners("Rocks", form.rocks),
   ];
 }
