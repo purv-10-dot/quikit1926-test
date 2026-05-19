@@ -4,7 +4,9 @@
  * Two checks:
  *  1. Projection vs breakdown — only enforced for Manual rows. The matrix:
  *       - Automatic + any         → skip (calculateBreakdown owns the row)
- *       - Manual    + Standalone  → skip (StandaloneManualSelect enforces values)
+ *       - any       + Standalone  → skip (StandaloneSelect dropdown enforces values;
+ *                                          breakdownProjected auto-fills regardless
+ *                                          of breakdownType for Standalone)
  *       - Manual    + Cumulative  → Σ cells === Projected
  *       - Manual    + CumulativeTillEnd → last cell === Projected
  *  2. Owner missing — for Key Thrusts, Key Initiatives, and Rocks: any row with a

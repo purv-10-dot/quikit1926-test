@@ -8,7 +8,7 @@ import {
   fiscalYearLabel,
   QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
-import { achievedPctColor, formatReviewNumber } from "./helpers";
+import { achievedPctColor, formatReviewValue } from "./helpers";
 import { CriticalReviewSection } from "./CriticalReviewSection";
 
 type TopTab = "review" | "critical";
@@ -86,6 +86,11 @@ interface ReviewRow {
   category: string;
   /** Raw DB value: "Cumulative" | "CumulativeTillEnd" | "Standalone". */
   categoryType: string;
+  /** Raw DB value: "Number" | "Currency" | "Percentage". Drives whether the
+   *  Target/Achieved/Gap/LastYearSamePeriod cells get a currency prefix. */
+  dataType: string;
+  /** CategoryMaster.currency (e.g. "USD", "INR"). Null for non-Currency rows. */
+  currency: string | null;
   projected: string;
   periods: Record<string, PeriodData>;
 }
@@ -115,6 +120,10 @@ interface TableRow {
   category: string;
   /** Raw DB value: "Cumulative" | "CumulativeTillEnd" | "Standalone". */
   categoryType: string;
+  /** Raw DB value: "Number" | "Currency" | "Percentage". */
+  dataType: string;
+  /** CategoryMaster.currency (e.g. "USD", "INR"). Null for non-Currency rows. */
+  currency: string | null;
   periodKey: string;
   periodLabel: string;
   target: number | null;
@@ -350,6 +359,8 @@ function buildTableRows(
           rowIndex: row.rowIndex,
           category: row.category,
           categoryType: row.categoryType,
+          dataType: row.dataType,
+          currency: row.currency,
           periodKey: pl.key,
           periodLabel: pl.label,
           target: pd.target,
@@ -394,6 +405,8 @@ function buildTableRows(
       rowIndex: row.rowIndex,
       category: row.category,
       categoryType: row.categoryType,
+      dataType: row.dataType,
+      currency: row.currency,
       periodKey: "cumulative",
       periodLabel: footerLabelFor(row.categoryType),
       target: agg.target || null,
@@ -803,6 +816,11 @@ export default function OPSPReviewPage() {
     comment: "",
   };
   const { gap, achievedPct } = computeMetrics(tabData.target, tabData.achieved);
+  // Drawer's numeric cells need the row's dataType / currency so currency
+  // categories show "$1,000,000" instead of bare "1000000".
+  const primaryRow = data?.rows.find((r) => r.rowIndex === primaryIdx);
+  const primaryDataType = primaryRow?.dataType;
+  const primaryCurrency = primaryRow?.currency ?? null;
 
   /* ── Column definitions ── */
 
@@ -901,7 +919,7 @@ export default function OPSPReviewPage() {
       thClassName: "whitespace-nowrap",
       render: (row) =>
         row.isFirstInGroup ? (
-          <span className="text-gray-600 truncate block">{row.categoryType}</span>
+          <span className="font-medium text-gray-800 truncate block">{row.categoryType}</span>
         ) : null,
     },
     {
@@ -920,7 +938,7 @@ export default function OPSPReviewPage() {
       width: 100,
       align: "right",
       render: (row) => (
-        <span className="text-gray-700">{formatReviewNumber(row.target)}</span>
+        <span className="text-gray-700">{formatReviewValue(row.target, row.dataType, row.currency)}</span>
       ),
     },
     {
@@ -929,7 +947,7 @@ export default function OPSPReviewPage() {
       width: 100,
       align: "right",
       render: (row) => (
-        <span className="text-gray-700">{formatReviewNumber(row.achieved)}</span>
+        <span className="text-gray-700">{formatReviewValue(row.achieved, row.dataType, row.currency)}</span>
       ),
     },
     {
@@ -938,7 +956,7 @@ export default function OPSPReviewPage() {
       width: 90,
       align: "right",
       render: (row) => (
-        <span className="text-gray-700">{formatReviewNumber(row.gap)}</span>
+        <span className="text-gray-700">{formatReviewValue(row.gap, row.dataType, row.currency)}</span>
       ),
     },
     {
@@ -959,8 +977,16 @@ export default function OPSPReviewPage() {
     {
       key: "comment",
       label: "Comments",
+      width: 220,
       render: (row) => (
-        <span className="text-gray-500 truncate block">{row.comment || "—"}</span>
+        // Two visible lines max; if the comment is longer, the cell scrolls
+        // vertically instead of expanding the row or being cut off.
+        <div
+          className="text-gray-500 whitespace-normal break-words leading-snug max-h-[2.5em] overflow-y-auto pr-1"
+          title={row.comment || undefined}
+        >
+          {row.comment || "—"}
+        </div>
       ),
     },
     {
@@ -971,7 +997,7 @@ export default function OPSPReviewPage() {
       thClassName: "whitespace-nowrap",
       render: (row) => (
         <span className={cn("text-gray-700", row.lastYearAchieved == null && "text-gray-400")}>
-          {formatReviewNumber(row.lastYearAchieved)}
+          {formatReviewValue(row.lastYearAchieved, row.dataType, row.currency)}
         </span>
       ),
     },
@@ -1088,8 +1114,16 @@ export default function OPSPReviewPage() {
     {
       key: "comment",
       label: "Comments",
+      width: 220,
       render: (row) => (
-        <span className="text-gray-500 truncate block">{row.comment || "—"}</span>
+        // Two visible lines max; if the comment is longer, the cell scrolls
+        // vertically instead of expanding the row or being cut off.
+        <div
+          className="text-gray-500 whitespace-normal break-words leading-snug max-h-[2.5em] overflow-y-auto pr-1"
+          title={row.comment || undefined}
+        >
+          {row.comment || "—"}
+        </div>
       ),
     },
     ];
@@ -1401,14 +1435,14 @@ export default function OPSPReviewPage() {
             <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
               <div>
                 <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Target</label>
-                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{formatReviewNumber(tabData.target)}</div>
+                <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700">{formatReviewValue(tabData.target, primaryDataType, primaryCurrency)}</div>
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
                   Achieved{isTabAutoPopulated && <span className="ml-1 text-accent-500 normal-case font-normal">(auto-populated from quarterly review)</span>}
                 </label>
                 {isTabAutoPopulated ? (
-                  <div className="px-3 py-2 bg-accent-50 border border-accent-200 rounded-lg text-xs text-gray-700 font-medium">{formatReviewNumber(tabData.achieved)}</div>
+                  <div className="px-3 py-2 bg-accent-50 border border-accent-200 rounded-lg text-xs text-gray-700 font-medium">{formatReviewValue(tabData.achieved, primaryDataType, primaryCurrency)}</div>
                 ) : (
                   <input type="number" step="any" value={tabData.achieved ?? ""} onChange={(e) => updatePrimaryField("achieved", e.target.value)} placeholder="Enter value" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-accent-400 focus:border-transparent" />
                 )}
@@ -1416,7 +1450,7 @@ export default function OPSPReviewPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Gap</label>
-                  <div className={cn("px-3 py-2 border rounded-lg text-xs", isTabAutoPopulated ? "bg-accent-50 border-accent-200 text-gray-700 font-medium" : "bg-gray-50 border-gray-200 text-gray-500")}>{gap != null ? gap.toFixed(2) : "—"}</div>
+                  <div className={cn("px-3 py-2 border rounded-lg text-xs", isTabAutoPopulated ? "bg-accent-50 border-accent-200 text-gray-700 font-medium" : "bg-gray-50 border-gray-200 text-gray-500")}>{formatReviewValue(gap, primaryDataType, primaryCurrency)}</div>
                 </div>
                 <div>
                   <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Achieved %</label>

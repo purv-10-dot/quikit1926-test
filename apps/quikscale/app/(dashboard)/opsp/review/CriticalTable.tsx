@@ -76,9 +76,9 @@ export function CriticalTable({
   const tierCellCls = critTierCellClasses(tier);
 
   return (
-    <div className="mb-6 border border-gray-200 rounded-lg overflow-hidden">
+    <div className="mb-6 border border-gray-200 rounded-lg overflow-hidden shadow-sm">
       {/* Block header — e.g. "Critical # — Growth" */}
-      <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-sm">
+      <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 text-sm">
         <span className="font-semibold text-gray-800">{label}</span>
         {card.title.trim() ? (
           <span className="text-gray-500"> — {card.title}</span>
@@ -86,9 +86,18 @@ export function CriticalTable({
       </div>
 
       <table className="w-full text-sm">
+        <colgroup>
+          <col className="w-10" />
+          <col className="w-10" />
+          <col className="w-12" />
+          <col className="w-[180px]" />
+          <col className="w-[300px]" />
+          <col className="w-[110px]" />
+          <col className="w-[260px]" />
+        </colgroup>
         <thead className="bg-accent-50 text-xs font-semibold text-gray-600">
           <tr>
-            <th className="w-10 px-2 py-2 border-b border-gray-200 text-center">
+            <th className="px-2 py-2.5 border-b border-gray-200 text-center">
               <input
                 type="checkbox"
                 checked={checked}
@@ -96,16 +105,16 @@ export function CriticalTable({
                 className="rounded border-gray-300 text-blue-600 cursor-pointer"
               />
             </th>
-            <th className="w-10 px-2 py-2 border-b border-gray-200" />
-            <th className="w-12 px-2 py-2 border-b border-gray-200 text-center">#</th>
-            <th className="text-left px-4 py-2 border-b border-gray-200 w-[160px]">
+            <th className="px-2 py-2.5 border-b border-gray-200" />
+            <th className="px-2 py-2.5 border-b border-gray-200 text-center">#</th>
+            <th className="text-left px-4 py-2.5 border-b border-gray-200">
               Critical Title
             </th>
-            <th className="text-left px-4 py-2 border-b border-gray-200">Projected</th>
-            <th className="text-center px-4 py-2 border-b border-gray-200 w-[120px]">
+            <th className="text-left px-4 py-2.5 border-b border-gray-200">Projected</th>
+            <th className="text-center px-4 py-2.5 border-b border-gray-200">
               Achieved
             </th>
-            <th className="text-left px-4 py-2 border-b border-gray-200 w-[35%]">
+            <th className="text-left px-4 py-2.5 border-b border-gray-200">
               Comment
             </th>
           </tr>
@@ -189,12 +198,12 @@ export function CriticalTable({
                 <>
                   <td
                     rowSpan={4}
-                    className="align-middle px-2 py-3 border-r border-gray-100 text-center"
+                    className="align-middle px-3 py-3 border-r border-gray-100 text-center"
                   >
                     {achievedIsNumeric ? (
                       <span
                         className={cn(
-                          "inline-block min-w-[60px] py-1.5 px-3 text-sm rounded font-semibold",
+                          "inline-flex items-center justify-center min-w-[64px] py-1.5 px-3 text-sm rounded-md font-semibold tabular-nums",
                           tierCellCls,
                         )}
                       >
@@ -206,10 +215,14 @@ export function CriticalTable({
                   </td>
                   <td
                     rowSpan={4}
-                    className="align-middle px-3 py-3 text-sm text-gray-600"
+                    className="align-middle px-4 py-3 text-sm text-gray-600"
                   >
                     {entry?.comment?.trim() ? (
-                      <span className="block">{entry.comment}</span>
+                      // Cap height at ~6 lines and scroll if longer so a
+                      // chatty comment doesn't stretch the card vertically.
+                      <div className="leading-snug whitespace-normal break-words max-h-[7.5em] overflow-y-auto pr-1">
+                        {entry.comment}
+                      </div>
                     ) : (
                       <span className="text-gray-400">—</span>
                     )}
@@ -235,15 +248,18 @@ function ProjectedCell({
 }) {
   const num = toNum(bulletText);
   return (
-    <div className="flex items-center gap-2.5">
+    // Fixed widths on the swatch (w-3) and label (w-[110px]) so values across
+    // the 4 bullet sub-rows line up in the same column. `tabular-nums` makes
+    // digit widths uniform so numbers stack cleanly.
+    <div className="flex items-center gap-3">
       <span
         className="w-3 h-3 rounded-sm flex-shrink-0"
         style={{ backgroundColor: CRIT_BULLET_COLORS[bulletIdx] }}
       />
-      <span className="text-gray-600 text-xs font-medium w-[90px]">
+      <span className="text-gray-600 text-xs font-medium w-[100px] flex-shrink-0">
         {CRIT_BULLET_LABELS[bulletIdx]}
       </span>
-      <span className="text-gray-800 font-medium">
+      <span className="text-gray-800 font-medium tabular-nums">
         {bulletText.trim() === "" ? (
           <span className="text-gray-400">—</span>
         ) : num !== null ? (

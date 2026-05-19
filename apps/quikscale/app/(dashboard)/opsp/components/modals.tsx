@@ -18,6 +18,7 @@
  *   - `AccountabilityModal` — KPI accountability + quarterly priorities
  */
 
+import { useEffect } from "react";
 import { X, AlertTriangle, Lock, Check, Calendar } from "lucide-react";
 import { FInput } from "./RichEditor";
 import { CategorySelect, ProjectedInput, parseProjectedValue, combineProjectedValue, getScaleAbbrs, displayCategory, catMetaCache } from "./category";
@@ -117,7 +118,12 @@ export function breakdownProjected(
   if (!meta) return null;
 
   // Manual rows opt out of auto-fill unless caller forces it.
-  if (!options?.force && meta.breakdownType !== "Automatic") return null;
+  // Exception: Standalone categories ALWAYS auto-fill regardless of stored
+  // breakdownType — their period cells are dropdowns keyed off Projected
+  // (see StandaloneSelect), so a "Manual" breakdownType still needs slices.
+  const treatAsAutomatic =
+    meta.breakdownType === "Automatic" || meta.categoryType === "Standalone";
+  if (!options?.force && !treatAsAutomatic) return null;
 
   const bridgeType = categoryTypeToBreakdown(meta.categoryType);
 
@@ -417,20 +423,18 @@ function ValidationBar({ effective, projected, categoryName, mode }: {
 }
 
 /**
- * Cell renderer for Manual + Standalone rows.
+ * Cell renderer for Standalone rows (any breakdownType).
  *
  * Standalone semantics say every period cell holds the Projected value
- * (rendered as-is, preserving currency scale suffix). Manual fill mode
- * shouldn't let the user free-type into the cell — instead they pick from
- * a 3-option dropdown:
- *   - "Select…" (empty)
- *   - the Projected value (verbatim, including scale like "1 L")
- *   - "0"
+ * (rendered as-is, preserving currency scale suffix). The cell is a
+ * 2-option dropdown — `[Projected, 0]` — with Projected pre-selected by
+ * default. An empty cell with a non-empty Projected auto-persists the
+ * Projected value so the visible default and the stored state match.
  *
  * Picks resolve to either the projected string or "0" — no parsing or
  * rebalance — and the parent stores them as-is.
  */
-function StandaloneManualSelect({
+function StandaloneSelect({
   value,
   projected,
   onChange,
@@ -443,9 +447,23 @@ function StandaloneManualSelect({
 }) {
   const projTrim = (projected ?? "").trim();
   const valTrim = (value ?? "").trim();
+
+  // Auto-default: when no value has been picked yet but Projected is set,
+  // persist the Projected value so the dropdown's visible selection matches
+  // the form state. Read-only / disabled mode skips this. Re-runs when
+  // Projected changes (relevant for legacy data loaded with empty cells).
+  useEffect(() => {
+    if (!disabled && valTrim === "" && projTrim !== "") {
+      onChange(projTrim);
+    }
+  }, [valTrim, projTrim, disabled, onChange]);
+
   // The select holds the displayed pick label so React renders the right option.
+  // When state is briefly empty (before the effect above runs) we still want
+  // Projected to appear selected — fall through to projTrim in that case.
   const selectValue =
-    valTrim === "" ? "" : valTrim === "0" ? "0" : projTrim;
+    valTrim === "0" ? "0" : projTrim;
+
   return (
     <div className={`flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-accent-400 overflow-hidden ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : ""}`}>
       <select
@@ -454,7 +472,6 @@ function StandaloneManualSelect({
         onChange={(e) => onChange(e.target.value)}
         className="flex-1 min-w-0 w-0 bg-transparent focus:outline-none text-sm text-gray-700 px-2 py-1.5 cursor-pointer"
       >
-        <option value="">Select…</option>
         {projTrim && <option value={projTrim}>{projTrim}</option>}
         <option value="0">0</option>
       </select>
@@ -611,11 +628,13 @@ export function TargetsModal({
                     const disabled = !v.hasCategory || !v.hasProjected;
                     const currency = v.meta?.currency ?? "USD";
                     const availScales = isCurrency ? getScaleAbbrs(currency) : [];
-                    const isManualStandalone =
-                      v.meta?.breakdownType === "Manual" && v.meta?.categoryType === "Standalone";
-                    if (isManualStandalone) {
+                    // Standalone always uses the dropdown — breakdownType no
+                    // longer gates this (Standalone is treated as Automatic
+                    // throughout). See StandaloneSelect + breakdownProjected.
+                    const isStandalone = v.meta?.categoryType === "Standalone";
+                    if (isStandalone) {
                       return (
-                        <StandaloneManualSelect
+                        <StandaloneSelect
                           key={k}
                           value={String(row[k] ?? "")}
                           projected={row.projected}
@@ -918,8 +937,10 @@ export function GoalsModal({
                     const availScales = isCurrency ? getScaleAbbrs(currency) : [];
                     const qKey = k as "q1" | "q2" | "q3" | "q4";
                     const nudge = nudges?.find((n) => n.rowIndex === i && n.period === qKey);
-                    const isManualStandalone =
-                      v.meta?.breakdownType === "Manual" && v.meta?.categoryType === "Standalone";
+                    // Standalone always uses the dropdown — breakdownType no
+                    // longer gates this (Standalone is treated as Automatic
+                    // throughout). See StandaloneSelect + breakdownProjected.
+                    const isStandalone = v.meta?.categoryType === "Standalone";
 
                     // Common wrapper — stacks input + nudge chip vertically so
                     // the chip lives under its own cell in the grid.
@@ -942,9 +963,9 @@ export function GoalsModal({
                       );
                     };
 
-                    if (isManualStandalone) {
+                    if (isStandalone) {
                       return wrap(
-                        <StandaloneManualSelect
+                        <StandaloneSelect
                           value={String(row[k] ?? "")}
                           projected={row.projected}
                           disabled={disabled}
@@ -1083,10 +1104,9 @@ export function ActionsModal({
   const mCols: (keyof ActionRow)[] = ["m1", "m2", "m3"];
   // Columns: Category | Category Type | Projected | M1 | M2 | M3
   const gridCols = "2fr 1fr 1fr 1fr 1fr 1fr";
-  const qKey = fiscalQuarter.toLowerCase() as keyof GoalRow; // "q1" | "q2" | "q3" | "q4"
 
   // ── Pre-compute per-row validation ──
-  const rowValidations = rows.map((row, i) => {
+  const rowValidations = rows.map((row) => {
     const meta = catMetaCache.get(row.category);
     const hasCategory = !!row.category.trim();
     const projectedVal = resolveProjected(row.category, row.projected);
@@ -1096,23 +1116,98 @@ export function ActionsModal({
     const hasAllM = mCols.every(k => String(row[k] ?? "").trim() !== "");
     const balance = computeRowBalance(row.category, mValues, projectedVal ?? 0);
 
-    // Check if inherited from Goals
-    const g = i < goalRows.length ? goalRows[i] : null;
-    const gQVal = g ? String(g[qKey] ?? "").trim() : "";
-    const isInherited = !!(g && g.category.trim() && g.projected.trim() && gQVal);
+    // Resolve the matching Goal (1 YR.) row by CATEGORY NAME, not index.
+    // The earlier index-based match silently dropped the "Goal: X" hint
+    // whenever the Action and Goal rows weren't filled in the same order
+    // (e.g. user fills row 1 of Actions = "product profit" while Goals row 1
+    // = "revenue"). Name-match shows the hint regardless of row position.
+    const goalForRow = hasCategory
+      ? goalRows.find((g) => g.category.trim() && g.category === row.category) ?? null
+      : null;
+    const goalProjectedVal = goalForRow
+      ? resolveProjected(goalForRow.category, goalForRow.projected)
+      : null;
+    // Validation: a single quarter's Projected should not exceed the annual
+    // Goal's Projected. Skipped for Standalone categories since their Year
+    // value is an AVERAGE, not a sum — a single quarter legitimately can sit
+    // above the year average.
+    const categoryType = meta?.categoryType;
+    const validateAgainstGoal = categoryType !== "Standalone";
+    const exceedsGoal =
+      validateAgainstGoal &&
+      hasProjected &&
+      goalProjectedVal != null &&
+      goalProjectedVal > 0 &&
+      projectedVal! > goalProjectedVal + 0.01;
+
+    // ── Per-cell rule (Cumulative + CumulativeTillEnd) ──
+    // No individual month value may exceed Projected. Catches both:
+    //   - Cumulative   : sum already over, but pinpoints the offending cell
+    //   - CumulativeTillEnd: running totals are capped at Projected (exit)
+    // Standalone is excluded — its monthly values are independent samples.
+    const isAggregatedType = categoryType === "Cumulative" || categoryType === "CumulativeTillEnd";
+    const cellsOverProjected = mValues.map(
+      (v) => isAggregatedType && hasProjected && v > projectedVal! + 0.01,
+    );
+    const hasCellOverProjected = cellsOverProjected.some(Boolean);
+
+    // ── Monotonic rule (CumulativeTillEnd only) ──
+    // Running totals can't dip — each filled month must be ≥ the previous
+    // filled month. Empty/zero cells are skipped, so the user can leave
+    // later months blank once an earlier month already reached Projected.
+    const monotonicViolations = mValues.map((v, idx) => {
+      if (categoryType !== "CumulativeTillEnd") return false;
+      if (idx === 0 || v <= 0) return false;
+      let prevNonZero: number | null = null;
+      for (let j = idx - 1; j >= 0; j--) {
+        if (mValues[j] > 0) { prevNonZero = mValues[j]; break; }
+      }
+      return prevNonZero != null && v < prevNonZero - 0.01;
+    });
+    const hasMonotonicViolation = monotonicViolations.some(Boolean);
+
+    // CumulativeTillEnd-specific: once an earlier month already equals
+    // Projected (exit reached), later months can stay empty. Bypasses the
+    // strict "last cell = projected" balance check so m1=25 / m2=blank /
+    // m3=blank validates as balanced.
+    const earlyExitReached = categoryType === "CumulativeTillEnd"
+      && hasProjected
+      && mValues.some((v) => Math.abs(v - projectedVal!) < 0.01);
+
+    // ── Required-field rules ──
+    // A selected category must have BOTH a Projected value and a Month
+    // breakdown. Empty "Select Category" rows are skipped (hasCategory=false)
+    // so the user can leave optional rows untouched.
+    const missingProjected = hasCategory && !hasProjected;
+    const missingBreakdown = hasCategory && hasProjected && !hasAnyM;
 
     const noMFilled = hasCategory && !hasAnyM;
     const isMatched = hasProjected && hasAllM && balance.isBalanced;
     const isOver = hasProjected && balance.isOver;
     const isUnder = hasProjected && hasAnyM && !hasAllM && !balance.isBalanced && !balance.isOver;
     const isMismatch = hasProjected && hasAllM && !balance.isBalanced;
-    const hasError = noMFilled || isOver || isUnder || isMismatch;
-    const isUnbalanced = hasProjected && hasAnyM && !balance.isBalanced;
+    const hasError = noMFilled || isOver || isUnder || isMismatch || exceedsGoal
+      || hasCellOverProjected || hasMonotonicViolation
+      || missingProjected || missingBreakdown;
+    const isUnbalanced = hasProjected && hasAnyM && !balance.isBalanced && !earlyExitReached;
 
-    return { meta, hasCategory, projectedVal, hasProjected, mValues, balance, hasAnyM, hasAllM, noMFilled, isMatched, isOver, isUnder, isMismatch, hasError, isUnbalanced, isInherited };
+    return {
+      meta, hasCategory, projectedVal, hasProjected, mValues, balance,
+      hasAnyM, hasAllM, noMFilled, isMatched, isOver, isUnder, isMismatch,
+      hasError, isUnbalanced,
+      goalForRow, goalProjectedVal, exceedsGoal,
+      cellsOverProjected, hasCellOverProjected,
+      monotonicViolations, hasMonotonicViolation,
+      missingProjected, missingBreakdown,
+    };
   });
 
   const hasAnyUnbalanced = rowValidations.some(v => v.isUnbalanced);
+  const hasAnyExceedsGoal = rowValidations.some(v => v.exceedsGoal);
+  const hasAnyCellOverProjected = rowValidations.some(v => v.hasCellOverProjected);
+  const hasAnyMonotonicViolation = rowValidations.some(v => v.hasMonotonicViolation);
+  const hasAnyMissingProjected = rowValidations.some(v => v.missingProjected);
+  const hasAnyMissingBreakdown = rowValidations.some(v => v.missingBreakdown);
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
@@ -1206,34 +1301,45 @@ export function ActionsModal({
                         onChange(next);
                       }}
                     />
-                    {/* Parent Goal (1 YR.) hint — small grey label so the
-                        user knows the upstream Goal value while entering
-                        Action's Projected. Shows only when the Goal at the
-                        same row index has a matching category and a filled
-                        projected. */}
-                    {(() => {
-                      const g = i < goalRows.length ? goalRows[i] : null;
-                      if (!g || !g.category.trim() || !g.projected.trim()) return null;
-                      if (g.category !== row.category) return null;
-                      return (
-                        <p
-                          className="text-[10px] text-gray-400 mt-0.5 truncate"
-                          title={`Goal (1 YR): ${g.projected}`}
-                        >
-                          Goal: {g.projected}
-                        </p>
-                      );
-                    })()}
+                    {/* Parent Goal (1 YR.) hint — looked up by category name
+                        (see rowValidations.goalForRow) so it works regardless
+                        of whether the Action row sits at the same index as
+                        its matching Goal row. */}
+                    {v.goalForRow && v.goalForRow.projected.trim() && (
+                      <p
+                        className="text-[10px] text-gray-400 mt-0.5 truncate"
+                        title={`Goal (1 YR): ${v.goalForRow.projected}`}
+                      >
+                        Goal: {v.goalForRow.projected}
+                      </p>
+                    )}
+                    {/* Goal-exceeded validation — Quarter Projected must not
+                        exceed the annual Goal Projected (skipped for Standalone
+                        categories, which are averaged not summed). */}
+                    {v.exceedsGoal && (
+                      <p className="text-[10px] text-red-500 mt-0.5 truncate font-medium">
+                        Exceeds Goal (1 YR): {v.goalForRow?.projected}
+                      </p>
+                    )}
+                    {/* Required-field: a selected category must have a
+                        Projected value entered. */}
+                    {v.missingProjected && (
+                      <p className="text-[10px] text-red-500 mt-0.5 truncate font-medium">
+                        Projected value is required
+                      </p>
+                    )}
                   </div>
                   {mCols.map((k) => {
                     const disabled = !v.hasCategory || !v.hasProjected;
                     const currency = v.meta?.currency ?? "USD";
                     const availScales = isCurrency ? getScaleAbbrs(currency) : [];
-                    const isManualStandalone =
-                      v.meta?.breakdownType === "Manual" && v.meta?.categoryType === "Standalone";
-                    if (isManualStandalone) {
+                    // Standalone always uses the dropdown — breakdownType no
+                    // longer gates this (Standalone is treated as Automatic
+                    // throughout). See StandaloneSelect + breakdownProjected.
+                    const isStandalone = v.meta?.categoryType === "Standalone";
+                    if (isStandalone) {
                       return (
-                        <StandaloneManualSelect
+                        <StandaloneSelect
                           key={k}
                           value={String(row[k] ?? "")}
                           projected={row.projected}
@@ -1249,8 +1355,36 @@ export function ActionsModal({
                     const { num: fieldNum, scale: fieldScale } = isCurrency
                       ? parseProjectedValue(String(row[k] ?? ""), currency)
                       : { num: String(row[k] ?? ""), scale: "" };
+                    // Per-cell error state — paints a red border + red focus
+                    // ring on the offending Month cell so the user sees at a
+                    // glance which input breaks the rule (over-Projected or
+                    // monotonic). The hover tooltip names the specific rule.
+                    const cellIdx = mCols.indexOf(k);
+                    const cellOverProjected = v.cellsOverProjected[cellIdx];
+                    const cellMonotonicViolation = v.monotonicViolations[cellIdx];
+                    const cellHasError = cellOverProjected || cellMonotonicViolation;
+                    let cellErrorTitle: string | undefined;
+                    if (cellOverProjected) {
+                      cellErrorTitle = `Value cannot exceed Projected (${row.projected})`;
+                    } else if (cellMonotonicViolation) {
+                      let prevIdx = -1;
+                      for (let j = cellIdx - 1; j >= 0; j--) {
+                        if (v.mValues[j] > 0) { prevIdx = j; break; }
+                      }
+                      if (prevIdx >= 0) {
+                        cellErrorTitle = `Month ${cellIdx + 1} value must be greater than or equal to Month ${prevIdx + 1} value`;
+                      }
+                    }
                     return (
-                      <div key={k} className={`flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-accent-400 overflow-hidden ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : ""}`}>
+                      <div
+                        key={k}
+                        title={cellErrorTitle}
+                        className={`flex items-center border rounded bg-white overflow-hidden ${
+                          cellHasError
+                            ? "border-red-400 focus-within:ring-1 focus-within:ring-red-400"
+                            : "border-gray-200 focus-within:ring-1 focus-within:ring-accent-400"
+                        } ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : ""}`}
+                      >
                         {isCurrency && symbol && (
                           <span className="pl-2 text-gray-500 text-xs select-none flex-shrink-0">{symbol}</span>
                         )}
@@ -1320,6 +1454,40 @@ export function ActionsModal({
                     mode={v.balance.mode}
                   />
                 )}
+                {/* Required-field: a selected category with Projected
+                    entered must also have a Month breakdown. */}
+                {v.missingBreakdown && (
+                  <p className="text-[10px] text-red-500 pl-1 pt-0.5 font-medium">
+                    Monthly breakdown is required
+                  </p>
+                )}
+                {/* Per-cell over-Projected error — fires for Cumulative +
+                    CumulativeTillEnd when any single month exceeds Projected. */}
+                {v.hasCellOverProjected && (
+                  <p className="text-[10px] text-red-500 pl-1 pt-0.5 font-medium">
+                    Month value cannot exceed Projected ({row.projected})
+                  </p>
+                )}
+                {/* Monotonic error (CumulativeTillEnd only) — running totals
+                    can't dip below an earlier filled month. One line per
+                    violation, naming the exact months so the user knows
+                    which cell to fix. */}
+                {v.hasMonotonicViolation && v.monotonicViolations.map((violated, idx) => {
+                  if (!violated) return null;
+                  let prevIdx = -1;
+                  for (let j = idx - 1; j >= 0; j--) {
+                    if (v.mValues[j] > 0) { prevIdx = j; break; }
+                  }
+                  if (prevIdx < 0) return null;
+                  return (
+                    <p
+                      key={`mono-${idx}`}
+                      className="text-[10px] text-red-500 pl-1 pt-0.5 font-medium"
+                    >
+                      Month {idx + 1} value must be greater than or equal to Month {prevIdx + 1} value
+                    </p>
+                  );
+                })}
               </div>
             );
           })}
@@ -1330,14 +1498,29 @@ export function ActionsModal({
           </p>
 
           <div className="flex items-center justify-end gap-3 mt-5">
+            {!readOnly && hasAnyMissingProjected && (
+              <span className="text-xs text-red-500 font-medium">Projected value required</span>
+            )}
+            {!readOnly && hasAnyMissingBreakdown && (
+              <span className="text-xs text-red-500 font-medium">Monthly breakdown required</span>
+            )}
             {!readOnly && hasAnyUnbalanced && (
               <span className="text-xs text-red-500 font-medium">Projected breakdown doesn&apos;t match</span>
             )}
+            {!readOnly && hasAnyExceedsGoal && (
+              <span className="text-xs text-red-500 font-medium">Projected exceeds Goal (1 YR)</span>
+            )}
+            {!readOnly && hasAnyCellOverProjected && (
+              <span className="text-xs text-red-500 font-medium">Month value exceeds Projected</span>
+            )}
+            {!readOnly && hasAnyMonotonicViolation && (
+              <span className="text-xs text-red-500 font-medium">Month values must not decrease</span>
+            )}
             <button
               onClick={onClose}
-              disabled={!readOnly && hasAnyUnbalanced}
+              disabled={!readOnly && (hasAnyUnbalanced || hasAnyExceedsGoal || hasAnyCellOverProjected || hasAnyMonotonicViolation || hasAnyMissingProjected || hasAnyMissingBreakdown)}
               className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${
-                !readOnly && hasAnyUnbalanced
+                !readOnly && (hasAnyUnbalanced || hasAnyExceedsGoal || hasAnyCellOverProjected || hasAnyMonotonicViolation || hasAnyMissingProjected || hasAnyMissingBreakdown)
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : readOnly
                     ? "bg-gray-600 text-white hover:bg-gray-700"

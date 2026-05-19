@@ -176,6 +176,10 @@ export async function GET(req: NextRequest) {
         // Surface categoryType so the client can render the "Category Type"
         // column and pick the right footer label (Cumulative / Exit / Average).
         categoryType: meta?.categoryType ?? "Cumulative",
+        // Surface dataType + currency so the client can prefix Currency rows
+        // with the right symbol ($1,000,000 / ₹10,00,000) in the review table.
+        dataType: meta?.dataType ?? "Number",
+        currency: meta?.currency ?? null,
         periods,
       };
     });
