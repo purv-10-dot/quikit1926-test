@@ -1282,7 +1282,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
 
         {/* Tab content. `<fieldset disabled>` natively disables every input,
             select, textarea and button inside when RBAC denies `update`. */}
-        <fieldset disabled={!canUpdate} className={`flex-1 overflow-y-auto px-6 py-5 ${!canUpdate ? "opacity-70" : ""}`}>
+        <fieldset disabled={!canUpdate} className={`flex-1 min-w-0 overflow-y-auto px-6 py-5 ${!canUpdate ? "opacity-70" : ""}`}>
           {!canUpdate && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-4">
               Read-only — your role doesn&apos;t grant update access on this KPI.
