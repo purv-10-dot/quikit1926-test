@@ -45,6 +45,8 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [appRoleId, setAppRoleId] = useState(""); // "" → org default
   const [projectIds, setProjectIds] = useState<string[]>([]);
+  /** Map projectId → projectRoleId. Missing key = use that project's default role. */
+  const [projectRoles, setProjectRoles] = useState<Record<string, string>>({});
   const [linkExistingUserId, setLinkExistingUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -113,7 +115,17 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
           ? { linkExistingUserId }
           : { password }),
         ...(appRoleId ? { appRoleId } : {}),
-        ...(projectIds.length > 0 ? { projectIds } : {}),
+        // New shape — `projects` carries the role per project. Backend
+        // also still accepts the legacy `projectIds: string[]` form for
+        // forward-compat with anything else calling the same endpoint.
+        ...(projectIds.length > 0
+          ? {
+              projects: projectIds.map((id) => ({
+                projectId: id,
+                projectRoleId: projectRoles[id] || undefined,
+              })),
+            }
+          : {}),
       };
       const r = await fetch("/api/org/users", {
         method: "POST",
@@ -280,17 +292,169 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
 
       <ProjectsPicker
         selected={projectIds}
-        onChange={setProjectIds}
+        onChange={(ids) => {
+          setProjectIds(ids);
+          // Drop role choices for projects that were just unchecked so we
+          // don't leak stale roleIds into the payload.
+          setProjectRoles((prev) => {
+            const next: Record<string, string> = {};
+            for (const id of ids) if (prev[id]) next[id] = prev[id];
+            return next;
+          });
+        }}
         label="Add to projects"
         placeholder="None — assign later"
       />
+
+      {projectIds.length > 0 && (
+        <ProjectRolesPicker
+          projectIds={projectIds}
+          value={projectRoles}
+          onChange={setProjectRoles}
+        />
+      )}
+
       <p className="-mt-2 text-[11px] text-gray-400">
-        New user joins each selected project as a member. Project-role
-        assignment can be done from the project&apos;s User Management page
+        Each project uses its own role catalogue. Leave a row on{" "}
+        <span className="font-medium">Default</span> and the project&apos;s
+        default role applies. Per-role permissions can be tuned later from
+        the project&apos;s User Management page
         after invite.
       </p>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
     </RightPanel>
+  );
+}
+
+/* ─────────────────── Per-project role picker ─────────────────── */
+
+interface ProjectMeta {
+  id: string;
+  name: string;
+  projectKey: string;
+  color?: string | null;
+}
+
+interface ProjectRoleOption {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+/**
+ * Lists every project the admin has selected and, for each, lets them pick
+ * a project role from THAT project's role catalogue. Roles are fetched per
+ * project — cached by React Query so re-mounts are instant.
+ *
+ * Mirrors the QuikIT "Roles per Application" picker pattern but scoped to
+ * the projects the new user is joining.
+ */
+function ProjectRolesPicker({
+  projectIds,
+  value,
+  onChange,
+}: {
+  projectIds: string[];
+  value: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+}) {
+  const projectsQ = useQuery({
+    queryKey: ["quiktrack", "projects-picker"],
+    queryFn: async () => {
+      const r = await fetch("/api/projects?pageSize=200");
+      const j = await r.json();
+      return ((j.data ?? []) as ProjectMeta[]) ?? [];
+    },
+  });
+  const projects = projectsQ.data ?? [];
+  const projectById = new Map(projects.map((p) => [p.id, p] as const));
+
+  return (
+    <div className="block text-sm">
+      <span className="text-gray-700 mb-1.5 block">Project roles</span>
+      <div className="border border-gray-200 rounded-md divide-y divide-gray-100">
+        {projectIds.map((pid) => {
+          const meta = projectById.get(pid);
+          return (
+            <ProjectRoleRow
+              key={pid}
+              projectId={pid}
+              projectName={meta?.name ?? "—"}
+              projectKey={meta?.projectKey ?? ""}
+              projectColor={meta?.color ?? null}
+              selectedRoleId={value[pid] ?? ""}
+              onSelect={(rid) => {
+                const next = { ...value };
+                if (rid) next[pid] = rid;
+                else delete next[pid];
+                onChange(next);
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProjectRoleRow({
+  projectId,
+  projectName,
+  projectKey,
+  projectColor,
+  selectedRoleId,
+  onSelect,
+}: {
+  projectId: string;
+  projectName: string;
+  projectKey: string;
+  projectColor: string | null;
+  selectedRoleId: string;
+  onSelect: (roleId: string) => void;
+}) {
+  const rolesQ = useQuery({
+    queryKey: ["quiktrack", "project-roles", projectId],
+    queryFn: async () => {
+      const r = await fetch(`/api/projects/${projectId}/roles`);
+      const j = await r.json();
+      return (j.data as ProjectRoleOption[]) ?? [];
+    },
+  });
+  const roles = rolesQ.data ?? [];
+  const defaultRole = roles.find((r) => r.isDefault);
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2">
+      <span
+        className="h-5 w-5 rounded-sm shrink-0"
+        style={{ background: projectColor ?? "#2563eb" }}
+      />
+      <span className="flex-1 min-w-0">
+        <span className="block text-[13px] font-medium text-gray-900 truncate">
+          {projectName}
+        </span>
+        {projectKey && (
+          <span className="block text-[10px] uppercase tracking-wider text-gray-400">
+            {projectKey}
+          </span>
+        )}
+      </span>
+      <select
+        value={selectedRoleId}
+        onChange={(e) => onSelect(e.target.value)}
+        className="h-8 px-2 text-[12.5px] border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 min-w-[140px]"
+      >
+        <option value="">
+          {defaultRole ? `Default (${defaultRole.name})` : "Default"}
+        </option>
+        {roles.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.name}
+            {r.isDefault ? " (default)" : ""}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

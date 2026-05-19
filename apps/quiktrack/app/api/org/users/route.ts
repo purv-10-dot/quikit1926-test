@@ -20,8 +20,23 @@ const createUserSchema = z
     appRoleId: z.string().min(1).optional(),
     /** Team ids to add the user to. */
     teamIds: z.array(z.string().min(1)).optional(),
-    /** QtProject ids to add the user to as a MEMBER. Idempotent upserts. */
+    /** QtProject ids to add the user to as a MEMBER. Idempotent upserts.
+     *  Legacy shape — superseded by `projects` below. Still accepted. */
     projectIds: z.array(z.string().min(1)).optional(),
+    /**
+     * Per-project membership + role assignment. Each entry creates a
+     * QtProjectMember row and, if `projectRoleId` is set, also a
+     * QtProjectUserRole row pointing at that role. Omit `projectRoleId`
+     * to fall back to the project's seeded default role.
+     */
+    projects: z
+      .array(
+        z.object({
+          projectId: z.string().min(1),
+          projectRoleId: z.string().min(1).optional(),
+        }),
+      )
+      .optional(),
     /** When set, skip user/membership creation — only grant app access + role. */
     linkExistingUserId: z.string().min(1).optional(),
   })
@@ -150,8 +165,16 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
     appRoleId,
     teamIds = [],
     projectIds = [],
+    projects: projectAssignments = [],
     linkExistingUserId,
   } = parsed.data;
+
+  // Merge legacy + new shape into a single list of (projectId, optional role).
+  // The new `projects` shape wins when both supply the same id.
+  const projectMap = new Map<string, { projectId: string; projectRoleId?: string }>();
+  for (const id of projectIds) projectMap.set(id, { projectId: id });
+  for (const p of projectAssignments) projectMap.set(p.projectId, p);
+  const projectAssignList = Array.from(projectMap.values());
 
   // ─── Resolve newUserId across the three paths ───
   let newUserId: string;
@@ -218,25 +241,63 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
     });
   }
 
-  // ─── Projects (idempotent QtProjectMember upserts) ───
+  // ─── Projects (idempotent QtProjectMember + optional QtProjectUserRole) ───
   // Only attach to projects that actually belong to this org — protects
-  // against an admin pasting a cross-tenant projectId.
-  if (projectIds.length > 0) {
+  // against an admin pasting a cross-tenant projectId. For each project the
+  // admin may also pin a specific project role; if omitted, the project's
+  // seeded default role is used.
+  if (projectAssignList.length > 0) {
+    const candidateIds = projectAssignList.map((p) => p.projectId);
     const validProjects = await db.qtProject.findMany({
-      where: { id: { in: projectIds }, orgId, isDeleted: false },
+      where: { id: { in: candidateIds }, orgId, isDeleted: false },
       select: { id: true },
     });
-    for (const p of validProjects) {
+    const validIdSet = new Set(validProjects.map((p) => p.id));
+
+    for (const assign of projectAssignList) {
+      if (!validIdSet.has(assign.projectId)) continue;
+
+      // 1. Membership row (legacy presence + enum).
       await db.qtProjectMember.upsert({
-        where: { projectId_userId: { projectId: p.id, userId: newUserId } },
+        where: { projectId_userId: { projectId: assign.projectId, userId: newUserId } },
         update: { isDeleted: false },
         create: {
-          projectId: p.id,
+          projectId: assign.projectId,
           userId: newUserId,
           role: "MEMBER",
           invitedBy: actorId,
         },
       });
+
+      // 2. Resolve which project role to assign. Explicit > project default.
+      let targetProjectRoleId: string | null = null;
+      if (assign.projectRoleId) {
+        const r = await db.qtProjectRole.findFirst({
+          where: { id: assign.projectRoleId, projectId: assign.projectId },
+          select: { id: true },
+        });
+        targetProjectRoleId = r?.id ?? null;
+      } else {
+        const def = await db.qtProjectRole.findFirst({
+          where: { projectId: assign.projectId, isDefault: true },
+          select: { id: true },
+        });
+        targetProjectRoleId = def?.id ?? null;
+      }
+
+      // 3. Dynamic project-role assignment (Layer 2). One row per (project, user).
+      if (targetProjectRoleId) {
+        await db.qtProjectUserRole.upsert({
+          where: { projectId_userId: { projectId: assign.projectId, userId: newUserId } },
+          update: { projectRoleId: targetProjectRoleId, assignedBy: actorId },
+          create: {
+            projectId: assign.projectId,
+            userId: newUserId,
+            projectRoleId: targetProjectRoleId,
+            assignedBy: actorId,
+          },
+        });
+      }
     }
   }
 
