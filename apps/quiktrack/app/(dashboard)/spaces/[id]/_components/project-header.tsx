@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { recordActivity } from "@/lib/utils/history";
 import { AddPeopleModal } from "@/components/add-people-modal";
 import { ShareFeedbackModal } from "@/components/share-feedback-modal";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import {
   UserPlus,
   MoreHorizontal,
@@ -29,21 +30,25 @@ import {
   Clock,
 } from "lucide-react";
 
-const TABS = [
-  { label: "Summary", path: "summary", icon: Globe },
-  { label: "Timeline", path: "timeline", icon: CalendarIcon },
-  { label: "Backlog", path: "backlog", icon: ListIcon },
-  { label: "Board", path: "board", icon: Columns },
-  // { label: "Calendar", path: "calendar", icon: CalendarIcon },
-  { label: "List", path: "list", icon: ListChecks },
-  { label: "Task Table", path: "task-table", icon: ListTree },
-  { label: "Timesheet", path: "timesheet", icon: Clock },
-  // { label: "Forms", path: "forms", icon: ClipboardList },
-  // { label: "Development", path: "development", icon: ListTree },
-  // { label: "Code", path: "code", icon: Code },
-  // { label: "Archived work items", path: "archived", icon: Archive },
-  { label: "Docs", path: "docs", icon: FileText },
-  // { label: "Shortcuts", path: "shortcuts", icon: ArrowRight },
+/**
+ * Tab list with the entity permission that gates each one. `perm: null` means
+ * "always show" (Summary / Timeline / Docs are intrinsic project chrome with
+ * no enforceable entity behind them today).
+ */
+const TABS: Array<{
+  label: string;
+  path: string;
+  icon: typeof Globe;
+  perm: { resource: string; action: string } | null;
+}> = [
+  { label: "Summary", path: "summary", icon: Globe, perm: { resource: "ProjectSummary", action: "view" } },
+  { label: "Timeline", path: "timeline", icon: CalendarIcon, perm: { resource: "ProjectTimeline", action: "view" } },
+  { label: "Backlog", path: "backlog", icon: ListIcon, perm: { resource: "ProjectBacklog", action: "view" } },
+  { label: "Board", path: "board", icon: Columns, perm: { resource: "Board", action: "view" } },
+  { label: "List", path: "list", icon: ListChecks, perm: { resource: "ProjectList", action: "view" } },
+  { label: "Task Table", path: "task-table", icon: ListTree, perm: { resource: "ProjectTaskTable", action: "view" } },
+  { label: "Timesheet", path: "timesheet", icon: Clock, perm: { resource: "Timesheet", action: "view" } },
+  { label: "Docs", path: "docs", icon: FileText, perm: { resource: "Doc", action: "view" } },
 ];
 
 interface Project {
@@ -56,6 +61,8 @@ interface Project {
 
 export function ProjectHeader({ projectId }: { projectId: string }) {
   const pathname = usePathname();
+  const perms = useMyProjectPermissions(projectId);
+  const canAddMember = perms.loading || perms.has("ProjectMember", "create");
   const [project, setProject] = useState<Project | null>(null);
   const [addPeopleOpen, setAddPeopleOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -178,14 +185,16 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
             ) : (
               <div className="h-4 w-40 rounded bg-gray-200 animate-pulse" />
             )}
-            <button
-              type="button"
-              onClick={() => setAddPeopleOpen(true)}
-              className="p-1 rounded border border-gray-200 hover:bg-gray-100"
-              aria-label="Add member"
-            >
-              <UserPlus className="h-3.5 w-3.5 text-gray-600" />
-            </button>
+            {canAddMember && (
+              <button
+                type="button"
+                onClick={() => setAddPeopleOpen(true)}
+                className="p-1 rounded border border-gray-200 hover:bg-gray-100"
+                aria-label="Add member"
+              >
+                <UserPlus className="h-3.5 w-3.5 text-gray-600" />
+              </button>
+            )}
             <button
               className="p-1 rounded border border-gray-200 hover:bg-gray-100"
               aria-label="More"
@@ -194,6 +203,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
             </button>
           </div>
           <div className="flex items-center gap-1.5">
+            {/* TODO: Share + Automation — coming soon
             <button className="p-1.5 rounded border border-gray-200 hover:bg-gray-100" aria-label="Share">
               <Share2 className="h-3.5 w-3.5 text-gray-600" />
             </button>
@@ -222,6 +232,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
                 </div>
               )}
             </div>
+            */}
             <button
               type="button"
               onClick={() => setFeedbackOpen(true)}
@@ -249,7 +260,9 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
       </div>
 
       <div className="px-6 flex items-center gap-1 overflow-x-auto">
-        {TABS.map((t) => {
+        {TABS.filter(
+          (t) => !t.perm || perms.loading || perms.has(t.perm.resource, t.perm.action),
+        ).map((t) => {
           const isActive = activeTab === t.path;
           return (
             <Link

@@ -5,6 +5,7 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createIssueSchema } from "@/lib/validation/issue";
 import { getDefaultStatusId } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
+import { userCanInProject, forbidden } from "@/lib/api/permissions";
 
 async function userIsProjectMember(
   userId: string,
@@ -341,6 +342,9 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
   if (!(await userIsProjectMember(userId, orgId, project.id))) {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
+  }
+  if (!(await userCanInProject(userId, orgId, project.id, "Issue", "create"))) {
+    return forbidden();
   }
 
   const issue = await db.$transaction(async (tx) => {

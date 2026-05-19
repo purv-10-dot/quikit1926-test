@@ -1,0 +1,234 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Search,
+  User,
+  Bell,
+  Monitor,
+  LayoutGrid,
+  Rocket,
+  ListChecks,
+  AppWindow,
+  Headphones,
+  Users as UsersIcon,
+  Receipt,
+  ExternalLink,
+  type LucideIcon,
+} from "lucide-react";
+
+interface PopoverItem {
+  key: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  /** Route to push on click. Omit + set `disabled` for "coming soon" items. */
+  href?: string;
+  /** Renders the small external-link icon at the right edge. */
+  external?: boolean;
+  disabled?: boolean;
+}
+
+interface PopoverSection {
+  key: string;
+  label: string;
+  items: PopoverItem[];
+}
+
+const SECTIONS: PopoverSection[] = [
+  {
+    key: "personal",
+    label: "Personal QuikTrack settings",
+    items: [
+      {
+        key: "general",
+        label: "General settings",
+        description: "Manage language, time zone, and other personal preferences",
+        icon: User,
+        disabled: true,
+      },
+      {
+        key: "notifications",
+        label: "Notification settings",
+        description: "Manage email and in-app notifications from QuikTrack",
+        icon: Bell,
+        disabled: true,
+      },
+    ],
+  },
+  {
+    key: "admin",
+    label: "QuikTrack admin settings",
+    items: [
+      {
+        key: "system",
+        label: "System",
+        description: "Manage general configuration, security, automation, user interface, and more",
+        icon: Monitor,
+        disabled: true,
+      },
+      {
+        key: "apps",
+        label: "QuikTrack apps",
+        description: "Manage access, settings, and integrations across QuikTrack",
+        icon: LayoutGrid,
+        disabled: true,
+      },
+      {
+        key: "spaces",
+        label: "Spaces",
+        description: "Manage space settings, categories, and more",
+        icon: Rocket,
+        href: "/spaces",
+      },
+      {
+        key: "work-items",
+        label: "Work items",
+        description: "Configure work types, workflows, screens, fields, and more",
+        icon: ListChecks,
+        disabled: true,
+      },
+      {
+        key: "marketplace",
+        label: "Marketplace apps",
+        description: "Add and manage QuikTrack Marketplace apps and integrations",
+        icon: AppWindow,
+        disabled: true,
+      },
+      {
+        key: "operations",
+        label: "Operations",
+        description: "Manage alerts and incidents, setup on-call schedules, and more",
+        icon: Headphones,
+        disabled: true,
+      },
+    ],
+  },
+  {
+    key: "atlassian",
+    label: "Organisation admin settings",
+    items: [
+      {
+        key: "user-management",
+        label: "User management",
+        description: "Manage users, groups, and access requests",
+        icon: UsersIcon,
+        href: "/settings/user-management",
+        external: true,
+      },
+      {
+        key: "billing",
+        label: "Billing",
+        description: "Update your billing details, manage subscriptions, and more",
+        icon: Receipt,
+        external: true,
+        disabled: true,
+      },
+    ],
+  },
+];
+
+export function SettingsPopover({
+  open,
+  onClose,
+  anchorRef,
+}: {
+  open: boolean;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
+}) {
+  const router = useRouter();
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  // Outside-click and Escape to dismiss.
+  useEffect(() => {
+    if (!open) return;
+    function onMouseDown(e: MouseEvent) {
+      const target = e.target as Node;
+      if (popoverRef.current?.contains(target)) return;
+      if (anchorRef.current?.contains(target)) return;
+      onClose();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose, anchorRef]);
+
+  if (!open) return null;
+
+  function handleClick(item: PopoverItem) {
+    if (item.disabled || !item.href) return;
+    onClose();
+    router.push(item.href);
+  }
+
+  return (
+    <div
+      ref={popoverRef}
+      className="absolute top-full right-0 mt-1 w-[560px] max-h-[80vh] overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl z-[1000]"
+      role="menu"
+    >
+      {/* Search row */}
+      <div className="px-4 pt-4 pb-3 border-b border-gray-100 flex items-center justify-end">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search ( Ctrl + K )"
+            className="h-9 w-64 pl-9 pr-3 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
+            disabled
+          />
+        </div>
+      </div>
+
+      {/* Hide disabled (coming-soon) items so only implemented destinations show. */}
+      {SECTIONS.map((section) => {
+        const visibleItems = section.items.filter((i) => !i.disabled);
+        if (visibleItems.length === 0) return null;
+        return (
+        <section key={section.key} className="py-2">
+          <h3 className="px-4 py-2 text-xs font-semibold text-gray-900">
+            {section.label}
+          </h3>
+          {visibleItems.map((item) => {
+            const Icon = item.icon;
+            const interactive = !item.disabled && !!item.href;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => handleClick(item)}
+                disabled={!interactive}
+                className={`group w-full px-4 py-2 flex items-start gap-3 text-left text-sm ${
+                  interactive
+                    ? "hover:bg-gray-50 text-gray-900"
+                    : "text-gray-400 cursor-not-allowed"
+                }`}
+                role="menuitem"
+              >
+                <Icon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${interactive ? "text-gray-500" : "text-gray-300"}`} />
+                <span className="flex-1 min-w-0">
+                  <span className="block font-medium leading-tight">{item.label}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5 leading-snug">
+                    {item.description}
+                  </span>
+                </span>
+                {item.external && (
+                  <ExternalLink className="h-3.5 w-3.5 text-gray-400 mt-1 flex-shrink-0" />
+                )}
+              </button>
+            );
+          })}
+        </section>
+        );
+      })}
+    </div>
+  );
+}

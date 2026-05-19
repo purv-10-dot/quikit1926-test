@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("orgSetup.users");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createOrgUserSchema } from "@/lib/schemas/userSchema";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
+import {
+  DEFAULT_INVITE_PASSWORD,
+  INVITE_METHOD,
+  renderInvitationEmail,
+  type SsoProvider,
+} from "@quikit/shared";
+import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
+import { sendEmail } from "@/lib/services/email";
 
 
 type MembershipWithTeams = {
@@ -146,8 +155,32 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
   const { firstName, lastName, email, password, role = "member", teamIds = [], teamId, linkExistingUserId, invitationMethod = "native" } = parsed.data;
   const resolvedTeamIds: string[] = teamIds.length ? teamIds : teamId ? [teamId] : [];
+  const normalisedEmail = email.trim().toLowerCase();
+
+  // FR-SA-004 — for SSO invites the email must resolve to a known SSO provider
+  // (Google/Microsoft, either consumer or MX-validated). Reject early so we
+  // don't end up with a passwordless user that can never sign in.
+  let ssoProvider: SsoProvider | null = null;
+  if (!linkExistingUserId && invitationMethod === INVITE_METHOD.SSO) {
+    ssoProvider = await classifySsoProviderAsync(normalisedEmail);
+    if (!ssoProvider) {
+      return NextResponse.json(
+        { success: false, error: "SSO invitations require a Google or Microsoft email address." },
+        { status: 422 },
+      );
+    }
+  }
+
+  // For Native invites with no admin-supplied password, seed the system
+  // default (Quikit2026) so the user receives it via email and must change
+  // it on first login. Matches the super-admin first-Org-Admin flow.
+  const isNativeNewUser =
+    !linkExistingUserId && invitationMethod === INVITE_METHOD.NATIVE;
+  const usedDefaultPassword = isNativeNewUser && !password;
+  const effectivePassword = usedDefaultPassword ? DEFAULT_INVITE_PASSWORD : password;
 
   let newUserId: string;
+  let newUserCreated = false;
 
   if (linkExistingUserId) {
     // Path A: link an existing org member into QuikScale. The user picked
@@ -166,7 +199,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     }
     newUserId = member.userId;
   } else {
-    const existingUser = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+    const existingUser = await db.user.findUnique({ where: { email: normalisedEmail } });
 
     if (existingUser) {
       const existingMembership = await db.orgMember.findUnique({
@@ -176,33 +209,55 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         return NextResponse.json({ success: false, error: "This user is already a member of the organisation. Pick them from the email dropdown to grant QuikScale access." }, { status: 409 });
 
       await db.orgMember.create({
-        data: { orgId, userId: existingUser.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
+        data: {
+          orgId,
+          userId: existingUser.id,
+          role,
+          teamId: resolvedTeamIds[0] ?? null,
+          status: "active",
+          createdBy: userId,
+          invitationToken: crypto.randomUUID(),
+          invitedAt: new Date(),
+          inviteMethod: invitationMethod,
+          inviteProvider: ssoProvider,
+        },
       });
       newUserId = existingUser.id;
     } else {
       // SSO invites get no password — `auth.User.password` is nullable so the
       // credentials provider can't authenticate them; only OAuth (Google /
-      // Microsoft) will work. Native invites take the existing path.
-      const isSso = invitationMethod === "sso";
-      if (!isSso && !password) {
-        return NextResponse.json(
-          { success: false, error: "Password is required for new users" },
-          { status: 400 },
-        );
-      }
-      const hashedPassword = isSso ? null : await bcrypt.hash(password!.trim(), 12);
+      // Microsoft) will work. Native invites either use an admin-supplied
+      // password OR the system default (Quikit2026); either way
+      // mustChangePassword forces a reset on first login.
+      const isSso = invitationMethod === INVITE_METHOD.SSO;
+      const hashedPassword = isSso
+        ? null
+        : await bcrypt.hash(effectivePassword!.trim(), 12);
       const user = await db.user.create({
         data: {
           firstName: firstName.trim(),
           lastName: lastName.trim(),
-          email: email.trim().toLowerCase(),
+          email: normalisedEmail,
           password: hashedPassword,
+          mustChangePassword: !isSso,
         },
       });
       await db.orgMember.create({
-        data: { orgId, userId: user.id, role, teamId: resolvedTeamIds[0] ?? null, status: "active", createdBy: userId },
+        data: {
+          orgId,
+          userId: user.id,
+          role,
+          teamId: resolvedTeamIds[0] ?? null,
+          status: "active",
+          createdBy: userId,
+          invitationToken: crypto.randomUUID(),
+          invitedAt: new Date(),
+          inviteMethod: invitationMethod,
+          inviteProvider: ssoProvider,
+        },
       });
       newUserId = user.id;
+      newUserCreated = true;
     }
   }
 
@@ -270,8 +325,64 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     appRole = { id: targetRoleId, name: targetRoleName };
   }
 
+  // ── Send onboarding invitation email ───────────────────────────────────
+  // Sent for fresh invites (Native or SSO) — not when linking an existing
+  // org member into QuikScale (they keep their existing credentials and
+  // already know how to log in). Email render + transport failures are
+  // logged but do not roll back the user creation.
+  if (!linkExistingUserId && membership?.invitationToken) {
+    try {
+      const [org, inviter, appRow] = await Promise.all([
+        db.org.findUnique({
+          where: { id: orgId },
+          select: { name: true, brandColor: true },
+        }),
+        db.user.findUnique({
+          where: { id: userId },
+          select: { firstName: true, lastName: true },
+        }),
+        appId
+          ? db.app.findUnique({ where: { id: appId }, select: { name: true } })
+          : Promise.resolve(null),
+      ]);
+
+      const appBaseUrl =
+        process.env.NEXT_PUBLIC_AUTH_URL ??
+        process.env.NEXTAUTH_URL ??
+        "http://localhost:3000";
+
+      const { subject, html } = renderInvitationEmail({
+        to: normalisedEmail,
+        firstName: firstName.trim(),
+        orgName: org?.name ?? "your organisation",
+        orgLogoUrl: null,
+        orgBrandColor: org?.brandColor ?? null,
+        inviterName: inviter
+          ? `${inviter.firstName} ${inviter.lastName}`.trim() || "QuikScale Admin"
+          : "QuikScale Admin",
+        role: appRole?.name ?? "User",
+        appNames: [appRow?.name ?? "QuikScale"],
+        token: membership.invitationToken,
+        appBaseUrl,
+        inviteMethod: invitationMethod,
+        ssoProvider,
+      });
+
+      await sendEmail({ to: normalisedEmail, subject, html });
+    } catch (err) {
+      console.error("[org/users] onboarding email failed:", err);
+    }
+  }
+
   return NextResponse.json(
-    { success: true, data: buildUserResponse(membership!, appRole) },
+    {
+      success: true,
+      data: buildUserResponse(membership!, appRole),
+      meta: {
+        usedDefaultPassword,
+        newUserCreated,
+      },
+    },
     { status: 201 },
   );
 }, { fallbackErrorMessage: "Failed to create user" });

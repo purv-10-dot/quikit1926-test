@@ -8,6 +8,7 @@ import { RouteProgress } from "@/components/shell/route-progress";
 import { KanTour } from "@/components/tour/kan-tour";
 import { SessionGuard } from "@/components/session-guard";
 import { IssueCreatedToast } from "@/components/issue-created-toast";
+import { NoAccessGate } from "@/components/shell/no-access-gate";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
 import { ImpersonationBanner } from "@quikit/ui";
 
@@ -19,7 +20,9 @@ export default function DashboardLayout({
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const pathname = usePathname();
-  const isSettings = /^\/spaces\/[^/]+\/settings/.test(pathname ?? "");
+  const isSettings =
+    /^\/spaces\/[^/]+\/settings/.test(pathname ?? "") ||
+    /^\/settings(\/|$)/.test(pathname ?? "");
 
   // Pages (like the project header's fullscreen button) dispatch this event
   // to hide both the top header and the sidebar for a distraction-free view.
@@ -41,14 +44,16 @@ export default function DashboardLayout({
     <SessionGuard>
       <ThemeApplier />
       <ImpersonationBanner />
-      <div className="flex flex-col h-screen bg-white">
-        {!fullscreen && <Header onToggleSidebar={() => setSidebarVisible((v) => !v)} />}
-        <div className="flex flex-1 overflow-hidden">
-          {!fullscreen && sidebarVisible && !isSettings && <Sidebar />}
-          <main className="flex-1 overflow-y-auto bg-white">{children}</main>
+      <NoAccessGate>
+        <div className="flex flex-col h-screen bg-white">
+          {!fullscreen && <Header onToggleSidebar={() => setSidebarVisible((v) => !v)} />}
+          <div className="flex flex-1 overflow-hidden">
+            {!fullscreen && sidebarVisible && !isSettings && <Sidebar />}
+            <main className="flex-1 overflow-y-auto bg-white">{children}</main>
+          </div>
+          <IssueCreatedToast />
         </div>
-        <IssueCreatedToast />
-      </div>
+      </NoAccessGate>
       <Suspense fallback={null}>
         <RouteProgress />
       </Suspense>

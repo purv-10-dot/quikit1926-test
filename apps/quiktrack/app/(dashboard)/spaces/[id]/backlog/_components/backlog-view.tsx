@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import {
   Search,
   Filter,
@@ -149,7 +150,22 @@ function formatSprintDateRange(start: string | null, end: string | null): string
   return "Add dates";
 }
 
-function InlineCreator({
+function InlineCreator(props: {
+  projectId: string;
+  defaultStatusId?: string;
+  sprintId: string | null;
+  members: Member[];
+  currentUserId: string | null;
+  onCreated: () => void;
+}) {
+  const perms = useMyProjectPermissions(props.projectId);
+  // Hide the composer entirely for users without create permission. Server
+  // would 403 the POST anyway, but the input bar is misleading UX.
+  if (!perms.loading && !perms.has("Issue", "create")) return null;
+  return <InlineCreatorInner {...props} />;
+}
+
+function InlineCreatorInner({
   projectId,
   defaultStatusId,
   sprintId,
@@ -1895,6 +1911,8 @@ function SectionBody({
 }
 
 export function BacklogView({ projectId }: { projectId: string }) {
+  const perms = useMyProjectPermissions(projectId);
+  const canCreateSprint = perms.loading || perms.has("Sprint", "create");
   const [search, setSearch] = useState("");
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [epics, setEpics] = useState<EpicLite[]>([]);
@@ -2862,13 +2880,15 @@ export function BacklogView({ projectId }: { projectId: string }) {
           someChecked={backlogSel.some}
           onToggleAll={backlogSel.toggle}
           trailing={
-            <button
-              type="button"
-              onClick={createSprint}
-              className="inline-flex items-center gap-1.5 h-7 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
-            >
-              Create sprint
-            </button>
+            canCreateSprint ? (
+              <button
+                type="button"
+                onClick={createSprint}
+                className="inline-flex items-center gap-1.5 h-7 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
+              >
+                Create sprint
+              </button>
+            ) : null
           }
         />
         <SectionBody
