@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
+import { userCanInProject, forbidden } from "@/lib/api/permissions";
 
 const bodySchema = z.object({
   /** QtProjectRole.id, or null to clear. */
@@ -12,13 +13,21 @@ const bodySchema = z.object({
 // Assign / clear a project member's dynamic project role. Writes to the
 // QtProjectUserRole join table — QtProjectMember itself only carries
 // membership presence + the legacy enum.
+//
+// Gate: tenant admins bypass; otherwise the caller must hold
+// `ProjectMember:update` via Layer 1 (QtAppRole) or Layer 2 (QtProjectRole).
+// The legacy PROJECT_ADMIN enum check has been retired — it's superseded by
+// the RBAC matrix that the per-project User Management UI now drives.
 export const PATCH = withProjectAccess<{ id: string; userId: string }>(async (
-  { projectId, projectRole, isTenantAdmin, userId: actorId },
+  { orgId, projectId, isTenantAdmin, userId: actorId },
   req,
   { params },
 ) => {
-  if (!isTenantAdmin && projectRole !== "PROJECT_ADMIN") {
-    return NextResponse.json({ success: false, error: "Project admin required" }, { status: 403 });
+  if (
+    !isTenantAdmin &&
+    !(await userCanInProject(actorId, orgId, projectId, "ProjectMember", "update"))
+  ) {
+    return forbidden();
   }
 
   const parsed = bodySchema.safeParse(await req.json());

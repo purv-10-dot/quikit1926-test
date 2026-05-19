@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { UsersTab } from "./_components/users-tab";
 import { RoleManagementTab } from "./_components/role-management-tab";
+import { RequirePerm } from "@/components/shell/require-perm";
 
 export default function UserManagementPage() {
   const [tab, setTab] = useState<"users" | "roles">("users");
 
   return (
+    <RequirePerm adminOnly>
     <div className="h-full flex flex-col">
       <div className="border-b border-gray-200 bg-white px-8 pt-2">
         <nav className="flex gap-6">
@@ -32,5 +34,6 @@ export default function UserManagementPage() {
         {tab === "users" ? <UsersTab /> : <RoleManagementTab />}
       </div>
     </div>
+    </RequirePerm>
   );
 }

@@ -6,6 +6,7 @@ import { Plus, Shield, Trash2 } from "lucide-react";
 import { ProjectPermissionMatrix } from "./permission-matrix";
 import { ProjectNavigationPanel } from "./navigation-panel";
 import { AddRoleModal } from "./add-role-modal";
+import { FieldPermissionMatrix } from "@/app/(dashboard)/settings/user-management/_components/field-permission-matrix";
 
 interface ProjectRole {
   id: string;
@@ -18,7 +19,7 @@ interface ProjectRole {
 export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<"entities" | "navigation">("entities");
+  const [subTab, setSubTab] = useState<"fields" | "entities" | "navigation">("fields");
   const [addOpen, setAddOpen] = useState(false);
 
   const rolesQ = useQuery({
@@ -116,18 +117,24 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
             </div>
 
             <nav className="flex gap-6 border-b border-gray-200">
-              {(["entities", "navigation"] as const).map((k) => (
+              {(
+                [
+                  { k: "fields" as const, label: "Fields" },
+                  { k: "entities" as const, label: "Entities" },
+                  { k: "navigation" as const, label: "Navigation" },
+                ]
+              ).map(({ k, label }) => (
                 <button
                   key={k}
                   type="button"
                   onClick={() => setSubTab(k)}
-                  className={`pb-2 text-sm font-medium border-b-2 -mb-px capitalize ${
+                  className={`pb-2 text-sm font-medium border-b-2 -mb-px ${
                     subTab === k
                       ? "border-blue-600 text-blue-700"
                       : "border-transparent text-gray-500 hover:text-gray-700"
                   }`}
                 >
-                  {k}
+                  {label}
                 </button>
               ))}
             </nav>
@@ -141,7 +148,13 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
               </span>
             </div>
 
-            {subTab === "entities" ? (
+            {subTab === "fields" ? (
+              <FieldPermissionMatrix
+                roleId={selectedRole.id}
+                endpoint={`/api/projects/${projectId}/roles/${selectedRole.id}/field-permissions`}
+                queryKey={["quiktrack", "project-role-field-perms", projectId, selectedRole.id]}
+              />
+            ) : subTab === "entities" ? (
               <ProjectPermissionMatrix projectId={projectId} roleId={selectedRole.id} />
             ) : (
               <ProjectNavigationPanel projectId={projectId} roleId={selectedRole.id} />

@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Search, Users as UsersIcon, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Lock, Search, Users as UsersIcon, X } from "lucide-react";
 import { Button } from "@quikit/ui";
 import { EffectivePermissions } from "./effective-permissions";
 import { AddMemberModal } from "./add-member-modal";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 interface Member {
   id: string;
@@ -33,6 +34,12 @@ interface ProjectRole {
 
 export function MembersTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
+  const perms = useMyProjectPermissions(projectId);
+  // Granular gates per action. Page-level guard only required `:view`, so a
+  // Developer/QA can read the member list — but mutations get disabled
+  // unless they hold the matching perm.
+  const canAdd = perms.loading || perms.has("ProjectMember", "create");
+  const canUpdateRoles = perms.loading || perms.has("ProjectMember", "update");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -82,6 +89,17 @@ export function MembersTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="px-8 py-6 space-y-4">
+      {!perms.loading && !canUpdateRoles && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-[12px] text-amber-800">
+          <Lock className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            <span className="font-semibold">Read-only</span> — you can see the member list,
+            but changing roles or adding members needs the{" "}
+            <span className="font-medium">ProjectMember:update</span> /{" "}
+            <span className="font-medium">:create</span> permission. Ask the project admin.
+          </span>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
@@ -103,9 +121,11 @@ export function MembersTab({ projectId }: { projectId: string }) {
               className="h-9 w-64 pl-9 pr-3 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
           </div>
-          <Button size="sm" onClick={() => setAddOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-            + Add Member
-          </Button>
+          {canAdd && (
+            <Button size="sm" onClick={() => setAddOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+              + Add Member
+            </Button>
+          )}
         </div>
       </div>
 
@@ -145,23 +165,33 @@ export function MembersTab({ projectId }: { projectId: string }) {
                     </td>
                     <td className="px-4 py-3 text-gray-600">{m.user?.email}</td>
                     <td className="px-4 py-3">
-                      <select
-                        value={m.projectRoleId ?? ""}
-                        onChange={(e) =>
-                          setRole.mutate({
-                            userId: m.userId,
-                            projectRoleId: e.target.value === "" ? null : e.target.value,
-                          })
-                        }
-                        className="text-xs px-2 py-1 border border-gray-200 rounded bg-white"
-                      >
-                        <option value="">— None —</option>
-                        {roles.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}{r.isDefault ? " (default)" : ""}
-                          </option>
-                        ))}
-                      </select>
+                      {canUpdateRoles ? (
+                        <select
+                          value={m.projectRoleId ?? ""}
+                          onChange={(e) =>
+                            setRole.mutate({
+                              userId: m.userId,
+                              projectRoleId: e.target.value === "" ? null : e.target.value,
+                            })
+                          }
+                          className="text-xs px-2 py-1 border border-gray-200 rounded bg-white"
+                        >
+                          <option value="">— None —</option>
+                          {roles.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}{r.isDefault ? " (default)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span
+                          title="You don't have permission to change member roles. Ask the project admin (ProjectMember:update)."
+                          className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 ring-1 ring-gray-200 rounded px-2 py-1 cursor-not-allowed"
+                        >
+                          <Lock className="h-3 w-3 text-gray-400" />
+                          {m.projectRole?.name ?? "— None —"}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{m.role}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs">

@@ -4899,20 +4899,21 @@ model QtAppRole {
 }
 
 model QtProjectRole {
-  id          String                    @id @default(cuid())
-  orgId       String
-  projectId   String
-  name        String
-  description String?
-  isDefault   Boolean                   @default(false)
-  createdAt   DateTime                  @default(now())
-  updatedAt   DateTime                  @updatedAt
-  createdBy   String?
-  org         Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  project     QtProject                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  permissions QtProjectRolePermission[]
-  navigations QtProjectRoleNavigation[]
-  members     QtProjectUserRole[]
+  id               String                         @id @default(cuid())
+  orgId            String
+  projectId        String
+  name             String
+  description      String?
+  isDefault        Boolean                        @default(false)
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
+  createdBy        String?
+  org              Org                            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project          QtProject                      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  permissions      QtProjectRolePermission[]
+  navigations      QtProjectRoleNavigation[]
+  fieldPermissions QtProjectRoleFieldPermission[]
+  members          QtProjectUserRole[]
 
   @@unique([projectId, name])
   @@index([orgId])
@@ -4978,6 +4979,22 @@ model QtProjectRolePermission {
 
   @@unique([projectRoleId, resource, action])
   @@index([projectRoleId])
+  @@schema("app_quiktrack")
+}
+
+/// Field-level permission grant for a project-scoped role (Layer 2). One row
+/// per (projectRoleId, entity, field). Absence means default level (editable).
+model QtProjectRoleFieldPermission {
+  id            String        @id @default(cuid())
+  projectRoleId String
+  entity        String
+  field         String
+  level         String        // "hidden" | "readonly" | "editable" | "required"
+  projectRole   QtProjectRole @relation(fields: [projectRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([projectRoleId, entity, field])
+  @@index([projectRoleId, entity])
+  @@map("ProjectRoleFieldPermission")
   @@schema("app_quiktrack")
 }
 

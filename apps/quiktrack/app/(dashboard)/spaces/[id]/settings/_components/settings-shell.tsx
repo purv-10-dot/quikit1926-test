@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 interface Project {
   id: string;
@@ -13,9 +14,16 @@ interface Project {
   color?: string | null;
 }
 
-const NAV: { key: string; label: string; href: (id: string) => string; tag?: string }[] = [
+const NAV: {
+  key: string;
+  label: string;
+  href: (id: string) => string;
+  tag?: string;
+  /** Required project perm (Layer 1 ∪ Layer 2) — entry hidden otherwise. */
+  perm?: { resource: string; action: string };
+}[] = [
   { key: "details", label: "Details", href: (id) => `/spaces/${id}/settings` },
-  { key: "user-management", label: "User Management", href: (id) => `/spaces/${id}/settings/user-management` },
+  { key: "user-management", label: "User Management", href: (id) => `/spaces/${id}/settings/user-management`, perm: { resource: "ProjectMember", action: "view" } },
   // TODO: the following nav entries are coming soon — their pages are stubs.
   // Restore once their corresponding settings UIs are implemented.
   // { key: "access", label: "Access", href: (id) => `/spaces/${id}/settings/access` },
@@ -43,8 +51,15 @@ export function SettingsShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const perms = useMyProjectPermissions(projectId);
   const [project, setProject] = useState<Project | null>(null);
   const [featuresOpen, setFeaturesOpen] = useState(false);
+
+  // Hide nav entries the current user can't act on. Pages re-enforce with
+  // RequireProjectPerm so direct URL hits are also blocked.
+  const visibleNav = NAV.filter(
+    (n) => !n.perm || perms.loading || perms.has(n.perm.resource, n.perm.action),
+  );
 
   useEffect(() => {
     let alive = true;
@@ -100,7 +115,7 @@ export function SettingsShell({
         </div>
 
         <nav className="mt-4 space-y-0.5">
-          {NAV.map((n) => {
+          {visibleNav.map((n) => {
             const href = n.href(projectId);
             const active = isActive(href);
             const isFeatures = n.key === "features";
