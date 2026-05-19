@@ -9,6 +9,7 @@ import {
   QUARTER_STARTS,
 } from "@/lib/utils/fiscal";
 import { achievedPctColor, formatReviewValue } from "./helpers";
+import { CATEGORY_TYPE_LABELS, type CategoryType } from "@/lib/utils/breakdownCalc";
 import { CriticalReviewSection } from "./CriticalReviewSection";
 
 type TopTab = "review" | "critical";
@@ -917,9 +918,14 @@ export default function OPSPReviewPage() {
       label: "Category Type",
       width: 130,
       thClassName: "whitespace-nowrap",
+      // Render the friendly label ("Cumulative Till Exit") instead of the raw
+      // DB key ("CumulativeTillEnd"). Falls back to the raw value if a future
+      // categoryType is added without a label entry.
       render: (row) =>
         row.isFirstInGroup ? (
-          <span className="font-medium text-gray-800 truncate block">{row.categoryType}</span>
+          <span className="font-medium text-gray-800 truncate block">
+            {CATEGORY_TYPE_LABELS[row.categoryType as CategoryType] ?? row.categoryType}
+          </span>
         ) : null,
     },
     {

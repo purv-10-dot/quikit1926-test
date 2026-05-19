@@ -21,7 +21,7 @@
 import { useEffect } from "react";
 import { X, AlertTriangle, Lock, Check, Calendar } from "lucide-react";
 import { FInput } from "./RichEditor";
-import { CategorySelect, ProjectedInput, parseProjectedValue, combineProjectedValue, getScaleAbbrs, displayCategory, catMetaCache } from "./category";
+import { CategorySelect, ProjectedInput, parseProjectedValue, combineProjectedValue, getScaleAbbrs, displayCategory, catMetaCache, sanitizeNumericInput } from "./category";
 import { OwnerSelect, WithTooltip } from "./pickers";
 import { getScales } from "@/lib/utils/currency";
 import {
@@ -596,7 +596,7 @@ export function TargetsModal({
                 >
                   <CategorySelect
                     value={row.category}
-
+                    excludeNames={rows.map((r, idx) => idx === i ? "" : r.category)}
                     onChange={(val) => {
                       const next = [...rows];
                       next[i] = { ...next[i], category: val, projected: "", y1: "", y2: "", y3: "", y4: "", y5: "" };
@@ -657,11 +657,14 @@ export function TargetsModal({
                         )}
                         <input
                           type="text"
+                          inputMode="decimal"
                           value={isCurrency ? fieldNum : String(row[k] ?? "")}
                           disabled={disabled}
                           onChange={(e) => {
                             const next = [...rows];
-                            const val = isCurrency ? combineProjectedValue(e.target.value, fieldScale) : e.target.value;
+                            // Strip non-numeric chars so cells like "6.6fgdgf7" can't land in state.
+                            const cleaned = sanitizeNumericInput(e.target.value);
+                            const val = isCurrency ? combineProjectedValue(cleaned, fieldScale) : cleaned;
                             // Only Automatic+Cumulative rows rebalance; others
                             // write only the edited cell.
                             const editedIdx = keys.indexOf(k);
@@ -899,7 +902,7 @@ export function GoalsModal({
                   ) : (
                     <CategorySelect
                       value={row.category}
-  
+                      excludeNames={rows.map((r, idx) => idx === i ? "" : r.category)}
                       onChange={(val) => {
                         const next = [...rows];
                         next[i] = { ...next[i], category: val, projected: "", q1: "", q2: "", q3: "", q4: "" };
@@ -989,11 +992,14 @@ export function GoalsModal({
                         )}
                         <input
                           type="text"
+                          inputMode="decimal"
                           value={isCurrency ? fieldNum : String(row[k] ?? "")}
                           disabled={disabled}
                           onChange={(e) => {
                             const next = [...rows];
-                            const val = isCurrency ? combineProjectedValue(e.target.value, fieldScale) : e.target.value;
+                            // Strip non-numeric chars so cells like "6.6fgdgf7" can't land in state.
+                            const cleaned = sanitizeNumericInput(e.target.value);
+                            const val = isCurrency ? combineProjectedValue(cleaned, fieldScale) : cleaned;
                             const editedIdx = qCols.indexOf(k);
                             const currentValues = qCols.map((kk) => String(row[kk] ?? ""));
                             const rebalanced = redistributeOnCellEdit({
@@ -1127,14 +1133,13 @@ export function ActionsModal({
     const goalProjectedVal = goalForRow
       ? resolveProjected(goalForRow.category, goalForRow.projected)
       : null;
-    // Validation: a single quarter's Projected should not exceed the annual
-    // Goal's Projected. Skipped for Standalone categories since their Year
-    // value is an AVERAGE, not a sum — a single quarter legitimately can sit
-    // above the year average.
+    // Validation: a single quarter's Projected must not exceed the annual
+    // Goal's Projected. Applies uniformly across categoryTypes —
+    // Cumulative, CumulativeTillEnd, AND Standalone. (A nonsensical case
+    // like Standalone Q=1000 Cr against Y=90 Cr should be caught even
+    // though Standalone's year value is conceptually an average.)
     const categoryType = meta?.categoryType;
-    const validateAgainstGoal = categoryType !== "Standalone";
     const exceedsGoal =
-      validateAgainstGoal &&
       hasProjected &&
       goalProjectedVal != null &&
       goalProjectedVal > 0 &&
@@ -1174,6 +1179,24 @@ export function ActionsModal({
       && hasProjected
       && mValues.some((v) => Math.abs(v - projectedVal!) < 0.01);
 
+    // ── Exit-not-reached rule (CumulativeTillEnd) ──
+    // When the user filled some months but no cell reaches Projected — the
+    // running total stops short of the required exit value. Catches the
+    // [10, 20, 25] → Projected=30 case: monotonic, none over Projected, but
+    // the exit (last filled month = 25) hasn't reached 30. Fires a specific
+    // message so the user knows to bump up the last month.
+    let lastFilledMonthIndex = -1;
+    for (let i = mValues.length - 1; i >= 0; i--) {
+      if (mValues[i] > 0) { lastFilledMonthIndex = i; break; }
+    }
+    const lastFilledValue = lastFilledMonthIndex >= 0 ? mValues[lastFilledMonthIndex] : null;
+    const lastBelowProjected =
+      categoryType === "CumulativeTillEnd"
+      && hasProjected
+      && lastFilledValue != null
+      && !earlyExitReached
+      && lastFilledValue < projectedVal! - 0.01;
+
     // ── Required-field rules ──
     // A selected category must have BOTH a Projected value and a Month
     // breakdown. Empty "Select Category" rows are skipped (hasCategory=false)
@@ -1188,7 +1211,8 @@ export function ActionsModal({
     const isMismatch = hasProjected && hasAllM && !balance.isBalanced;
     const hasError = noMFilled || isOver || isUnder || isMismatch || exceedsGoal
       || hasCellOverProjected || hasMonotonicViolation
-      || missingProjected || missingBreakdown;
+      || missingProjected || missingBreakdown
+      || lastBelowProjected;
     const isUnbalanced = hasProjected && hasAnyM && !balance.isBalanced && !earlyExitReached;
 
     return {
@@ -1199,6 +1223,7 @@ export function ActionsModal({
       cellsOverProjected, hasCellOverProjected,
       monotonicViolations, hasMonotonicViolation,
       missingProjected, missingBreakdown,
+      lastBelowProjected, lastFilledMonthIndex,
     };
   });
 
@@ -1208,6 +1233,12 @@ export function ActionsModal({
   const hasAnyMonotonicViolation = rowValidations.some(v => v.hasMonotonicViolation);
   const hasAnyMissingProjected = rowValidations.some(v => v.missingProjected);
   const hasAnyMissingBreakdown = rowValidations.some(v => v.missingBreakdown);
+  const hasAnyLastBelowProjected = rowValidations.some(v => v.lastBelowProjected);
+  // Hide the generic "doesn't match" banner when the only reason for unbalance
+  // is the more specific lastBelowProjected case — keeps the message focused.
+  const hasAnyGenericUnbalance = rowValidations.some(v =>
+    v.isUnbalanced && !v.lastBelowProjected
+  );
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4">
@@ -1262,6 +1293,7 @@ export function ActionsModal({
                       rows even when they were seeded from a Goal. */}
                   <CategorySelect
                     value={row.category}
+                    excludeNames={rows.map((r, idx) => idx === i ? "" : r.category)}
                     onChange={(val) => {
                       const next = [...rows];
                       next[i] = { ...next[i], category: val, projected: "", m1: "", m2: "", m3: "" };
@@ -1314,8 +1346,8 @@ export function ActionsModal({
                       </p>
                     )}
                     {/* Goal-exceeded validation — Quarter Projected must not
-                        exceed the annual Goal Projected (skipped for Standalone
-                        categories, which are averaged not summed). */}
+                        exceed the annual Goal Projected. Applies uniformly
+                        to every categoryType including Standalone. */}
                     {v.exceedsGoal && (
                       <p className="text-[10px] text-red-500 mt-0.5 truncate font-medium">
                         Exceeds Goal (1 YR): {v.goalForRow?.projected}
@@ -1390,11 +1422,14 @@ export function ActionsModal({
                         )}
                         <input
                           type="text"
+                          inputMode="decimal"
                           value={isCurrency ? fieldNum : String(row[k] ?? "")}
                           disabled={disabled}
                           onChange={(e) => {
                             const next = [...rows];
-                            const val = isCurrency ? combineProjectedValue(e.target.value, fieldScale) : e.target.value;
+                            // Strip non-numeric chars so cells like "6.6fgdgf7" can't land in state.
+                            const cleaned = sanitizeNumericInput(e.target.value);
+                            const val = isCurrency ? combineProjectedValue(cleaned, fieldScale) : cleaned;
                             const editedIdx = mCols.indexOf(k);
                             const currentValues = mCols.map((kk) => String(row[kk] ?? ""));
                             const rebalanced = redistributeOnCellEdit({
@@ -1488,6 +1523,15 @@ export function ActionsModal({
                     </p>
                   );
                 })}
+                {/* Exit-not-reached (CumulativeTillEnd) — the last filled
+                    month must reach Projected to mark the running total as
+                    "exited". Names the actual last-filled month + value so
+                    the user knows which cell to bump up. */}
+                {v.lastBelowProjected && v.lastFilledMonthIndex >= 0 && (
+                  <p className="text-[10px] text-red-500 pl-1 pt-0.5 font-medium">
+                    Month {v.lastFilledMonthIndex + 1} value ({v.mValues[v.lastFilledMonthIndex]}) must reach Projected ({row.projected})
+                  </p>
+                )}
               </div>
             );
           })}
@@ -1504,8 +1548,11 @@ export function ActionsModal({
             {!readOnly && hasAnyMissingBreakdown && (
               <span className="text-xs text-red-500 font-medium">Monthly breakdown required</span>
             )}
-            {!readOnly && hasAnyUnbalanced && (
+            {!readOnly && hasAnyGenericUnbalance && (
               <span className="text-xs text-red-500 font-medium">Projected breakdown doesn&apos;t match</span>
+            )}
+            {!readOnly && hasAnyLastBelowProjected && (
+              <span className="text-xs text-red-500 font-medium">Last month must reach Projected</span>
             )}
             {!readOnly && hasAnyExceedsGoal && (
               <span className="text-xs text-red-500 font-medium">Projected exceeds Goal (1 YR)</span>
@@ -1518,9 +1565,9 @@ export function ActionsModal({
             )}
             <button
               onClick={onClose}
-              disabled={!readOnly && (hasAnyUnbalanced || hasAnyExceedsGoal || hasAnyCellOverProjected || hasAnyMonotonicViolation || hasAnyMissingProjected || hasAnyMissingBreakdown)}
+              disabled={!readOnly && (hasAnyUnbalanced || hasAnyExceedsGoal || hasAnyCellOverProjected || hasAnyMonotonicViolation || hasAnyMissingProjected || hasAnyMissingBreakdown || hasAnyLastBelowProjected)}
               className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${
-                !readOnly && (hasAnyUnbalanced || hasAnyExceedsGoal || hasAnyCellOverProjected || hasAnyMonotonicViolation || hasAnyMissingProjected || hasAnyMissingBreakdown)
+                !readOnly && (hasAnyUnbalanced || hasAnyExceedsGoal || hasAnyCellOverProjected || hasAnyMonotonicViolation || hasAnyMissingProjected || hasAnyMissingBreakdown || hasAnyLastBelowProjected)
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : readOnly
                     ? "bg-gray-600 text-white hover:bg-gray-700"

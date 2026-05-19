@@ -126,9 +126,14 @@ export function displayCategory(name: string): string {
 export function CategorySelect({
   value,
   onChange,
+  excludeNames,
 }: {
   value: string;
   onChange: (v: string) => void;
+  /** Category names to hide from the dropdown (e.g. picked in sibling rows
+   *  of the same section). The current row's own `value` is always shown,
+   *  so the user can still see and Clear what they picked. */
+  excludeNames?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [cats, setCats] = useState<CatFull[]>([]);
@@ -209,11 +214,16 @@ export function CategorySelect({
     if (open) fetchCats();
   }, [open]);
 
-  const catNames = cats.map((c) => c.name);
+  // Hide names picked in sibling rows (passed via `excludeNames`) but always
+  // keep the current row's own `value` visible so the user can re-select or
+  // Clear it. Falsy entries in `excludeNames` (empty strings) are ignored.
+  const excludedSet = new Set((excludeNames ?? []).filter(Boolean));
+  const visibleCats = cats.filter((c) => c.name === value || !excludedSet.has(c.name));
+  const catNames = visibleCats.map((c) => c.name);
   const allCats: CatFull[] =
     catNames.includes(value) || !value
-      ? cats
-      : [...cats, { name: value, dataType: "Number", currency: null }];
+      ? visibleCats
+      : [...visibleCats, { name: value, dataType: "Number", currency: null }];
 
   function resetForm() {
     setAdding(false);
@@ -467,6 +477,25 @@ export function CategorySelect({
   );
 }
 
+/**
+ * Strip non-numeric characters, keeping only digits and a single decimal
+ * point. The OPSP Projected/period cells are `type="text"` (required so
+ * the currency-scale dropdown can sit alongside the input), which means
+ * the browser won't block letters on its own — this is the runtime guard
+ * so values like "6.6fgdgf7" can't be entered.
+ *
+ * Exported so the modal cell inputs can use the same rule.
+ */
+export function sanitizeNumericInput(raw: string): string {
+  let s = (raw ?? "").replace(/[^0-9.]/g, "");
+  const firstDot = s.indexOf(".");
+  if (firstDot >= 0) {
+    // Collapse any subsequent dots into nothing (only one decimal allowed).
+    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
+  }
+  return s;
+}
+
 export function ProjectedInput({
   value,
   onChange,
@@ -492,8 +521,10 @@ export function ProjectedInput({
   const availScaleAbbrs = isCurrency ? getScaleAbbrs(currency) : [];
 
   function handleNumChange(newNum: string) {
-    if (isCurrency) onChange(combineProjectedValue(newNum, scalePart));
-    else onChange(newNum);
+    // Numeric-only — strips letters/symbols before storing.
+    const clean = sanitizeNumericInput(newNum);
+    if (isCurrency) onChange(combineProjectedValue(clean, scalePart));
+    else onChange(clean);
   }
   function handleScaleChange(newScale: string) {
     onChange(combineProjectedValue(numPart, newScale));
@@ -514,6 +545,7 @@ export function ProjectedInput({
 
       <input
         type="text"
+        inputMode="decimal"
         value={isCurrency ? numPart : value}
         onChange={(e) => handleNumChange(e.target.value)}
         placeholder={placeholder ?? (isPct ? "0" : isCurrency ? "0" : "Num")}

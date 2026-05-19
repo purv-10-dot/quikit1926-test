@@ -50,6 +50,7 @@ export function TargetsSection({
             <div className="col-span-3 min-w-0">
               <CategorySelect
                 value={row.category}
+                excludeNames={form.targetRows.map((r, idx) => idx === i ? "" : r.category)}
                 onChange={(v) => {
                   const next = [...form.targetRows];
                   next[i] = {

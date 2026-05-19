@@ -205,16 +205,33 @@ export function toNum(v: unknown): number | null {
  * the four projected thresholds entered during OPSP creation. Bullets are
  * indexed as `[superGreen, lightGreen, yellow, red]`.
  *
- * Rule: returns the highest tier whose projected threshold ≤ achieved.
- * If achieved is below every threshold (or all thresholds are missing),
- * returns "red". If achieved itself is null/NaN, returns null (no tier).
+ * Two valid bullet conventions are supported — direction is auto-detected
+ * from the SG vs R bullet pair:
  *
- * Examples (bullets = [120, 80, 60, 40]):
- *   25  → red          (< 40)
- *   45  → red          (≥ 40 but < 60 — "red" is still the highest match)
- *   65  → yellow       (≥ 60 but < 80)
- *   85  → lightGreen   (≥ 80 but < 120)
- *   130 → superGreen   (≥ 120)
+ * **Descending mode** — `SG > R` ("higher achieved is better", e.g. revenue):
+ *   Returns the highest tier whose projected threshold ≤ achieved.
+ *   Below every threshold → "red".
+ *
+ *   Examples (bullets = [120, 80, 60, 40]):
+ *     25  → red          (< 40)
+ *     45  → red          (≥ 40 but < 60 — "red" is still the highest match)
+ *     65  → yellow       (≥ 60 but < 80)
+ *     85  → lightGreen   (≥ 80 but < 120)
+ *     130 → superGreen   (≥ 120)
+ *
+ * **Ascending mode** — `SG < R` ("lower achieved is better", e.g. defects):
+ *   Returns the first tier whose projected threshold > achieved (i.e. the
+ *   one achieved hasn't crossed yet). Above every threshold → "red".
+ *
+ *   Examples (bullets = [20, 30, 50, 90]):
+ *     10  → superGreen   (< 20)
+ *     25  → lightGreen   (≥ 20 but < 30)
+ *     40  → yellow       (≥ 30 but < 50)
+ *     110 → red          (≥ 50 — past the yellow band, all worse → red)
+ *
+ * **Fallback:** when SG/R is missing or `SG === R`, mode defaults to
+ * descending — preserves behavior for existing OPSP cards. If achieved
+ * itself is null/NaN, returns null (no tier).
  */
 export function resolveCritTier(
   achieved: number | string | null | undefined,
@@ -222,6 +239,26 @@ export function resolveCritTier(
 ): CritTier | null {
   const ach = toNum(achieved);
   if (ach === null) return null;
+
+  // Direction detection — compare the Super Green and Red thresholds. SG < R
+  // means "lower is better" (e.g. defects); SG > R means "higher is better"
+  // (e.g. revenue). Missing-bullet / equal cases fall back to descending so
+  // existing OPSP cards keep their tier mapping.
+  const sgT = toNum(bullets[0]);
+  const rT = toNum(bullets[3]);
+  const ascending = sgT !== null && rT !== null && sgT < rT;
+
+  if (ascending) {
+    // Walk best → worst; the tier is the FIRST one whose threshold the
+    // achieved value hasn't crossed yet. Past every threshold → red.
+    for (let i = 0; i < 4; i++) {
+      const threshold = toNum(bullets[i]);
+      if (threshold !== null && ach < threshold) return CRIT_BULLET_TIERS[i];
+    }
+    return "red";
+  }
+
+  // Descending mode (default / existing behavior).
   // bullets[0..3] map to superGreen/lightGreen/yellow/red. Walk highest →
   // lowest and return the first tier whose threshold is satisfied.
   for (let i = 0; i < 4; i++) {

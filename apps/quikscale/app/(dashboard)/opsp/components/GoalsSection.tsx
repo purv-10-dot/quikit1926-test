@@ -66,6 +66,7 @@ export function GoalsSection({
                 <div className="col-span-3 min-w-0">
                   <CategorySelect
                     value={row.category}
+                    excludeNames={form.goalRows.map((r, idx) => idx === i ? "" : r.category)}
                     onChange={(v) => {
                       const next = [...form.goalRows];
                       next[i] = {
