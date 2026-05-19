@@ -8,25 +8,16 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/internal/provision-roles  — service-to-service only.
  *
- * Eagerly seeds this org's default QuikScale roles (system "admin" with
- * full permissions + the default "Member" role). Called by the launcher's
- * super-admin "grant app access" flow the moment QuikScale is enabled for
- * an org, so the admin panel's role dropdown shows "admin" immediately
- * instead of "No roles available" until someone first opens QuikScale.
+ * Mirror of apps/quikscale/app/api/internal/provision-roles/route.ts for
+ * QuikTrack's RBAC tables (app_quiktrack.AppRole / RolePermission /
+ * UserAppRole, modelled in Prisma as QtAppRole / QtRolePermission /
+ * QtUserAppRole).
  *
- * Optionally accepts `adminUserIds: string[]` — for each user id, an
- * `app_quikscale.UserAppRole` row is upserted linking them to the seeded
- * admin AppRole. Used by the super-admin "create org with admin" flow so
- * the freshly-invited Org Admin has the admin role assigned the moment
- * they accept the invite — no lazy-seed gap.
+ * Seeds the default "admin" + "Member" roles for the org, then optionally
+ * assigns the supplied `adminUserIds` to the admin role so the org admin
+ * is wired up at the same moment access is granted.
  *
- * The lazy seed in GET /api/me/permissions remains as the fallback — this
- * endpoint just removes the provisioning-order gap. Idempotent (the
- * seeder is in-process cached + only fills grants when empty;
- * ensureUserOnRole skips on existing rows).
- *
- * Auth: shared INTERNAL_SECRET via `x-internal-secret` (mirrors
- * verify-token-remote). Not a user session — no withOrgAuth.
+ * Auth: shared INTERNAL_SECRET via `x-internal-secret`.
  */
 export async function POST(req: NextRequest) {
   const secret = process.env.INTERNAL_SECRET;
