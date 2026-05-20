@@ -1,5 +1,11 @@
+const path = require("path");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Container build: emit a self-contained Node server under .next/standalone.
+  // outputFileTracingRoot points at the monorepo root so workspace deps
+  // (@quikit/*) are traced into the standalone bundle.
+  output: "standalone",
   reactStrictMode: true,
   swcMinify: true,
   transpilePackages: [
@@ -13,6 +19,7 @@ const nextConfig = {
   // Wires up Sentry server/edge configs.
   experimental: {
     instrumentationHook: true,
+    outputFileTracingRoot: path.join(__dirname, "../.."),
   },
   async headers() {
     // Marketing is now served in-app (one zone). Its _next chunks + assets

@@ -1,5 +1,11 @@
+const path = require("path");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Container build: emit a self-contained Node server under .next/standalone.
+  // outputFileTracingRoot points at the monorepo root so workspace deps
+  // (@quikit/*) are traced into the standalone bundle.
+  output: "standalone",
   reactStrictMode: true,
   swcMinify: true,
   transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database", "@quikit/redis"],
@@ -7,6 +13,7 @@ const nextConfig = {
     serverActions: {
       allowedOrigins: ["localhost:3002", "localhost:3005"],
     },
+    outputFileTracingRoot: path.join(__dirname, "../.."),
   },
   async headers() {
     return [
