@@ -32,10 +32,13 @@ export const createClientSchema = z.object({
   description: z.string().max(5000).optional().nullable(),
   isActive: z.boolean().default(true),
   startDate: z.string().regex(DATE_ISO_OR_YMD).optional().nullable(),
-  weeklyStartTime: z.string().regex(TIME_24H).optional().nullable(),
-  weeklyEndTime: z.string().regex(TIME_24H).optional().nullable(),
-  dailyStartTime: z.string().regex(TIME_24H).optional().nullable(),
-  dailyEndTime: z.string().regex(TIME_24H).optional().nullable(),
+  // Planned meeting times are required so the export header block and the
+  // duration-followed stat always have a denominator. Legacy NULLs are not
+  // a concern in production data; new records cannot omit these.
+  weeklyStartTime: z.string().regex(TIME_24H, "Weekly start time is required (HH:mm)"),
+  weeklyEndTime: z.string().regex(TIME_24H, "Weekly end time is required (HH:mm)"),
+  dailyStartTime: z.string().regex(TIME_24H, "Daily start time is required (HH:mm)"),
+  dailyEndTime: z.string().regex(TIME_24H, "Daily end time is required (HH:mm)"),
   /// IDs of ClientMember rows that should be on this client's roster.
   teamMemberIds: z.array(z.string()).default([]),
 });
