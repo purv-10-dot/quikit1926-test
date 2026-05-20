@@ -164,3 +164,138 @@ export function resolveOwnerName(
   const u = users.find((x) => x.id === id);
   return u ? `${u.firstName} ${u.lastName}` : id;
 }
+
+/* ── Critical-Number tier resolution ─────────────────────────────────── */
+
+/**
+ * Critical-Number tier names. The 4 projected values entered in OPSP
+ * creation define the lower-bound thresholds for each tier; `resolveCritTier`
+ * places an achieved value into the highest tier whose projected ≤ achieved,
+ * defaulting to "red" when achieved falls below all four.
+ */
+export type CritTier = "superGreen" | "lightGreen" | "yellow" | "red";
+
+export const CRIT_TIER_LABELS: Record<CritTier, string> = {
+  superGreen: "Super Green",
+  lightGreen: "Light Green",
+  yellow: "Yellow",
+  red: "Red",
+};
+
+/** Bullet-index → tier mapping. CritCard.bullets is always [SG, LG, Y, R]. */
+export const CRIT_BULLET_TIERS: readonly CritTier[] = [
+  "superGreen",
+  "lightGreen",
+  "yellow",
+  "red",
+];
+
+/**
+ * Coerce a raw bullet/achieved value (may arrive as string from JSON
+ * storage, number, null, or undefined) to a finite number or null.
+ */
+export function toNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Resolve which Critical-Number tier an `achieved` value lands in, given
+ * the four projected thresholds entered during OPSP creation. Bullets are
+ * indexed as `[superGreen, lightGreen, yellow, red]`.
+ *
+ * Two valid bullet conventions are supported — direction is auto-detected
+ * from the SG vs R bullet pair:
+ *
+ * **Descending mode** — `SG > R` ("higher achieved is better", e.g. revenue):
+ *   Returns the highest tier whose projected threshold ≤ achieved.
+ *   Below every threshold → "red".
+ *
+ *   Examples (bullets = [120, 80, 60, 40]):
+ *     25  → red          (< 40)
+ *     45  → red          (≥ 40 but < 60 — "red" is still the highest match)
+ *     65  → yellow       (≥ 60 but < 80)
+ *     85  → lightGreen   (≥ 80 but < 120)
+ *     130 → superGreen   (≥ 120)
+ *
+ * **Ascending mode** — `SG < R` ("lower achieved is better", e.g. defects):
+ *   Returns the first tier whose projected threshold > achieved (i.e. the
+ *   one achieved hasn't crossed yet). Above every threshold → "red".
+ *
+ *   Examples (bullets = [20, 30, 50, 90]):
+ *     10  → superGreen   (< 20)
+ *     25  → lightGreen   (≥ 20 but < 30)
+ *     40  → yellow       (≥ 30 but < 50)
+ *     110 → red          (≥ 50 — past the yellow band, all worse → red)
+ *
+ * **Fallback:** when SG/R is missing or `SG === R`, mode defaults to
+ * descending — preserves behavior for existing OPSP cards. If achieved
+ * itself is null/NaN, returns null (no tier).
+ */
+export function resolveCritTier(
+  achieved: number | string | null | undefined,
+  bullets: ReadonlyArray<number | string | null | undefined>
+): CritTier | null {
+  const ach = toNum(achieved);
+  if (ach === null) return null;
+
+  // Direction detection — compare the Super Green and Red thresholds. SG < R
+  // means "lower is better" (e.g. defects); SG > R means "higher is better"
+  // (e.g. revenue). Missing-bullet / equal cases fall back to descending so
+  // existing OPSP cards keep their tier mapping.
+  const sgT = toNum(bullets[0]);
+  const rT = toNum(bullets[3]);
+  const ascending = sgT !== null && rT !== null && sgT < rT;
+
+  if (ascending) {
+    // Walk best → worst; the tier is the FIRST one whose threshold the
+    // achieved value hasn't crossed yet. Past every threshold → red.
+    for (let i = 0; i < 4; i++) {
+      const threshold = toNum(bullets[i]);
+      if (threshold !== null && ach < threshold) return CRIT_BULLET_TIERS[i];
+    }
+    return "red";
+  }
+
+  // Descending mode (default / existing behavior).
+  // bullets[0..3] map to superGreen/lightGreen/yellow/red. Walk highest →
+  // lowest and return the first tier whose threshold is satisfied.
+  for (let i = 0; i < 4; i++) {
+    const threshold = toNum(bullets[i]);
+    if (threshold !== null && ach >= threshold) return CRIT_BULLET_TIERS[i];
+  }
+  return "red";
+}
+
+/**
+ * Tailwind classes for tinting a cell by Critical-Number tier. The
+ * background colors mirror the dot colors used in CritBlock so the
+ * review listing reads as the same visual language.
+ */
+export function critTierCellClasses(tier: CritTier | null): string {
+  switch (tier) {
+    case "superGreen":
+      return "bg-green-700 text-white";
+    case "lightGreen":
+      return "bg-green-500 text-white";
+    case "yellow":
+      return "bg-yellow-400 text-gray-900";
+    case "red":
+      return "bg-red-600 text-white";
+    default:
+      return "text-gray-400";
+  }
+}
+
+/**
+ * Dot color (hex) for each tier — matches CritBlock's `BULLET_TIERS`. Used
+ * by the review drawer / listing to render the small color swatch next to
+ * tier labels.
+ */
+export const CRIT_TIER_DOT_HEX: Record<CritTier, string> = {
+  superGreen: "#1a5c2e",
+  lightGreen: "#4caf50",
+  yellow: "#f5c518",
+  red: "#e53935",
+};

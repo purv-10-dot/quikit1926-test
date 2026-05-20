@@ -1,19 +1,25 @@
 "use client";
 
 /**
- * CriticalReviewSection — body of the new "Critical Review" top-level tab on
+ * CriticalReviewSection — body of the "Critical Hash Review" top-level tab on
  * the OPSP Review screen.
  *
  * Owns:
- *   - Module sub-tabs ([Actions QTR] [Year] [People])
+ *   - Module sub-tabs ([Year] [Quarter] [Individual])
  *   - Data fetch from /api/opsp/review/critical
- *   - Drawer open/close state for editing one card's 4 bullets
- *   - Per-card save via POST /api/opsp/review/critical (one POST per
- *     changed bullet on Save Changes)
+ *   - Drawer open/close state for editing one card's Achieved + Comment
+ *   - Per-card save via POST /api/opsp/review/critical (one POST per card)
  *   - Read-only banner when OPSP is draft / reviewed
  *
- * The year + quarter come from the parent (`<OPSPReviewPage>`); switching them
- * triggers a refetch.
+ * Tab keys stay `actions / year / people` for API stability; only labels and
+ * tab order change here. Internal key → label mapping:
+ *   year    → "Year"        (OPSPData.criticalNumGoals)
+ *   actions → "Quarter"     (OPSPData.criticalNumProcess)   — was "Actions QTR"
+ *   people  → "Individual"  (OPSPData.criticalNumAcct)      — was "People"
+ *
+ * Entries are now keyed by `"<module>:<cardType>"` (one entry per card, no
+ * bullet index). Tier is derived live by `resolveCritTier()` in the
+ * drawer/table from the 4 projected values on the CritCard.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -39,16 +45,16 @@ interface CriticalReviewData {
   opspId: string | null;
   opspStatus: string | null;
   modules: Record<Module, ModuleCards>;
-  /** Saved entries keyed by `"<module>:<cardType>:<bulletIndex>"`. */
+  /** Saved entries keyed by `"<module>:<cardType>"`. */
   entries: Record<string, CriticalTableEntry>;
   year: number;
   quarter: string;
 }
 
 const MODULE_TABS: { key: Module; label: string }[] = [
-  { key: "actions", label: "Actions QTR" },
   { key: "year",    label: "Year" },
-  { key: "people",  label: "People" },
+  { key: "actions", label: "Quarter" },
+  { key: "people",  label: "Individual" },
 ];
 
 export function CriticalReviewSection({
@@ -58,7 +64,7 @@ export function CriticalReviewSection({
   year: number;
   quarter: string;
 }) {
-  const [activeModule, setActiveModule] = useState<Module>("actions");
+  const [activeModule, setActiveModule] = useState<Module>("year");
   const [data, setData] = useState<CriticalReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,50 +97,44 @@ export function CriticalReviewSection({
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  /* ── Save the changed bullets when the drawer Save Changes fires ── */
+  /* ── Save the card's Achieved + Comment when the drawer Save Changes fires ── */
   const handleDrawerSave = useCallback(
     async (
       moduleKey: Module,
       cardType: CardType,
       category: string,
-      changes: Array<{ bulletIndex: number; patch: CriticalTableEntry }>,
+      patch: CriticalTableEntry,
     ) => {
-      if (!changes.length) return;
       setSaving(true);
       try {
-        // POSTs in parallel (≤4 bullets → bounded fan-out).
-        const results = await Promise.all(
-          changes.map((c) =>
-            fetch("/api/opsp/review/critical", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                year, quarter,
-                module: moduleKey,
-                cardType,
-                bulletIndex: c.bulletIndex,
-                category,
-                achievedValue: c.patch.achievedValue,
-                comment: c.patch.comment,
-              }),
-            }).then((r) => r.json()),
-          ),
-        );
-        // Optimistic merge into local state — only patch entries we successfully saved.
+        const res = await fetch("/api/opsp/review/critical", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            year, quarter,
+            module: moduleKey,
+            cardType,
+            category,
+            achievedValue: patch.achievedValue,
+            comment: patch.comment,
+          }),
+        });
+        const json = await res.json();
+        if (!json.success) {
+          await loadData();
+          return;
+        }
+        // Optimistic merge into local state.
         setData((prev) => {
           if (!prev) return prev;
-          const nextEntries = { ...prev.entries };
-          changes.forEach((c, i) => {
-            const ok = results[i]?.success;
-            if (!ok) return;
-            nextEntries[`${moduleKey}:${cardType}:${c.bulletIndex}`] = c.patch;
-          });
-          return { ...prev, entries: nextEntries };
+          return {
+            ...prev,
+            entries: {
+              ...prev.entries,
+              [`${moduleKey}:${cardType}`]: patch,
+            },
+          };
         });
-        // Any failure → resync from server.
-        if (results.some((r) => !r?.success)) {
-          await loadData();
-        }
         setDrawer((d) => ({ ...d, open: false }));
       } catch {
         await loadData();
@@ -179,15 +179,8 @@ export function CriticalReviewSection({
 
   const moduleCards = data.modules[activeModule];
 
-  // Build per-card entry lookups: { 0: { achievedValue, comment }, 1: {...}, ... }
-  const buildEntryMap = (cardType: CardType) => {
-    const out: Partial<Record<number, CriticalTableEntry>> = {};
-    for (let i = 0; i < 4; i++) {
-      const key = `${activeModule}:${cardType}:${i}`;
-      if (data.entries[key]) out[i] = data.entries[key];
-    }
-    return out;
-  };
+  const entryFor = (cardType: CardType): CriticalTableEntry | null =>
+    data.entries[`${activeModule}:${cardType}`] ?? null;
 
   const activeCard =
     drawer.cardType === "critical" ? moduleCards.critical : moduleCards.balancing;
@@ -236,14 +229,14 @@ export function CriticalReviewSection({
           label="Critical #"
           index={1}
           card={moduleCards.critical}
-          entries={buildEntryMap("critical")}
+          entry={entryFor("critical")}
           onOpenEdit={() => setDrawer({ open: true, cardType: "critical" })}
         />
         <CriticalTable
           label="Balancing Critical #"
           index={2}
           card={moduleCards.balancing}
-          entries={buildEntryMap("balancing")}
+          entry={entryFor("balancing")}
           onOpenEdit={() => setDrawer({ open: true, cardType: "balancing" })}
         />
       </div>
@@ -254,11 +247,11 @@ export function CriticalReviewSection({
         onClose={() => setDrawer((d) => ({ ...d, open: false }))}
         heading={drawerHeading}
         card={activeCard}
-        entries={buildEntryMap(drawer.cardType)}
+        entry={entryFor(drawer.cardType)}
         readOnly={readOnly}
         saving={saving}
-        onSave={(changes) =>
-          handleDrawerSave(activeModule, drawer.cardType, activeCard.title, changes)
+        onSave={(patch) =>
+          handleDrawerSave(activeModule, drawer.cardType, activeCard.title, patch)
         }
       />
     </div>

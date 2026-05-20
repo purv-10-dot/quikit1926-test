@@ -18,10 +18,14 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CURRENCIES, getScales } from "@/lib/utils/currency";
 import { WithTooltip } from "./pickers";
+import {
+  CATEGORY_TYPE_LABELS,
+  CATEGORY_TYPE_INFO,
+} from "@/lib/utils/breakdownCalc";
 
 const DATA_TYPES = ["Number", "Percentage", "Currency"] as const;
 
@@ -122,9 +126,14 @@ export function displayCategory(name: string): string {
 export function CategorySelect({
   value,
   onChange,
+  excludeNames,
 }: {
   value: string;
   onChange: (v: string) => void;
+  /** Category names to hide from the dropdown (e.g. picked in sibling rows
+   *  of the same section). The current row's own `value` is always shown,
+   *  so the user can still see and Clear what they picked. */
+  excludeNames?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [cats, setCats] = useState<CatFull[]>([]);
@@ -132,12 +141,11 @@ export function CategorySelect({
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("Number");
   const [newCurrency, setNewCurrency] = useState("NONE");
-  // Two-axis picker — drives the OPSP modal matrix.
-  //   - categoryType: Cumulative | CumulativeTillEnd | Standalone (distribution shape)
-  //   - breakdownType: Manual | Automatic (fill mode)
+  // Category Type drives the OPSP modal distribution shape. The legacy
+  // Breakdown Type axis is always "Automatic" — the Manual radio was removed
+  // from the UI per spec, so we no longer track that state.
   const [newCategoryType, setNewCategoryType] =
     useState<"Cumulative" | "CumulativeTillEnd" | "Standalone">("Cumulative");
-  const [newBreakdownType, setNewBreakdownType] = useState<"Manual" | "Automatic">("Automatic");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -206,11 +214,16 @@ export function CategorySelect({
     if (open) fetchCats();
   }, [open]);
 
-  const catNames = cats.map((c) => c.name);
+  // Hide names picked in sibling rows (passed via `excludeNames`) but always
+  // keep the current row's own `value` visible so the user can re-select or
+  // Clear it. Falsy entries in `excludeNames` (empty strings) are ignored.
+  const excludedSet = new Set((excludeNames ?? []).filter(Boolean));
+  const visibleCats = cats.filter((c) => c.name === value || !excludedSet.has(c.name));
+  const catNames = visibleCats.map((c) => c.name);
   const allCats: CatFull[] =
     catNames.includes(value) || !value
-      ? cats
-      : [...cats, { name: value, dataType: "Number", currency: null }];
+      ? visibleCats
+      : [...visibleCats, { name: value, dataType: "Number", currency: null }];
 
   function resetForm() {
     setAdding(false);
@@ -218,7 +231,6 @@ export function CategorySelect({
     setNewType("Number");
     setNewCurrency("NONE");
     setNewCategoryType("Cumulative");
-    setNewBreakdownType("Automatic");
     setError("");
   }
 
@@ -253,7 +265,9 @@ export function CategorySelect({
           dataType: newType,
           currency: effectiveCurrency,
           categoryType: newCategoryType,
-          breakdownType: newBreakdownType,
+          // Breakdown Type is always Automatic — Manual was removed from the
+          // UI per spec.
+          breakdownType: "Automatic",
         }),
       });
       const json = await res.json();
@@ -388,13 +402,23 @@ export function CategorySelect({
                       ))}
                     </select>
                   )}
-                  {/* Two independent axes — Category Type drives distribution
-                      shape, Breakdown Type drives whether the user fills
-                      every cell manually or the helper distributes Projected. */}
+                  {/* Category Type drives the OPSP modal distribution shape. */}
                   <div className="space-y-1">
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Category Type
-                    </p>
+                    <div className="flex items-center gap-1 px-0.5">
+                      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                        Category Type
+                      </p>
+                      <span
+                        className="inline-flex items-center cursor-help text-gray-400 hover:text-gray-600"
+                        title={
+                          `Cumulative — ${CATEGORY_TYPE_INFO.Cumulative}\n\n` +
+                          `Cumulative Till Exit — ${CATEGORY_TYPE_INFO.CumulativeTillEnd}\n\n` +
+                          `Standalone — ${CATEGORY_TYPE_INFO.Standalone}`
+                        }
+                      >
+                        <Info className="h-3 w-3" />
+                      </span>
+                    </div>
                     <div className="flex items-center gap-2 flex-wrap px-0.5">
                       {(["Cumulative", "CumulativeTillEnd", "Standalone"] as const).map((v) => (
                         <label key={v} className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
@@ -407,31 +431,13 @@ export function CategorySelect({
                             disabled={saving}
                             className="accent-accent-600"
                           />
-                          {v === "CumulativeTillEnd" ? "Cumulative Till End" : v}
+                          {CATEGORY_TYPE_LABELS[v]}
                         </label>
                       ))}
                     </div>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Breakdown Type
+                    <p className="text-[10px] italic text-gray-500 px-0.5 leading-snug">
+                      {CATEGORY_TYPE_INFO[newCategoryType]}
                     </p>
-                    <div className="flex items-center gap-3 px-0.5">
-                      {(["Manual", "Automatic"] as const).map((v) => (
-                        <label key={v} className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="newCatBreakdownType"
-                            value={v}
-                            checked={newBreakdownType === v}
-                            onChange={() => setNewBreakdownType(v)}
-                            disabled={saving}
-                            className="accent-accent-600"
-                          />
-                          {v}
-                        </label>
-                      ))}
-                    </div>
                   </div>
                   {error && <p className="text-red-500 text-xs">{error}</p>}
                   <div className="flex gap-2">
@@ -471,6 +477,25 @@ export function CategorySelect({
   );
 }
 
+/**
+ * Strip non-numeric characters, keeping only digits and a single decimal
+ * point. The OPSP Projected/period cells are `type="text"` (required so
+ * the currency-scale dropdown can sit alongside the input), which means
+ * the browser won't block letters on its own — this is the runtime guard
+ * so values like "6.6fgdgf7" can't be entered.
+ *
+ * Exported so the modal cell inputs can use the same rule.
+ */
+export function sanitizeNumericInput(raw: string): string {
+  let s = (raw ?? "").replace(/[^0-9.]/g, "");
+  const firstDot = s.indexOf(".");
+  if (firstDot >= 0) {
+    // Collapse any subsequent dots into nothing (only one decimal allowed).
+    s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
+  }
+  return s;
+}
+
 export function ProjectedInput({
   value,
   onChange,
@@ -496,8 +521,10 @@ export function ProjectedInput({
   const availScaleAbbrs = isCurrency ? getScaleAbbrs(currency) : [];
 
   function handleNumChange(newNum: string) {
-    if (isCurrency) onChange(combineProjectedValue(newNum, scalePart));
-    else onChange(newNum);
+    // Numeric-only — strips letters/symbols before storing.
+    const clean = sanitizeNumericInput(newNum);
+    if (isCurrency) onChange(combineProjectedValue(clean, scalePart));
+    else onChange(clean);
   }
   function handleScaleChange(newScale: string) {
     onChange(combineProjectedValue(numPart, newScale));
@@ -518,6 +545,7 @@ export function ProjectedInput({
 
       <input
         type="text"
+        inputMode="decimal"
         value={isCurrency ? numPart : value}
         onChange={(e) => handleNumChange(e.target.value)}
         placeholder={placeholder ?? (isPct ? "0" : isCurrency ? "0" : "Num")}

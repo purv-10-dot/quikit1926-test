@@ -20,7 +20,10 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
     const msg = parsed.error.errors[0]?.message ?? "Invalid input";
     return NextResponse.json({ success: false, error: msg }, { status: 400 });
   }
-  const { firstName, lastName, email, password, role, status, teamIds, teamId } = parsed.data;
+  const { firstName, lastName, email, password, status, teamIds, teamId } = parsed.data;
+  // OrgMember.role is pinned to "member" — app-level authority lives in
+  // app_quikscale.UserAppRole. Ignore any `role` value the client tries to PUT.
+  const role: string | undefined = undefined;
   const resolvedTeamIds: string[] | undefined =
     teamIds !== undefined ? teamIds :
     teamId !== undefined ? (teamId ? [teamId] : []) :

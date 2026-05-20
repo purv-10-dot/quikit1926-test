@@ -82,12 +82,6 @@ export const createOrgUserSchema = z.object({
    *  Defaults to "native" when omitted (back-compat with existing callers).
    */
   invitationMethod: z.enum(["native", "sso"]).optional(),
-}).refine(
-  (d) =>
-    d.linkExistingUserId ||
-    d.invitationMethod === "sso" ||
-    (d.password && d.password.length >= 8),
-  { message: "Password is required for new users", path: ["password"] },
-);
+});
 
 export type CreateOrgUserInput = z.infer<typeof createOrgUserSchema>;

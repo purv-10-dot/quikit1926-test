@@ -20,6 +20,11 @@ const entrySchema = z.object({
   period: periodEnum,
   targetValue: z.number().nullable().optional(),
   achievedValue: z.number().nullable().optional(),
+  // Manually-entered Last Year Same Period — only sent when the prior-year
+  // OPSPReviewEntry has no auto value for this category/period. When source
+  // is "auto" on the client, this field is disabled and won't be in the
+  // payload.
+  lastYearSamePeriod: z.number().nullable().optional(),
   comment: z.string().max(2000).nullable().optional(),
 });
 

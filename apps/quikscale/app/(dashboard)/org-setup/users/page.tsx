@@ -474,15 +474,9 @@ function UserPanel({
       setError("Email is required.");
       return;
     }
-    if (
-      !editUser &&
-      !form.linkExistingUserId &&
-      form.invitationMethod === "native" &&
-      !form.password.trim()
-    ) {
-      setError("Password is required for new users.");
-      return;
-    }
+    // Native invites no longer require a typed password — when left blank,
+    // the server seeds the system default (Quikit2026) and emails it to the
+    // invitee, matching the QuikIT super-admin onboarding flow.
 
     setSaving(true);
     setError("");
@@ -496,14 +490,10 @@ function UserPanel({
         role: "member",
         teamIds: form.teamIds,
       };
-      if (
-        !editUser &&
-        !form.linkExistingUserId &&
-        form.invitationMethod === "native"
-      ) {
-        payload.password = form.password;
-      }
-      if (editUser && form.password.trim()) payload.password = form.password;
+      // Only attach password when the admin actually typed one. An empty
+      // string would fail Zod's min(8) on the server. For new Native users
+      // who leave it blank, the server seeds the Quikit2026 default.
+      if (form.password.trim()) payload.password = form.password.trim();
       if (editUser) payload.status = form.status;
       if (!editUser && form.linkExistingUserId) payload.linkExistingUserId = form.linkExistingUserId;
       if (!editUser && !form.linkExistingUserId) {
@@ -586,9 +576,7 @@ function UserPanel({
                   ? "Update User"
                   : form.linkExistingUserId
                     ? "Grant QuikScale Access"
-                    : form.invitationMethod === "sso"
-                      ? "Send Invite"
-                      : "Add User"
+                    : "Add User"
               }
             />
           )}
@@ -786,29 +774,36 @@ function UserPanel({
         </div>
       )}
 
-      {/* Password — hidden when linking an existing org member OR when SSO is selected */}
-      {!form.linkExistingUserId && (editUser || form.invitationMethod === "native") && (
+      {/* Password — only shown in Edit mode (admin can change an existing user's
+          password). For new users, Native invitees receive the system default
+          Quikit2026 via email and reset it on first sign-in; SSO invitees never
+          have a password. Mirrors the super-admin first-Org-Admin flow. */}
+      {editUser && !form.linkExistingUserId && (
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">
           Password{" "}
-          {editUser ? (
-            <span className="text-gray-400 font-normal">
-              (leave blank to keep unchanged)
-            </span>
-          ) : (
-            <span className="text-red-400">*</span>
-          )}
+          <span className="text-gray-400 font-normal">
+            (leave blank to keep unchanged)
+          </span>
         </label>
         <input
           type="password"
           value={form.password}
           onChange={(e) => set("password", e.target.value)}
-          placeholder={
-            editUser ? "Enter new password to change" : "Set a password"
-          }
+          placeholder="Enter new password to change"
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 placeholder-gray-400"
         />
       </div>
+      )}
+
+      {/* Native-invite notice — explains the auto-generated password flow */}
+      {!editUser && !form.linkExistingUserId && form.invitationMethod === "native" && (
+        <div className="bg-accent-50 border border-accent-200 rounded-lg px-3 py-2 text-[11px] text-accent-800 leading-snug">
+          <strong className="font-semibold">Temporary password will be emailed.</strong>{" "}
+          The user will receive <span className="font-mono font-semibold">Quikit2026</span> at{" "}
+          <span className="font-medium">{form.email || "their email"}</span> and be prompted
+          to set a new password on first sign-in.
+        </div>
       )}
 
       {/* Role — dynamic AppRole list from /api/org/roles */}

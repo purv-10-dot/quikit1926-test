@@ -105,6 +105,7 @@ export async function GET(req: NextRequest) {
         period: true,
         targetValue: true,
         achievedValue: true,
+        lastYearSamePeriod: true,
         comment: true,
         updatedAt: true,
       },
@@ -141,6 +142,10 @@ export async function GET(req: NextRequest) {
         comment: string | null;
         autoPopulated?: boolean;
         lastYearAchieved: number | null;
+        // "auto"   — value came from a prior-year OPSPReviewEntry (drawer disables the field)
+        // "manual" — value came from the current entry's lastYearSamePeriod (user-entered)
+        // "none"   — no prior-year value AND no manual entry yet (drawer editable)
+        lastYearSamePeriodSource: "auto" | "manual" | "none";
       }> = {};
 
       const meta = catMetaMap.get(row.category as string);
@@ -157,9 +162,10 @@ export async function GET(req: NextRequest) {
           gap: null,
           achievedPct: null,
           comment: entry?.comment ?? null,
-          // Populated by loadLastYearAchieved below. Default 0 per spec
-          // ("first quarter → 0" / no prior-year data → 0).
-          lastYearAchieved: 0,
+          // Populated by loadLastYearAchieved (auto) and the manual-override
+          // pass below. `null` here means no source has filled it yet.
+          lastYearAchieved: null,
+          lastYearSamePeriodSource: "none",
         };
       }
 
@@ -170,6 +176,10 @@ export async function GET(req: NextRequest) {
         // Surface categoryType so the client can render the "Category Type"
         // column and pick the right footer label (Cumulative / Exit / Average).
         categoryType: meta?.categoryType ?? "Cumulative",
+        // Surface dataType + currency so the client can prefix Currency rows
+        // with the right symbol ($1,000,000 / ₹10,00,000) in the review table.
+        dataType: meta?.dataType ?? "Number",
+        currency: meta?.currency ?? null,
         periods,
       };
     });
@@ -181,8 +191,26 @@ export async function GET(req: NextRequest) {
 
     // 6b. Attach Last Year Same Period — used by the client's "Year Growth"
     // column. For each row+period we look at the analogous period one year
-    // prior; missing prior-year data falls back to 0.
+    // prior. Rows that find a value are marked source = "auto" (drawer
+    // disables the field). Rows with no auto value fall through to the
+    // manual-override pass below.
     await loadLastYearAchieved(orgId, userId, year, quarter, horizon, rows, opsp.targetYears, catMetaMap);
+
+    // 6c. Manual-override pass — for rows where no auto value was found,
+    // surface the user-entered `lastYearSamePeriod` from the current
+    // OPSPReviewEntry (if set). Auto always wins, so we only consult the
+    // manual value when source is still "none".
+    for (const row of rows) {
+      for (const pKey of Object.keys(row.periods)) {
+        const p = row.periods[pKey];
+        if (p.lastYearSamePeriodSource === "auto") continue;
+        const entry = entryMap.get(`${row.rowIndex}:${pKey}`);
+        if (entry?.lastYearSamePeriod != null) {
+          p.lastYearAchieved = Number(entry.lastYearSamePeriod);
+          p.lastYearSamePeriodSource = "manual";
+        }
+      }
+    }
 
     // 7. Get tenant fiscal config
     const org = await db.org.findUnique({
@@ -298,9 +326,14 @@ export async function POST(req: NextRequest) {
             },
           },
           update: {
-            targetValue: entry.targetValue ?? undefined,
-            achievedValue: entry.achievedValue ?? undefined,
-            comment: entry.comment ?? undefined,
+            // `?? undefined` would silently drop an explicit `null` (i.e. a
+            // user clearing the field). Prisma needs `null` passed through
+            // to actually unset the column.
+            targetValue: entry.targetValue === undefined ? undefined : entry.targetValue,
+            achievedValue: entry.achievedValue === undefined ? undefined : entry.achievedValue,
+            lastYearSamePeriod:
+              entry.lastYearSamePeriod === undefined ? undefined : entry.lastYearSamePeriod,
+            comment: entry.comment === undefined ? undefined : entry.comment,
             updatedBy: userId,
           },
           create: {
@@ -311,9 +344,10 @@ export async function POST(req: NextRequest) {
             rowIndex,
             category,
             period: entry.period,
-            targetValue: entry.targetValue ?? undefined,
-            achievedValue: entry.achievedValue ?? undefined,
-            comment: entry.comment ?? undefined,
+            targetValue: entry.targetValue ?? null,
+            achievedValue: entry.achievedValue ?? null,
+            lastYearSamePeriod: entry.lastYearSamePeriod ?? null,
+            comment: entry.comment ?? null,
             updatedBy: userId,
           },
         }),
@@ -501,7 +535,7 @@ async function populateCascadeData(
   orgId: string,
   userId: string,
   year: number,
-  rows: { rowIndex: number; category: string; categoryType: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; gap: number | null; achievedPct: number | null; comment: string | null; autoPopulated?: boolean; lastYearAchieved: number | null }> }[],
+  rows: { rowIndex: number; category: string; categoryType: string; projected: string; periods: Record<string, { target: number | null; achieved: number | null; gap: number | null; achievedPct: number | null; comment: string | null; autoPopulated?: boolean; lastYearAchieved: number | null; lastYearSamePeriodSource: "auto" | "manual" | "none" }> }[],
   horizon: string,
   targetYears: number,
   catMetaMap?: CatMetaMap,
@@ -649,7 +683,7 @@ async function loadLastYearAchieved(
   year: number,
   quarter: string,
   horizon: string,
-  rows: { rowIndex: number; category: string; categoryType: string; periods: Record<string, { lastYearAchieved: number | null }> }[],
+  rows: { rowIndex: number; category: string; categoryType: string; periods: Record<string, { lastYearAchieved: number | null; lastYearSamePeriodSource: "auto" | "manual" | "none" }> }[],
   targetYears: number,
   catMetaMap?: CatMetaMap,
 ) {
@@ -674,6 +708,7 @@ async function loadLastYearAchieved(
         const e = entries.find((x) => x.rowIndex === priorIdx && x.period === pKey);
         if (e?.achievedValue != null && row.periods[pKey]) {
           row.periods[pKey].lastYearAchieved = Number(e.achievedValue);
+          row.periods[pKey].lastYearSamePeriodSource = "auto";
         }
       }
     }
@@ -698,6 +733,7 @@ async function loadLastYearAchieved(
         const cum = await getQuarterCumulativeForCategory(orgId, opsp.id, row.category, src, catMetaMap);
         if (cum.hasAchieved && row.periods[qKeys[i]]) {
           row.periods[qKeys[i]].lastYearAchieved = cum.achieved;
+          row.periods[qKeys[i]].lastYearSamePeriodSource = "auto";
         }
       }
     }
@@ -731,6 +767,7 @@ async function loadLastYearAchieved(
         const agg = aggregateByType(row.categoryType, quartersInOrder);
         if (agg.hasAchieved && row.periods[yKeys[yi]]) {
           row.periods[yKeys[yi]].lastYearAchieved = agg.achieved;
+          row.periods[yKeys[yi]].lastYearSamePeriodSource = "auto";
         }
       }
     }

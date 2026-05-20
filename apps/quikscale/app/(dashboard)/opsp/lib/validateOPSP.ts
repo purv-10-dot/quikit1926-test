@@ -4,7 +4,9 @@
  * Two checks:
  *  1. Projection vs breakdown — only enforced for Manual rows. The matrix:
  *       - Automatic + any         → skip (calculateBreakdown owns the row)
- *       - Manual    + Standalone  → skip (StandaloneManualSelect enforces values)
+ *       - any       + Standalone  → skip (StandaloneSelect dropdown enforces values;
+ *                                          breakdownProjected auto-fills regardless
+ *                                          of breakdownType for Standalone)
  *       - Manual    + Cumulative  → Σ cells === Projected
  *       - Manual    + CumulativeTillEnd → last cell === Projected
  *  2. Owner missing — for Key Thrusts, Key Initiatives, and Rocks: any row with a
@@ -182,10 +184,9 @@ export function validateOPSP(form: FormData): ValidationError[] {
     ...checkBreakdown("Targets", form.targetRows as unknown as Array<Record<string, string>>, targetParts),
     ...checkBreakdown("Goals", form.goalRows as unknown as Array<Record<string, string>>, partKeys.goals),
     ...checkBreakdown("Actions", form.actionsQtr as unknown as Array<Record<string, string>>, partKeys.actions),
-    // Key Thrusts no longer requires an owner — the column was removed from
-    // the UI (both inline + modal) per spec, so checking it would block
-    // Finalize for data that has no UI to fill the field.
-    ...checkOwners("Key Initiatives", form.keyInitiatives),
+    // Key Thrusts + Key Initiatives no longer require an owner — the column
+    // was removed from the UI per spec, so checking them would block Finalize
+    // for data that has no UI to fill the field.
     ...checkOwners("Rocks", form.rocks),
   ];
 }

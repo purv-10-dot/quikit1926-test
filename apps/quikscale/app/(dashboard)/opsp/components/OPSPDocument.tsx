@@ -795,12 +795,12 @@ export function OPSPDocument({
                 </View>
                 <View style={{ flex: 1, borderRightWidth: 1, borderBottomWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, overflow: "hidden" }}>
                   {thrusts5.map((r, i) => (
-                    <NumberedRow key={i} i={i} text={r.desc} owner={owner(r.owner)} isLast={i === 4} />
+                    <NumberedRow key={i} i={i} text={r.desc} isLast={i === 4} />
                   ))}
                 </View>
                 <View style={{ flex: 1, borderRightWidth: 1, borderBottomWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, overflow: "hidden" }}>
                   {initiatives5.map((r, i) => (
-                    <NumberedRow key={i} i={i} text={r.desc} owner={owner(r.owner)} isLast={i === 4} />
+                    <NumberedRow key={i} i={i} text={r.desc} isLast={i === 4} />
                   ))}
                 </View>
               </View>
