@@ -25,6 +25,10 @@ COPY packages/redis/package.json packages/redis/
 COPY packages/shared/package.json packages/shared/
 COPY packages/ui/package.json packages/ui/
 
+# packages/database has a postinstall that runs `prisma generate` — the
+# schema must exist before `npm ci` triggers it. Copy the schema dir up-front.
+COPY packages/database/prisma packages/database/prisma
+
 RUN npm ci --no-audit --no-fund
 
 FROM node:22-slim AS builder
