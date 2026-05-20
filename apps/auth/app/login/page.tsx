@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { SignInComponent } from "@quikit/ui";
+import { requireProdEnv } from "@quikit/shared";
 
 const REASON_MESSAGES: Record<string, string> = {
   deactivated: "Your membership has been deactivated by an administrator.",
@@ -33,7 +34,7 @@ export default function LoginPage() {
   return (
     <SignInComponent
       brandName="QuikIT"
-      redirectPath={`${(process.env.NEXT_PUBLIC_LAUNCHER_URL ?? "http://localhost:3001").replace(/\/+$/, "")}/apps`}
+      redirectPath={`${requireProdEnv("NEXT_PUBLIC_LAUNCHER_URL", "http://localhost:3001").replace(/\/+$/, "")}/apps`}
       callbackUrl={callbackUrl}
       initialError={initialError}
       initialStep={initialStep}

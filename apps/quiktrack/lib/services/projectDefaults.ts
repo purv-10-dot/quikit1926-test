@@ -21,57 +21,119 @@ export const DEFAULT_ISSUE_TYPES = [
  * Five starter project roles seeded on every new project. Admins can rename,
  * delete, or add roles per project from the User Management UI.
  *
- * - **Project Admin** — every pair in the tree (auto-assigned to creator).
- * - **Developer** *(isDefault)* — full Issue / Comment CRUD, Sprint update,
- *   Doc view/update, Timesheet create/update.
- * - **QA** — Issue view+update, IssueComment create+update, Sprint view.
- * - **PM** — Developer's set + Sprint create/delete, ProjectMember CRUD,
- *   Project update.
- * - **Viewer** — view-only on Issue / IssueComment / Sprint / Board.
+ * Canonical grant matrices for PM / Developer / QA / Viewer are defined
+ * relative to PROJECT_SHELL_VIEW — the minimum "can see the project shell"
+ * set that every Layer-2 role needs (project metadata, every tab, board,
+ * docs, reports, sprints/issues/comments/timesheets at view-level).
  */
-const DEVELOPER_GRANTS: Array<{ resource: string; action: string }> = [
+const PROJECT_SHELL_VIEW: Array<{ resource: string; action: string }> = [
+  { resource: "Project", action: "view" },
+  { resource: "ProjectMember", action: "view" },
+  { resource: "Board", action: "view" },
+  { resource: "ProjectSummary", action: "view" },
+  { resource: "ProjectTimeline", action: "view" },
+  { resource: "ProjectBacklog", action: "view" },
+  { resource: "ProjectList", action: "view" },
+  { resource: "ProjectTaskTable", action: "view" },
+  { resource: "Doc", action: "view" },
+  { resource: "Report", action: "view" },
+  { resource: "Sprint", action: "view" },
   { resource: "Issue", action: "view" },
+  { resource: "IssueComment", action: "view" },
+  { resource: "Timesheet", action: "view" },
+];
+
+const DEVELOPER_GRANTS: Array<{ resource: string; action: string }> = [
+  ...PROJECT_SHELL_VIEW,
   { resource: "Issue", action: "create" },
   { resource: "Issue", action: "update" },
-  { resource: "Issue", action: "delete" },
-  { resource: "IssueComment", action: "view" },
   { resource: "IssueComment", action: "create" },
   { resource: "IssueComment", action: "update" },
-  { resource: "Sprint", action: "view" },
   { resource: "Sprint", action: "update" },
-  { resource: "Doc", action: "view" },
+  { resource: "Board", action: "update" },
+  { resource: "Doc", action: "create" },
   { resource: "Doc", action: "update" },
-  { resource: "Timesheet", action: "view" },
   { resource: "Timesheet", action: "create" },
   { resource: "Timesheet", action: "update" },
 ];
 
 const QA_GRANTS: Array<{ resource: string; action: string }> = [
-  { resource: "Issue", action: "view" },
+  ...PROJECT_SHELL_VIEW,
+  { resource: "Issue", action: "create" },
   { resource: "Issue", action: "update" },
-  { resource: "IssueComment", action: "view" },
   { resource: "IssueComment", action: "create" },
   { resource: "IssueComment", action: "update" },
-  { resource: "Sprint", action: "view" },
+  { resource: "Board", action: "update" },
+  { resource: "Doc", action: "create" },
+  { resource: "Doc", action: "update" },
+  { resource: "Timesheet", action: "create" },
+  { resource: "Timesheet", action: "update" },
 ];
 
 const PM_GRANTS: Array<{ resource: string; action: string }> = [
   ...DEVELOPER_GRANTS,
-  { resource: "Sprint", action: "create" },
-  { resource: "Sprint", action: "delete" },
-  { resource: "ProjectMember", action: "view" },
+  { resource: "Project", action: "update" },
   { resource: "ProjectMember", action: "create" },
   { resource: "ProjectMember", action: "update" },
   { resource: "ProjectMember", action: "delete" },
-  { resource: "Project", action: "update" },
+  { resource: "Sprint", action: "create" },
+  { resource: "Sprint", action: "delete" },
+  { resource: "Issue", action: "delete" },
+  { resource: "IssueComment", action: "delete" },
+  { resource: "Doc", action: "delete" },
+  { resource: "Timesheet", action: "delete" },
 ];
 
 const VIEWER_GRANTS: Array<{ resource: string; action: string }> = [
-  { resource: "Issue", action: "view" },
-  { resource: "IssueComment", action: "view" },
-  { resource: "Sprint", action: "view" },
-  { resource: "Board", action: "view" },
+  ...PROJECT_SHELL_VIEW,
 ];
+
+/* ───────────────────── Field-level seed per role ───────────────────── */
+// Rows are added only where a role's field deviates from the default
+// (editable). Project Admin / PM stay editable across the board — no rows
+// needed. Developer / QA get readonly locks on fields they shouldn't change.
+
+type FieldRow = {
+  entity: string;
+  field: string;
+  level: "hidden" | "readonly" | "editable" | "required";
+};
+
+const DEVELOPER_FIELD_PERMS: FieldRow[] = [
+  { entity: "Issue", field: "type", level: "readonly" },
+  { entity: "Issue", field: "priority", level: "readonly" },
+  { entity: "Issue", field: "reporter", level: "readonly" },
+  { entity: "Issue", field: "dueDate", level: "readonly" },
+  { entity: "Issue", field: "parent", level: "readonly" },
+  { entity: "Issue", field: "sprint", level: "readonly" },
+  { entity: "Timesheet", field: "billable", level: "readonly" },
+];
+
+const QA_FIELD_PERMS: FieldRow[] = [
+  { entity: "Issue", field: "title", level: "readonly" },
+  { entity: "Issue", field: "description", level: "readonly" },
+  { entity: "Issue", field: "type", level: "readonly" },
+  { entity: "Issue", field: "priority", level: "readonly" },
+  { entity: "Issue", field: "assignee", level: "readonly" },
+  { entity: "Issue", field: "reporter", level: "readonly" },
+  { entity: "Issue", field: "dueDate", level: "readonly" },
+  { entity: "Issue", field: "startDate", level: "readonly" },
+  { entity: "Issue", field: "storyPoints", level: "readonly" },
+  { entity: "Issue", field: "originalEstimate", level: "readonly" },
+  { entity: "Issue", field: "parent", level: "readonly" },
+  { entity: "Issue", field: "sprint", level: "readonly" },
+  { entity: "Timesheet", field: "billable", level: "readonly" },
+];
+
+const VIEWER_FIELD_PERMS: FieldRow[] = [];
+
+export const STARTER_FIELD_PERMS: Record<string, FieldRow[]> = {
+  "Project Admin": [],
+  PM: [],
+  Developer: DEVELOPER_FIELD_PERMS,
+  QA: QA_FIELD_PERMS,
+  Viewer: VIEWER_FIELD_PERMS,
+};
 
 interface StarterRole {
   name: string;
@@ -158,6 +220,20 @@ export async function seedProjectDefaults(
           projectRoleId: role.id,
           resource: g.resource,
           action: g.action,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    // Field-level seed — only rows that deviate from default editable.
+    const fieldRows = STARTER_FIELD_PERMS[tmpl.name] ?? [];
+    if (fieldRows.length > 0) {
+      await tx.qtProjectRoleFieldPermission.createMany({
+        data: fieldRows.map((r) => ({
+          projectRoleId: role.id,
+          entity: r.entity,
+          field: r.field,
+          level: r.level,
         })),
         skipDuplicates: true,
       });

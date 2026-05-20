@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import {
   renderInvitationEmail,
+  requireProdEnv,
   sendWithRetry,
   type SendWithRetryResult,
   type RenderInvitationParams,
@@ -112,10 +113,13 @@ export async function sendOnboardingInvitationEmail(
   // NEXT_PUBLIC_AUTH_URL — that points at the central credentials host
   // (:3000 in dev) which serves its own dark-theme Set-Password page
   // instead of the launcher modal we want shown.
+  // Env-only — `NEXT_PUBLIC_QUIKIT_URL` (preferred) or `QUIKIT_URL` must be
+  // set in prod. Dev falls back to the local launcher port; prod throws so
+  // we don't accidentally email a stale Vercel-preview link.
   const authBase =
     process.env.NEXT_PUBLIC_QUIKIT_URL ??
     process.env.QUIKIT_URL ??
-    "http://localhost:3001";
+    requireProdEnv("NEXT_PUBLIC_QUIKIT_URL", "http://localhost:3001");
 
   const { subject, html } = renderInvitationEmail({
     ...params,

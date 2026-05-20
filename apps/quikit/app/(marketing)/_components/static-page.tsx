@@ -1,4 +1,5 @@
 import Script from "next/script";
+import { requireProdEnv } from "@quikit/shared";
 import { getPageSchemas } from "../_lib/schema";
 
 export type StaticPageData = {
@@ -13,10 +14,14 @@ export type StaticPageData = {
 /**
  * Launcher login URL. The marketing site is auth-less; its "Log in" CTA
  * deep-links into the QuikIT launcher's existing /login (NextAuth + SSO).
- * Configurable per-deploy via NEXT_PUBLIC_LOGIN_URL.
+ * Driven by `NEXT_PUBLIC_LOGIN_URL` only — dev falls back to the local
+ * launcher, prod throws at build/render time if the var is missing so we
+ * never accidentally ship a stale Vercel preview URL.
  */
-const LOGIN_URL =
-  process.env.NEXT_PUBLIC_LOGIN_URL ?? "https://quik-it-auth.vercel.app/login";
+const LOGIN_URL = requireProdEnv(
+  "NEXT_PUBLIC_LOGIN_URL",
+  "http://localhost:3001/login",
+);
 
 /**
  * Inject a "Log in" CTA into the baked-in marketing navbar (desktop

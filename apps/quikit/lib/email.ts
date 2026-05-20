@@ -162,6 +162,8 @@ export async function sendOnboardingInvitationEmail(params: {
   inviteMethod: InviteMethod;
   ssoProvider?: SsoProvider | null;
   isReminder?: boolean;
+  /** Override the temp-password shown in the email (reset flow only). */
+  tempPassword?: string;
 }): Promise<{ success: boolean; attempts: number; error?: unknown }> {
   const transporter = getTransporter();
   // Invitation links land users on the QuikIT launcher (this app). Its

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
+import { userCanInProject } from "@/lib/api/permissions";
 import { isNavKey } from "@/lib/api/permissionsRegistry";
 
 const putBodySchema = z.object({
@@ -29,12 +30,15 @@ export const GET = withProjectAccess<{ id: string; roleId: string }>(async ({ pr
 // PUT /api/projects/[id]/roles/[roleId]/navigation — atomic replace into
 // the dedicated QtProjectRoleNavigation table.
 export const PUT = withProjectAccess<{ id: string; roleId: string }>(async (
-  { projectId, projectRole, isTenantAdmin },
+  { orgId, projectId, userId, isTenantAdmin },
   req,
   { params },
 ) => {
-  if (!isTenantAdmin && projectRole !== "PROJECT_ADMIN") {
-    return NextResponse.json({ success: false, error: "Project admin required" }, { status: 403 });
+  if (
+    !isTenantAdmin &&
+    !(await userCanInProject(userId, orgId, projectId, "ProjectMember", "update"))
+  ) {
+    return NextResponse.json({ success: false, error: "You don't have permission to edit role navigation" }, { status: 403 });
   }
 
   const parsed = putBodySchema.safeParse(await req.json());
