@@ -121,13 +121,20 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
         lastName,
         email,
         // Linking an existing user skips the credentials section entirely.
-        // For a brand-new user, send either password (native) OR
-        // invitationMethod=sso (no password — provider auth only).
+        // For a brand-new user:
+        //   • SSO   → send `invitationMethod: "sso"`, no password.
+        //   • Native + admin typed a password → send both.
+        //   • Native + admin left it blank → send only `invitationMethod:
+        //     "native"` and let the server seed DEFAULT_INVITE_PASSWORD.
+        //     Sending an empty string would trip Zod's min(8) check.
         ...(linkExistingUserId
           ? { linkExistingUserId }
           : invitationMethod === "sso"
             ? { invitationMethod: "sso" }
-            : { password, invitationMethod: "native" }),
+            : {
+                invitationMethod: "native",
+                ...(password.trim().length > 0 ? { password: password.trim() } : {}),
+              }),
         ...(appRoleId ? { appRoleId } : {}),
         // New shape — `projects` carries the role per project. Backend
         // also still accepts the legacy `projectIds: string[]` form for
@@ -161,8 +168,13 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
     email.trim().length > 0 &&
-    // SSO + linking don't need a password collected from the admin.
-    (isLinking || invitationMethod === "sso" || password.length >= 8);
+    // Native: leaving the password blank triggers the default-password seed,
+    // so blank is fine. If admin DID type one, it must be ≥ 8 chars to be
+    // accepted by the server (Zod min(8)).
+    (isLinking ||
+      invitationMethod === "sso" ||
+      password.length === 0 ||
+      password.length >= 8);
 
   const roles = rolesQ.data ?? [];
   const hits = searchQ.data ?? [];
@@ -332,15 +344,18 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* Password input only when admin picked Native and we're not linking. */}
+      {/* Native callout — admin doesn't type a password on create. The
+          server seeds DEFAULT_INVITE_PASSWORD and the email embeds it.
+          Per the reference UI, the password input is only available in
+          edit mode (separate EditUserModal). Keeping this drawer
+          purely about invite-and-go. */}
       {!isLinking && invitationMethod === "native" && (
-        <Input
-          label="Temporary password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="At least 8 characters"
-        />
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-[11.5px] text-blue-800 leading-snug">
+          <strong className="font-semibold">Temporary password will be emailed.</strong>{" "}
+          The user will receive{" "}
+          <span className="font-mono font-semibold">Quikit2026</span> at their
+          email and be prompted to set a new password on first sign-in.
+        </div>
       )}
 
       <Select
@@ -430,7 +445,10 @@ function ProjectRolesPicker({
     queryFn: async () => {
       const r = await fetch("/api/projects?pageSize=200");
       const j = await r.json();
-      return ((j.data ?? []) as ProjectMeta[]) ?? [];
+      // Inner ?? handles missing data; cast is the boundary between
+      // `unknown` json and our typed shape. Trailing ?? [] was redundant
+      // because the inner coalescing already guarantees an array.
+      return (j.data ?? []) as ProjectMeta[];
     },
   });
   const projects = projectsQ.data ?? [];

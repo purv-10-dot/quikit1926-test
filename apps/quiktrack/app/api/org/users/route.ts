@@ -19,6 +19,10 @@ import { sendEmail } from "@/lib/email/sendEmail";
 const INVITE_METHOD = { NATIVE: "native", SSO: "sso" } as const;
 type InviteMethod = (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
 type SsoProvider = "google" | "microsoft";
+/** Native invitations seed this password when the admin omits one. Mirrors
+ *  packages/shared/lib/constants.ts and the password policy denylist in the
+ *  auth app's /api/invitations/accept handler. */
+const DEFAULT_INVITE_PASSWORD = "Quikit2026";
 
 const createUserSchema = z
   .object({
@@ -57,13 +61,10 @@ const createUserSchema = z
      */
     invitationMethod: z.enum(["native", "sso"]).optional(),
   })
-  .refine(
-    (d) =>
-      d.linkExistingUserId ||
-      d.invitationMethod === "sso" ||
-      (d.password && d.password.length >= 8),
-    { message: "Password is required for new native users", path: ["password"] },
-  );
+  // No refine on password — Native invites without a password get the
+  // DEFAULT_INVITE_PASSWORD seeded server-side. If a password IS supplied,
+  // Zod's `min(8)` on the field itself still enforces strength.
+  ;
 
 function buildUserResponse(
   m: {
@@ -219,6 +220,15 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
 
   // ─── Resolve newUserId across the three paths ───
   let newUserId: string;
+  /** True when the admin omitted a password and the server seeded the
+   *  DEFAULT_INVITE_PASSWORD for a Native invite. Surfaced in `meta` so the
+   *  admin UI can show a toast like "Temporary password Quikit2026 emailed
+   *  to jane@…". */
+  let usedDefaultPassword = false;
+  /** True when path C ran (brand-new auth.User row created). False for
+   *  linking + existing-email paths. Helps the UI decide whether to refresh
+   *  the user list or just toast "Granted access". */
+  let newUserCreated = false;
 
   if (linkExistingUserId) {
     // Path A — verify the target is already a member of this org.
@@ -270,14 +280,22 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
       newUserId = existingUser.id;
     } else {
       // Path C — create the User row.
-      if (!isSso && !password) {
-        return NextResponse.json(
-          { success: false, error: "Password is required for native users" },
-          { status: 400 },
-        );
-      }
+      //
       // SSO → password stays NULL so the credentials provider can't auth.
-      const hashedPassword = isSso ? null : await bcrypt.hash(password!, 12);
+      // Native → admin-supplied password, OR seed DEFAULT_INVITE_PASSWORD
+      //          ("Quikit2026") if the admin left it blank. The default
+      //          gets emailed to the invitee verbatim; they're forced to
+      //          change it on first login via the accept-invite flow.
+      const effectivePassword = isSso
+        ? null
+        : password && password.length > 0
+          ? password
+          : DEFAULT_INVITE_PASSWORD;
+      usedDefaultPassword =
+        !isSso && (!password || password.length === 0);
+      const hashedPassword = isSso
+        ? null
+        : await bcrypt.hash(effectivePassword!, 12);
       const user = await db.user.create({
         data: {
           firstName,
@@ -302,6 +320,7 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
         },
       });
       newUserId = user.id;
+      newUserCreated = true;
     }
   }
 
@@ -485,7 +504,11 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
   }
 
   return NextResponse.json(
-    { success: true, data: buildUserResponse(membership!, appRole, []) },
+    {
+      success: true,
+      data: buildUserResponse(membership!, appRole, []),
+      meta: { usedDefaultPassword, newUserCreated },
+    },
     { status: 201 },
   );
 });
