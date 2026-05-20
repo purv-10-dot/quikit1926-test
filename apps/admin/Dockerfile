@@ -43,6 +43,14 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+# Build-time placeholders — `next build` instantiates Prisma at "Collect page
+# data" time. They are never used to connect to a real DB (build does not
+# execute queries); they just satisfy the PrismaClient constructor.
+ENV DATABASE_URL="postgresql://x:x@localhost:5432/x"
+ENV DATABASE_URL_DIRECT="postgresql://x:x@localhost:5432/x"
+ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
+ENV NEXTAUTH_URL="http://localhost:3000"
+
 RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
 RUN npx turbo run build --filter=admin
 
