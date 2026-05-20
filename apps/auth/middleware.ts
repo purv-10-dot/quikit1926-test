@@ -27,6 +27,9 @@ export async function middleware(req: NextRequest) {
     "/api/invitations",
     "/api/auth",
     "/api/verify-token",
+    // Liveness probe — must be reachable without a session so Cloud Run /
+    // GKE health checks succeed before any user logs in.
+    "/api/health",
   ];
   const isPublic = PUBLIC.some((p) => pathname.startsWith(p));
 
