@@ -1,0 +1,81 @@
+name: Docker — build & push to GHCR
+
+# Builds container images for the 5 deployable apps and pushes them to the
+# GitHub Container Registry (ghcr.io). Triggered on every push to the
+# Pre-Prod branch, or manually via the Actions UI. The 5 builds run in
+# parallel via a matrix strategy.
+#
+# Images are named `ghcr.io/<owner>/<app>-runtime` and tagged with:
+#   - `latest`           (mutable, points at the newest Pre-Prod build)
+#   - `pre-prod`         (mutable, same target as `latest` while we only
+#                         publish from this branch)
+#   - `sha-<short_sha>`  (immutable, addresses the exact commit)
+#
+# GHCR auth uses the built-in `GITHUB_TOKEN` — no manual secret to add.
+
+on:
+  push:
+    branches: [Pre-Prod]
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app:
+          - quikit
+          - auth
+          - admin
+          - quikscale
+          - quiktrack
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase image owner
+        id: owner
+        run: echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.owner.outputs.value }}/${{ matrix.app }}-runtime
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/Pre-Prod' }}
+            type=raw,value=pre-prod,enable=${{ github.ref == 'refs/heads/Pre-Prod' }}
+            type=sha,prefix=sha-,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max
+          platforms: linux/amd64
