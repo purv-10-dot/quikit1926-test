@@ -33,6 +33,14 @@ export interface RenderInvitationParams {
   ssoProvider?: SsoProvider | null;
   /** When true, subject + heading say "Reminder" instead of first-time wording. */
   isReminder?: boolean;
+  /**
+   * Override the temporary password printed in the Native-Email body. The
+   * self-service forgot-password flow uses DEFAULT_RESET_PASSWORD instead of
+   * DEFAULT_INVITE_PASSWORD; every other caller (Super Admin → new org,
+   * Org Admin invites, in-app invites) leaves this undefined to keep the
+   * invite default.
+   */
+  tempPassword?: string;
 }
 
 const SAFE_HEX = /^#[0-9a-fA-F]{6}$/;
@@ -72,7 +80,9 @@ export function renderInvitationEmail(params: RenderInvitationParams): { subject
     inviteMethod,
     ssoProvider,
     isReminder,
+    tempPassword,
   } = params;
+  const displayPassword = tempPassword ?? DEFAULT_INVITE_PASSWORD;
 
   const safeOrg = escapeHtml(orgName);
   const safeFirst = escapeHtml(firstName);
@@ -158,7 +168,7 @@ export function renderInvitationEmail(params: RenderInvitationParams): { subject
         <div style="margin:0 0 16px;padding:16px;background:#f1f5f9;border-radius:8px;">
           <p style="margin:0 0 6px;color:#0f172a;font-size:14px;font-weight:600;">Your login details</p>
           <p style="margin:0 0 4px;color:#0f172a;font-size:14px;">Email: <strong>${escapeHtml(to)}</strong></p>
-          <p style="margin:0;color:#0f172a;font-size:14px;">Temporary password: <strong>${DEFAULT_INVITE_PASSWORD}</strong></p>
+          <p style="margin:0;color:#0f172a;font-size:14px;">Temporary password: <strong>${escapeHtml(displayPassword)}</strong></p>
         </div>
         <p style="margin:0 0 8px;color:#0f172a;font-size:14px;font-weight:600;">Getting started:</p>
         <ol style="margin:0 0 16px;padding-left:20px;color:#0f172a;font-size:14px;line-height:1.6;">

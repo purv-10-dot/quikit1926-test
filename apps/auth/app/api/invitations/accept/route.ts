@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import {
   DEFAULT_INVITE_PASSWORD,
+  DEFAULT_RESET_PASSWORD,
   INVITE_METHOD,
   MEMBERSHIP_ROLES,
 } from "@quikit/shared";
@@ -40,7 +41,14 @@ export async function GET(request: NextRequest) {
     where: { invitationToken: token },
     include: {
       org: { select: { name: true, logoUrl: true, brandColor: true } },
-      user: { select: { email: true, firstName: true, lastName: true } },
+      user: {
+        select: {
+          email: true,
+          firstName: true,
+          lastName: true,
+          mustChangePassword: true,
+        },
+      },
     },
   });
 
@@ -51,7 +59,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  if (membership.status === "active") {
+  // Active memberships are normally a replay attempt and rejected. Exception:
+  // the forgot-password flow re-uses this same token + screen, and in that
+  // path the membership stays active while `User.mustChangePassword` is true
+  // — that's our signal that the token represents an in-flight reset, not a
+  // replayed first-time invite.
+  if (membership.status === "active" && !membership.user.mustChangePassword) {
     return NextResponse.json(
       { success: false, error: "Invitation already accepted. Please sign in." },
       { status: 400 },
@@ -116,11 +129,28 @@ export async function POST(request: NextRequest) {
   const membership = await db.orgMember.findUnique({
     where: { invitationToken: token },
     include: {
-      user: { select: { id: true, email: true, password: true } },
+      user: {
+        select: {
+          id: true,
+          email: true,
+          password: true,
+          mustChangePassword: true,
+        },
+      },
     },
   });
 
-  if (!membership || membership.status === "active") {
+  if (!membership) {
+    return NextResponse.json(
+      { success: false, error: "Invalid or already accepted invitation" },
+      { status: 400 },
+    );
+  }
+  // Same dual-purpose check as GET — active membership is allowed only when
+  // it's a forgot-password reuse (mustChangePassword=true).
+  const isPasswordReset =
+    membership.status === "active" && membership.user.mustChangePassword;
+  if (membership.status === "active" && !isPasswordReset) {
     return NextResponse.json(
       { success: false, error: "Invalid or already accepted invitation" },
       { status: 400 },
@@ -212,6 +242,25 @@ export async function POST(request: NextRequest) {
   }
 
   // Activate the membership and clear the single-use token (FR-SA-006).
+  // Password-reset reuse path: membership is already active and the app
+  // grants have already happened — just clear the single-use token (and the
+  // mustChangePassword flag if not already cleared above) and skip the
+  // app-grant block.
+  if (isPasswordReset) {
+    await db.orgMember.update({
+      where: { id: membership.id },
+      data: { invitationToken: null },
+    });
+    await db.user.update({
+      where: { id: membership.user.id },
+      data: { mustChangePassword: false },
+    });
+    return NextResponse.json({
+      success: true,
+      data: { email: membership.user.email, skipped: Boolean(skip) },
+    });
+  }
+
   await db.orgMember.update({
     where: { id: membership.id },
     data: {
@@ -270,7 +319,7 @@ function checkPasswordPolicy(pw: string): string | null {
   if (!/[0-9]/.test(pw)) return "Password must contain at least one number.";
   if (!/[^A-Za-z0-9]/.test(pw))
     return "Password must contain at least one special character.";
-  if (pw === DEFAULT_INVITE_PASSWORD) {
+  if (pw === DEFAULT_INVITE_PASSWORD || pw === DEFAULT_RESET_PASSWORD) {
     return "New password cannot be the same as the default password.";
   }
   return null;

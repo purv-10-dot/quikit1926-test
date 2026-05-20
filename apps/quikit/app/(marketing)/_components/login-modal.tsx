@@ -22,8 +22,16 @@ import {
  */
 
 const DEFAULT_POST_LOGIN = "/apps";
-const AUTH_ORIGIN =
-  process.env.NEXT_PUBLIC_AUTH_API_ORIGIN ?? "https://auth-quikit.vercel.app";
+/**
+ * Forgot-password / verify-otp / reset-password are now SAME-ORIGIN to the
+ * launcher (this app). The launcher hosts a thin `/api/auth/forgot-password`
+ * route that mirrors the auth-service implementation but reuses the same
+ * onboarding-invite email helpers the Native Email invite path already uses
+ * (see `lib/email.ts → sendOnboardingInvitationEmail`). An empty string
+ * means "relative to the current origin" — works identically on localhost
+ * and prod, no env-var required.
+ */
+const AUTH_ORIGIN = "";
 
 /**
  * Post-login destination. When the launcher bounces an unauthenticated
@@ -403,10 +411,14 @@ export function LoginModal() {
         setBusy(false);
         return;
       }
+      // The reset flow no longer mails a 6-digit code — instead the server
+      // resets the account to the system default password and emails a
+      // single-use Set-Password link (same UX as the first-time native
+      // invite). Stay on this view and show a confirmation notice so the
+      // user knows to check their inbox.
       setNotice(
-        "If an account exists for that email, a 6-digit code is on its way. It expires in 3 minutes.",
+        "If an account exists for that email, we've emailed a temporary password and a link to set a new one. The link is valid for 7 days.",
       );
-      setView("forgotOtp");
       setBusy(false);
     } catch {
       setError("Couldn't reach the reset service. Please try again.");
@@ -630,7 +642,7 @@ export function LoginModal() {
                       </motion.button>
                     </form>
 
-                    {/* <button
+                    <button
                       type="button"
                       onClick={() => {
                         setError(null);
@@ -640,7 +652,7 @@ export function LoginModal() {
                       style={S.linkBtn}
                     >
                       Forgot password?
-                    </button> */}
+                    </button>
                   </>
                 )}
 
