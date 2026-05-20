@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { getQuikTrackAppId } from "@/lib/api/permissions";
@@ -8,6 +9,16 @@ import {
   seedAllDefaultRoles,
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
+import { renderInvitationEmail } from "@quikit/shared";
+import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
+import { sendEmail } from "@/lib/email/sendEmail";
+
+// Local copies of the constants — the @quikit/shared barrel doesn't re-export
+// them yet, and apps can't modify packages/. Values mirror
+// packages/shared/lib/constants.ts exactly.
+const INVITE_METHOD = { NATIVE: "native", SSO: "sso" } as const;
+type InviteMethod = (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
+type SsoProvider = "google" | "microsoft";
 
 const createUserSchema = z
   .object({
@@ -39,10 +50,19 @@ const createUserSchema = z
       .optional(),
     /** When set, skip user/membership creation — only grant app access + role. */
     linkExistingUserId: z.string().min(1).optional(),
+    /**
+     * "native" → admin-supplied (or default) password; credentials sign-in.
+     * "sso"    → no password; provider auth (Google / Microsoft) only.
+     * Defaults to "native" for back-compat with the old payload shape.
+     */
+    invitationMethod: z.enum(["native", "sso"]).optional(),
   })
   .refine(
-    (d) => d.linkExistingUserId || (d.password && d.password.length >= 8),
-    { message: "Password is required for new users", path: ["password"] },
+    (d) =>
+      d.linkExistingUserId ||
+      d.invitationMethod === "sso" ||
+      (d.password && d.password.length >= 8),
+    { message: "Password is required for new native users", path: ["password"] },
   );
 
 function buildUserResponse(
@@ -167,7 +187,28 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
     projectIds = [],
     projects: projectAssignments = [],
     linkExistingUserId,
+    invitationMethod = "native",
   } = parsed.data;
+
+  const normalisedEmail = email.trim().toLowerCase();
+
+  // SSO branch — confirm the email actually hosts on Google Workspace or
+  // Microsoft 365 via MX lookup. We don't want to mint a passwordless user
+  // who can never sign in.
+  let ssoProvider: SsoProvider | null = null;
+  if (!linkExistingUserId && invitationMethod === INVITE_METHOD.SSO) {
+    ssoProvider = (await classifySsoProviderAsync(normalisedEmail)) as SsoProvider | null;
+    if (!ssoProvider) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "SSO invitations require a Google or Microsoft email address. Pick Native instead, or use a different address.",
+        },
+        { status: 422 },
+      );
+    }
+  }
 
   // Merge legacy + new shape into a single list of (projectId, optional role).
   // The new `projects` shape wins when both supply the same id.
@@ -193,7 +234,8 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
     }
     newUserId = linkExistingUserId;
   } else {
-    const existingUser = await db.user.findUnique({ where: { email } });
+    const existingUser = await db.user.findUnique({ where: { email: normalisedEmail } });
+    const isSso = invitationMethod === INVITE_METHOD.SSO;
     if (existingUser) {
       // Path B — user exists, but check if already in this org.
       const existingMembership = await db.orgMember.findUnique({
@@ -210,23 +252,54 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
         );
       }
       await db.orgMember.create({
-        data: { orgId, userId: existingUser.id, role, status: "active", createdBy: actorId },
+        data: {
+          orgId,
+          userId: existingUser.id,
+          role,
+          // SSO members start as "invited" so the auth signIn callback flips
+          // them active on first OAuth login. Native members keep the
+          // existing "active" default (legacy QuikTrack behaviour).
+          status: isSso ? "invited" : "active",
+          createdBy: actorId,
+          inviteMethod: invitationMethod,
+          inviteProvider: ssoProvider,
+          invitationToken: crypto.randomUUID(),
+          invitedAt: new Date(),
+        },
       });
       newUserId = existingUser.id;
     } else {
       // Path C — create the User row.
-      if (!password) {
+      if (!isSso && !password) {
         return NextResponse.json(
-          { success: false, error: "Password is required for new users" },
+          { success: false, error: "Password is required for native users" },
           { status: 400 },
         );
       }
-      const hashedPassword = await bcrypt.hash(password, 12);
+      // SSO → password stays NULL so the credentials provider can't auth.
+      const hashedPassword = isSso ? null : await bcrypt.hash(password!, 12);
       const user = await db.user.create({
-        data: { firstName, lastName, email, password: hashedPassword },
+        data: {
+          firstName,
+          lastName,
+          email: normalisedEmail,
+          password: hashedPassword,
+          // Native invitees must reset on first login; SSO never has a password.
+          mustChangePassword: !isSso,
+        },
       });
       await db.orgMember.create({
-        data: { orgId, userId: user.id, role, status: "active", createdBy: actorId },
+        data: {
+          orgId,
+          userId: user.id,
+          role,
+          status: isSso ? "invited" : "active",
+          createdBy: actorId,
+          inviteMethod: invitationMethod,
+          inviteProvider: ssoProvider,
+          invitationToken: crypto.randomUUID(),
+          invitedAt: new Date(),
+        },
       });
       newUserId = user.id;
     }
@@ -362,6 +435,54 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
       },
     },
   });
+
+  // ─── Onboarding email ───
+  // Native: "Here's your temporary password" + link to /login
+  // SSO:    "Sign in with Google/Microsoft" — never includes a password,
+  //         link to /login; the auth signIn callback auto-accepts the
+  //         pending invite on first OAuth round-trip.
+  if (!linkExistingUserId && membership?.invitationToken) {
+    try {
+      const [org, inviter] = await Promise.all([
+        db.org.findUnique({
+          where: { id: orgId },
+          select: { name: true, brandColor: true },
+        }),
+        db.user.findUnique({
+          where: { id: actorId },
+          select: { firstName: true, lastName: true },
+        }),
+      ]);
+
+      const appBaseUrl =
+        process.env.NEXT_PUBLIC_AUTH_URL ??
+        process.env.NEXTAUTH_URL ??
+        "http://localhost:3004";
+
+      const { subject, html } = renderInvitationEmail({
+        to: normalisedEmail,
+        firstName: firstName.trim(),
+        orgName: org?.name ?? "your organisation",
+        orgLogoUrl: null,
+        orgBrandColor: org?.brandColor ?? null,
+        inviterName:
+          inviter
+            ? `${inviter.firstName} ${inviter.lastName}`.trim() || "QuikTrack Admin"
+            : "QuikTrack Admin",
+        role: appRole?.name ?? "Member",
+        appNames: ["QuikTrack"],
+        token: membership.invitationToken,
+        appBaseUrl,
+        inviteMethod: invitationMethod as InviteMethod,
+        ssoProvider,
+      });
+
+      await sendEmail({ to: normalisedEmail, subject, html });
+    } catch (err) {
+      // Email failures must not roll back user creation.
+      console.error("[org/users] onboarding email failed:", err);
+    }
+  }
 
   return NextResponse.json(
     { success: true, data: buildUserResponse(membership!, appRole, []) },

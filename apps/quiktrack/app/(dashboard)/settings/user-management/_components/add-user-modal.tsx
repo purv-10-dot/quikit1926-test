@@ -48,6 +48,15 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
   /** Map projectId → projectRoleId. Missing key = use that project's default role. */
   const [projectRoles, setProjectRoles] = useState<Record<string, string>>({});
   const [linkExistingUserId, setLinkExistingUserId] = useState<string | null>(null);
+  /**
+   * "native" → admin sets password, user signs in with email+password.
+   * "sso"    → no password collected; user authenticates via Google/Microsoft.
+   *            Server stores `User.password = null` so the credentials
+   *            provider can't log them in — only OAuth works. The signIn
+   *            callback in @quikit/auth auto-accepts the invite on first
+   *            OAuth login.
+   */
+  const [invitationMethod, setInvitationMethod] = useState<"native" | "sso">("native");
   const [error, setError] = useState<string | null>(null);
 
   // Email typeahead.
@@ -111,9 +120,14 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
         firstName,
         lastName,
         email,
+        // Linking an existing user skips the credentials section entirely.
+        // For a brand-new user, send either password (native) OR
+        // invitationMethod=sso (no password — provider auth only).
         ...(linkExistingUserId
           ? { linkExistingUserId }
-          : { password }),
+          : invitationMethod === "sso"
+            ? { invitationMethod: "sso" }
+            : { password, invitationMethod: "native" }),
         ...(appRoleId ? { appRoleId } : {}),
         // New shape — `projects` carries the role per project. Backend
         // also still accepts the legacy `projectIds: string[]` form for
@@ -147,7 +161,8 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
     email.trim().length > 0 &&
-    (isLinking || password.length >= 8);
+    // SSO + linking don't need a password collected from the admin.
+    (isLinking || invitationMethod === "sso" || password.length >= 8);
 
   const roles = rolesQ.data ?? [];
   const hits = searchQ.data ?? [];
@@ -267,7 +282,58 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
+      {/* Invitation Method — only when creating a brand-new user (hidden
+          when linking an existing org member, since they already have an
+          auth identity). */}
       {!isLinking && (
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1.5">
+            Invitation Method
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              {
+                key: "native" as const,
+                title: "Native (Email + Password)",
+                hint: "Admin sets a password. User signs in with email + password.",
+              },
+              {
+                key: "sso" as const,
+                title: "SSO (Google / Microsoft)",
+                hint: "No password. User signs in via their existing provider.",
+              },
+            ]).map((opt) => {
+              const active = invitationMethod === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setInvitationMethod(opt.key)}
+                  className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${
+                    active
+                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-300"
+                      : "border-gray-200 bg-white hover:bg-gray-50"
+                  }`}
+                >
+                  <div
+                    className={`text-xs font-semibold ${
+                      active ? "text-blue-700" : "text-gray-800"
+                    }`}
+                  >
+                    {opt.title}
+                  </div>
+                  <div className="text-[10.5px] text-gray-500 mt-0.5 leading-snug">
+                    {opt.hint}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Password input only when admin picked Native and we're not linking. */}
+      {!isLinking && invitationMethod === "native" && (
         <Input
           label="Temporary password"
           type="password"
