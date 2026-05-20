@@ -7,10 +7,17 @@ import { createTeamSchema } from "@/lib/schemas/teamSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 
-// GET /api/org/teams — all teams with member count and head info
+// GET /api/org/teams — all teams with member count and head info.
+// Default: returns only active teams (deletedAt = null).
+// With ?includeDeleted=true: returns ONLY soft-deleted teams (trash view).
 export const GET = withOrgAuth(async ({ orgId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
-  const where = { orgId };
+  const url = new URL(req.url);
+  const includeDeleted = url.searchParams.get("includeDeleted") === "true";
+  const where = {
+    orgId,
+    deletedAt: includeDeleted ? { not: null } : null,
+  };
 
   const [teams, total] = await Promise.all([
     db.team.findMany({

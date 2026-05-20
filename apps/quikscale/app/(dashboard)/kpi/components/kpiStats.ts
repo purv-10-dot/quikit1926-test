@@ -5,6 +5,7 @@
  *   - `filledWeeks`  — weeks that have a non-null, non-undefined value
  *   - `avgPerWeek`   — average of filled weeks' values
  *   - `bestWeek`     — week number with the highest value (0 if none)
+ *   - `bestValue`    — the achieved value at `bestWeek` (0 if none)
  *
  * Split out so the math can be unit-tested independently of React.
  */
@@ -16,6 +17,7 @@ export interface KPIStats {
   filledWeeks: number[];
   avgPerWeek: number;
   bestWeek: number;
+  bestValue: number;
 }
 
 export function computeKPIStats(kpi: KPIRow): KPIStats {
@@ -36,8 +38,9 @@ export function computeKPIStats(kpi: KPIRow): KPIStats {
     const v = weekMap[w]?.value ?? 0;
     return v > (weekMap[best]?.value ?? 0) ? w : best;
   }, filledWeeks[0] ?? 0);
+  const bestValue = bestWeek > 0 ? (weekMap[bestWeek]?.value ?? 0) : 0;
 
-  return { filledWeeks, avgPerWeek, bestWeek };
+  return { filledWeeks, avgPerWeek, bestWeek, bestValue };
 }
 
 /**

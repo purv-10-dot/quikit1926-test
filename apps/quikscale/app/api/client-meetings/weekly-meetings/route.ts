@@ -6,16 +6,21 @@ import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
 /**
- * GET /api/client-meetings/weekly-meetings?clientId=&from=&to=
- * Ordered newest first; soft-deleted hidden.
+ * GET /api/client-meetings/weekly-meetings?clientId=&from=&to=&includeDeleted=
+ * Ordered newest first. By default soft-deleted rows are hidden.
+ * When `includeDeleted=true` ONLY soft-deleted rows are returned — trash view.
  */
 export const GET = withOrgAuth(async ({ orgId }, request) => {
   const url = new URL(request.url);
   const clientId = url.searchParams.get("clientId") ?? undefined;
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
+  const includeDeleted = url.searchParams.get("includeDeleted") === "true";
 
-  const where: Record<string, unknown> = { orgId, deletedAt: null };
+  const where: Record<string, unknown> = {
+    orgId,
+    deletedAt: includeDeleted ? { not: null } : null,
+  };
   if (clientId) where.clientId = clientId;
   if (from || to) {
     const range: Record<string, Date> = {};

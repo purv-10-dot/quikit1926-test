@@ -27,7 +27,7 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // that can lag behind after a target edit. Use kpi.target as the primary.
   const target = kpi.target ?? kpi.qtdGoal ?? 0;
   const achieved = kpi.qtdAchieved ?? 0;
-  const { filledWeeks, avgPerWeek, bestWeek } = computeKPIStats(kpi);
+  const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi);
 
   // Week-of-quarter (1..13) — DB-driven, respects tenant's QuarterSetting.
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
@@ -98,15 +98,26 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
 
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Weeks Reported", value: String(filledWeeks.length) },
-          { label: "Avg / Week", value: fmt(avgPerWeek) },
-          { label: "Best Week", value: bestWeek ? `W${bestWeek}` : "—" },
+          { label: "Weeks Reported", value: String(filledWeeks.length), sub: undefined },
+          { label: "Avg / Week", value: fmt(avgPerWeek), sub: undefined },
+          {
+            label: "Best Week",
+            value: bestWeek ? `W${bestWeek}` : "—",
+            // Sub-label surfaces the achieved value for the best-performing
+            // week so the stat reads like "W1 — 4.45" instead of a bare label.
+            sub: bestWeek ? fmt(bestValue) : undefined,
+          },
         ].map((s) => (
           <div
             key={s.label}
             className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-center"
           >
-            <div className="text-lg font-semibold text-gray-800">{s.value}</div>
+            <div className="text-lg font-semibold text-gray-800">
+              {s.value}
+              {s.sub != null && (
+                <span className="text-xs font-normal text-gray-500 ml-1.5">· {s.sub}</span>
+              )}
+            </div>
             <div className="text-[10px] text-gray-500 mt-0.5">{s.label}</div>
           </div>
         ))}

@@ -230,6 +230,17 @@ export default function ClientMembersPage() {
     refresh();
   }
 
+  async function handleBulkRestore() {
+    if (!selected.size) return;
+    await fetch(`/api/client-meetings/members/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected] }),
+    });
+    setSelected(new Set());
+    refresh();
+  }
+
   async function handleDeleteOne(id: string) {
     if (!confirm("Delete this member?")) return;
     await fetch(`/api/client-meetings/members/${id}`, { method: "DELETE" });
@@ -253,10 +264,19 @@ export default function ClientMembersPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selected.size > 0 && canDelete && (
+          {selected.size > 0 && canDelete && !viewTrash && (
             <button onClick={handleBulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
+            </button>
+          )}
+          {selected.size > 0 && canDelete && viewTrash && (
+            <button onClick={handleBulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+              </svg>
+              Restore {selected.size} selected
             </button>
           )}
 

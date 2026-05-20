@@ -284,6 +284,17 @@ export default function DailyHuddlePage() {
     refresh();
   }
 
+  async function handleBulkRestore() {
+    if (!selected.size) return;
+    await fetch(`/api/client-meetings/daily-huddles/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected] }),
+    });
+    setSelected(new Set());
+    refresh();
+  }
+
   // Export column metadata.
   const moduleColumns = [
     { key: "meetingDate",            label: "Meeting Date" },
@@ -359,10 +370,16 @@ export default function DailyHuddlePage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selected.size > 0 && canDelete && (
+          {selected.size > 0 && canDelete && !viewTrash && (
             <button onClick={handleBulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
+            </button>
+          )}
+          {selected.size > 0 && canDelete && viewTrash && (
+            <button onClick={handleBulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors">
+              <RotateCcw className="h-3.5 w-3.5" /> Restore {selected.size} selected
             </button>
           )}
 
