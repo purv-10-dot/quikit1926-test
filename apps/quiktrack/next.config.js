@@ -6,6 +6,10 @@ const nextConfig = {
   // outputFileTracingRoot points at the monorepo root so workspace deps
   // (@quikit/*) are traced into the standalone bundle.
   output: "standalone",
+  // Skip type/lint checks inside the Docker build — the pruned monorepo
+  // tree may not include every devDep; these checks already run in CI.
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
   reactStrictMode: true,
   swcMinify: true,
   transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database"],

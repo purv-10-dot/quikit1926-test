@@ -6,6 +6,12 @@ const nextConfig = {
   // outputFileTracingRoot points at the monorepo root so workspace deps
   // (@quikit/*) are traced into the standalone bundle.
   output: "standalone",
+  // Skip type/lint checks inside the Docker build — the pruned monorepo
+  // tree may not include every devDep referenced by test/eslint configs
+  // (e.g. @vitejs/plugin-react), and these checks already run in CI before
+  // the docker build via separate `npm run typecheck` / `npm run lint`.
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
   reactStrictMode: true,
   swcMinify: true,
   transpilePackages: [
