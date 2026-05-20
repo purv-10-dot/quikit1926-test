@@ -91,6 +91,20 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
     ),
   );
 
+  // Exclude members who were AB or NA in every meeting this month — they
+  // would otherwise show up as 0%-everywhere rows and drag the bottom
+  // "Total Average of All Members" down. A single numeric score in any
+  // meeting is enough to keep them in.
+  const eligibleReports = reports.filter((rep) =>
+    rep.weeks.some((w) => typeof w.kpiWeeklyQTD === "number"),
+  );
+  if (!eligibleReports.length) {
+    return NextResponse.json(
+      { success: false, error: "There is no data in the selected range." },
+      { status: 404 },
+    );
+  }
+
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet(`${client.name} – Punch ${year}-${String(month).padStart(2, "0")}`);
 
@@ -98,7 +112,7 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
   ws.addRow(header).eachCell(applyHeader);
 
   let rowIdx = 2;
-  reports.forEach((rep, repIdx) => {
+  eligibleReports.forEach((rep, repIdx) => {
     if (!rep.weeks.length) return;
 
     // Visual separator before every member block except the first one.
@@ -171,8 +185,9 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
     mergedName.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
   });
 
-  // Overall row
-  const overallAvg = calculateOverallFinalAverage(reports);
+  // Overall row — averages only the eligible (present-at-least-once) members,
+  // matching the row set rendered above.
+  const overallAvg = calculateOverallFinalAverage(eligibleReports);
   const overallRow = ws.addRow(["Total Average of All Members", "", "", "", "", "", "", `${overallAvg}%`]);
   overallRow.eachCell(c => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: EXCEL_COLORS.HEADER } }; c.font = { bold: true }; c.alignment = { horizontal: "center" }; });
   ws.mergeCells(rowIdx, 1, rowIdx, 7);

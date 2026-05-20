@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
-import { runExport } from "@/lib/export/xlsx";
 import type { ExportSelection } from "@quikit/ui";
 import { Download } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -1469,47 +1468,35 @@ export default function WeeklyMeetingPage() {
           clients={clients}
           defaultClientId={filterClientId || null}
           onSubmit={async ({ from, to, clientId }: ExportRange) => {
-            // Fetch weekly meetings in the chosen client + date window.
-            const qs = new URLSearchParams();
-            if (clientId) qs.set("clientId", clientId);
-            qs.set("from", from);
-            qs.set("to", to);
-            const res = await fetch(`/api/client-meetings/weekly-meetings?${qs.toString()}`);
-            const json = await res.json();
-            const data: MeetingRow[] = json.success ? (json.data as MeetingRow[]) : [];
-
-            const columns = [
-              { key: "meetingDate",            label: "Meeting Date",      value: (r: MeetingRow) => r.meetingDate.slice(0, 10) },
-              { key: "clientName",             label: "Client Name",       value: (r: MeetingRow) => r.clientName },
-              { key: "callStatus",             label: "Call Status",       value: (r: MeetingRow) => r.callStatus },
-              { key: "absentMembers",          label: "Absent Members",    value: (r: MeetingRow) => r.absentClientMemberNames.join(", ") },
-              { key: "dashboardNAMembers",     label: "Weekly Dashboard NA", value: (r: MeetingRow) => r.dashboardNAClientMemberNames.join(", ") },
-              { key: "actualStartTime",        label: "Actual Start Time", value: (r: MeetingRow) => r.actualStartTime ?? "" },
-              { key: "actualEndTime",          label: "Actual End Time",   value: (r: MeetingRow) => r.actualEndTime ?? "" },
-              { key: "goodNewsSharing",        label: "Good News Sharing", value: (r: MeetingRow) => r.goodNewsSharing },
-              { key: "goodNewsSharingTime",    label: "Good News Sharing Time", value: (r: MeetingRow) => r.segmentTime1 ?? "" },
-              { key: "kpDashboard",            label: "K&P dashboard",     value: (r: MeetingRow) => r.kpDashboard },
-              { key: "kpDashboardTime",        label: "K&P dashboard Time", value: (r: MeetingRow) => r.segmentTime2 ?? "" },
-              { key: "gaps",                   label: "GAPS",              value: (r: MeetingRow) => r.gaps },
-              { key: "gapsTime",               label: "GAPS Time",         value: (r: MeetingRow) => r.segmentTime3 ?? "" },
-              { key: "www",                    label: "WWW",               value: (r: MeetingRow) => r.www },
-              { key: "wwwTime",                label: "WWW Time",          value: (r: MeetingRow) => r.segmentTime4 ?? "" },
-              { key: "feedback",               label: "Customer/Employee Feedback", value: (r: MeetingRow) => r.feedback },
-              { key: "feedbackTime",           label: "Customer/Employee Feedback Time", value: (r: MeetingRow) => r.segmentTime5 ?? "" },
-              { key: "collectiveIntelligence", label: "Collective Intelligence", value: (r: MeetingRow) => r.collectiveIntelligence },
-              { key: "ciTime",                 label: "Collective Intelligence Time", value: (r: MeetingRow) => r.segmentTime6 ?? "" },
-              { key: "opspReview",             label: "OPSP Review",       value: (r: MeetingRow) => r.opspReview },
-              { key: "opspReviewTime",         label: "OPSP Review Time",  value: (r: MeetingRow) => r.segmentTime7 ?? "" },
-            ];
-
-            await runExport<MeetingRow>({
-              selection: { rowScope: "all", columnKeys: columns.map((c) => c.key) },
-              columns,
-              pageRows: data,
-              fetchFiltered: async () => data,
-              fetchAll: async () => data,
-              filename: `WeeklyMeeting_${from}_${to}${clientId ? "" : "_all-clients"}`,
+            if (!clientId) {
+              toast.error("Please select a client to export.");
+              return;
+            }
+            // Backend builds the XLSX (with header block, member counts,
+            // and Notes columns). We just stream the blob and trigger a
+            // browser download.
+            const res = await fetch("/api/client-meetings/export/weekly-detail", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ clientId, from, to }),
             });
+            if (!res.ok) {
+              const errJson = await res.json().catch(() => null);
+              toast.error(errJson?.error ?? "Failed to export weekly meetings");
+              return;
+            }
+            const blob = await res.blob();
+            const disposition = res.headers.get("Content-Disposition") ?? "";
+            const match = /filename="([^"]+)"/.exec(disposition);
+            const filename = match?.[1] ?? `WeeklyMeetingExport_${from}_to_${to}.xlsx`;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
           }}
         />
       </div>

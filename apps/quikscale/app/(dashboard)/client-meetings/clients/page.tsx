@@ -206,8 +206,15 @@ export default function ClientsPage() {
     if (!editing) return;
     const f = editing.form;
     if (!f.name.trim()) { setError("Client name is required"); return; }
-    if (f.dailyStartTime && f.dailyEndTime && f.dailyEndTime <= f.dailyStartTime) { setError("D/H end must be after start"); return; }
-    if (f.weeklyStartTime && f.weeklyEndTime && f.weeklyEndTime <= f.weeklyStartTime) { setError("Weekly end must be after start"); return; }
+    // All 4 planned meeting times are required — the export header block
+    // and the duration-followed stat depend on them. Server enforces the
+    // same rule via createClientSchema.
+    if (!f.dailyStartTime) { setError("Daily start time is required"); return; }
+    if (!f.dailyEndTime)   { setError("Daily end time is required"); return; }
+    if (!f.weeklyStartTime){ setError("Weekly start time is required"); return; }
+    if (!f.weeklyEndTime)  { setError("Weekly end time is required"); return; }
+    if (f.dailyEndTime <= f.dailyStartTime) { setError("D/H end must be after start"); return; }
+    if (f.weeklyEndTime <= f.weeklyStartTime) { setError("Weekly end must be after start"); return; }
 
     setSaving(true); setError("");
     try {
@@ -215,10 +222,10 @@ export default function ClientsPage() {
         name: f.name.trim(),
         description: f.description.trim() || null,
         isActive: f.isActive,
-        weeklyStartTime: f.weeklyStartTime || null,
-        weeklyEndTime:   f.weeklyEndTime || null,
-        dailyStartTime:  f.dailyStartTime || null,
-        dailyEndTime:    f.dailyEndTime || null,
+        weeklyStartTime: f.weeklyStartTime,
+        weeklyEndTime:   f.weeklyEndTime,
+        dailyStartTime:  f.dailyStartTime,
+        dailyEndTime:    f.dailyEndTime,
         teamMemberIds:   f.teamMemberIds,
       };
       const url = editing.id ? `/api/client-meetings/clients/${editing.id}` : "/api/client-meetings/clients";

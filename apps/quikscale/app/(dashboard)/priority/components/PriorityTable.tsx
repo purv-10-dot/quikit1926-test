@@ -231,29 +231,63 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   }
 
   async function handleWeeklyStatusSave(priorityId: string, weekNumber: number, status: string, notes: string) {
-    // Optimistic update
-    setOptimisticStatuses(prev => ({
-      ...prev,
-      [priorityId]: { ...prev[priorityId], [weekNumber]: status },
-    }));
-    setOptimisticNotes(prev => ({
-      ...prev,
-      [priorityId]: { ...prev[priorityId], [weekNumber]: notes },
-    }));
+    // Build the list of (week, status, notes) writes for this save.
+    // When the user marks a week as "completed", cascade Completed forward to
+    // every subsequent week up to the end of the quarter (week 13). Existing
+    // notes are preserved. If the priority's endWeek is shorter, it is
+    // auto-extended to 13 via a parallel PUT so the grid shows blue cells
+    // (instead of out-of-range X markers) for those weeks.
+    const QUARTER_END = 13;
+    const priority = prioritiesAll.find(p => p.id === priorityId);
+    const currentEnd = priority?.endWeek ?? QUARTER_END;
+
+    const writes: Array<{ weekNumber: number; status: string; notes: string }> = [
+      { weekNumber, status, notes },
+    ];
+    if (status === "completed" && priority) {
+      for (let w = weekNumber + 1; w <= QUARTER_END; w++) {
+        if (getWeekStatus(priority, w) === "completed") continue;
+        writes.push({ weekNumber: w, status: "completed", notes: getWeekNote(priority, w) });
+      }
+    }
+    const shouldExtendEndWeek = status === "completed" && currentEnd < QUARTER_END;
+
+    // Optimistic update — apply all writes at once
+    setOptimisticStatuses(prev => {
+      const inner = { ...(prev[priorityId] ?? {}) };
+      for (const wr of writes) inner[wr.weekNumber] = wr.status;
+      return { ...prev, [priorityId]: inner };
+    });
+    setOptimisticNotes(prev => {
+      const inner = { ...(prev[priorityId] ?? {}) };
+      for (const wr of writes) inner[wr.weekNumber] = wr.notes;
+      return { ...prev, [priorityId]: inner };
+    });
     try {
-      await fetch(`/api/priority/${priorityId}/weekly`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekNumber, status, notes }),
-      });
+      await Promise.all([
+        ...writes.map(wr =>
+          fetch(`/api/priority/${priorityId}/weekly`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ weekNumber: wr.weekNumber, status: wr.status, notes: wr.notes }),
+          }),
+        ),
+        ...(shouldExtendEndWeek
+          ? [fetch(`/api/priority/${priorityId}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ endWeek: QUARTER_END }),
+            })]
+          : []),
+      ]);
       onRefresh();
     } catch {
-      // revert
+      // revert all writes
       setOptimisticStatuses(prev => {
         const copy = { ...prev };
         if (copy[priorityId]) {
           const inner = { ...copy[priorityId] };
-          delete inner[weekNumber];
+          for (const wr of writes) delete inner[wr.weekNumber];
           copy[priorityId] = inner;
         }
         return copy;
@@ -262,7 +296,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
         const copy = { ...prev };
         if (copy[priorityId]) {
           const inner = { ...copy[priorityId] };
-          delete inner[weekNumber];
+          for (const wr of writes) delete inner[wr.weekNumber];
           copy[priorityId] = inner;
         }
         return copy;
