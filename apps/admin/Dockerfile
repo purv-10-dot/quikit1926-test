@@ -81,7 +81,7 @@ RUN addgroup --system --gid 1001 nodejs \
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3005
+ENV PORT=3002
 ENV HOSTNAME="0.0.0.0"
 
 # Standalone server (Next 14 monorepo output: apps/admin/server.js)
@@ -95,6 +95,6 @@ COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma  ./node_mo
 COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma  ./node_modules/.prisma
 
 USER nextjs
-EXPOSE 3005
+EXPOSE 3002
 
 CMD ["node", "apps/admin/server.js"]

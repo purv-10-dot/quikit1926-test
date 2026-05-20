@@ -81,7 +81,7 @@ RUN addgroup --system --gid 1001 nodejs \
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3002
+ENV PORT=3003
 ENV HOSTNAME="0.0.0.0"
 
 # Standalone server (Next 14 monorepo output: apps/quikscale/server.js)
@@ -95,6 +95,6 @@ COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma  ./node_mo
 COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma  ./node_modules/.prisma
 
 USER nextjs
-EXPOSE 3002
+EXPOSE 3003
 
 CMD ["node", "apps/quikscale/server.js"]
