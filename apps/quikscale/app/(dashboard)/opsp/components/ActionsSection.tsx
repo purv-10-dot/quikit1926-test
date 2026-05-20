@@ -52,6 +52,7 @@ export function ActionsSection({
               <div className="col-span-3 min-w-0">
                 <CategorySelect
                   value={row.category}
+                  excludeNames={form.actionsQtr.map((r, idx) => idx === i ? "" : r.category)}
                   onChange={(v) => {
                     const next = [...form.actionsQtr];
                     next[i] = {

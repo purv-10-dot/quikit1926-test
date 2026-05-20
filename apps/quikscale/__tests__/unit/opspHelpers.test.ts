@@ -16,6 +16,9 @@ import {
   formatDueDate,
   stripHtml,
   resolveOwnerName,
+  resolveCritTier,
+  toNum,
+  critTierCellClasses,
 } from "@/lib/utils/opspHelpers";
 
 describe("empty-state factories", () => {
@@ -264,5 +267,102 @@ describe("resolveOwnerName", () => {
 
   it("works with an empty users array (always falls back)", () => {
     expect(resolveOwnerName("u1", [])).toBe("u1");
+  });
+});
+
+describe("toNum (raw-value coercion)", () => {
+  it("returns null for empty/missing values", () => {
+    expect(toNum("")).toBeNull();
+    expect(toNum(null)).toBeNull();
+    expect(toNum(undefined)).toBeNull();
+  });
+
+  it("returns null for non-numeric strings", () => {
+    expect(toNum("abc")).toBeNull();
+    expect(toNum("12abc")).toBeNull();
+  });
+
+  it("parses numeric strings", () => {
+    expect(toNum("42")).toBe(42);
+    expect(toNum("3.14")).toBe(3.14);
+    expect(toNum("-7")).toBe(-7);
+  });
+
+  it("returns finite numbers as-is and rejects NaN/Infinity", () => {
+    expect(toNum(0)).toBe(0);
+    expect(toNum(99.9)).toBe(99.9);
+    expect(toNum(NaN)).toBeNull();
+    expect(toNum(Infinity)).toBeNull();
+  });
+});
+
+describe("resolveCritTier (achieved → tier band)", () => {
+  // Mirrors the example from the OPSP redesign spec:
+  //   bullets = [Super Green 120, Light Green 80, Yellow 60, Red 40]
+  const bullets = [120, 80, 60, 40];
+
+  it("returns null when achieved is missing/non-numeric", () => {
+    expect(resolveCritTier(null, bullets)).toBeNull();
+    expect(resolveCritTier(undefined, bullets)).toBeNull();
+    expect(resolveCritTier("", bullets)).toBeNull();
+    expect(resolveCritTier("abc", bullets)).toBeNull();
+  });
+
+  it("places 25 in red (below every threshold)", () => {
+    expect(resolveCritTier(25, bullets)).toBe("red");
+  });
+
+  it("places 45 in red (≥ Red 40 but < Yellow 60 — Red is highest match)", () => {
+    expect(resolveCritTier(45, bullets)).toBe("red");
+  });
+
+  it("places 65 in yellow (≥ Yellow 60 but < Light Green 80)", () => {
+    expect(resolveCritTier(65, bullets)).toBe("yellow");
+  });
+
+  it("places 85 in lightGreen (≥ Light Green 80 but < Super Green 120)", () => {
+    expect(resolveCritTier(85, bullets)).toBe("lightGreen");
+  });
+
+  it("places 130 in superGreen (≥ Super Green 120)", () => {
+    expect(resolveCritTier(130, bullets)).toBe("superGreen");
+  });
+
+  it("treats equal-to-threshold as IN that band (boundary inclusive)", () => {
+    expect(resolveCritTier(120, bullets)).toBe("superGreen");
+    expect(resolveCritTier(80, bullets)).toBe("lightGreen");
+    expect(resolveCritTier(60, bullets)).toBe("yellow");
+    expect(resolveCritTier(40, bullets)).toBe("red");
+  });
+
+  it("accepts string bullets (storage may serialize as JSON strings)", () => {
+    expect(resolveCritTier(85, ["120", "80", "60", "40"])).toBe("lightGreen");
+  });
+
+  it("skips missing/non-numeric bullet thresholds when matching", () => {
+    // Light Green slot is missing — 85 still satisfies Yellow=60 → yellow.
+    expect(resolveCritTier(85, [120, null, 60, 40])).toBe("yellow");
+    // Every threshold missing → defaults to red.
+    expect(resolveCritTier(50, [null, null, null, null])).toBe("red");
+  });
+
+  it("handles achieved 0 — defaults to red when no zero threshold is set", () => {
+    expect(resolveCritTier(0, bullets)).toBe("red");
+  });
+});
+
+describe("critTierCellClasses", () => {
+  it("returns distinct Tailwind classes for each tier", () => {
+    expect(critTierCellClasses("superGreen")).toContain("green-700");
+    expect(critTierCellClasses("lightGreen")).toContain("green-500");
+    expect(critTierCellClasses("yellow")).toContain("yellow-400");
+    expect(critTierCellClasses("red")).toContain("red-600");
+  });
+
+  it("returns neutral classes when tier is null (no achieved value yet)", () => {
+    const cls = critTierCellClasses(null);
+    expect(cls).not.toContain("green-");
+    expect(cls).not.toContain("red-");
+    expect(cls).toContain("gray");
   });
 });

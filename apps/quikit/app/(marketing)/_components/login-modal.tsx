@@ -38,7 +38,16 @@ function resolvePostLogin(): string {
   return DEFAULT_POST_LOGIN;
 }
 
-type View = "signin" | "forgotEmail" | "forgotOtp" | "forgotReset";
+type View =
+  | "signin"
+  | "forgotEmail"
+  | "forgotOtp"
+  | "forgotReset"
+  // Native-invite "Set your password" step (FRD FR-SA-006/008). Auto-
+  // entered when the modal opens on `/invitations/accept?token=…`. Twin
+  // of SignInComponent's "invitation" step, restyled to match this
+  // marketing modal's light paper theme instead of the dark split-screen.
+  | "invitation";
 
 async function getCsrfToken(): Promise<string> {
   const r = await fetch("/api/auth/csrf", { credentials: "include" });
@@ -86,6 +95,20 @@ export function LoginModal() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  // Invitation flow state. `inviteToken` is the single-use token from
+  // `/invitations/accept?token=…`; `inviteEmail` is what
+  // GET /api/invitations/accept returns once the token validates and is
+  // shown as a read-only chip on the form. `inviteCurrent` is the user's
+  // existing (default or previously-set) password, required by the API
+  // for the Save & Continue branch.
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState<string | null>(null);
+  const [inviteCurrent, setInviteCurrent] = useState("");
+  const [inviteNew, setInviteNew] = useState("");
+  const [inviteConfirm, setInviteConfirm] = useState("");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
   const reset = useCallback(() => {
@@ -98,6 +121,13 @@ export function LoginModal() {
     setResetToken("");
     setNewPassword("");
     setConfirmPassword("");
+    setInviteToken(null);
+    setInviteEmail(null);
+    setInviteCurrent("");
+    setInviteNew("");
+    setInviteConfirm("");
+    setInviteLoading(false);
+    setInviteSubmitting(false);
   }, []);
 
   const close = useCallback(() => {
@@ -123,6 +153,47 @@ export function LoginModal() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.get("next") || q.get("login") === "1") setOpen(true);
+  }, []);
+
+  // Invitation auto-open: when the modal mounts on /invitations/accept
+  // with a ?token=… query, open immediately on the "invitation" view
+  // (image 3) and prefetch invitation metadata so the email chip + form
+  // can render with the user's data. We don't fall back to the email
+  // step on token failure — instead the view renders an explanatory
+  // error so the user knows the link is invalid/expired (same UX the
+  // dark SignInComponent already shows on the auth host).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.pathname !== "/invitations/accept") return;
+    const t = new URLSearchParams(window.location.search).get("token");
+    if (!t) return;
+    setInviteToken(t);
+    setView("invitation");
+    setOpen(true);
+    setInviteLoading(true);
+    fetch(`/api/invitations/accept?token=${encodeURIComponent(t)}`, {
+      credentials: "include",
+    })
+      .then(async (r) => {
+        const j = (await r.json().catch(() => ({}))) as {
+          success?: boolean;
+          data?: { email?: string };
+          error?: string;
+        };
+        if (!r.ok || !j.success) {
+          setError(j.error ?? "Invalid or expired invitation.");
+          setInviteLoading(false);
+          return;
+        }
+        setInviteEmail(j.data?.email ?? null);
+        setInviteLoading(false);
+      })
+      .catch(() => {
+        setError(
+          "Couldn't reach the invitation service. Refresh to retry.",
+        );
+        setInviteLoading(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -193,6 +264,121 @@ export function LoginModal() {
     } catch {
       setError("Could not start single sign-on. Please try again.");
       setBusy(false);
+    }
+  }
+
+  /* ── Invitation: Save & Continue (same-origin to launcher API) ── */
+  async function submitInvitation(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (inviteSubmitting) return;
+    setError(null);
+    if (!inviteToken) {
+      setError("Missing invitation token. Please use the link from your email.");
+      return;
+    }
+    if (!inviteCurrent || !inviteNew || !inviteConfirm) {
+      setError("All password fields are required.");
+      return;
+    }
+    if (inviteNew.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (!/[A-Z]/.test(inviteNew)) {
+      setError("Password must contain at least one uppercase letter.");
+      return;
+    }
+    if (!/[0-9]/.test(inviteNew)) {
+      setError("Password must contain at least one number.");
+      return;
+    }
+    if (!/[^A-Za-z0-9]/.test(inviteNew)) {
+      setError("Password must contain at least one special character.");
+      return;
+    }
+    if (inviteNew !== inviteConfirm) {
+      setError("Passwords do not match. Please re-enter.");
+      return;
+    }
+    setInviteSubmitting(true);
+    try {
+      const res = await fetch("/api/invitations/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: inviteToken,
+          currentPassword: inviteCurrent,
+          newPassword: inviteNew,
+          confirmPassword: inviteConfirm,
+        }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        data?: { email?: string };
+        error?: string;
+      };
+      if (!res.ok || !j.success) {
+        setError(j.error ?? "Could not set your password. Please try again.");
+        setInviteSubmitting(false);
+        return;
+      }
+      // Auto sign-in with the new credentials so the user lands on /apps
+      // without re-typing them — mirrors SignInComponent's behaviour.
+      const signedIn = await credentialsSignIn(
+        j.data?.email ?? inviteEmail ?? "",
+        inviteNew,
+        DEFAULT_POST_LOGIN,
+      );
+      if (!signedIn) {
+        setNotice(
+          "Password set. Please sign in with your new password.",
+        );
+        setEmail(j.data?.email ?? inviteEmail ?? "");
+        setView("signin");
+        setInviteSubmitting(false);
+        return;
+      }
+      goToApps();
+    } catch {
+      setError("Network error. Please try again.");
+      setInviteSubmitting(false);
+    }
+  }
+
+  async function skipInvitation() {
+    if (inviteSubmitting) return;
+    setError(null);
+    if (!inviteToken) {
+      setError("Missing invitation token. Please use the link from your email.");
+      return;
+    }
+    setInviteSubmitting(true);
+    try {
+      const res = await fetch("/api/invitations/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: inviteToken, skip: true }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        data?: { email?: string };
+        error?: string;
+      };
+      if (!res.ok || !j.success) {
+        setError(j.error ?? "Could not skip. Please try again.");
+        setInviteSubmitting(false);
+        return;
+      }
+      // Skip path: route the user to the email step with their address
+      // pre-filled so they can sign in manually with the default password
+      // (FR-SA-010). Same fallback the dark SignInComponent uses.
+      setNotice("Invitation accepted. Sign in with your default password.");
+      setEmail(j.data?.email ?? inviteEmail ?? "");
+      setView("signin");
+      setInviteSubmitting(false);
+    } catch {
+      setError("Network error. Please try again.");
+      setInviteSubmitting(false);
     }
   }
 
@@ -444,7 +630,7 @@ export function LoginModal() {
                       </motion.button>
                     </form>
 
-                    <button
+                    {/* <button
                       type="button"
                       onClick={() => {
                         setError(null);
@@ -454,7 +640,7 @@ export function LoginModal() {
                       style={S.linkBtn}
                     >
                       Forgot password?
-                    </button>
+                    </button> */}
                   </>
                 )}
 
@@ -545,6 +731,75 @@ export function LoginModal() {
                     >
                       ← Use a different email
                     </button>
+                  </>
+                )}
+
+                {view === "invitation" && (
+                  <>
+                    <h2 style={S.title}>Set your password</h2>
+                    <p style={S.sub}>
+                      You&apos;re using a temporary password. Set a new one
+                      now, or skip and keep the default for now.
+                    </p>
+                    {inviteEmail && (
+                      <div style={S.emailChip}>
+                        <span style={S.emailDot} />
+                        <span>{inviteEmail}</span>
+                      </div>
+                    )}
+                    {inviteLoading ? (
+                      <p style={{ ...S.sub, marginTop: 18 }}>
+                        Validating your invitation…
+                      </p>
+                    ) : (
+                      <form onSubmit={submitInvitation}>
+                        <label style={S.label}>Enter your default password</label>
+                        <input
+                          ref={firstFieldRef}
+                          type="password"
+                          autoComplete="current-password"
+                          value={inviteCurrent}
+                          onChange={(e) => setInviteCurrent(e.target.value)}
+                          placeholder="••••••••"
+                          style={S.input}
+                        />
+                        <label style={S.label}>New password</label>
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          value={inviteNew}
+                          onChange={(e) => setInviteNew(e.target.value)}
+                          placeholder="Min 8 chars, 1 uppercase, 1 number, 1 special"
+                          style={S.input}
+                        />
+                        <label style={S.label}>Re-enter password</label>
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          value={inviteConfirm}
+                          onChange={(e) => setInviteConfirm(e.target.value)}
+                          placeholder="••••••••"
+                          style={S.input}
+                        />
+                        <motion.button
+                          type="submit"
+                          disabled={inviteSubmitting}
+                          whileTap={tap}
+                          style={S.primary}
+                        >
+                          {inviteSubmitting ? "Saving…" : "Save & Continue"}
+                        </motion.button>
+                        <motion.button
+                          type="button"
+                          disabled={inviteSubmitting}
+                          whileTap={tap}
+                          onClick={skipInvitation}
+                          style={{ ...S.oauthBtn, marginTop: 12 }}
+                        >
+                          Skip for now
+                        </motion.button>
+                      </form>
+                    )}
                   </>
                 )}
 
@@ -795,5 +1050,23 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 10,
     color: "oklch(0.42 0.05 70)",
     fontSize: 13,
+  },
+  // Read-only email "chip" shown above the Set-Password form. Matches
+  // the bullet + email line in image 3.
+  emailChip: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    margin: "6px 0 18px",
+    fontSize: 13,
+    color: INK,
+    fontWeight: 500,
+  },
+  emailDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    background: ACCENT_STRONG,
+    display: "inline-block",
   },
 };

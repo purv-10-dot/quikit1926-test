@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { seedAllDefaultRoles } from "@/lib/api/seedAdminAppRole";
+import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,9 +14,16 @@ export const dynamic = "force-dynamic";
  * an org, so the admin panel's role dropdown shows "admin" immediately
  * instead of "No roles available" until someone first opens QuikScale.
  *
+ * Optionally accepts `adminUserIds: string[]` — for each user id, an
+ * `app_quikscale.UserAppRole` row is upserted linking them to the seeded
+ * admin AppRole. Used by the super-admin "create org with admin" flow so
+ * the freshly-invited Org Admin has the admin role assigned the moment
+ * they accept the invite — no lazy-seed gap.
+ *
  * The lazy seed in GET /api/me/permissions remains as the fallback — this
  * endpoint just removes the provisioning-order gap. Idempotent (the
- * seeder is in-process cached + only fills grants when empty).
+ * seeder is in-process cached + only fills grants when empty;
+ * ensureUserOnRole skips on existing rows).
  *
  * Auth: shared INTERNAL_SECRET via `x-internal-secret` (mirrors
  * verify-token-remote). Not a user session — no withOrgAuth.
@@ -32,10 +39,16 @@ export async function POST(req: NextRequest) {
   }
 
   let orgId: string | null = null;
+  let adminUserIds: string[] = [];
   try {
-    const body = (await req.json()) as { orgId?: unknown };
+    const body = (await req.json()) as { orgId?: unknown; adminUserIds?: unknown };
     if (typeof body.orgId === "string" && body.orgId.trim()) {
       orgId = body.orgId.trim();
+    }
+    if (Array.isArray(body.adminUserIds)) {
+      adminUserIds = body.adminUserIds.filter(
+        (v): v is string => typeof v === "string" && v.trim().length > 0,
+      );
     }
   } catch {
     // fall through to 400
@@ -49,7 +62,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const { adminRoleId, userRoleId } = await seedAllDefaultRoles(orgId);
-    return NextResponse.json({ success: true, adminRoleId, userRoleId });
+    for (const userId of adminUserIds) {
+      await ensureUserOnRole(userId, orgId, adminRoleId);
+    }
+    return NextResponse.json({
+      success: true,
+      adminRoleId,
+      userRoleId,
+      assignedAdminUserIds: adminUserIds,
+    });
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Failed to provision roles";

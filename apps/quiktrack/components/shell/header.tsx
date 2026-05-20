@@ -5,14 +5,18 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { Bell, HelpCircle, Settings, Plus, PanelLeft } from "lucide-react";
-import { AppSwitcher, UserMenu, globalSignOut } from "@quikit/ui";
+import { useRouter } from "next/navigation";
+import { Bell, HelpCircle, Settings, Plus, PanelLeft, ShieldCheck } from "lucide-react";
+import { UserMenu, globalSignOut } from "@quikit/ui";
 import { CreateIssueModal } from "@/components/create-issue-modal";
 import { HelpPanel } from "@/components/help-panel";
 import {
   GlobalSearchPopover,
   type GlobalSearchPopoverHandle,
 } from "@/components/global-search-popover";
+import { SettingsPopover } from "@/components/shell/settings-popover";
+import { AppSwitcherVertical } from "@/components/shell/app-switcher-vertical";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface HeaderProps {
   onToggleSidebar?: () => void;
@@ -20,10 +24,14 @@ interface HeaderProps {
 
 export function Header({ onToggleSidebar }: HeaderProps) {
   const { data: session } = useSession();
+  const router = useRouter();
+  const perms = useMyPermissions();
   const params = useParams();
   const currentProjectId = typeof params?.id === "string" ? params.id : undefined;
   const [createOpen, setCreateOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<GlobalSearchPopoverHandle>(null);
 
   // "/" anywhere outside an input focuses the global search box.
@@ -53,7 +61,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
   return (
     <header className="h-12 bg-white border-b border-gray-200 px-3 flex items-center gap-3 sticky top-0 z-50">
       <div className="flex items-center gap-2">
-        <AppSwitcher />
+        <AppSwitcherVertical />
         <Link href="/" className="flex items-center px-1">
           <Image
             src="/header-icon.png"
@@ -75,15 +83,17 @@ export function Header({ onToggleSidebar }: HeaderProps) {
 
       <div className="flex-1 max-w-2xl mx-auto flex items-center gap-2">
         <GlobalSearchPopover ref={searchRef} />
-        <button
-          type="button"
-          data-tour="create"
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex items-center gap-1 h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          Create
-        </button>
+        {(perms.loading || perms.has("Issue", "create")) && (
+          <button
+            type="button"
+            data-tour="create"
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-1 h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            Create
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-1">
@@ -98,13 +108,39 @@ export function Header({ onToggleSidebar }: HeaderProps) {
         >
           <HelpCircle className="h-4 w-4" />
         </button>
-        <Link href="/settings" className="p-2 rounded hover:bg-gray-100 text-gray-600" aria-label="Settings">
-          <Settings className="h-4 w-4" />
-        </Link>
+        <div className="relative">
+          <button
+            ref={settingsBtnRef}
+            type="button"
+            onClick={() => setSettingsOpen((v) => !v)}
+            className={`p-2 rounded text-gray-600 ${settingsOpen ? "bg-gray-100" : "hover:bg-gray-100"}`}
+            aria-label="Settings"
+            aria-haspopup="menu"
+            aria-expanded={settingsOpen}
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+          <SettingsPopover
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            anchorRef={settingsBtnRef}
+          />
+        </div>
         <UserMenu
           user={{ name: fullName, email }}
           onSignOut={handleSignOut}
           avatarClassName="bg-blue-600"
+          items={
+            perms.isAdmin
+              ? [
+                  {
+                    label: "User Permission",
+                    icon: ShieldCheck,
+                    onClick: () => router.push("/org-setup/users"),
+                  },
+                ]
+              : []
+          }
         />
       </div>
       <CreateIssueModal

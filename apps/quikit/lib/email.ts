@@ -164,12 +164,17 @@ export async function sendOnboardingInvitationEmail(params: {
   isReminder?: boolean;
 }): Promise<{ success: boolean; attempts: number; error?: unknown }> {
   const transporter = getTransporter();
-  // Native-flow set-password URL lives on the central auth app; SSO CTA also
-  // points at /login there. Use the auth-app base URL for both — matches
-  // FR-SA-005 / FR-SA-008 wording about "the Quikit login page".
+  // Invitation links land users on the QuikIT launcher (this app). Its
+  // marketing landing renders a LoginModal that auto-opens whenever the
+  // request URL carries `?next=`, which is exactly what the middleware
+  // appends when an unauthenticated visitor hits /invitations/accept.
+  // We deliberately do NOT use NEXT_PUBLIC_AUTH_URL here — that points at
+  // the central credentials host (:3000 in dev) which serves its own
+  // dark-theme Set-Password page instead of the launcher's modal.
   const authBase =
-    process.env.NEXT_PUBLIC_AUTH_URL ||
-    requireProdEnv("NEXTAUTH_URL", "http://localhost:3000"); // prod-safety-allow: dev fallback, prod throws
+    process.env.QUIKIT_URL ||
+    process.env.NEXT_PUBLIC_QUIKIT_URL ||
+    requireProdEnv("NEXTAUTH_URL", "http://localhost:3001"); // prod-safety-allow: dev fallback, prod throws
 
   const { subject, html } = renderInvitationEmail({
     ...params,

@@ -2,10 +2,15 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Trash2, X, ChevronDown, Check } from "lucide-react";
+import { Search, Plus, Trash2, X, ChevronDown, Check, Info } from "lucide-react";
 import { CURRENCIES } from "@/lib/utils/currency";
 import { AddButton } from "@quikit/ui";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import {
+  CATEGORY_TYPE_LABELS,
+  CATEGORY_TYPE_INFO,
+  type CategoryType as CategoryTypeEnum,
+} from "@/lib/utils/breakdownCalc";
 import { toast } from "sonner";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -23,17 +28,17 @@ interface CategoryItem {
   createdAt: string;
 }
 
-type CategoryType = "Cumulative" | "CumulativeTillEnd" | "Standalone";
-type BreakdownType = "Manual" | "Automatic";
+type CategoryType = CategoryTypeEnum;
 
 type FormState = {
   name: string;
   dataType: string;
   currency: string;
   description: string;
-  // Two-axis category metadata — both axes are independent.
+  // Category-type axis is user-selectable. The legacy `breakdownType` axis is
+  // always persisted as "Automatic" — the Manual option was removed from the
+  // UI per spec, so this form no longer tracks it.
   categoryType: CategoryType;
-  breakdownType: BreakdownType;
 };
 
 const DATA_TYPES = ["Number", "Percentage", "Currency"] as const;
@@ -43,7 +48,6 @@ const EMPTY_FORM: FormState = {
   currency: "NONE",
   description: "",
   categoryType: "Cumulative",
-  breakdownType: "Automatic",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -53,40 +57,23 @@ function currencySymbol(code: string | null) {
   return CURRENCIES.find(c => c.code === code)?.symbol ?? null;
 }
 
-// Soft-color badges for the two-axis category metadata.
-const CATEGORY_TYPE_LABEL: Record<string, string> = {
-  Cumulative: "Cumulative",
-  CumulativeTillEnd: "Cumulative Till End",
-  Standalone: "Standalone",
-};
+// Soft-color badges for the Category Type axis. The Breakdown Type axis is
+// always "Automatic" now — we no longer render a badge for it.
 const CATEGORY_TYPE_STYLE: Record<string, string> = {
   Cumulative: "bg-blue-50 text-blue-700",
   CumulativeTillEnd: "bg-purple-50 text-purple-700",
   Standalone: "bg-emerald-50 text-emerald-700",
 };
-const BREAKDOWN_TYPE_STYLE: Record<string, string> = {
-  Automatic: "bg-amber-50 text-amber-700",
-  Manual: "bg-gray-100 text-gray-600",
-};
 
-function BreakdownBadges({
-  categoryType,
-  breakdownType,
-}: {
-  categoryType?: string;
-  breakdownType?: string;
-}) {
+function BreakdownBadges({ categoryType }: { categoryType?: string }) {
   const cKey =
-    categoryType && CATEGORY_TYPE_LABEL[categoryType] ? categoryType : "Cumulative";
-  const bKey =
-    breakdownType && BREAKDOWN_TYPE_STYLE[breakdownType] ? breakdownType : "Automatic";
+    categoryType && CATEGORY_TYPE_LABELS[categoryType as CategoryType]
+      ? (categoryType as CategoryType)
+      : "Cumulative";
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${CATEGORY_TYPE_STYLE[cKey]}`}>
-        {CATEGORY_TYPE_LABEL[cKey]}
-      </span>
-      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${BREAKDOWN_TYPE_STYLE[bKey]}`}>
-        {bKey}
+        {CATEGORY_TYPE_LABELS[cKey]}
       </span>
     </div>
   );
@@ -212,10 +199,9 @@ function CategoryPanel({
           dataType: editItem.dataType,
           currency: editItem.currency ?? "NONE",
           description: editItem.description ?? "",
-          categoryType: (CATEGORY_TYPE_LABEL[editItem.categoryType ?? ""]
+          categoryType: (CATEGORY_TYPE_LABELS[editItem.categoryType as CategoryType]
             ? (editItem.categoryType as CategoryType)
             : "Cumulative"),
-          breakdownType: editItem.breakdownType === "Manual" ? "Manual" : "Automatic",
         }
       : EMPTY_FORM
   );
@@ -236,7 +222,10 @@ function CategoryPanel({
         currency: data.dataType === "Currency" ? data.currency : null,
         description: data.description,
         categoryType: data.categoryType,
-        breakdownType: data.breakdownType,
+        // Breakdown Type is always Automatic — the Manual option was removed
+        // from the UI per spec. We send it explicitly (rather than relying on
+        // the server default) so the intent is visible in the payload.
+        breakdownType: "Automatic",
       };
       const res = await fetch(url, {
         method,
@@ -347,9 +336,21 @@ function CategoryPanel({
 
           {/* Category Type — distribution shape across periods. */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Category Type
-            </label>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <label className="block text-sm font-medium text-gray-700">
+                Category Type
+              </label>
+              <span
+                className="inline-flex items-center cursor-help text-gray-400 hover:text-gray-600"
+                title={
+                  `Cumulative — ${CATEGORY_TYPE_INFO.Cumulative}\n\n` +
+                  `Cumulative Till Exit — ${CATEGORY_TYPE_INFO.CumulativeTillEnd}\n\n` +
+                  `Standalone — ${CATEGORY_TYPE_INFO.Standalone}`
+                }
+              >
+                <Info className="h-3.5 w-3.5" />
+              </span>
+            </div>
             <div className="flex items-center gap-4 flex-wrap">
               {(["Cumulative", "CumulativeTillEnd", "Standalone"] as const).map((v) => (
                 <label key={v} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
@@ -361,32 +362,13 @@ function CategoryPanel({
                     onChange={() => set("categoryType", v)}
                     className="accent-accent-600"
                   />
-                  {v === "CumulativeTillEnd" ? "Cumulative Till End" : v}
+                  {CATEGORY_TYPE_LABELS[v]}
                 </label>
               ))}
             </div>
-          </div>
-
-          {/* Breakdown Type — fill mode. */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Breakdown Type
-            </label>
-            <div className="flex items-center gap-4">
-              {(["Manual", "Automatic"] as const).map((v) => (
-                <label key={v} className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="breakdownType"
-                    value={v}
-                    checked={form.breakdownType === v}
-                    onChange={() => set("breakdownType", v)}
-                    className="accent-accent-600"
-                  />
-                  {v}
-                </label>
-              ))}
-            </div>
+            <p className="text-xs italic text-gray-500 mt-1.5">
+              {CATEGORY_TYPE_INFO[form.categoryType]}
+            </p>
           </div>
 
           {/* Description */}
@@ -550,7 +532,7 @@ export default function CategoryMgmtPage() {
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Category Name</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-36">Data Type</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-28">Currency</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-60">Category &amp; Breakdown</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-60">Category Type</th>
                 <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Description</th>
               </tr>
             </thead>
@@ -602,10 +584,7 @@ export default function CategoryMgmtPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <BreakdownBadges
-                        categoryType={item.categoryType}
-                        breakdownType={item.breakdownType}
-                      />
+                      <BreakdownBadges categoryType={item.categoryType} />
                     </td>
                     <td className="px-4 py-3 text-gray-500 truncate max-w-xs">{item.description || "—"}</td>
                   </tr>

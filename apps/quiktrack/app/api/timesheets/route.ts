@@ -2,14 +2,35 @@
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createTimesheetSchema } from "@/lib/validation/timesheet";
+import { userCanInProject, forbidden } from "@/lib/api/permissions";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
-  const filterUserId = url.searchParams.get("userId") ?? userId;
+  const requestedUserId = url.searchParams.get("userId");
   const fromStr = url.searchParams.get("from");
   const toStr = url.searchParams.get("to");
   const projectId = url.searchParams.get("projectId");
   const issueId = url.searchParams.get("issueId");
+
+  const tenantAdmin = await db.orgMember.findFirst({
+    where: { userId, orgId, status: "active" },
+    select: { role: true },
+  });
+  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+
+  // Non-admins can only ever read their own entries (close the leak).
+  const filterUserId = isAdmin ? (requestedUserId ?? userId) : userId;
+
+  // If a projectId is supplied by a non-admin, confirm membership.
+  if (!isAdmin && projectId) {
+    const member = await db.qtProjectMember.findFirst({
+      where: { projectId, userId, isDeleted: false },
+      select: { id: true },
+    });
+    if (!member) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+  }
 
   const where = {
     orgId: orgId,
@@ -68,6 +89,9 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
   if (!member && !isAdmin) {
     return NextResponse.json({ success: false, error: "Issue not found" }, { status: 404 });
+  }
+  if (!isAdmin && !(await userCanInProject(userId, orgId, issue.projectId, "Timesheet", "create"))) {
+    return forbidden();
   }
 
   const entry = await db.qtTimesheetEntry.create({

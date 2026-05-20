@@ -22,6 +22,14 @@ const launcherPublicRoutes = [
   "/api/oauth/userinfo",
   "/api/oauth/jwks",
   "/.well-known/openid-configuration",
+  // Native-invite acceptance — the "Set Up My Account" link in onboarding
+  // emails now targets the launcher (:3001) so the Set-Password page is
+  // served from here instead of bouncing to the auth app on :3000.
+  // Both the page and its same-origin API fetches must be reachable
+  // without a session because the user authenticates by presenting their
+  // single-use invitation token (FRD FR-SA-009 / FR-SA-010).
+  "/invitations/accept",
+  "/api/invitations",
 ];
 
 // Only set centralLoginUrl when AUTH_URL points at a DIFFERENT host.

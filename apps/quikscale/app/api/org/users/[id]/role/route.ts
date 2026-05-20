@@ -8,7 +8,6 @@ import {
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
 import { assertWouldNotEmptyAdmin, AdminLockoutError } from "@/lib/api/preventAdminLockout";
-import { syncLegacyAdminRole } from "@/lib/api/syncLegacyAdminRole";
 
 const bodySchema = z.object({
   /** AppRole.id, or null to revoke. Special value "admin" auto-seeds + uses
@@ -123,10 +122,18 @@ export async function PATCH(
       await ensureUserOnRole(params.id, orgId, targetRoleId, actorId);
     }
 
-    // Phase-2: keep legacy OrgMember.role in lock-step with the v2 admin
-    // grant so the shared role-tier requireAdmin() agrees without relying
-    // on the Phase-1 read-time bridge.
-    await syncLegacyAdminRole({ orgId, userId: params.id, isV2Admin });
+    // OrgMember.role is intentionally pinned to "member" for every QuikScale
+    // user — app-level authority (Admin / Manager / custom roles) lives in
+    // app_quikscale.UserAppRole. The QuikScale `extraAdminCheck` bridge in
+    // requireAdmin() reads v2 admin status directly from UserAppRole, so we
+    // don't (and shouldn't) mirror "admin" back onto the legacy column.
+    // Force-reset the legacy column to "member" so any previously promoted
+    // rows converge.
+    void isV2Admin;
+    await db.orgMember.updateMany({
+      where: { orgId, userId: params.id, role: { not: "member" } },
+      data: { role: "member" },
+    });
 
     // Hydrate response — include the role's id + name (or null if revoked).
     const role = targetRoleId

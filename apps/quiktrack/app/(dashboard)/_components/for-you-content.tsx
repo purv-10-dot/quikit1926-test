@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Columns, Bookmark, Zap, CheckSquare, LayoutDashboard } from "lucide-react";
 import { TruckIllustration } from "@/components/illustrations/truck";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import {
   type HistoryEntry,
   fetchActivity,
@@ -25,7 +26,7 @@ interface SpaceCard {
 }
 
 const TOP_N = 5;
-
+console.log("TOP_N", TOP_N);
 const TABS: { key: Tab; label: string; count?: number }[] = [
   { key: "recommended", label: "Recommended" },
   { key: "assigned", label: "Assigned to me", count: 0 },
@@ -52,6 +53,8 @@ function KindIcon({ kind }: { kind: HistoryEntry["kind"] }) {
 
 export function ForYouContent() {
   const { data: session } = useSession();
+  const perms = useMyPermissions();
+  const canCreateProject = perms.loading || perms.has("Project", "create");
   const currentUserId = session?.user?.id ?? null;
   const [tab, setTab] = useState<Tab>("recommended");
   const [allSpaces, setAllSpaces] = useState<SpaceCard[] | null>(null);
@@ -172,11 +175,20 @@ export function ForYouContent() {
           </div>
         ) : (
           <div className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-md p-6 text-center">
-            No spaces yet.{" "}
-            <Link href="/spaces/templates" className="text-blue-600 hover:underline">
-              Create your first space
-            </Link>
-            .
+            {canCreateProject ? (
+              <>
+                No spaces yet.{" "}
+                <Link href="/spaces/templates" className="text-blue-600 hover:underline">
+                  Create your first space
+                </Link>
+                .
+              </>
+            ) : (
+              <>
+                You&apos;re not on any project yet. Once an admin adds you to
+                a project, your activity will appear here.
+              </>
+            )}
           </div>
         )}
       </section>

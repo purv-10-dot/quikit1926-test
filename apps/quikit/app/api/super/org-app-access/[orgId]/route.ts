@@ -16,6 +16,8 @@ import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
+import { provisionAppRoles } from "@/lib/provisionAppRoles";
+import { MEMBERSHIP_ROLES } from "@quikit/shared";
 
 export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: NextRequest, { params }) => {
   try {
@@ -121,30 +123,22 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
 
     // Eagerly provision the app's default roles for this org so the admin
     // panel's role dropdown is populated the moment access is granted —
-    // not lazily on first app open. Fire-and-forget: a slow/unreachable
-    // target must never block or fail the grant (the app's own lazy seed
-    // remains the fallback). Currently only QuikScale has this seeded
-    // role system; add slugs here as other apps adopt it.
-    if (app.slug === "quikscale") {
-      const base = (
-        process.env.QUIKSCALE_URL ??
-        app.baseUrl ??
-        ""
-      ).replace(/\/+$/, "");
-      const internalSecret = process.env.INTERNAL_SECRET;
-      if (base && internalSecret) {
-        void fetch(`${base}/api/internal/provision-roles`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-internal-secret": internalSecret,
-          },
-          body: JSON.stringify({ orgId }),
-        }).catch(() => {
-          // Non-fatal — lazy seed on first QuikScale load still covers it.
-        });
-      }
-    }
+    // not lazily on first app open. Also wires every existing Org Admin
+    // of the tenant into the app's admin AppRole via UserAppRole, so they
+    // land on the app with full access on first login. Fire-and-forget:
+    // a slow/unreachable target must never block or fail the grant (the
+    // app's own lazy seed remains the fallback). Apps that don't expose
+    // /api/internal/provision-roles are silently skipped inside the
+    // helper.
+    const adminMembers = await db.orgMember.findMany({
+      where: { orgId, role: MEMBERSHIP_ROLES.ORG_ADMIN },
+      select: { userId: true },
+    });
+    void provisionAppRoles(
+      { slug: app.slug, baseUrl: app.baseUrl },
+      orgId,
+      adminMembers.map((m) => m.userId),
+    );
 
     logAudit({
       orgId,

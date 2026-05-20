@@ -44,8 +44,39 @@ export const BREAKDOWN_TYPES: readonly BreakdownType[] = [
 export const BREAKDOWN_LABELS: Record<BreakdownType, string> = {
   Cumulative: "Cumulative",
   Standalone: "Standalone",
-  CumulativeTillExit: "Cumulative Till End",
+  CumulativeTillExit: "Cumulative Till Exit",
   Manual: "Manual",
+};
+
+/* ─────────────────────── CategoryType (new axis) ─────────────────────── */
+
+/**
+ * The new two-axis `categoryType` enum stored on `CategoryMaster`. Distinct
+ * from the legacy `BreakdownType` above: the DB uses `CumulativeTillEnd`
+ * (no "Exit"), but the UI consistently displays it as "Cumulative Till
+ * Exit". Keep this mapping as the single source of truth so the label can
+ * be tweaked in one place.
+ */
+export type CategoryType = "Cumulative" | "CumulativeTillEnd" | "Standalone";
+
+export const CATEGORY_TYPE_LABELS: Record<CategoryType, string> = {
+  Cumulative: "Cumulative",
+  CumulativeTillEnd: "Cumulative Till Exit",
+  Standalone: "Standalone",
+};
+
+/**
+ * Short human-readable description of each Category Type — surfaced as a
+ * tooltip / inline help text next to the Category Type radio group in the
+ * Category Master form and the inline Add-Category mini-form.
+ */
+export const CATEGORY_TYPE_INFO: Record<CategoryType, string> = {
+  Cumulative:
+    "Values add up across periods. Projected is the running total — each cell contributes to the sum.",
+  CumulativeTillEnd:
+    "Same accumulation as Cumulative, but the final period equals the cumulative total carried to exit (not a fresh contribution).",
+  Standalone:
+    "Each period is independent — no roll-up. Projected is the target for every period on its own.",
 };
 
 /* ───────────────────────── rounding ───────────────────────── */

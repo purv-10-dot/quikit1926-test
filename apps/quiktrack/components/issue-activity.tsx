@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowDownNarrowWide, X, ChevronDown, ChevronRight } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { SkeletonList } from "@/components/skeleton";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 type Tab = "all" | "comments" | "history" | "worklog";
 
@@ -139,6 +140,8 @@ export function IssueActivity({
    *  pass them here so the Work log tab is instantly populated. */
   initialWorkLogs?: WorkLogRow[];
 }) {
+  const perms = useMyProjectPermissions(projectId);
+  const canComment = perms.loading || perms.has("IssueComment", "create");
   const [tab, setTab] = useState<Tab>("all");
   const [open, setOpen] = useState(true);
   const [comments, setComments] = useState<Comment[] | null>(null);
@@ -232,7 +235,7 @@ export function IssueActivity({
           issueId={issueId}
           comments={comments}
           sortDesc={sortDesc}
-          showComposer={tab === "comments"}
+          showComposer={canComment && tab === "comments"}
           onPosted={(c) => setComments((arr) => [...(arr ?? []), c])}
         />
       )}

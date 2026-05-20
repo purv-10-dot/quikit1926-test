@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import {
   Search,
   ChevronDown,
@@ -75,6 +76,8 @@ function typeLabel(t?: string): string {
 }
 
 export function SpacesGrid() {
+  const perms = useMyPermissions();
+  const canCreateProject = perms.loading || perms.has("Project", "create");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -153,18 +156,22 @@ export function SpacesGrid() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-gray-900">Spaces</h1>
         <div className="flex items-center gap-2">
-          <Link
-            href="/spaces/templates"
-            className="inline-flex items-center h-9 px-4 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded"
-          >
-            Create space
-          </Link>
-          <Link
-            href="/spaces/templates"
-            className="inline-flex items-center h-9 px-4 text-sm font-medium text-gray-700 border border-gray-300 hover:bg-gray-50 rounded"
-          >
-            Templates
-          </Link>
+          {canCreateProject && (
+            <>
+              <Link
+                href="/spaces/templates"
+                className="inline-flex items-center h-9 px-4 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded"
+              >
+                Create space
+              </Link>
+              <Link
+                href="/spaces/templates"
+                className="inline-flex items-center h-9 px-4 text-sm font-medium text-gray-700 border border-gray-300 hover:bg-gray-50 rounded"
+              >
+                Templates
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
@@ -276,7 +283,26 @@ export function SpacesGrid() {
             {!loading && spaces.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">
-                  No spaces match your filters.
+                  {debouncedSearch || filters.size > 0 ? (
+                    <span>No spaces match your filters.</span>
+                  ) : canCreateProject ? (
+                    <span>
+                      No spaces yet.{" "}
+                      <Link
+                        href="/spaces/templates"
+                        className="text-blue-600 hover:underline"
+                      >
+                        Create your first space
+                      </Link>
+                      .
+                    </span>
+                  ) : (
+                    <span>
+                      You haven&apos;t been added to any space yet. Ask your
+                      organisation admin to invite you to a project — spaces
+                      you join will appear here.
+                    </span>
+                  )}
                 </td>
               </tr>
             )}

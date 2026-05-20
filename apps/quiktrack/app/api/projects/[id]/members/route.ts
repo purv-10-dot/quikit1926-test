@@ -12,9 +12,9 @@ export const GET = withProjectAccess<{ id: string }>(
     });
 
     const userIds = members.map((m) => m.userId);
-    const users =
+    const [users, projectRoleAssignments] = await Promise.all([
       userIds.length > 0
-        ? await db.user.findMany({
+        ? db.user.findMany({
             where: { id: { in: userIds } },
             select: {
               id: true,
@@ -25,16 +25,33 @@ export const GET = withProjectAccess<{ id: string }>(
               lastSignInAt: true,
             },
           })
-        : [];
+        : Promise.resolve([] as Array<{ id: string }>),
+      userIds.length > 0
+        ? db.qtProjectUserRole.findMany({
+            where: { projectId, userId: { in: userIds } },
+            select: { userId: true, projectRole: { select: { id: true, name: true } } },
+          })
+        : Promise.resolve([] as Array<{ userId: string; projectRole: { id: string; name: string } }>),
+    ]);
     const userById = new Map(users.map((u) => [u.id, u] as const));
+    const roleByUserId = new Map(
+      projectRoleAssignments.map((r) => [r.userId, r.projectRole] as const),
+    );
 
-    const data = members.map((m) => ({
-      id: m.id,
-      userId: m.userId,
-      role: m.role,
-      joinedAt: m.joinedAt,
-      user: userById.get(m.userId) ?? null,
-    }));
+    const data = members.map((m) => {
+      const assignedRole = roleByUserId.get(m.userId) ?? null;
+      return {
+        id: m.id,
+        userId: m.userId,
+        role: m.role,
+        projectRoleId: assignedRole?.id ?? null,
+        projectRole: assignedRole,
+        status: "active",
+        teams: [] as string[],
+        joinedAt: m.joinedAt,
+        user: userById.get(m.userId) ?? null,
+      };
+    });
 
     const pendingInvites = await db.qtInvitation.findMany({
       where: { projectId, acceptedAt: null, revokedAt: null, isDeleted: false },

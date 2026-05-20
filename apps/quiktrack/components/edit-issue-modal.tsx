@@ -32,6 +32,7 @@ import { RichTextEditor } from "@/components/rich-text-editor";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { AlertCircle } from "lucide-react";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 type IssueType = "TASK" | "BUG" | "STORY" | "EPIC" | "SUBTASK";
 type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
@@ -230,6 +231,13 @@ export function EditIssueModal({
   useEffect(() => {
     if (issueId) setCurrentIssueId(issueId);
   }, [issueId]);
+
+  // Project-scoped perms decide which fields are editable and whether the
+  // subtask composer is rendered at all. Server enforces; this just hides
+  // controls the user can't actually use.
+  const perms = useMyProjectPermissions(projectId);
+  const canUpdateIssue = perms.loading || perms.has("Issue", "update");
+  const canCreateIssue = perms.loading || perms.has("Issue", "create");
 
   const [issue, setIssue] = useState<IssueFull | null>(null);
   const [statuses, setStatuses] = useState<Status[]>([]);
@@ -569,9 +577,32 @@ export function EditIssueModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
+          {!perms.loading && !canUpdateIssue && issue && (
+            <div className="mb-3 flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-[12px] text-amber-800">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                <span className="font-semibold">Read-only</span> — your role
+                does not have <span className="font-medium">Issue:update</span>{" "}
+                permission, so changes you make here won&apos;t save.
+              </span>
+            </div>
+          )}
           {loading && !issue && <DrawerSkeleton />}
           {issue && (
             <>
+              {/* Wrap the entire editable region (everything except the
+                  Activity stream) in one fieldset so a Member without
+                  Issue:update has every button, input, select, and
+                  textarea disabled automatically — native HTML semantics
+                  propagate `disabled` to every descendant form control. */}
+              <fieldset
+                disabled={!perms.loading && !canUpdateIssue}
+                className={`m-0 p-0 border-0 min-w-0 space-y-3 ${
+                  !perms.loading && !canUpdateIssue
+                    ? "[&_input]:cursor-not-allowed [&_button]:cursor-not-allowed [&_select]:cursor-not-allowed [&_textarea]:cursor-not-allowed"
+                    : ""
+                }`}
+              >
               {/* Top action row: Add epic, breadcrumb, eye, more */}
               <div className="flex items-center justify-between mb-3 text-xs text-gray-500">
                 <div className="inline-flex items-center gap-1.5">
@@ -718,8 +749,10 @@ export function EditIssueModal({
                 />
               ) : (
                 <h1
-                  onClick={() => setTitleEditing(true)}
-                  className="text-2xl font-semibold text-gray-900 mb-3 cursor-text px-2 py-1 -ml-2 rounded hover:bg-gray-50"
+                  onClick={() => canUpdateIssue && setTitleEditing(true)}
+                  className={`text-2xl font-semibold text-gray-900 mb-3 px-2 py-1 -ml-2 rounded ${
+                    canUpdateIssue ? "cursor-text hover:bg-gray-50" : "cursor-default"
+                  }`}
                 >
                   {title}
                 </h1>
@@ -808,8 +841,11 @@ export function EditIssueModal({
                 ) : (
                   <button
                     type="button"
+                    disabled={!canUpdateIssue}
                     onClick={() => setDescEditing(true)}
-                    className="block w-full text-left text-sm text-gray-500 hover:bg-gray-50 rounded px-3 py-2"
+                    className={`block w-full text-left text-sm text-gray-500 rounded px-3 py-2 ${
+                      canUpdateIssue ? "hover:bg-gray-50" : "cursor-default opacity-80"
+                    }`}
                   >
                     {description ? (
                       <span
@@ -860,6 +896,7 @@ export function EditIssueModal({
                             </button>
                           </>
                         )}
+                        {canCreateIssue && (
                         <button
                           type="button"
                           onClick={() => {
@@ -880,6 +917,7 @@ export function EditIssueModal({
                         >
                           <Plus className="h-3.5 w-3.5" />
                         </button>
+                        )}
                       </div>
                     </div>
 
@@ -937,7 +975,7 @@ export function EditIssueModal({
                           </>
                         )}
 
-                        {subtaskInputOpen ? (
+                        {canCreateIssue && subtaskInputOpen ? (
                           <div className="mt-2">
                             <div className="flex items-center gap-2 border border-blue-500 rounded ring-2 ring-blue-500 px-2 h-9 bg-white">
                               <input
@@ -991,7 +1029,7 @@ export function EditIssueModal({
                             </div>
                           </div>
                         ) : (
-                          !hasAny && (
+                          canCreateIssue && !hasAny && (
                             <button
                               type="button"
                               onClick={() => setSubtaskInputOpen(true)}
@@ -1018,7 +1056,7 @@ export function EditIssueModal({
               )}
 
               {/* Details (collapsible) */}
-              <div className="border border-gray-200 rounded-md">
+              <div className={`border border-gray-200 rounded-md ${!perms.loading && !canUpdateIssue ? "opacity-80" : ""}`}>
                 <button
                   type="button"
                   onClick={() => setDetailsOpen((v) => !v)}
@@ -1274,6 +1312,8 @@ export function EditIssueModal({
                   </div>
                 )}
               </div>
+
+              </fieldset>
 
               <div className="mt-4 text-[11px] text-gray-500">
                 {issue.createdAt && <div>Created {fmtDateLabel(issue.createdAt)}</div>}
