@@ -33,8 +33,26 @@ const LEVEL_META: Record<FieldLevel, { label: string; tone: string }> = {
  * non-default entries; defaults (Editable) are omitted to keep the row count
  * small.
  */
-export function FieldPermissionMatrix({ roleId }: { roleId: string }) {
+export function FieldPermissionMatrix({
+  roleId,
+  endpoint,
+  queryKey,
+}: {
+  roleId: string;
+  /**
+   * Optional override — defaults to the Layer-1 (org-role) endpoint. The
+   * per-project User Management page passes the project-scoped variant:
+   * `/api/projects/<projectId>/roles/<roleId>/field-permissions`.
+   */
+  endpoint?: string;
+  /** Optional override for the React Query cache key, paired with `endpoint`. */
+  queryKey?: readonly unknown[];
+}) {
   const qc = useQueryClient();
+  const effectiveEndpoint =
+    endpoint ?? `/api/org/roles/${roleId}/field-permissions`;
+  const effectiveQueryKey =
+    queryKey ?? ["quiktrack", "org-role-field-perms", roleId];
   const [levels, setLevels] = useState<Map<string, FieldLevel>>(new Map());
   const [openEntities, setOpenEntities] = useState<Set<string>>(
     () => new Set(FIELD_TREE.map((e) => e.key)),
@@ -46,9 +64,9 @@ export function FieldPermissionMatrix({ roleId }: { roleId: string }) {
   const [forceRehydrate, setForceRehydrate] = useState(0);
 
   const q = useQuery({
-    queryKey: ["quiktrack", "org-role-field-perms", roleId],
+    queryKey: effectiveQueryKey,
     queryFn: async () => {
-      const r = await fetch(`/api/org/roles/${roleId}/field-permissions`);
+      const r = await fetch(effectiveEndpoint);
       const j = await r.json();
       return j.data as { roleId: string; permissions: SavedRow[] };
     },
@@ -81,7 +99,7 @@ export function FieldPermissionMatrix({ roleId }: { roleId: string }) {
         const [entity, field] = k.split(":");
         payload.push({ entity, field, level: lvl });
       }
-      const r = await fetch(`/api/org/roles/${roleId}/field-permissions`, {
+      const r = await fetch(effectiveEndpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ permissions: payload }),
@@ -92,7 +110,7 @@ export function FieldPermissionMatrix({ roleId }: { roleId: string }) {
       setForceRehydrate((n) => n + 1);
       hydratedFor.current = null;
       qc.invalidateQueries({
-        queryKey: ["quiktrack", "org-role-field-perms", roleId],
+        queryKey: effectiveQueryKey,
       });
     },
   });

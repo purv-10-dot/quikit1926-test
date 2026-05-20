@@ -660,7 +660,7 @@ export function LoginModal() {
                   <>
                     <h2 style={S.title}>Reset password</h2>
                     <p style={S.sub}>
-                      We&apos;ll email you a 6-digit code to reset it.
+                      {/* We&apos;ll email you a 6-digit code to reset it. */}
                     </p>
                     <form onSubmit={requestOtp}>
                       <label style={S.label}>Account email</label>

@@ -45,7 +45,18 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [appRoleId, setAppRoleId] = useState(""); // "" → org default
   const [projectIds, setProjectIds] = useState<string[]>([]);
+  /** Map projectId → projectRoleId. Missing key = use that project's default role. */
+  const [projectRoles, setProjectRoles] = useState<Record<string, string>>({});
   const [linkExistingUserId, setLinkExistingUserId] = useState<string | null>(null);
+  /**
+   * "native" → admin sets password, user signs in with email+password.
+   * "sso"    → no password collected; user authenticates via Google/Microsoft.
+   *            Server stores `User.password = null` so the credentials
+   *            provider can't log them in — only OAuth works. The signIn
+   *            callback in @quikit/auth auto-accepts the invite on first
+   *            OAuth login.
+   */
+  const [invitationMethod, setInvitationMethod] = useState<"native" | "sso">("native");
   const [error, setError] = useState<string | null>(null);
 
   // Email typeahead.
@@ -109,11 +120,33 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
         firstName,
         lastName,
         email,
+        // Linking an existing user skips the credentials section entirely.
+        // For a brand-new user:
+        //   • SSO   → send `invitationMethod: "sso"`, no password.
+        //   • Native + admin typed a password → send both.
+        //   • Native + admin left it blank → send only `invitationMethod:
+        //     "native"` and let the server seed DEFAULT_INVITE_PASSWORD.
+        //     Sending an empty string would trip Zod's min(8) check.
         ...(linkExistingUserId
           ? { linkExistingUserId }
-          : { password }),
+          : invitationMethod === "sso"
+            ? { invitationMethod: "sso" }
+            : {
+                invitationMethod: "native",
+                ...(password.trim().length > 0 ? { password: password.trim() } : {}),
+              }),
         ...(appRoleId ? { appRoleId } : {}),
-        ...(projectIds.length > 0 ? { projectIds } : {}),
+        // New shape — `projects` carries the role per project. Backend
+        // also still accepts the legacy `projectIds: string[]` form for
+        // forward-compat with anything else calling the same endpoint.
+        ...(projectIds.length > 0
+          ? {
+              projects: projectIds.map((id) => ({
+                projectId: id,
+                projectRoleId: projectRoles[id] || undefined,
+              })),
+            }
+          : {}),
       };
       const r = await fetch("/api/org/users", {
         method: "POST",
@@ -135,7 +168,13 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
     firstName.trim().length > 0 &&
     lastName.trim().length > 0 &&
     email.trim().length > 0 &&
-    (isLinking || password.length >= 8);
+    // Native: leaving the password blank triggers the default-password seed,
+    // so blank is fine. If admin DID type one, it must be ≥ 8 chars to be
+    // accepted by the server (Zod min(8)).
+    (isLinking ||
+      invitationMethod === "sso" ||
+      password.length === 0 ||
+      password.length >= 8);
 
   const roles = rolesQ.data ?? [];
   const hits = searchQ.data ?? [];
@@ -255,14 +294,68 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
         )}
       </div>
 
+      {/* Invitation Method — only when creating a brand-new user (hidden
+          when linking an existing org member, since they already have an
+          auth identity). */}
       {!isLinking && (
-        <Input
-          label="Temporary password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="At least 8 characters"
-        />
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1.5">
+            Invitation Method
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              {
+                key: "native" as const,
+                title: "Native (Email + Password)",
+                hint: "Admin sets a password. User signs in with email + password.",
+              },
+              {
+                key: "sso" as const,
+                title: "SSO (Google / Microsoft)",
+                hint: "No password. User signs in via their existing provider.",
+              },
+            ]).map((opt) => {
+              const active = invitationMethod === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setInvitationMethod(opt.key)}
+                  className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${
+                    active
+                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-300"
+                      : "border-gray-200 bg-white hover:bg-gray-50"
+                  }`}
+                >
+                  <div
+                    className={`text-xs font-semibold ${
+                      active ? "text-blue-700" : "text-gray-800"
+                    }`}
+                  >
+                    {opt.title}
+                  </div>
+                  <div className="text-[10.5px] text-gray-500 mt-0.5 leading-snug">
+                    {opt.hint}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Native callout — admin doesn't type a password on create. The
+          server seeds DEFAULT_INVITE_PASSWORD and the email embeds it.
+          Per the reference UI, the password input is only available in
+          edit mode (separate EditUserModal). Keeping this drawer
+          purely about invite-and-go. */}
+      {!isLinking && invitationMethod === "native" && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-[11.5px] text-blue-800 leading-snug">
+          <strong className="font-semibold">Temporary password will be emailed.</strong>{" "}
+          The user will receive{" "}
+          <span className="font-mono font-semibold">Quikit2026</span> at their
+          email and be prompted to set a new password on first sign-in.
+        </div>
       )}
 
       <Select
@@ -280,17 +373,172 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
 
       <ProjectsPicker
         selected={projectIds}
-        onChange={setProjectIds}
+        onChange={(ids) => {
+          setProjectIds(ids);
+          // Drop role choices for projects that were just unchecked so we
+          // don't leak stale roleIds into the payload.
+          setProjectRoles((prev) => {
+            const next: Record<string, string> = {};
+            for (const id of ids) if (prev[id]) next[id] = prev[id];
+            return next;
+          });
+        }}
         label="Add to projects"
         placeholder="None — assign later"
       />
+
+      {projectIds.length > 0 && (
+        <ProjectRolesPicker
+          projectIds={projectIds}
+          value={projectRoles}
+          onChange={setProjectRoles}
+        />
+      )}
+
       <p className="-mt-2 text-[11px] text-gray-400">
-        New user joins each selected project as a member. Project-role
-        assignment can be done from the project&apos;s User Management page
+        Each project uses its own role catalogue. Leave a row on{" "}
+        <span className="font-medium">Default</span> and the project&apos;s
+        default role applies. Per-role permissions can be tuned later from
+        the project&apos;s User Management page
         after invite.
       </p>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
     </RightPanel>
+  );
+}
+
+/* ─────────────────── Per-project role picker ─────────────────── */
+
+interface ProjectMeta {
+  id: string;
+  name: string;
+  projectKey: string;
+  color?: string | null;
+}
+
+interface ProjectRoleOption {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+/**
+ * Lists every project the admin has selected and, for each, lets them pick
+ * a project role from THAT project's role catalogue. Roles are fetched per
+ * project — cached by React Query so re-mounts are instant.
+ *
+ * Mirrors the QuikIT "Roles per Application" picker pattern but scoped to
+ * the projects the new user is joining.
+ */
+function ProjectRolesPicker({
+  projectIds,
+  value,
+  onChange,
+}: {
+  projectIds: string[];
+  value: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+}) {
+  const projectsQ = useQuery({
+    queryKey: ["quiktrack", "projects-picker"],
+    queryFn: async () => {
+      const r = await fetch("/api/projects?pageSize=200");
+      const j = await r.json();
+      // Inner ?? handles missing data; cast is the boundary between
+      // `unknown` json and our typed shape. Trailing ?? [] was redundant
+      // because the inner coalescing already guarantees an array.
+      return (j.data ?? []) as ProjectMeta[];
+    },
+  });
+  const projects = projectsQ.data ?? [];
+  const projectById = new Map(projects.map((p) => [p.id, p] as const));
+
+  return (
+    <div className="block text-sm">
+      <span className="text-gray-700 mb-1.5 block">Project roles</span>
+      <div className="border border-gray-200 rounded-md divide-y divide-gray-100">
+        {projectIds.map((pid) => {
+          const meta = projectById.get(pid);
+          return (
+            <ProjectRoleRow
+              key={pid}
+              projectId={pid}
+              projectName={meta?.name ?? "—"}
+              projectKey={meta?.projectKey ?? ""}
+              projectColor={meta?.color ?? null}
+              selectedRoleId={value[pid] ?? ""}
+              onSelect={(rid) => {
+                const next = { ...value };
+                if (rid) next[pid] = rid;
+                else delete next[pid];
+                onChange(next);
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProjectRoleRow({
+  projectId,
+  projectName,
+  projectKey,
+  projectColor,
+  selectedRoleId,
+  onSelect,
+}: {
+  projectId: string;
+  projectName: string;
+  projectKey: string;
+  projectColor: string | null;
+  selectedRoleId: string;
+  onSelect: (roleId: string) => void;
+}) {
+  const rolesQ = useQuery({
+    queryKey: ["quiktrack", "project-roles", projectId],
+    queryFn: async () => {
+      const r = await fetch(`/api/projects/${projectId}/roles`);
+      const j = await r.json();
+      return (j.data as ProjectRoleOption[]) ?? [];
+    },
+  });
+  const roles = rolesQ.data ?? [];
+  const defaultRole = roles.find((r) => r.isDefault);
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2">
+      <span
+        className="h-5 w-5 rounded-sm shrink-0"
+        style={{ background: projectColor ?? "#2563eb" }}
+      />
+      <span className="flex-1 min-w-0">
+        <span className="block text-[13px] font-medium text-gray-900 truncate">
+          {projectName}
+        </span>
+        {projectKey && (
+          <span className="block text-[10px] uppercase tracking-wider text-gray-400">
+            {projectKey}
+          </span>
+        )}
+      </span>
+      <select
+        value={selectedRoleId}
+        onChange={(e) => onSelect(e.target.value)}
+        className="h-8 px-2 text-[12.5px] border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 min-w-[140px]"
+      >
+        <option value="">
+          {defaultRole ? `Default (${defaultRole.name})` : "Default"}
+        </option>
+        {roles.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.name}
+            {r.isDefault ? " (default)" : ""}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

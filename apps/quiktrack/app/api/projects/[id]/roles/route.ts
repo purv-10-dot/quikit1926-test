@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
+import { userCanInProject, forbidden } from "@/lib/api/permissions";
 
 const createRoleSchema = z.object({
   name: z.string().trim().min(1).max(64),
@@ -29,10 +30,13 @@ export const GET = withProjectAccess(async ({ orgId, projectId }) => {
 
 // POST /api/projects/[id]/roles — create a new project role.
 // Project admins (tenant admin or project PROJECT_ADMIN) only.
-export const POST = withProjectAccess(async ({ orgId, projectId, userId, projectRole, isTenantAdmin }, req) => {
-  if (!isTenantAdmin && projectRole !== "PROJECT_ADMIN") {
+export const POST = withProjectAccess(async ({ orgId, projectId, userId, isTenantAdmin }, req) => {
+  if (
+    !isTenantAdmin &&
+    !(await userCanInProject(userId, orgId, projectId, "ProjectMember", "update"))
+  ) {
     return NextResponse.json(
-      { success: false, error: "Project admin required" },
+      { success: false, error: "You don't have permission to manage project roles" },
       { status: 403 },
     );
   }
