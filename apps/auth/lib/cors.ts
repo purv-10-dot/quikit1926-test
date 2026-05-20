@@ -14,15 +14,16 @@ import type { NextRequest } from "next/server";
  *
  * Origins are env-overridable via AUTH_CORS_ORIGINS (comma-separated).
  */
-const DEFAULT_ORIGINS = [
-  "https://quik-it-auth.vercel.app",
-  "https://quikit-marketing.vercel.app",
-];
+// Allow-list is env-only. Prod sets `AUTH_CORS_ORIGINS` to a comma-separated
+// list of trusted origins (the launcher + the auth host, plus any preview
+// hostnames you care about). Dev falls back to localhost only — no
+// hardcoded Vercel hostnames in this file.
+const DEV_FALLBACK_ORIGINS = ["http://localhost:3000", "http://localhost:3001"];
 
 const ALLOWED = (
   process.env.AUTH_CORS_ORIGINS
     ? process.env.AUTH_CORS_ORIGINS.split(",").map((s) => s.trim())
-    : DEFAULT_ORIGINS
+    : DEV_FALLBACK_ORIGINS
 ).filter(Boolean);
 
 function headersFor(origin: string | null): Record<string, string> {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
+import { userCanInProject } from "@/lib/api/permissions";
 import {
   isAction,
   isResource,
@@ -41,12 +42,15 @@ export const GET = withProjectAccess<{ id: string; roleId: string }>(async ({ pr
 // Project-role grants live in their own QtProjectRolePermission table
 // (separate from app-wide QtRolePermission per the schema rule).
 export const PUT = withProjectAccess<{ id: string; roleId: string }>(async (
-  { projectId, projectRole, isTenantAdmin },
+  { orgId, projectId, userId, isTenantAdmin },
   req,
   { params },
 ) => {
-  if (!isTenantAdmin && projectRole !== "PROJECT_ADMIN") {
-    return NextResponse.json({ success: false, error: "Project admin required" }, { status: 403 });
+  if (
+    !isTenantAdmin &&
+    !(await userCanInProject(userId, orgId, projectId, "ProjectMember", "update"))
+  ) {
+    return NextResponse.json({ success: false, error: "You don't have permission to edit role permissions" }, { status: 403 });
   }
 
   const parsed = putBodySchema.safeParse(await req.json());

@@ -153,7 +153,12 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       { status: 400 }
     );
   }
-  const { firstName, lastName, email, password, role = "member", teamIds = [], teamId, linkExistingUserId, invitationMethod = "native" } = parsed.data;
+  const { firstName, lastName, email, password, teamIds = [], teamId, linkExistingUserId, invitationMethod = "native" } = parsed.data;
+  // OrgMember.role is intentionally pinned to "member" for every QuikScale
+  // invitee — app-level authority (Admin / Manager / custom roles) lives in
+  // app_quikscale.UserAppRole. The shared role-tier requireAdmin() reads v2
+  // admin status via the QuikScale `extraAdminCheck` bridge, not this column.
+  const role = "member";
   const resolvedTeamIds: string[] = teamIds.length ? teamIds : teamId ? [teamId] : [];
   const normalisedEmail = email.trim().toLowerCase();
 
@@ -346,10 +351,18 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
           : Promise.resolve(null),
       ]);
 
+      // Invitation links land users on the QuikIT launcher (:3001 in dev),
+      // whose marketing landing auto-opens a LoginModal whenever the URL
+      // has `?next=…` (set by the launcher's middleware when an
+      // unauthenticated visitor hits /invitations/accept). We deliberately
+      // do NOT use NEXT_PUBLIC_AUTH_URL or NEXTAUTH_URL — the former
+      // points at the central credentials host (:3000) and the latter at
+      // QuikScale itself (:3003), neither of which is the experience we
+      // want when the user clicks "Set Up My Account".
       const appBaseUrl =
-        process.env.NEXT_PUBLIC_AUTH_URL ??
-        process.env.NEXTAUTH_URL ??
-        "http://localhost:3000";
+        process.env.NEXT_PUBLIC_QUIKIT_URL ??
+        process.env.QUIKIT_URL ??
+        "http://localhost:3001";
 
       const { subject, html } = renderInvitationEmail({
         to: normalisedEmail,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
+import { userCanInProject } from "@/lib/api/permissions";
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(64).optional(),
@@ -27,12 +28,15 @@ export const GET = withProjectAccess<{ id: string; roleId: string }>(async ({ pr
 
 // PATCH /api/projects/[id]/roles/[roleId]
 export const PATCH = withProjectAccess<{ id: string; roleId: string }>(async (
-  { projectId, projectRole, isTenantAdmin },
+  { orgId, projectId, userId, isTenantAdmin },
   req,
   { params },
 ) => {
-  if (!isTenantAdmin && projectRole !== "PROJECT_ADMIN") {
-    return NextResponse.json({ success: false, error: "Project admin required" }, { status: 403 });
+  if (
+    !isTenantAdmin &&
+    !(await userCanInProject(userId, orgId, projectId, "ProjectMember", "update"))
+  ) {
+    return NextResponse.json({ success: false, error: "You don't have permission to edit project roles" }, { status: 403 });
   }
 
   const parsed = patchSchema.safeParse(await req.json());
@@ -94,12 +98,15 @@ export const PATCH = withProjectAccess<{ id: string; roleId: string }>(async (
 
 // DELETE /api/projects/[id]/roles/[roleId]
 export const DELETE = withProjectAccess<{ id: string; roleId: string }>(async (
-  { projectId, projectRole, isTenantAdmin },
+  { orgId, projectId, userId, isTenantAdmin },
   _req,
   { params },
 ) => {
-  if (!isTenantAdmin && projectRole !== "PROJECT_ADMIN") {
-    return NextResponse.json({ success: false, error: "Project admin required" }, { status: 403 });
+  if (
+    !isTenantAdmin &&
+    !(await userCanInProject(userId, orgId, projectId, "ProjectMember", "update"))
+  ) {
+    return NextResponse.json({ success: false, error: "You don't have permission to delete project roles" }, { status: 403 });
   }
 
   const role = await db.qtProjectRole.findFirst({

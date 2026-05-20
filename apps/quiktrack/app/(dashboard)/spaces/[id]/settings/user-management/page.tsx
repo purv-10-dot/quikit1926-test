@@ -3,6 +3,7 @@
 import { use, useState } from "react";
 import { MembersTab } from "./_components/members-tab";
 import { ProjectRoleManagementTab } from "./_components/role-management-tab";
+import { RequireProjectPerm } from "@/components/shell/require-project-perm";
 
 export default function ProjectUserManagementPage({
   params,
@@ -18,6 +19,7 @@ export default function ProjectUserManagementPage({
   const [tab, setTab] = useState<"members" | "roles">("members");
 
   return (
+    <RequireProjectPerm projectId={projectId} resource="ProjectMember" action="view">
     <div className="h-full flex flex-col">
       <div className="border-b border-gray-200 bg-white px-8 pt-2">
         <nav className="flex gap-6">
@@ -46,5 +48,6 @@ export default function ProjectUserManagementPage({
         )}
       </div>
     </div>
+    </RequireProjectPerm>
   );
 }

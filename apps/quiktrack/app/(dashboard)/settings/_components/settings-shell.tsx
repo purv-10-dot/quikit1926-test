@@ -3,14 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, Settings as SettingsIcon, Users } from "lucide-react";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
-const NAV: { key: string; label: string; href: string; icon: React.ElementType }[] = [
+const NAV: {
+  key: string;
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  adminOnly?: boolean;
+}[] = [
   // { key: "general", label: "General", href: "/settings", icon: SettingsIcon },
-  { key: "user-management", label: "User Management", href: "/settings/user-management", icon: Users },
+  { key: "user-management", label: "User Management", href: "/settings/user-management", icon: Users, adminOnly: true },
 ];
 
 export function SettingsShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const perms = useMyPermissions();
+  // Hide admin-only entries from non-admin users. The pages still re-enforce
+  // via <RequirePerm adminOnly> so direct URL hits are safe too.
+  const visibleNav = NAV.filter((n) => !n.adminOnly || perms.isAdmin);
   const isActive = (href: string) =>
     href === "/settings" ? pathname === href : pathname?.startsWith(href);
 
@@ -25,7 +36,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
           <h2 className="mt-2 text-sm font-semibold text-gray-900">Settings</h2>
         </div>
         <nav className="flex-1 overflow-y-auto py-2">
-          {NAV.map((n) => {
+          {visibleNav.map((n) => {
             const Icon = n.icon;
             const active = isActive(n.href);
             return (

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { userCanInProject, forbidden } from "@/lib/api/permissions";
+import { filterUpdatePayload } from "@/lib/api/fieldLevels";
 import { updateIssueSchema } from "@/lib/validation/issue";
 import { emailIssueAssigned, emailIssueStatusChanged } from "@/lib/email/sendEmail";
 import {
@@ -112,12 +113,30 @@ export const PATCH = withOrgAuth<{ id: string }>(
         { status: 400 },
       );
     }
+    // Field-level guard — strip any keys the user can't write (hidden /
+    // readonly). Tenant admin bypass is handled inside the helper.
+    const { allowed, rejected } = await filterUpdatePayload(
+      userId,
+      orgId,
+      issue.projectId,
+      "Issue",
+      parsed.data as Record<string, unknown>,
+    );
+    if (rejected.length > 0 && Object.keys(allowed).length === 0) {
+      return forbidden(
+        `Field(s) not editable for your role: ${rejected.join(", ")}`,
+      );
+    }
     const updated = await db.qtIssue.update({
       where: { id: params.id },
       data: {
-        ...parsed.data,
-        startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : undefined,
-        dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : undefined,
+        ...(allowed as typeof parsed.data),
+        startDate: (allowed as typeof parsed.data).startDate
+          ? new Date((allowed as typeof parsed.data).startDate!)
+          : undefined,
+        dueDate: (allowed as typeof parsed.data).dueDate
+          ? new Date((allowed as typeof parsed.data).dueDate!)
+          : undefined,
         updatedBy: userId,
       },
     });

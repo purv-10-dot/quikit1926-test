@@ -13,6 +13,7 @@
  */
 
 import nodemailer, { type Transporter } from "nodemailer";
+import { requireProdEnv } from "@quikit/shared";
 
 let _smtpTransporter: Transporter | null = null;
 let _smtpResolved = false;
@@ -70,7 +71,9 @@ function esc(s: string): string {
 }
 
 function authBase(): string {
-  return process.env.NEXT_PUBLIC_AUTH_URL ?? "http://localhost:3000";
+  // Env-only: `NEXT_PUBLIC_AUTH_URL` must be set in prod (throws otherwise),
+  // dev falls back to the local auth host port.
+  return requireProdEnv("NEXT_PUBLIC_AUTH_URL", "http://localhost:3000");
 }
 
 interface SendArgs {
@@ -165,6 +168,29 @@ export async function sendPasswordResetOtpEmail(params: {
       html,
     },
     () => console.log("[auth-email] password-reset OTP for", params.to, "→", params.otp),
+  );
+}
+
+/**
+ * Password-reset invite: the user has clicked "Send code" on the marketing
+ * Reset-password screen, we've reset their password back to the system
+ * default and minted a fresh single-use OrgMember.invitationToken. This
+ * email gives them the default credentials + a link that opens the
+ * Set-Password screen (the same one used for first-time native invites).
+ */
+export async function sendPasswordResetInviteEmail(params: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<void> {
+  await deliver(
+    { to: params.to, subject: params.subject, html: params.html },
+    () =>
+      console.log(
+        "[auth-email] password-reset invite for",
+        params.to,
+        "— SMTP/Resend not configured; check the OrgMember.invitationToken to construct the link manually",
+      ),
   );
 }
 

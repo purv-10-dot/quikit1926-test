@@ -4,42 +4,38 @@ import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { sendPasswordResetInviteEmail } from "@/lib/email";
+import { sendOnboardingInvitationEmail } from "@/lib/email";
 import { rateLimitAsync, getClientIp } from "@quikit/shared/rateLimit";
-import {
-  DEFAULT_RESET_PASSWORD,
-  INVITE_METHOD,
-  renderInvitationEmail,
-  requireProdEnv,
-} from "@quikit/shared";
+import { DEFAULT_RESET_PASSWORD, INVITE_METHOD } from "@quikit/shared";
 import { getRedis } from "@quikit/redis";
-import { withCors, preflight } from "@/lib/cors";
 
 /**
- * POST /api/auth/forgot-password
+ * POST /api/auth/forgot-password  (same-origin to the launcher)
  *
- * Self-service password reset. We do NOT email an OTP — instead we treat the
- * request as a forced re-invite:
+ * The marketing LoginModal calls this when the user clicks "Send code" on
+ * the Reset-password screen. Identical contract to the auth service's
+ * /api/auth/forgot-password — kept here so the modal doesn't have to make a
+ * cross-origin request (no CORS, no env-var, no NextAuth catch-all
+ * collision).
  *
+ * Flow:
  *   1. Reset the user's `password` to bcrypt(DEFAULT_INVITE_PASSWORD) and
  *      flip `mustChangePassword = true`.
- *   2. Mint a fresh single-use token on the user's primary OrgMember row
+ *   2. Mint a single-use token on the user's primary OrgMember row
  *      (`invitationToken` + `invitedAt`). Status is left unchanged so an
  *      already-active member doesn't lose org access while the link is
  *      outstanding.
  *   3. Record the issuance in Redis (`password-reset:issued:<userId>` with
- *      7-day TTL) so future tooling can audit/throttle without scanning the
- *      DB. Redis is best-effort — failures are logged, not surfaced.
- *   4. Email the user their email + the default password + a link to
- *      `${launcherBase}/invitations/accept?token=…`. That URL opens the
- *      marketing LoginModal's "Set your password" view, identical to the
- *      first-time native-invite flow.
+ *      7-day TTL) for audit/throttling. Best-effort; never blocks the
+ *      response.
+ *   4. Email the same Native-Invite template the user got the first time
+ *      they were onboarded (email + temporary password + Set-Up link) via
+ *      `sendOnboardingInvitationEmail`. The link points back at this same
+ *      launcher (`/invitations/accept?token=…`), which the LoginModal
+ *      already handles by opening the "Set your password" view.
  *
  * Anti-enumeration: the response is always `{ success: true }` whether the
- * email maps to a real user or not, so an attacker can't probe the user
- * table by inspecting the response. Errors are logged server-side.
- *
- * Rate-limited per IP and per email — see `rateLimitAsync` below.
+ * email maps to a real user or not. Errors are logged server-side.
  */
 
 const Body = z.object({
@@ -49,18 +45,7 @@ const Body = z.object({
 const FAIL_CLOSED = process.env.NODE_ENV === "production";
 const RESET_FLAG_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days — matches invitation TTL.
 
-function launcherBase(): string {
-  // Env-only — no hardcoded prod URL. Falls back to the local launcher in
-  // dev; prod throws if neither var is set so we never accidentally email
-  // a Vercel-preview link.
-  const raw =
-    process.env.NEXT_PUBLIC_LAUNCHER_URL ??
-    process.env.NEXT_PUBLIC_QUIKIT_URL ??
-    requireProdEnv("NEXT_PUBLIC_LAUNCHER_URL", "http://localhost:3001");
-  return raw.replace(/\/+$/, "");
-}
-
-async function postHandler(req: NextRequest) {
+export async function POST(req: NextRequest) {
   const successPayload = { success: true };
 
   try {
@@ -75,7 +60,6 @@ async function postHandler(req: NextRequest) {
       return NextResponse.json(successPayload);
     }
 
-    // Per-IP throttle first (cheaper, before DB hit).
     const ipRl = await rateLimitAsync({
       routeKey: "auth:forgot-password:ip",
       clientKey: getClientIp(req),
@@ -90,7 +74,6 @@ async function postHandler(req: NextRequest) {
       );
     }
 
-    // Per-email throttle: stops an attacker from spamming a known user's inbox.
     const emailRl = await rateLimitAsync({
       routeKey: "auth:forgot-password:email",
       clientKey: parsed.email,
@@ -99,7 +82,6 @@ async function postHandler(req: NextRequest) {
       failClosed: FAIL_CLOSED,
     });
     if (!emailRl.ok) {
-      // Silent success — see anti-enumeration note in the docblock.
       return NextResponse.json(successPayload);
     }
 
@@ -111,12 +93,10 @@ async function postHandler(req: NextRequest) {
       return NextResponse.json(successPayload);
     }
 
-    // Pick a "primary" org membership to attach the single-use token to. We
-    // prefer the most recently updated active one; if none are active we
-    // fall back to the most recent row of any status (covers the edge case
-    // where every membership is still pending). If the user has zero
-    // memberships there's nowhere to land the accept link — silent-success
-    // and bail.
+    // Pick a "primary" org membership to attach the single-use token to.
+    // Prefer the most recently updated active one; fall back to the most
+    // recent of any status. If the user has zero memberships there's
+    // nowhere to land the accept link — silent-success and bail.
     const membership =
       (await db.orgMember.findFirst({
         where: { userId: user.id, status: "active" },
@@ -143,8 +123,6 @@ async function postHandler(req: NextRequest) {
     const token = crypto.randomBytes(24).toString("hex");
     const hashedDefault = await bcrypt.hash(DEFAULT_RESET_PASSWORD, 10);
 
-    // Single transaction so we never end up with a token pointing at an
-    // OrgMember whose owning User still has the old password.
     await db.$transaction([
       db.user.update({
         where: { id: user.id },
@@ -155,15 +133,11 @@ async function postHandler(req: NextRequest) {
         data: {
           invitationToken: token,
           invitedAt: new Date(),
-          // Reset the invite method to native so the accept screen prompts
-          // for the default password (matches the first-time flow).
           inviteMethod: INVITE_METHOD.NATIVE,
         },
       }),
     ]);
 
-    // Redis flag for auditing / future "you have a reset in flight" UI.
-    // Best-effort — never block the response on Redis.
     try {
       const r = getRedis();
       if (r) {
@@ -182,28 +156,21 @@ async function postHandler(req: NextRequest) {
       console.error("[forgot-password] redis flag write failed:", err);
     }
 
-    // Build the same email body the first-time native invite uses. The
-    // template already prints email + temporary password + Set-Up link, so
-    // the user lands on the LoginModal's "Set your password" view with a
-    // valid current-password to type in.
-    const { subject, html } = renderInvitationEmail({
-      to: user.email,
-      firstName: user.firstName || user.email.split("@")[0] || "there",
-      orgName: membership.org.name,
-      orgLogoUrl: membership.org.logoUrl,
-      orgBrandColor: membership.org.brandColor,
-      inviterName: "QuikIT Support",
-      role: membership.role,
-      appNames: [],
-      token,
-      appBaseUrl: launcherBase(),
-      inviteMethod: INVITE_METHOD.NATIVE,
-      isReminder: true,
-      tempPassword: DEFAULT_RESET_PASSWORD,
-    });
-
     try {
-      await sendPasswordResetInviteEmail({ to: user.email, subject, html });
+      await sendOnboardingInvitationEmail({
+        to: user.email,
+        firstName: user.firstName || user.email.split("@")[0] || "there",
+        orgName: membership.org.name,
+        orgLogoUrl: membership.org.logoUrl,
+        orgBrandColor: membership.org.brandColor,
+        inviterName: "QuikIT Support",
+        role: membership.role,
+        appNames: [],
+        token,
+        inviteMethod: INVITE_METHOD.NATIVE,
+        isReminder: true,
+        tempPassword: DEFAULT_RESET_PASSWORD,
+      });
     } catch (err) {
       console.error("[forgot-password] email send failed:", err);
     }
@@ -213,9 +180,4 @@ async function postHandler(req: NextRequest) {
     console.error("[forgot-password] unexpected error:", error);
     return NextResponse.json(successPayload);
   }
-}
-
-export const POST = withCors(postHandler);
-export function OPTIONS(req: NextRequest) {
-  return preflight(req);
 }

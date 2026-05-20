@@ -13,19 +13,24 @@ import { assignAppRoles } from "@quikit/auth/assign-app-roles";
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Native-invite acceptance API hosted on the central auth service so the
- * "Set Up My Account" link in onboarding emails (which points at
- * `${NEXT_PUBLIC_AUTH_URL}/invitations/accept?token=…`) opens directly on
- * the Set-Password screen instead of bouncing to /login.
+ * Launcher-hosted invitation accept API. Identical contract to the auth
+ * app's apps/auth/app/api/invitations/accept/route.ts — the two are
+ * deliberate twins, NOT one calling the other:
  *
- *   GET  ?token=…  → token validity + display data for the form
- *   POST           → either set a new password (Save & Continue)
- *                    or keep the system default (Skip)
+ *   - Both speak to the same `quikit.OrgMember` row via @quikit/database,
+ *     so the activation effect (status: invited → active, single-use
+ *     token cleared, UserAppAccess + UserAppRole granted) is identical
+ *     regardless of which app served the link.
+ *   - The launcher copy exists because we moved the email's "Set Up My
+ *     Account" link from :3000 (auth host) to :3001 (this launcher), and
+ *     SignInComponent's invitation step issues SAME-ORIGIN fetches to
+ *     `/api/invitations/accept`. Without this route, the launcher page
+ *     would 404 the moment the user hits Save & Continue.
  *
- * Both verbs are public — the single-use invitationToken is the auth
- * factor. Hardened with a 7-day TTL (FRD BRV-009) and a one-shot
- * activation guard (already-active memberships are rejected so a leaked
- * link can't be replayed once the user is in).
+ * Auth: public — the single-use invitationToken is the auth factor.
+ * Hardened with a 7-day TTL (FRD BRV-009) and a one-shot activation
+ * guard (already-active memberships are rejected so a leaked link can't
+ * be replayed once the user is in).
  */
 
 export async function GET(request: NextRequest) {
@@ -190,10 +195,7 @@ export async function POST(request: NextRequest) {
       }
       if (newPassword !== confirmPassword) {
         return NextResponse.json(
-          {
-            success: false,
-            error: "Passwords do not match. Please re-enter.",
-          },
+          { success: false, error: "Passwords do not match. Please re-enter." },
           { status: 400 },
         );
       }
@@ -203,10 +205,7 @@ export async function POST(request: NextRequest) {
       // a previous reset attempt, it's whatever they last set.
       if (!membership.user.password) {
         return NextResponse.json(
-          {
-            success: false,
-            error: "Account has no password set. Use Forgot Password.",
-          },
+          { success: false, error: "Account has no password set. Use Forgot Password." },
           { status: 400 },
         );
       }
@@ -218,8 +217,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error:
-              "Incorrect password. Please enter your default password to proceed.",
+            error: "Incorrect password. Please enter your default password to proceed.",
           },
           { status: 400 },
         );

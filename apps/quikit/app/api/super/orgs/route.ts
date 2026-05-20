@@ -5,6 +5,7 @@ import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { createOrgSchema } from "@/lib/schemas/superAdminSchemas";
 import { logAudit } from "@/lib/auditLog";
 import { sendOnboardingInvitationEmail } from "@/lib/email";
+import { provisionAppRolesForOrg } from "@/lib/provisionAppRoles";
 import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "@quikit/shared/pagination";
 import {
   DEFAULT_INVITE_PASSWORD,
@@ -137,11 +138,11 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
     // BRV-005 — when an admin block is provided, appIds must be non-empty AND
     // every selected appId must exist on the platform. Fetched up-front so
     // the error path doesn't create a half-baked org.
-    let appsToProvision: { id: string; name: string }[] = [];
+    let appsToProvision: { id: string; name: string; slug: string; baseUrl: string | null }[] = [];
     if (appIds.length > 0) {
       appsToProvision = await db.app.findMany({
         where: { id: { in: appIds }, status: "active" },
-        select: { id: true, name: true },
+        select: { id: true, name: true, slug: true, baseUrl: true },
       });
       if (appsToProvision.length !== appIds.length) {
         return NextResponse.json(
@@ -241,6 +242,26 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
         inviteMethod: admin?.inviteMethod ?? null,
       }),
     });
+
+    // ── Seed per-app RBAC for every granted app ─────────────────────────────
+    // For each app the org was granted, ask the app to seed its own
+    // schema's AppRole / RolePermission tables and (if we just invited
+    // an Org Admin) create a UserAppRole row linking that admin to the
+    // seeded admin AppRole. Same wiring the QuikScale invite flow uses
+    // when promoting the first admin of an org.
+    //
+    // Fire-and-forget. Per-app lazy seed on first login remains as the
+    // fallback if the target app is briefly unreachable. Apps that
+    // don't yet expose /api/internal/provision-roles are silently
+    // skipped inside the helper.
+    if (appsToProvision.length > 0) {
+      const adminUserIds = result.adminUser ? [result.adminUser.id] : [];
+      void provisionAppRolesForOrg(
+        appsToProvision.map((a) => ({ slug: a.slug, baseUrl: a.baseUrl })),
+        result.org.id,
+        adminUserIds,
+      );
+    }
 
     // ── Send invitation email outside the transaction ───────────────────────
     // (Email is best-effort; if Resend/SMTP is down we don't want to roll

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { requireProdEnv } from "@quikit/shared";
 
 /**
  * FRD FR-SA-009 / FR-SA-010 — Set Password screen.
@@ -23,8 +24,12 @@ export default function SetPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const launcherUrl =
-    process.env.NEXT_PUBLIC_LAUNCHER_URL ?? "http://localhost:3001/apps";
+  // Env-only — `NEXT_PUBLIC_LAUNCHER_URL` is required in prod (throws at
+  // render time if unset); dev falls back to the local launcher.
+  const launcherUrl = `${requireProdEnv(
+    "NEXT_PUBLIC_LAUNCHER_URL",
+    "http://localhost:3001",
+  ).replace(/\/+$/, "")}/apps`;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

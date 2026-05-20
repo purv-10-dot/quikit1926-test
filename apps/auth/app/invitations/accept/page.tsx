@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { SignInComponent } from "@quikit/ui";
+import { requireProdEnv } from "@quikit/shared";
 
 /**
  * Native-invite acceptance page. The "Set Up My Account" link in the
@@ -25,10 +26,13 @@ export default function InvitationAcceptPage() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
 
-  const launcherUrl =
-    process.env.NEXT_PUBLIC_LAUNCHER_URL ?? "http://localhost:3001/apps";
-  // Normalize to exactly one trailing /apps regardless of whether the env
-  // value already includes it.
+  // Env-only — `NEXT_PUBLIC_LAUNCHER_URL` required in prod (throws at
+  // render time if unset); dev falls back to the local launcher. Normalize
+  // to exactly one trailing `/apps`.
+  const launcherUrl = requireProdEnv(
+    "NEXT_PUBLIC_LAUNCHER_URL",
+    "http://localhost:3001",
+  );
   const launcherApps = `${launcherUrl.replace(/\/+$/, "").replace(/\/apps$/, "")}/apps`;
 
   return (
