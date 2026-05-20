@@ -1,112 +1,90 @@
 # syntax=docker/dockerfile:1.6
 #
-# Multi-stage Docker build for the `quikit` Next.js launcher.
-# Pattern: deps → builder → runner (production-minimal standalone output).
+# Multi-stage Docker build for the `quikit` Next.js app.
+# Pattern: turbo prune --docker (slices monorepo to just this app's deps)
+#   → installer (npm install --ignore-scripts + prisma generate + next build)
+#   → runner (standalone output + Prisma engines, non-root)
 #
 # Build (from monorepo root):
-#   docker build -f apps/quikit/Dockerfile -t quikit:latest .
-#
-# Run:
-#   docker run --rm -p 8080:8080 \
-#     --env-file /tmp/vercel-quik-it.env \
-#     quikit:latest
-#
-# Target: Google Cloud Run (auto-injects PORT, terminates TLS, scales to 0).
+#   docker build -f apps/quikit/Dockerfile -t quikitatest .
+# Build with custom DATABASE_URL (optional — defaults pass build-time Prisma init):
+#   docker build --build-arg DATABASE_URL="postgresql://..." -f apps/quikit/Dockerfile -t quikitatest .
+
+FROM node:20-alpine AS base
 
 # ─────────────────────────────────────────────────────────────────────────
-# Stage 1 — deps
-# Install workspace deps once; cached as long as package.jsons + lockfile
-# don't change.
+# Stage 1 — builder: prune monorepo down to just `quikit` + its workspace deps
 # ─────────────────────────────────────────────────────────────────────────
-FROM node:22-slim AS deps
-WORKDIR /repo
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-      openssl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy lockfile + every workspace's package.json. Layer cache busts only
-# when one of these changes — source edits keep the install layer.
-COPY package.json package-lock.json turbo.json ./
-COPY apps/quikit/package.json apps/quikit/
-COPY apps/auth/package.json apps/auth/
-COPY apps/admin/package.json apps/admin/
-COPY apps/quikscale/package.json apps/quikscale/
-COPY apps/quiktrack/package.json apps/quiktrack/
-COPY apps/quikvc/package.json apps/quikvc/
-COPY apps/quiksocial/package.json apps/quiksocial/
-COPY apps/quikconstruction/package.json apps/quikconstruction/
-COPY apps/_template/package.json apps/_template/
-COPY packages/auth/package.json packages/auth/
-COPY packages/database/package.json packages/database/
-COPY packages/redis/package.json packages/redis/
-COPY packages/shared/package.json packages/shared/
-COPY packages/ui/package.json packages/ui/
-
-# packages/database has a postinstall that runs `prisma generate` — the
-# schema must exist before `npm ci` triggers it. Copy the schema dir up-front.
-COPY packages/database/prisma packages/database/prisma
-
-RUN npm ci --no-audit --no-fund
-
-# ─────────────────────────────────────────────────────────────────────────
-# Stage 2 — builder
-# Copy source, generate Prisma client, build the target app with Turbo.
-# ─────────────────────────────────────────────────────────────────────────
-FROM node:22-slim AS builder
-WORKDIR /repo
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-      openssl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=deps /repo/node_modules ./node_modules
-COPY --from=deps /repo/apps/quikit/node_modules ./apps/quikit/node_modules
+FROM base AS builder
+RUN apk update && apk add --no-cache libc6-compat
+WORKDIR /app
+RUN npm install -g turbo
 COPY . .
+RUN turbo prune quikit --docker
 
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 2 — installer: install pruned deps + generate Prisma + build
+# --ignore-scripts skips packages/database's postinstall (we run prisma
+# generate explicitly below so it picks up the right schema path).
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS installer
+RUN apk update && apk add --no-cache libc6-compat openssl
+WORKDIR /app
+
+COPY --from=builder /app/out/json/ .
+COPY --from=builder /app/out/package-lock.json ./package-lock.json
+RUN npm install --ignore-scripts
+
+COPY --from=builder /app/out/full/ .
+COPY turbo.json turbo.json
+COPY tsconfig.base.json tsconfig.base.json
+
+# Build-time placeholders — `next build` instantiates Prisma at "Collect
+# page data" time. They are never used to connect to a real DB.
+ARG DATABASE_URL="postgresql://x:x@localhost:5432/x"
+ARG DATABASE_URL_DIRECT="postgresql://x:x@localhost:5432/x"
+ARG NEXTAUTH_URL="https://placeholder.com"
+ARG NEXT_PUBLIC_SENTRY_DSN
+
+ENV DATABASE_URL=$DATABASE_URL
+ENV DATABASE_URL_DIRECT=$DATABASE_URL_DIRECT
+ENV NEXTAUTH_URL=$NEXTAUTH_URL
+ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-
-# Generate Prisma client against the shared schema
-# Build-time placeholders — `next build` instantiates Prisma at "Collect page
-# data" time. They are never used to connect to a real DB (build does not
-# execute queries); they just satisfy the PrismaClient constructor.
-ENV DATABASE_URL="postgresql://x:x@localhost:5432/x"
-ENV DATABASE_URL_DIRECT="postgresql://x:x@localhost:5432/x"
-ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
-ENV NEXTAUTH_URL="http://localhost:3000"
 
 RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
-
-# Build just this app (Turbo respects its own dep graph)
-RUN npx turbo run build --filter=quikit
+RUN mkdir -p apps/quikit/public
+RUN mkdir -p apps/quikit/.next/static
+RUN npx turbo build --filter=quikit
 
 # ─────────────────────────────────────────────────────────────────────────
-# Stage 3 — runner
-# Minimal image: only the standalone server + static + public.
-# Cloud Run injects $PORT; standalone server reads it from env.
+# Stage 3 — runner: minimal image, standalone server + Prisma engines
 # ─────────────────────────────────────────────────────────────────────────
-FROM node:22-slim AS runner
+FROM base AS runner
+RUN apk add --no-cache openssl
 WORKDIR /app
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-      openssl ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 1001 nodejs \
-    && useradd  --uid 1001 --gid nodejs --shell /bin/bash --create-home nextjs
+
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 nextjs
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-# Cloud Run sets PORT automatically; this is a fallback for `docker run`.
-ENV PORT=8080
-ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
-# Standalone server + Prisma engines + minimal node_modules
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/quikit/.next/standalone ./
-# Static assets that the standalone server needs to serve
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/quikit/.next/static ./apps/quikit/.next/static
-# Public folder (favicon, images, etc.)
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/quikit/public ./apps/quikit/public
+# Standalone server (Next 14 monorepo output: apps/quikit/server.js)
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikit/.next/standalone ./
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikit/.next/static    ./apps/quikit/.next/static
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikit/public          ./public
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikit/public          ./apps/quikit/public
+
+# Prisma client (engine + generated bindings); standalone doesn't always trace these
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma  ./node_modules/@prisma
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma  ./node_modules/.prisma
 
 USER nextjs
-EXPOSE 8080
+EXPOSE 3000
 
-# The standalone build emits server.js at apps/<app>/server.js
 CMD ["node", "apps/quikit/server.js"]

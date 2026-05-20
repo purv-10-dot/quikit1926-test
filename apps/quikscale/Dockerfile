@@ -1,75 +1,90 @@
 # syntax=docker/dockerfile:1.6
 #
-# Multi-stage Docker build for the `quikscale` app.
-# Build:  docker build -f apps/quikscale/Dockerfile -t quikscale:latest .
-# Target: Google Cloud Run.
+# Multi-stage Docker build for the `quikscale` Next.js app.
+# Pattern: turbo prune --docker (slices monorepo to just this app's deps)
+#   → installer (npm install --ignore-scripts + prisma generate + next build)
+#   → runner (standalone output + Prisma engines, non-root)
+#
+# Build (from monorepo root):
+#   docker build -f apps/quikscale/Dockerfile -t quikscaleatest .
+# Build with custom DATABASE_URL (optional — defaults pass build-time Prisma init):
+#   docker build --build-arg DATABASE_URL="postgresql://..." -f apps/quikscale/Dockerfile -t quikscaleatest .
 
-FROM node:22-slim AS deps
-WORKDIR /repo
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-      openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+FROM node:20-alpine AS base
 
-COPY package.json package-lock.json turbo.json ./
-COPY apps/quikit/package.json apps/quikit/
-COPY apps/auth/package.json apps/auth/
-COPY apps/admin/package.json apps/admin/
-COPY apps/quikscale/package.json apps/quikscale/
-COPY apps/quiktrack/package.json apps/quiktrack/
-COPY apps/quikvc/package.json apps/quikvc/
-COPY apps/quiksocial/package.json apps/quiksocial/
-COPY apps/quikconstruction/package.json apps/quikconstruction/
-COPY apps/_template/package.json apps/_template/
-COPY packages/auth/package.json packages/auth/
-COPY packages/database/package.json packages/database/
-COPY packages/redis/package.json packages/redis/
-COPY packages/shared/package.json packages/shared/
-COPY packages/ui/package.json packages/ui/
-
-# packages/database has a postinstall that runs `prisma generate` — the
-# schema must exist before `npm ci` triggers it. Copy the schema dir up-front.
-COPY packages/database/prisma packages/database/prisma
-
-RUN npm ci --no-audit --no-fund
-
-FROM node:22-slim AS builder
-WORKDIR /repo
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-      openssl ca-certificates && rm -rf /var/lib/apt/lists/*
-
-COPY --from=deps /repo/node_modules ./node_modules
-COPY --from=deps /repo/apps/quikscale/node_modules ./apps/quikscale/node_modules
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 1 — builder: prune monorepo down to just `quikscale` + its workspace deps
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS builder
+RUN apk update && apk add --no-cache libc6-compat
+WORKDIR /app
+RUN npm install -g turbo
 COPY . .
+RUN turbo prune quikscale --docker
 
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 2 — installer: install pruned deps + generate Prisma + build
+# --ignore-scripts skips packages/database's postinstall (we run prisma
+# generate explicitly below so it picks up the right schema path).
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS installer
+RUN apk update && apk add --no-cache libc6-compat openssl
+WORKDIR /app
+
+COPY --from=builder /app/out/json/ .
+COPY --from=builder /app/out/package-lock.json ./package-lock.json
+RUN npm install --ignore-scripts
+
+COPY --from=builder /app/out/full/ .
+COPY turbo.json turbo.json
+COPY tsconfig.base.json tsconfig.base.json
+
+# Build-time placeholders — `next build` instantiates Prisma at "Collect
+# page data" time. They are never used to connect to a real DB.
+ARG DATABASE_URL="postgresql://x:x@localhost:5432/x"
+ARG DATABASE_URL_DIRECT="postgresql://x:x@localhost:5432/x"
+ARG NEXTAUTH_URL="https://placeholder.com"
+ARG NEXT_PUBLIC_SENTRY_DSN
+
+ENV DATABASE_URL=$DATABASE_URL
+ENV DATABASE_URL_DIRECT=$DATABASE_URL_DIRECT
+ENV NEXTAUTH_URL=$NEXTAUTH_URL
+ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
-
-# Build-time placeholders — `next build` instantiates Prisma at "Collect page
-# data" time. They are never used to connect to a real DB (build does not
-# execute queries); they just satisfy the PrismaClient constructor.
-ENV DATABASE_URL="postgresql://x:x@localhost:5432/x"
-ENV DATABASE_URL_DIRECT="postgresql://x:x@localhost:5432/x"
-ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
-ENV NEXTAUTH_URL="http://localhost:3000"
 
 RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
-RUN npx turbo run build --filter=quikscale
+RUN mkdir -p apps/quikscale/public
+RUN mkdir -p apps/quikscale/.next/static
+RUN npx turbo build --filter=quikscale
 
-FROM node:22-slim AS runner
+# ─────────────────────────────────────────────────────────────────────────
+# Stage 3 — runner: minimal image, standalone server + Prisma engines
+# ─────────────────────────────────────────────────────────────────────────
+FROM base AS runner
+RUN apk add --no-cache openssl
 WORKDIR /app
-RUN apt-get update -y && apt-get install -y --no-install-recommends \
-      openssl ca-certificates && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 1001 nodejs \
-    && useradd  --uid 1001 --gid nodejs --shell /bin/bash --create-home nextjs
+
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 nextjs
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=8080
-ENV HOSTNAME=0.0.0.0
+ENV PORT=3002
+ENV HOSTNAME="0.0.0.0"
 
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/quikscale/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/quikscale/.next/static ./apps/quikscale/.next/static
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/quikscale/public ./apps/quikscale/public
+# Standalone server (Next 14 monorepo output: apps/quikscale/server.js)
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikscale/.next/standalone ./
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikscale/.next/static    ./apps/quikscale/.next/static
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikscale/public          ./public
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikscale/public          ./apps/quikscale/public
+
+# Prisma client (engine + generated bindings); standalone doesn't always trace these
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma  ./node_modules/@prisma
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma  ./node_modules/.prisma
 
 USER nextjs
-EXPOSE 8080
+EXPOSE 3002
+
 CMD ["node", "apps/quikscale/server.js"]
