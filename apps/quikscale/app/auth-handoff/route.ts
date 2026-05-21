@@ -23,8 +23,9 @@ import { encode } from "next-auth/jwt";
  */
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
+  const origin = process.env.NEXTAUTH_URL ?? request.url;
   if (!token) {
-    return NextResponse.redirect(new URL("/login?reason=missing_handoff", request.url));
+    return NextResponse.redirect(new URL("/login?reason=missing_handoff", origin));
   }
 
   const internalSecret = process.env.INTERNAL_SECRET;
@@ -59,11 +60,11 @@ export async function GET(request: NextRequest) {
     payload = result.payload as typeof payload;
   } catch (err) {
     const reason = err instanceof Error && /exp/i.test(err.message) ? "expired" : "invalid";
-    return NextResponse.redirect(new URL(`/login?reason=${reason}_handoff`, request.url));
+    return NextResponse.redirect(new URL(`/login?reason=${reason}_handoff`, origin));
   }
 
   if (!payload.sub) {
-    return NextResponse.redirect(new URL("/login?reason=invalid_handoff", request.url));
+    return NextResponse.redirect(new URL("/login?reason=invalid_handoff", origin));
   }
 
   // Mint a NextAuth-compatible session JWE for this app's domain.
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest) {
   });
 
   const safeTo = sanitizeRedirect(payload.to ?? "/");
-  const response = NextResponse.redirect(new URL(safeTo, request.url));
+  const response = NextResponse.redirect(new URL(safeTo, origin));
 
   const cookieName =
     process.env.NODE_ENV === "production"
