@@ -81,6 +81,20 @@ RUN echo "[next-env-bake]" \
 RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
 RUN mkdir -p apps/quikscale/public
 RUN mkdir -p apps/quikscale/.next/static
+# Write .env.production from ARG/ENV values so Next.js loadEnv()
+# picks them up deterministically. Bypasses turbo's env filtering
+# (the previous failure mode: shell ENV was set but didn't reach
+# Next's process.env during next build, leaving client bundles
+# with undefined NEXT_PUBLIC_* values).
+RUN printf '%s\n' \
+  "NEXT_PUBLIC_LAUNCHER_URL=$NEXT_PUBLIC_LAUNCHER_URL" \
+  "NEXT_PUBLIC_AUTH_URL=$NEXT_PUBLIC_AUTH_URL" \
+  "NEXT_PUBLIC_QUIKIT_URL=$NEXT_PUBLIC_QUIKIT_URL" \
+  "NEXT_PUBLIC_ADMIN_URL=$NEXT_PUBLIC_ADMIN_URL" \
+  "NEXT_PUBLIC_LOGIN_URL=$NEXT_PUBLIC_LOGIN_URL" \
+  "NEXTAUTH_URL=$NEXTAUTH_URL" \
+  > apps/quikscale/.env.production && cat apps/quikscale/.env.production
+
 RUN npx turbo build --filter=quikscale
 
 # ─────────────────────────────────────────────────────────────────────────
