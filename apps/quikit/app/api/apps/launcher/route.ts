@@ -147,8 +147,10 @@ export async function GET(req: NextRequest) {
     quikit: process.env.QUIKIT_URL,
     quikscale: process.env.QUIKSCALE_URL,
     admin: process.env.ADMIN_URL,
+    quiktrack: process.env.QUIKTRACK_URL,
     quikvc: process.env.QUIKVC_URL,
     quikconstruction: process.env.QUIKCONSTRUCTION_URL,
+    quiksocial: process.env.QUIKSOCIAL_URL,
   };
 
   // Dev-only safety net. If the env var isn't set AND the DB's baseUrl is
@@ -159,10 +161,12 @@ export async function GET(req: NextRequest) {
   // we never inject localhost into a prod response.
   const isDev = process.env.NODE_ENV !== "production";
   const devLocalhostFallbacks: Record<string, string> = {
-    quikit: "http://localhost:3001",
+    quikit: "http://localhost:3000",
+    auth: "http://localhost:3001",
     admin: "http://localhost:3002",
     quikscale: "http://localhost:3003",
-    quikconstruction: "http://localhost:3004",
+    quiktrack: "http://localhost:3004",
+    quikconstruction: "http://localhost:3006",
     quikvc: "http://localhost:3005",
   };
 
