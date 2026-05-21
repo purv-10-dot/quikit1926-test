@@ -16,7 +16,8 @@
     "./apiLogging": "./lib/apiLogging.ts",
     "./redisCache": "./lib/redisCache.ts",
     "./dateFormat": "./lib/dateFormat.ts",
-    "./sso-domain-server": "./lib/sso-domain-server.ts"
+    "./sso-domain-server": "./lib/sso-domain-server.ts",
+    "./login-url": "./lib/login-url.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

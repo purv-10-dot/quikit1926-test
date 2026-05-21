@@ -68,20 +68,37 @@ export async function middleware(req: NextRequest) {
     const callback = req.nextUrl.searchParams.get("callbackUrl");
     if (callback) {
       try {
-        return NextResponse.redirect(new URL(callback, req.url));
+        const callbackUrl = new URL(callback, req.url);
+        // Cross-origin callback → route through /api/post-login so the
+        // target sub-app gets a host-scoped session cookie via the
+        // /auth-handoff bridge. Same-origin callbacks (the auth app
+        // itself, or a relative /path) can short-circuit.
+        if (callbackUrl.origin !== req.nextUrl.origin) {
+          const bridge = new URL("/api/post-login", req.url);
+          bridge.searchParams.set("callbackUrl", callbackUrl.toString());
+          return NextResponse.redirect(bridge);
+        }
+        return NextResponse.redirect(callbackUrl);
       } catch {
         // fall through
       }
     }
     if (token.isSuperAdmin) {
       const adminUrl = process.env.NEXT_PUBLIC_ADMIN_URL;
-      if (adminUrl) return NextResponse.redirect(adminUrl);
+      if (adminUrl) {
+        // Even for super admins, hopping cross-origin needs the bridge.
+        const bridge = new URL("/api/post-login", req.url);
+        bridge.searchParams.set("callbackUrl", adminUrl);
+        return NextResponse.redirect(bridge);
+      }
     }
     const launcherUrl =
       process.env.NEXT_PUBLIC_LAUNCHER_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL;
     if (launcherUrl) {
       const apps = `${launcherUrl.replace(/\/+$/, "").replace(/\/apps$/, "")}/apps`;
-      return NextResponse.redirect(apps);
+      const bridge = new URL("/api/post-login", req.url);
+      bridge.searchParams.set("callbackUrl", apps);
+      return NextResponse.redirect(bridge);
     }
     // No launcher URL configured (shouldn't happen in any real deploy) —
     // let the authenticated user stay rather than bounce to a removed page.

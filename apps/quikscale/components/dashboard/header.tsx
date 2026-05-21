@@ -18,9 +18,17 @@ export function Header({ onMenuClick }: HeaderProps) {
   const isImpersonating = session?.user?.impersonating === true;
 
   async function handleSignOut() {
+    // After full sign-out (local + auth + launcher cookies cleared), land
+    // the user back on quikscale's public landing page so they see "Login"
+    // again instead of an authenticated /apps tile grid.
+    const landingUrl =
+      (process.env.NEXT_PUBLIC_QUIKSCALE_URL?.replace(/\/+$/, "") ??
+        (typeof window !== "undefined" ? window.location.origin : "")) + "/";
     await globalSignOut({
+      authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: process.env.NEXT_PUBLIC_QUIKIT_URL,
       localSignOut: () => signOut({ redirect: false }),
+      postLogoutRedirect: landingUrl,
     });
   }
 

@@ -482,6 +482,86 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
         };
         return session;
       },
+      /**
+       * Cross-domain post-login routing.
+       *
+       * NextAuth credentials sign-in sets a host-only cookie on this app's
+       * origin. Sub-apps (`quikscale.vercel.app`, `quik-it-auth.vercel.app`,
+       * …) live on different hosts and need their own per-host cookies —
+       * the auth-app session is invisible to them otherwise.
+       *
+       * Strategy: instead of redirecting straight to the user-supplied
+       * `callbackUrl`, route through `${baseUrl}/api/post-login?callbackUrl=…`.
+       * That endpoint reads the (freshly created) session, mints a 120-second
+       * HS256 handoff token signed with `INTERNAL_SECRET`, and bounces the
+       * browser to `${targetOrigin}/auth-handoff?token=…`, where the target
+       * sub-app exchanges the token for its own session cookie.
+       *
+       * Same-origin callbacks (e.g. the auth app's own /post-login flows) are
+       * returned verbatim — no handoff needed when nothing crosses a domain.
+       *
+       * Allow-list: only `callbackUrl` values matching one of the documented
+       * Vercel UAT / GKE prod origins (extensible via
+       * `AUTH_ALLOWED_RETURN_ORIGINS`) reach the post-login bridge. Anything
+       * else falls back to the launcher's `/apps` page — preserving the
+       * historical safe destination.
+       */
+      async redirect({ url, baseUrl }) {
+        const launcherUrl =
+          (process.env.NEXT_PUBLIC_QUIKIT_URL ?? process.env.QUIKIT_URL ?? baseUrl).replace(/\/$/, "");
+        const launcherApps = `${launcherUrl}/apps`;
+
+        // Relative URLs always resolve against this auth app's origin.
+        if (url.startsWith("/")) {
+          return `${baseUrl}${url}`;
+        }
+
+        let target: URL;
+        try {
+          target = new URL(url);
+        } catch {
+          // Malformed URL → route the user through the post-login bridge
+          // to the launcher (gets them a session cookie on the launcher
+          // host instead of stranding them here).
+          const bridge = new URL("/api/post-login", baseUrl);
+          bridge.searchParams.set("callbackUrl", launcherApps);
+          return bridge.toString();
+        }
+
+        // Same-origin callback → no cross-domain cookie needed.
+        if (target.origin === baseUrl) {
+          return url;
+        }
+
+        // Cross-origin allow-list. Defaults cover Vercel UAT + GKE prod;
+        // extend via env without redeploying this package.
+        const defaults = [
+          "https://quik-it-auth.vercel.app",
+          "https://quikscale.vercel.app",
+          "https://quik-it-admin.vercel.app",
+          "https://quiktrack.vercel.app",
+          "https://quikvc.vercel.app",
+          "https://quiksocial.vercel.app",
+          "https://quikconstruction.vercel.app",
+          "https://quiklauncher.quikit.ai",
+          "https://quikscale.quikit.ai",
+          "https://quikadmin.quikit.ai",
+          "https://quiktrack.quikit.ai",
+          "https://quikcrm.quikit.ai",
+          "https://social.quikit.ai",
+          "https://quikinfra.quikit.ai",
+        ];
+        const fromEnv = (process.env.AUTH_ALLOWED_RETURN_ORIGINS ?? "")
+          .split(",")
+          .map((s) => s.trim().replace(/\/$/, ""))
+          .filter(Boolean);
+        const allowed = new Set([...defaults, ...fromEnv]);
+
+        const finalCallback = allowed.has(target.origin) ? url : launcherApps;
+        const bridge = new URL("/api/post-login", baseUrl);
+        bridge.searchParams.set("callbackUrl", finalCallback);
+        return bridge.toString();
+      },
     },
     events: {
       async signIn({ user }) {
