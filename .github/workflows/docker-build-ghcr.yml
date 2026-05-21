@@ -89,6 +89,7 @@ jobs:
             NEXT_PUBLIC_LAUNCHER_URL=https://quiklauncher.quikit.ai
             NEXT_PUBLIC_AUTH_URL=https://quikauth.quikit.ai
             NEXT_PUBLIC_QUIKIT_URL=https://quiklauncher.quikit.ai
+            NEXT_PUBLIC_QUIKSCALE_URL=https://quikscale.quikit.ai
             NEXT_PUBLIC_ADMIN_URL=https://quikadmin.quikit.ai
             NEXT_PUBLIC_LOGIN_URL=https://quikauth.quikit.ai/login
             NEXTAUTH_URL=https://quikauth.quikit.ai
