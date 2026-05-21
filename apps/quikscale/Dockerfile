@@ -64,6 +64,20 @@ ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+# Cache-bust: embed ARG values into the RUN command string so BuildKit
+# invalidates this layer (and the build that follows) whenever the
+# NEXT_PUBLIC_* / NEXTAUTH_URL build-args change. Without this line,
+# BuildKit reuses the cached `npx turbo build` layer and the new ARG
+# values never reach `next build`.
+RUN echo "[next-env-bake]" \
+      "LAUNCHER=$NEXT_PUBLIC_LAUNCHER_URL" \
+      "AUTH=$NEXT_PUBLIC_AUTH_URL" \
+      "QUIKIT=$NEXT_PUBLIC_QUIKIT_URL" \
+      "ADMIN=$NEXT_PUBLIC_ADMIN_URL" \
+      "LOGIN=$NEXT_PUBLIC_LOGIN_URL" \
+      "NEXTAUTH=$NEXTAUTH_URL" \
+      > /tmp/.next-env-bake.txt && cat /tmp/.next-env-bake.txt
+
 RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
 RUN mkdir -p apps/quikscale/public
 RUN mkdir -p apps/quikscale/.next/static
