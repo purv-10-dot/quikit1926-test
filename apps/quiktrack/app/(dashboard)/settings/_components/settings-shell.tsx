@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, Settings as SettingsIcon, Users } from "lucide-react";
+import { ArrowLeft, Database, Settings as SettingsIcon, Users } from "lucide-react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 const NAV: {
@@ -14,6 +14,7 @@ const NAV: {
 }[] = [
   // { key: "general", label: "General", href: "/settings", icon: SettingsIcon },
   { key: "user-management", label: "User Management", href: "/settings/user-management", icon: Users, adminOnly: true },
+  { key: "migration", label: "Migration", href: "/settings/migration", icon: Database, adminOnly: true },
 ];
 
 export function SettingsShell({ children }: { children: React.ReactNode }) {
