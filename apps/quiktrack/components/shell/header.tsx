@@ -5,8 +5,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { Bell, HelpCircle, Settings, Plus, PanelLeft, ShieldCheck } from "lucide-react";
+import { Bell, HelpCircle, Settings, Plus, PanelLeft } from "lucide-react";
 import { UserMenu, globalSignOut } from "@quikit/ui";
 import { CreateIssueModal } from "@/components/create-issue-modal";
 import { HelpPanel } from "@/components/help-panel";
@@ -24,7 +23,6 @@ interface HeaderProps {
 
 export function Header({ onToggleSidebar }: HeaderProps) {
   const { data: session } = useSession();
-  const router = useRouter();
   const perms = useMyPermissions();
   const params = useParams();
   const currentProjectId = typeof params?.id === "string" ? params.id : undefined;
@@ -130,17 +128,6 @@ export function Header({ onToggleSidebar }: HeaderProps) {
           user={{ name: fullName, email }}
           onSignOut={handleSignOut}
           avatarClassName="bg-blue-600"
-          items={
-            perms.isAdmin
-              ? [
-                  {
-                    label: "User Permission",
-                    icon: ShieldCheck,
-                    onClick: () => router.push("/org-setup/users"),
-                  },
-                ]
-              : []
-          }
         />
       </div>
       <CreateIssueModal

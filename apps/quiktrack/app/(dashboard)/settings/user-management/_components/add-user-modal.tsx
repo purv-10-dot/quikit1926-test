@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Search, X } from "lucide-react";
+import { Check, ChevronDown, Search, X } from "lucide-react";
 import {
-  Button,
   Input,
-  Select,
   RightPanel,
   RightPanelFooter,
   RightPanelCancelButton,
@@ -358,18 +356,22 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      <Select
-        label="Role"
-        value={appRoleId}
-        onChange={(e) => setAppRoleId(e.target.value)}
-        options={[
-          { value: "", label: "Use org default" },
-          ...roles.map((r) => ({
-            value: r.id,
-            label: r.isDefault ? `${r.name} (default)` : r.name,
-          })),
-        ]}
-      />
+      <div className="block text-sm">
+        <span className="text-gray-700 mb-1.5 block">Role</span>
+        <CustomSelect
+          value={appRoleId}
+          onChange={setAppRoleId}
+          placeholder="Use org default"
+          options={[
+            { value: "", label: "Use org default" },
+            ...roles.map((r) => ({
+              value: r.id,
+              label: r.name,
+              badge: r.isDefault ? "default" : undefined,
+            })),
+          ]}
+        />
+      </div>
 
       <ProjectsPicker
         selected={projectIds}
@@ -506,7 +508,6 @@ function ProjectRoleRow({
     },
   });
   const roles = rolesQ.data ?? [];
-  const defaultRole = roles.find((r) => r.isDefault);
 
   return (
     <div className="flex items-center gap-3 px-3 py-2">
@@ -524,21 +525,193 @@ function ProjectRoleRow({
           </span>
         )}
       </span>
-      <select
-        value={selectedRoleId}
-        onChange={(e) => onSelect(e.target.value)}
-        className="h-8 px-2 text-[12.5px] border border-gray-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 min-w-[140px]"
-      >
-        <option value="">
-          {defaultRole ? `Default (${defaultRole.name})` : "Default"}
-        </option>
-        {roles.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.name}
-            {r.isDefault ? " (default)" : ""}
-          </option>
-        ))}
-      </select>
+      <div className="shrink-0" style={{ minWidth: 180 }}>
+        <CustomSelect
+          value={selectedRoleId}
+          onChange={onSelect}
+          size="sm"
+          width={180}
+          placeholder="Use project default"
+          options={[
+            { value: "", label: "Use project default" },
+            ...roles.map((r) => ({
+              value: r.id,
+              label: r.name,
+              badge: r.isDefault ? "default" : undefined,
+            })),
+          ]}
+        />
+      </div>
     </div>
+  );
+}
+
+/* ─────────────────── CustomSelect ───────────────────
+ * Lightweight popover-style select used for the Role + per-project role
+ * pickers. Builds on the same portal/auto-flip pattern as RolePill so the
+ * menu can escape any overflow-hidden parent (e.g. the RightPanel body).
+ *
+ * Why not the native <select>? Browser-rendered option lists can't pick up
+ * Tailwind tokens — font, padding, hover, active row colour are all OS
+ * controlled — so the two pickers always looked off vs the rest of the
+ * drawer. This component owns the rendering top to bottom.
+ */
+interface CustomSelectOption {
+  value: string;
+  label: string;
+  badge?: string; // e.g. "default" — rendered as a tiny chip on the row
+}
+
+function CustomSelect({
+  value,
+  onChange,
+  options,
+  placeholder = "Select",
+  size = "md",
+  width,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: CustomSelectOption[];
+  placeholder?: string;
+  size?: "sm" | "md";
+  /** Optional min-width override for the trigger; menu matches the trigger. */
+  width?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    openUp: boolean;
+  } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const menuHeight = Math.min(320, options.length * 36 + 16);
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < menuHeight + 16 && rect.top > menuHeight + 16;
+    setCoords({
+      top: openUp ? rect.top - 4 : rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      openUp,
+    });
+  }, [open, options.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    function onScroll() {
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+  const label = selected ? selected.label : placeholder;
+
+  const heightCls = size === "sm" ? "h-8 text-[12.5px]" : "h-9 text-[13px]";
+
+  const menu =
+    open && coords && typeof window !== "undefined"
+      ? createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            style={{
+              position: "fixed",
+              top: coords.openUp ? undefined : coords.top,
+              bottom: coords.openUp ? window.innerHeight - coords.top : undefined,
+              left: coords.left,
+              minWidth: coords.width,
+              zIndex: 1100,
+            }}
+            className="bg-white border border-gray-200 rounded-lg shadow-[0_12px_32px_-10px_rgba(15,23,42,0.18),0_4px_12px_-4px_rgba(15,23,42,0.08)] overflow-hidden py-1 max-h-[20rem] overflow-y-auto"
+          >
+            {options.map((opt) => {
+              const active = opt.value === value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-[13px] transition-colors ${
+                    active
+                      ? "bg-blue-50 text-blue-700 font-medium"
+                      : "text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="truncate">{opt.label}</span>
+                    {opt.badge && (
+                      <span className="text-[9px] uppercase tracking-wider text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                        {opt.badge}
+                      </span>
+                    )}
+                  </span>
+                  {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
+                </button>
+              );
+            })}
+            {options.length === 0 && (
+              <p className="px-3 py-3 text-xs text-gray-400">No options.</p>
+            )}
+          </div>,
+          document.body,
+        )
+      : null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={width ? { minWidth: width } : undefined}
+        className={`w-full ${heightCls} pl-3 pr-9 inline-flex items-center justify-between text-left border rounded-md transition-colors relative cursor-pointer ${
+          open
+            ? "border-blue-400 bg-white ring-1 ring-blue-300"
+            : "border-gray-200 bg-white hover:bg-gray-50"
+        }`}
+      >
+        <span
+          className={`truncate ${selected ? "text-gray-800" : "text-gray-500"}`}
+        >
+          {label}
+        </span>
+        <ChevronDown
+          className={`absolute right-3 h-3.5 w-3.5 text-gray-400 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      {menu}
+    </>
   );
 }
