@@ -113,5 +113,13 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Excludes:
+  //   _next/static  — Next.js compiled assets
+  //   _next/image   — Next.js image optimisation
+  //   favicon.ico   — browser-requested
+  //   auth/         — public/auth/* (login-bg.webp, quikit-logo-*.png served
+  //                   by the new login UI). Without this exclusion the
+  //                   middleware redirects asset requests to /login and the
+  //                   page renders with broken image icons.
+  matcher: ["/((?!_next/static|_next/image|auth/|favicon.ico).*)"],
 };
