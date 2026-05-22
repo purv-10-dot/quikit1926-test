@@ -35,17 +35,13 @@ export const PATCH = withOrgAuth<{ id: string }>(
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 
-    const activeSprint = await db.qtSprint.findFirst({
-      where: { projectId: sprint.projectId, status: "ACTIVE", isDeleted: false },
-      select: { id: true },
-    });
-    if (activeSprint) {
-      return NextResponse.json(
-        { success: false, error: "Another sprint is already active" },
-        { status: 409 },
-      );
-    }
-
+    // Parallel sprints allowed — Jira's "Parallel Sprints" board setting
+    // permits multiple ACTIVE sprints per project, and QuikTrack mirrors
+    // that. Teams that want the stricter "one active" workflow can simply
+    // not start more than one at a time. (Earlier this route rejected
+    // with "Another sprint is already active" — that restriction has been
+    // lifted; the Jira importer also writes whatever active set the source
+    // reported.)
     const updated = await db.qtSprint.update({
       where: { id: params.id },
       data: { status: "ACTIVE", startedAt: new Date(), updatedBy: userId },
