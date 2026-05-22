@@ -240,8 +240,11 @@ export async function migrateFromJira(
     return report;
   }
 
-  // 2. Story-points custom field discovery.
+  // 2. Custom-field discovery (Story Points + Sprint). Sprint is a custom
+  //    field on every Jira issue — even team-managed projects expose sprints
+  //    here, where they don't always appear via the Agile boards API.
   let storyPointsField: string | null = null;
+  let sprintField: string | null = null;
   try {
     const fields = await jira.get<Array<{ id: string; name: string }>>(
       "/rest/api/3/field",
@@ -250,8 +253,11 @@ export async function migrateFromJira(
       (f) => f.name === "Story Points" || f.name === "Story point estimate",
     );
     storyPointsField = sp?.id ?? null;
+    const sprint = fields.find((f) => f.name === "Sprint");
+    sprintField = sprint?.id ?? null;
   } catch {
     storyPointsField = null;
+    sprintField = null;
   }
 
   // 3. App context for user grants.
@@ -334,6 +340,7 @@ export async function migrateFromJira(
       actorUserId,
       userMap,
       storyPointsField,
+      sprintField,
       includeComments,
       includeWorklog,
       dryRun,
@@ -356,12 +363,13 @@ async function migrateOneProject(args: {
   actorUserId: string;
   userMap: Map<string, string>;
   storyPointsField: string | null;
+  sprintField: string | null;
   includeComments: boolean;
   includeWorklog: boolean;
   dryRun: boolean;
   report: MigrationReport;
 }): Promise<MigrationReport["projectsImported"][number]> {
-  const { jira, jp, orgId, actorUserId, userMap, storyPointsField, includeComments, includeWorklog, dryRun, report } = args;
+  const { jira, jp, orgId, actorUserId, userMap, storyPointsField, sprintField, includeComments, includeWorklog, dryRun, report } = args;
 
   // Upsert QtProject keyed on (orgId, projectKey).
   let qtProjectId = "";
@@ -386,6 +394,39 @@ async function migrateOneProject(args: {
         select: { id: true },
       });
       qtProjectId = created.id;
+    }
+
+    // The importing admin auto-joins every project they create as
+    // PROJECT_ADMIN — otherwise the /api/projects list filters them out
+    // (only org-level tenant admins bypass membership). Idempotent.
+    await db.qtProjectMember.upsert({
+      where: {
+        projectId_userId: { projectId: qtProjectId, userId: actorUserId },
+      },
+      update: { isDeleted: false },
+      create: {
+        projectId: qtProjectId,
+        userId: actorUserId,
+        role: "PROJECT_ADMIN",
+        invitedBy: actorUserId,
+      },
+    });
+
+    // Also add the Jira project lead (if mapped) so they show up as a member.
+    const jiraLeadQtId = jp.lead ? userMap.get(jp.lead.accountId) : null;
+    if (jiraLeadQtId && jiraLeadQtId !== actorUserId) {
+      await db.qtProjectMember.upsert({
+        where: {
+          projectId_userId: { projectId: qtProjectId, userId: jiraLeadQtId },
+        },
+        update: { isDeleted: false },
+        create: {
+          projectId: qtProjectId,
+          userId: jiraLeadQtId,
+          role: "PROJECT_ADMIN",
+          invitedBy: actorUserId,
+        },
+      });
     }
   }
 
@@ -476,52 +517,67 @@ async function migrateOneProject(args: {
     /* swallow */
   }
 
-  // Sprints via boards.
+  // Sprints — two paths in parallel because Jira Cloud is inconsistent:
+  //   1) Agile API boards (works for "company-managed" classic projects).
+  //   2) Sprint custom field on issues (works for "team-managed" / next-gen
+  //      projects, which don't always surface boards via the Agile API).
+  // We dedupe on Jira sprint id so each sprint lands once.
   const sprintMap = new Map<number, string>(); // jira sprint id → QtSprint id
   let sprintCount = 0;
+
+  const upsertSprint = async (s: JiraSprint): Promise<void> => {
+    if (sprintMap.has(s.id)) return;
+    if (!dryRun) {
+      const existing = await db.qtSprint.findFirst({
+        where: { projectId: qtProjectId, name: s.name },
+        select: { id: true },
+      });
+      if (existing) {
+        sprintMap.set(s.id, existing.id);
+      } else {
+        const created = await db.qtSprint.create({
+          data: {
+            projectId: qtProjectId,
+            name: s.name,
+            goal: s.goal ?? null,
+            status: mapSprintState(s.state),
+            startDate: s.startDate ? new Date(s.startDate) : null,
+            endDate: s.endDate ? new Date(s.endDate) : null,
+            createdBy: actorUserId,
+          },
+          select: { id: true },
+        });
+        sprintMap.set(s.id, created.id);
+      }
+    } else {
+      sprintMap.set(s.id, `dryrun:sprint:${s.id}`);
+    }
+    report.counts.sprints += 1;
+    sprintCount += 1;
+  };
+
+  // Path 1 — Agile boards. Use the project KEY (more reliable on Jira Cloud
+  // than the numeric id for cross-product / team-managed scenarios).
   try {
     const boards = await jira.getAllPaged<JiraBoard>(
       (startAt, max) =>
-        `/rest/agile/1.0/board?projectKeyOrId=${jp.id}&startAt=${startAt}&maxResults=${max}`,
+        `/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(jp.key)}&startAt=${startAt}&maxResults=${max}`,
     );
-    const scrumBoards = boards.filter((b) => b.type === "scrum");
-    for (const b of scrumBoards) {
-      const sprints = await jira.getAllPaged<JiraSprint>(
-        (startAt, max) =>
-          `/rest/agile/1.0/board/${b.id}/sprint?startAt=${startAt}&maxResults=${max}`,
-      );
-      for (const s of sprints) {
-        if (!dryRun) {
-          const existing = await db.qtSprint.findFirst({
-            where: { projectId: qtProjectId, name: s.name },
-            select: { id: true },
-          });
-          if (existing) {
-            sprintMap.set(s.id, existing.id);
-          } else {
-            const created = await db.qtSprint.create({
-              data: {
-                projectId: qtProjectId,
-                name: s.name,
-                goal: s.goal ?? null,
-                status: mapSprintState(s.state),
-                startDate: s.startDate ? new Date(s.startDate) : null,
-                endDate: s.endDate ? new Date(s.endDate) : null,
-                createdBy: actorUserId,
-              },
-              select: { id: true },
-            });
-            sprintMap.set(s.id, created.id);
-          }
-        } else {
-          sprintMap.set(s.id, `dryrun:sprint:${s.id}`);
-        }
-        report.counts.sprints += 1;
-        sprintCount += 1;
+    for (const b of boards) {
+      // Kanban boards don't have sprints — skip them.
+      if (b.type !== "scrum") continue;
+      try {
+        const sprints = await jira.getAllPaged<JiraSprint>(
+          (startAt, max) =>
+            `/rest/agile/1.0/board/${b.id}/sprint?startAt=${startAt}&maxResults=${max}`,
+        );
+        for (const s of sprints) await upsertSprint(s);
+      } catch {
+        /* one board failing shouldn't abort the rest */
       }
     }
   } catch {
-    /* swallow */
+    /* boards API may 403 for team-managed projects — fall through to path 2 */
   }
 
   // Issues — three sweeps so parent/epic links resolve.
@@ -543,6 +599,7 @@ async function migrateOneProject(args: {
       "updated",
       "attachment",
       ...(storyPointsField ? [storyPointsField] : []),
+      ...(sprintField ? [sprintField] : []),
     ];
 
     // Jira deprecated GET /rest/api/3/search in 2024 (returns 410). The
@@ -604,11 +661,65 @@ async function migrateOneProject(args: {
           ? (ji.fields[storyPointsField] as number)
           : null;
 
+      // Sprint discovery from the issue's Sprint custom field. The field is
+      // an array (an issue can sit across multiple sprints historically); we
+      // upsert each one and link the issue to the LAST sprint listed, which
+      // Jira treats as the current/active membership.
+      let issueSprintId: string | null = null;
+      if (sprintField) {
+        const raw = ji.fields[sprintField];
+        if (Array.isArray(raw)) {
+          for (const sp of raw as Array<{
+            id?: number;
+            name?: string;
+            state?: string;
+            startDate?: string;
+            endDate?: string;
+            goal?: string;
+          }>) {
+            if (typeof sp.id !== "number" || !sp.name) continue;
+            await upsertSprint({
+              id: sp.id,
+              name: sp.name,
+              state: (sp.state ?? "future") as JiraSprint["state"],
+              startDate: sp.startDate,
+              endDate: sp.endDate,
+              goal: sp.goal,
+            });
+            const linked = sprintMap.get(sp.id);
+            if (linked && !linked.startsWith("dryrun:")) issueSprintId = linked;
+          }
+        }
+      }
+
       // Attachments — count + skip (no model yet).
       const atts =
         (ji.fields as unknown as { attachment?: Array<unknown> }).attachment ??
         [];
       report.counts.attachmentsSkipped += atts.length;
+
+      // Auto-join the assignee + reporter as project members so they can
+      // see issues they own when they sign in. The actor was added when
+      // the project was created; these are additive, idempotent.
+      if (!dryRun && qtProjectId) {
+        const memberIds = new Set<string>();
+        if (assigneeId) memberIds.add(assigneeId);
+        if (reporterId && reporterId !== actorUserId) memberIds.add(reporterId);
+        for (const uid of memberIds) {
+          await db.qtProjectMember.upsert({
+            where: {
+              projectId_userId: { projectId: qtProjectId, userId: uid },
+            },
+            update: { isDeleted: false },
+            create: {
+              projectId: qtProjectId,
+              userId: uid,
+              role: "MEMBER",
+              invitedBy: actorUserId,
+            },
+          });
+        }
+      }
 
       if (!dryRun && qtProjectId && resolvedStatusId) {
         // Idempotent by (projectId, key).
@@ -629,6 +740,7 @@ async function migrateOneProject(args: {
               assigneeId,
               reporterId,
               ...(parentId ? { parentId } : {}),
+              ...(issueSprintId ? { sprintId: issueSprintId } : {}),
               dueDate: ji.fields.duedate ? new Date(ji.fields.duedate) : null,
               ...(storyPoints !== null ? { storyPoints } : {}),
               updatedBy: actorUserId,
@@ -649,6 +761,7 @@ async function migrateOneProject(args: {
               assigneeId,
               reporterId,
               ...(parentId ? { parentId } : {}),
+              ...(issueSprintId ? { sprintId: issueSprintId } : {}),
               dueDate: ji.fields.duedate ? new Date(ji.fields.duedate) : null,
               ...(storyPoints !== null ? { storyPoints } : {}),
               createdBy: actorUserId,
