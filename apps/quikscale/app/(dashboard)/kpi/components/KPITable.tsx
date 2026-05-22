@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
 import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
+import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { computeQtd, weeklyGoalFor } from "./kpiStats";
 import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
 import { useStickyOffsets } from "../hooks/useStickyOffsets";
@@ -421,18 +422,62 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                         <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
                           {qtdGoal != null ? fmtCompact(qtdGoal) : "—"}
                         </td>
-                        {!localHideSet.has("qtdAchieved") && (
-                          <td className={tdClass("qtdAchieved")} style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}>
-                            {qtdAchieved != null ? fmtCompact(qtdAchieved) : "—"}
-                          </td>
-                        )}
+                        {!localHideSet.has("qtdAchieved") && (() => {
+                          // QTD Achieved uses the same semantic traffic-light
+                          // palette as the weekly cells (≥120 blue, ≥100 green,
+                          // ≥80 yellow, <80+updated red, else neutral). RED is
+                          // gated on at least one weekly value being entered —
+                          // mirrors `weekCellColors` semantics so brand-new
+                          // KPIs at 0% don't paint red on first render.
+                          const hasAnyWeeklyValue = Object.values(weekMap).some(
+                            wv => wv?.value != null,
+                          );
+                          const color = qtdAchieved != null
+                            ? getColorByPercentage(qtdAchieved, qtdGoal ?? kpi.target ?? 0, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+                            : null;
+                          const sticky = isFrozen("qtdAchieved");
+                          const boundary = "qtdAchieved" === frozenUpTo;
+                          return (
+                            <td
+                              className={[
+                                "px-3 py-2 text-xs border-b border-r border-gray-100 overflow-hidden align-top text-center font-semibold",
+                                color?.bg || (sticky ? "bg-white" : ""),
+                                color?.text ?? "text-gray-700",
+                                sticky ? `sticky z-[15]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.04)]" : ""}` : "",
+                              ].filter(Boolean).join(" ")}
+                              style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
+                            >
+                              {qtdAchieved != null ? fmtCompact(qtdAchieved) : "—"}
+                            </td>
+                          );
+                        })()}
                       </>
                     );
                   })()}
                   {/* If qtdGoal column is hidden but qtdAchieved is shown, render it standalone. */}
-                  {localHideSet.has("qtdGoal") && !localHideSet.has("qtdAchieved") && (
-                    <td className={tdClass("qtdAchieved")} style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}>{fmtCompact(kpi.qtdAchieved ?? null)}</td>
-                  )}
+                  {localHideSet.has("qtdGoal") && !localHideSet.has("qtdAchieved") && (() => {
+                    const hasAnyWeeklyValue = Object.values(weekMap).some(
+                      wv => wv?.value != null,
+                    );
+                    const color = kpi.qtdAchieved != null
+                      ? getColorByPercentage(kpi.qtdAchieved, kpi.qtdGoal ?? kpi.target ?? 0, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+                      : null;
+                    const sticky = isFrozen("qtdAchieved");
+                    const boundary = "qtdAchieved" === frozenUpTo;
+                    return (
+                      <td
+                        className={[
+                          "px-3 py-2 text-xs border-b border-r border-gray-100 overflow-hidden align-top text-center font-semibold",
+                          color?.bg || (sticky ? "bg-white" : ""),
+                          color?.text ?? "text-gray-700",
+                          sticky ? `sticky z-[15]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.04)]" : ""}` : "",
+                        ].filter(Boolean).join(" ")}
+                        style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
+                      >
+                        {fmtCompact(kpi.qtdAchieved ?? null)}
+                      </td>
+                    );
+                  })()}
                   {/* Weekly Goal — current week's target (from weeklyTargets), falling
                       back to flat target/13 when no per-week breakdown is set. */}
                   {!localHideSet.has("weeklyGoal") && (
