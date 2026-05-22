@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { sendEmail, buildKPIAssignmentEmail } from "./email";
+import { getAppBaseUrl } from "./appUrl";
 
 export interface NotifyKPIAssignmentParams {
   orgId: string;
@@ -41,8 +42,8 @@ export async function notifyKPIAssignment(params: NotifyKPIAssignmentParams): Pr
     ? `${creator.firstName ?? ""} ${creator.lastName ?? ""}`.trim() || (creator.email ?? "A teammate")
     : "A teammate";
 
-  const baseUrl = process.env.APP_URL || process.env.NEXTAUTH_URL || "";
-  const kpiUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/kpi?highlight=${kpiId}` : undefined;
+  const baseUrl = getAppBaseUrl();
+  const kpiUrl = baseUrl ? `${baseUrl}/kpi?highlight=${kpiId}` : undefined;
 
   const title = "You have been assigned a KPI";
   const message = `${creatorName} assigned you "${kpiName}" for ${quarter} ${year}.`;

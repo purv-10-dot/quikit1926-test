@@ -23,6 +23,8 @@ import {
 } from "@quikit/ui";
 import { Clock, FileText, X, RotateCcw, AlertTriangle } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
+import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
 
 /* ═══════════════════════════════════════════════
    Checkbox hook (shared for primary + secondary)
@@ -452,51 +454,6 @@ function computeYearGrowth(
 }
 
 /* ═══════════════════════════════════════════════
-   Logs Popover
-   ═══════════════════════════════════════════════ */
-
-function LogsPopover({ opspId, horizon, rowIndex, onClose }: { opspId: string; horizon: Horizon; rowIndex: number; onClose: () => void }) {
-  const [logs, setLogs] = useState<{ id: string; action: string; reason: string | null; createdAt: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let ok = true;
-    fetch(`/api/opsp/review/logs?opspId=${opspId}&horizon=${horizon}&rowIndex=${rowIndex}`)
-      .then((r) => r.json())
-      .then((j) => { if (ok && j.success) setLogs(j.data); })
-      .catch(() => {})
-      .finally(() => { if (ok) setLoading(false); });
-    return () => { ok = false; };
-  }, [opspId, horizon, rowIndex]);
-
-  return (
-    <div className="absolute left-0 top-full mt-1 z-40 bg-white border border-gray-200 rounded-lg shadow-lg w-72 max-h-60 overflow-y-auto">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
-        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Audit History</span>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="h-3 w-3" /></button>
-      </div>
-      {loading ? (
-        <div className="px-3 py-4 text-xs text-gray-400 text-center">Loading...</div>
-      ) : logs.length === 0 ? (
-        <div className="px-3 py-4 text-xs text-gray-400 text-center">No changes recorded yet</div>
-      ) : (
-        <div className="divide-y divide-gray-50">
-          {logs.map((l) => (
-            <div key={l.id} className="px-3 py-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-gray-600">{l.action}</span>
-                <span className="text-[10px] text-gray-400">{new Date(l.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
-              </div>
-              {l.reason && <p className="text-[10px] text-gray-500 mt-0.5 truncate">{l.reason}</p>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
    Main Page Component
    ═══════════════════════════════════════════════ */
 
@@ -513,7 +470,16 @@ export default function OPSPReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
-  const [logsRowIndex, setLogsRowIndex] = useState<number | null>(null);
+  // Audit-log drawer context. `kind` discriminates which entity/scope we're
+  // viewing so the drawer can build the right title + reason filter:
+  //   - "primary":   OPSP Review primary rows (horizon|rowIndex=…)
+  //   - "secondary": OPSP Review secondary rows
+  //   - "critical":  OPSP Critical # Review rows (module:cardType)
+  type LogsContext =
+    | { kind: "primary"; rowIndex: number; horizon: Horizon; category: string }
+    | { kind: "secondary"; rowIndex: number; horizon: Horizon; category: string }
+    | { kind: "critical"; moduleKey: string; cardType: string; category: string };
+  const [logsContext, setLogsContext] = useState<LogsContext | null>(null);
 
   // Row selection
   const primarySel = useRowSelection();
@@ -862,23 +828,20 @@ export default function OPSPReviewPage() {
       align: "center",
       render: (row) =>
         row.isFirstInGroup ? (
-          <div className="relative">
-            <button
-              onClick={() => setLogsRowIndex(logsRowIndex === row.rowIndex ? null : row.rowIndex)}
-              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
-              title="View audit history"
-            >
-              <Clock className="h-3.5 w-3.5" />
-            </button>
-            {logsRowIndex === row.rowIndex && data?.opspId && (
-              <LogsPopover
-                opspId={data.opspId}
-                horizon={horizon}
-                rowIndex={row.rowIndex}
-                onClose={() => setLogsRowIndex(null)}
-              />
-            )}
-          </div>
+          <button
+            onClick={() =>
+              setLogsContext({
+                kind: "primary",
+                rowIndex: row.rowIndex,
+                horizon,
+                category: row.category,
+              })
+            }
+            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
+            title="View audit history"
+          >
+            <Clock className="h-3.5 w-3.5" />
+          </button>
         ) : null,
     },
     {
@@ -1028,7 +991,7 @@ export default function OPSPReviewPage() {
     // row in those views, so the column adds no info (and the categoryType
     // label "Cumulative / Exit / Average" already lives in the Cat Type column).
     return horizon === "quarter" ? cols : cols.filter((c) => c.key !== "period");
-  }, [primarySel, primaryCategoryIdxs, logsRowIndex, data?.opspId, horizon, openPrimaryModal]);
+  }, [primarySel, primaryCategoryIdxs, horizon, openPrimaryModal]);
 
   const secondaryIdxs = useMemo(
     () => filteredSecondary.map((r) => r.index),
@@ -1064,23 +1027,20 @@ export default function OPSPReviewPage() {
       width: 40,
       align: "center",
       render: (row) => (
-        <div className="relative">
-          <button
-            onClick={() => setLogsRowIndex(logsRowIndex === row.index + 1000 ? null : row.index + 1000)}
-            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
-            title="View audit history"
-          >
-            <Clock className="h-3.5 w-3.5" />
-          </button>
-          {logsRowIndex === row.index + 1000 && data?.opspId && (
-            <LogsPopover
-              opspId={data.opspId}
-              horizon={horizon}
-              rowIndex={row.index}
-              onClose={() => setLogsRowIndex(null)}
-            />
-          )}
-        </div>
+        <button
+          onClick={() =>
+            setLogsContext({
+              kind: "secondary",
+              rowIndex: row.index,
+              horizon,
+              category: row.desc,
+            })
+          }
+          className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
+          title="View audit history"
+        >
+          <Clock className="h-3.5 w-3.5" />
+        </button>
       ),
     },
     {
@@ -1136,7 +1096,7 @@ export default function OPSPReviewPage() {
     // 3-5yr (Key Thrusts) — owner column intentionally hidden per spec; the
     // capability rows on this horizon don't carry per-row ownership.
     return horizon === "3to5year" ? cols.filter((c) => c.key !== "who") : cols;
-  }, [secondarySel, secondaryIdxs, logsRowIndex, data?.opspId, horizon, openSecondaryModal]);
+  }, [secondarySel, secondaryIdxs, horizon, openSecondaryModal]);
 
   /* ═══════════════════════════════════════════════
      Render
@@ -1560,6 +1520,41 @@ export default function OPSPReviewPage() {
           </div>
         </div>
       )}
+
+      {/* Global audit-log drawer — shared by Primary, Secondary, and
+          Critical # Review rows. The reason filter (`extra`) matches the
+          structured tag in the AuditLog.reason field written by the OPSP
+          POST endpoints (see opsp/review/*.ts). */}
+      {data?.opspId && logsContext && (() => {
+        let title = "Audit History";
+        let subtitle = "";
+        let extra = "";
+        if (logsContext.kind === "primary") {
+          title = `Audit History — Row ${logsContext.rowIndex + 1}`;
+          subtitle = `${logsContext.category} · ${HORIZON_LABELS[logsContext.horizon].primaryTitle}`;
+          extra = `(${logsContext.horizon}|rowIndex=${logsContext.rowIndex})`;
+        } else if (logsContext.kind === "secondary") {
+          title = `Audit History — Row ${logsContext.rowIndex + 1}`;
+          subtitle = `${logsContext.category} · ${HORIZON_LABELS[logsContext.horizon].secondaryTitle}`;
+          extra = `OPSP Secondary (${logsContext.horizon}|rowIndex=${logsContext.rowIndex})`;
+        } else {
+          title = `Audit History — ${logsContext.cardType}`;
+          subtitle = `${logsContext.category} · ${logsContext.moduleKey}`;
+          extra = `OPSP Critical (${logsContext.moduleKey}:${logsContext.cardType})`;
+        }
+        return (
+          <AuditLogDrawer
+            open
+            onClose={() => setLogsContext(null)}
+            title={title}
+            subtitle={subtitle}
+            entityType="Review"
+            entityId={data.opspId}
+            extraQuery={extra}
+            fieldLabels={OPSP_FIELD_LABELS}
+          />
+        );
+      })()}
     </div>
   );
 }

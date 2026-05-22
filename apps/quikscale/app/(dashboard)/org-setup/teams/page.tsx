@@ -24,6 +24,7 @@ import {
 } from "@quikit/ui";
 import { useTableCRUD } from "@/lib/hooks/useTableCRUD";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
@@ -921,6 +922,7 @@ function MemberPickerPanel({
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgTeamsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("Team");
+  const queryClient = useQueryClient();
   // Trash view — when ON, the list endpoint returns only soft-deleted teams.
   // Memoise the fetchParams so refetch only fires on actual toggle (object
   // identity matters because it's a dep of refetch in useTableCRUD).
@@ -1019,6 +1021,10 @@ export default function OrgTeamsPage() {
       }
       return [...prev, team];
     });
+    // Invalidate the shared TanStack Query `["teams"]` cache so consumers
+    // like the Team KPI page's `useTeams()` see the new/renamed team without
+    // a full page reload.
+    queryClient.invalidateQueries({ queryKey: ["teams"] });
   }
 
   async function handleRemoveMember(team: OrgTeam, userId: string) {

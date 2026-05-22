@@ -316,7 +316,7 @@ export default function OPSPPage() {
             <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-red-800">Cannot finalize — fix {validationErrors.length} issue{validationErrors.length === 1 ? "" : "s"}</p>
-              <p className="text-xs text-red-600 mt-0.5">Projection vs breakdown sums and missing owners must be resolved.</p>
+              <p className="text-xs text-red-600 mt-0.5">Review the items below and update each row, or remove rows you don&apos;t need.</p>
             </div>
             <button
               onClick={() => setValidationErrors([])}

@@ -52,7 +52,25 @@ function checkBreakdown(
     const allParts = parts.every((k) => String(row[k] ?? "").trim() !== "");
 
     // Skip fully empty rows.
-    if (!projectedStr && !anyPart) return;
+    if (!projectedStr && !anyPart && !cat) return;
+
+    // Category picked but Projected left blank — block finalize with a clear,
+    // actionable message. Without this check the row was silently skipped at
+    // page-level finalize even though the in-modal validator flagged it,
+    // letting users finalize partial Actions/Goals/Targets data.
+    if (cat && !projectedStr) {
+      errors.push({
+        section,
+        row: i + 1,
+        message: `${section} row ${i + 1} (${cat}): Projected value is required — enter a value or remove this row.`,
+      });
+      return;
+    }
+
+    // Projected entered but no category — the row is incomplete; skip
+    // silently (the projected value has no category to validate against and
+    // there's no UI affordance to fix this without picking a category).
+    if (!cat) return;
 
     const meta = catMetaCache.get(cat);
     // Default to Automatic + Cumulative when meta is missing — same fallback

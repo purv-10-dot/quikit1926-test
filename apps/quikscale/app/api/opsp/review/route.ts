@@ -312,7 +312,54 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Upsert each entry
+    // 2a. Snapshot pre-update state for the audit log. We flatten to
+    // per-cell keys (e.g. `m1.target`, `m1.achieved`) so the drawer renders
+    // one diff row per changed cell instead of a JSON blob. Field labels for
+    // these keys live in OPSP_FIELD_LABELS (lib/utils/auditLog.ts).
+    const prevEntries = await db.oPSPReviewEntry.findMany({
+      where: {
+        orgId,
+        opspId: opsp.id,
+        horizon,
+        rowIndex,
+        period: { in: entries.map((e) => e.period) },
+      },
+      select: {
+        period: true,
+        targetValue: true,
+        achievedValue: true,
+        lastYearSamePeriod: true,
+        comment: true,
+      },
+    });
+    const prevByPeriod = Object.fromEntries(
+      prevEntries.map((e) => [e.period, e]),
+    );
+    const oldSnapshot: Record<string, unknown> = {};
+    const newSnapshot: Record<string, unknown> = {};
+    for (const e of entries) {
+      const p = prevByPeriod[e.period];
+      // Only snapshot keys the caller is actually changing — `undefined`
+      // means "keep existing value", so it shouldn't appear in the diff.
+      if (e.targetValue !== undefined) {
+        oldSnapshot[`${e.period}.target`] = p?.targetValue != null ? Number(p.targetValue) : null;
+        newSnapshot[`${e.period}.target`] = e.targetValue ?? null;
+      }
+      if (e.achievedValue !== undefined) {
+        oldSnapshot[`${e.period}.achieved`] = p?.achievedValue != null ? Number(p.achievedValue) : null;
+        newSnapshot[`${e.period}.achieved`] = e.achievedValue ?? null;
+      }
+      if (e.lastYearSamePeriod !== undefined) {
+        oldSnapshot[`${e.period}.lastYear`] = p?.lastYearSamePeriod != null ? Number(p.lastYearSamePeriod) : null;
+        newSnapshot[`${e.period}.lastYear`] = e.lastYearSamePeriod ?? null;
+      }
+      if (e.comment !== undefined) {
+        oldSnapshot[`${e.period}.comment`] = p?.comment ?? null;
+        newSnapshot[`${e.period}.comment`] = e.comment ?? null;
+      }
+    }
+
+    // 2b. Upsert each entry
     const savedEntries = await Promise.all(
       entries.map((entry) =>
         db.oPSPReviewEntry.upsert({
@@ -354,15 +401,19 @@ export async function POST(req: NextRequest) {
       ),
     );
 
-    // 3. Audit log
+    // 3. Audit log — includes old/new snapshots so the audit-log drawer can
+    // render field-level diffs. Existing rows that pre-date this enrichment
+    // still render correctly (fmtFriendlyAuditEntry handles missing values).
     await writeAuditLog({
       orgId,
       actorId: userId,
       action: "UPDATE",
       entityType: "Review",
       entityId: opsp.id,
+      oldValues: oldSnapshot,
+      newValues: newSnapshot,
       changes: entries.map((e) => `${horizon}:${category}:${e.period}`),
-      reason: `OPSP Review: ${horizon} ${category} row ${rowIndex}`,
+      reason: `OPSP Review (${horizon}|rowIndex=${rowIndex}): ${category}`,
     });
 
     return NextResponse.json({
