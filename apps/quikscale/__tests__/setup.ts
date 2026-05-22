@@ -56,6 +56,80 @@ export function setSession(user: TestUser | null) {
 }
 
 // ---------------------------------------------------------------------------
+// RBAC v2 permission gate
+// ---------------------------------------------------------------------------
+// The branch's `withOrgAuthForResource(...)` wrapper now calls
+// `userCan(userId, orgId, resource, action)` after auth. That helper hits the
+// DB for `rolePermission.findFirst` + `userPermissionExtra.findFirst` — both
+// return `undefined` against the deep-mocked Prisma client unless every test
+// seeds them, so the wrapper short-circuits to 403 before the handler runs.
+//
+// For unit tests we bypass the permission check globally and re-enable it
+// per-test via `setPermissionGate(false)` when a test specifically wants to
+// assert the 403 path. Same control-surface pattern as `setSession`.
+const _permState: { allow: boolean } = { allow: true };
+
+vi.mock("@/lib/api/permissions", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/api/permissions")
+  >("@/lib/api/permissions");
+  return {
+    ...actual,
+    userCan: vi.fn(async () => _permState.allow),
+  };
+});
+
+export function setPermissionGate(allow: boolean) {
+  _permState.allow = allow;
+}
+
+// ---------------------------------------------------------------------------
+// Row-level visibility helpers
+// ---------------------------------------------------------------------------
+// Branch adds `@/lib/api/visibility` helpers (isOrgAdmin, getMyTeamIds) that
+// hit the DB via the deep-mocked Prisma client. Without seeded mocks each
+// helper either throws (undefined access) or returns false, breaking list
+// endpoints' admin bypass. Default to admin=true / empty teams for tests;
+// per-test override via the setters below.
+const _visState = {
+  isOrgAdmin: true,
+  myTeamIds: [] as string[],
+};
+
+vi.mock("@/lib/api/visibility", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/api/visibility")
+  >("@/lib/api/visibility");
+  return {
+    ...actual,
+    isOrgAdmin: vi.fn(async () => _visState.isOrgAdmin),
+    getMyTeamIds: vi.fn(async () => _visState.myTeamIds),
+  };
+});
+
+export function setVisibility(opts: {
+  isOrgAdmin?: boolean;
+  myTeamIds?: string[];
+}) {
+  if (opts.isOrgAdmin !== undefined) _visState.isOrgAdmin = opts.isOrgAdmin;
+  if (opts.myTeamIds !== undefined) _visState.myTeamIds = opts.myTeamIds;
+}
+
+// ---------------------------------------------------------------------------
+// Past-week feature flags + fiscal-week helpers
+// ---------------------------------------------------------------------------
+// KPI/Priority/WWW writes call these and would otherwise pull from the
+// unmocked FeatureFlag + QuarterSetting tables. Default to "all flags off /
+// week=1" so tests don't accidentally trip on the new past-week guards.
+vi.mock("@/lib/utils/featureFlags", () => ({
+  getPastWeekFlags: vi.fn(async () => ({
+    canAddPastWeek: false,
+    canEditPastWeek: false,
+  })),
+  getCurrentFiscalWeekFromDB: vi.fn(async () => 1),
+}));
+
+// ---------------------------------------------------------------------------
 // next/navigation stubs (component tests import useRouter, etc.)
 // ---------------------------------------------------------------------------
 vi.mock("next/navigation", () => ({
@@ -89,6 +163,11 @@ vi.spyOn(console, "error").mockImplementation(() => {});
 // ---------------------------------------------------------------------------
 beforeEach(() => {
   _state.user = null;
+  // Reset permission gate so tests don't leak the "allow=false" state
+  // across files.
+  _permState.allow = true;
+  _visState.isOrgAdmin = true;
+  _visState.myTeamIds = [];
   // Clear the @quikit/auth in-memory LRU between tests. Without this, a
   // membership row resolved in test A is cached and "leaks" into test B,
   // making mocked DB return values look ignored. Safe to import here —

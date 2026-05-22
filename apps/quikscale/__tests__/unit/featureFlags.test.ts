@@ -1,5 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mockDb, resetMockDb } from "../helpers/mockDb";
+
+// setup.ts globally mocks @/lib/utils/featureFlags so API tests don't trip
+// on unmocked DB calls. THIS file tests the real implementation — unmock.
+vi.unmock("@/lib/utils/featureFlags");
 
 import {
   getPastWeekFlags,
