@@ -146,21 +146,58 @@ const STATUS_LABELS: Record<string, string> = {
  * Field-name → human label map used by OPSP Review audit logs (primary,
  * secondary, and Critical # Review rows). Kept separate from
  * MEETING_FIELD_LABELS so entity-specific label changes don't cross-contaminate.
+ *
+ * Primary review snapshots use compound keys `${period}.${field}` so the
+ * diff renders one row per cell. The combos are precomputed below.
  */
-export const OPSP_FIELD_LABELS: Record<string, string> = {
-  targetValue: "Target",
-  achievedValue: "Achieved",
-  lastYearSamePeriod: "Last year same period",
-  comment: "Comment",
-  period: "Period",
-  module: "Module",
-  cardType: "Card type",
-  status: "Status",
-  horizon: "Horizon",
-  rowIndex: "Row",
-  category: "Category",
-  entries: "Entries",
+const OPSP_PERIODS: Record<string, string> = {
+  // Quarter (actions) — m1/m2/m3 are the three months of the quarter
+  m1: "Month 1",
+  m2: "Month 2",
+  m3: "Month 3",
+  // Yearly (goals) — one row per fiscal quarter
+  q1: "Q1",
+  q2: "Q2",
+  q3: "Q3",
+  q4: "Q4",
+  // 3-5yr (targets)
+  y1: "Year 1",
+  y2: "Year 2",
+  y3: "Year 3",
+  y4: "Year 4",
+  y5: "Year 5",
 };
+
+const OPSP_CELL_FIELDS: Record<string, string> = {
+  target: "Target",
+  achieved: "Achieved",
+  lastYear: "Last year same period",
+  comment: "Comment",
+};
+
+export const OPSP_FIELD_LABELS: Record<string, string> = (() => {
+  const out: Record<string, string> = {
+    // Flat (non-period) fields — used by Critical # Review + Secondary rows.
+    targetValue: "Target",
+    achievedValue: "Achieved",
+    lastYearSamePeriod: "Last year same period",
+    comment: "Comment",
+    period: "Period",
+    module: "Module",
+    cardType: "Card type",
+    status: "Status",
+    horizon: "Horizon",
+    rowIndex: "Row",
+    category: "Category",
+  };
+  // Compound keys for Primary review snapshots: e.g. `m1.target` → "Month 1 · Target"
+  for (const [pk, pl] of Object.entries(OPSP_PERIODS)) {
+    for (const [fk, fl] of Object.entries(OPSP_CELL_FIELDS)) {
+      out[`${pk}.${fk}`] = `${pl} · ${fl}`;
+    }
+  }
+  return out;
+})();
 
 const FLAG_LABELS: Record<string, string> = {
   YES: "Yes",
@@ -235,7 +272,12 @@ function fmtValue(
     return v.map((x) => fmtValue(key, x, opts)).join(", ");
   }
   if (typeof v === "boolean") return v ? "Yes" : "No";
-  if (typeof v === "number") return String(v);
+  if (typeof v === "number") {
+    // Thousand separators + cap at 2 decimal places. Matches the
+    // formatReviewNumber() style used elsewhere on the OPSP Review screen
+    // so audit-log values look the same as the table cells.
+    return Number.isFinite(v) ? v.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(v);
+  }
   if (typeof v === "string") {
     if (key === "callStatus" && STATUS_LABELS[v]) return STATUS_LABELS[v];
     if (FLAG_LABELS[v] && (key === "goodNewsSharing" || key === "kpDashboard" ||
