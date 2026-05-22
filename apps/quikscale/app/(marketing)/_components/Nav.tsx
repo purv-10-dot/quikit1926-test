@@ -1,7 +1,7 @@
 import { buildLoginUrl } from "@quikit/shared/login-url";
 
 /**
- * Public marketing nav for quikscale.quikit.ai/.
+ * Public marketing nav for scale.quikit.ai/.
  *
  * Login button redirects to the central QuikAuth login with a `callbackUrl`
  * that returns the user to `/dashboard` on this app's origin after a

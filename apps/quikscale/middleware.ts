@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
  *           /dashboard, so logged-in users never see the brochure.
  *   - `/dashboard`, `/kpi`, `/opsp`, … → auth required. Unauth users get
  *           sent to `/` (the landing). From there they click "Login" to
- *           reach https://quikauth.quikit.ai/login.
+ *           reach https://authn.quikit.ai/login.
  *   - `/auth-handoff` is public so the cross-domain cookie-bridge from
  *           the auth host can plant the session cookie on this host.
  *
