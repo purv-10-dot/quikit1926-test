@@ -51,6 +51,8 @@ export interface CriticalTableProps {
   entry: CriticalTableEntry | null;
   /** Clicked when the user opens the drawer to edit this card. */
   onOpenEdit: () => void;
+  /** Clicked when the user opens the audit-log drawer for this card. */
+  onOpenLogs?: () => void;
 }
 
 export function CriticalTable({
@@ -59,8 +61,8 @@ export function CriticalTable({
   card,
   entry,
   onOpenEdit,
+  onOpenLogs,
 }: CriticalTableProps) {
-  const [logsOpen, setLogsOpen] = useState(false);
   const [checked, setChecked] = useState(false);
 
   // Hide the whole card when it has no title AND every bullet is empty.
@@ -142,28 +144,16 @@ export function CriticalTable({
                   </td>
                   <td
                     rowSpan={4}
-                    className="align-middle px-2 py-3 border-r border-gray-100 text-center relative"
+                    className="align-middle px-2 py-3 border-r border-gray-100 text-center"
                   >
                     <button
-                      onClick={() => setLogsOpen(!logsOpen)}
+                      onClick={() => onOpenLogs?.()}
                       className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500 transition-colors"
                       title="View audit history"
+                      disabled={!onOpenLogs}
                     >
                       <Clock className="h-3.5 w-3.5" />
                     </button>
-                    {logsOpen ? (
-                      <div className="absolute left-0 top-full mt-1 z-40 bg-white border border-gray-200 rounded-lg shadow-lg w-60 p-3 text-left">
-                        <p className="text-[11px] text-gray-500">
-                          Audit history for this critical card is shown here.
-                        </p>
-                        <button
-                          onClick={() => setLogsOpen(false)}
-                          className="mt-2 text-[11px] text-accent-600 hover:underline"
-                        >
-                          Close
-                        </button>
-                      </div>
-                    ) : null}
                   </td>
                   <td
                     rowSpan={4}

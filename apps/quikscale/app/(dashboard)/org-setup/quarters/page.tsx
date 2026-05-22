@@ -932,15 +932,11 @@ export default function QuarterSettingsPage() {
           PUT/DELETE /api/org/quarters/[id] + DELETE /api/org/quarters?year=. */}
       {selectedYear !== null && filtered.length > 0 && !loading && (
         fyHasData ? (
-          <div className="mx-6 mt-4 rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 flex items-start gap-2.5">
-            <Lock className="h-4 w-4 text-gray-500 flex-shrink-0 mt-0.5" />
-            <div className="text-xs leading-relaxed">
-              <p className="font-semibold text-gray-700 mb-0.5">Quarter dates are locked</p>
-              <p className="text-gray-500">
-                Data exists for <span className="font-semibold text-gray-700">{fyLabel}</span> (KPI, Priority, or OPSP records).
-                Quarter dates cannot be changed and quarters cannot be deleted.
-              </p>
-            </div>
+          <div className=" m-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
+            <Lock className="h-4 w-4 text-amber-600 flex-shrink-0" />
+            <p className="text-xs leading-relaxed text-amber-800 font-medium">
+              Once you start entering the data into Goals, you won&apos;t be able to edit your quarters.
+            </p>
           </div>
         ) : (
           <div className="mx-6 mt-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-2.5">

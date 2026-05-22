@@ -3,11 +3,15 @@
 /**
  * ActionsSection — "ACTIONS (QTR) / Rocks / Critical #" + "THEME / Scoreboard / Celebration / Reward"
  *
- * actionsQtr rows are first-fill seeded from goalRows by useOPSPForm, but
- * remain user-editable (no locked state).
+ * `actionsQtr` row count is driven by `goalRows` via the cascade in
+ * `hooks/useOPSPForm.ts` (Goals → Actions section). The cascade also seeds
+ * each Action row's category from the matching Goal — but the field stays
+ * editable here, so the user can override on a per-row basis. There are no
+ * Add-New / per-row remove controls in Actions because Goals owns the
+ * length; to add/remove rows the user edits Goals (1 YR).
  */
 
-import { Maximize2 } from "lucide-react";
+import { Maximize2, X } from "lucide-react";
 import { Card, CardH } from "./Card";
 import { FInput, FTextarea } from "./RichEditor";
 import { CritBlock } from "./CritBlock";
@@ -22,6 +26,10 @@ interface Props {
   onExpandActions: () => void;
   onExpandRocks: () => void;
 }
+
+// Mirror Goals' floor — users can drop rows down to 6 but no further, so
+// the card always has a usable baseline shape.
+const MIN_ACTION_ROWS = 6;
 
 export function ActionsSection({
   form,
@@ -40,59 +48,86 @@ export function ActionsSection({
             expand
             onExpand={onExpandActions}
           />
-          <div className="grid grid-cols-5 gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
-            <span className="col-span-3">Category</span>
-            <span className="col-span-2 text-right">Projected</span>
-          </div>
-          {form.actionsQtr.map((row, i) => (
-            <div
-              key={i}
-              className="grid grid-cols-5 gap-1.5 items-start py-0.5"
-            >
-              <div className="col-span-3 min-w-0">
-                <CategorySelect
-                  value={row.category}
-                  excludeNames={form.actionsQtr.map((r, idx) => idx === i ? "" : r.category)}
-                  onChange={(v) => {
-                    const next = [...form.actionsQtr];
-                    next[i] = {
-                      ...next[i],
-                      category: v,
-                      projected: "",
-                      m1: "",
-                      m2: "",
-                      m3: "",
-                    };
-                    set("actionsQtr", next);
-                  }}
-                />
-              </div>
-              <div className="col-span-2 min-w-0">
-                <ProjectedInput
-                  categoryName={row.category}
-                  value={row.projected}
-                  onChange={(v) => {
-                    const next = [...form.actionsQtr];
-                    // Automatic categories: auto-fill m1..m3.
-                    // Manual categories: breakdownProjected returns null →
-                    // leave the month cells alone (user fills via modal).
-                    const autofill = breakdownProjected(row.category, v, 3, {
-                      force: true,
-                    });
-                    const mPatch = autofill
-                      ? {
-                          m1: autofill[0] ?? "",
-                          m2: autofill[1] ?? "",
-                          m3: autofill[2] ?? "",
-                        }
-                      : {};
-                    next[i] = { ...next[i], projected: v, ...mPatch };
-                    set("actionsQtr", next);
-                  }}
-                />
-              </div>
+          <div className="grid grid-cols-[1fr_auto] gap-1.5 text-xs text-gray-500 font-medium pb-1 border-b border-gray-100 mb-1">
+            <div className="grid grid-cols-5 gap-1.5">
+              <span className="col-span-3">Category</span>
+              <span className="col-span-2 text-right">Projected</span>
             </div>
-          ))}
+            <span className="w-5" />
+          </div>
+          {/* Fixed-height scroll viewport — when Goals grows past ~6 rows the
+              cascade adds matching Action rows; the card height stays
+              stable and the user scrolls inside this region. Same value
+              GoalsSection uses, so the two cards share a visual rhythm. */}
+          <div className="max-h-[268px] overflow-y-auto pr-1">
+            {form.actionsQtr.map((row, i) => (
+              <div
+                key={i}
+                className="grid grid-cols-[1fr_auto] gap-1.5 items-start py-0.5 group"
+              >
+                <div className="grid grid-cols-5 gap-1.5 items-start">
+                  <div className="col-span-3 min-w-0">
+                    <CategorySelect
+                      value={row.category}
+                      excludeNames={form.actionsQtr.map((r, idx) => idx === i ? "" : r.category)}
+                      onChange={(v) => {
+                        const next = [...form.actionsQtr];
+                        next[i] = {
+                          ...next[i],
+                          category: v,
+                          projected: "",
+                          m1: "",
+                          m2: "",
+                          m3: "",
+                        };
+                        set("actionsQtr", next);
+                      }}
+                    />
+                  </div>
+                  <div className="col-span-2 min-w-0">
+                    <ProjectedInput
+                      categoryName={row.category}
+                      value={row.projected}
+                      onChange={(v) => {
+                        const next = [...form.actionsQtr];
+                        // Automatic categories: auto-fill m1..m3.
+                        // Manual categories: breakdownProjected returns null →
+                        // leave the month cells alone (user fills via modal).
+                        const autofill = breakdownProjected(row.category, v, 3, {
+                          force: true,
+                        });
+                        const mPatch = autofill
+                          ? {
+                              m1: autofill[0] ?? "",
+                              m2: autofill[1] ?? "",
+                              m3: autofill[2] ?? "",
+                            }
+                          : {};
+                        next[i] = { ...next[i], projected: v, ...mPatch };
+                        set("actionsQtr", next);
+                      }}
+                    />
+                  </div>
+                </div>
+                {form.actionsQtr.length > MIN_ACTION_ROWS ? (
+                  <button
+                    type="button"
+                    aria-label="Remove row"
+                    onClick={() => {
+                      const next = [...form.actionsQtr];
+                      next.splice(i, 1);
+                      set("actionsQtr", next);
+                    }}
+                    className="w-5 h-7 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                ) : (
+                  <span className="w-5" />
+                )}
+              </div>
+            ))}
+          </div>
         </div>
         {/* Rocks — 3-column table (rank | Quarterly Priority | Who/OwnerSelect). Matches Key Thrusts/Capabilities pattern. */}
         <div className="border-t border-gray-100 pt-3">

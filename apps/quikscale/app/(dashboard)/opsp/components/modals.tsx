@@ -1287,10 +1287,10 @@ export function ActionsModal({
                   style={{ display: "grid", gap: "12px", gridTemplateColumns: gridCols }}
                   className="items-start py-2 border-b border-gray-100"
                 >
-                  {/* Category + Projected are always editable in the modal.
-                      The earlier "inherited from Goals → lock" UI was removed
-                      per spec — users can change category/projected on Action
-                      rows even when they were seeded from a Goal. */}
+                  {/* Category seeds from the matching Goal (1 YR) row via
+                      the Goals → Actions cascade in `hooks/useOPSPForm.ts`,
+                      but stays editable here so the user can override per
+                      Action row. */}
                   <CategorySelect
                     value={row.category}
                     excludeNames={rows.map((r, idx) => idx === i ? "" : r.category)}

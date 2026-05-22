@@ -142,6 +142,26 @@ const STATUS_LABELS: Record<string, string> = {
   PENDING: "Pending",
 };
 
+/**
+ * Field-name → human label map used by OPSP Review audit logs (primary,
+ * secondary, and Critical # Review rows). Kept separate from
+ * MEETING_FIELD_LABELS so entity-specific label changes don't cross-contaminate.
+ */
+export const OPSP_FIELD_LABELS: Record<string, string> = {
+  targetValue: "Target",
+  achievedValue: "Achieved",
+  lastYearSamePeriod: "Last year same period",
+  comment: "Comment",
+  period: "Period",
+  module: "Module",
+  cardType: "Card type",
+  status: "Status",
+  horizon: "Horizon",
+  rowIndex: "Row",
+  category: "Category",
+  entries: "Entries",
+};
+
 const FLAG_LABELS: Record<string, string> = {
   YES: "Yes",
   NO: "No",
@@ -161,7 +181,10 @@ function humanizeKey(k: string): string {
     .trim();
 }
 
-const labelFor = (k: string): string => MEETING_FIELD_LABELS[k] ?? humanizeKey(k);
+const labelFor = (
+  k: string,
+  overrides?: Record<string, string>,
+): string => overrides?.[k] ?? MEETING_FIELD_LABELS[k] ?? humanizeKey(k);
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T/;
 const CUID_RE = /^c[a-z0-9]{20,}$/;
@@ -176,6 +199,12 @@ const CUID_RE = /^c[a-z0-9]{20,}$/;
 export interface FriendlyAuditOptions {
   /** Resolve any id (clientId / userId / clientMemberId) → display name. */
   nameById?: (id: string) => string | undefined;
+  /**
+   * Per-call field-label override. Takes precedence over MEETING_FIELD_LABELS.
+   * Use OPSP_FIELD_LABELS (or any entity-specific map) to render OPSP / KPI /
+   * Priority / WWW logs without polluting the shared meeting map.
+   */
+  fieldLabels?: Record<string, string>;
 }
 
 const MEMBER_LIST_KEYS = new Set([
@@ -292,7 +321,7 @@ export function fmtFriendlyAuditEntry(
     const scoreKeys = ["kpiWeeklyQTD", "kpiCoding", "priorityNotes", "priorityStartEndDate", "priorityColor"];
     const rows = scoreKeys
       .filter((k) => newObj[k] !== undefined)
-      .map((k) => ({ label: labelFor(k), newValue: fmtValue(k, newObj[k], opts) }));
+      .map((k) => ({ label: labelFor(k, opts.fieldLabels), newValue: fmtValue(k, newObj[k], opts) }));
     return { headline, rows };
   }
 
@@ -302,7 +331,7 @@ export function fmtFriendlyAuditEntry(
       ? "Updated"
       : `Updated ${changes.length} field${changes.length === 1 ? "" : "s"}`;
     const rows = changes.map((c) => ({
-      label: labelFor(c.key),
+      label: labelFor(c.key, opts.fieldLabels),
       oldValue: fmtValue(c.key, c.oldValue, opts),
       newValue: fmtValue(c.key, c.newValue, opts),
     }));
@@ -323,7 +352,7 @@ export function fmtFriendlyAuditEntry(
     ...Object.keys(newObj).filter((k) => !NOISE_KEYS.has(k) && !PRIORITY_KEYS.includes(k as typeof PRIORITY_KEYS[number])),
   ];
   const rows = ordered.map((k) => ({
-    label: labelFor(k),
+    label: labelFor(k, opts.fieldLabels),
     newValue: fmtValue(k, newObj[k], opts),
   }));
   return { headline, rows };

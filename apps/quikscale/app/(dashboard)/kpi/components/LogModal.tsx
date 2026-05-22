@@ -337,35 +337,21 @@ function EditTab({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Division Type</label>
-          <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
-            {(["Cumulative", "Standalone"] as const).map(dt => (
-              <button key={dt} type="button" onClick={() => setDivisionType(dt)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                  form.divisionType === dt ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                }`}>
-                {dt}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-gray-400 mt-1">
-            {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
-          </p>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Division Type</label>
+        <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
+          {(["Cumulative", "Standalone"] as const).map(dt => (
+            <button key={dt} type="button" onClick={() => setDivisionType(dt)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                form.divisionType === dt ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              }`}>
+              {dt}
+            </button>
+          ))}
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-          <div className="flex gap-3 mt-1">
-            {(["active", "paused", "completed"] as const).map(s => (
-              <label key={s} className="flex items-center gap-1.5 cursor-pointer">
-                <input type="radio" name="editStatus" value={s} checked={form.status === s}
-                  onChange={() => set("status", s)} className="text-accent-600" />
-                <span className="text-xs text-gray-600 capitalize">{s}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+        <p className="text-[10px] text-gray-400 mt-1">
+          {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
+        </p>
       </div>
 
       {/* Color Coding Mode */}
