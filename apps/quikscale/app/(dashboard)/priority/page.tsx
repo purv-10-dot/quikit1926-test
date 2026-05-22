@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { usePriorities, useDeletePriority } from "@/lib/hooks/usePriority";
+import { usePriorities, useDeletePriority, useBulkRestorePriority } from "@/lib/hooks/usePriority";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
@@ -81,6 +81,7 @@ export default function PriorityPage() {
 
   const { data: priorities = [], isLoading, error, refetch } = usePriorities(year, quarter, prioritySort, viewTrash);
   const deletePriority = useDeletePriority();
+  const bulkRestorePriority = useBulkRestorePriority();
 
   const PRIORITY_COL_LABELS: Record<string, string> = { team: "Team", priorityName: "Priority Name", owner: "Owner" };
   const priorityColumns = Object.entries(PRIORITY_COL_LABELS).map(([key, label]) => ({ key, label }));
@@ -98,6 +99,13 @@ export default function PriorityPage() {
   async function handleBulkDelete() {
     if (!selectedIds.size) return;
     await Promise.all([...selectedIds].map(id => deletePriority.mutateAsync(id)));
+    setSelectedIds(new Set());
+    refetch();
+  }
+
+  async function handleBulkRestore() {
+    if (!selectedIds.size) return;
+    await bulkRestorePriority.mutateAsync([...selectedIds]);
     setSelectedIds(new Set());
     refetch();
   }
@@ -164,8 +172,8 @@ export default function PriorityPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Bulk delete */}
-          {canDelete && selectedIds.size > 0 && (
+          {/* Bulk delete — active list only */}
+          {canDelete && selectedIds.size > 0 && !viewTrash && (
             <button
               onClick={handleBulkDelete}
               disabled={deletePriority.isPending}
@@ -182,6 +190,27 @@ export default function PriorityPage() {
                 </svg>
               )}
               Delete {selectedIds.size} selected
+            </button>
+          )}
+
+          {/* Bulk restore — trash view only */}
+          {canDelete && selectedIds.size > 0 && viewTrash && (
+            <button
+              onClick={handleBulkRestore}
+              disabled={bulkRestorePriority.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 disabled:opacity-50 transition-colors"
+            >
+              {bulkRestorePriority.isPending ? (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+                </svg>
+              )}
+              Restore {selectedIds.size} selected
             </button>
           )}
 

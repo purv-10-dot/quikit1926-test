@@ -140,12 +140,65 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   }
 
   async function handleWeeklyStatusChange(weekNumber: number, status: string) {
-    setWeeklyData(prev => ({ ...prev, [weekNumber]: { ...prev[weekNumber], status } }));
+    // Build the list of (week, status, notes) writes for this change. When the
+    // user marks a week as "completed", cascade Completed forward to every
+    // subsequent week up to the end of the quarter (week 13). Existing notes
+    // on cascaded weeks are preserved. If the priority's endWeek is shorter,
+    // it is auto-extended to 13 so the grid shows blue cells (instead of
+    // out-of-range X markers) for those weeks.
+    const QUARTER_END = 13;
+    const currentEnd = parseInt(form.endWeek) || QUARTER_END;
+    const cascadeUpper = status === "completed" ? QUARTER_END : currentEnd;
+
+    const writes: Array<{ weekNumber: number; status: string; notes: string }> = [
+      { weekNumber, status, notes: weeklyData[weekNumber]?.notes ?? "" },
+    ];
+    if (status === "completed") {
+      for (let w = weekNumber + 1; w <= cascadeUpper; w++) {
+        if (weeklyData[w]?.status === "completed") continue;
+        writes.push({ weekNumber: w, status: "completed", notes: weeklyData[w]?.notes ?? "" });
+      }
+    }
+
+    // Snapshot for rollback
+    const previous: Record<number, { status: string; notes: string }> = {};
+    for (const wr of writes) {
+      previous[wr.weekNumber] = weeklyData[wr.weekNumber] ?? { status: "", notes: "" };
+    }
+    const previousEndWeek = form.endWeek;
+    const shouldExtendEndWeek = status === "completed" && currentEnd < QUARTER_END;
+
+    // Optimistic update — apply all writes at once
+    setWeeklyData(prev => {
+      const next = { ...prev };
+      for (const wr of writes) next[wr.weekNumber] = { status: wr.status, notes: wr.notes };
+      return next;
+    });
+    if (shouldExtendEndWeek) {
+      setForm(f => ({ ...f, endWeek: String(QUARTER_END) }));
+    }
+
     try {
-      await updateWeeklyStatus.mutateAsync({ weekNumber, status, notes: weeklyData[weekNumber]?.notes });
+      await Promise.all([
+        ...writes.map(wr =>
+          updateWeeklyStatus.mutateAsync({ weekNumber: wr.weekNumber, status: wr.status, notes: wr.notes }),
+        ),
+        ...(shouldExtendEndWeek
+          ? [updatePriority.mutateAsync({ endWeek: QUARTER_END } as any)]
+          : []),
+      ]);
     } catch {
-      // revert on error
-      setWeeklyData(prev => ({ ...prev, [weekNumber]: { ...prev[weekNumber], status: priority.weeklyStatuses.find(ws => ws.weekNumber === weekNumber)?.status ?? "" } }));
+      // revert all writes on error
+      setWeeklyData(prev => {
+        const next = { ...prev };
+        for (const [wStr, val] of Object.entries(previous)) {
+          next[parseInt(wStr, 10)] = val;
+        }
+        return next;
+      });
+      if (shouldExtendEndWeek) {
+        setForm(f => ({ ...f, endWeek: previousEndWeek }));
+      }
     }
   }
 

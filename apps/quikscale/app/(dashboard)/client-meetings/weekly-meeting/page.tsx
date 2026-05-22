@@ -25,10 +25,11 @@ import {
   History,
   Search,
   Filter as FilterIcon,
+  RotateCcw,
 } from "lucide-react";
+import { TrashBanner } from "@quikit/ui";
 import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
-import { runExport } from "@/lib/export/xlsx";
 import type { ExportSelection } from "@quikit/ui";
 import { Download } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -249,6 +250,9 @@ export default function WeeklyMeetingPage() {
   // Search + selection (KPI-style chrome).
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Trash view — when true, the list endpoint returns only soft-deleted rows
+  // and per-row / bulk actions switch from Delete to Restore.
+  const [viewTrash, setViewTrash] = useState(false);
 
   // Log drawer.
   const [logsFor, setLogsFor] = useState<{ id: string; label: string } | null>(
@@ -279,7 +283,10 @@ export default function WeeklyMeetingPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = filterClientId ? `?clientId=${filterClientId}` : "";
+      const qsParts: string[] = [];
+      if (filterClientId) qsParts.push(`clientId=${filterClientId}`);
+      if (viewTrash) qsParts.push("includeDeleted=true");
+      const qs = qsParts.length ? `?${qsParts.join("&")}` : "";
       const [m, c] = await Promise.all([
         fetch(`/api/client-meetings/weekly-meetings${qs}`).then((r) =>
           r.json()
@@ -291,7 +298,7 @@ export default function WeeklyMeetingPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterClientId]);
+  }, [filterClientId, viewTrash]);
 
   useEffect(() => {
     refresh();
@@ -716,6 +723,43 @@ export default function WeeklyMeetingPage() {
     if ((await res.json()).success) refresh();
   }
 
+  async function restoreOne(id: string) {
+    const res = await fetch(`/api/client-meetings/weekly-meetings/${id}/restore`, {
+      method: "POST",
+    });
+    const json = await res.json();
+    if (json.success) {
+      toast.success("Weekly meeting restored");
+      refresh();
+    } else {
+      toast.error(json.error ?? "Failed to restore");
+    }
+  }
+
+  async function bulkRestore() {
+    if (!selectedIds.size) return;
+    const res = await fetch(`/api/client-meetings/weekly-meetings/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selectedIds] }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      toast.success(`Restored ${json.data?.restored ?? 0} meeting${json.data?.restored === 1 ? "" : "s"}`);
+      setSelectedIds(new Set());
+      refresh();
+    } else {
+      toast.error(json.error ?? "Failed to restore");
+    }
+  }
+
+  // Drop any stale selection whenever the user enters/exits trash mode so
+  // a "Delete N selected" / "Restore N selected" button doesn't carry over
+  // ids that aren't visible.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [viewTrash]);
+
   const isEdit = !!editing?.id;
   // Update tab is exposed in both Add and Edit. The grid handles the "no
   // client selected yet" case with an inline hint, so we don't gate the
@@ -781,7 +825,7 @@ export default function WeeklyMeetingPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selectedIds.size > 0 && canDelete && (
+          {selectedIds.size > 0 && canDelete && !viewTrash && (
             <button
               onClick={bulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors"
@@ -790,6 +834,28 @@ export default function WeeklyMeetingPage() {
               Delete {selectedIds.size} selected
             </button>
           )}
+          {selectedIds.size > 0 && viewTrash && (
+            <button
+              onClick={bulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Restore {selectedIds.size} selected
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setViewTrash((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-md transition-colors ${
+              viewTrash
+                ? "bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100"
+                : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+            title={viewTrash ? "Exit Trash" : "View Trash"}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {viewTrash ? "Exit Trash" : "View Trash"}
+          </button>
 
           {/* Search */}
           <div className="relative">
@@ -833,13 +899,18 @@ export default function WeeklyMeetingPage() {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden p-6 min-h-0">
+        {viewTrash && (
+          <div className="mb-3">
+            <TrashBanner count={rows.length} onExit={() => setViewTrash(false)} />
+          </div>
+        )}
         {loading ? (
           <p className="text-sm text-gray-500">Loading…</p>
         ) : rows.length === 0 ? (
           <EmptyState
             icon={CalendarDays}
-            title="No weekly meetings yet"
-            message="Click Add to record your first weekly meeting."
+            title={viewTrash ? "Trash is empty" : "No weekly meetings yet"}
+            message={viewTrash ? "Deleted weekly meetings will appear here." : "Click Add to record your first weekly meeting."}
           />
         ) : (
           <div className="flex-1 flex flex-col min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -1050,18 +1121,30 @@ export default function WeeklyMeetingPage() {
                       {r.segmentTime7 || "—"}
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => openEdit(r)}
-                        className="text-gray-400 hover:text-blue-500 p-1"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => remove(r.id)}
-                        className="text-gray-400 hover:text-red-500 p-1"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {viewTrash ? (
+                        <button
+                          onClick={() => restoreOne(r.id)}
+                          className="text-gray-400 hover:text-green-600 p-1"
+                          title="Restore"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => openEdit(r)}
+                            className="text-gray-400 hover:text-blue-500 p-1"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => remove(r.id)}
+                            className="text-gray-400 hover:text-red-500 p-1"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1469,47 +1552,35 @@ export default function WeeklyMeetingPage() {
           clients={clients}
           defaultClientId={filterClientId || null}
           onSubmit={async ({ from, to, clientId }: ExportRange) => {
-            // Fetch weekly meetings in the chosen client + date window.
-            const qs = new URLSearchParams();
-            if (clientId) qs.set("clientId", clientId);
-            qs.set("from", from);
-            qs.set("to", to);
-            const res = await fetch(`/api/client-meetings/weekly-meetings?${qs.toString()}`);
-            const json = await res.json();
-            const data: MeetingRow[] = json.success ? (json.data as MeetingRow[]) : [];
-
-            const columns = [
-              { key: "meetingDate",            label: "Meeting Date",      value: (r: MeetingRow) => r.meetingDate.slice(0, 10) },
-              { key: "clientName",             label: "Client Name",       value: (r: MeetingRow) => r.clientName },
-              { key: "callStatus",             label: "Call Status",       value: (r: MeetingRow) => r.callStatus },
-              { key: "absentMembers",          label: "Absent Members",    value: (r: MeetingRow) => r.absentClientMemberNames.join(", ") },
-              { key: "dashboardNAMembers",     label: "Weekly Dashboard NA", value: (r: MeetingRow) => r.dashboardNAClientMemberNames.join(", ") },
-              { key: "actualStartTime",        label: "Actual Start Time", value: (r: MeetingRow) => r.actualStartTime ?? "" },
-              { key: "actualEndTime",          label: "Actual End Time",   value: (r: MeetingRow) => r.actualEndTime ?? "" },
-              { key: "goodNewsSharing",        label: "Good News Sharing", value: (r: MeetingRow) => r.goodNewsSharing },
-              { key: "goodNewsSharingTime",    label: "Good News Sharing Time", value: (r: MeetingRow) => r.segmentTime1 ?? "" },
-              { key: "kpDashboard",            label: "K&P dashboard",     value: (r: MeetingRow) => r.kpDashboard },
-              { key: "kpDashboardTime",        label: "K&P dashboard Time", value: (r: MeetingRow) => r.segmentTime2 ?? "" },
-              { key: "gaps",                   label: "GAPS",              value: (r: MeetingRow) => r.gaps },
-              { key: "gapsTime",               label: "GAPS Time",         value: (r: MeetingRow) => r.segmentTime3 ?? "" },
-              { key: "www",                    label: "WWW",               value: (r: MeetingRow) => r.www },
-              { key: "wwwTime",                label: "WWW Time",          value: (r: MeetingRow) => r.segmentTime4 ?? "" },
-              { key: "feedback",               label: "Customer/Employee Feedback", value: (r: MeetingRow) => r.feedback },
-              { key: "feedbackTime",           label: "Customer/Employee Feedback Time", value: (r: MeetingRow) => r.segmentTime5 ?? "" },
-              { key: "collectiveIntelligence", label: "Collective Intelligence", value: (r: MeetingRow) => r.collectiveIntelligence },
-              { key: "ciTime",                 label: "Collective Intelligence Time", value: (r: MeetingRow) => r.segmentTime6 ?? "" },
-              { key: "opspReview",             label: "OPSP Review",       value: (r: MeetingRow) => r.opspReview },
-              { key: "opspReviewTime",         label: "OPSP Review Time",  value: (r: MeetingRow) => r.segmentTime7 ?? "" },
-            ];
-
-            await runExport<MeetingRow>({
-              selection: { rowScope: "all", columnKeys: columns.map((c) => c.key) },
-              columns,
-              pageRows: data,
-              fetchFiltered: async () => data,
-              fetchAll: async () => data,
-              filename: `WeeklyMeeting_${from}_${to}${clientId ? "" : "_all-clients"}`,
+            if (!clientId) {
+              toast.error("Please select a client to export.");
+              return;
+            }
+            // Backend builds the XLSX (with header block, member counts,
+            // and Notes columns). We just stream the blob and trigger a
+            // browser download.
+            const res = await fetch("/api/client-meetings/export/weekly-detail", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ clientId, from, to }),
             });
+            if (!res.ok) {
+              const errJson = await res.json().catch(() => null);
+              toast.error(errJson?.error ?? "Failed to export weekly meetings");
+              return;
+            }
+            const blob = await res.blob();
+            const disposition = res.headers.get("Content-Disposition") ?? "";
+            const match = /filename="([^"]+)"/.exec(disposition);
+            const filename = match?.[1] ?? `WeeklyMeetingExport_${from}_to_${to}.xlsx`;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
           }}
         />
       </div>

@@ -64,15 +64,23 @@ export function useCreateKPI() {
 }
 
 // Update KPI
-export function useUpdateKPI(id: string) {
+//
+// `skipListInvalidate` lets a caller that already drives its own list refetch
+// (e.g. LogModal calling parent's `onRefresh` after a multi-step save)
+// suppress the automatic list invalidation so the same `kpi?page=...` GET
+// doesn't fire multiple times per Save click. Detail + dashboard are still
+// invalidated because those are off-screen during the save and need to stay
+// fresh.
+export function useUpdateKPI(id: string, options?: { skipListInvalidate?: boolean }) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (input: Partial<UpdateKPIInput>) => kpiService.updateKPI(id, input),
     onSuccess: () => {
-      // Invalidate specific KPI and lists
       queryClient.invalidateQueries({ queryKey: kpiKeys.detail(id) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      if (!options?.skipListInvalidate) {
+        queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      }
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
@@ -86,6 +94,44 @@ export function useDeleteKPI() {
     mutationFn: (id: string) => kpiService.deleteKPI(id),
     onSuccess: () => {
       // Invalidate all KPI queries
+      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Restore KPI — undo soft-delete for a single row.
+export function useRestoreKPI() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/kpi/${id}/restore`, { method: "POST" });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to restore KPI");
+      return json.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Bulk restore KPIs — undo soft-delete in batch.
+export function useBulkRestoreKPI() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch(`/api/kpi/bulk-restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to restore KPIs");
+      return (json.data ?? { restored: 0 }) as { restored: number };
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: kpiKeys.all });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
@@ -122,7 +168,12 @@ export function useUpdateWeeklyValue(kpiId: string) {
 
 // Batch update weekly values — one network call per Save click. Same cache
 // invalidation as the single-week variant.
-export function useUpdateWeeklyValuesBatch(kpiId: string) {
+//
+// See `useUpdateKPI` above for the rationale behind `skipListInvalidate`.
+export function useUpdateWeeklyValuesBatch(
+  kpiId: string,
+  options?: { skipListInvalidate?: boolean }
+) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -131,7 +182,9 @@ export function useUpdateWeeklyValuesBatch(kpiId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
       queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      if (!options?.skipListInvalidate) {
+        queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      }
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });

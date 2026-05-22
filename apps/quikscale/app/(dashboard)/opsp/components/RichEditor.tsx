@@ -35,7 +35,9 @@ import {
 
 /* ── Basic inputs ── */
 
-/** Counter pill — bottom-right "remaining/limit" indicator. Red when at/over limit. */
+/** Counter pill — bottom-right "remaining/limit" indicator. Red when at/over limit.
+ * White background + rounded padding so it never visually collides with long
+ * wrapped content (e.g. URL-shaped strings with no spaces in Sandbox). */
 function CharCounter({ used, max }: { used: number; max: number }) {
   const remaining = max - used;
   const danger = remaining <= 0;
@@ -45,6 +47,7 @@ function CharCounter({ used, max }: { used: number; max: number }) {
       aria-live="polite"
       className={cn(
         "pointer-events-none absolute bottom-1 right-2 text-[10px] tabular-nums select-none",
+        "bg-white/90 px-1 rounded",
         danger ? "text-red-600 font-semibold" : warn ? "text-amber-600" : "text-gray-400",
       )}
     >
@@ -118,7 +121,7 @@ export function FTextarea({
       maxLength={maxLength}
       className={cn(
         "w-full border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 resize-none bg-white",
-        maxLength ? "pb-5" : "",
+        maxLength ? "pb-6" : "",
         className,
       )}
     />

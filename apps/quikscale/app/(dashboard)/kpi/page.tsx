@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import { useKPIs, useDeleteKPI } from "@/lib/hooks/useKPI";
+import { useKPIs, useDeleteKPI, useBulkRestoreKPI } from "@/lib/hooks/useKPI";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -138,6 +138,7 @@ export default function IndividualKPIPage() {
 
   // Bulk delete
   const deleteKPI = useDeleteKPI();
+  const bulkRestoreKPI = useBulkRestoreKPI();
   const [selectedKPIIds, setSelectedKPIIds] = useState<Set<string>>(new Set());
   const [clearSelectionTrigger, setClearSelectionTrigger] = useState(0);
 
@@ -146,6 +147,13 @@ export default function IndividualKPIPage() {
   async function handleBulkDelete() {
     if (!selectedKPIIds.size) return;
     await Promise.all([...selectedKPIIds].map(id => deleteKPI.mutateAsync(id)));
+    setClearSelectionTrigger(n => n + 1);
+    refetch();
+  }
+
+  async function handleBulkRestore() {
+    if (!selectedKPIIds.size) return;
+    await bulkRestoreKPI.mutateAsync([...selectedKPIIds]);
     setClearSelectionTrigger(n => n + 1);
     refetch();
   }
@@ -235,8 +243,8 @@ export default function IndividualKPIPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Bulk delete */}
-          {canDelete && selectedKPIIds.size > 0 && (
+          {/* Bulk delete — active list only */}
+          {canDelete && selectedKPIIds.size > 0 && !viewTrash && (
             <button
               onClick={handleBulkDelete}
               disabled={deleteKPI.isPending}
@@ -253,6 +261,27 @@ export default function IndividualKPIPage() {
                 </svg>
               )}
               Delete {selectedKPIIds.size} selected
+            </button>
+          )}
+
+          {/* Bulk restore — trash view only */}
+          {canDelete && selectedKPIIds.size > 0 && viewTrash && (
+            <button
+              onClick={handleBulkRestore}
+              disabled={bulkRestoreKPI.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 disabled:opacity-50 transition-colors"
+            >
+              {bulkRestoreKPI.isPending ? (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+                </svg>
+              )}
+              Restore {selectedKPIIds.size} selected
             </button>
           )}
 

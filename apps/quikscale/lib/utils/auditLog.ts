@@ -113,6 +113,10 @@ const MEETING_FIELD_LABELS: Record<string, string> = {
   opspReview: "OPSP review",
   notesKPDashboard: "K&P dashboard notes",
   otherNotes: "Other notes",
+  absentUserIds: "Absent members",
+  dashboardNAUserIds: "Dashboard N/A members",
+  absentClientMemberIds: "Absent members",
+  dashboardNAClientMemberIds: "Dashboard N/A members",
   // Daily Huddle specific
   format1Status: "Yesterday's achievements",
   format2Status: "Today's priority",
@@ -174,12 +178,33 @@ export interface FriendlyAuditOptions {
   nameById?: (id: string) => string | undefined;
 }
 
+const MEMBER_LIST_KEYS = new Set([
+  "absentUserIds",
+  "dashboardNAUserIds",
+  "absentClientMemberIds",
+  "dashboardNAClientMemberIds",
+]);
+
 function fmtValue(
   key: string,
   v: unknown,
   opts: FriendlyAuditOptions = {},
 ): string {
   if (v === null || v === undefined || v === "") return "—";
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "—";
+    if (MEMBER_LIST_KEYS.has(key)) {
+      return v
+        .map((id) => {
+          if (typeof id !== "string") return String(id);
+          const resolved = opts.nameById?.(id);
+          if (resolved) return resolved;
+          return CUID_RE.test(id) ? `${id.slice(0, 6)}…${id.slice(-6)}` : id;
+        })
+        .join(", ");
+    }
+    return v.map((x) => fmtValue(key, x, opts)).join(", ");
+  }
   if (typeof v === "boolean") return v ? "Yes" : "No";
   if (typeof v === "number") return String(v);
   if (typeof v === "string") {

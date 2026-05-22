@@ -206,8 +206,15 @@ export default function ClientsPage() {
     if (!editing) return;
     const f = editing.form;
     if (!f.name.trim()) { setError("Client name is required"); return; }
-    if (f.dailyStartTime && f.dailyEndTime && f.dailyEndTime <= f.dailyStartTime) { setError("D/H end must be after start"); return; }
-    if (f.weeklyStartTime && f.weeklyEndTime && f.weeklyEndTime <= f.weeklyStartTime) { setError("Weekly end must be after start"); return; }
+    // All 4 planned meeting times are required — the export header block
+    // and the duration-followed stat depend on them. Server enforces the
+    // same rule via createClientSchema.
+    if (!f.dailyStartTime) { setError("Daily start time is required"); return; }
+    if (!f.dailyEndTime)   { setError("Daily end time is required"); return; }
+    if (!f.weeklyStartTime){ setError("Weekly start time is required"); return; }
+    if (!f.weeklyEndTime)  { setError("Weekly end time is required"); return; }
+    if (f.dailyEndTime <= f.dailyStartTime) { setError("D/H end must be after start"); return; }
+    if (f.weeklyEndTime <= f.weeklyStartTime) { setError("Weekly end must be after start"); return; }
 
     setSaving(true); setError("");
     try {
@@ -215,10 +222,10 @@ export default function ClientsPage() {
         name: f.name.trim(),
         description: f.description.trim() || null,
         isActive: f.isActive,
-        weeklyStartTime: f.weeklyStartTime || null,
-        weeklyEndTime:   f.weeklyEndTime || null,
-        dailyStartTime:  f.dailyStartTime || null,
-        dailyEndTime:    f.dailyEndTime || null,
+        weeklyStartTime: f.weeklyStartTime,
+        weeklyEndTime:   f.weeklyEndTime,
+        dailyStartTime:  f.dailyStartTime,
+        dailyEndTime:    f.dailyEndTime,
         teamMemberIds:   f.teamMemberIds,
       };
       const url = editing.id ? `/api/client-meetings/clients/${editing.id}` : "/api/client-meetings/clients";
@@ -247,6 +254,22 @@ export default function ClientsPage() {
   }
   async function handleRestore(id: string) {
     await fetch(`/api/client-meetings/clients/${id}/restore`, { method: "POST" });
+    refresh();
+  }
+
+  async function handleBulkRestore() {
+    if (!selected.size) return;
+    const res = await fetch(`/api/client-meetings/clients/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected] }),
+    });
+    const json = await res.json().catch(() => ({ success: false }));
+    if (!json.success) {
+      // Fall back to per-row restore if bulk endpoint isn't available.
+      await Promise.all([...selected].map(id => handleRestore(id)));
+    }
+    setSelected(new Set());
     refresh();
   }
 
@@ -315,10 +338,19 @@ export default function ClientsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selected.size > 0 && canDelete && (
+          {selected.size > 0 && canDelete && !viewTrash && (
             <button onClick={handleBulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
+            </button>
+          )}
+          {selected.size > 0 && canDelete && viewTrash && (
+            <button onClick={handleBulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+              </svg>
+              Restore {selected.size} selected
             </button>
           )}
 

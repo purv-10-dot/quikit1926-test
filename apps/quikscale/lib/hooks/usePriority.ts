@@ -46,6 +46,8 @@ export function usePriorities(year: number, quarter: string, sort?: string | nul
 export const useCreatePriority = priority.useCreate;
 export const useUpdatePriority = priority.useUpdate;
 export const useDeletePriority = priority.useDelete;
+export const useRestorePriority = priority.useRestore;
+export const useBulkRestorePriority = priority.useBulkRestore;
 
 /** Change-history log for a priority (AuditLog rows). */
 export function usePriorityLogs(priorityId: string) {

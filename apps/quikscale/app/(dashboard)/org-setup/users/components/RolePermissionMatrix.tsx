@@ -24,6 +24,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, Save, Undo2, Shield, Info, Pencil, Check, X } from "lucide-react";
 import {
   PERMISSION_TREE,
@@ -128,6 +129,7 @@ export function RolePermissionMatrix({
   /** Notify parent (RolesTab) so the left rail refetches with the new name. */
   onRenamed?: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [role, setRole] = useState<RoleDetail | null>(null);
   const [grants, setGrants] = useState<Set<string>>(new Set());
   const [savedGrants, setSavedGrants] = useState<Set<string>>(new Set());
@@ -294,6 +296,9 @@ export function RolePermissionMatrix({
         return;
       }
       setSavedGrants(new Set(grants));
+      // Invalidate the client-side permission cache so consumers (OPSP History,
+      // sidebar visibility, etc.) reflect the new grants without a full reload.
+      await queryClient.invalidateQueries({ queryKey: ["me-permissions"] });
     } catch {
       setError("Network error saving");
     } finally {

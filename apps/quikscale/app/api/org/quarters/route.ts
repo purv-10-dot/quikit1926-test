@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { generateQuartersSchema } from "@/lib/schemas/quarterSchema";
 import { addDays, generateQuarterDates } from "@/lib/utils/quarterGen";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { fyHasData, fyLabel } from "@/lib/api/quartersFyHasData";
 
 // Org resolution + auth + the orgSetup.quarters module gate now come from
 // the shared wrapper (same as ../[id]/route.ts), so `orgId` is the org the
@@ -113,17 +114,11 @@ export const GET = withOrgAuth(async ({ orgId }, request: NextRequest) => {
 
   // Determine which fiscal years are "locked" — i.e. have KPI, Priority, or
   // OPSP data. Quarters for locked years cannot be deleted or have their
-  // start date changed to avoid orphaning existing records.
+  // start date changed to avoid orphaning existing records. The same
+  // `fyHasData` helper is used by PUT/DELETE so policy stays in one place.
   const realYears = availableYears.filter(y => y !== futureYearAvailable);
   const dataChecks = await Promise.all(
-    realYears.map(async (year) => {
-      const [kpiCount, priorityCount, opspCount] = await Promise.all([
-        db.kPI.count({ where: { orgId, year, deletedAt: null } }),
-        db.priority.count({ where: { orgId, year, deletedAt: null } }),
-        db.oPSPData.count({ where: { orgId, year } }),
-      ]);
-      return { year, hasData: kpiCount > 0 || priorityCount > 0 || opspCount > 0 };
-    })
+    realYears.map(async (year) => ({ year, hasData: await fyHasData(orgId, year) }))
   );
   const hasDataByYear: Record<number, boolean> = Object.fromEntries(
     dataChecks.map(({ year, hasData }) => [year, hasData])
@@ -265,6 +260,12 @@ export const DELETE = withOrgAuth(async ({ orgId }, request: NextRequest) => {
   const fiscalYear = parseInt(yearParam, 10);
   if (!Number.isFinite(fiscalYear))
     return NextResponse.json({ success: false, error: "Invalid fiscal year" }, { status: 400 });
+
+  if (await fyHasData(orgId, fiscalYear))
+    return NextResponse.json({
+      success: false,
+      error: `Fiscal year cannot be deleted — data exists for ${fyLabel(fiscalYear)}.`,
+    }, { status: 409 });
 
   const result = await db.quarterSetting.deleteMany({
     where: { orgId, fiscalYear },

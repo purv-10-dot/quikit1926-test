@@ -945,8 +945,13 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // open and edit those.
   const metadataReadOnly = !canUpdate;
 
-  const updateKPI = useUpdateKPI(kpi.id);
-  const updateWeeklyBatch = useUpdateWeeklyValuesBatch(kpi.id);
+  // Suppress the auto list-invalidation in both mutation hooks — the page
+  // already drives a single list refetch via `onRefresh()` after both
+  // requests complete. Without this, every Edit save triggered THREE
+  // identical `GET /api/kpi?page=...` requests (one per mutation +
+  // one explicit refetch).
+  const updateKPI = useUpdateKPI(kpi.id, { skipListInvalidate: true });
+  const updateWeeklyBatch = useUpdateWeeklyValuesBatch(kpi.id, { skipListInvalidate: true });
 
   // Edit form state (lifted up for unified save)
   const [editForm, setEditForm] = useState<EditFormState>(() => {
@@ -1282,7 +1287,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
 
         {/* Tab content. `<fieldset disabled>` natively disables every input,
             select, textarea and button inside when RBAC denies `update`. */}
-        <fieldset disabled={!canUpdate} className={`flex-1 overflow-y-auto px-6 py-5 ${!canUpdate ? "opacity-70" : ""}`}>
+        <fieldset disabled={!canUpdate} className={`flex-1 min-w-0 overflow-y-auto px-6 py-5 ${!canUpdate ? "opacity-70" : ""}`}>
           {!canUpdate && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-4">
               Read-only — your role doesn&apos;t grant update access on this KPI.

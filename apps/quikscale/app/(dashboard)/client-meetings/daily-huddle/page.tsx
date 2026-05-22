@@ -284,6 +284,17 @@ export default function DailyHuddlePage() {
     refresh();
   }
 
+  async function handleBulkRestore() {
+    if (!selected.size) return;
+    await fetch(`/api/client-meetings/daily-huddles/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected] }),
+    });
+    setSelected(new Set());
+    refresh();
+  }
+
   // Export column metadata.
   const moduleColumns = [
     { key: "meetingDate",            label: "Meeting Date" },
@@ -359,10 +370,16 @@ export default function DailyHuddlePage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selected.size > 0 && canDelete && (
+          {selected.size > 0 && canDelete && !viewTrash && (
             <button onClick={handleBulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
+            </button>
+          )}
+          {selected.size > 0 && canDelete && viewTrash && (
+            <button onClick={handleBulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors">
+              <RotateCcw className="h-3.5 w-3.5" /> Restore {selected.size} selected
             </button>
           )}
 
@@ -847,53 +864,35 @@ export default function DailyHuddlePage() {
         clients={clients}
         defaultClientId={filterClientId || null}
         onSubmit={async ({ from, to, clientId }: ExportRange) => {
-          // 1) Fetch the rows for the chosen From / To / Client window.
-          const qs = new URLSearchParams();
-          if (clientId) qs.set("clientId", clientId);
-          qs.set("from", from);
-          qs.set("to", to);
-          if (viewTrash) qs.set("includeDeleted", "true");
-          const res = await fetch(`/api/client-meetings/daily-huddles?${qs.toString()}`);
-          const json = await res.json();
-          const data: HuddleRow[] = json.success ? (json.data as HuddleRow[]) : [];
-
-          // 2) Build columns → cell mapping (mirrors handleExport's mapping;
-          //    kept inline so this modal owns its own export contract).
-          const columns = moduleColumns
-            .filter((c) => visibleColKeys.includes(c.key))
-            .map((c) => ({
-              key: c.key,
-              label: c.label,
-              value: (r: HuddleRow) => {
-                switch (c.key) {
-                  case "meetingDate":            return fmtDateShort(r.meetingDate);
-                  case "client":                 return r.clientName;
-                  case "callStatus":             return statusLabel(r.callStatus);
-                  case "absentMembers":          return r.absentTeamMemberNames.join(", ");
-                  case "actualStartTime":        return r.actualStartTime ?? "";
-                  case "actualEndTime":          return r.actualEndTime ?? "";
-                  case "yesterdaysAchievements": return r.yesterdaysAchievements ? "YES" : "NO";
-                  case "todaysPriority":         return r.todaysPriority ? "YES" : "NO";
-                  case "stuckIssues":            return r.stuckIssues ? "YES" : "NO";
-                  case "notesKPDashboard":       return r.notesKPDashboard ?? "";
-                  case "otherNotes":             return r.otherNotes ?? "";
-                  case "createdBy":              return r.createdByName;
-                  case "updatedBy":              return r.updatedByName ?? "";
-                  case "createdAt":              return fmtDateShort(r.createdAt);
-                  case "updatedAt":              return fmtDateShort(r.updatedAt);
-                  default:                       return "";
-                }
-              },
-            }));
-
-          await runExport<HuddleRow>({
-            selection: { rowScope: "all", columnKeys: visibleColKeys },
-            columns,
-            pageRows: data,
-            fetchFiltered: async () => data,
-            fetchAll: async () => data,
-            filename: `DailyHuddle_${from}_${to}${clientId ? "" : "_all-clients"}`,
+          if (!clientId) {
+            toast.error("Please select a client to export.");
+            return;
+          }
+          // Backend builds the XLSX (with header block, member counts,
+          // and Notes columns). We just stream the blob and trigger a
+          // browser download.
+          const res = await fetch("/api/client-meetings/export/daily-detail", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ clientId, from, to }),
           });
+          if (!res.ok) {
+            const errJson = await res.json().catch(() => null);
+            toast.error(errJson?.error ?? "Failed to export daily huddles");
+            return;
+          }
+          const blob = await res.blob();
+          const disposition = res.headers.get("Content-Disposition") ?? "";
+          const match = /filename="([^"]+)"/.exec(disposition);
+          const filename = match?.[1] ?? `DailyHuddleExport_${from}_to_${to}.xlsx`;
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
         }}
       />
     </div>
