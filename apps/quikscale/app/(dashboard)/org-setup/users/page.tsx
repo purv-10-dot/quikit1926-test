@@ -21,6 +21,7 @@ import {
   RightPanelSubmitButton,
   Pagination,
 } from "@quikit/ui";
+import { DEFAULT_INVITE_PASSWORD } from "@quikit/shared";
 import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -475,8 +476,8 @@ function UserPanel({
       return;
     }
     // Native invites no longer require a typed password — when left blank,
-    // the server seeds the system default (Quikit2026) and emails it to the
-    // invitee, matching the QuikIT super-admin onboarding flow.
+    // the server seeds the system DEFAULT_INVITE_PASSWORD and emails it to
+    // the invitee, matching the QuikIT super-admin onboarding flow.
 
     setSaving(true);
     setError("");
@@ -492,7 +493,7 @@ function UserPanel({
       };
       // Only attach password when the admin actually typed one. An empty
       // string would fail Zod's min(8) on the server. For new Native users
-      // who leave it blank, the server seeds the Quikit2026 default.
+      // who leave it blank, the server seeds DEFAULT_INVITE_PASSWORD.
       if (form.password.trim()) payload.password = form.password.trim();
       if (editUser) payload.status = form.status;
       if (!editUser && form.linkExistingUserId) payload.linkExistingUserId = form.linkExistingUserId;
@@ -775,9 +776,9 @@ function UserPanel({
       )}
 
       {/* Password — only shown in Edit mode (admin can change an existing user's
-          password). For new users, Native invitees receive the system default
-          Quikit2026 via email and reset it on first sign-in; SSO invitees never
-          have a password. Mirrors the super-admin first-Org-Admin flow. */}
+          password). For new users, Native invitees receive DEFAULT_INVITE_PASSWORD
+          via email and reset it on first sign-in; SSO invitees never have a
+          password. Mirrors the super-admin first-Org-Admin flow. */}
       {editUser && !form.linkExistingUserId && (
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">
@@ -800,7 +801,7 @@ function UserPanel({
       {!editUser && !form.linkExistingUserId && form.invitationMethod === "native" && (
         <div className="bg-accent-50 border border-accent-200 rounded-lg px-3 py-2 text-[11px] text-accent-800 leading-snug">
           <strong className="font-semibold">Temporary password will be emailed.</strong>{" "}
-          The user will receive <span className="font-mono font-semibold">Quikit2026</span> at{" "}
+          The user will receive <span className="font-mono font-semibold">{DEFAULT_INVITE_PASSWORD}</span> at{" "}
           <span className="font-medium">{form.email || "their email"}</span> and be prompted
           to set a new password on first sign-in.
         </div>
