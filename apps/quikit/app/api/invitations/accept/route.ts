@@ -3,8 +3,6 @@ import type { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import {
-  DEFAULT_INVITE_PASSWORD,
-  DEFAULT_RESET_PASSWORD,
   INVITE_METHOD,
   MEMBERSHIP_ROLES,
 } from "@quikit/shared";
@@ -317,8 +315,5 @@ function checkPasswordPolicy(pw: string): string | null {
   if (!/[0-9]/.test(pw)) return "Password must contain at least one number.";
   if (!/[^A-Za-z0-9]/.test(pw))
     return "Password must contain at least one special character.";
-  if (pw === DEFAULT_INVITE_PASSWORD || pw === DEFAULT_RESET_PASSWORD) {
-    return "New password cannot be the same as the default password.";
-  }
   return null;
 }

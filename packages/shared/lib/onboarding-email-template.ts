@@ -12,7 +12,7 @@
  *  - Native Email Invitation (FRD §4.2) — credentials + Set-Password link.
  */
 
-import { DEFAULT_INVITE_PASSWORD, INVITE_METHOD, SSO_PROVIDER } from "./constants";
+import { INVITE_METHOD, SSO_PROVIDER } from "./constants";
 import type { InviteMethod, SsoProvider } from "./constants";
 
 export interface RenderInvitationParams {
@@ -34,11 +34,12 @@ export interface RenderInvitationParams {
   /** When true, subject + heading say "Reminder" instead of first-time wording. */
   isReminder?: boolean;
   /**
-   * Override the temporary password printed in the Native-Email body. The
-   * self-service forgot-password flow uses DEFAULT_RESET_PASSWORD instead of
-   * DEFAULT_INVITE_PASSWORD; every other caller (Super Admin → new org,
-   * Org Admin invites, in-app invites) leaves this undefined to keep the
-   * invite default.
+   * Plaintext temporary password generated via `generateTempPassword()`.
+   * Required for new-user native invites + self-service resets — the
+   * "Your sign-in details" block in the email renders this verbatim.
+   * Omit for reminder emails to existing users + SSO invites where no
+   * password is being issued; the credentials block is suppressed when
+   * this field is absent so reminders don't leak a stale fallback.
    */
   tempPassword?: string;
 }
@@ -82,7 +83,7 @@ export function renderInvitationEmail(params: RenderInvitationParams): { subject
     isReminder,
     tempPassword,
   } = params;
-  const displayPassword = tempPassword ?? DEFAULT_INVITE_PASSWORD;
+  const displayPassword = tempPassword;
 
   const safeOrg = escapeHtml(orgName);
   const safeFirst = escapeHtml(firstName);
@@ -167,14 +168,16 @@ export function renderInvitationEmail(params: RenderInvitationParams): { subject
         ${appListHtml(appNames)}
         <div style="margin:0 0 16px;padding:16px;background:#f1f5f9;border-radius:8px;">
           <p style="margin:0 0 6px;color:#0f172a;font-size:14px;font-weight:600;">Your login details</p>
-          <p style="margin:0 0 4px;color:#0f172a;font-size:14px;">Email: <strong>${escapeHtml(to)}</strong></p>
-          <p style="margin:0;color:#0f172a;font-size:14px;">Temporary password: <strong>${escapeHtml(displayPassword)}</strong></p>
+          <p style="margin:${displayPassword ? "0 0 4px" : "0"};color:#0f172a;font-size:14px;">Email: <strong>${escapeHtml(to)}</strong></p>
+          ${displayPassword
+            ? `<p style="margin:0;color:#0f172a;font-size:14px;">Temporary password: <strong>${escapeHtml(displayPassword)}</strong></p>`
+            : ""}
         </div>
         <p style="margin:0 0 8px;color:#0f172a;font-size:14px;font-weight:600;">Getting started:</p>
         <ol style="margin:0 0 16px;padding-left:20px;color:#0f172a;font-size:14px;line-height:1.6;">
           <li>Click the link below.</li>
-          <li>Enter your temporary password.</li>
-          <li>You will be prompted to set a new password (or skip to keep the default for now).</li>
+          ${displayPassword ? `<li>Enter your temporary password.</li>` : ""}
+          <li>You will be prompted to set a new password.</li>
           <li>Log in with your credentials.</li>
         </ol>
         <a href="${acceptUrl}" style="display:inline-block;background:${accent};color:#ffffff;text-decoration:none;padding:12px 32px;border-radius:8px;font-size:15px;font-weight:500;">Set Up My Account</a>

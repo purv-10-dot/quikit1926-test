@@ -283,8 +283,8 @@ export const SignInComponent = ({
 
   const startForgotPassword = async () => {
     // The backend `/api/auth/forgot-password` resets the user's password
-    // to DEFAULT_RESET_PASSWORD (the temporary password emailed to them)
-    // and flips `mustChangePassword = true`. We don't need to verify the
+    // to a freshly-generated temporary password (emailed to them) and
+    // flips `mustChangePassword = true`. We don't need to verify the
     // temp password against an OTP store — it's just their current
     // password now. So the UI flow becomes:
     //
@@ -364,8 +364,7 @@ export const SignInComponent = ({
    * Temporary-password reset flow.
    *
    * After `/api/auth/forgot-password` runs the user's password IS the
-   * `DEFAULT_RESET_PASSWORD` (emailed to them as the "temporary
-   * password"). We:
+   * freshly-generated temporary password (emailed to them). We:
    *   1. Validate the 3 fields client-side (incl. password policy: 8+ chars,
    *      one uppercase, one number, one special).
    *   2. NextAuth credentials sign-in with the temp password — authenticates
@@ -1052,8 +1051,8 @@ export const SignInComponent = ({
             {/* ════════════ RESET PASSWORD STEP (3-field) ════════════ */}
             {/*
               Reached after the user submits their email on the
-              `forgot-email` step. Backend has just reset the password to
-              DEFAULT_RESET_PASSWORD and emailed it. User types:
+              `forgot-email` step. Backend has just reset the password to a
+              freshly-generated temporary password and emailed it. User types:
                 - that temporary password
                 - their chosen new password
                 - confirmation

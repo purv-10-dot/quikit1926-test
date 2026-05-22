@@ -6,7 +6,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { sendOnboardingInvitationEmail } from "@/lib/email";
 import { rateLimitAsync, getClientIp } from "@quikit/shared/rateLimit";
-import { DEFAULT_RESET_PASSWORD, INVITE_METHOD } from "@quikit/shared";
+import { INVITE_METHOD } from "@quikit/shared";
+import { generateTempPassword } from "@quikit/shared/temp-password";
 import { getRedis } from "@quikit/redis";
 
 /**
@@ -19,7 +20,7 @@ import { getRedis } from "@quikit/redis";
  * collision).
  *
  * Flow:
- *   1. Reset the user's `password` to bcrypt(DEFAULT_INVITE_PASSWORD) and
+ *   1. Reset the user's `password` to bcrypt(generateTempPassword()) and
  *      flip `mustChangePassword = true`.
  *   2. Mint a single-use token on the user's primary OrgMember row
  *      (`invitationToken` + `invitedAt`). Status is left unchanged so an
@@ -121,7 +122,8 @@ export async function POST(req: NextRequest) {
     }
 
     const token = crypto.randomBytes(24).toString("hex");
-    const hashedDefault = await bcrypt.hash(DEFAULT_RESET_PASSWORD, 10);
+    const tempPassword = generateTempPassword();
+    const hashedDefault = await bcrypt.hash(tempPassword, 10);
 
     await db.$transaction([
       db.user.update({
@@ -169,7 +171,7 @@ export async function POST(req: NextRequest) {
         token,
         inviteMethod: INVITE_METHOD.NATIVE,
         isReminder: true,
-        tempPassword: DEFAULT_RESET_PASSWORD,
+        tempPassword,
       });
     } catch (err) {
       console.error("[forgot-password] email send failed:", err);

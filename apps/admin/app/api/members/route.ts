@@ -8,13 +8,13 @@ import { db } from "@/lib/db";
 import { sendOnboardingInvitationEmail } from "@/lib/email";
 import { assignNamedRolesForAccess } from "@/lib/roles-helpers";
 import {
-  DEFAULT_INVITE_PASSWORD,
   INVITE_METHOD,
   MEMBERSHIP_ROLE_LABELS,
   MEMBERSHIP_ROLES,
   type SsoProvider,
 } from "@quikit/shared";
 import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
+import { generateTempPassword } from "@quikit/shared/temp-password";
 
 const inviteSchema = z.object({
   name: z.string().min(2, "Full name is required").max(100),
@@ -140,31 +140,42 @@ export const POST = withAdminAuth(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Organisation not found" }, { status: 404 });
   }
 
-  // Create the User if new. Native seeds with DEFAULT_INVITE_PASSWORD +
-  // mustChangePassword so the Set-Password screen fires on first login
-  // (FR-SA-009 / BR-008). SSO users get no password.
+  // Create the User if new. Native seeds with a freshly-generated friendly
+  // temporary password + mustChangePassword so the Set-Password screen fires
+  // on first login (FR-SA-009 / BR-008). SSO users get no password. The
+  // plaintext is emailed to the invitee AND returned in this API response
+  // so the inviting admin can display it once in their UI.
   let user = existingUser;
+  let tempPassword: string | null = null;
+  if (isNative) {
+    tempPassword = generateTempPassword();
+  }
   if (!user) {
     user = await db.user.create({
       data: {
         email,
         firstName,
         lastName,
-        password: isNative ? await bcrypt.hash(DEFAULT_INVITE_PASSWORD, 10) : null,
+        password: isNative && tempPassword ? await bcrypt.hash(tempPassword, 10) : null,
         mustChangePassword: isNative,
       },
       select: { id: true, firstName: true, lastName: true, email: true, password: true },
     });
-  } else if (isNative && !user.password) {
+  } else if (isNative && !user.password && tempPassword) {
     // Existing user re-invited via native flow with no password yet — seed
-    // the default password so they can complete the Set-Password screen.
+    // the freshly-generated temp password so they can complete the
+    // Set-Password screen.
     await db.user.update({
       where: { id: user.id },
       data: {
-        password: await bcrypt.hash(DEFAULT_INVITE_PASSWORD, 10),
+        password: await bcrypt.hash(tempPassword, 10),
         mustChangePassword: true,
       },
     });
+  } else if (isNative && user.password) {
+    // Existing user with a password — don't overwrite. Drop the temp
+    // password so it isn't surfaced or emailed.
+    tempPassword = null;
   }
 
   // Resolve appIds in parallel with the duplicate-membership check.
@@ -299,6 +310,7 @@ export const POST = withAdminAuth(async ({ orgId, userId }, req) => {
       token: invitationToken,
       inviteMethod,
       ssoProvider,
+      tempPassword: tempPassword ?? "",
     });
     if (!result.success) {
       console.error(
@@ -325,6 +337,10 @@ export const POST = withAdminAuth(async ({ orgId, userId }, req) => {
         inviteMethod,
         ssoProvider,
         status: "pending",
+        // Plaintext temp password — shown ONCE in the admin UI so the
+        // inviting admin can relay it manually if email delivery is delayed.
+        // Only present for native invites where we actually generated one.
+        tempPassword: tempPassword ?? undefined,
       },
     },
     { status: 201 },

@@ -3,24 +3,19 @@ import { NextResponse } from "next/server";
 import { verifyJWT } from "@quikit/auth/jwt";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { DEFAULT_INVITE_PASSWORD } from "@quikit/shared";
 
 /**
  * FRD FR-SA-009 / FR-SA-010 / BR-008 — Set Password API.
  *
  * Used by the /set-password screen, which is shown ONCE after first login
- * for users created via the native invite flow. Two payload shapes:
- *
- *   { skip: true }
- *     User clicked "Skip for now". Keep the system default password but
- *     clear `mustChangePassword` so they're not bounced back here on the
- *     next login (BR-008: "shown only once").
+ * for users created via the native invite flow. Always expects:
  *
  *   { currentPassword, newPassword, confirmPassword }
- *     User filled the form. Validate the current password against the
- *     stored hash (BRV-008 wants Quikit2026 specifically, but we use the
- *     hash so a previously-changed password is also accepted), enforce
- *     password policy, hash, save, clear flag.
+ *
+ * The legacy `{ skip: true }` branch (which let users keep the temporary
+ * password) was removed when temp passwords became unique per-invite — a
+ * generated one-time password must never be kept as the user's standing
+ * credential.
  */
 export async function POST(req: NextRequest) {
   const token = await verifyJWT(req);
@@ -29,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { skip?: boolean; currentPassword?: string; newPassword?: string; confirmPassword?: string } = {};
+  let body: { currentPassword?: string; newPassword?: string; confirmPassword?: string } = {};
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -44,16 +39,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
   }
 
-  // ── Skip path (FR-SA-009) ───────────────────────────────────────────────
-  if (body.skip) {
-    await db.user.update({
-      where: { id: user.id },
-      data: { mustChangePassword: false },
-    });
-    return NextResponse.json({ success: true, skipped: true });
-  }
-
-  // ── Set-new-password path ───────────────────────────────────────────────
   const { currentPassword, newPassword, confirmPassword } = body;
 
   if (!currentPassword || !newPassword || !confirmPassword) {
@@ -72,9 +57,6 @@ export async function POST(req: NextRequest) {
   }
 
   // BRV-008 — current password must match the user's actual stored password.
-  // We use bcrypt rather than a literal Quikit2026 string compare so users
-  // who previously changed it via the in-app flow can still re-enter this
-  // route without re-issuing a password.
   if (!user.password) {
     return NextResponse.json(
       { success: false, error: "Account has no password set. Use Forgot Password." },
@@ -84,7 +66,7 @@ export async function POST(req: NextRequest) {
   const okCurrent = await bcrypt.compare(currentPassword, user.password);
   if (!okCurrent) {
     return NextResponse.json(
-      { success: false, error: "Incorrect password. Please enter your default password to proceed." },
+      { success: false, error: "Incorrect password. Please enter your current password to proceed." },
       { status: 400 }
     );
   }
@@ -109,8 +91,5 @@ function checkPasswordPolicy(pw: string): string | null {
   if (!/[A-Z]/.test(pw)) return "Password must contain at least one uppercase letter.";
   if (!/[0-9]/.test(pw)) return "Password must contain at least one number.";
   if (!/[^A-Za-z0-9]/.test(pw)) return "Password must contain at least one special character.";
-  if (pw === DEFAULT_INVITE_PASSWORD) {
-    return "New password cannot be the same as the default password.";
-  }
   return null;
 }

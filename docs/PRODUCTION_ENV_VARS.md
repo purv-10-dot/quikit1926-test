@@ -109,13 +109,13 @@ each app's own `CLAUDE.md` and `docs/13-app-ports-and-env.md`.
 2. **Forgot-password email link** — trigger a reset on prod and confirm the "Set Up My Account" URL in the email starts with the launcher's public origin (NOT a Vercel preview hostname, NOT localhost).
 3. **Marketing "Log in" CTA** — view source on the marketing landing; the `data-quikit-login` anchor's `href` must be the auth host's `/login`, not `quik-it-auth.vercel.app/login`.
 4. **Redis connectivity** — hit the launcher health endpoint or check Vercel logs for `[forgot-password] redis flag write failed` warnings.
-5. **Default passwords** — first-time invites land with `Quikit123`; self-service password resets land with `MoreYeahs@123`. The policy check rejects either value as a "new password".
+5. **Temporary passwords** — first-time invites and self-service password resets each generate a unique 12-char temp password via `generateTempPassword()` from `@quikit/shared/temp-password`. The plaintext is emailed to the user (and returned in the invite-create API response for admin UIs to display once); the database only stores the bcrypt hash.
 
 ---
 
 ## 6. What changed on 2026-05-20
 
-- **Default passwords split**: `DEFAULT_INVITE_PASSWORD = "Quikit123"` (invites), `DEFAULT_RESET_PASSWORD = "MoreYeahs@123"` (reset only). Both live in `packages/shared/lib/constants.ts`.
+- **Default passwords removed**: the previous `DEFAULT_INVITE_PASSWORD` / `DEFAULT_RESET_PASSWORD` constants are gone. Every invite and reset now generates a unique friendly 12-char temp password via `@quikit/shared/temp-password`. The plaintext is emailed to the user and returned once in the invite-create API response so admin UIs can show it. Old historical values (`Quikit123`, `MoreYeahs@123`) are no longer used anywhere.
 - **All previously-hardcoded prod URLs** (`https://quik-it-auth.vercel.app`, `https://quikit-marketing.vercel.app`) **were removed from runtime code** in `apps/auth`, `apps/quikit`, `apps/admin`. They are now driven entirely by the env vars listed above via `requireProdEnv`.
 - **CORS** for `/api/auth/forgot-password` (and siblings) is driven by `AUTH_CORS_ORIGINS` only — the previous hardcoded Vercel hostnames in the allow-list are gone.
-- **Forgot-password flow** is now same-origin to the launcher (no env var needed in the modal). The launcher hosts `POST /api/auth/forgot-password` which mints a single-use invitation token, sends the standard Native-Invite email with `MoreYeahs@123` as the temporary password, and lands the user on the same `/invitations/accept?token=…` screen used by first-time invites.
+- **Forgot-password flow** is now same-origin to the launcher (no env var needed in the modal). The launcher hosts `POST /api/auth/forgot-password` which mints a single-use invitation token, sends the standard Native-Invite email with a freshly-generated temporary password, and lands the user on the same `/invitations/accept?token=…` screen used by first-time invites.

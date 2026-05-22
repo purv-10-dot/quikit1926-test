@@ -17,7 +17,8 @@
     "./redisCache": "./lib/redisCache.ts",
     "./dateFormat": "./lib/dateFormat.ts",
     "./sso-domain-server": "./lib/sso-domain-server.ts",
-    "./login-url": "./lib/login-url.ts"
+    "./login-url": "./lib/login-url.ts",
+    "./temp-password": "./lib/temp-password.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
