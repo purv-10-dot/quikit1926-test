@@ -64,15 +64,23 @@ export function useCreateKPI() {
 }
 
 // Update KPI
-export function useUpdateKPI(id: string) {
+//
+// `skipListInvalidate` lets a caller that already drives its own list refetch
+// (e.g. LogModal calling parent's `onRefresh` after a multi-step save)
+// suppress the automatic list invalidation so the same `kpi?page=...` GET
+// doesn't fire multiple times per Save click. Detail + dashboard are still
+// invalidated because those are off-screen during the save and need to stay
+// fresh.
+export function useUpdateKPI(id: string, options?: { skipListInvalidate?: boolean }) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (input: Partial<UpdateKPIInput>) => kpiService.updateKPI(id, input),
     onSuccess: () => {
-      // Invalidate specific KPI and lists
       queryClient.invalidateQueries({ queryKey: kpiKeys.detail(id) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      if (!options?.skipListInvalidate) {
+        queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      }
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
@@ -160,7 +168,12 @@ export function useUpdateWeeklyValue(kpiId: string) {
 
 // Batch update weekly values — one network call per Save click. Same cache
 // invalidation as the single-week variant.
-export function useUpdateWeeklyValuesBatch(kpiId: string) {
+//
+// See `useUpdateKPI` above for the rationale behind `skipListInvalidate`.
+export function useUpdateWeeklyValuesBatch(
+  kpiId: string,
+  options?: { skipListInvalidate?: boolean }
+) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -169,7 +182,9 @@ export function useUpdateWeeklyValuesBatch(kpiId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: kpiKeys.weekly(kpiId) });
       queryClient.invalidateQueries({ queryKey: kpiKeys.detail(kpiId) });
-      queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      if (!options?.skipListInvalidate) {
+        queryClient.invalidateQueries({ queryKey: kpiKeys.lists() });
+      }
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });

@@ -945,8 +945,13 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // open and edit those.
   const metadataReadOnly = !canUpdate;
 
-  const updateKPI = useUpdateKPI(kpi.id);
-  const updateWeeklyBatch = useUpdateWeeklyValuesBatch(kpi.id);
+  // Suppress the auto list-invalidation in both mutation hooks — the page
+  // already drives a single list refetch via `onRefresh()` after both
+  // requests complete. Without this, every Edit save triggered THREE
+  // identical `GET /api/kpi?page=...` requests (one per mutation +
+  // one explicit refetch).
+  const updateKPI = useUpdateKPI(kpi.id, { skipListInvalidate: true });
+  const updateWeeklyBatch = useUpdateWeeklyValuesBatch(kpi.id, { skipListInvalidate: true });
 
   // Edit form state (lifted up for unified save)
   const [editForm, setEditForm] = useState<EditFormState>(() => {
