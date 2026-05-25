@@ -1,110 +1,202 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  X,
-  MoreHorizontal,
-  Link2,
-  ChevronDown,
-  Plus,
-} from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, MoreHorizontal, X } from "lucide-react";
+import { StyledSelect } from "@/app/(dashboard)/spaces/[id]/settings/user-management/_components/styled-select";
 
-type Role = "Administrator" | "Member" | "Viewer";
+interface ProjectRole {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
 
-interface InvitedPerson {
+interface SearchResult {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  avatar: string | null;
+  hasQuikTrackAccess: boolean;
+}
+
+interface ChipPerson {
   id: string;
   label: string;
-  /** When `email`, treat as an external invite; when `member`, the chip is
-   *  a tenant user we already know. The UI doesn't differentiate yet — kept
-   *  here so the future API call can route correctly. */
-  kind: "email" | "member";
+  kind: "email" | "existing-user";
+  userId?: string;
+  firstName?: string;
+  lastName?: string;
+  email: string;
 }
 
 /**
- * "Add people to <project>" invite modal — UI-only for now. Wires up:
- *  - typeahead input that converts emails / suggestions into pill chips
- *  - chip removal
- *  - role selector (Administrator / Member / Viewer)
- *  - external-source quick-add buttons (Google / Slack / Microsoft) — display only
- *  - Copy link footer action
- *  - Add submits the captured payload via `onSubmit` (parent decides what to do)
+ * "Add people to <project>" — centred modal, Jira-style multi-invite chips.
+ *
+ * Each chip submits through the same /api/org/users pipeline as the Add User
+ * drawer:
+ *   - existing-user chip → `linkExistingUserId` (no password, no email)
+ *   - plain-email chip   → new user creation; backend dispatches the
+ *                          invitation email (Native = temp password,
+ *                          SSO = first-sign-in flow)
+ *
+ * Constraints enforced for project-scoped invites:
+ *   - App role: omitted from payload → server uses org default (Member tier)
+ *   - Projects: `[{ projectId, projectRoleId? }]` — invitee is added to
+ *     ONLY this space; project role defaults to the space's seeded default
+ *     unless the inviter picked one.
  */
 export function AddPeopleModal({
+  projectId,
   projectName,
   onClose,
-  onSubmit,
 }: {
+  projectId: string;
   projectName: string;
   onClose: () => void;
-  onSubmit?: (payload: { invitees: InvitedPerson[]; role: Role }) => void;
 }) {
+  const qc = useQueryClient();
   const [input, setInput] = useState("");
-  const [invitees, setInvitees] = useState<InvitedPerson[]>([]);
-  const [role, setRole] = useState<Role>("Administrator");
-  const [roleOpen, setRoleOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [people, setPeople] = useState<ChipPerson[]>([]);
+  const [projectRoleId, setProjectRoleId] = useState("");
+  const [invitationMethod, setInvitationMethod] = useState<"native" | "sso">("native");
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const roleRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [showHits, setShowHits] = useState(false);
+  const [debounced, setDebounced] = useState("");
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Outside-click closes the role popover; Escape closes the whole modal.
   useEffect(() => {
-    function onDown(e: MouseEvent) {
-      if (roleOpen && roleRef.current && !roleRef.current.contains(e.target as Node)) {
-        setRoleOpen(false);
-      }
-    }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
-    document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [roleOpen, onClose]);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
-  function commitInput() {
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(input.trim()), 200);
+    return () => clearTimeout(t);
+  }, [input]);
+
+  const rolesQ = useQuery({
+    queryKey: ["quiktrack", "project-roles", projectId],
+    queryFn: async () => {
+      const r = await fetch(`/api/projects/${projectId}/roles`);
+      const j = await r.json();
+      return (j.data as ProjectRole[]) ?? [];
+    },
+  });
+
+  const searchQ = useQuery({
+    queryKey: ["quiktrack", "user-search", debounced],
+    queryFn: async () => {
+      const r = await fetch(`/api/users/search?q=${encodeURIComponent(debounced)}&limit=8`);
+      const j = await r.json();
+      return (j.data as SearchResult[]) ?? [];
+    },
+    enabled: debounced.length >= 2,
+  });
+
+  function commitTypedEmail() {
     const t = input.trim().replace(/[,;]\s*$/, "");
     if (!t) return;
-    // Naive split on commas so pasting a list works.
-    const parts = t
-      .split(/[,;]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    setInvitees((cur) => {
+    const parts = t.split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+    setPeople((cur) => {
       const next = [...cur];
       for (const p of parts) {
         const isEmail = /\S+@\S+\.\S+/.test(p);
-        if (next.some((x) => x.label.toLowerCase() === p.toLowerCase())) continue;
-        next.push({
-          id: `${isEmail ? "e" : "n"}:${p}`,
-          label: p,
-          kind: isEmail ? "email" : "email",
-        });
+        if (!isEmail) continue;
+        if (next.some((x) => x.email.toLowerCase() === p.toLowerCase())) continue;
+        next.push({ id: `e:${p}`, label: p, kind: "email", email: p });
       }
       return next;
     });
     setInput("");
+    setShowHits(false);
   }
 
-  function copyLink() {
-    if (typeof window === "undefined") return;
-    void navigator.clipboard?.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  function addExistingUser(h: SearchResult) {
+    if (h.hasQuikTrackAccess) return;
+    setPeople((cur) => {
+      if (cur.some((x) => x.userId === h.userId || x.email.toLowerCase() === h.email.toLowerCase())) return cur;
+      return [
+        ...cur,
+        {
+          id: `u:${h.userId}`,
+          label: `${h.firstName} ${h.lastName}`.trim() || h.email,
+          kind: "existing-user",
+          userId: h.userId,
+          firstName: h.firstName,
+          lastName: h.lastName,
+          email: h.email,
+        },
+      ];
+    });
+    setInput("");
+    setShowHits(false);
   }
 
-  function submit() {
-    onSubmit?.({ invitees, role });
-    onClose();
+  function removeChip(id: string) {
+    setPeople((cur) => cur.filter((x) => x.id !== id));
   }
 
-  const canSubmit = invitees.length > 0;
+  function deriveName(emailAddr: string): { firstName: string; lastName: string } {
+    const local = emailAddr.split("@")[0] ?? "User";
+    const parts = local.split(/[._-]+/).filter(Boolean);
+    const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s);
+    if (parts.length >= 2) return { firstName: cap(parts[0]), lastName: cap(parts.slice(1).join(" ")) };
+    return { firstName: cap(parts[0] ?? "User"), lastName: "—" };
+  }
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      const failures: string[] = [];
+      for (const p of people) {
+        const body: Record<string, unknown> = {
+          projects: [
+            { projectId, ...(projectRoleId ? { projectRoleId } : {}) },
+          ],
+        };
+        if (p.kind === "existing-user" && p.userId) {
+          body.firstName = p.firstName ?? "";
+          body.lastName = p.lastName ?? "—";
+          body.email = p.email;
+          body.linkExistingUserId = p.userId;
+        } else {
+          const { firstName, lastName } = deriveName(p.email);
+          body.firstName = firstName;
+          body.lastName = lastName;
+          body.email = p.email;
+          body.invitationMethod = invitationMethod;
+        }
+        const r = await fetch("/api/org/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (!r.ok) failures.push(`${p.email}: ${j.error ?? "Failed"}`);
+      }
+      if (failures.length) throw new Error(failures.join(" · "));
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["quiktrack", "project-members", projectId] });
+      qc.invalidateQueries({ queryKey: ["quiktrack", "org-users"] });
+      onClose();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const hits = (searchQ.data ?? []).filter(
+    (h) => !people.some((x) => x.userId === h.userId || x.email.toLowerCase() === h.email.toLowerCase()),
+  );
+  const canSubmit = people.length > 0 && !mut.isPending;
+  const roles = rolesQ.data ?? [];
 
   return (
     <div
@@ -112,7 +204,7 @@ export function AddPeopleModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-md shadow-xl w-full max-w-md p-5"
+        className="bg-white rounded-lg shadow-xl w-full max-w-md p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2 mb-4">
@@ -138,33 +230,18 @@ export function AddPeopleModal({
           </div>
         </div>
 
-        {/* Names or emails */}
-        <label className="block">
+        {/* Names or emails — chip input + typeahead */}
+        <div ref={wrapRef} className="relative">
           <span className="text-xs font-semibold text-gray-700 block mb-1">
             Names or emails <span className="text-red-500">*</span>
           </span>
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === ",") {
-                e.preventDefault();
-                commitInput();
-              }
-              if (e.key === "Backspace" && input === "" && invitees.length > 0) {
-                setInvitees((cur) => cur.slice(0, -1));
-              }
-            }}
-            onBlur={commitInput}
-            placeholder="e.g., Maria, maria@company.com"
-            className="w-full h-9 px-3 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
-        </label>
-
-        {invitees.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {invitees.map((p) => (
+          <div
+            className={`min-h-[36px] w-full px-2 py-1 flex flex-wrap items-center gap-1.5 border rounded-md bg-white ${
+              showHits ? "border-blue-400 ring-1 ring-blue-200" : "border-gray-300"
+            }`}
+            onClick={() => inputRef.current?.focus()}
+          >
+            {people.map((p) => (
               <span
                 key={p.id}
                 className="inline-flex items-center gap-1.5 h-6 pl-1 pr-1.5 text-xs bg-gray-100 rounded-full text-gray-800"
@@ -178,9 +255,7 @@ export function AddPeopleModal({
                 {p.label}
                 <button
                   type="button"
-                  onClick={() =>
-                    setInvitees((cur) => cur.filter((x) => x.id !== p.id))
-                  }
+                  onClick={() => removeChip(p.id)}
                   className="text-gray-400 hover:text-gray-600"
                   aria-label={`Remove ${p.label}`}
                 >
@@ -188,93 +263,158 @@ export function AddPeopleModal({
                 </button>
               </span>
             ))}
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setShowHits(true);
+              }}
+              onFocus={() => setShowHits(true)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === ",") {
+                  e.preventDefault();
+                  commitTypedEmail();
+                }
+                if (e.key === "Backspace" && input === "" && people.length > 0) {
+                  setPeople((cur) => cur.slice(0, -1));
+                }
+              }}
+              onBlur={() => setTimeout(() => commitTypedEmail(), 100)}
+              placeholder={people.length === 0 ? "e.g., Maria, maria@company.com" : ""}
+              className="flex-1 min-w-[140px] h-7 text-sm outline-none bg-transparent"
+            />
           </div>
-        )}
+
+          {showHits && debounced.length >= 2 && hits.length > 0 && (
+            <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto">
+              {hits.map((h) => (
+                <button
+                  key={h.userId}
+                  type="button"
+                  disabled={h.hasQuikTrackAccess}
+                  onClick={() => addExistingUser(h)}
+                  className={`w-full px-3 py-2 flex items-center gap-2 text-left text-sm border-b border-gray-100 last:border-b-0 ${
+                    h.hasQuikTrackAccess
+                      ? "opacity-50 cursor-not-allowed"
+                      : "hover:bg-blue-50"
+                  }`}
+                >
+                  <span
+                    className="h-6 w-6 rounded-full flex items-center justify-center text-white text-[10px] font-semibold"
+                    style={{ background: avatarColor(h.email) }}
+                  >
+                    {(h.firstName[0] ?? "?") + (h.lastName[0] ?? "")}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block font-medium truncate">{h.firstName} {h.lastName}</span>
+                    <span className="block text-xs text-gray-500 truncate">{h.email}</span>
+                  </span>
+                  {h.hasQuikTrackAccess ? (
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                      Already in
+                    </span>
+                  ) : (
+                    <Check className="h-3.5 w-3.5 text-blue-600 opacity-60" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* External providers (visual only) */}
-        <div className="mt-4">
+        {/* <div className="mt-4">
           <div className="text-xs text-gray-500 mb-2">or add from</div>
           <div className="grid grid-cols-3 gap-2">
             <ProviderButton label="Google" />
             <ProviderButton label="Slack" />
             <ProviderButton label="Microsoft" />
           </div>
+        </div> */}
+
+        {/* Invitation method */}
+        <div className="mt-4">
+          <span className="text-xs font-semibold text-gray-700 block mb-1.5">
+            Invitation method
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { key: "native" as const, title: "Native", hint: "Email + temp password" },
+              { key: "sso" as const, title: "SSO", hint: "Google / Microsoft" },
+            ]).map((opt) => {
+              const active = invitationMethod === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setInvitationMethod(opt.key)}
+                  className={`text-left rounded-lg border px-3 py-2 transition-colors ${
+                    active
+                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-300"
+                      : "border-gray-200 bg-white hover:bg-gray-50"
+                  }`}
+                >
+                  <div className={`text-xs font-semibold ${active ? "text-blue-700" : "text-gray-800"}`}>
+                    {opt.title}
+                  </div>
+                  <div className="text-[10.5px] text-gray-500 mt-0.5 leading-snug">{opt.hint}</div>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[10.5px] text-gray-400">
+            Only applies to new emails. Existing org members get linked silently — no email.
+          </p>
         </div>
 
-        {/* Role */}
-        <div className="mt-4" ref={roleRef}>
-          <span className="text-xs font-semibold text-gray-700 block mb-1">
+        {/* Role — this project's roles only */}
+        <div className="mt-4">
+          <span className="text-xs font-semibold text-gray-700 block mb-1.5">
             Role <span className="text-red-500">*</span>
           </span>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setRoleOpen((v) => !v)}
-              className="w-full inline-flex items-center justify-between h-9 px-3 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50"
-            >
-              <span>{role}</span>
-              <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
-            </button>
-            {roleOpen && (
-              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
-                {(["Administrator", "Member", "Viewer"] as Role[]).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => {
-                      setRole(r);
-                      setRoleOpen(false);
-                    }}
-                    className={`w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50 ${
-                      r === role ? "text-blue-700 bg-blue-50 font-medium" : "text-gray-700"
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <StyledSelect
+            value={projectRoleId}
+            onChange={setProjectRoleId}
+            placeholder="Use project default"
+            options={[
+              { value: "", label: "Use project default", sub: "Whatever this space marks as default" },
+              ...roles.map((r) => ({
+                value: r.id,
+                label: r.name,
+                sub: r.isDefault ? "Default for new members" : undefined,
+              })),
+            ]}
+          />
         </div>
 
-        <p className="mt-4 text-[11px] text-gray-500 leading-snug">
-          This site is protected by reCAPTCHA and the Google{" "}
-          <a className="text-blue-600 hover:underline" href="#">
-            Privacy Policy
-          </a>{" "}
-          and{" "}
-          <a className="text-blue-600 hover:underline" href="#">
-            Terms of Service
-          </a>{" "}
-          apply.
+        <p className="mt-3 text-[11px] text-gray-500 leading-snug">
+          Invitees join the org as <span className="font-medium">Member</span> and
+          are added to <span className="font-medium">{projectName}</span> only.
         </p>
 
-        <div className="mt-4 flex items-center justify-between">
+        {error && (
+          <div className="mt-3 px-3 py-2 text-xs bg-red-50 border border-red-200 text-red-700 rounded">
+            {error}
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"
-            onClick={copyLink}
-            className="inline-flex items-center gap-1.5 text-sm text-gray-700 hover:text-gray-900"
+            onClick={onClose}
+            className="h-8 px-3 text-sm text-gray-700 rounded hover:bg-gray-100"
           >
-            <Link2 className="h-3.5 w-3.5" />
-            {copied ? "Copied" : "Copy link"}
+            Cancel
           </button>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-8 px-3 text-sm text-gray-700 rounded hover:bg-gray-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!canSubmit}
-              className="h-8 px-3 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500"
-            >
-              Add
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => mut.mutate()}
+            disabled={!canSubmit}
+            className="h-8 px-3 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-500"
+          >
+            {mut.isPending ? "Sending…" : "Add"}
+          </button>
         </div>
       </div>
     </div>
@@ -287,10 +427,7 @@ function ProviderButton({ label }: { label: string }) {
       type="button"
       className="inline-flex items-center justify-center gap-2 h-9 px-3 text-sm text-gray-800 border border-gray-300 rounded hover:bg-gray-50"
     >
-      <span
-        className="h-4 w-4 rounded-sm"
-        style={{ background: providerColor(label) }}
-      />
+      <span className="h-4 w-4 rounded-sm" style={{ background: providerColor(label) }} />
       {label}
     </button>
   );

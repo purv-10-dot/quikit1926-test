@@ -23,7 +23,10 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
   const [subTab, setSubTab] = useState<"fields" | "entities" | "navigation">("fields");
   const [addOpen, setAddOpen] = useState(false);
   const projectPerms = useMyProjectPermissions(projectId);
-  const canManageRoles = projectPerms.isAdmin || projectPerms.has("ProjectMember", "update");
+  // Only app-wide admins (tenant admin / super admin) can edit project roles.
+  // Project-level "ProjectMember:update" no longer unlocks role editing —
+  // it remains scoped to assigning members.
+  const canManageRoles = projectPerms.isAdmin;
 
   const rolesQ = useQuery({
     queryKey: ["quiktrack", "project-roles", projectId],
@@ -177,17 +180,29 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
               </span>
             </div>
 
-            {subTab === "fields" ? (
-              <FieldPermissionMatrix
-                roleId={selectedRole.id}
-                endpoint={`/api/projects/${projectId}/roles/${selectedRole.id}/field-permissions`}
-                queryKey={["quiktrack", "project-role-field-perms", projectId, selectedRole.id]}
-              />
-            ) : subTab === "entities" ? (
-              <ProjectPermissionMatrix projectId={projectId} roleId={selectedRole.id} />
-            ) : (
-              <ProjectNavigationPanel projectId={projectId} roleId={selectedRole.id} />
+            {!canManageRoles && !projectPerms.loading && (
+              <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+                <Shield className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-600" />
+                <span>
+                  <span className="font-semibold">Read-only.</span> Only app admins can edit
+                  project roles. Ask a tenant admin if you need changes here.
+                </span>
+              </div>
             )}
+
+            <fieldset disabled={!canManageRoles} className="contents">
+              {subTab === "fields" ? (
+                <FieldPermissionMatrix
+                  roleId={selectedRole.id}
+                  endpoint={`/api/projects/${projectId}/roles/${selectedRole.id}/field-permissions`}
+                  queryKey={["quiktrack", "project-role-field-perms", projectId, selectedRole.id]}
+                />
+              ) : subTab === "entities" ? (
+                <ProjectPermissionMatrix projectId={projectId} roleId={selectedRole.id} />
+              ) : (
+                <ProjectNavigationPanel projectId={projectId} roleId={selectedRole.id} />
+              )}
+            </fieldset>
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-sm text-gray-500">
