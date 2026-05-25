@@ -87,6 +87,13 @@ export function getWeekDateRange(year: number, quarter: string, weekNumber: numb
  * quarter is finished. Dropping the `- 1` and using `Math.max(currentWeek,
  * size)` covers past, current, and future quarters with one formula.
  *
+ * ⚠️ INTENTIONALLY includes the current week. Do NOT re-add a `- 1` here.
+ * If a future caller needs to exclude the in-progress week for a specific
+ * surface, slice the result IN THAT CALLER where the context is known —
+ * don't bake the rule back into this helper (it has multiple callers with
+ * different needs). See `__tests__/unit/fiscal.test.ts` — the
+ * `rollingVisibleWeeks` block locks this contract in.
+ *
  * Returns [] when `currentWeek` is null/undefined (still loading).
  */
 export function rollingVisibleWeeks(
