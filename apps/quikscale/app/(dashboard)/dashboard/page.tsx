@@ -7,7 +7,8 @@ import { useDashboardSummary } from "@/lib/hooks/useDashboardSummary";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption, FiscalPeriodPicker, type FiscalQuarter } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
-import { STATUS_FILTER_OPTIONS, STATUS_DOT, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
@@ -16,7 +17,8 @@ import {
   weekDateLabel, ALL_WEEKS, rollingVisibleWeeks,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
-import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
+import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { KPITable } from "../kpi/components/KPITable";
 import { PriorityTable } from "../priority/components/PriorityTable";
@@ -60,6 +62,102 @@ function formatDate(iso?: string | null): string {
     const d = new Date(iso);
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
   } catch { return "—"; }
+}
+
+/**
+ * Compact multi-select dropdown for the WWW status filter.
+ *
+ * Replaces the previous single-select `<select>`. Default selection (set by
+ * the caller) is every status except "completed" — keeps the dashboard
+ * focused on open work without making the user uncheck completed each time.
+ *
+ * Behavior:
+ *   - Button label shows the count of selected statuses (or "All statuses"
+ *     when every option is checked, "No statuses" when none are checked).
+ *   - Click outside closes the popover (matches the file's existing
+ *     mousedown-handler pattern for other dropdowns on this page).
+ *   - Toggling a checkbox applies immediately — no separate Apply button.
+ */
+function StatusMultiSelect({
+  selected,
+  onChange,
+  buttonClass,
+}: {
+  selected: string[];
+  onChange: (next: string[]) => void;
+  buttonClass: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function toggle(s: string) {
+    onChange(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s]);
+  }
+
+  const label = selected.length === ITEM_STATUS_ORDER.length
+    ? "All statuses"
+    : selected.length === 0
+      ? "No statuses"
+      : `${selected.length} statuses`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`${buttonClass} inline-flex items-center gap-1.5 cursor-pointer`}
+      >
+        {label}
+        <svg
+          className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          aria-multiselectable="true"
+          className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]"
+        >
+          {ITEM_STATUS_ORDER.map((s) => {
+            const checked = selected.includes(s);
+            return (
+              <label
+                key={s}
+                role="option"
+                aria-selected={checked}
+                className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(s)}
+                  className="rounded border-gray-300 text-accent-600 focus:ring-accent-400"
+                />
+                <span className="text-xs text-gray-700">{getStatusLabel(s)}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Tooltips ──────────────────────────────────────────────────────────────────
@@ -388,9 +486,18 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
 // ── KPI mini cards ────────────────────────────────────────────────────────────
 
 function KPICard({ kpi }: { kpi: KPIRow }) {
-  const colors = progressColor(kpi.progressPercent ?? 0);
+  // Same denominator for ratio AND percentage so the math agrees with what
+  // the user reads. `getProgressBadgeColors` runs the canonical
+  // `getColorByPercentage` internally and returns READABLE-on-white text
+  // colors (text-blue-700 etc.) instead of the text-on-color text-white
+  // tones — so the percentage label is visible on the white card.
   const achieved = kpi.qtdAchieved ?? 0;
-  const goal = kpi.quarterlyGoal ?? kpi.target ?? 0;
+  const goal = kpi.qtdGoal ?? kpi.target ?? 0;
+  const pct = goal > 0 ? (achieved / goal) * 100 : 0;
+  const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
+  const badge = kpi.qtdAchieved != null
+    ? getProgressBadgeColors(achieved, goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+    : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
   return (
     <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow">
       <p className="text-[11px] text-gray-500 font-medium truncate mb-1.5" title={kpi.name}>{kpi.name}</p>
@@ -399,9 +506,12 @@ function KPICard({ kpi }: { kpi: KPIRow }) {
         <span className="text-xs text-gray-400">/ {fmtCompact(goal)}</span>
       </div>
       <div className="flex items-center gap-2">
-        <span className={`text-xs font-semibold ${colors.text}`}>{(kpi.progressPercent ?? 0).toFixed(0)}%</span>
+        <span className={`text-xs font-semibold ${badge.text}`}>{pct.toFixed(0)}%</span>
         <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <div className={`h-1.5 rounded-full ${colors.bar}`} style={{ width: `${Math.min(kpi.progressPercent ?? 0, 100)}%` }} />
+          {/* Bar width still clamps at 100% (container width). The color
+              band already signals over-achievement; the text shows the
+              true percentage. */}
+          <div className={`h-1.5 rounded-full ${badge.bar}`} style={{ width: `${Math.min(pct, 100)}%` }} />
         </div>
       </div>
     </div>
@@ -871,6 +981,31 @@ export default function DashboardPage() {
   // Reset C when A changes (the user list narrows / widens).
   useEffect(() => { setTeamTabOwnerId(""); }, [teamTabTeamId]);
 
+  // ── KPI Type toggle gating ──
+  // The "Individual KPI / Team KPI" tab buttons only make sense when the
+  // user can actually see BOTH lists. If they're missing one permission,
+  // surfacing a toggle that snaps them to an empty page is just confusing.
+  // Resource names mirror the permissions registry: "KPI" = Individual KPI,
+  // "TeamKPI" = Team KPI. Pattern matches the sidebar's existing nav-gate
+  // (components/dashboard/sidebar.tsx).
+  const perms = useMyPermissions();
+  const canViewIndividualKPI = perms.has("KPI", "view");
+  const canViewTeamKPI = perms.has("TeamKPI", "view");
+  const showKpiTypeToggle = canViewIndividualKPI && canViewTeamKPI;
+
+  // If the user's current selection points at a permission they don't have
+  // (e.g. they had Team selected, then their role got narrowed), snap to
+  // whichever side they CAN view. Guarded on `!perms.loading` so we don't
+  // flip during the initial permission fetch.
+  useEffect(() => {
+    if (perms.loading) return;
+    if (teamTabKpiType === "team" && !canViewTeamKPI) {
+      setTeamTabKpiType("individual");
+    } else if (teamTabKpiType === "individual" && !canViewIndividualKPI && canViewTeamKPI) {
+      setTeamTabKpiType("team");
+    }
+  }, [perms.loading, canViewIndividualKPI, canViewTeamKPI, teamTabKpiType]);
+
   // ── Sync Dashboard scope → FilterContext ──
   // The KPI / Team KPI / Priority pages read `filterTeam` + `filterOwner`
   // from FilterContext. Writing them here means a sidebar navigation lands
@@ -921,7 +1056,12 @@ export default function DashboardPage() {
   // Set of user IDs belonging to the selected team (all org members when no team selected)
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
 
-  const [wwwStatusFilter, setWwwStatusFilter] = useState<string>("");
+  // Multi-select WWW status filter. Defaults to every status EXCEPT
+  // "completed" — keeps the dashboard focused on actionable work; users can
+  // re-include completed items via the dropdown.
+  const [wwwStatusFilter, setWwwStatusFilter] = useState<string[]>(
+    ITEM_STATUS_ORDER.filter(s => s !== "completed"),
+  );
 
   /* ── My Dashboard tab — always scoped to the current user ───────────── */
   // KPI section: Individual KPIs owned by the user + Team KPIs they co-own.
@@ -988,9 +1128,10 @@ export default function DashboardPage() {
   const wwwLoading = isLoading;
   const priorities = activeTab === "individual" ? myPriorities : teamPriorities;
   const wwwSource = activeTab === "individual" ? myWwwByOwner : teamWwwByOwner;
-  const wwwItems = wwwStatusFilter
-    ? wwwSource.filter((w) => w.status === wwwStatusFilter)
-    : wwwSource;
+  // Multi-select filter — keep rows whose status is in the selected set.
+  // Empty selection → empty list (user has explicitly unchecked every
+  // status; they can re-check from the dropdown).
+  const wwwItems = wwwSource.filter((w) => wwwStatusFilter.includes(w.status));
 
   // Dashboard-local pagination state (10 rows per page for each table)
   const DASHBOARD_PAGE_SIZE = 10;
@@ -1108,24 +1249,28 @@ export default function DashboardPage() {
                       allLabel="All Users"
                     />
                   </div>
-                  {/* B — KPI type */}
-                  <div>
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">KPI Type</p>
-                    <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg">
-                      {(["individual", "team"] as const).map(t => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => setTeamTabKpiType(t)}
-                          className={`flex-1 px-2 py-1 text-[11px] font-medium rounded-md transition-all ${
-                            teamTabKpiType === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                          }`}
-                        >
-                          {t === "individual" ? "Individual KPI" : "Team KPI"}
-                        </button>
-                      ))}
+                  {/* B — KPI type. Only renders when the user can view BOTH
+                      Individual KPI and Team KPI; otherwise the toggle is
+                      pointless and `teamTabKpiType` is force-synced above. */}
+                  {showKpiTypeToggle && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">KPI Type</p>
+                      <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg">
+                        {(["individual", "team"] as const).map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setTeamTabKpiType(t)}
+                            className={`flex-1 px-2 py-1 text-[11px] font-medium rounded-md transition-all ${
+                              teamTabKpiType === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                            }`}
+                          >
+                            {t === "individual" ? "Individual KPI" : "Team KPI"}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                   {/* C — Owner */}
                   <div>
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
@@ -1296,16 +1441,11 @@ export default function DashboardPage() {
                   onRestoreAll={wwwPrefs.showAllCols}
                 />
               )}
-              <select
-                value={wwwStatusFilter}
-                onChange={e => setWwwStatusFilter(e.target.value)}
-                className={selectCls}
-                aria-label="Filter WWW by status"
-              >
-                {STATUS_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <StatusMultiSelect
+                selected={wwwStatusFilter}
+                onChange={setWwwStatusFilter}
+                buttonClass={selectCls}
+              />
             </>
           }
         >

@@ -59,6 +59,9 @@ export default function WWWPage() {
 
   const WWW_COL_LABELS: Record<string, string> = {
     who: "Who", when: "When", what: "What", revisedDate: "Revised Date", status: "Status", notes: "Notes",
+    // Audit columns — populated by GET /api/www via decorateAudit.
+    createdBy: "Created By", updatedBy: "Updated By",
+    createdAt: "Created Date", updatedAt: "Updated Date",
   };
   const wwwColumns = Object.entries(WWW_COL_LABELS).map(([key, label]) => ({ key, label }));
   const visibleWwwCols = wwwColumns.filter((c) => !wwwHidden.includes(c.key)).map((c) => c.key);

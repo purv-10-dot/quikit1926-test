@@ -9,6 +9,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
+import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 
 // GET /api/www — list all WWWItems for tenant
 export const GET = auth.view(async ({ orgId, userId }, req) => {
@@ -79,9 +80,13 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     : [];
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
+  // Resolve createdBy/updatedBy → name + initials so the WWW table can
+  // paint the audit columns without a second round-trip.
+  const auditMap = await fetchAuditUserMap(items);
+
   const result = items.map(item => {
     const ids = item.who ? [item.who] : [];
-    return {
+    return decorateAudit({
       ...item,
       whoIds: ids,
       when: item.when.toISOString(),
@@ -90,7 +95,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       updatedAt: item.updatedAt.toISOString(),
       who_user: userMap[item.who] ?? null,
       who_users: ids.map(id => userMap[id]).filter(Boolean),
-    };
+    }, auditMap);
   });
 
   return NextResponse.json(paginatedResponse(result, total, page, limit));

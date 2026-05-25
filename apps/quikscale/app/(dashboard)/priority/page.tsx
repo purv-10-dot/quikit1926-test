@@ -83,7 +83,23 @@ export default function PriorityPage() {
   const deletePriority = useDeletePriority();
   const bulkRestorePriority = useBulkRestorePriority();
 
-  const PRIORITY_COL_LABELS: Record<string, string> = { team: "Team", priorityName: "Priority Name", owner: "Owner" };
+  // Toggleable columns surfaced in the Manage Columns modal. Mirrors the
+  // togglable subset of PriorityTable's COL_ORDER_FULL (excludes the
+  // always-visible row controls `_cb`/`_log`/`_id`). Without listing every
+  // togglable column here, "Hide all" couldn't reach them.
+  const PRIORITY_COL_LABELS: Record<string, string> = {
+    team: "Team",
+    priorityName: "Priority Name",
+    owner: "Owner",
+    startWeek: "Start Week",
+    endWeek: "End Week",
+    lastNote: "Last Note",
+    // Audit columns — populated by GET /api/priority via decorateAudit.
+    createdBy: "Created By",
+    updatedBy: "Updated By",
+    createdAt: "Created Date",
+    updatedAt: "Updated Date",
+  };
   const priorityColumns = Object.entries(PRIORITY_COL_LABELS).map(([key, label]) => ({ key, label }));
   const visiblePriorityCols = priorityColumns.filter((c) => !priorityHidden.includes(c.key)).map((c) => c.key);
 

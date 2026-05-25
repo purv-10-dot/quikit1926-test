@@ -49,6 +49,18 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     },
   });
 
+  // Resolve createdBy / updatedBy → name + initials for the table's audit columns.
+  const actorIds = [...new Set(rows.flatMap((r) => [r.createdBy, r.updatedBy].filter(Boolean) as string[]))];
+  const users = actorIds.length
+    ? await db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, firstName: true, lastName: true } })
+    : [];
+  const actorMap: Record<string, { name: string; initials: string }> = {};
+  for (const u of users) {
+    const name = `${u.firstName} ${u.lastName}`.trim() || "—";
+    const initials = `${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase() || "??";
+    actorMap[u.id] = { name, initials };
+  }
+
   return NextResponse.json({
     success: true,
     data: rows.map((r) => ({
@@ -85,6 +97,15 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       dashboardNAClientMemberNames: r.dashboardNATeamMembers.map(
         (a) => a.member.name
       ),
+      // Audit fields surfaced on the Weekly Meeting table.
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      createdBy: r.createdBy,
+      createdByName: actorMap[r.createdBy]?.name ?? "—",
+      createdByInitials: actorMap[r.createdBy]?.initials ?? "??",
+      updatedBy: r.updatedBy,
+      updatedByName: r.updatedBy ? (actorMap[r.updatedBy]?.name ?? null) : null,
+      updatedByInitials: r.updatedBy ? (actorMap[r.updatedBy]?.initials ?? null) : null,
     })),
   });
 });
