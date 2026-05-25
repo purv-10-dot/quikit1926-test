@@ -222,7 +222,7 @@ export function Sidebar() {
               <ChevronRight className="h-4 w-4 shrink-0" />
             )}
             <span className="flex-1 truncate">Spaces</span>
-            <span className="flex items-center gap-1">
+            <span className="flex items-center">
               <span
                 role="button"
                 tabIndex={0}
@@ -236,7 +236,6 @@ export function Sidebar() {
               >
                 <Plus className="h-3.5 w-3.5 text-gray-400 hover:text-gray-700" />
               </span>
-              <MoreHorizontal className="h-3.5 w-3.5 text-gray-400 hover:text-gray-700" />
             </span>
           </button>
           {spacesOpen && (

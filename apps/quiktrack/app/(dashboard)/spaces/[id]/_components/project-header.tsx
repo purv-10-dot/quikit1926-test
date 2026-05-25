@@ -9,7 +9,6 @@ import { ShareFeedbackModal } from "@/components/share-feedback-modal";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import {
   UserPlus,
-  MoreHorizontal,
   Share2,
   Zap,
   Link as LinkIcon,
@@ -162,7 +161,6 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
             <Link href="/spaces" className="text-xs text-gray-500 hover:underline">
               Spaces
             </Link>
-            <span className="text-gray-300">/</span>
           </div>
         </div>
 
@@ -197,12 +195,6 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
                 <UserPlus className="h-3.5 w-3.5 text-gray-600" />
               </button>
             )}
-            <button
-              className="p-1 rounded border border-gray-200 hover:bg-gray-100"
-              aria-label="More"
-            >
-              <MoreHorizontal className="h-3.5 w-3.5 text-gray-600" />
-            </button>
           </div>
           <div className="flex items-center gap-1.5">
             {/* TODO: Share + Automation — coming soon
@@ -281,13 +273,14 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
             </Link>
           );
         })}
-        <button className="ml-1 p-1.5 rounded hover:bg-gray-100 text-gray-500" aria-label="Add tab">
+        {/* <button className="ml-1 p-1.5 rounded hover:bg-gray-100 text-gray-500" aria-label="Add tab">
           <Plus className="h-4 w-4" />
-        </button>
+        </button> */}
       </div>
 
       {addPeopleOpen && project && (
         <AddPeopleModal
+          projectId={projectId}
           projectName={project.name}
           onClose={() => setAddPeopleOpen(false)}
         />

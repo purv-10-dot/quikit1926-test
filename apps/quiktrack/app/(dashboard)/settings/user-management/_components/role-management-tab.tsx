@@ -54,8 +54,16 @@ export function RoleManagementTab() {
   return (
     <div className="flex h-full">
       <aside className="w-72 border-r border-gray-200 bg-white flex flex-col">
+        <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-200">
+          <div className="text-[10px] font-semibold tracking-wider uppercase text-indigo-700">
+            App-wide
+          </div>
+          <div className="text-xs text-indigo-900">
+            Applies across every space
+          </div>
+        </div>
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900">Roles</h2>
+          <h2 className="text-sm font-semibold text-gray-900">App-wide roles</h2>
           <button
             type="button"
             onClick={() => setAddOpen(true)}
@@ -82,7 +90,7 @@ export function RoleManagementTab() {
                 }`}
               >
                 <span className="inline-flex items-center gap-2 truncate">
-                  <Shield className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                  <Shield className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
                   <span className="truncate">{r.name}</span>
                   {r.isDefault && (
                     <span className="text-[9px] uppercase tracking-wider bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
@@ -112,11 +120,14 @@ export function RoleManagementTab() {
       <section className="flex-1 min-w-0 bg-gray-50 overflow-y-auto">
         {selectedRole ? (
           <div className="px-8 py-6 space-y-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-semibold text-gray-900">
                 Permissions — {selectedRole.name}
               </h3>
-              <Shield className="h-4 w-4 text-amber-500" />
+              <Shield className="h-4 w-4 text-indigo-500" />
+              <span className="text-[10px] font-semibold tracking-wider uppercase bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
+                App-wide
+              </span>
             </div>
 
             <nav className="flex gap-6 border-b border-gray-200">

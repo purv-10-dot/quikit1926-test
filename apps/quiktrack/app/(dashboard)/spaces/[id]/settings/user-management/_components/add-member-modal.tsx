@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Select,
   RightPanel,
   RightPanelFooter,
   RightPanelCancelButton,
   RightPanelSubmitButton,
 } from "@quikit/ui";
+import { StyledSelect } from "./styled-select";
+import { RolePicker } from "./role-picker";
 
 interface OrgUser {
   userId: string;
@@ -21,6 +22,7 @@ interface OrgUser {
 interface ProjectRole {
   id: string;
   name: string;
+  isDefault?: boolean;
 }
 
 export function AddMemberModal({
@@ -108,40 +110,35 @@ function Drawer({ projectId, onClose }: { projectId: string; onClose: () => void
         </RightPanelFooter>
       }
     >
-      <label className="block text-sm">
-        <span className="text-gray-700 mb-1 block">User</span>
-        <select
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-          className="w-full h-9 px-3 text-sm border border-gray-200 rounded"
-        >
-          <option value="">Select a user…</option>
-          {users.map((u) => (
-            <option key={u.userId} value={u.userId}>
-              {u.firstName} {u.lastName} — {u.email}
-            </option>
-          ))}
-        </select>
-      </label>
-      <Select
+      <StyledSelect
+        label="User"
+        value={userId}
+        onChange={setUserId}
+        placeholder="Select a user…"
+        options={users.map((u) => ({
+          value: u.userId,
+          label: `${u.firstName} ${u.lastName}`.trim() || u.email,
+          sub: u.email,
+        }))}
+      />
+      <StyledSelect
         label="Membership tier (legacy)"
         value={legacyRole}
-        onChange={(e) => setLegacyRole(e.target.value)}
+        onChange={setLegacyRole}
         options={[
-          { value: "PROJECT_ADMIN", label: "Project Admin" },
-          { value: "MEMBER", label: "Member" },
-          { value: "VIEWER", label: "Viewer" },
+          { value: "PROJECT_ADMIN", label: "Project Admin", sub: "Full project administration" },
+          { value: "MEMBER", label: "Member", sub: "Default tier" },
+          { value: "VIEWER", label: "Viewer", sub: "Read-only" },
         ]}
       />
-      <Select
-        label="Project role"
-        value={projectRoleId}
-        onChange={(e) => setProjectRoleId(e.target.value)}
-        options={[
-          { value: "", label: "— None (only membership) —" },
-          ...roles.map((r) => ({ value: r.id, label: r.name })),
-        ]}
-      />
+      <div>
+        <span className="text-sm text-gray-700 mb-1 block">Project role</span>
+        <RolePicker
+          value={projectRoleId || null}
+          roles={roles}
+          onChange={(next) => setProjectRoleId(next ?? "")}
+        />
+      </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
     </RightPanel>
   );

@@ -60,7 +60,7 @@ const STEPS: TourStep[] = [
     id: "done",
     title: "You're set!",
     body:
-      "That's the whirlwind tour. You can replay it any time from the help menu in the top bar. Happy tracking!",
+      "That's the whirlwind tour. Happy tracking!",
   },
 ];
 

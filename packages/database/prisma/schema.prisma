@@ -5476,6 +5476,59 @@ model QtNotificationPref {
   @@schema("app_quiktrack")
 }
 
+model QtUserNotificationSetting {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  digestCadence       String    @default("none")
+  lastDigestAt        DateTime?
+  inAppEnabled        Boolean   @default(true)
+  emailInstantEnabled Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@schema("app_quiktrack")
+}
+
+model QtNotification {
+  id          String    @id @default(cuid())
+  orgId       String
+  recipientId String
+  actorId     String?
+  tab         String    @default("direct")
+  type        String
+  projectId   String?
+  issueId     String?
+  issueKey    String?
+  issueTitle  String?
+  commentId   String?
+  snippet     String?
+  fromValue   String?
+  toValue     String?
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([recipientId, tab, isRead, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([orgId, createdAt])
+  @@index([issueId])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueWatcher {
+  id        String   @id @default(cuid())
+  orgId     String
+  issueId   String
+  userId    String
+  source    String   @default("AUTO")
+  createdAt DateTime @default(now())
+
+  @@unique([issueId, userId])
+  @@index([userId])
+  @@index([issueId])
+  @@schema("app_quiktrack")
+}
+
 model QtInvitation {
   id         String    @id @default(cuid())
   orgId      String

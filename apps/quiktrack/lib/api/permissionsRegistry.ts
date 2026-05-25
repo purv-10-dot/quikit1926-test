@@ -136,7 +136,6 @@ export const PERMISSION_TREE: PermissionModule[] = [
 export const NAV_ITEMS = [
   { key: "home", label: "For you" },
   { key: "dashboards", label: "Dashboards" },
-  { key: "plans", label: "Plans" },
 ] as const;
 
 /**

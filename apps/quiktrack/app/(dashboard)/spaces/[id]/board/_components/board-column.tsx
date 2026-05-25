@@ -104,14 +104,24 @@ export function BoardColumn({
           setState((s) => ({ ...s, loading: false, loaded: true }));
           return;
         }
-        setState((s) => ({
-          loading: false,
-          loaded: true,
-          issues: initial ? res.data : [...s.issues, ...res.data],
-          cursor: res.nextCursor,
-          hasMore: !!res.nextCursor,
-          total: res.total ?? s.total,
-        }));
+        setState((s) => {
+          const merged = initial ? res.data : [...s.issues, ...res.data];
+          const seen = new Set<string>();
+          const deduped = [] as typeof merged;
+          for (const it of merged) {
+            if (seen.has(it.id)) continue;
+            seen.add(it.id);
+            deduped.push(it);
+          }
+          return {
+            loading: false,
+            loaded: true,
+            issues: deduped,
+            cursor: res.nextCursor,
+            hasMore: !!res.nextCursor,
+            total: res.total ?? s.total,
+          };
+        });
       } catch {
         setState((s) => ({ ...s, loading: false, loaded: true }));
       }

@@ -503,7 +503,7 @@ function Toolbar({
           </button>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      {/* <div className="flex items-center gap-2">
         <button className="inline-flex items-center gap-1 h-8 px-3 text-sm border border-gray-300 rounded hover:bg-gray-50">
           Group
           <ChevronDown className="h-3.5 w-3.5" />
@@ -514,7 +514,7 @@ function Toolbar({
         <button className="p-1.5 rounded border border-gray-200 hover:bg-gray-100">
           <MoreHorizontal className="h-3.5 w-3.5 text-gray-600" />
         </button>
-      </div>
+      </div> */}
     </div>
   );
 }
