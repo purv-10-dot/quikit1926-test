@@ -8,7 +8,7 @@ import type {
   GroupedBoardTask,
   SprintLite,
 } from "../_types";
-import { EMPTY_FILTERS, NO_ACTIVE_SPRINT_SENTINEL } from "../_types";
+import { EMPTY_FILTERS } from "../_types";
 import { useGroupedBoard } from "../_hooks/useGroupedBoard";
 import {
   useCreateGroup,
@@ -113,17 +113,12 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
-  const activeSprint = useMemo(
-    () => sprints.find((s) => s.status === "ACTIVE") ?? null,
+  // Grouped Kanban is active-work only — default filter ("all") already
+  // unions every ACTIVE sprint server-side. No auto-lock needed.
+  const hasActiveSprint = useMemo(
+    () => sprints.some((s) => s.status === "ACTIVE"),
     [sprints],
   );
-
-  useEffect(() => {
-    const targetSprintId = activeSprint?.id ?? NO_ACTIVE_SPRINT_SENTINEL;
-    setFilters((prev) =>
-      prev.sprintId === targetSprintId ? prev : { ...prev, sprintId: targetSprintId },
-    );
-  }, [activeSprint]);
 
   const onTaskContextMenu = (e: MouseEvent, task: GroupedBoardTask) => {
     setContextMenu({ task, x: e.clientX, y: e.clientY });
@@ -151,7 +146,7 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
   if (!board.data) return null;
 
   const { groups, statuses, defaultGroupId } = board.data;
-  const showNoSprintBanner = !activeSprint;
+  const showNoSprintBanner = !hasActiveSprint;
 
   return (
     <div className="px-3 sm:px-6 py-4">
@@ -161,7 +156,7 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
           setSearchInput(next.search);
           setFilters({ ...next, search: filters.search });
         }}
-        activeSprint={activeSprint}
+        sprints={sprints}
         members={members}
         onCreateGroup={() => setCreateOpen(true)}
         onCreateTask={() => setCreateTaskOpen(true)}

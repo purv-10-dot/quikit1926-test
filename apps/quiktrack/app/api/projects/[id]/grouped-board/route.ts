@@ -31,6 +31,24 @@ export const GET = withOrgAuth<{ id: string }>(
 
     const defaultGroup = await ensureDefaultGroup(orgId, params.id, userId);
 
+    // Grouped Kanban is an active-work board: backlog tasks (sprintId=null)
+    // and tasks in PLANNED / COMPLETED sprints are never shown. Multiple
+    // sprints can be ACTIVE at once, so the default ("no sprintId" or
+    // sprintId=all) unions every active sprint's tasks. A specific sprintId
+    // is honored only if that sprint is currently active.
+    const activeSprintRows = await db.qtSprint.findMany({
+      where: { projectId: params.id, status: "ACTIVE", isDeleted: false },
+      select: { id: true },
+    });
+    const activeSprintIds = activeSprintRows.map((s) => s.id);
+    const wantsSpecificSprint =
+      sprintId && sprintId !== "all" && sprintId !== "null";
+    const sprintIdsToFilter = wantsSpecificSprint
+      ? activeSprintIds.includes(sprintId)
+        ? [sprintId]
+        : [] // user picked a non-active sprint → return zero rows
+      : activeSprintIds;
+
     const [groups, statuses, issues] = await Promise.all([
       db.qtTaskGroup.findMany({
         where: { projectId: params.id, isDeleted: false },
@@ -47,17 +65,34 @@ export const GET = withOrgAuth<{ id: string }>(
           orderIndex: true,
         },
       }),
-      db.qtIssue.findMany({
+      sprintIdsToFilter.length === 0
+        ? Promise.resolve(
+            [] as Array<{
+              id: string;
+              key: string;
+              title: string;
+              type: string;
+              priority: string;
+              statusId: string;
+              sprintId: string | null;
+              assigneeId: string | null;
+              reporterId: string | null;
+              groupId: string | null;
+              orderInGroup: number;
+              startDate: Date | null;
+              dueDate: Date | null;
+              storyPoints: number | null;
+              eta: number | null;
+              updatedAt: Date;
+            }>,
+          )
+        : db.qtIssue.findMany({
         where: {
           projectId: params.id,
           orgId,
           isDeleted: false,
           type: { notIn: ["EPIC", "SUBTASK"] },
-          ...(sprintId === "null"
-            ? { sprintId: null }
-            : sprintId
-              ? { sprintId }
-              : {}),
+          sprintId: { in: sprintIdsToFilter },
           ...(assigneeId === "null"
             ? { assigneeId: null }
             : assigneeId

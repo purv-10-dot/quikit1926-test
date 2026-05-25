@@ -36,18 +36,6 @@ export function SprintCell({ value, sprints, onCommit }: SprintCellProps) {
         align="right"
         width={200}
       >
-        <button
-          type="button"
-          onClick={() => {
-            setOpen(false);
-            if (value !== null) onCommit(null);
-          }}
-          className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-50 ${
-            value === null ? "bg-gray-50" : ""
-          }`}
-        >
-          Backlog (no sprint)
-        </button>
         {sprints.map((s) => (
           <button
             key={s.id}

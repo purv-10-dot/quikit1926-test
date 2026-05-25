@@ -61,14 +61,13 @@ export interface SprintLite {
   status: string;
 }
 
-/**
- * Sentinel sprintId used when the project has NO active sprint. The grouped
- * board endpoint receives this string, finds zero matching rows, and
- * returns the group skeletons with empty `tasks[]`.
- */
-export const NO_ACTIVE_SPRINT_SENTINEL = "__no_active_sprint__";
-
 export interface GroupedBoardFilters {
+  /**
+   * `"all"` (default) = union of every ACTIVE sprint's tasks.
+   * A specific sprint id = only that sprint (and only if it's ACTIVE; the
+   * server returns zero rows otherwise). Backlog and non-active sprints
+   * are NEVER shown on this board — Grouped Kanban is active-work only.
+   */
   sprintId: string;
   assigneeId: string;
   priority: string;
@@ -77,7 +76,7 @@ export interface GroupedBoardFilters {
 }
 
 export const EMPTY_FILTERS: GroupedBoardFilters = {
-  sprintId: NO_ACTIVE_SPRINT_SENTINEL,
+  sprintId: "all",
   assigneeId: "",
   priority: "",
   type: "",
