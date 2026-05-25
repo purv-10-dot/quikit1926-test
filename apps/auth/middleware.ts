@@ -83,15 +83,11 @@ export async function middleware(req: NextRequest) {
         // fall through
       }
     }
-    if (token.isSuperAdmin) {
-      const adminUrl = process.env.NEXT_PUBLIC_ADMIN_URL;
-      if (adminUrl) {
-        // Even for super admins, hopping cross-origin needs the bridge.
-        const bridge = new URL("/api/post-login", req.url);
-        bridge.searchParams.set("callbackUrl", adminUrl);
-        return NextResponse.redirect(bridge);
-      }
-    }
+    // Super admins land on the launcher /apps like everyone else; they
+    // reach the org-admin portal via the Super Admin capsule rendered on
+    // the launcher header. Auto-redirecting them away from /apps surprised
+    // users who explicitly wanted the launcher view (e.g. OAuth login,
+    // which has no callbackUrl and previously fell through to admin).
     const launcherUrl =
       process.env.NEXT_PUBLIC_LAUNCHER_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL;
     if (launcherUrl) {
