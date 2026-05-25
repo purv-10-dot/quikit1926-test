@@ -7,7 +7,7 @@ import { useDashboardSummary } from "@/lib/hooks/useDashboardSummary";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption, FiscalPeriodPicker, type FiscalQuarter } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
-import { STATUS_FILTER_OPTIONS, STATUS_DOT, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
+import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
@@ -60,6 +60,102 @@ function formatDate(iso?: string | null): string {
     const d = new Date(iso);
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
   } catch { return "—"; }
+}
+
+/**
+ * Compact multi-select dropdown for the WWW status filter.
+ *
+ * Replaces the previous single-select `<select>`. Default selection (set by
+ * the caller) is every status except "completed" — keeps the dashboard
+ * focused on open work without making the user uncheck completed each time.
+ *
+ * Behavior:
+ *   - Button label shows the count of selected statuses (or "All statuses"
+ *     when every option is checked, "No statuses" when none are checked).
+ *   - Click outside closes the popover (matches the file's existing
+ *     mousedown-handler pattern for other dropdowns on this page).
+ *   - Toggling a checkbox applies immediately — no separate Apply button.
+ */
+function StatusMultiSelect({
+  selected,
+  onChange,
+  buttonClass,
+}: {
+  selected: string[];
+  onChange: (next: string[]) => void;
+  buttonClass: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function toggle(s: string) {
+    onChange(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s]);
+  }
+
+  const label = selected.length === ITEM_STATUS_ORDER.length
+    ? "All statuses"
+    : selected.length === 0
+      ? "No statuses"
+      : `${selected.length} statuses`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`${buttonClass} inline-flex items-center gap-1.5 cursor-pointer`}
+      >
+        {label}
+        <svg
+          className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          aria-multiselectable="true"
+          className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px]"
+        >
+          {ITEM_STATUS_ORDER.map((s) => {
+            const checked = selected.includes(s);
+            return (
+              <label
+                key={s}
+                role="option"
+                aria-selected={checked}
+                className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(s)}
+                  className="rounded border-gray-300 text-accent-600 focus:ring-accent-400"
+                />
+                <span className="text-xs text-gray-700">{getStatusLabel(s)}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Tooltips ──────────────────────────────────────────────────────────────────
@@ -921,7 +1017,12 @@ export default function DashboardPage() {
   // Set of user IDs belonging to the selected team (all org members when no team selected)
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
 
-  const [wwwStatusFilter, setWwwStatusFilter] = useState<string>("");
+  // Multi-select WWW status filter. Defaults to every status EXCEPT
+  // "completed" — keeps the dashboard focused on actionable work; users can
+  // re-include completed items via the dropdown.
+  const [wwwStatusFilter, setWwwStatusFilter] = useState<string[]>(
+    ITEM_STATUS_ORDER.filter(s => s !== "completed"),
+  );
 
   /* ── My Dashboard tab — always scoped to the current user ───────────── */
   // KPI section: Individual KPIs owned by the user + Team KPIs they co-own.
@@ -988,9 +1089,10 @@ export default function DashboardPage() {
   const wwwLoading = isLoading;
   const priorities = activeTab === "individual" ? myPriorities : teamPriorities;
   const wwwSource = activeTab === "individual" ? myWwwByOwner : teamWwwByOwner;
-  const wwwItems = wwwStatusFilter
-    ? wwwSource.filter((w) => w.status === wwwStatusFilter)
-    : wwwSource;
+  // Multi-select filter — keep rows whose status is in the selected set.
+  // Empty selection → empty list (user has explicitly unchecked every
+  // status; they can re-check from the dropdown).
+  const wwwItems = wwwSource.filter((w) => wwwStatusFilter.includes(w.status));
 
   // Dashboard-local pagination state (10 rows per page for each table)
   const DASHBOARD_PAGE_SIZE = 10;
@@ -1296,16 +1398,11 @@ export default function DashboardPage() {
                   onRestoreAll={wwwPrefs.showAllCols}
                 />
               )}
-              <select
-                value={wwwStatusFilter}
-                onChange={e => setWwwStatusFilter(e.target.value)}
-                className={selectCls}
-                aria-label="Filter WWW by status"
-              >
-                {STATUS_FILTER_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <StatusMultiSelect
+                selected={wwwStatusFilter}
+                onChange={setWwwStatusFilter}
+                buttonClass={selectCls}
+              />
             </>
           }
         >

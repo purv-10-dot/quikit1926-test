@@ -452,7 +452,13 @@ function TeamKPIMoreActions({
   quarter: string;
 }) {
   const tablePrefs = useTablePrefs("kpi");
-  const moduleColumns = ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key }));
+  // Includes the 13 week columns so "Hide all" actually hides every data
+  // column. See `apps/quikscale/app/(dashboard)/kpi/page.tsx` for the
+  // canonical comment on framework row controls.
+  const moduleColumns = [
+    ...ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key })),
+    ...ALL_WEEKS.map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
+  ];
   const visibleColKeys = moduleColumns
     .filter((c) => !tablePrefs.hiddenCols.includes(c.key))
     .map((c) => c.key);

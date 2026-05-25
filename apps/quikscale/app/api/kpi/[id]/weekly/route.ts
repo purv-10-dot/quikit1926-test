@@ -71,7 +71,9 @@ async function upsertAndRecalc(opts: {
   notes: string | null | undefined;
   changedBy: string;
 }) {
-  const value = opts.value ?? 0;
+  // Preserve null so "cleared input" stays distinct from "entered 0".
+  // See `weekly/batch/route.ts` for the same fix + rationale.
+  const value = opts.value ?? null;
   const existing = await db.kPIWeeklyValue.findFirst({
     where: { kpiId: opts.kpiId, userId: opts.userId, weekNumber: opts.weekNumber },
     select: { id: true },

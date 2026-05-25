@@ -173,8 +173,15 @@ export default function IndividualKPIPage() {
   const currentYear = filters.year ?? FISCAL_YEAR;
   const currentQuarter = filters.quarter ?? FISCAL_QUARTER;
 
-  // Columns metadata for Manage + Export modals — static cols only (weeks handled separately)
-  const moduleColumns = ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key }));
+  // Columns metadata for Manage + Export modals.
+  // Includes the 13 week columns so "Hide all" actually hides every data
+  // column. Framework row controls (`_checkbox`, `_log`, `_id`) are
+  // deliberately excluded — they're UI affordances rendered unconditionally
+  // by KPITable, not user-togglable data.
+  const moduleColumns = [
+    ...ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key })),
+    ...ALL_WEEKS.map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
+  ];
   const visibleColKeys = moduleColumns.filter((c) => !hiddenCols.has(c.key)).map((c) => c.key);
 
   // Export handler — pulls rows per scope, formats via runExport

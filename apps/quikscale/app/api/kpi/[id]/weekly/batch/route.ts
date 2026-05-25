@@ -28,7 +28,11 @@ async function upsertRow(opts: {
   notes: string | null | undefined;
   changedBy: string;
 }): Promise<void> {
-  const value = opts.value ?? 0;
+  // Preserve null so "cleared input" stays distinct from "entered 0".
+  // Display + color logic (e.g. `weekCellColors`, dashboard QTD cell) gate
+  // RED on `value != null`, so coercing null → 0 here paints unentered
+  // weeks red. The KPIWeeklyValue.value column is Float? — nullable.
+  const value = opts.value ?? null;
   const existing = await db.kPIWeeklyValue.findFirst({
     where: { kpiId: opts.kpiId, userId: opts.userId, weekNumber: opts.weekNumber },
     select: { id: true },
