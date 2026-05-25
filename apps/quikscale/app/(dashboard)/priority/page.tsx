@@ -94,6 +94,11 @@ export default function PriorityPage() {
     startWeek: "Start Week",
     endWeek: "End Week",
     lastNote: "Last Note",
+    // Audit columns — populated by GET /api/priority via decorateAudit.
+    createdBy: "Created By",
+    updatedBy: "Updated By",
+    createdAt: "Created Date",
+    updatedAt: "Updated Date",
   };
   const priorityColumns = Object.entries(PRIORITY_COL_LABELS).map(([key, label]) => ({ key, label }));
   const visiblePriorityCols = priorityColumns.filter((c) => !priorityHidden.includes(c.key)).map((c) => c.key);

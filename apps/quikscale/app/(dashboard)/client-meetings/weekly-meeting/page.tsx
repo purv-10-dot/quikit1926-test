@@ -28,6 +28,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { TrashBanner } from "@quikit/ui";
+import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
 import type { ExportSelection } from "@quikit/ui";
@@ -127,6 +128,15 @@ interface MeetingRow {
   absentClientMemberNames: string[];
   dashboardNAClientMemberIds: string[];
   dashboardNAClientMemberNames: string[];
+  // Audit columns appended by GET /api/client-meetings/weekly-meetings.
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  createdByName: string;
+  createdByInitials: string;
+  updatedBy: string | null;
+  updatedByName: string | null;
+  updatedByInitials: string | null;
 }
 interface LogEntry {
   id: string;
@@ -1003,6 +1013,11 @@ export default function WeeklyMeetingPage() {
                   <th className="px-3 py-2 text-left whitespace-nowrap">
                     OPSP Time
                   </th>
+                  {/* Audit columns — populated by GET /api/client-meetings/weekly-meetings. */}
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Created By</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Updated By</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Created Date</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Updated Date</th>
                   <th className="px-3 py-2 text-right" />
                 </tr>
               </thead>
@@ -1119,6 +1134,20 @@ export default function WeeklyMeetingPage() {
                     </td>
                     <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                       {r.segmentTime7 || "—"}
+                    </td>
+                    {/* Audit cells — Created By / Updated By / Created Date / Updated Date.
+                        Populated by GET /api/client-meetings/weekly-meetings. */}
+                    <td className="px-3 py-2">
+                      <UserAuditCell name={r.createdByName} initials={r.createdByInitials} />
+                    </td>
+                    <td className="px-3 py-2">
+                      <UserAuditCell name={r.updatedByName} initials={r.updatedByInitials} />
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <DateAuditCell iso={r.createdAt} />
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <DateAuditCell iso={r.updatedAt} />
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       {viewTrash ? (

@@ -13,6 +13,7 @@ import { useTableSort } from "@/lib/store";
 import { ColMenu } from "@/components/table/ColMenu";
 import { SortIndicator } from "@/components/table/SortIndicator";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
+import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
@@ -325,10 +326,16 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   }
 
   // Column layout — checkbox/log/id are ALWAYS frozen/visible; others are user-controlled
-  const COL_ORDER_FULL = ["_cb", "_log", "_id", "team", "priorityName", "owner", "startWeek", "endWeek", "lastNote"];
+  const COL_ORDER_FULL = [
+    "_cb", "_log", "_id", "team", "priorityName", "owner",
+    "startWeek", "endWeek", "lastNote",
+    // Audit columns — last, before week columns.
+    "createdBy", "updatedBy", "createdAt", "updatedAt",
+  ];
   const COL_WIDTHS: Record<string, number> = {
     _cb: 40, _log: 40, _id: 40, team: 120, priorityName: 260, owner: 140,
     startWeek: 170, endWeek: 170, lastNote: 200,
+    createdBy: 160, updatedBy: 160, createdAt: 130, updatedAt: 130,
   };
   // Drag-to-resize: persisted widths override the defaults above.
   // _cb/_log/_id stay at their defaults (always-frozen chrome — no handle rendered).
@@ -336,6 +343,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const COL_LABELS: Record<string, string> = {
     team: "Team", priorityName: "Priority Name", owner: "Owner",
     startWeek: "Start Week", endWeek: "End Week", lastNote: "Last Note",
+    createdBy: "Created By", updatedBy: "Updated By",
+    createdAt: "Created Date", updatedAt: "Updated Date",
   };
   const ALWAYS_VISIBLE = new Set(["_cb", "_log", "_id"]);
   const ALWAYS_FROZEN = new Set(["_cb", "_log", "_id"]);
@@ -466,7 +475,10 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                               <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                             </svg>
                           )}
-                          <span className={isSorted ? "text-accent-700" : ""}>{label}</span>
+                          {/* `title` surfaces the full label as a native tooltip
+                              when the column is narrow enough to ellipsize
+                              (common on Dashboard previews). */}
+                          <span title={label} className={isSorted ? "text-accent-700" : ""}>{label}</span>
                           <SortIndicator active={!!isSorted} direction={sortDir} />
                         </span>
                         {showMenu && (
@@ -697,6 +709,33 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                       </td>
                     );
                   })()}
+
+                  {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
+                      Populated by GET /api/priority via decorateAudit. */}
+                  {COL_ORDER.includes("createdBy") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
+                      style={{ width: getColWidth("createdBy"), minWidth: getColWidth("createdBy") }}>
+                      <UserAuditCell name={priority.createdByName} initials={priority.createdByInitials} />
+                    </td>
+                  )}
+                  {COL_ORDER.includes("updatedBy") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
+                      style={{ width: getColWidth("updatedBy"), minWidth: getColWidth("updatedBy") }}>
+                      <UserAuditCell name={priority.updatedByName} initials={priority.updatedByInitials} />
+                    </td>
+                  )}
+                  {COL_ORDER.includes("createdAt") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
+                      style={{ width: getColWidth("createdAt"), minWidth: getColWidth("createdAt") }}>
+                      <DateAuditCell iso={priority.createdAt} />
+                    </td>
+                  )}
+                  {COL_ORDER.includes("updatedAt") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
+                      style={{ width: getColWidth("updatedAt"), minWidth: getColWidth("updatedAt") }}>
+                      <DateAuditCell iso={priority.updatedAt} />
+                    </td>
+                  )}
 
                   {/* Week cells */}
                   {visibleWeeksList.map(w => {

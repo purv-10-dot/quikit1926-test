@@ -13,6 +13,7 @@ import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featur
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
 import { isOrgAdmin, getMyTeamIds } from "@/lib/api/visibility";
+import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
@@ -194,6 +195,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       createdAt: true,
       updatedAt: true,
       createdBy: true,
+      updatedBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
       team: { select: { id: true, name: true, color: true, headId: true } },
       weeklyValues: { select: { userId: true, weekNumber: true, value: true, notes: true }, orderBy: [{ weekNumber: "asc" }, { userId: "asc" }] },
@@ -231,6 +233,10 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
         })).map((p) => [p.id, p])
       )
     : new Map();
+
+  // Resolve every unique createdBy/updatedBy id → { name, initials } so the
+  // KPI table can paint the audit columns without an extra round-trip.
+  const auditMap = await fetchAuditUserMap(kpis);
 
   const enriched = kpis.map((k) => {
     const ownerIds = (k.ownerIds as string[] | null) ?? [];
@@ -274,7 +280,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       weeklyOwnerValues = byOwner;
     }
 
-    return {
+    return decorateAudit({
       ...k,
       weeklyValues,
       weeklyOwnerValues,
@@ -283,7 +289,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
         : null,
       owners: ownerIds.map((id) => usersMap.get(id)).filter(Boolean),
       parentKPI: k.parentKPIId ? (parentMap.get(k.parentKPIId) ?? null) : null,
-    };
+    }, auditMap);
   });
 
   const response: ApiResponse<any> = {
@@ -434,6 +440,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       createdAt: true,
       updatedAt: true,
       createdBy: true,
+      updatedBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
     },
   });

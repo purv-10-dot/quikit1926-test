@@ -13,6 +13,7 @@ import { ColMenu } from "@/components/table/ColMenu";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
+import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
 import { Pagination } from "@quikit/ui";
@@ -96,15 +97,10 @@ function StatusPicker({ itemId, currentStatus, onSave, onClose }: StatusPickerPr
             )}
           </button>
         ))}
-        <div className="border-t border-gray-100 mt-1">
-          <button
-            onClick={() => { onSave(itemId, ""); onClose(); }}
-            className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-gray-500 transition-colors ${currentStatus === "" ? "bg-gray-50 font-semibold" : "hover:bg-gray-50"}`}
-          >
-            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-white border border-gray-300" />
-            Clear
-          </button>
-        </div>
+        {/* The "Clear" entry is already in STATUS_PICKER_OPTIONS (last item,
+            value=""), so the previously-rendered manual <button> here
+            produced a duplicate row. Removed — keep the picker in lockstep
+            with the shared options used by PriorityTable. */}
       </div>
     </div>
   );
@@ -210,13 +206,20 @@ interface Props {
 }
 
 // Column keys: _cb, _log, _id (always visible+frozen) | who, when, what, revisedDate, status, notes
-const WWW_COL_ORDER_FULL = ["_cb", "_log", "_id", "who", "when", "what", "revisedDate", "status", "category", "notes"];
+const WWW_COL_ORDER_FULL = [
+  "_cb", "_log", "_id", "who", "when", "what", "revisedDate", "status", "category", "notes",
+  // Audit columns — appended at the end.
+  "createdBy", "updatedBy", "createdAt", "updatedAt",
+];
 const WWW_COL_WIDTHS: Record<string, number> = {
   _cb: 40, _log: 40, _id: 50, who: 120, when: 110,
   what: 300, revisedDate: 120, status: 140, category: 110, notes: 300,
+  createdBy: 160, updatedBy: 160, createdAt: 130, updatedAt: 130,
 };
 const WWW_COL_LABELS: Record<string, string> = {
   who: "Who", when: "When", what: "What", revisedDate: "Revised Date", status: "Status", category: "Category", notes: "Notes",
+  createdBy: "Created By", updatedBy: "Updated By",
+  createdAt: "Created Date", updatedAt: "Updated Date",
 };
 const WWW_SORT_KEYS: Record<string, string> = {
   who: "who", when: "when", what: "what", revisedDate: "revisedDate", status: "status", category: "category", notes: "notes",
@@ -405,7 +408,10 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                               <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                             </svg>
                           )}
-                          <span className={isSorted ? "text-accent-700" : ""}>{label}</span>
+                          {/* `title` surfaces the full label as a native tooltip
+                              when the column is narrow enough to ellipsize
+                              (common on Dashboard previews). */}
+                          <span title={label} className={isSorted ? "text-accent-700" : ""}>{label}</span>
                           <SortIndicator active={!!isSorted} direction={sortDir} />
                         </span>
                         {showMenu && (
@@ -641,6 +647,28 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                           {item.notes || <span className="text-gray-300">—</span>}
                         </span>
                       </TextTooltip>
+                    </td>
+                  )}
+
+                  {/* Audit columns — populated by GET /api/www via decorateAudit. */}
+                  {WWW_COL_ORDER.includes("createdBy") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("createdBy"), minWidth: getColWidth("createdBy") }}>
+                      <UserAuditCell name={item.createdByName} initials={item.createdByInitials} />
+                    </td>
+                  )}
+                  {WWW_COL_ORDER.includes("updatedBy") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("updatedBy"), minWidth: getColWidth("updatedBy") }}>
+                      <UserAuditCell name={item.updatedByName} initials={item.updatedByInitials} />
+                    </td>
+                  )}
+                  {WWW_COL_ORDER.includes("createdAt") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("createdAt"), minWidth: getColWidth("createdAt") }}>
+                      <DateAuditCell iso={item.createdAt} />
+                    </td>
+                  )}
+                  {WWW_COL_ORDER.includes("updatedAt") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 align-top" style={{ width: getColWidth("updatedAt"), minWidth: getColWidth("updatedAt") }}>
+                      <DateAuditCell iso={item.updatedAt} />
                     </td>
                   )}
                 </tr>

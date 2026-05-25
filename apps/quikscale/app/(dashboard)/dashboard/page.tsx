@@ -7,6 +7,7 @@ import { useDashboardSummary } from "@/lib/hooks/useDashboardSummary";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption, FiscalPeriodPicker, type FiscalQuarter } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
@@ -967,6 +968,31 @@ export default function DashboardPage() {
   // Reset C when A changes (the user list narrows / widens).
   useEffect(() => { setTeamTabOwnerId(""); }, [teamTabTeamId]);
 
+  // ── KPI Type toggle gating ──
+  // The "Individual KPI / Team KPI" tab buttons only make sense when the
+  // user can actually see BOTH lists. If they're missing one permission,
+  // surfacing a toggle that snaps them to an empty page is just confusing.
+  // Resource names mirror the permissions registry: "KPI" = Individual KPI,
+  // "TeamKPI" = Team KPI. Pattern matches the sidebar's existing nav-gate
+  // (components/dashboard/sidebar.tsx).
+  const perms = useMyPermissions();
+  const canViewIndividualKPI = perms.has("KPI", "view");
+  const canViewTeamKPI = perms.has("TeamKPI", "view");
+  const showKpiTypeToggle = canViewIndividualKPI && canViewTeamKPI;
+
+  // If the user's current selection points at a permission they don't have
+  // (e.g. they had Team selected, then their role got narrowed), snap to
+  // whichever side they CAN view. Guarded on `!perms.loading` so we don't
+  // flip during the initial permission fetch.
+  useEffect(() => {
+    if (perms.loading) return;
+    if (teamTabKpiType === "team" && !canViewTeamKPI) {
+      setTeamTabKpiType("individual");
+    } else if (teamTabKpiType === "individual" && !canViewIndividualKPI && canViewTeamKPI) {
+      setTeamTabKpiType("team");
+    }
+  }, [perms.loading, canViewIndividualKPI, canViewTeamKPI, teamTabKpiType]);
+
   // ── Sync Dashboard scope → FilterContext ──
   // The KPI / Team KPI / Priority pages read `filterTeam` + `filterOwner`
   // from FilterContext. Writing them here means a sidebar navigation lands
@@ -1210,24 +1236,28 @@ export default function DashboardPage() {
                       allLabel="All Users"
                     />
                   </div>
-                  {/* B — KPI type */}
-                  <div>
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">KPI Type</p>
-                    <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg">
-                      {(["individual", "team"] as const).map(t => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => setTeamTabKpiType(t)}
-                          className={`flex-1 px-2 py-1 text-[11px] font-medium rounded-md transition-all ${
-                            teamTabKpiType === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                          }`}
-                        >
-                          {t === "individual" ? "Individual KPI" : "Team KPI"}
-                        </button>
-                      ))}
+                  {/* B — KPI type. Only renders when the user can view BOTH
+                      Individual KPI and Team KPI; otherwise the toggle is
+                      pointless and `teamTabKpiType` is force-synced above. */}
+                  {showKpiTypeToggle && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">KPI Type</p>
+                      <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg">
+                        {(["individual", "team"] as const).map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setTeamTabKpiType(t)}
+                            className={`flex-1 px-2 py-1 text-[11px] font-medium rounded-md transition-all ${
+                              teamTabKpiType === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                            }`}
+                          >
+                            {t === "individual" ? "Individual KPI" : "Team KPI"}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
                   {/* C — Owner */}
                   <div>
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>

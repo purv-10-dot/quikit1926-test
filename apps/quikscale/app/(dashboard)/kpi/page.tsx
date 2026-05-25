@@ -15,7 +15,7 @@ import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "./hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
-import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, DropdownPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { AddButton } from "@quikit/ui";
@@ -88,7 +88,6 @@ export default function IndividualKPIPage() {
 
   // Filter panel state
   const [showFilter, setShowFilter] = useState(false);
-  const [filterStatus, setFilterStatus] = useState("");
   const filterRef = useRef<HTMLDivElement>(null);
 
   // Teams list
@@ -116,12 +115,12 @@ export default function IndividualKPIPage() {
   useEffect(() => {
     setFilters(f => ({
       ...f,
-      status: (filterStatus as any) || undefined,
+      status: undefined,
       owner: filterOwner || undefined,
       teamId: filterTeam && !filterOwner ? filterTeam : undefined,
       page: 1,
     }));
-  }, [filterStatus, filterOwner, filterTeam]);
+  }, [filterOwner, filterTeam]);
 
   // Close filter dropdown on outside click (year picker owns its own outside-click handling)
   useEffect(() => {
@@ -231,7 +230,7 @@ export default function IndividualKPIPage() {
   // Both return null while loading → pill hides until ready.
   const fiscalWeek = useCurrentWeek(currentYear, currentQuarter);
   const fiscalWeekRange = useWeekDateRange(currentYear, currentQuarter, fiscalWeek);
-  const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterOwner ? 1 : 0);
+  const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner ? 1 : 0);
 
   return (
     <div className="flex flex-col h-full">
@@ -356,22 +355,9 @@ export default function IndividualKPIPage() {
                     allLabel="All owners"
                   />
                 </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Status</p>
-                  <DropdownPicker
-                    value={filterStatus}
-                    onChange={setFilterStatus}
-                    options={[
-                      { value: "", label: "All statuses" },
-                      { value: "active", label: "Active" },
-                      { value: "paused", label: "Paused" },
-                      { value: "completed", label: "Completed" },
-                    ]}
-                  />
-                </div>
-                {(filterTeam || filterStatus || filterOwner) && (
+                {(filterTeam || filterOwner) && (
                   <button
-                    onClick={() => { setFilterTeam(""); setFilterStatus(""); setFilterOwner(""); }}
+                    onClick={() => { setFilterTeam(""); setFilterOwner(""); }}
                     className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Clear filters

@@ -9,6 +9,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
+import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 
 const PRIORITY_SELECT = {
   id: true,
@@ -25,6 +26,7 @@ const PRIORITY_SELECT = {
   createdAt: true,
   updatedAt: true,
   createdBy: true,
+  updatedBy: true,
   owner_user: { select: { id: true, firstName: true, lastName: true } },
   team: { select: { id: true, name: true } },
   weeklyStatuses: {
@@ -74,7 +76,12 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     db.priority.count({ where }),
   ]);
 
-  return NextResponse.json(paginatedResponse(priorities, total, page, limit));
+  // Resolve createdBy/updatedBy → name + initials so the table can paint
+  // the audit columns without a second round-trip.
+  const auditMap = await fetchAuditUserMap(priorities);
+  const decorated = priorities.map((p) => decorateAudit(p, auditMap));
+
+  return NextResponse.json(paginatedResponse(decorated, total, page, limit));
 });
 
 // POST /api/priority — create a priority

@@ -5,6 +5,7 @@ import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
 import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
+import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { computeQtd, weeklyGoalFor } from "./kpiStats";
 import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
 import { useStickyOffsets } from "../hooks/useStickyOffsets";
@@ -215,7 +216,15 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   <th key={col} data-col-key={col} className={thClass(col)} style={stickyStyle(col, w)}>
                     <div className="flex items-center gap-1 px-3 py-2 pr-2">
                       {frozenUpTo === col && <FreezeIcon />}
-                      <span className={`flex-1 truncate min-w-0 ${isSorted ? "text-accent-700" : ""}`}>{COL_LABELS[col]}</span>
+                      {/* `title` surfaces the full label as a native tooltip when
+                          the column is narrow enough to ellipsize (common on
+                          Dashboard previews where cells are constrained). */}
+                      <span
+                        title={COL_LABELS[col]}
+                        className={`flex-1 truncate min-w-0 ${isSorted ? "text-accent-700" : ""}`}
+                      >
+                        {COL_LABELS[col]}
+                      </span>
                       <SortIndicator active={isSorted} direction={sortOrder} />
                       <ColMenu colKey={col}
                         onSort={sortable ? (d => onSort(SORT_KEYS[col], d)) : undefined}
@@ -510,6 +519,28 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       )}
                     </td>
                   )}
+                  {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
+                      Populated by GET /api/kpi (see lib/api/auditUsers.ts). */}
+                  {!localHideSet.has("createdBy") && (
+                    <td className={tdClass("createdBy")} style={stickyStyle("createdBy", getColWidth("createdBy"))}>
+                      <UserAuditCell name={kpi.createdByName} initials={kpi.createdByInitials} />
+                    </td>
+                  )}
+                  {!localHideSet.has("updatedBy") && (
+                    <td className={tdClass("updatedBy")} style={stickyStyle("updatedBy", getColWidth("updatedBy"))}>
+                      <UserAuditCell name={kpi.updatedByName} initials={kpi.updatedByInitials} />
+                    </td>
+                  )}
+                  {!localHideSet.has("createdAt") && (
+                    <td className={tdClass("createdAt")} style={stickyStyle("createdAt", getColWidth("createdAt"))}>
+                      <DateAuditCell iso={kpi.createdAt} />
+                    </td>
+                  )}
+                  {!localHideSet.has("updatedAt") && (
+                    <td className={tdClass("updatedAt")} style={stickyStyle("updatedAt", getColWidth("updatedAt"))}>
+                      <DateAuditCell iso={kpi.updatedAt} />
+                    </td>
+                  )}
 
                   {/* Week columns */}
                   {visibleWeekCols.map(w => {
@@ -517,7 +548,20 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     const wv = weekMap[w];
                     const val = wv?.value;
                     const note = wv?.notes;
-                    const { bg, text, label: cellLabel } = weekCellColors(val, kpi.qtdGoal, kpi.target, kpi.reverseColor ?? false);
+                    // Per-week target wins over `qtdGoal/13` averaging.
+                    // `weekCellColors` divides by 13 internally, so the
+                    // explicit per-week target is multiplied back to keep
+                    // the helper signature unchanged. Mirrors the
+                    // Dashboard's pattern at dashboard/page.tsx:648.
+                    // Without this, KPIs whose per-week target differs
+                    // from `qtdGoal/13` (or whose qtdGoal isn't the
+                    // quarterly sum) paint the wrong color band.
+                    const kpiWeeklyTargets = kpi.weeklyTargets as Record<string, number> | null | undefined;
+                    const explicitWeekTarget = kpiWeeklyTargets?.[String(w)];
+                    const targetForHelper = explicitWeekTarget != null
+                      ? explicitWeekTarget * 13
+                      : (kpi.qtdGoal ?? kpi.target ?? 0);
+                    const { bg, text, label: cellLabel } = weekCellColors(val, targetForHelper, null, kpi.reverseColor ?? false);
                     const colW = getColWidth(col);
                     const boundary = col === frozenUpTo;
 

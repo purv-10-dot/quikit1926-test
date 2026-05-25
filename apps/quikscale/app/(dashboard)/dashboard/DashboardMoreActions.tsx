@@ -33,6 +33,10 @@ import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
 import type { WWWItem } from "@/lib/types/www";
 import { useTablePrefs, type TableName } from "@/lib/hooks/useTablePreferences";
+// Single source of truth for KPI column labels — keeps the Manage Columns
+// modal in lockstep with the actual table headers. Without this import, the
+// modal silently drifts every time a label is renamed on the KPI page.
+import { COL_LABELS as KPI_COL_LABELS } from "../kpi/hooks/useTableColumns";
 
 export type DashboardSectionKey = "kpi" | "priority" | "www";
 
@@ -41,14 +45,20 @@ const SECTION_META: Array<{ key: DashboardSectionKey; label: string; prefsKey: T
     key: "kpi",
     label: "KPI Overview",
     prefsKey: "kpi",
+    // Column keys MUST match the keys used by KPITable's `localHideSet`
+    // (see app/(dashboard)/kpi/components/KPITable.tsx). Labels are pulled
+    // from `KPI_COL_LABELS` so the modal can't drift from the table header
+    // text. Note: the column is `targetValue`, not `target` — using
+    // `target` here was a bug that made the toggle silently no-op because
+    // KPITable checks `localHideSet.has("targetValue")`.
     columns: [
-      { key: "kpiName", label: "KPI Name" },
-      { key: "owner", label: "Owner" },
-      { key: "team", label: "Team" },
-      { key: "measurementUnit", label: "Unit" },
-      { key: "target", label: "Target" },
-      { key: "qtdAchieved", label: "QTD Achieved" },
-      { key: "progress", label: "Progress" },
+      { key: "kpiName",         label: KPI_COL_LABELS.kpiName },
+      { key: "owner",           label: KPI_COL_LABELS.owner },
+      { key: "team",            label: KPI_COL_LABELS.team },
+      { key: "measurementUnit", label: KPI_COL_LABELS.measurementUnit },
+      { key: "targetValue",     label: KPI_COL_LABELS.targetValue },
+      { key: "qtdAchieved",     label: KPI_COL_LABELS.qtdAchieved },
+      { key: "progress",        label: KPI_COL_LABELS.progress },
     ],
   },
   {
@@ -199,7 +209,10 @@ function ExportSectionsModal({
     try {
       const wb = XLSX.utils.book_new();
       if (sel.has("kpi") && kpis.length) {
-        const header = ["KPI Name", "Owner", "Team", "Unit", "Target", "QTD Achieved", "Progress %"];
+        // Header labels match the table headers + the Manage Columns modal
+        // (both sourced from KPI_COL_LABELS) so the exported xlsx uses the
+        // same wording the user sees on screen.
+        const header = ["KPI Name", "Owner", "Team", KPI_COL_LABELS.measurementUnit, KPI_COL_LABELS.targetValue, KPI_COL_LABELS.qtdAchieved, "Progress %"];
         const body = kpis.map((k: any) => [
           k.name ?? "",
           k.owner_user ? `${k.owner_user.firstName} ${k.owner_user.lastName}` : "",
