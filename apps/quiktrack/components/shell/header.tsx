@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Bell, HelpCircle, Settings, Plus, PanelLeft, ShieldCheck } from "lucide-react";
+import { HelpCircle, Settings, Plus, PanelLeft, ShieldCheck } from "lucide-react";
 import { UserMenu, globalSignOut } from "@quikit/ui";
 import { CreateIssueModal } from "@/components/create-issue-modal";
 import { HelpPanel } from "@/components/help-panel";
@@ -16,6 +16,7 @@ import {
 } from "@/components/global-search-popover";
 import { SettingsPopover } from "@/components/shell/settings-popover";
 import { AppSwitcherVertical } from "@/components/shell/app-switcher-vertical";
+import { NotificationsPopover } from "@/components/shell/notifications-popover";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface HeaderProps {
@@ -97,9 +98,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-1">
-        <button className="p-2 rounded hover:bg-gray-100 text-gray-600" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
-        </button>
+        <NotificationsPopover />
         <button
           type="button"
           onClick={() => setHelpOpen(true)}

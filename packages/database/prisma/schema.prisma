@@ -4835,6 +4835,7 @@ model QtProject {
   statuses    QtIssueStatus[]
   issueTypes  QtIssueType[]
   pages       QtPage[]
+  taskGroups  QtTaskGroup[]
   org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   members          QtProjectMember[]
   teams            QtProjectTeam[]
@@ -5200,6 +5201,12 @@ model QtIssue {
   eta              Float?
   storyPoints      Int?
   orderInColumn    Int                @default(0)
+  /// Grouped Kanban — visual business band. INDEPENDENT of statusId.
+  /// Dragging across groups must NOT change status, and changing status
+  /// must NOT change groupId. Null = tasks render under the default
+  /// "Ungrouped" row but still carry no group assignment.
+  groupId          String?
+  orderInGroup     Int                @default(0)
   isDeleted        Boolean            @default(false)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
@@ -5213,6 +5220,7 @@ model QtIssue {
   project          QtProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sprint           QtSprint?          @relation(fields: [sprintId], references: [id])
   status           QtIssueStatus      @relation(fields: [statusId], references: [id])
+  group            QtTaskGroup?       @relation(fields: [groupId], references: [id], onDelete: SetNull)
   comments         QtIssueComment[]
   history          QtIssueHistory[]
   outgoingLinks    QtIssueLink[]      @relation("IssueLinkSource")
@@ -5227,7 +5235,41 @@ model QtIssue {
   @@index([epicId])
   @@index([parentId])
   @@index([sprintId])
+  @@index([groupId, orderInGroup])
   @@index([startDate, dueDate])
+  @@schema("app_quiktrack")
+}
+
+/// Grouped Kanban — business-band grouping that sits alongside `statusId`
+/// as an independent axis on QtIssue. The "group ≠ status" rule is enforced
+/// in app code (apps/quiktrack/lib/services/groupService.ts), not at the DB
+/// layer.
+model QtTaskGroup {
+  id          String    @id @default(cuid())
+  orgId       String
+  projectId   String
+  name        String
+  /// Hex color used to render the group band accent.
+  color       String    @default("#94a3b8")
+  /// Optional lucide-react icon name.
+  icon        String?
+  order       Int       @default(0)
+  /// True for the auto-seeded "Ungrouped" row. Cannot be deleted; tasks
+  /// fall back here when any other group is deleted.
+  isDefault   Boolean   @default(false)
+  /// Board-wide default collapse state. Per-user override is client-side.
+  isCollapsed Boolean   @default(false)
+  isDeleted   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  project     QtProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issues      QtIssue[]
+
+  @@unique([projectId, name])
+  @@index([orgId, projectId])
+  @@index([projectId, order])
   @@schema("app_quiktrack")
 }
 
@@ -5431,6 +5473,59 @@ model QtNotificationPref {
 
   @@unique([userId, eventKey, channel])
   @@index([userId])
+  @@schema("app_quiktrack")
+}
+
+model QtUserNotificationSetting {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  digestCadence       String    @default("none")
+  lastDigestAt        DateTime?
+  inAppEnabled        Boolean   @default(true)
+  emailInstantEnabled Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@schema("app_quiktrack")
+}
+
+model QtNotification {
+  id          String    @id @default(cuid())
+  orgId       String
+  recipientId String
+  actorId     String?
+  tab         String    @default("direct")
+  type        String
+  projectId   String?
+  issueId     String?
+  issueKey    String?
+  issueTitle  String?
+  commentId   String?
+  snippet     String?
+  fromValue   String?
+  toValue     String?
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([recipientId, tab, isRead, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([orgId, createdAt])
+  @@index([issueId])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueWatcher {
+  id        String   @id @default(cuid())
+  orgId     String
+  issueId   String
+  userId    String
+  source    String   @default("AUTO")
+  createdAt DateTime @default(now())
+
+  @@unique([issueId, userId])
+  @@index([userId])
+  @@index([issueId])
   @@schema("app_quiktrack")
 }
 

@@ -286,6 +286,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
 
       {addPeopleOpen && project && (
         <AddPeopleModal
+          projectId={projectId}
           projectName={project.name}
           onClose={() => setAddPeopleOpen(false)}
         />
