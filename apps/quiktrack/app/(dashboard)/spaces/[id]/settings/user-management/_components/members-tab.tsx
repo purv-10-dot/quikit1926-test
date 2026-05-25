@@ -40,7 +40,10 @@ export function MembersTab({ projectId }: { projectId: string }) {
   // Developer/QA can read the member list — but mutations get disabled
   // unless they hold the matching perm.
   const canAdd = perms.loading || perms.has("ProjectMember", "create");
-  const canUpdateRoles = perms.loading || perms.has("ProjectMember", "update");
+  // Only app-wide admins (tenant admin / super admin) can change a member's
+  // project role. Project-level "ProjectMember:update" no longer unlocks the
+  // role picker — matches the role-catalogue editor gate.
+  const canUpdateRoles = perms.loading || perms.isAdmin;
   const [expanded, setExpanded] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -103,9 +106,8 @@ export function MembersTab({ projectId }: { projectId: string }) {
           <Lock className="h-3.5 w-3.5 shrink-0" />
           <span>
             <span className="font-semibold">Read-only</span> — you can see the member list,
-            but changing roles or adding members needs the{" "}
-            <span className="font-medium">ProjectMember:update</span> /{" "}
-            <span className="font-medium">:create</span> permission. Ask the project admin.
+            but only <span className="font-medium">app admins</span> can change a member&apos;s
+            project role here. Ask a tenant admin if you need changes.
           </span>
         </div>
       )}
