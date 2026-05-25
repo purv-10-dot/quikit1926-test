@@ -110,6 +110,33 @@
   scrollbar-width: auto;
 }
 
+/* Polished horizontal scrollbar for the project Board strip. Slimmer
+   (8px), rounded, subtle gray with a soft hover tint. Sits at the bottom
+   of the board pane so users see they can pan to reveal off-screen
+   columns (parallel sprints + many statuses can easily exceed the
+   viewport width). */
+.qt-board-scroll::-webkit-scrollbar { height: 10px; }
+.qt-board-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 0 4px;
+}
+.qt-board-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-width: 48px;
+}
+.qt-board-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+.qt-board-scroll {
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-width: thin;
+}
+
 /* Indeterminate progress slider for background refetches — paired with the
    keepPreviousData pattern in the Project Reports view. */
 @keyframes qt-progress-slide {

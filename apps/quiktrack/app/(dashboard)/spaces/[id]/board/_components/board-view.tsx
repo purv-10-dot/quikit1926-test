@@ -91,8 +91,12 @@ export function BoardView({ projectId }: { projectId: string }) {
       const sprintList: Array<{ id: string; name: string; status: string }> =
         sprintsRes?.success ? sprintsRes.data ?? [] : [];
       setAllSprints(sprintList);
-      const active = sprintList.find((s) => s.status === "ACTIVE");
-      setActiveSprintId(active?.id ?? null);
+      // Parallel sprints are allowed (Jira-parity). The board shows the
+      // union of every currently-ACTIVE sprint's work; we pass the joined
+      // id list to /api/issues, which interprets a comma-separated
+      // `sprintId` as an IN-list (see issues/route.ts).
+      const actives = sprintList.filter((s) => s.status === "ACTIVE");
+      setActiveSprintId(actives.length > 0 ? actives.map((s) => s.id).join(",") : null);
       if (epicsRes?.success) {
         const map: Record<string, EpicLite> = {};
         for (const e of epicsRes.data ?? []) {
@@ -204,7 +208,12 @@ export function BoardView({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className="px-6 py-4">
+    // `min-w-0` is essential — without it, the inner overflow-x-auto can't
+    // create a scroll context because the parent flex/grid chain tries to
+    // size to content. With many columns + parallel sprints in play the
+    // board easily exceeds the viewport width, so we let the inner column
+    // strip own the horizontal scrollbar.
+    <div className="px-6 py-4 min-w-0">
       <Toolbar
         searchInput={searchInput}
         onSearchChange={setSearchInput}
@@ -223,7 +232,14 @@ export function BoardView({ projectId }: { projectId: string }) {
         }}
       />
 
-      <div className="flex gap-3 overflow-x-auto pb-4">
+      {/* qt-board-scroll (globals.css) — slim rounded always-visible
+          horizontal scrollbar styled specifically for the board pane.
+          The strip fills the remaining vertical space so the bar sits
+          at the bottom of the viewport, matching Jira's pattern. */}
+      <div
+        className="flex gap-3 overflow-x-scroll w-full qt-board-scroll pb-2"
+        style={{ minHeight: "calc(100vh - 220px)" }}
+      >
         {bootLoading &&
           Array.from({ length: 4 }).map((_, i) => (
             <div
