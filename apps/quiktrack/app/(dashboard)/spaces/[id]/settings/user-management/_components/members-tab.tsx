@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Lock, Search, Users as UsersIcon, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Lock, Search, Users as UsersIcon, X } from "lucide-react";
 import { Button } from "@quikit/ui";
 import { EffectivePermissions } from "./effective-permissions";
 import { AddMemberModal } from "./add-member-modal";
+import { RolePicker } from "./role-picker";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 interface Member {
@@ -43,6 +44,8 @@ export function MembersTab({ projectId }: { projectId: string }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const membersQ = useQuery({
     queryKey: ["quiktrack", "project-members", projectId],
@@ -86,6 +89,12 @@ export function MembersTab({ projectId }: { projectId: string }) {
   });
 
   const roles = rolesQ.data ?? [];
+
+  const totalPages = Math.max(1, Math.ceil(members.length / pageSize));
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  useEffect(() => { setPage(1); }, [search, pageSize]);
+  const pageStart = (Math.min(page, totalPages) - 1) * pageSize;
+  const pageMembers = members.slice(pageStart, pageStart + pageSize);
 
   return (
     <div className="px-8 py-6 space-y-4">
@@ -145,7 +154,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
               <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">Loading…</td></tr>
             ) : members.length === 0 ? (
               <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">No members yet</td></tr>
-            ) : members.map((m) => {
+            ) : pageMembers.map((m) => {
               const isOpen = expanded === m.userId;
               return (
                 <>
@@ -166,30 +175,20 @@ export function MembersTab({ projectId }: { projectId: string }) {
                     <td className="px-4 py-3 text-gray-600">{m.user?.email}</td>
                     <td className="px-4 py-3">
                       {canUpdateRoles ? (
-                        <select
-                          value={m.projectRoleId ?? ""}
-                          onChange={(e) =>
-                            setRole.mutate({
-                              userId: m.userId,
-                              projectRoleId: e.target.value === "" ? null : e.target.value,
-                            })
+                        <RolePicker
+                          value={m.projectRoleId}
+                          roles={roles}
+                          onChange={(next) =>
+                            setRole.mutate({ userId: m.userId, projectRoleId: next })
                           }
-                          className="text-xs px-2 py-1 border border-gray-200 rounded bg-white"
-                        >
-                          <option value="">— None —</option>
-                          {roles.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.name}{r.isDefault ? " (default)" : ""}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       ) : (
                         <span
                           title="You don't have permission to change member roles. Ask the project admin (ProjectMember:update)."
                           className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 ring-1 ring-gray-200 rounded px-2 py-1 cursor-not-allowed"
                         >
                           <Lock className="h-3 w-3 text-gray-400" />
-                          {m.projectRole?.name ?? "— None —"}
+                          {m.projectRole?.name ?? "Unassigned"}
                         </span>
                       )}
                     </td>
@@ -223,6 +222,52 @@ export function MembersTab({ projectId }: { projectId: string }) {
             })}
           </tbody>
         </table>
+        {members.length > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-gray-50/60 text-xs text-gray-600">
+            <div className="flex items-center gap-2">
+              <span>Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(parseInt(e.target.value, 10))}
+                className="h-7 px-2 rounded border border-gray-200 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                {[10, 25, 50, 100].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-3">
+              <span>
+                {members.length === 0
+                  ? "0"
+                  : `${pageStart + 1}–${Math.min(pageStart + pageSize, members.length)} of ${members.length}`}
+              </span>
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="h-7 w-7 inline-flex items-center justify-center rounded border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="mx-2 tabular-nums">
+                  Page <span className="font-medium text-gray-900">{Math.min(page, totalPages)}</span> of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="h-7 w-7 inline-flex items-center justify-center rounded border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {addOpen && <AddMemberModal projectId={projectId} onClose={() => setAddOpen(false)} />}
