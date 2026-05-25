@@ -53,7 +53,7 @@ export function EffectivePermissions({
       <div className="bg-gray-900 text-white rounded-md px-4 py-2.5 flex items-start gap-2 text-xs">
         <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
         <span>
-          Gray-checked + <Lock className="inline h-3 w-3 mx-0.5" /> cells come from the role and can't be changed here.
+          Gray-checked + <Lock className="inline h-3 w-3 mx-0.5" /> cells come from the role and can&apos;t be changed here.
           Tick any empty cell to add an <span className="text-blue-300 font-medium">extra</span> grant for just this user.
         </span>
       </div>
