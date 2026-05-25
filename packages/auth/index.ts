@@ -6,7 +6,6 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import { db } from "@quikit/database";
-import { rateLimitAsync } from "@quikit/shared/rateLimit";
 import bcrypt from "bcryptjs";
 import {
   createAuthSession,
@@ -41,35 +40,6 @@ function splitName(name: string | undefined | null): { first: string; last: stri
   return { first: trimmed.slice(0, idx), last: trimmed.slice(idx + 1).trim() };
 }
 
-/**
- * NextAuth's `authorize(credentials, req)` hands us a plain Node request
- * whose `headers` shape is `IncomingHttpHeaders` — a record of string |
- * string[] | undefined. Extract the first plausible client IP so the
- * rate limiter can bucket attackers.
- *
- * In production behind Caddy / Vercel edge, `x-forwarded-for` is trusted;
- * the first IP in the list is the original client. Locally, both headers
- * are absent → "anonymous" (still useful because it groups the unknown-IP
- * population together).
- */
-function nextAuthIp(
-  req: { headers?: Record<string, string | string[] | undefined> } | undefined,
-): string {
-  const h = req?.headers ?? {};
-  const xff = h["x-forwarded-for"];
-  const ipStr = Array.isArray(xff) ? xff[0] : xff;
-  if (ipStr) return String(ipStr).split(",")[0]!.trim();
-  const real = h["x-real-ip"];
-  if (real) return Array.isArray(real) ? real[0]! : String(real);
-  return "anonymous";
-}
-
-/**
- * Fail-closed (return {ok: false}) only in production. In dev / tests,
- * the in-memory fallback works fine for a single process.
- */
-const FAIL_CLOSED = process.env.NODE_ENV === "production";
-
 export function createAuthOptions(config: AuthConfig): NextAuthOptions {
   return {
     providers: [
@@ -84,37 +54,22 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
             throw new Error("Invalid credentials");
           }
 
-          // Two-axis rate limit, both distributed via Redis when REDIS_URL is
-          // set. See docs/plans/P0-3-distributed-rate-limiter.md.
+          // Rate-limits removed (per user request).
           //
-          // Per-email: stops a targeted guessing attack on one account.
-          // Per-IP:    stops credential-stuffing spreading across many emails.
-          const emailKey = String(credentials.email).toLowerCase();
-          const emailRL = await rateLimitAsync({
-            routeKey: "auth:login:email",
-            clientKey: emailKey,
-            limit: 5,
-            windowMs: 15 * 60 * 1000,
-            failClosed: FAIL_CLOSED,
-          });
-          if (!emailRL.ok) {
-            throw new Error(
-              "Too many login attempts. Please try again in 15 minutes.",
-            );
-          }
-
-          const ipRL = await rateLimitAsync({
-            routeKey: "auth:login:ip",
-            clientKey: nextAuthIp(req),
-            limit: 20,
-            windowMs: 15 * 60 * 1000,
-            failClosed: FAIL_CLOSED,
-          });
-          if (!ipRL.ok) {
-            throw new Error(
-              "Too many login attempts from this IP. Try again later.",
-            );
-          }
+          // The forgot-password / set-password / re-signin chain triggers 2
+          // credential signIns per attempt; the old per-email limit of 5 in
+          // 15 minutes locked legitimate users out of the reset flow after
+          // only 2-3 retries — surfaced to the UI as a misleading
+          // "Temporary password is incorrect" error.
+          //
+          // Brute-force / credential-stuffing protection now lives ONLY in
+          // the auth host's middleware + the underlying `/api/auth/...`
+          // route handlers (e.g. `/api/auth/forgot-password` keeps its
+          // per-IP + per-email throttles). The credentials provider itself
+          // no longer throttles login attempts.
+          // _req parameter kept to preserve the helper import; suppresses
+          // unused-import lint.
+          void req;
 
           // Case-insensitive lookup so existing rows whose `email` was stored
           // with the casing the admin originally typed (e.g. "Foo@Bar.com")

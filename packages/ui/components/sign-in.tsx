@@ -423,8 +423,13 @@ export const SignInComponent = ({
         redirect: false,
       });
       if (!tempSignIn?.ok) {
+        // NextAuth surfaces the credentials provider's thrown message in
+        // `tempSignIn.error` (e.g. rate-limit messages, custom validation).
+        // Fall back to the generic "incorrect password" copy only when no
+        // structured error was returned.
         setResetError(
-          "Temporary password is incorrect. Check the email we sent or request a new one.",
+          tempSignIn?.error ||
+            "Temporary password is incorrect. Check the email we sent or request a new one.",
         );
         setResetSubmitting(false);
         return;
