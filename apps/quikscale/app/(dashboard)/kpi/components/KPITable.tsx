@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
 import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
-import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { computeQtd, weeklyGoalFor } from "./kpiStats";
@@ -274,10 +274,25 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                 </td>
               </tr>
             ) : kpis.map((kpi, idx) => {
-              const colors = progressColor(kpi.progressPercent ?? 0);
+              // Progress column uses `getProgressBadgeColors` (NOT
+              // `getColorByPercentage` directly) because the percentage
+              // text sits on a white row — the underlying helper's
+              // `text-white` tone is for cells with a colored bg and
+              // would render the label invisible here. The badge helper
+              // returns the same color thresholds with readable-on-white
+              // text tones (text-blue-700 etc.).
+              const progressAchieved = kpi.qtdAchieved ?? 0;
+              const progressGoal = kpi.qtdGoal ?? kpi.target ?? 0;
+              const progressPct = progressGoal > 0 ? (progressAchieved / progressGoal) * 100 : 0;
               const ownerName = kpi.owner_user ? `${kpi.owner_user.firstName} ${kpi.owner_user.lastName}` : kpi.owner;
               const weekMap: Record<number, WeeklyValue> = {};
               (kpi.weeklyValues ?? []).forEach(wv => { weekMap[wv.weekNumber] = wv; });
+              const hasAnyWeeklyValue = Object.values(weekMap).some((wv) => wv?.value != null);
+              const progressBadge = kpi.qtdAchieved != null
+                ? getProgressBadgeColors(progressAchieved, progressGoal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+                : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
+              const progressBarBg = progressBadge.bar;
+              const progressTextColor = progressBadge.text;
 
               return (
                 <tr key={kpi.id} className="hover:bg-blue-50/30 transition-colors">
@@ -324,13 +339,16 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     </td>
                   )}
 
-                  {/* Progress */}
+                  {/* Progress — percentage + text + bar all consistent now.
+                      Computed from qtdAchieved/qtdGoal (same denominator as
+                      the cards), colored via `getColorByPercentage` so the
+                      thresholds documented in `colorLogic.ts` are honored. */}
                   {!localHideSet.has("progress") && (
                     <td className={tdClass("progress")} style={stickyStyle("progress", getColWidth("progress"))}>
                       <div className="flex items-center gap-2">
-                        <span className={`font-medium w-10 flex-shrink-0 ${colors.text}`}>{(kpi.progressPercent ?? 0).toFixed(0)}%</span>
+                        <span className={`font-medium w-10 flex-shrink-0 ${progressTextColor}`}>{progressPct.toFixed(0)}%</span>
                         <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
-                          <div className={`h-2 rounded-full transition-all ${colors.bar}`} style={{ width: `${Math.min(kpi.progressPercent ?? 0, 100)}%` }} />
+                          <div className={`h-2 rounded-full transition-all ${progressBarBg}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
                         </div>
                       </div>
                     </td>

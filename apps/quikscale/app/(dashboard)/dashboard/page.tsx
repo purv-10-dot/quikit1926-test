@@ -17,7 +17,8 @@ import {
   weekDateLabel, ALL_WEEKS, rollingVisibleWeeks,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
-import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
+import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { KPITable } from "../kpi/components/KPITable";
 import { PriorityTable } from "../priority/components/PriorityTable";
@@ -485,9 +486,18 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
 // ── KPI mini cards ────────────────────────────────────────────────────────────
 
 function KPICard({ kpi }: { kpi: KPIRow }) {
-  const colors = progressColor(kpi.progressPercent ?? 0);
+  // Same denominator for ratio AND percentage so the math agrees with what
+  // the user reads. `getProgressBadgeColors` runs the canonical
+  // `getColorByPercentage` internally and returns READABLE-on-white text
+  // colors (text-blue-700 etc.) instead of the text-on-color text-white
+  // tones — so the percentage label is visible on the white card.
   const achieved = kpi.qtdAchieved ?? 0;
-  const goal = kpi.quarterlyGoal ?? kpi.target ?? 0;
+  const goal = kpi.qtdGoal ?? kpi.target ?? 0;
+  const pct = goal > 0 ? (achieved / goal) * 100 : 0;
+  const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
+  const badge = kpi.qtdAchieved != null
+    ? getProgressBadgeColors(achieved, goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+    : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
   return (
     <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow">
       <p className="text-[11px] text-gray-500 font-medium truncate mb-1.5" title={kpi.name}>{kpi.name}</p>
@@ -496,9 +506,12 @@ function KPICard({ kpi }: { kpi: KPIRow }) {
         <span className="text-xs text-gray-400">/ {fmtCompact(goal)}</span>
       </div>
       <div className="flex items-center gap-2">
-        <span className={`text-xs font-semibold ${colors.text}`}>{(kpi.progressPercent ?? 0).toFixed(0)}%</span>
+        <span className={`text-xs font-semibold ${badge.text}`}>{pct.toFixed(0)}%</span>
         <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <div className={`h-1.5 rounded-full ${colors.bar}`} style={{ width: `${Math.min(kpi.progressPercent ?? 0, 100)}%` }} />
+          {/* Bar width still clamps at 100% (container width). The color
+              band already signals over-achievement; the text shows the
+              true percentage. */}
+          <div className={`h-1.5 rounded-full ${badge.bar}`} style={{ width: `${Math.min(pct, 100)}%` }} />
         </div>
       </div>
     </div>

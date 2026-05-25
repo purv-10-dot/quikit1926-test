@@ -17,16 +17,24 @@
  */
 
 import type { KPIRow } from "@/lib/types/kpi";
-import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
+import { fmt, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
 import { computeKPIStats, computeQtd } from "./kpiStats";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
-  const colors = progressColor(kpi.progressPercent ?? 0);
   // kpi.target is the user-set quarterly target; kpi.qtdGoal is a derived aggregate
   // that can lag behind after a target edit. Use kpi.target as the primary.
   const target = kpi.target ?? kpi.qtdGoal ?? 0;
   const achieved = kpi.qtdAchieved ?? 0;
+  // Badge-colors helper — runs the canonical `getColorByPercentage`
+  // internally and maps the result to READABLE-on-white text tones plus
+  // a human status label. Use it because the percentage label here sits
+  // on a white panel (not a colored cell).
+  const pct = target > 0 ? (achieved / target) * 100 : 0;
+  const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
+  const colors = kpi.qtdAchieved != null
+    ? getProgressBadgeColors(achieved, target, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+    : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
   const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi);
 
   // Week-of-quarter (1..13) — DB-driven, respects tenant's QuarterSetting.
@@ -73,7 +81,7 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
           <div className="flex items-end justify-between mb-3">
             <div>
               <div className={`text-3xl font-bold ${colors.text}`}>
-                {(kpi.progressPercent ?? 0).toFixed(0)}%
+                {pct.toFixed(0)}%
               </div>
               <div className="text-xs text-gray-500 mt-0.5">{colors.label}</div>
             </div>
@@ -90,7 +98,7 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
           <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
             <div
               className={`h-3 rounded-full transition-all ${colors.bar}`}
-              style={{ width: `${Math.min(kpi.progressPercent ?? 0, 100)}%` }}
+              style={{ width: `${Math.min(pct, 100)}%` }}
             />
           </div>
         </div>
