@@ -9,6 +9,7 @@ import { useTeams, type Team } from "@/lib/hooks/useTeams";
 import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, DropdownPicker } from "@quikit/ui";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
+import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 
 interface Props {
   defaultYear?: number;
@@ -156,6 +157,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   // DB-scoped fiscal years via shared hook
   const { years: fyYears } = useFiscalYears();
   const yearOptions = fyYears.length ? fyYears : [CURRENT_YEAR];
+  const { getStartDate: getQuarterStartDate } = useQuarterStartDates();
 
   // Owner dropdown filtering:
   //   - Team selected → fetch members of that team (API filters server-side).
@@ -289,7 +291,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
                 options={WEEK_OPTIONS.map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
-                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w),
+                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter)),
                 }))}
                 searchable
               />
@@ -334,7 +336,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
                 options={WEEK_OPTIONS.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
-                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w),
+                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter)),
                 }))}
                 searchable
               />

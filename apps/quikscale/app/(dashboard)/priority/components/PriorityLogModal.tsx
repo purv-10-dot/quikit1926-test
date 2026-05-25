@@ -11,6 +11,7 @@ import { UserPicker } from "@quikit/ui";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
+import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 
 interface Props {
   priority: PriorityRow;
@@ -68,6 +69,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // DB-scoped fiscal years via shared hook
   const { years: fyYears } = useFiscalYears();
   const yearOptions = fyYears.length ? fyYears : [CURRENT_YEAR];
+  const { getStartDate: getQuarterStartDate } = useQuarterStartDates();
 
   // Notes tab state
   const [notes, setNotes] = useState(priority.notes ?? "");
@@ -316,7 +318,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   <select value={form.startWeek} onChange={e => handleStartWeekChange(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                     {WEEK_OPTIONS.map(w => (
-                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>
+                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter))})</option>
                     ))}
                   </select>
                 </div>
@@ -325,7 +327,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   <select value={form.endWeek} onChange={e => setField("endWeek", e.target.value)}
                     className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
                     {WEEK_OPTIONS.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => (
-                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>
+                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter))})</option>
                     ))}
                   </select>
                   {errors.endWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.endWeek}</p>}
@@ -376,7 +378,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                       <div>
                         <span className="text-xs font-medium text-gray-700">Week {weekNum}</span>
                         <span className="text-[10px] text-gray-400 ml-2">
-                          {priorityWeekLabels[weekNum - 1] ?? weekDateLabel(priority.year, priority.quarter, weekNum)}
+                          {priorityWeekLabels[weekNum - 1] ?? weekDateLabel(priority.year, priority.quarter, weekNum, getQuarterStartDate(priority.year, priority.quarter))}
                         </span>
                         {isPast && <span className="ml-2 text-[10px] text-amber-600">· past-week locked</span>}
                         {isFuture && <span className="ml-2 text-[10px] text-gray-400">· future week</span>}

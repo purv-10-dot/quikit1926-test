@@ -30,8 +30,32 @@ export function fiscalYearLabel(year: number): string {
   return `${year}–${year + 1}`;
 }
 
-/** Returns the start date of a fiscal quarter. */
-export function getQuarterStart(year: number, quarter: string): Date {
+/**
+ * Returns the start date of a fiscal quarter.
+ *
+ * If `actualStartDate` is provided (e.g. fetched from `QuarterSetting.startDate`),
+ * that takes precedence — it lets us honour the tenant's real week-aligned
+ * quarter start (typically the Monday on/before the 1st of the quarter's
+ * first month) rather than the hardcoded calendar-month boundaries.
+ *
+ * Callers that don't have the actual start date can omit the third argument
+ * and get the legacy calendar-month behavior (Q1=Apr 1, …, Q4=Jan 1).
+ */
+export function getQuarterStart(
+  year: number,
+  quarter: string,
+  actualStartDate?: string | Date | null,
+): Date {
+  if (actualStartDate) {
+    if (typeof actualStartDate === "string") {
+      // Parse "YYYY-MM-DD" (or ISO) without timezone surprises: pull the
+      // date parts directly so we get local-midnight on that calendar day.
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(actualStartDate);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return new Date(actualStartDate);
+    }
+    return new Date(actualStartDate.getFullYear(), actualStartDate.getMonth(), actualStartDate.getDate());
+  }
   const [mo, dy] = QUARTER_STARTS[quarter] ?? [3, 1];
   return new Date(quarter === "Q4" ? year + 1 : year, mo, dy);
 }
@@ -56,12 +80,23 @@ export function getCurrentFiscalWeekFromStart(startDate: string | Date): number 
   return Math.min(13, Math.max(1, elapsed));
 }
 
-/** Full-format date range: "1 Apr – 7 Apr" */
-export function getWeekDateRange(year: number, quarter: string, weekNumber: number): string {
-  const [mo, dy] = QUARTER_STARTS[quarter] ?? [3, 1];
-  const yr = quarter === "Q4" ? year + 1 : year;
-  const start = new Date(yr, mo, dy + (weekNumber - 1) * 7);
-  const end = new Date(yr, mo, dy + weekNumber * 7 - 1);
+/**
+ * Full-format date range: "1 Apr – 7 Apr".
+ *
+ * Pass `actualStartDate` (from `QuarterSetting.startDate`) to anchor weeks
+ * on the tenant's real quarter start (typically the Monday on/before the
+ * 1st of the quarter's first month). Without it, falls back to the legacy
+ * calendar-month start.
+ */
+export function getWeekDateRange(
+  year: number,
+  quarter: string,
+  weekNumber: number,
+  actualStartDate?: string | Date | null,
+): string {
+  const qs = getQuarterStart(year, quarter, actualStartDate);
+  const start = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + (weekNumber - 1) * 7);
+  const end = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + weekNumber * 7 - 1);
   const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   return `${fmt(start)} – ${fmt(end)}`;
 }
@@ -110,12 +145,22 @@ export function rollingVisibleWeeks(
   return Array.from({ length: end - start + 1 }, (_, i) => start + i);
 }
 
-/** Compact date range for table headers: "1–7 Apr" or "29 Apr–5 May" */
-export function weekDateLabel(year: number, quarter: string, weekNumber: number): string {
-  const [mo, dy] = QUARTER_STARTS[quarter] ?? [3, 1];
-  const yr = quarter === "Q4" ? year + 1 : year;
-  const start = new Date(yr, mo, dy + (weekNumber - 1) * 7);
-  const end = new Date(yr, mo, dy + weekNumber * 7 - 1);
+/**
+ * Compact date range for table headers: "1–7 Apr" or "29 Apr–5 May".
+ *
+ * Pass `actualStartDate` (from `QuarterSetting.startDate`) to anchor weeks
+ * on the tenant's real quarter start. Without it, falls back to the legacy
+ * calendar-month start.
+ */
+export function weekDateLabel(
+  year: number,
+  quarter: string,
+  weekNumber: number,
+  actualStartDate?: string | Date | null,
+): string {
+  const qs = getQuarterStart(year, quarter, actualStartDate);
+  const start = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + (weekNumber - 1) * 7);
+  const end = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + weekNumber * 7 - 1);
   const startMonth = start.toLocaleDateString("en-GB", { month: "short" });
   const endMonth = end.toLocaleDateString("en-GB", { month: "short" });
   if (startMonth === endMonth) {

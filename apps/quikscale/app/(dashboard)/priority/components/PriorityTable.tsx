@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { PriorityRow } from "@/lib/types/priority";
 import { ALL_WEEKS, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
+import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { PriorityModal } from "./PriorityModal";
 import { PriorityLogModal } from "./PriorityLogModal";
 import { PriorityLogsModal } from "./PriorityLogsModal";
@@ -198,6 +199,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const { canEditPastWeek } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(year, quarter);
   const weekLabels = useWeekLabels(year, quarter);
+  const { getStartDate: getQuarterStartDate } = useQuarterStartDates();
+  const qStart = getQuarterStartDate(year, quarter);
 
   // Freeze + hidden cols stay in the DB-backed user pref. Sort moved to the
   // global Redux tables slice (lib/store) so it shares the same persistence
@@ -507,7 +510,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                   className="sticky top-0 z-20 bg-accent-50 border-b border-gray-200 border-r border-r-gray-100 text-center px-1 py-2 text-[10px] font-semibold text-gray-500 whitespace-nowrap select-none"
                   style={{ minWidth: 76 }}>
                   <div>Week {w}</div>
-                  <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? weekDateLabel(year, quarter, w)}</div>
+                  <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? weekDateLabel(year, quarter, w, qStart)}</div>
                 </th>
               ))}
             </tr>
@@ -638,7 +641,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                       {priority.startWeek != null ? (
                         <span className="text-xs text-gray-700 whitespace-nowrap">
                           Week {priority.startWeek}{" "}
-                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.startWeek)})</span>
+                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.startWeek, qStart)})</span>
                         </span>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
@@ -658,7 +661,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                       {priority.endWeek != null ? (
                         <span className="text-xs text-gray-700 whitespace-nowrap">
                           Week {priority.endWeek}{" "}
-                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.endWeek)})</span>
+                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.endWeek, qStart)})</span>
                         </span>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
