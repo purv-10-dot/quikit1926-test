@@ -121,6 +121,34 @@ html.dark .text-green-900      { color: #d1fae5 !important; }
 html.dark .bg-yellow-50        { background-color: rgba(234, 179, 8, 0.15) !important; }
 html.dark .bg-yellow-100       { background-color: rgba(234, 179, 8, 0.22) !important; }
 
+/* Emerald — "Present" attendance pills + success badges. Same playbook as
+   the green-* block above; emerald-50/700/200 reads as a washed-out pastel
+   on the dark slate surface without these. */
+html.dark .bg-emerald-50       { background-color: rgba(16, 185, 129, 0.2) !important; }
+html.dark .bg-emerald-100      { background-color: rgba(16, 185, 129, 0.3) !important; }
+html.dark .hover\:bg-emerald-100:hover { background-color: rgba(16, 185, 129, 0.38) !important; }
+html.dark .border-emerald-100  { border-color: rgba(52, 211, 153, 0.35) !important; }
+html.dark .border-emerald-200  { border-color: rgba(52, 211, 153, 0.5) !important; }
+html.dark .ring-emerald-100    { --tw-ring-color: rgba(52, 211, 153, 0.4) !important; }
+html.dark .text-emerald-600    { color: #6ee7b7 !important; }
+html.dark .text-emerald-700    { color: #6ee7b7 !important; }
+html.dark .text-emerald-800    { color: #a7f3d0 !important; }
+html.dark .text-emerald-900    { color: #d1fae5 !important; }
+
+/* Rose — today/active-date highlight in the timesheet header + totals row,
+   and over-budget tone in reports. Tinted overlay so the active column
+   reads as clearly "today" against the dark grid. */
+html.dark .bg-rose-50          { background-color: rgba(244, 63, 94, 0.22) !important; }
+html.dark .bg-rose-100         { background-color: rgba(244, 63, 94, 0.3) !important; }
+html.dark .border-rose-200     { border-color: rgba(244, 63, 94, 0.5) !important; }
+html.dark .text-rose-600       { color: #fda4af !important; }
+html.dark .text-rose-700       { color: #fecdd3 !important; }
+
+/* Opacity-suffix variant — `bg-rose-50/40` is used per-cell in the
+   timesheet body to softly tint the entire today column. */
+html.dark .bg-rose-50\/40,
+html.dark .bg-rose-50\/60      { background-color: rgba(244, 63, 94, 0.18) !important; }
+
 /* Opacity-suffix variants (e.g. `bg-gray-50/60`, `hover:bg-blue-50/40`).
    Tailwind generates these as separate classes with rgb()/<alpha> values
    that bypass the solid-color overrides above. Listed explicitly because
@@ -154,6 +182,25 @@ html.dark .hover\:border-blue-300:hover { border-color: rgba(96, 165, 250, 0.6) 
 html.dark .qt-list-scroll::-webkit-scrollbar-track { background: #1e293b; border-top-color: #334155; }
 html.dark .qt-list-scroll::-webkit-scrollbar-thumb { background: #475569; border-color: #1e293b; }
 html.dark .qt-list-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+html.dark .qt-list-scroll { scrollbar-color: #475569 #1e293b; }
+
+/* Timesheet horizontal scrollbar (Standard view). Default light-mode rule
+   below uses #f3f4f6 track + #9ca3af thumb, which sits as a bright bar at
+   the bottom of the dark grid. */
+html.dark .qt-timesheet-scroll::-webkit-scrollbar-track { background: #1e293b; }
+html.dark .qt-timesheet-scroll::-webkit-scrollbar-thumb {
+  background: #475569; border-color: #1e293b;
+}
+html.dark .qt-timesheet-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+html.dark .qt-timesheet-scroll { scrollbar-color: #475569 #1e293b; }
+
+/* Board horizontal scrollbar (Attendance matrix + project board). Uses a
+   transparent track in light mode; the thumb just needs a darker base so
+   it doesn't blow out against the slate surface. */
+html.dark .qt-board-scroll::-webkit-scrollbar-thumb { background: #475569; }
+html.dark .qt-board-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+html.dark .qt-board-scroll { scrollbar-color: #475569 transparent; }
+
 html.dark .qt-shimmer {
   background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
   background-size: 800px 100%;
