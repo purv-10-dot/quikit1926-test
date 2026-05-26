@@ -117,7 +117,9 @@ export const updateKPISchema = z
 export const weeklyValueSchema = z.object({
   weekNumber: z.number().int().min(1).max(13),
   value: z.number().optional().nullable(),
-  notes: z.string().max(500).optional().nullable(),
+  // No length cap — DB column is TEXT. Lifted because users were hitting
+  // the previous 500-char limit on pasted weekly updates.
+  notes: z.string().optional().nullable(),
   userId: z.string().cuid().optional().nullable(),
 });
 
@@ -129,8 +131,10 @@ export const weeklyValueBatchSchema = z.object({
 });
 
 // KPI Note Schema
+// No max length — DB column is TEXT. `min(1)` stays so empty notes are
+// still rejected (content rule, not a length cap).
 export const kpiNoteSchema = z.object({
-  content: z.string().min(1, "Note content is required").max(5000),
+  content: z.string().min(1, "Note content is required"),
 });
 
 // List Query Params
