@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
+import { useTheme } from "next-themes";
 import { HelpCircle, Settings, Plus, PanelLeft } from "lucide-react";
 import { UserMenu, globalSignOut } from "@quikit/ui";
 import { CreateIssueModal } from "@/components/create-issue-modal";
@@ -32,6 +33,16 @@ export function Header({ onToggleSidebar }: HeaderProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<GlobalSearchPopoverHandle>(null);
+
+  // Theme-aware logo. `mounted` gate prevents an SSR/CSR hydration mismatch:
+  // next-themes returns `undefined` on the first render, so we serve the
+  // light logo until the client knows which theme to apply.
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const logoSrc = mounted && resolvedTheme === "dark"
+    ? "/header-icon-dark.svg"
+    : "/header-icon.png";
 
   // "/" anywhere outside an input focuses the global search box.
   useEffect(() => {
@@ -63,12 +74,13 @@ export function Header({ onToggleSidebar }: HeaderProps) {
         <AppSwitcherVertical />
         <Link href="/" className="flex items-center px-1">
           <Image
-            src="/header-icon.png"
+            src={logoSrc}
             alt="QuikTrack"
             width={140}
             height={28}
             className="h-7 w-auto object-contain"
             priority
+            unoptimized={logoSrc.endsWith(".svg")}
           />
         </Link>
         <button

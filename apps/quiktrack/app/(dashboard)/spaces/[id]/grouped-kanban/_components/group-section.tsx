@@ -156,7 +156,7 @@ function ColumnLabels({
 }) {
   return (
     <div
-      className={`grid ${ROW_GRID_TEMPLATE} items-stretch px-0 text-[11px] font-bold uppercase tracking-wider text-slate-700 bg-slate-200 border-b border-slate-300 [&>*]:self-stretch [&>*]:flex [&>*]:items-center [&>*]:justify-center [&>*]:px-2 [&>*]:py-2.5 [&>*]:border-r [&>*]:border-slate-300 [&>*:last-child]:border-r-0`}
+      className={`grid ${ROW_GRID_TEMPLATE} items-stretch px-0 text-[12px] font-bold uppercase tracking-wider text-slate-700 bg-slate-50 border-b border-slate-300 [&>*]:self-stretch [&>*]:flex [&>*]:items-center [&>*]:justify-center [&>*]:px-2 [&>*]:py-2.5 [&>*]:border-r [&>*]:border-slate-300 [&>*:last-child]:border-r-0`}
     >
       <span>
         <IndeterminateCheckbox
@@ -180,7 +180,7 @@ function AddTaskRow({ onAddTask }: { onAddTask: () => void }) {
     <button
       type="button"
       onClick={onAddTask}
-      className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-blue-700 bg-slate-50 hover:bg-blue-50 border-t border-slate-200 transition-colors group"
+      className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-blue-700 bg-slate-200 hover:bg-blue-50 border-t border-slate-300 transition-colors group"
     >
       <span className="h-5 w-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-700 group-hover:bg-blue-600 group-hover:text-white transition-colors">
         <Plus className="h-3.5 w-3.5" />

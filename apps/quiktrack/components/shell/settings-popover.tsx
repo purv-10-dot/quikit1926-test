@@ -44,9 +44,9 @@ const SECTIONS: PopoverSection[] = [
       {
         key: "general",
         label: "General settings",
-        description: "Manage language, time zone, and other personal preferences",
+        description: "Manage appearance (light / dark / system) and other personal preferences",
         icon: User,
-        disabled: true,
+        href: "/settings/general",
       },
       {
         key: "notifications",

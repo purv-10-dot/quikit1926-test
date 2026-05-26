@@ -10,6 +10,7 @@ import { SessionGuard } from "@/components/session-guard";
 import { IssueCreatedToast } from "@/components/issue-created-toast";
 import { NoAccessGate } from "@/components/shell/no-access-gate";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
+import { ThemeSync } from "@/components/shell/theme-sync";
 import { ImpersonationBanner } from "@quikit/ui";
 
 export default function DashboardLayout({
@@ -43,6 +44,7 @@ export default function DashboardLayout({
   return (
     <SessionGuard>
       <ThemeApplier />
+      <ThemeSync />
       <ImpersonationBanner />
       <NoAccessGate>
         <div className="flex flex-col h-screen bg-white">
