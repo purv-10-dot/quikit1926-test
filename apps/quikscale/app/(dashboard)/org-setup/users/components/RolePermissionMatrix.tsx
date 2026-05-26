@@ -34,6 +34,7 @@ import {
   type PermissionModule,
   type PermissionSubModule,
 } from "@/lib/api/permissionsRegistry";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 
 interface RoleDetail {
   id: string;
@@ -130,6 +131,11 @@ export function RolePermissionMatrix({
   onRenamed?: () => void;
 }) {
   const queryClient = useQueryClient();
+  // RBAC v2 — User:update unlocks rename pencil + Save/Discard buttons.
+  // Without it the matrix is render-only: checkboxes still react to clicks
+  // but the dirty bar's Save button is hidden so changes can never persist.
+  // The viewer can still EXPLORE permissions to understand them.
+  const { canUpdate } = useResourcePermissions("User");
   const [role, setRole] = useState<RoleDetail | null>(null);
   const [grants, setGrants] = useState<Set<string>>(new Set());
   const [savedGrants, setSavedGrants] = useState<Set<string>>(new Set());
@@ -359,7 +365,7 @@ export function RolePermissionMatrix({
               <>
                 <span className="truncate">{role?.name}</span>
                 {role?.isSystem && <Shield className="h-4 w-4 text-amber-500 flex-shrink-0" />}
-                {role && !role.isSystem && (
+                {role && !role.isSystem && canUpdate && (
                   <button
                     onClick={startRename}
                     className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex-shrink-0"
@@ -408,8 +414,10 @@ export function RolePermissionMatrix({
         />
       </div>
 
-      {/* Sticky bottom bar */}
-      {dirty && (
+      {/* Sticky bottom bar — only when the user can actually save. Read-only
+          viewers don't see this bar; their checkbox clicks have no persistent
+          effect. */}
+      {dirty && canUpdate && (
         <div className="bg-white border-t border-gray-200 shadow-md px-6 py-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2 text-xs">
             <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-accent-100 text-accent-700 font-bold">

@@ -19,6 +19,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, Shield, Plus, Trash2 } from "lucide-react";
 import { RolePermissionMatrix } from "./RolePermissionMatrix";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 
 interface RoleRow {
   id: string;
@@ -30,6 +31,12 @@ interface RoleRow {
 }
 
 export function RolesTab() {
+  // RBAC v2 — `+ Add Role` requires User:create, trash icons require
+  // User:delete. The Permission matrix's edit affordances are gated inside
+  // RolePermissionMatrix on User:update. The tab itself is already gated by
+  // User:view at the page level (so this component only renders when the
+  // user can at least view roles).
+  const { canCreate, canDelete } = useResourcePermissions("User");
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,13 +121,15 @@ export function RolesTab() {
       <aside className="w-[260px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-sm font-bold text-gray-800">Roles</h2>
-          <button
-            onClick={() => setCreating(true)}
-            className="h-7 w-7 rounded-full bg-accent-600 hover:bg-accent-700 text-white inline-flex items-center justify-center"
-            title="Add role"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setCreating(true)}
+              className="h-7 w-7 rounded-full bg-accent-600 hover:bg-accent-700 text-white inline-flex items-center justify-center"
+              title="Add role"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
         {creating && (
@@ -205,7 +214,7 @@ export function RolesTab() {
                       </span>
                     )}
                   </div>
-                  {!role.isSystem && (
+                  {!role.isSystem && canDelete && (
                     <span
                       role="button"
                       onClick={(e) => {

@@ -4,6 +4,9 @@ export type PriorityWeeklyStatus = {
   weekNumber: number;
   status: string;
   notes?: string | null;
+  /** ISO timestamp from Prisma. Used by Last Note column to pick the
+   *  most recently edited week — see lib/utils/priorityHelpers.ts. */
+  updatedAt?: string;
 };
 
 export type PriorityRow = {

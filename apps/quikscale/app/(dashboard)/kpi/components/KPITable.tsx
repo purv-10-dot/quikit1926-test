@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
 import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
-import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors, getLatestWeeklyNote } from "@/lib/utils/kpiHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { computeQtd, weeklyGoalFor } from "./kpiStats";
@@ -525,18 +525,27 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       </DescTooltip>
                     </td>
                   )}
-                  {/* Last Notes */}
-                  {!localHideSet.has("lastNotes") && (
-                    <td className={tdClass("lastNotes")} style={stickyStyle("lastNotes", getColWidth("lastNotes"))}>
-                      {kpi.lastNotes ? (
-                        <span className="line-clamp-2 text-gray-500 leading-snug cursor-default" title={kpi.lastNotes}>
-                          {kpi.lastNotes}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-                  )}
+                  {/* Last Notes — prefers the most recent weekly note from
+                      `KPIWeeklyValue.notes`, falls back to `kpi.lastNotes`
+                      (general note). See `getLatestWeeklyNote` for why both
+                      sources are consulted. */}
+                  {!localHideSet.has("lastNotes") && (() => {
+                    const latest = getLatestWeeklyNote(kpi);
+                    return (
+                      <td className={tdClass("lastNotes")} style={stickyStyle("lastNotes", getColWidth("lastNotes"))}>
+                        {latest ? (
+                          <span className="line-clamp-2 text-gray-500 leading-snug cursor-default" title={latest.note}>
+                            {latest.weekNumber != null && (
+                              <span className="text-gray-400 mr-1">W{latest.weekNumber}:</span>
+                            )}
+                            {latest.note}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    );
+                  })()}
                   {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
                       Populated by GET /api/kpi (see lib/api/auditUsers.ts). */}
                   {!localHideSet.has("createdBy") && (

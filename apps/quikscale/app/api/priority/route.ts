@@ -30,7 +30,10 @@ const PRIORITY_SELECT = {
   owner_user: { select: { id: true, firstName: true, lastName: true } },
   team: { select: { id: true, name: true } },
   weeklyStatuses: {
-    select: { id: true, priorityId: true, weekNumber: true, status: true, notes: true },
+    // `updatedAt` powers the Last Note column's "most recently edited" picker.
+    // Without it the UI falls back to highest-weekNumber, which hides fresh
+    // edits on earlier weeks. See lib/utils/priorityHelpers.getLatestPriorityNote.
+    select: { id: true, priorityId: true, weekNumber: true, status: true, notes: true, updatedAt: true },
     orderBy: { weekNumber: "asc" as const },
   },
 };

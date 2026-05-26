@@ -110,3 +110,34 @@ export function weekCellColors(
   }
   return { bg: color.bg, text: color.text, label };
 }
+
+/**
+ * Resolve the "last note" to display in the KPI table's Last Notes column.
+ *
+ * Source priority:
+ *   1. Highest weekNumber in `weeklyValues` that has a non-empty `notes`
+ *      (mirrors Priority's `lastNote` pattern — most recent weekly note wins)
+ *   2. Fallback to `kpi.lastNotes` — the denormalized field written ONLY by
+ *      `POST /api/kpi/[id]/notes` (the general KPI-level notes endpoint).
+ *      Per-week notes save to `KPIWeeklyValue.notes` and do NOT update that
+ *      field, so reading it alone misses weekly notes entirely (the bug this
+ *      helper fixes).
+ *
+ * Returns `null` when nothing is available, so callers can render `—`.
+ */
+export function getLatestWeeklyNote(kpi: {
+  weeklyValues?: Array<{ weekNumber: number; notes?: string | null }> | null;
+  lastNotes?: string | null;
+}): { note: string; weekNumber: number | null } | null {
+  let best: { note: string; weekNumber: number } | null = null;
+  for (const wv of kpi.weeklyValues ?? []) {
+    const n = wv.notes?.trim();
+    if (n && (best == null || wv.weekNumber > best.weekNumber)) {
+      best = { note: n, weekNumber: wv.weekNumber };
+    }
+  }
+  if (best) return best;
+  const fallback = kpi.lastNotes?.trim();
+  if (fallback) return { note: fallback, weekNumber: null };
+  return null;
+}

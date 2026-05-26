@@ -60,7 +60,12 @@ const PRIORITY_SELECT = {
   owner_user: { select: { id: true, firstName: true, lastName: true } },
   team: { select: { id: true, name: true } },
   weeklyStatuses: {
-    select: { id: true, priorityId: true, weekNumber: true, status: true, notes: true },
+    // `updatedAt` is required by the Dashboard's Last Note column — it picks
+    // the most recently edited weekly note via `getLatestPriorityNote`. Without
+    // this field the helper falls back to highest-weekNumber, which hides
+    // fresh edits on earlier weeks. Mirrors the same select in
+    // /api/priority/route.ts. Don't drop it without updating the helper.
+    select: { id: true, priorityId: true, weekNumber: true, status: true, notes: true, updatedAt: true },
     orderBy: { weekNumber: "asc" as const },
   },
 };

@@ -25,7 +25,29 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   // kpi.target is the user-set quarterly target; kpi.qtdGoal is a derived aggregate
   // that can lag behind after a target edit. Use kpi.target as the primary.
   const target = kpi.target ?? kpi.qtdGoal ?? 0;
-  const achieved = kpi.qtdAchieved ?? 0;
+  // Standalone vs Cumulative — drives both the QTD tile math AND the Overall
+  // Progress panel below. Defaults to Cumulative (schema default).
+  const divisionType: "Cumulative" | "Standalone" =
+    kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
+  const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi);
+
+  // Week-of-quarter (1..13) — DB-driven, respects tenant's QuarterSetting.
+  const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+
+  // Compute QTD totals over [1 .. currentWeek-1]. Falls back to full-quarter
+  // totals when currentWeek is unresolvable.
+  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, divisionType);
+
+  // Overall Progress — for Standalone, mirror the computed qtdAchieved (the
+  // documented average) because the server-stamped `kpi.qtdAchieved` is a
+  // cumulative SUM unconditionally and would show 341% on a Standalone KPI
+  // whose true progress is 113%. For Cumulative, preserve today's behavior
+  // (read the row's qtdAchieved which includes the in-progress week — slightly
+  // different denominator from the QTD tile but unchanged from before).
+  const achieved =
+    divisionType === "Standalone"
+      ? (qtdAchieved ?? 0)
+      : (kpi.qtdAchieved ?? 0);
   // Badge-colors helper — runs the canonical `getColorByPercentage`
   // internally and maps the result to READABLE-on-white text tones plus
   // a human status label. Use it because the percentage label here sits
@@ -35,14 +57,6 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
   const colors = kpi.qtdAchieved != null
     ? getProgressBadgeColors(achieved, target, hasAnyWeeklyValue, kpi.reverseColor ?? false)
     : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
-  const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi);
-
-  // Week-of-quarter (1..13) — DB-driven, respects tenant's QuarterSetting.
-  const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
-
-  // Compute QTD totals over [1 .. currentWeek-1]. Falls back to full-quarter
-  // totals when currentWeek is unresolvable.
-  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek);
 
   // Weekly Goal tile shows "<latest reported value> / <that week's target>".
   // We look at the most recent week (≤ currentWeek when known, else any week)

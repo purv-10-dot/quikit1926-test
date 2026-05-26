@@ -46,18 +46,38 @@ export function computeKPIStats(kpi: KPIRow): KPIStats {
 /**
  * QTD Goal + QTD Achieved over weeks [1 .. currentWeek-1].
  *
- *   - Uses `kpi.weeklyTargets` per-week goal map when present; falls back to
- *     an even split of the total target across 13 weeks when no breakdown.
- *   - Uses `kpi.weeklyValues` actuals filtered to weeks < currentWeek.
+ * Behavior depends on `divisionType` (defaults to `"Cumulative"` when omitted
+ * or unset on the KPI — matches the schema default):
+ *
+ *   ┌──────────────┬────────────────────────────┬────────────────────────────┐
+ *   │              │ Cumulative                 │ Standalone                 │
+ *   ├──────────────┼────────────────────────────┼────────────────────────────┤
+ *   │ qtdGoal      │ Σ weekly targets so far    │ = kpi.target (constant,    │
+ *   │              │ (per-week map; falls back  │   when at least one prior  │
+ *   │              │  to target/13 flat split)  │   week has target > 0)     │
+ *   │ qtdAchieved  │ Σ values so far            │ Σ values so far /          │
+ *   │              │                            │   count(weeks with target  │
+ *   │              │                            │   > 0 in [1..currentWeek-1])│
+ *   └──────────────┴────────────────────────────┴────────────────────────────┘
+ *
+ * Standalone matches the spec in `docs/individualKpi-standalone-logic.md`:
+ * the denominator is `weeksWithTarget.length` (NOT the count of updated
+ * weeks), so a week with a target but no entered value drags the average
+ * down — the documented "penalty" semantics.
  *
  * When `currentWeek` is null (quarter not started / already ended / unknown)
- * we fall back to the server-stored `kpi.qtdGoal` / `qtdAchieved`.
+ * we fall back to the server-stored `kpi.qtdGoal` / `qtdAchieved` to keep
+ * historical/future KPIs rendering something sensible.
  *
  * Same algorithm StatsTab uses — extracted so the dashboard KPI table can
  * show the same numbers (was previously reading `kpi.qtdGoal` raw, which is
  * a stale aggregate that ignores the per-week breakdown).
  */
-export function computeQtd(kpi: KPIRow, currentWeek: number | null): {
+export function computeQtd(
+  kpi: KPIRow,
+  currentWeek: number | null,
+  divisionType: "Cumulative" | "Standalone" = "Cumulative",
+): {
   qtdGoal: number | null;
   qtdAchieved: number | null;
 } {
@@ -75,17 +95,33 @@ export function computeQtd(kpi: KPIRow, currentWeek: number | null): {
   const wt = kpi.weeklyTargets ?? {};
   const totalTarget = kpi.target ?? kpi.qtdGoal ?? 0;
   const flat = totalTarget > 0 ? totalTarget / 13 : 0;
-  const goal = priorWeeks.reduce((sum, w) => {
+
+  // Resolve each prior week's target (per-week map → fallback to flat split).
+  const priorWeekTargets = priorWeeks.map((w) => {
     const v = wt[String(w)];
-    return sum + (typeof v === "number" ? v : flat);
-  }, 0);
+    return typeof v === "number" ? v : flat;
+  });
 
   const wv = kpi.weeklyValues ?? [];
-  const achieved = wv
-    .filter((v) => v.weekNumber < currentWeek)
-    .reduce((sum, v) => sum + (v.value ?? 0), 0);
+  const priorWeekValues = wv.filter((v) => v.weekNumber < currentWeek);
+  const sumOfValues = priorWeekValues.reduce((sum, v) => sum + (v.value ?? 0), 0);
 
-  return { qtdGoal: goal, qtdAchieved: achieved };
+  if (divisionType === "Standalone") {
+    // Standalone — every "valid" week (target > 0) counts equally toward
+    // the denominator; the goal is the quarterly target (not a running sum).
+    const weeksWithTargetCount = priorWeekTargets.filter((t) => t > 0).length;
+    if (weeksWithTargetCount === 0) {
+      return { qtdGoal: 0, qtdAchieved: 0 };
+    }
+    return {
+      qtdGoal: totalTarget,
+      qtdAchieved: sumOfValues / weeksWithTargetCount,
+    };
+  }
+
+  // Cumulative — preserved exactly as before.
+  const goal = priorWeekTargets.reduce((s, t) => s + t, 0);
+  return { qtdGoal: goal, qtdAchieved: sumOfValues };
 }
 
 /**

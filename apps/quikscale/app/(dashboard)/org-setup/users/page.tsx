@@ -24,6 +24,7 @@ import {
 import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -1008,6 +1009,11 @@ function ConfirmDialog({
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgUsersPage() {
   const { canCreate, canUpdate } = useResourcePermissions("User");
+  // RBAC v2 — User Management tab is now permission-driven (was admin-only).
+  // Anyone with User:view can see roles; the sub-actions (create/edit/delete
+  // role, edit permissions, change members) gate independently below.
+  const myPerms = useMyPermissions();
+  const canViewUserMgmt = myPerms.isAdmin || myPerms.has("User", "view");
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
@@ -1137,7 +1143,7 @@ export default function OrgUsersPage() {
         {(
           [
             { key: "users", label: "Users" },
-            { key: "roles", label: "User Management" },
+            ...(canViewUserMgmt ? [{ key: "roles" as const, label: "User Management" }] : []),
           ] as const
         ).map((t) => (
           <button
@@ -1154,7 +1160,7 @@ export default function OrgUsersPage() {
         ))}
       </div>
 
-      {tab === "roles" && <RolesTab />}
+      {tab === "roles" && canViewUserMgmt && <RolesTab />}
 
       {tab === "users" && (
       <>

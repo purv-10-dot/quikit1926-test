@@ -17,7 +17,8 @@ import {
   weekDateLabel, ALL_WEEKS, rollingVisibleWeeks,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
-import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors, getLatestWeeklyNote } from "@/lib/utils/kpiHelpers";
+import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { KPITable } from "../kpi/components/KPITable";
@@ -617,11 +618,19 @@ function KPISection({ kpis, year, quarter, visibleWeeks }: { kpis: KPIRow[]; yea
                 const frozenBg = getFrozenBg(col.key, frozenUpTo, ALL_KPI_COLS, rowBg);
                 const base = `border-r border-b border-gray-100 px-4 py-3 ${frozenBg}`;
 
-                if (col.key === "lastNotes") return (
-                  <td key={col.key} className={base} style={{ ...sticky, ...colW(col) }}>
-                    <NoteCell text={kpi.lastNotes} />
-                  </td>
-                );
+                if (col.key === "lastNotes") {
+                  // Mirror KPITable: pick the most recent weekly note, fall
+                  // back to kpi.lastNotes. See `getLatestWeeklyNote`.
+                  const latest = getLatestWeeklyNote(kpi);
+                  const display = latest
+                    ? (latest.weekNumber != null ? `W${latest.weekNumber}: ${latest.note}` : latest.note)
+                    : null;
+                  return (
+                    <td key={col.key} className={base} style={{ ...sticky, ...colW(col) }}>
+                      <NoteCell text={display} />
+                    </td>
+                  );
+                }
 
                 if (col.key === "qtdAchieved") {
                   const achieved = kpi.qtdAchieved ?? 0;
@@ -739,7 +748,13 @@ function PrioritySection({ priorities, year, quarter, visibleWeeks }: { prioriti
             statusMap[ws.weekNumber] = ws.status;
             weekNoteMap[ws.weekNumber] = ws.notes ?? null;
           });
-          const lastNote = p.weeklyStatuses.slice().reverse().find(ws => ws.notes)?.notes ?? null;
+          // Most recently EDITED note (max updatedAt), with priority-level
+          // fallback. Matches PriorityTable behavior. Dashboard has no
+          // optimistic state — read-only preview.
+          const latestNote = getLatestPriorityNote(p.weeklyStatuses, undefined, p.notes);
+          const lastNote = latestNote
+            ? (latestNote.weekNumber != null ? `W${latestNote.weekNumber}: ${latestNote.note}` : latestNote.note)
+            : null;
 
           return (
             <tr key={p.id} className={`${rowBg} hover:bg-accent-50 transition-colors`}>

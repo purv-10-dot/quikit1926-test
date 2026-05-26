@@ -373,7 +373,6 @@ export default function PriorityPage() {
             defaultYear={year}
             defaultQuarter={quarter}
             onSelectionChange={handleSelectionChange}
-            hideColumns={["startWeek", "endWeek", "lastNote"]}
             page={page}
             pageSize={pageSize}
             total={filtered.length}

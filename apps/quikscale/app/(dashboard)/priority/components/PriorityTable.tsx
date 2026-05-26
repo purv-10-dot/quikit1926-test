@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
 import { ALL_WEEKS, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
@@ -17,6 +18,7 @@ import { HiddenColsPill } from "@/components/table/HiddenColsPill";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { Pagination } from "@quikit/ui";
@@ -179,6 +181,11 @@ interface Props {
 }
 
 export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quarter, defaultYear, defaultQuarter, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, fillWidth, canDelete = true, canUpdate = true }: Props) {
+  // Cross-surface cache invalidation — when the inline cell picker saves a
+  // weekly status/note, the Dashboard's `useDashboardSummary` query must
+  // refetch so the Last Note / week cells update without a page reload.
+  // Mirrors what `useUpdateWeeklyStatus` does for the modal-edit path.
+  const queryClient = useQueryClient();
   const priorities = maxRows != null ? prioritiesAll.slice(0, maxRows) : prioritiesAll;
   const paginationEnabled = page != null && pageSize != null && total != null && onPageChange != null;
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil((total as number) / (pageSize as number))) : 1;
@@ -284,6 +291,11 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
             })]
           : []),
       ]);
+      // Invalidate cross-surface caches so the Dashboard (and any other
+      // React Query consumer of `priority` lists) refetches on next render.
+      // Mirrors `useUpdateWeeklyStatus`'s onSuccess — same keys, same effect.
+      queryClient.invalidateQueries({ queryKey: ["priority"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       onRefresh();
     } catch {
       // revert all writes
@@ -669,30 +681,16 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     </td>
                   )}
 
-                  {/* Last Note — user-freezable, hidable. Shows the most recent weekly note (highest week with a note). */}
+                  {/* Last Note — user-freezable, hidable. Shows the most
+                      RECENTLY EDITED weekly note (max updatedAt), not the
+                      highest-numbered week. Optimistic edits always win
+                      because they're the freshest. See `getLatestPriorityNote`. */}
                   {COL_ORDER.includes("lastNote") && (() => {
-                    // Find the most recent weekly note (highest weekNumber with a non-empty note, considering optimistic updates)
-                    let lastNote = "";
-                    let lastWeek = 0;
-                    for (const ws of priority.weeklyStatuses) {
-                      const n = getWeekNote(priority, ws.weekNumber);
-                      if (n && ws.weekNumber > lastWeek) {
-                        lastNote = n;
-                        lastWeek = ws.weekNumber;
-                      }
-                    }
-                    // Also check any optimistic-only notes (not in weeklyStatuses)
-                    const optNotes = optimisticNotes[priority.id] ?? {};
-                    for (const [wStr, n] of Object.entries(optNotes)) {
-                      const w = parseInt(wStr, 10);
-                      if (n && w > lastWeek) {
-                        lastNote = n;
-                        lastWeek = w;
-                      }
-                    }
-                    // Fall back to priority.notes (priority-level note) if no weekly notes
-                    if (!lastNote && priority.notes) lastNote = priority.notes;
-
+                    const latest = getLatestPriorityNote(
+                      priority.weeklyStatuses,
+                      optimisticNotes[priority.id],
+                      priority.notes,
+                    );
                     return (
                       <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("lastNote") ? "sticky" : ""}`}
                         style={{
@@ -701,11 +699,23 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                           minWidth: getColWidth("lastNote"),
                           boxShadow: lastFrozenKey === "lastNote" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                         }}>
-                        {lastNote ? (
-                          <span className="text-xs text-gray-600 truncate block" title={lastNote}>
-                            {lastWeek > 0 && <span className="text-gray-400 mr-1">W{lastWeek}:</span>}
-                            {lastNote}
-                          </span>
+                        {latest ? (
+                          // Mirror KPI Name's wrap-with-3-line-scroll pattern
+                          // (KPITable.tsx). `max-h-[3.25rem]` fits 3 lines of
+                          // text-xs/leading-snug; longer notes scroll inside
+                          // the cell rather than stretching the column.
+                          // `break-all` handles pasted unbreakable strings
+                          // (URLs, IDs, gibberish) without horizontal overflow.
+                          <div
+                            className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-xs text-gray-600 cursor-default pr-1"
+                            style={{ scrollbarWidth: "thin" }}
+                            title={latest.note}
+                          >
+                            {latest.weekNumber != null && (
+                              <span className="text-gray-400 mr-1">W{latest.weekNumber}:</span>
+                            )}
+                            {latest.note}
+                          </div>
                         ) : (
                           <span className="text-xs text-gray-300">—</span>
                         )}
