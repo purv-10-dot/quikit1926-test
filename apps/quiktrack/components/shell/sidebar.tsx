@@ -111,6 +111,7 @@ export function Sidebar() {
   const [spacesOpen, setSpacesOpen] = useState(true);
   const [opsOpen, setOpsOpen] = useState(true);
   const [dashboardsOpen, setDashboardsOpen] = useState(true);
+  const [reportsOpen, setReportsOpen] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const recentRowRef = useRef<HTMLDivElement>(null);
@@ -343,15 +344,41 @@ export function Sidebar() {
               /> */}
             </div>
           )}
-          {canSee("timesheet") && (
+          {canSee("timesheet") && perms.isAdmin && (
             <span data-tour="timesheet">
               <NavRow href="/timesheet" icon={Clock} label="Timesheet" active={isActive("/timesheet")} />
             </span>
           )}
           {canSee("reports") && (
             <span data-tour="reports">
-              <NavRow href="/reports" icon={BarChart3} label="Reports" active={isActive("/reports")} />
+              <NavRow
+                icon={BarChart3}
+                label="Reports"
+                expandable
+                expanded={reportsOpen}
+                onToggle={() => setReportsOpen((v) => !v)}
+              />
             </span>
+          )}
+          {canSee("reports") && reportsOpen && (
+            <div className="pr-2 space-y-1.5 mb-1">
+              <NavRow
+                href="/reports"
+                icon={BarChart3}
+                label="Project Report"
+                active={pathname === "/reports"}
+                indent
+              />
+              {perms.isAdmin && (
+                <NavRow
+                  href="/reports/resource"
+                  icon={BarChart3}
+                  label="Resource Report"
+                  active={isActive("/reports/resource")}
+                  indent
+                />
+              )}
+            </div>
           )}
           {/* TODO: coming soon — Operations / Customers / Customer experiences.
               Restore the full subtree once these modules are implemented.
