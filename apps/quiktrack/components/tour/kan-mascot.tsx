@@ -3,17 +3,64 @@
 /**
  * Kan — QuikTrack's product-tour assistant.
  *
- * Anime-inspired SaaS onboarding mascot: half-body floating pose, hoodie
- * under a blazer, one hand waving, surrounded by floating holographic UI
- * cards (analytics, notification, checklist). Indigo / blue / purple
- * palette with soft neon glow and glassmorphism panels.
+ * Default `KanMascot` renders the 3D rendered character PNG
+ * (`/kan-mascot.png`) with a floating bob, soft halo glow, and animated
+ * decorative chart icons — matching the onboarding-card reference design.
+ *
+ * The original anime SVG mascot is preserved as `KanMascotSvg` (still
+ * exported) so any existing usage / loader fallbacks keep working.
  *
  * Modes:
- *   "wave"   → subtle floating idle + gentle wave + holo card drift
- *   "bounce" → bouncing + squash-and-stretch (loader fallback)
+ *   "wave"   → gentle bob + slight tilt + halo pulse + sparkle decorations
+ *   "bounce" → vertical bounce (loader / empty-state fallback)
  *   "static" → no animation
  */
 export function KanMascot({
+  size = 160,
+  mode = "wave",
+  className = "",
+  flip = false,
+}: {
+  size?: number;
+  mode?: "wave" | "bounce" | "static";
+  className?: string;
+  /** Horizontally mirror the character — use when the mascot sits on the
+   *  right side of a speech bubble so it still points toward the card. */
+  flip?: boolean;
+}) {
+  const wrapAnim =
+    mode === "bounce"
+      ? "qt-mascot-bounce"
+      : mode === "wave"
+        ? "qt-kan-bob"
+        : "";
+
+  return (
+    <div
+      className={`relative ${className} ${wrapAnim}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <img
+        src="/kan-mascot.png"
+        alt=""
+        draggable={false}
+        className="relative h-full w-full select-none object-contain"
+        style={{
+          filter: "drop-shadow(0 8px 18px rgba(15, 38, 71, 0.25))",
+          transform: flip ? "scaleX(-1)" : undefined,
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * The original anime-inspired Kan SVG. Kept exported so other surfaces
+ * (loader fallback, marketing usage, illustrations that need an inline
+ * SVG rather than a PNG) can still use it.
+ */
+export function KanMascotSvg({
   size = 160,
   mode = "wave",
   className = "",

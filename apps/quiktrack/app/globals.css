@@ -544,6 +544,30 @@ html.dark .qt-shimmer {
 }
 .qt-kan-check { animation: qt-kan-check 2.6s ease-in-out infinite; }
 
+/* PNG Kan — gentle bob with a subtle side-to-side tilt, so the 3D
+   character feels alive without the harsh start/stop of a pure
+   translate. Anchored near the feet so the body sways naturally. */
+@keyframes qt-kan-bob {
+  0%, 100% { transform: translateY(0)    rotate(-1.2deg); }
+  50%      { transform: translateY(-6px) rotate(1.2deg);  }
+}
+.qt-kan-bob {
+  animation: qt-kan-bob 3.2s ease-in-out infinite;
+  transform-origin: 50% 95%;
+}
+
+/* Soft halo behind PNG Kan — breathes in/out on a longer cycle than
+   the bob so the two motions never line up identically. */
+@keyframes qt-kan-halo {
+  0%, 100% { opacity: 0.85; transform: scale(1);    }
+  50%      { opacity: 1;    transform: scale(1.06); }
+}
+.qt-kan-halo {
+  animation: qt-kan-halo 3.8s ease-in-out infinite;
+  transform-origin: 50% 55%;
+  will-change: transform, opacity;
+}
+
 /* === Abstract loader — stacked task cards with sequential check === */
 @keyframes qt-load-card-1 {
   0%,  100% { transform: translate(-28px, 16px) rotate(-12deg) scale(0.92); opacity: 0.85; }
