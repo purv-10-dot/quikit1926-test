@@ -166,10 +166,30 @@ export const SignInComponent = ({
 
   const navigateToTarget = () => {
     const target = callbackUrl || redirectPath;
+    // Cross-origin targets need to route through the auth host's
+    // /api/post-login bridge so a handoff JWT is minted and the target's
+    // /auth-handoff can plant a host-scoped session cookie. Direct
+    // window.location.assign across origins would land the user on the
+    // target with no cookie (cookies are host-only) — anonymous UI, empty
+    // /apps, "User" placeholder name. Same-origin targets bypass the
+    // bridge since the cookie already exists on this origin.
+    let finalUrl = target;
+    if (typeof window !== "undefined") {
+      try {
+        const targetUrl = new URL(target, window.location.origin);
+        if (targetUrl.origin !== window.location.origin) {
+          const bridge = new URL("/api/post-login", window.location.origin);
+          bridge.searchParams.set("callbackUrl", targetUrl.toString());
+          finalUrl = bridge.toString();
+        }
+      } catch {
+        // Malformed target — fall through to verbatim navigation.
+      }
+    }
     if (hardNavigate) {
-      window.location.assign(target);
+      window.location.assign(finalUrl);
     } else {
-      router.push(target);
+      router.push(finalUrl);
     }
   };
 
