@@ -12,7 +12,6 @@
  * Client Name, D/H window, Weekly window, Is Client Active, Description.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import {
@@ -71,10 +70,6 @@ function fmtWindow(s: string | null, e: string | null) {
 
 export default function ClientsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("ClientMaster");
-  const { data: session } = useSession();
-  const role = (session?.user as { membershipRole?: string } | undefined)?.membershipRole;
-  const isAdmin = role === "owner" || role === "admin" || role === "super_admin" ||
-    (session?.user as { isSuperAdmin?: boolean } | undefined)?.isSuperAdmin === true;
 
   const { quarter } = useFilterContext();
   const { year } = useFilterContext();
@@ -171,7 +166,7 @@ export default function ClientsPage() {
   }
 
   function openCreate() {
-    if (!isAdmin) return;
+    if (!canCreate) return;
     setError("");
     setEditing({ id: null, form: { ...emptyForm } });
   }
@@ -239,7 +234,7 @@ export default function ClientsPage() {
   }
 
   async function handleBulkDelete() {
-    if (!selected.size || !isAdmin) return;
+    if (!selected.size || !canDelete) return;
     if (!confirm(`Delete ${selected.size} client${selected.size === 1 ? "" : "s"}?`)) return;
     await Promise.all([...selected].map(id => fetch(`/api/client-meetings/clients/${id}`, { method: "DELETE" })));
     setSelected(new Set());
@@ -247,7 +242,7 @@ export default function ClientsPage() {
   }
 
   async function handleDeleteOne(id: string) {
-    if (!isAdmin) return;
+    if (!canDelete) return;
     if (!confirm("Delete this client?")) return;
     await fetch(`/api/client-meetings/clients/${id}`, { method: "DELETE" });
     refresh();
@@ -403,7 +398,7 @@ export default function ClientsPage() {
             defaultExportColumnKeys={visibleColKeys}
           />
 
-          {canCreate && isAdmin && <AddButton onClick={openCreate}>Add New</AddButton>}
+          {canCreate && <AddButton onClick={openCreate}>Add New</AddButton>}
         </div>
       </div>
 
@@ -422,7 +417,7 @@ export default function ClientsPage() {
               icon={Users}
               title={search ? "No matches" : viewTrash ? "Trash is empty" : "Add your first client"}
               message={search ? "Try a different search term." : "Clients are the external organisations you run meeting rhythm for. Planned meeting windows power the Dashboard's punctuality and duration-followed metrics."}
-              action={!search && !viewTrash && canCreate && isAdmin ? { label: "Add your first client", onClick: openCreate } : undefined}
+              action={!search && !viewTrash && canCreate ? { label: "Add your first client", onClick: openCreate } : undefined}
             />
           </div>
         ) : (
@@ -543,11 +538,11 @@ export default function ClientsPage() {
                       </td>
                     )}
                     <td className="px-3 py-3">
-                      {viewTrash && isAdmin ? (
+                      {viewTrash && canDelete ? (
                         <button onClick={() => handleRestore(r.id)} className="p-1 rounded hover:bg-green-50 text-gray-300 hover:text-green-600" title="Restore">
                           <RotateCcw className="h-3.5 w-3.5" />
                         </button>
-                      ) : isAdmin ? (
+                      ) : canDelete ? (
                         <button onClick={() => handleDeleteOne(r.id)} className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500" title="Delete">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>

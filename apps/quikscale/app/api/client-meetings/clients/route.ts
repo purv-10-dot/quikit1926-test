@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { requireAdmin } from "@/lib/api/requireAdmin";
@@ -79,9 +80,19 @@ export async function POST(request: NextRequest) {
     }
     const d = parsed.data;
 
-    const existing = await db.client.findFirst({ where: { orgId, name: d.name, deletedAt: null } });
-    if (existing)
-      return NextResponse.json({ success: false, error: "A client with that name already exists" }, { status: 409 });
+    // Uniqueness check spans soft-deleted rows because the DB constraint
+    // `@@unique([orgId, name])` does too — otherwise a trashed name leaks
+    // through and Prisma throws P2002 at insert time.
+    const existing = await db.client.findFirst({
+      where: { orgId, name: d.name },
+      select: { id: true, deletedAt: true },
+    });
+    if (existing) {
+      const msg = existing.deletedAt
+        ? "A deleted client with that name is still in Trash. Restore it or choose a different name."
+        : "A client with that name already exists";
+      return NextResponse.json({ success: false, error: msg }, { status: 409 });
+    }
 
     // Confirm all requested team members exist for this tenant.
     if (d.teamMemberIds.length) {
@@ -124,6 +135,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });
   } catch (error: unknown) {
+    // Race-loss safety net for the (orgId, name) unique constraint — keep
+    // the response shape consistent with the pre-check above.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        { success: false, error: "A client with that name already exists" },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create client") }, { status: 500 });
   }
 }
