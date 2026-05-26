@@ -462,7 +462,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {/* QTD Goal — Σ weeklyTargets[1..currentWeek-1].
                       Falls back to kpi.qtdGoal when currentWeek is unresolvable. */}
                   {!localHideSet.has("qtdGoal") && (() => {
-                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek);
+                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, progressDivisionType);
                     return (
                       <>
                         <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
@@ -500,13 +500,16 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       </>
                     );
                   })()}
-                  {/* If qtdGoal column is hidden but qtdAchieved is shown, render it standalone. */}
+                  {/* If qtdGoal column is hidden but qtdAchieved is shown, render it standalone.
+                      Use computeQtd so Standalone KPIs render the avg (not the server-stamped SUM). */}
                   {localHideSet.has("qtdGoal") && !localHideSet.has("qtdAchieved") && (() => {
+                    const { qtdGoal: dQtdGoal, qtdAchieved: dQtdAchieved } =
+                      computeQtd(kpi, currentWeek, progressDivisionType);
                     const hasAnyWeeklyValue = Object.values(weekMap).some(
                       wv => wv?.value != null,
                     );
-                    const color = kpi.qtdAchieved != null
-                      ? getColorByPercentage(kpi.qtdAchieved, kpi.qtdGoal ?? kpi.target ?? 0, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+                    const color = dQtdAchieved != null
+                      ? getColorByPercentage(dQtdAchieved, dQtdGoal ?? kpi.target ?? 0, hasAnyWeeklyValue, kpi.reverseColor ?? false)
                       : null;
                     const sticky = isFrozen("qtdAchieved");
                     const boundary = "qtdAchieved" === frozenUpTo;
@@ -520,7 +523,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                         ].filter(Boolean).join(" ")}
                         style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
                       >
-                        {fmtCompact(kpi.qtdAchieved ?? null)}
+                        {dQtdAchieved != null ? fmtCompact(dQtdAchieved) : "—"}
                       </td>
                     );
                   })()}
