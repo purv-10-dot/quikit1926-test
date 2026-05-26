@@ -618,7 +618,19 @@ export const SignInComponent = ({
   const handleSocialSignIn = (provider: "google" | "microsoft") => {
     const id = provider === "microsoft" ? "azure-ad" : "google";
     setModalStatus("loading");
-    nextAuthSignIn(id, { callbackUrl: "/login?step=profile" });
+    // Preserve the inbound deep-link callbackUrl (e.g. when the user came
+    // from scale.quikit.ai/login?callbackUrl=https://scale.quikit.ai/dashboard).
+    // Without this, OAuth users always land on /login?step=profile on the
+    // auth host, which then falls through to the launcher /apps (or, for
+    // super admins on the un-patched middleware, to the admin portal).
+    //
+    // Trade-off: OAuth users whose profile is still incomplete skip the
+    // profile-confirmation step when a callbackUrl is present. The profile
+    // gate currently lives in client-side advancePostSignIn (credentials-only
+    // path); a server-side profile gate in middleware would be the proper
+    // long-term fix. Filed as follow-up.
+    const target = callbackUrl || "/login?step=profile";
+    nextAuthSignIn(id, { callbackUrl: target });
   };
 
   const handleNativeSignIn = (e: React.FormEvent) => {
