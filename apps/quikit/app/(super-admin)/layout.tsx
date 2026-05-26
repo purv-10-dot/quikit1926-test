@@ -67,10 +67,18 @@ export default function SuperAdminLayout({
   const isImpersonating = session?.user?.impersonating === true;
 
   async function handleSignOut() {
-    // On QuikIT itself (the IdP), globalSignOut defaults quikitUrl to
-    // window.location.origin — one call clears both the local + IdP cookie.
+    // Single-logout: clear launcher cookie, auth-host cookie, AND launcher
+    // SLO cookies. authn.quikit.ai is a SEPARATE origin from apps.quikit.ai
+    // (the IdP-on-same-host assumption from the legacy single-host
+    // architecture is stale), so authUrl must be passed explicitly.
+    const launcherUrl =
+      process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
+      (typeof window !== "undefined" ? window.location.origin : "");
     await globalSignOut({
+      authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
+      quikitUrl: launcherUrl,
       localSignOut: () => signOut({ redirect: false }),
+      postLogoutRedirect: `${launcherUrl}/`,
     });
   }
 
