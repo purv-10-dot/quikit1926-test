@@ -96,10 +96,17 @@ export function computeQtd(
   const totalTarget = kpi.target ?? kpi.qtdGoal ?? 0;
   const flat = totalTarget > 0 ? totalTarget / 13 : 0;
 
-  // Resolve each prior week's target (per-week map → fallback to flat split).
+  // Resolve each prior week's target. Cumulative falls back to the flat
+  // 1/13 split so missing weeks still contribute their share to the running
+  // goal sum. Standalone treats a missing key as "no target configured" —
+  // it must NOT receive the flat fallback, otherwise sparse `weeklyTargets`
+  // maps (the shape the API returns — only weeks with an explicit target
+  // are present) inflate `weeksWithTargetCount` and shrink the average,
+  // showing 43% on the row instead of the correct 85%.
   const priorWeekTargets = priorWeeks.map((w) => {
     const v = wt[String(w)];
-    return typeof v === "number" ? v : flat;
+    if (typeof v === "number") return v;
+    return divisionType === "Standalone" ? 0 : flat;
   });
 
   const wv = kpi.weeklyValues ?? [];
