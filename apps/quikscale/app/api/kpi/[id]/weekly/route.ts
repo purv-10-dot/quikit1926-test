@@ -135,7 +135,16 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
   if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   const body = await req.json();
-  const validated = weeklyValueSchema.parse(body);
+  // safeParse → 400 with friendly message (e.g. long weekly note exceeding
+  // the 500-char cap). `.parse()` would throw and surface as opaque 500.
+  const parsed = weeklyValueSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 },
+    );
+  }
+  const validated = parsed.data;
 
   // Resolve target userId: for individual KPIs, default to kpi.owner if omitted.
   // For team KPIs, userId is required and must be one of ownerIds.

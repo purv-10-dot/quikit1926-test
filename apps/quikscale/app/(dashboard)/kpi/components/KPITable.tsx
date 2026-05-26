@@ -281,8 +281,27 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
               // would render the label invisible here. The badge helper
               // returns the same color thresholds with readable-on-white
               // text tones (text-blue-700 etc.).
-              const progressAchieved = kpi.qtdAchieved ?? 0;
-              const progressGoal = kpi.qtdGoal ?? kpi.target ?? 0;
+              //
+              // Standalone KPIs: server-stamped `kpi.qtdAchieved` is a
+              // cumulative SUM regardless of divisionType, so it shows
+              // (e.g.) 341% on a Standalone KPI whose true progress is
+              // ~113%. Re-derive via `computeQtd(...,"Standalone")` —
+              // that returns avg / kpi.target per the spec. Cumulative
+              // path stays byte-identical to before.
+              const progressDivisionType: "Cumulative" | "Standalone" =
+                kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
+              const stdProgress =
+                progressDivisionType === "Standalone"
+                  ? computeQtd(kpi, currentWeek, "Standalone")
+                  : null;
+              const progressAchieved =
+                stdProgress != null
+                  ? (stdProgress.qtdAchieved ?? 0)
+                  : (kpi.qtdAchieved ?? 0);
+              const progressGoal =
+                stdProgress != null
+                  ? (stdProgress.qtdGoal ?? kpi.target ?? 0)
+                  : (kpi.qtdGoal ?? kpi.target ?? 0);
               const progressPct = progressGoal > 0 ? (progressAchieved / progressGoal) * 100 : 0;
               const ownerName = kpi.owner_user ? `${kpi.owner_user.firstName} ${kpi.owner_user.lastName}` : kpi.owner;
               const weekMap: Record<number, WeeklyValue> = {};

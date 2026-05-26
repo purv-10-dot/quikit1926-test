@@ -317,7 +317,20 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   }
 
   const body = await req.json();
-  const validated = createKPISchema.parse(body);
+  // Use `safeParse` so validation failures return a clean 400 with the
+  // first field-level message (e.g. "String must contain at most 200
+  // character(s)" when the user enters an overly long KPI name).
+  // `.parse()` would throw, get caught by withOrgAuth's outer try/catch,
+  // and surface as an opaque 500 — see /api/priority/[id]/weekly/route.ts
+  // for the established convention.
+  const parsed = createKPISchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 },
+    );
+  }
+  const validated = parsed.data;
 
   // ── Past-week add enforcement ──
   // When add_past_week_data is disabled, reject non-zero targets for weeks before current week

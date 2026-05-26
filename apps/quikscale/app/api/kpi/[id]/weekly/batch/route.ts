@@ -124,7 +124,17 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
   if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   const body = await req.json();
-  const validated = weeklyValueBatchSchema.parse(body);
+  // safeParse → 400 with friendly message. The Save Changes button on the
+  // KPI Updates tab hits this route — long notes on any week previously
+  // surfaced as opaque 500s.
+  const parsed = weeklyValueBatchSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 },
+    );
+  }
+  const validated = parsed.data;
 
   const { canEditPastWeek } = await getPastWeekFlags(orgId);
   const currentWeek = kpi.quarter && kpi.year

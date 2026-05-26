@@ -139,7 +139,17 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
   // restricts non-admins to their own rows in the list.
 
   const body = await req.json();
-  const validated = updateKPISchema.parse(body);
+  // safeParse → 400 with friendly message. `.parse()` would throw, get
+  // caught by withOrgAuth, and surface as a 500 with the full Zod JSON
+  // dump. Mirrors the create-KPI fix in /api/kpi/route.ts.
+  const parsed = updateKPISchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 },
+    );
+  }
+  const validated = parsed.data;
   const oldValue = JSON.stringify(existingKPI);
 
   // Determine the effective kpiLevel after the update
