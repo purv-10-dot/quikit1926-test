@@ -53,17 +53,17 @@ export function RoleManagementTab() {
 
   return (
     <div className="flex h-full">
-      <aside className="w-72 border-r border-gray-200 bg-white flex flex-col">
-        <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-200">
-          <div className="text-[10px] font-semibold tracking-wider uppercase text-indigo-700">
+      <aside className="w-72 border-r border-gray-200 bg-white flex flex-col dark:border-gray-700 dark:bg-gray-900">
+        <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-200 dark:bg-indigo-500/10 dark:border-indigo-400/20">
+          <div className="text-[10px] font-semibold tracking-wider uppercase text-indigo-700 dark:text-indigo-300">
             App-wide
           </div>
-          <div className="text-xs text-indigo-900">
+          <div className="text-xs text-indigo-900 dark:text-indigo-200/80">
             Applies across every space
           </div>
         </div>
-        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900">App-wide roles</h2>
+        <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">App-wide roles</h2>
           <button
             type="button"
             onClick={() => setAddOpen(true)}
@@ -75,9 +75,9 @@ export function RoleManagementTab() {
         </div>
         <div className="flex-1 overflow-y-auto py-2">
           {rolesQ.isLoading ? (
-            <p className="px-4 py-3 text-sm text-gray-500">Loading…</p>
+            <p className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">Loading…</p>
           ) : roles.length === 0 ? (
-            <p className="px-4 py-3 text-sm text-gray-500">No roles yet.</p>
+            <p className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">No roles yet.</p>
           ) : roles.map((r) => {
             const active = r.id === selectedRoleId;
             return (
@@ -86,14 +86,16 @@ export function RoleManagementTab() {
                 type="button"
                 onClick={() => setSelectedRoleId(r.id)}
                 className={`group w-full px-4 py-2 text-left flex items-center justify-between gap-2 text-sm ${
-                  active ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-50"
+                  active
+                    ? "bg-blue-50 text-blue-700 font-medium dark:bg-blue-500/15 dark:text-blue-300"
+                    : "text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800/60"
                 }`}
               >
                 <span className="inline-flex items-center gap-2 truncate">
-                  <Shield className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
+                  <Shield className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0 dark:text-indigo-300" />
                   <span className="truncate">{r.name}</span>
                   {r.isDefault && (
-                    <span className="text-[9px] uppercase tracking-wider bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                    <span className="text-[9px] uppercase tracking-wider bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded dark:bg-gray-700 dark:text-gray-300">
                       Default
                     </span>
                   )}
@@ -106,7 +108,7 @@ export function RoleManagementTab() {
                       e.stopPropagation();
                       if (confirm(`Delete role "${r.name}"?`)) del.mutate(r.id);
                     }}
-                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500"
+                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </span>
@@ -117,20 +119,20 @@ export function RoleManagementTab() {
         </div>
       </aside>
 
-      <section className="flex-1 min-w-0 bg-gray-50 overflow-y-auto">
+      <section className="flex-1 min-w-0 bg-gray-50 overflow-y-auto dark:bg-gray-950">
         {selectedRole ? (
           <div className="px-8 py-6 space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-base font-semibold text-gray-900">
+              <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">
                 Permissions — {selectedRole.name}
               </h3>
-              <Shield className="h-4 w-4 text-indigo-500" />
-              <span className="text-[10px] font-semibold tracking-wider uppercase bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded">
+              <Shield className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />
+              <span className="text-[10px] font-semibold tracking-wider uppercase bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-1 dark:ring-indigo-400/30">
                 App-wide
               </span>
             </div>
 
-            <nav className="flex gap-6 border-b border-gray-200">
+            <nav className="flex gap-6 border-b border-gray-200 dark:border-gray-700">
               {(
                 [
                   { k: "fields" as const, label: "Fields" },
@@ -144,8 +146,8 @@ export function RoleManagementTab() {
                   onClick={() => setSubTab(k)}
                   className={`pb-2 text-sm font-medium border-b-2 -mb-px ${
                     subTab === k
-                      ? "border-blue-600 text-blue-700"
-                      : "border-transparent text-gray-500 hover:text-gray-700"
+                      ? "border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300"
+                      : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                   }`}
                 >
                   {label}
@@ -153,7 +155,7 @@ export function RoleManagementTab() {
               ))}
             </nav>
 
-            <div className="bg-gray-900 text-white rounded-md px-4 py-2.5 flex items-start gap-2 text-xs">
+            <div className="bg-gray-900 text-white rounded-md px-4 py-2.5 flex items-start gap-2 text-xs dark:bg-gray-800/70 dark:ring-1 dark:ring-gray-700">
               <span className="font-semibold">ⓘ</span>
               <span>
                 {subTab === "fields" ? (
@@ -183,7 +185,7 @@ export function RoleManagementTab() {
             )}
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-sm text-gray-500">
+          <div className="flex items-center justify-center h-full text-sm text-gray-500 dark:text-gray-400">
             Select a role to view its permissions.
           </div>
         )}

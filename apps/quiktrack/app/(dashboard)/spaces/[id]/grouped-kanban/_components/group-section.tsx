@@ -84,13 +84,13 @@ export function GroupSection({
                 indeterminate={someSelected}
                 onToggleAll={() => onToggleGroupSelected(groupTaskIds, !allSelected)}
               />
-              <div className="px-3 py-6 text-center text-xs text-gray-400 border-2 border-dashed border-gray-200 m-2 rounded">
+              <div className="px-3 py-6 text-center text-xs text-gray-400 border-2 border-dashed border-gray-200 m-2 rounded dark:border-slate-700 dark:text-slate-500">
                 Drop a task here to add it to this group.
               </div>
               <AddTaskRow onAddTask={onAddTask} />
             </div>
           ) : (
-            <div style={{ minWidth: ROW_GRID_MIN_WIDTH }} className="divide-y divide-slate-100">
+            <div style={{ minWidth: ROW_GRID_MIN_WIDTH }} className="divide-y divide-slate-100 dark:divide-slate-800">
               <ColumnLabels
                 allSelected={allSelected}
                 indeterminate={someSelected}
@@ -156,7 +156,7 @@ function ColumnLabels({
 }) {
   return (
     <div
-      className={`grid ${ROW_GRID_TEMPLATE} items-stretch px-0 text-[12px] font-bold uppercase tracking-wider text-slate-700 bg-slate-50 border-b border-slate-300 [&>*]:self-stretch [&>*]:flex [&>*]:items-center [&>*]:justify-center [&>*]:px-2 [&>*]:py-2.5 [&>*]:border-r [&>*]:border-slate-300 [&>*:last-child]:border-r-0`}
+      className={`grid ${ROW_GRID_TEMPLATE} items-stretch px-0 text-[12px] font-bold uppercase tracking-wider text-slate-700 bg-slate-200	 border-b border-slate-300 dark:bg-slate-800/80 dark:text-slate-300 dark:border-slate-700 [&>*]:self-stretch [&>*]:flex [&>*]:items-center [&>*]:justify-center [&>*]:px-2 [&>*]:py-2.5 [&>*]:border-r [&>*]:border-slate-300 dark:[&>*]:border-slate-700 [&>*:last-child]:border-r-0`}
     >
       <span>
         <IndeterminateCheckbox
@@ -180,9 +180,9 @@ function AddTaskRow({ onAddTask }: { onAddTask: () => void }) {
     <button
       type="button"
       onClick={onAddTask}
-      className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-blue-700 bg-slate-200 hover:bg-blue-50 border-t border-slate-300 transition-colors group"
+      className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-semibold text-blue-700 bg-gray-50 hover:bg-blue-50 border-t border-slate-300 transition-colors group dark:text-blue-300 dark:bg-slate-900/60 dark:hover:bg-blue-500/15 dark:border-slate-700"
     >
-      <span className="h-5 w-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-700 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+      <span className="h-5 w-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-700 group-hover:bg-blue-600 group-hover:text-white transition-colors dark:bg-blue-500/20 dark:text-blue-300 dark:group-hover:bg-blue-500 dark:group-hover:text-white">
         <Plus className="h-3.5 w-3.5" />
       </span>
       <span>Add task</span>

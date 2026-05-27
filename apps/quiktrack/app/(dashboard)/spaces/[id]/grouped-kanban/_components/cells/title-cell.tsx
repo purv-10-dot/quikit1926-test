@@ -88,11 +88,11 @@ export function TitleCell({ taskId, taskKey, value, onCommit, onOpenDetail }: Ti
       type="button"
       onClick={handleSingleClick}
       onDoubleClick={handleDoubleClick}
-      title={`Open ${taskKey}`}
       data-task-id={taskId}
+      data-task-key={taskKey}
       className="w-full flex items-center min-w-0 text-left cursor-pointer"
     >
-      <span className="truncate text-sm text-gray-900 hover:text-blue-700 transition-colors">
+      <span className="truncate text-sm text-gray-900 hover:text-blue-700 transition-colors dark:text-slate-100 dark:hover:text-blue-300">
         {value}
       </span>
     </button>

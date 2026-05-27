@@ -220,9 +220,9 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
       {/* Email with typeahead */}
       <div ref={emailWrapRef} className="relative">
         <label className="block text-sm">
-          <span className="text-gray-700 mb-1 block">Email</span>
+          <span className="text-gray-700 mb-1 block dark:text-gray-200">Email</span>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
             <input
               type="email"
               value={email}
@@ -235,15 +235,15 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
               placeholder="jane@company.com"
               className={`w-full h-9 pl-9 pr-9 text-sm border rounded-md focus:outline-none focus:ring-1 ${
                 isLinking
-                  ? "border-blue-400 bg-blue-50 focus:ring-blue-400"
-                  : "border-gray-200 focus:ring-blue-400"
+                  ? "border-blue-400 bg-blue-50 focus:ring-blue-400 dark:bg-blue-500/15 dark:border-blue-400/40 dark:text-blue-200"
+                  : "border-gray-200 focus:ring-blue-400 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-100 dark:placeholder:text-gray-500"
               }`}
             />
             {isLinking && (
               <button
                 type="button"
                 onClick={clearLink}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-blue-100 text-blue-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-blue-100 text-blue-600 dark:text-blue-300 dark:hover:bg-blue-500/20"
                 aria-label="Clear link"
                 title="Clear and add as a new user"
               >
@@ -253,38 +253,38 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
           </div>
         </label>
         {isLinking && (
-          <p className="mt-1 text-xs text-blue-700">
+          <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">
             Linking existing org member — password not required.
           </p>
         )}
 
         {showHits && !isLinking && debouncedEmail.length >= 2 && hits.length > 0 && (
-          <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto">
+          <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto dark:bg-gray-900 dark:border-gray-700">
             {hits.map((h) => (
               <button
                 key={h.userId}
                 type="button"
                 disabled={h.hasQuikTrackAccess}
                 onClick={() => pickHit(h)}
-                className={`w-full px-3 py-2 flex items-center gap-2 text-left text-sm border-b border-gray-100 last:border-b-0 ${
+                className={`w-full px-3 py-2 flex items-center gap-2 text-left text-sm border-b border-gray-100 last:border-b-0 dark:border-gray-800 ${
                   h.hasQuikTrackAccess
                     ? "opacity-50 cursor-not-allowed"
-                    : "hover:bg-blue-50"
+                    : "hover:bg-blue-50 dark:hover:bg-blue-500/15"
                 }`}
               >
                 <span className="w-6 h-6 rounded-full bg-purple-500 text-white text-[10px] font-semibold flex items-center justify-center">
                   {(h.firstName[0] ?? "?") + (h.lastName[0] ?? "")}
                 </span>
                 <span className="flex-1 min-w-0">
-                  <span className="block font-medium truncate">{h.firstName} {h.lastName}</span>
-                  <span className="block text-xs text-gray-500 truncate">{h.email}</span>
+                  <span className="block font-medium truncate dark:text-gray-100">{h.firstName} {h.lastName}</span>
+                  <span className="block text-xs text-gray-500 truncate dark:text-gray-400">{h.email}</span>
                 </span>
                 {h.hasQuikTrackAccess ? (
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
                     Already in
                   </span>
                 ) : (
-                  <Check className="h-3.5 w-3.5 text-blue-600 opacity-0 group-hover:opacity-100" />
+                  <Check className="h-3.5 w-3.5 text-blue-600 opacity-0 group-hover:opacity-100 dark:text-blue-300" />
                 )}
               </button>
             ))}
@@ -297,7 +297,7 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
           auth identity). */}
       {!isLinking && (
         <div>
-          <label className="text-xs font-medium text-gray-600 block mb-1.5">
+          <label className="text-xs font-medium text-gray-600 block mb-1.5 dark:text-gray-300">
             Invitation Method
           </label>
           <div className="grid grid-cols-2 gap-2">
@@ -321,18 +321,18 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
                   onClick={() => setInvitationMethod(opt.key)}
                   className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${
                     active
-                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-300"
-                      : "border-gray-200 bg-white hover:bg-gray-50"
+                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-300 dark:bg-blue-500/15 dark:border-blue-400/50 dark:ring-blue-400/40"
+                      : "border-gray-200 bg-white hover:bg-gray-50 dark:bg-gray-800/60 dark:border-gray-700 dark:hover:bg-gray-700/60"
                   }`}
                 >
                   <div
                     className={`text-xs font-semibold ${
-                      active ? "text-blue-700" : "text-gray-800"
+                      active ? "text-blue-700 dark:text-blue-300" : "text-gray-800 dark:text-gray-100"
                     }`}
                   >
                     {opt.title}
                   </div>
-                  <div className="text-[10.5px] text-gray-500 mt-0.5 leading-snug">
+                  <div className="text-[10.5px] text-gray-500 mt-0.5 leading-snug dark:text-gray-400">
                     {opt.hint}
                   </div>
                 </button>
@@ -348,16 +348,16 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
           edit mode (separate EditUserModal). Keeping this drawer
           purely about invite-and-go. */}
       {!isLinking && invitationMethod === "native" && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-[11.5px] text-blue-800 leading-snug">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-[11.5px] text-blue-800 leading-snug dark:bg-blue-500/10 dark:border-blue-400/30 dark:text-blue-100">
           <strong className="font-semibold">Temporary password will be emailed.</strong>{" "}
           The user will receive{" "}
-          <span className="font-mono font-semibold">Quikit2026</span> at their
+          <span className="font-mono font-semibold dark:text-blue-200">Quikit2026</span> at their
           email and be prompted to set a new password on first sign-in.
         </div>
       )}
 
       <div className="block text-sm">
-        <span className="text-gray-700 mb-1.5 block">Role</span>
+        <span className="text-gray-700 mb-1.5 block dark:text-gray-200">Role</span>
         <CustomSelect
           value={appRoleId}
           onChange={setAppRoleId}
@@ -397,15 +397,15 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
         />
       )}
 
-      <p className="-mt-2 text-[11px] text-gray-400">
+      <p className="-mt-2 text-[11px] text-gray-400 dark:text-gray-500">
         Each project uses its own role catalogue. Leave a row on{" "}
-        <span className="font-medium">Default</span> and the project&apos;s
+        <span className="font-medium dark:text-gray-300">Default</span> and the project&apos;s
         default role applies. Per-role permissions can be tuned later from
         the project&apos;s User Management page
         after invite.
       </p>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
     </RightPanel>
   );
 }
@@ -458,8 +458,8 @@ function ProjectRolesPicker({
 
   return (
     <div className="block text-sm">
-      <span className="text-gray-700 mb-1.5 block">Project roles</span>
-      <div className="border border-gray-200 rounded-md divide-y divide-gray-100">
+      <span className="text-gray-700 mb-1.5 block dark:text-gray-200">Project roles</span>
+      <div className="border border-gray-200 rounded-md divide-y divide-gray-100 dark:border-gray-700 dark:divide-gray-800">
         {projectIds.map((pid) => {
           const meta = projectById.get(pid);
           return (
@@ -516,11 +516,11 @@ function ProjectRoleRow({
         style={{ background: projectColor ?? "#2563eb" }}
       />
       <span className="flex-1 min-w-0">
-        <span className="block text-[13px] font-medium text-gray-900 truncate">
+        <span className="block text-[13px] font-medium text-gray-900 truncate dark:text-gray-100">
           {projectName}
         </span>
         {projectKey && (
-          <span className="block text-[10px] uppercase tracking-wider text-gray-400">
+          <span className="block text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">
             {projectKey}
           </span>
         )}
@@ -647,7 +647,7 @@ function CustomSelect({
               minWidth: coords.width,
               zIndex: 1100,
             }}
-            className="bg-white border border-gray-200 rounded-lg shadow-[0_12px_32px_-10px_rgba(15,23,42,0.18),0_4px_12px_-4px_rgba(15,23,42,0.08)] overflow-hidden py-1 max-h-[20rem] overflow-y-auto"
+            className="bg-white border border-gray-200 rounded-lg shadow-[0_12px_32px_-10px_rgba(15,23,42,0.18),0_4px_12px_-4px_rgba(15,23,42,0.08)] overflow-hidden py-1 max-h-[20rem] overflow-y-auto dark:bg-gray-900 dark:border-gray-700"
           >
             {options.map((opt) => {
               const active = opt.value === value;
@@ -663,24 +663,24 @@ function CustomSelect({
                   }}
                   className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-[13px] transition-colors ${
                     active
-                      ? "bg-blue-50 text-blue-700 font-medium"
-                      : "text-gray-700 hover:bg-gray-50"
+                      ? "bg-blue-50 text-blue-700 font-medium dark:bg-blue-500/15 dark:text-blue-300"
+                      : "text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800/60"
                   }`}
                 >
                   <span className="flex items-center gap-2 min-w-0">
                     <span className="truncate">{opt.label}</span>
                     {opt.badge && (
-                      <span className="text-[9px] uppercase tracking-wider text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                      <span className="text-[9px] uppercase tracking-wider text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded dark:bg-gray-700 dark:text-gray-300">
                         {opt.badge}
                       </span>
                     )}
                   </span>
-                  {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
+                  {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0 dark:text-blue-300" />}
                 </button>
               );
             })}
             {options.length === 0 && (
-              <p className="px-3 py-3 text-xs text-gray-400">No options.</p>
+              <p className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500">No options.</p>
             )}
           </div>,
           document.body,
@@ -696,17 +696,17 @@ function CustomSelect({
         style={width ? { minWidth: width } : undefined}
         className={`w-full ${heightCls} pl-3 pr-9 inline-flex items-center justify-between text-left border rounded-md transition-colors relative cursor-pointer ${
           open
-            ? "border-blue-400 bg-white ring-1 ring-blue-300"
-            : "border-gray-200 bg-white hover:bg-gray-50"
+            ? "border-blue-400 bg-white ring-1 ring-blue-300 dark:bg-gray-800 dark:border-blue-400/50 dark:ring-blue-400/40"
+            : "border-gray-200 bg-white hover:bg-gray-50 dark:bg-gray-800/60 dark:border-gray-700 dark:hover:bg-gray-700/60"
         }`}
       >
         <span
-          className={`truncate ${selected ? "text-gray-800" : "text-gray-500"}`}
+          className={`truncate ${selected ? "text-gray-800 dark:text-gray-100" : "text-gray-500 dark:text-gray-400"}`}
         >
           {label}
         </span>
         <ChevronDown
-          className={`absolute right-3 h-3.5 w-3.5 text-gray-400 transition-transform ${
+          className={`absolute right-3 h-3.5 w-3.5 text-gray-400 transition-transform dark:text-gray-500 ${
             open ? "rotate-180" : ""
           }`}
         />

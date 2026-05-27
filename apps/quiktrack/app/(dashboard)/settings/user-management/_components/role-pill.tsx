@@ -81,10 +81,10 @@ export function RolePill({
   const isAdmin = (currentRoleName ?? "").toLowerCase() === "admin";
 
   const baseStyle = isAdmin
-    ? "bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100/70"
+    ? "bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100/70 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-400/30 dark:hover:bg-blue-500/25"
     : currentRoleId
-      ? "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
-      : "bg-white text-gray-400 border-dashed border-gray-300 hover:bg-gray-50";
+      ? "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100 dark:bg-gray-700/60 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-700"
+      : "bg-white text-gray-400 border-dashed border-gray-300 hover:bg-gray-50 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-600 dark:hover:bg-gray-700/60";
 
   const menu =
     open && coords && typeof window !== "undefined"

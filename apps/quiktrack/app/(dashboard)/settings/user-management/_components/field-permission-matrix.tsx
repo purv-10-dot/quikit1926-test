@@ -19,10 +19,22 @@ interface SavedRow {
 }
 
 const LEVEL_META: Record<FieldLevel, { label: string; tone: string }> = {
-  hidden: { label: "Hidden", tone: "bg-gray-100 text-gray-600 ring-gray-200" },
-  readonly: { label: "Read-only", tone: "bg-amber-50 text-amber-700 ring-amber-100" },
-  editable: { label: "Editable", tone: "bg-emerald-50 text-emerald-700 ring-emerald-100" },
-  required: { label: "Required", tone: "bg-blue-50 text-blue-700 ring-blue-100" },
+  hidden: {
+    label: "Hidden",
+    tone: "bg-gray-100 text-gray-600 ring-gray-200 dark:bg-gray-700/60 dark:text-gray-200 dark:ring-gray-600",
+  },
+  readonly: {
+    label: "Read-only",
+    tone: "bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/30",
+  },
+  editable: {
+    label: "Editable",
+    tone: "bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/30",
+  },
+  required: {
+    label: "Required",
+    tone: "bg-blue-50 text-blue-700 ring-blue-100 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-400/30",
+  },
 };
 
 /**
@@ -135,13 +147,13 @@ export function FieldPermissionMatrix({
   }
 
   if (q.isLoading)
-    return <p className="text-sm text-gray-500 px-4 py-3">Loading…</p>;
+    return <p className="text-sm text-gray-500 px-4 py-3 dark:text-gray-400">Loading…</p>;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden dark:bg-gray-900 dark:border-gray-700">
       <table className="w-full text-sm">
-        <thead className="bg-gradient-to-b from-gray-50 to-gray-50/60 text-left">
-          <tr className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+        <thead className="bg-gradient-to-b from-gray-50 to-gray-50/60 text-left dark:from-gray-800 dark:to-gray-800/60">
+          <tr className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-gray-500 dark:text-gray-300">
             <th className="px-4 py-3 w-[40%]">Form field</th>
             {FIELD_LEVELS.map((l) => (
               <th key={l} className="px-3 py-3 text-center w-[15%]">
@@ -175,9 +187,9 @@ export function FieldPermissionMatrix({
         </tbody>
       </table>
 
-      <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
-        <p className="text-[11.5px] text-gray-500">
-          <span className="font-medium text-gray-700">Editable</span> is the
+      <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between dark:border-gray-700">
+        <p className="text-[11.5px] text-gray-500 dark:text-gray-400">
+          <span className="font-medium text-gray-700 dark:text-gray-200">Editable</span> is the
           default — fields not explicitly set behave as editable.
         </p>
         <Button
@@ -215,7 +227,7 @@ function FieldEntityRows({
 }) {
   return (
     <>
-      <tr className="border-t border-gray-100 bg-gray-50/40">
+      <tr className="border-t border-gray-100 bg-gray-50/40 dark:border-gray-700 dark:bg-gray-800/40">
         <td colSpan={5} className="px-4 py-2.5">
           <button
             type="button"
@@ -223,17 +235,17 @@ function FieldEntityRows({
             className="inline-flex items-center gap-2 text-left"
           >
             {open ? (
-              <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
+              <ChevronDown className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
             ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
+              <ChevronRight className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
             )}
-            <span className="font-semibold text-gray-900">{entityLabel}</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{entityLabel}</span>
             {nonDefault > 0 && (
-              <span className="text-[10px] font-medium bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] font-medium bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded dark:bg-blue-500/15 dark:text-blue-300">
                 {nonDefault} customized
               </span>
             )}
-            <span className="text-[11.5px] text-gray-500 ml-1">
+            <span className="text-[11.5px] text-gray-500 ml-1 dark:text-gray-400">
               {entityDescription}
             </span>
           </button>
@@ -247,19 +259,19 @@ function FieldEntityRows({
           return (
             <tr
               key={f.key}
-              className="border-t border-gray-50 hover:bg-gray-50/60"
+              className="border-t border-gray-50 hover:bg-gray-50/60 dark:border-gray-800 dark:hover:bg-gray-800/40"
             >
-              <td className="px-4 py-2 pl-10 text-gray-700">
+              <td className="px-4 py-2 pl-10 text-gray-700 dark:text-gray-200">
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="text-gray-300">↳</span>
+                  <span className="text-gray-300 dark:text-gray-600">↳</span>
                   <span>{f.label}</span>
                   {sysRequired && (
-                    <span className="text-[9px] uppercase tracking-wider text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                    <span className="text-[9px] uppercase tracking-wider text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded dark:bg-amber-500/15 dark:text-amber-300">
                       system
                     </span>
                   )}
                   {f.hint && (
-                    <span className="text-[11px] text-gray-400">{f.hint}</span>
+                    <span className="text-[11px] text-gray-400 dark:text-gray-500">{f.hint}</span>
                   )}
                 </span>
               </td>
@@ -277,10 +289,10 @@ function FieldEntityRows({
                       onClick={() => onChange(f.key, target)}
                       className={`inline-flex items-center justify-center h-7 min-w-[72px] px-2.5 text-[11.5px] font-medium rounded-full ring-1 transition-colors ${
                         disabled
-                          ? "opacity-30 cursor-not-allowed bg-gray-50 text-gray-400 ring-gray-200"
+                          ? "opacity-30 cursor-not-allowed bg-gray-50 text-gray-400 ring-gray-200 dark:bg-gray-800/60 dark:text-gray-500 dark:ring-gray-700"
                           : active
                             ? LEVEL_META[target].tone
-                            : "bg-white text-gray-500 ring-gray-200 hover:bg-gray-50"
+                            : "bg-white text-gray-500 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800/60 dark:text-gray-300 dark:ring-gray-700 dark:hover:bg-gray-700/60"
                       }`}
                     >
                       {LEVEL_META[target].label}

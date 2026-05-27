@@ -80,7 +80,70 @@ html.dark .divide-gray-200 > * + *  { border-color: #334155 !important; }
 /* Inputs — placeholders, disabled states ───────────────────────────── */
 html.dark input::placeholder,
 html.dark textarea::placeholder {
-  color: #64748b;
+  color: #64748b !important;
+}
+
+/* Global dark-mode treatment for text-entry controls.
+   Targets <input> (excluding checkbox/radio/file/range/color/button-like
+   types), <textarea>, and <select> so every form field in the app gets a
+   coherent dark surface, light text, and a visible border without per-
+   component dark: classes. !important is required to beat the
+   `.bg-white !important` / `.border-gray-200 !important` remaps higher in
+   this file. */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),
+html.dark textarea,
+html.dark select {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-color: #334155 !important;
+}
+
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):hover:not(:disabled):not(:focus),
+html.dark textarea:hover:not(:disabled):not(:focus),
+html.dark select:hover:not(:disabled):not(:focus) {
+  border-color: #475569 !important;
+}
+
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]):focus,
+html.dark textarea:focus,
+html.dark select:focus {
+  background-color: #273449 !important;
+  border-color: #60a5fa !important;
+}
+
+html.dark input:disabled,
+html.dark textarea:disabled,
+html.dark select:disabled {
+  background-color: #0f172a !important;
+  color: #64748b !important;
+  border-color: #1e293b !important;
+}
+
+/* Status pills (StatusCell in grouped-kanban). In light mode the cell uses
+   `${color}1a` (10% opacity) as bg + full-saturation text. On a dark surface
+   that 10% tint is barely visible. Here we read the `--qt-status-c` CSS var
+   set inline and rebuild the pill with a richer tint + light text mixed
+   toward the status hue, plus an inset ring for a defined edge. `color-mix`
+   is supported in all evergreen browsers (Chrome 111+, Safari 16.4+,
+   Firefox 113+) which matches the rest of the app's baseline. */
+html.dark .qt-status-pill {
+  background-color: color-mix(in srgb, var(--qt-status-c, #94a3b8) 38%, transparent) !important;
+  color: color-mix(in srgb, var(--qt-status-c, #94a3b8) 35%, #f8fafc 65%) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--qt-status-c, #94a3b8) 45%, transparent) !important;
+}
+html.dark .qt-status-pill:hover {
+  background-color: color-mix(in srgb, var(--qt-status-c, #94a3b8) 48%, transparent) !important;
+  color: color-mix(in srgb, var(--qt-status-c, #94a3b8) 20%, #f8fafc 80%) !important;
+  filter: none !important;
+}
+
+/* Autofill in dark mode — Chrome paints a yellow box otherwise. */
+html.dark input:-webkit-autofill,
+html.dark textarea:-webkit-autofill,
+html.dark select:-webkit-autofill {
+  -webkit-text-fill-color: #f1f5f9 !important;
+  -webkit-box-shadow: 0 0 0 1000px #1e293b inset !important;
+  caret-color: #f1f5f9 !important;
 }
 
 /* Brand-tinted chrome (sidebar active item, nav highlights) — bring the

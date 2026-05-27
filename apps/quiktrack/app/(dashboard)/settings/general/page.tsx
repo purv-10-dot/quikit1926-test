@@ -22,11 +22,16 @@ function asThemeMode(value: unknown, fallback: ThemeMode): ThemeMode {
 }
 
 export default function GeneralSettingsPage() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { theme, setTheme, systemTheme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<ThemeMode | null>(null);
   const [persisted, setPersisted] = useState<ThemeMode>("system");
   const [toast, setToast] = useState<{ kind: "success" | "error"; msg: string } | null>(null);
+  // next-themes' `theme` is read from the html class on the first client
+  // render but is undefined on the server. Gate any theme-dependent UI on
+  // `mounted` so SSR and the hydration render emit the same markup.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -73,7 +78,6 @@ export default function GeneralSettingsPage() {
       if (!res.ok || !json.success) {
         throw new Error(json.error || "Failed to save theme");
       }
-      setToast({ kind: "success", msg: "Theme saved" });
     } catch (error: unknown) {
       setPersisted(previous);
       setTheme(previous);
@@ -84,7 +88,14 @@ export default function GeneralSettingsPage() {
     }
   }
 
-  const current: ThemeMode = asThemeMode(theme, persisted);
+  // Until mounted, use `persisted` (the SSR-stable seed) so the first
+  // client render matches the server. After mount, prefer the live
+  // next-themes value so user toggles take effect immediately.
+  const current: ThemeMode = mounted ? asThemeMode(theme, persisted) : persisted;
+  // Show the OS preference under the System card. `systemTheme` always
+  // reflects `prefers-color-scheme` regardless of which theme is selected
+  // in the app — `resolvedTheme` would echo the active app theme instead.
+  const osTheme = mounted ? systemTheme : undefined;
 
   return (
     <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-900">
@@ -129,7 +140,7 @@ export default function GeneralSettingsPage() {
                   onClick={() => handleSelect(opt.value)}
                   className={`relative flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 ${
                     selected
-                      ? "border-accent-500 bg-accent-50 dark:border-accent-400 dark:bg-accent-900/30"
+                      ? "border-accent-500 bg-accent-50 dark:border-accent-400 dark:!bg-accent-800"
                       : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600 dark:hover:bg-gray-700/40"
                   }`}
                 >
@@ -142,11 +153,11 @@ export default function GeneralSettingsPage() {
                   >
                     <Icon className="h-4 w-4" />
                   </span>
-                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{opt.label}</span>
-                  <span className="text-xs leading-snug text-gray-500 dark:text-gray-400">{opt.description}</span>
-                  {opt.value === "system" && resolvedTheme ? (
+                  <span className={`text-sm font-medium ${selected ? "text-accent-700 dark:!text-white" : "text-gray-900 dark:text-gray-100"}`}>{opt.label}</span>
+                  <span className={`text-xs leading-snug ${selected ? "text-accent-600 dark:!text-gray-200" : "text-gray-500 dark:text-gray-400"}`}>{opt.description}</span>
+                  {opt.value === "system" && osTheme ? (
                     <span className="text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                      Now: {resolvedTheme}
+                      OS: {osTheme}
                     </span>
                   ) : null}
                   {selected ? (
