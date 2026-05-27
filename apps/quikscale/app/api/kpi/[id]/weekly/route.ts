@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { weeklyValueSchema } from "@/lib/schemas/kpiSchema";
-import { canEditKPIOwnerWeekly } from "@/lib/api/kpiWeeklyPermissions";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
@@ -48,10 +47,9 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params }
  *   - Individual KPI: userId is inferred from kpi.owner if omitted
  *   - Team KPI: userId is required (must be one of kpi.ownerIds)
  *
- * Permissions (via canEditKPIOwnerWeekly):
- *   - Admins/executives/super_admins can write any owner's row
- *   - Team heads can write any row on their team's KPIs
- *   - Owners can write their own row (self-edit)
+ * Authorization: handled exclusively by the RBAC v2 `KPI:update` /
+ * `TeamKPI:update` gate enforced by the route wrapper. No in-handler
+ * owner/role check.
  *
  * On success, re-aggregates qtdAchieved as the SUM of all weekly values for the KPI
  * and recomputes progressPercent + healthStatus.
@@ -159,20 +157,14 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
     const ownerIds = (kpi.ownerIds ?? []) as string[];
     if (!ownerIds.includes(targetUserId)) {
       return NextResponse.json(
-        { success: false, error: "targetUserId is not an owner of this team KPI" },
+        { success: false, error: "The selected user is not a contributor on this Team KPI." },
         { status: 400 }
       );
     }
   }
 
-  // Permission check
-  const allowed = await canEditKPIOwnerWeekly(userId, orgId, params.id, targetUserId);
-  if (!allowed) {
-    return NextResponse.json(
-      { success: false, error: "You do not have permission to edit this weekly value." },
-      { status: 403 }
-    );
-  }
+  // No instance-level role check — RBAC v2 `KPI:update` / `TeamKPI:update`
+  // (enforced by the route wrapper) is the sole authorization gate.
 
   // ── Past-week edit enforcement ──
   const { canEditPastWeek } = await getPastWeekFlags(orgId);

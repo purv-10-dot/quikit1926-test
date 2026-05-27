@@ -7,18 +7,20 @@
  * that Zod can't express alone:
  *
  *   - Team exists in the tenant
- *   - Actor has permission to manage the team
  *   - All ownerIds are active members of the team
  *   - ownerContributions keys match ownerIds
  *   - Owner user exists for individual KPIs
  *   - Parent KPI belongs to the same tenant
+ *
+ * Authorization (who may create a KPI for which team) is handled exclusively
+ * by RBAC v2 `KPI:create` / `TeamKPI:create` enforced by the route wrapper —
+ * no instance-level "actor must be team head" check here.
  *
  * Each helper returns either a JSON error response (to forward to the client)
  * or `null` on success.
  */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { canManageTeamKPI } from "@/lib/api/teamKPIPermissions";
 
 type ValidationResult = NextResponse | null;
 
@@ -41,7 +43,7 @@ export async function validateTeamKPICreate(
 
   if (!teamId) {
     return NextResponse.json(
-      { success: false, error: "teamId is required for team KPIs" },
+      { success: false, error: "Please select a team for this Team KPI." },
       { status: 400 }
     );
   }
@@ -49,18 +51,14 @@ export async function validateTeamKPICreate(
   const team = await db.team.findUnique({ where: { id: teamId } });
   if (!team || team.orgId !== orgId) {
     return NextResponse.json(
-      { success: false, error: "Team not found" },
+      { success: false, error: "The selected team could not be found. It may have been deleted." },
       { status: 404 }
     );
   }
 
-  const allowed = await canManageTeamKPI(actorUserId, orgId, teamId);
-  if (!allowed) {
-    return NextResponse.json(
-      { success: false, error: "You must be a team head or admin to create KPIs for this team." },
-      { status: 403 }
-    );
-  }
+  // No instance-level "actor must be team head" check — RBAC v2 `TeamKPI:create`
+  // (enforced by the route wrapper) is the sole authorization gate.
+  void actorUserId;
 
   const ownerIds = rawOwnerIds ?? [];
   if (ownerIds.length === 0) {

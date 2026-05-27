@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { weeklyValueBatchSchema } from "@/lib/schemas/kpiSchema";
-import { canEditKPIOwnerWeekly } from "@/lib/api/kpiWeeklyPermissions";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
@@ -153,22 +152,18 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       continue;
     }
     if (kpi.kpiLevel === "team" && !ownerIds.includes(targetUserId)) {
-      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: "targetUserId is not an owner of this team KPI" });
+      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: "The selected user is not a contributor on this Team KPI." });
       continue;
     }
 
-    // Past-week gate
+    // Past-week gate — org-level config, not a role check.
     if (!canEditPastWeek && input.weekNumber < currentWeek) {
-      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: `Editing past weeks is disabled. Week ${input.weekNumber} is before current (${currentWeek}).` });
+      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: `Editing past weeks is disabled. Week ${input.weekNumber} is before the current week (${currentWeek}). Enable it in Settings > Configurations.` });
       continue;
     }
 
-    // Permission check
-    const allowed = await canEditKPIOwnerWeekly(userId, orgId, params.id, targetUserId);
-    if (!allowed) {
-      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: "Permission denied" });
-      continue;
-    }
+    // No instance-level role check here — RBAC v2 `KPI:update` / `TeamKPI:update`
+    // (enforced by the route wrapper) is the sole authorization gate.
 
     // Primary upsert
     try {
