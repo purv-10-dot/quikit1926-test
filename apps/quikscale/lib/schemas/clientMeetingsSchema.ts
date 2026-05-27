@@ -28,8 +28,9 @@ export const statusSchema = z.enum(CLIENT_MEETING_STATUSES);
 /* ─── Client (master) ───────────────────────────────────────────────────────── */
 
 export const createClientSchema = z.object({
-  name: z.string().trim().min(1, "Client name is required").max(200),
-  description: z.string().max(5000).optional().nullable(),
+  // No length cap on user-content fields — Prisma columns are `text`.
+  name: z.string().trim().min(1, "Client name is required"),
+  description: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
   startDate: z.string().regex(DATE_ISO_OR_YMD).optional().nullable(),
   // Planned meeting times are required so the export header block and the
@@ -51,8 +52,9 @@ export type UpdateClientInput = z.infer<typeof updateClientSchema>;
 /* ─── Client Member (flat entity) ───────────────────────────────────────────── */
 
 export const createClientMemberSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(200),
-  email: z.string().trim().toLowerCase().email("Invalid email").max(200),
+  name: z.string().trim().min(1, "Name is required"),
+  // Email cap retained — RFC 5321 puts the practical email max at 254 chars.
+  email: z.string().trim().toLowerCase().email("Invalid email").max(254),
 });
 
 export const updateClientMemberSchema = createClientMemberSchema.partial();
@@ -89,9 +91,9 @@ export const createDailyHuddleSchema = z.object({
   stuckCallStatus: flagSchema.default("NA"), // Stuck Issues
   punctualityOverride: flagSchema.default("NA"),
   totalMembers: z.number().int().min(0).default(0),
-  notes: z.string().max(5000).optional().nullable(),
-  notesKPDashboard: z.string().max(10000).optional().nullable(),
-  otherNotes: z.string().max(10000).optional().nullable(),
+  notes: z.string().optional().nullable(),
+  notesKPDashboard: z.string().optional().nullable(),
+  otherNotes: z.string().optional().nullable(),
   /// Legacy tenant-user absences (dashboard math still reads these).
   absentUserIds: z.array(z.string()).default([]),
   /// New external-roster absences (ClientMember ids).
@@ -128,8 +130,8 @@ export const createWeeklyMeetingSchema = z.object({
   feedback: flagSchema.default("NA"),
   collectiveIntelligence: flagSchema.default("NA"),
   opspReview: flagSchema.default("NA"),
-  notesKPDashboard: z.string().max(20000).optional().nullable(),
-  otherNotes: z.string().max(20000).optional().nullable(),
+  notesKPDashboard: z.string().optional().nullable(),
+  otherNotes: z.string().optional().nullable(),
   /// Tenant-user absences (legacy). Empty in most modern tenants.
   absentUserIds: z.array(z.string()).default([]),
   dashboardNAUserIds: z.array(z.string()).default([]),
