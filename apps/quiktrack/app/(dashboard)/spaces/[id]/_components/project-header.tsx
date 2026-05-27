@@ -25,6 +25,7 @@ import {
   ArrowRight,
   ListTree,
   Columns,
+  LayoutGrid,
   ClipboardList,
   Plus,
   Clock,
@@ -45,6 +46,7 @@ const TABS: Array<{
   { label: "Timeline", path: "timeline", icon: CalendarIcon, perm: { resource: "ProjectTimeline", action: "view" } },
   { label: "Backlog", path: "backlog", icon: ListIcon, perm: { resource: "ProjectBacklog", action: "view" } },
   { label: "Board", path: "board", icon: Columns, perm: { resource: "Board", action: "view" } },
+  { label: "Grouped Kanban", path: "grouped-kanban", icon: LayoutGrid, perm: { resource: "Board", action: "view" } },
   { label: "List", path: "list", icon: ListChecks, perm: { resource: "ProjectList", action: "view" } },
   { label: "Task Table", path: "task-table", icon: ListTree, perm: { resource: "ProjectTaskTable", action: "view" } },
   { label: "Timesheet", path: "timesheet", icon: Clock, perm: { resource: "Timesheet", action: "view" } },
@@ -286,6 +288,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
 
       {addPeopleOpen && project && (
         <AddPeopleModal
+          projectId={projectId}
           projectName={project.name}
           onClose={() => setAddPeopleOpen(false)}
         />

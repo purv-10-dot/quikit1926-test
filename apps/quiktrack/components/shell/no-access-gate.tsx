@@ -90,9 +90,17 @@ function NoAccessScreen({
     .toUpperCase();
 
   async function handleSignOut() {
+    // Single-logout: clear quiktrack cookie, auth-host cookie, AND
+    // launcher cookie. Without authUrl, the auth-host cookie would
+    // persist and silently re-authenticate on next "Login" click.
+    const landingUrl =
+      (process.env.NEXT_PUBLIC_QUIKTRACK_URL?.replace(/\/+$/, "") ??
+        (typeof window !== "undefined" ? window.location.origin : "")) + "/";
     await globalSignOut({
+      authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
       quikitUrl: launcherUrl ?? undefined,
       localSignOut: () => signOut({ redirect: false }),
+      postLogoutRedirect: landingUrl,
     });
   }
 
