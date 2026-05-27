@@ -123,6 +123,11 @@ export const createWeeklyMeetingSchema = z.object({
   segmentTime5: z.string().regex(TIME_24H).optional().nullable(),
   segmentTime6: z.string().regex(TIME_24H).optional().nullable(),
   segmentTime7: z.string().regex(TIME_24H).optional().nullable(),
+  /// "Planned Deviation In Time" override (UI label). YES → punctuality
+  /// counted as honored regardless of actualStartTime; NO/NA → fall through
+  /// to the time-grace check in clientMeetingsMath.isPunctual. UI exposes
+  /// only YES/NO with NO as default; NA exists as a sentinel for old rows.
+  punctualityOverride: flagSchema.default("NA"),
   goodNewsSharing: flagSchema.default("NA"),
   kpDashboard: flagSchema.default("NA"),
   gaps: flagSchema.default("NA"),

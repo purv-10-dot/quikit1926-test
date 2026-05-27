@@ -1,14 +1,38 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
+
+const HUDDLE_SORT_WHITELIST = [
+  "meetingDate",
+  "client",
+  "callStatus",
+  "actualStartTime",
+  "actualEndTime",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+function mapHuddleSort(key: string, dir: SortDirection): Prisma.ClientDailyHuddleOrderByWithRelationInput {
+  if (key === "client") return { client: { name: dir } };
+  if (key === "callStatus") return { callStatus: dir };
+  if (key === "actualStartTime") return { actualStartTime: dir };
+  if (key === "actualEndTime") return { actualEndTime: dir };
+  if (key === "createdAt") return { createdAt: dir };
+  if (key === "updatedAt") return { updatedAt: dir };
+  return { meetingDate: key === "meetingDate" ? dir : "desc" }; // default keeps legacy `meetingDate desc`
+}
 
 /**
  * GET /api/client-meetings/daily-huddles
  *   ?clientId=…&from=YYYY-MM-DD&to=YYYY-MM-DD&includeDeleted=true
+ *   ?sortBy=<col>&sortOrder=<asc|desc> → server-side sort (whitelist enforced).
+ *     Falls back to the historical `meetingDate desc` when omitted/invalid.
  *
  * Returns rows with creator/updater name + initials + absence-member
  * ids (both legacy User-based and new ClientMember-based).
@@ -29,9 +53,10 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     where.meetingDate = r;
   }
 
+  const { orderBy } = parseSort(request, HUDDLE_SORT_WHITELIST, mapHuddleSort);
   const rows = await db.clientDailyHuddle.findMany({
     where,
-    orderBy: { meetingDate: "desc" },
+    orderBy,
     include: {
       client: { select: { id: true, name: true } },
       absentMembers: true,

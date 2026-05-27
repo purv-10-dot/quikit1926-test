@@ -6,18 +6,40 @@ import { requireAdmin } from "@/lib/api/requireAdmin";
 import { createClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.clients");
+
+const CLIENT_SORT_WHITELIST = [
+  "name",
+  "createdAt",
+  "updatedAt",
+  "isActive",
+  "weeklyStartTime",
+  "dailyStartTime",
+] as const;
+
+function mapClientSort(key: string, dir: SortDirection): Prisma.ClientOrderByWithRelationInput {
+  if (key === "name") return { name: dir };
+  if (key === "updatedAt") return { updatedAt: dir };
+  if (key === "isActive") return { isActive: dir };
+  if (key === "weeklyStartTime") return { weeklyStartTime: dir };
+  if (key === "dailyStartTime") return { dailyStartTime: dir };
+  return { createdAt: key === "createdAt" ? dir : "asc" }; // default preserves the legacy order
+}
 
 /**
  * GET /api/client-meetings/clients
  *   ?includeDeleted=true → return ONLY soft-deleted rows (trash view).
+ *   ?sortBy=<col>&sortOrder=<asc|desc> → server-side sort (whitelist enforced).
+ *     Falls back to the historical `createdAt asc` when omitted/invalid.
  */
 export const GET = withOrgAuth(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
+  const { orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
   const rows = await db.client.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
-    orderBy: { createdAt: "asc" },
+    orderBy,
     include: {
       teamMembers: { include: { member: { select: { id: true, name: true, email: true } } } },
       _count: { select: { memberships: { where: { deletedAt: null } } } },
