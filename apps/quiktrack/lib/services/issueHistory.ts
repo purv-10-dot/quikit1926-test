@@ -18,6 +18,7 @@ export type IssueHistorySnapshot = {
   dueDate: Date | string | null;
   storyPoints: number | null;
   eta: number | null;
+  groupId: string | null;
 };
 
 export const selectIssueHistorySnapshot = {
@@ -33,6 +34,7 @@ export const selectIssueHistorySnapshot = {
   dueDate: true,
   storyPoints: true,
   eta: true,
+  groupId: true,
 } as const;
 
 const TRACKED_FIELDS: (keyof IssueHistorySnapshot)[] = [
@@ -48,6 +50,7 @@ const TRACKED_FIELDS: (keyof IssueHistorySnapshot)[] = [
   "dueDate",
   "storyPoints",
   "eta",
+  "groupId",
 ];
 
 /** Friendly label for the History feed's "changed the X" sentence. */
@@ -64,6 +67,7 @@ const FIELD_LABEL: Record<keyof IssueHistorySnapshot, string> = {
   dueDate: "Due date",
   storyPoints: "Story points",
   eta: "ETA",
+  groupId: "Group",
 };
 
 function dateToIsoOrNull(v: Date | string | null | undefined): string | null {
@@ -85,11 +89,13 @@ interface ResolvedNames {
   users: Map<string, string>;
   issues: Map<string, string>; // id → "KEY title"
   sprints: Map<string, string>;
+  groups: Map<string, string>;
 }
 
 /**
  * Resolve all the relational ids we need to render human-readable history
- * values (status name, user display name, issue key, sprint name).
+ * values (status name, user display name, issue key, sprint name, group
+ * name).
  */
 async function resolveLabels(
   before: IssueHistorySnapshot,
@@ -99,14 +105,16 @@ async function resolveLabels(
   const userIds = new Set<string>();
   const issueIds = new Set<string>();
   const sprintIds = new Set<string>();
+  const groupIds = new Set<string>();
 
   for (const v of [before.statusId, after.statusId]) if (v) statusIds.add(v);
   for (const v of [before.assigneeId, after.assigneeId]) if (v) userIds.add(v);
   for (const v of [before.parentId, after.parentId, before.epicId, after.epicId])
     if (v) issueIds.add(v);
   for (const v of [before.sprintId, after.sprintId]) if (v) sprintIds.add(v);
+  for (const v of [before.groupId, after.groupId]) if (v) groupIds.add(v);
 
-  const [statuses, users, issues, sprints] = await Promise.all([
+  const [statuses, users, issues, sprints, groups] = await Promise.all([
     statusIds.size
       ? db.qtIssueStatus.findMany({
           where: { id: { in: Array.from(statusIds) } },
@@ -131,6 +139,12 @@ async function resolveLabels(
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
+    groupIds.size
+      ? db.qtTaskGroup.findMany({
+          where: { id: { in: Array.from(groupIds) } },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   return {
@@ -143,6 +157,7 @@ async function resolveLabels(
     ),
     issues: new Map(issues.map((i) => [i.id, `${i.key}${i.title ? " " + i.title : ""}`])),
     sprints: new Map(sprints.map((s) => [s.id, s.name])),
+    groups: new Map(groups.map((g) => [g.id, g.name])),
   };
 }
 
@@ -157,6 +172,7 @@ function renderValue(
   if (field === "assigneeId") return names.users.get(id) ?? id;
   if (field === "parentId" || field === "epicId") return names.issues.get(id) ?? id;
   if (field === "sprintId") return names.sprints.get(id) ?? id;
+  if (field === "groupId") return names.groups.get(id) ?? id;
   if (field === "startDate" || field === "dueDate") {
     const iso = dateToIsoOrNull(value as Date | string);
     return iso ? new Date(iso).toLocaleDateString() : null;
