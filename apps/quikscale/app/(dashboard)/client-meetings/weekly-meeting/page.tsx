@@ -117,6 +117,7 @@ interface MeetingRow {
   segmentTime5: string | null;
   segmentTime6: string | null;
   segmentTime7: string | null;
+  punctualityOverride: Flag;
   goodNewsSharing: Flag;
   kpDashboard: Flag;
   gaps: Flag;
@@ -179,6 +180,11 @@ const emptyForm = {
   segmentTime5: "",
   segmentTime6: "",
   segmentTime7: "",
+  // "Planned Deviation In Time" — YES → mark this call punctual regardless of
+  // actualStartTime (an agreed deviation was honored). Default NO matches the
+  // UI radio in the form (only YES/NO are user-selectable; NA only appears on
+  // legacy rows that pre-date this field).
+  punctualityOverride: "NO" as Flag,
   goodNewsSharing: "NA" as Flag,
   kpDashboard: "NA" as Flag,
   gaps: "NA" as Flag,
@@ -369,6 +375,9 @@ export default function WeeklyMeetingPage() {
         segmentTime5: detail.segmentTime5 ?? "",
         segmentTime6: detail.segmentTime6 ?? "",
         segmentTime7: detail.segmentTime7 ?? "",
+        // Legacy rows pre-dating this column will have `NA`; coerce that to
+        // `NO` for the UI radio (which only exposes YES/NO).
+        punctualityOverride: (row.punctualityOverride === "YES" ? "YES" : "NO") as Flag,
         goodNewsSharing: row.goodNewsSharing,
         kpDashboard: row.kpDashboard,
         gaps: row.gaps,
@@ -435,6 +444,7 @@ export default function WeeklyMeetingPage() {
         segmentTime5: "",
         segmentTime6: "",
         segmentTime7: "",
+        punctualityOverride: "NO",
         goodNewsSharing: "NA",
         kpDashboard: "NA",
         gaps: "NA",
@@ -574,6 +584,7 @@ export default function WeeklyMeetingPage() {
         segmentTime5: f.segmentTime5 || null,
         segmentTime6: f.segmentTime6 || null,
         segmentTime7: f.segmentTime7 || null,
+        punctualityOverride: f.punctualityOverride,
         goodNewsSharing: f.goodNewsSharing,
         kpDashboard: f.kpDashboard,
         gaps: f.gaps,
@@ -1297,31 +1308,64 @@ export default function WeeklyMeetingPage() {
                     disabled={isEdit}
                   />
                 </Field>
-                <Field label="Absent Members">
-                  <UserMultiPicker
-                    values={editing.form.absentClientMemberIds}
-                    onChange={(v) => {
-                      updateField("absentClientMemberIds", v);
-                      // Newly-absent users can't also be Dashboard NA — drop
-                      // any stale NA entries that overlap with the new absent
-                      // list. Keeps the two pickers consistent.
-                      const absentSet = new Set(v);
-                      const cleanedNA = editing.form.dashboardNAClientMemberIds.filter(
-                        (id) => !absentSet.has(id),
-                      );
-                      if (cleanedNA.length !== editing.form.dashboardNAClientMemberIds.length) {
-                        updateField("dashboardNAClientMemberIds", cleanedNA);
-                      }
-                    }}
-                    users={pickerUsers}
-                    placeholder={pickerPlaceholder(
-                      editing.form.clientId,
-                      pickerUsers.length
-                    )}
-                    disabled={!editing.form.clientId}
-                  />
+                {/* Planned Deviation In Time — feeds the punctuality metric on
+                    the Dashboard. YES = treat this call as on-time regardless
+                    of actualStartTime (an agreed schedule deviation was
+                    honored); NO = use the normal time-grace check. Underlying
+                    enum is ClientMeetingFlag (YES/NO/NA) — NA only appears on
+                    legacy rows pre-dating this field. */}
+                <Field label="Planned Deviation In Time">
+                  <div className="flex items-center gap-6 px-3 py-2 text-xs">
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="punctualityOverride"
+                        value="YES"
+                        checked={editing.form.punctualityOverride === "YES"}
+                        onChange={() => updateField("punctualityOverride", "YES")}
+                        className="text-accent-600 focus:ring-accent-400"
+                      />
+                      <span className="text-gray-700">YES</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="punctualityOverride"
+                        value="NO"
+                        checked={editing.form.punctualityOverride !== "YES"}
+                        onChange={() => updateField("punctualityOverride", "NO")}
+                        className="text-accent-600 focus:ring-accent-400"
+                      />
+                      <span className="text-gray-700">NO</span>
+                    </label>
+                  </div>
                 </Field>
               </div>
+
+              <Field label="Absent Members">
+                <UserMultiPicker
+                  values={editing.form.absentClientMemberIds}
+                  onChange={(v) => {
+                    updateField("absentClientMemberIds", v);
+                    // Newly-absent users can't also be Dashboard NA — drop
+                    // any stale NA entries that overlap with the new absent
+                    // list. Keeps the two pickers consistent.
+                    const absentSet = new Set(v);
+                    const cleanedNA = editing.form.dashboardNAClientMemberIds.filter(
+                      (id) => !absentSet.has(id),
+                    );
+                    if (cleanedNA.length !== editing.form.dashboardNAClientMemberIds.length) {
+                      updateField("dashboardNAClientMemberIds", cleanedNA);
+                    }
+                  }}
+                  users={pickerUsers}
+                  placeholder={pickerPlaceholder(
+                    editing.form.clientId,
+                    pickerUsers.length
+                  )}
+                  disabled={!editing.form.clientId}
+                />
+              </Field>
 
               <Field label="Weekly Dashboard NA">
                 <UserMultiPicker

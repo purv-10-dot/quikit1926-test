@@ -108,9 +108,10 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
           www: m.www, feedback: m.feedback,
           collectiveIntelligence: m.collectiveIntelligence, gaps: m.gaps,
           opspReview: m.opspReview,
-          // Weekly model has no override column; with the fixed isPunctual,
-          // "NA" no longer auto-passes — falls through to the time check.
-          punctualityOverride: ("NA" as const),
+          // Per-meeting "Planned Deviation In Time" override (added 2026-05-27).
+          // YES → call counted as punctual regardless of actualStartTime; NO/NA
+          // → fall through to the time-grace check in isPunctual.
+          punctualityOverride: m.punctualityOverride,
           totalMembers: rosterSize,
           absentCount,
           memberScores: m.memberScores.map(s => ({
