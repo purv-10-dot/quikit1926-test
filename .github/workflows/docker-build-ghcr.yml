@@ -2,13 +2,10 @@ name: Docker — build & push to GHCR
 
 # Builds container images for the 5 deployable apps and pushes them to the
 # GitHub Container Registry (ghcr.io). Triggered on every push to the
-# Pre-Prod branch, or manually via the Actions UI. The 5 builds run in
-# parallel via a matrix strategy.
+# Pre-Prod branch, or manually via the Actions UI. Changed apps are detected
+# dynamically and built in parallel via a matrix strategy.
 #
 # Images are named `ghcr.io/<owner>/<app>-runtime` and tagged with:
-#   - `latest`           (mutable, points at the newest Pre-Prod build)
-#   - `pre-prod`         (mutable, same target as `latest` while we only
-#                         publish from this branch)
 #   - `sha-<short_sha>`  (immutable, addresses the exact commit)
 #
 # GHCR auth uses the built-in `GITHUB_TOKEN` — no manual secret to add.
@@ -27,18 +24,78 @@ permissions:
   packages: write
 
 jobs:
+  detect-changes:
+    name: Detect Changed Apps
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.set-matrix.outputs.apps }}
+      run_build: ${{ steps.set-matrix.outputs.run_build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changes in apps and packages
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            quikit:
+              - 'apps/quikit/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+            auth:
+              - 'apps/auth/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+            admin:
+              - 'apps/admin/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+            quikscale:
+              - 'apps/quikscale/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+            quiktrack:
+              - 'apps/quiktrack/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+
+      - name: Generate Matrix Output
+        id: set-matrix
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo 'apps=["quikit", "auth", "admin", "quikscale", "quiktrack"]' >> "$GITHUB_OUTPUT"
+            echo "run_build=true" >> "$GITHUB_OUTPUT"
+          else
+            CHANGES='${{ steps.filter.outputs.changes }}'
+            if [ "$CHANGES" = "[]" ] || [ -z "$CHANGES" ]; then
+              echo 'apps=[]' >> "$GITHUB_OUTPUT"
+              echo "run_build=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "apps=$CHANGES" >> "$GITHUB_OUTPUT"
+              echo "run_build=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
   build:
     name: Build ${{ matrix.app }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_build == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        app:
-          - quikit
-          - auth
-          - admin
-          - quikscale
-          - quiktrack
+        app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
 
     steps:
       - name: Checkout
@@ -64,8 +121,7 @@ jobs:
         with:
           images: ghcr.io/${{ steps.owner.outputs.value }}/${{ matrix.app }}-runtime
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/Pre-Prod' }}
-            type=raw,value=pre-prod,enable=${{ github.ref == 'refs/heads/Pre-Prod' }}
+            type=raw,value=build-${{ github.run_number }}
             type=sha,prefix=sha-,format=short
 
       - name: Build and push
