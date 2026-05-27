@@ -12,6 +12,7 @@ const SETTINGS_ADMIN_ROLES = new Set(["super_admin", "admin", "org_admin"]);
 
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
 const QUIKIT_URL = process.env.NEXT_PUBLIC_QUIKIT_URL;
+const APP_SLUG = "quikinfra";
 
 /**
  * Every request gets a correlation ID, forwarded to handlers via
@@ -30,7 +31,7 @@ function generateRequestId(): string {
 
 const sharedMiddleware = createMiddleware({
   loginRoute: "/login",
-  publicRoutes: ["/invite", "/reset-password", "/auth-handoff", "/api/auth"],
+  publicRoutes: ["/login", "/invite", "/reset-password", "/auth-handoff", "/api/auth"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
@@ -82,6 +83,35 @@ export async function middleware(request: NextRequest) {
 
   // Delegate auth-gate + central-login redirect to the shared middleware.
   const res = await sharedMiddleware(request);
+
+  // Cookies don't cross *.vercel.app subdomains (or localhost ports), so
+  // intercept any redirect to AUTH_URL/login and route it through the
+  // launcher's /apps?handoff=… handshake instead. Mirrors quiktrack /
+  // quikscale / quiksocial.
+  if (QUIKIT_URL && (res.status === 307 || res.status === 308)) {
+    const dest = res.headers.get("location") ?? "";
+    const launcherLogin = AUTH_URL ? `${AUTH_URL}/login` : "";
+    if (launcherLogin && dest.startsWith(launcherLogin)) {
+      const handoff = new URL("/apps", QUIKIT_URL);
+      handoff.searchParams.set("handoff", APP_SLUG);
+      // Don't pass auth-flow-internal paths as `to` — landing back on /login
+      // or /auth-handoff after a successful re-handshake would just loop. If
+      // the user was bounced through an auth-internal path, drop them on `/`.
+      const pn = request.nextUrl.pathname;
+      const isAuthInternal =
+        pn === "/login" ||
+        pn === "/auth-handoff" ||
+        pn.startsWith("/api/auth");
+      handoff.searchParams.set(
+        "to",
+        isAuthInternal ? "/" : pn + request.nextUrl.search,
+      );
+      const handoffRes = NextResponse.redirect(handoff);
+      handoffRes.headers.set("x-request-id", requestId);
+      return handoffRes;
+    }
+  }
+
   if (res && res.headers.get("location")) {
     res.headers.set("x-request-id", requestId);
     return res;

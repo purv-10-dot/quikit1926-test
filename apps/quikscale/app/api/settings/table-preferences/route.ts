@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { updateTablePreferencesSchema } from "@/lib/schemas/tablePreferencesSchema";
+import {
+  TABLE_PREFERENCE_KEYS,
+  type TablePreferenceKey,
+  updateTablePreferencesSchema,
+} from "@/lib/schemas/tablePreferencesSchema";
 import { validationError } from "@/lib/api/validationError";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
-function parseHidden(json: string | null): string[] {
+/**
+ * Per-user table column preferences (sort / hidden / frozen / col widths).
+ *
+ * Storage moved from `auth.User.kpi[Field]` / `priority[Field]` / `www[Field]`
+ * columns into a dedicated `app_quikscale.UserTablePreference` table on
+ * 2026-05-27 so the shared User model stops growing every time we add a new
+ * QuikScale list page. The legacy User columns were backfilled in migration
+ * `20260527172915_user_table_preference` and now sit idle for rollback.
+ */
+
+function parseHidden(json: string | null | undefined): string[] {
   if (!json) return [];
   try {
     const arr = JSON.parse(json);
@@ -14,7 +28,7 @@ function parseHidden(json: string | null): string[] {
   }
 }
 
-function parseWidths(json: string | null): Record<string, number> {
+function parseWidths(json: string | null | undefined): Record<string, number> {
   if (!json) return {};
   try {
     const obj = JSON.parse(json);
@@ -31,81 +45,90 @@ function parseWidths(json: string | null): Record<string, number> {
   }
 }
 
-// GET /api/settings/table-preferences — return all table prefs for the current user
-export const GET = withOrgAuth(async ({ userId }) => {
-    const user = await db.user.findUnique({
-      where: { id: userId },
-      select: {
-        kpiFrozenCol: true,
-        priorityFrozenCol: true,
-        wwwFrozenCol: true,
-        kpiHiddenCols: true,
-        priorityHiddenCols: true,
-        wwwHiddenCols: true,
-        kpiSort: true,
-        prioritySort: true,
-        wwwSort: true,
-        kpiColWidths: true,
-        priorityColWidths: true,
-        wwwColWidths: true,
-      },
-    });
+interface TablePrefShape {
+  frozenCol: string | null;
+  hiddenCols: string[];
+  sort: string | null;
+  colWidths: Record<string, number>;
+}
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        kpi: {
-          frozenCol: user?.kpiFrozenCol ?? null,
-          hiddenCols: parseHidden(user?.kpiHiddenCols ?? null),
-          sort: user?.kpiSort ?? null,
-          colWidths: parseWidths(user?.kpiColWidths ?? null),
-        },
-        priority: {
-          frozenCol: user?.priorityFrozenCol ?? null,
-          hiddenCols: parseHidden(user?.priorityHiddenCols ?? null),
-          sort: user?.prioritySort ?? null,
-          colWidths: parseWidths(user?.priorityColWidths ?? null),
-        },
-        www: {
-          frozenCol: user?.wwwFrozenCol ?? null,
-          hiddenCols: parseHidden(user?.wwwHiddenCols ?? null),
-          sort: user?.wwwSort ?? null,
-          colWidths: parseWidths(user?.wwwColWidths ?? null),
-        },
-      },
+const EMPTY: TablePrefShape = { frozenCol: null, hiddenCols: [], sort: null, colWidths: {} };
+
+// GET /api/settings/table-preferences — returns one entry per supported table
+// key. Tables the user hasn't customized yet come back as EMPTY defaults so
+// the client doesn't have to special-case "first visit".
+export const GET = withOrgAuth(async ({ userId, orgId }) => {
+  const rows = await db.userTablePreference.findMany({
+    where: { userId, orgId },
+    select: {
+      tableName: true,
+      frozenCol: true,
+      hiddenCols: true,
+      sort: true,
+      colWidths: true,
+    },
+  });
+
+  const byName = new Map<string, TablePrefShape>();
+  for (const r of rows) {
+    byName.set(r.tableName, {
+      frozenCol: r.frozenCol,
+      hiddenCols: parseHidden(r.hiddenCols),
+      sort: r.sort,
+      colWidths: parseWidths(r.colWidths),
     });
+  }
+
+  const data: Record<TablePreferenceKey, TablePrefShape> = Object.fromEntries(
+    TABLE_PREFERENCE_KEYS.map((key) => [key, byName.get(key) ?? EMPTY]),
+  ) as Record<TablePreferenceKey, TablePrefShape>;
+
+  return NextResponse.json({ success: true, data });
 }, { fallbackErrorMessage: "Failed to fetch preferences" });
 
-// PATCH /api/settings/table-preferences — update one or more fields for a table
-export const PATCH = withOrgAuth(async ({ userId }, request) => {
-    const body = await request.json();
-    const parsed = updateTablePreferencesSchema.safeParse(body);
-    if (!parsed.success) return validationError(parsed);
+// PATCH /api/settings/table-preferences — upsert one table's prefs. Only the
+// keys present in the request body are updated; everything else is preserved
+// on the row.
+export const PATCH = withOrgAuth(async ({ userId, orgId }, request) => {
+  const body = await request.json();
+  const parsed = updateTablePreferencesSchema.safeParse(body);
+  if (!parsed.success) return validationError(parsed);
 
-    const { table, frozenCol, hiddenCols, sort, colWidths } = parsed.data;
-    const frozenField =
-      table === "kpi" ? "kpiFrozenCol" :
-      table === "priority" ? "priorityFrozenCol" : "wwwFrozenCol";
-    const hiddenField =
-      table === "kpi" ? "kpiHiddenCols" :
-      table === "priority" ? "priorityHiddenCols" : "wwwHiddenCols";
-    const sortField =
-      table === "kpi" ? "kpiSort" :
-      table === "priority" ? "prioritySort" : "wwwSort";
-    const widthsField =
-      table === "kpi" ? "kpiColWidths" :
-      table === "priority" ? "priorityColWidths" : "wwwColWidths";
+  const { table, frozenCol, hiddenCols, sort, colWidths } = parsed.data;
 
-    const data: Record<string, string | null> = {};
-    if (frozenCol !== undefined) data[frozenField] = frozenCol;
-    if (hiddenCols !== undefined) data[hiddenField] = hiddenCols ? JSON.stringify(hiddenCols) : null;
-    if (sort !== undefined) data[sortField] = sort;
-    if (colWidths !== undefined) data[widthsField] = colWidths ? JSON.stringify(colWidths) : null;
+  // Build a partial update payload — only fields explicitly present.
+  const updateData: Record<string, string | null> = {};
+  if (frozenCol !== undefined) updateData.frozenCol = frozenCol;
+  if (hiddenCols !== undefined) {
+    updateData.hiddenCols = hiddenCols ? JSON.stringify(hiddenCols) : null;
+  }
+  if (sort !== undefined) updateData.sort = sort;
+  if (colWidths !== undefined) {
+    updateData.colWidths = colWidths ? JSON.stringify(colWidths) : null;
+  }
 
-    await db.user.update({
-      where: { id: userId },
-      data,
-    });
+  // On first touch for this (user, org, table) the row doesn't exist yet —
+  // upsert handles both branches in one round trip. The CREATE branch mirrors
+  // the UPDATE so partial PATCHes (e.g. set only `sort`) leave the unset
+  // fields as null rather than defaulting them.
+  await db.userTablePreference.upsert({
+    where: {
+      userId_orgId_tableName: { userId, orgId, tableName: table },
+    },
+    update: updateData,
+    create: {
+      userId,
+      orgId,
+      tableName: table,
+      frozenCol: frozenCol ?? null,
+      hiddenCols: hiddenCols ? JSON.stringify(hiddenCols) : null,
+      sort: sort ?? null,
+      colWidths: colWidths ? JSON.stringify(colWidths) : null,
+    },
+  });
 
-    return NextResponse.json({ success: true, data: { table, frozenCol, hiddenCols, sort, colWidths } });
+  return NextResponse.json({
+    success: true,
+    data: { table, frozenCol, hiddenCols, sort, colWidths },
+  });
 }, { fallbackErrorMessage: "Failed to update preferences" });

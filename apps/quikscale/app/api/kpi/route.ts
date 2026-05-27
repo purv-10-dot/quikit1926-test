@@ -9,7 +9,6 @@ import {
   validateIndividualKPICreate,
   validateParentKPI,
 } from "@/lib/api/kpiCreateValidation";
-import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
 import { isOrgAdmin, getMyTeamIds } from "@/lib/api/visibility";
@@ -332,24 +331,11 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   }
   const validated = parsed.data;
 
-  // ── Past-week add enforcement ──
-  // When add_past_week_data is disabled, reject non-zero targets for weeks before current week
-  const { canAddPastWeek } = await getPastWeekFlags(orgId);
-  if (!canAddPastWeek && validated.weeklyTargets && validated.quarter && validated.year) {
-    const currentWeek = await getCurrentFiscalWeekFromDB(orgId, validated.year, validated.quarter);
-    for (const [weekStr, val] of Object.entries(validated.weeklyTargets)) {
-      const week = parseInt(weekStr, 10);
-      if (week < currentWeek && val && val !== 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Adding past week data is disabled. Week ${week} is before the current week (${currentWeek}). Enable it in Settings > Configurations.`,
-          },
-          { status: 403 }
-        );
-      }
-    }
-  }
+  // Past-week ADD enforcement removed per product spec — KPI creation is now
+  // always allowed regardless of the `add_past_week_data` org flag, so users
+  // mid-quarter can create KPIs that auto-distribute targets across past
+  // weeks via Cumulative/Standalone division. Editing past-week ACTUAL values
+  // is still gated by `canEditPastWeek` on the weekly update routes.
 
   const isTeamLevel = validated.kpiLevel === "team";
 

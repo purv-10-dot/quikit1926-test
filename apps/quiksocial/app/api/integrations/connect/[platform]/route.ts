@@ -9,7 +9,7 @@
  *
  * Ported to QuikIT (Phase 3, Batch 3):
  *   - withOrgAuth wrapper (returns 401 JSON if not signed in)
- *   - Callback URL anchored to NEXTAUTH_URL (= http://localhost:3006 in dev)
+ *   - Callback URL anchored to NEXTAUTH_URL (= http://localhost:3007 in dev)
  */
 
 import { NextRequest, NextResponse } from "next/server";

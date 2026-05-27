@@ -28,7 +28,8 @@ export const createFeedbackSchema = z.object({
   toUserId: z.string().cuid("toUserId must be a cuid"),
   category: z.enum(FEEDBACK_CATEGORIES),
   visibility: z.enum(FEEDBACK_VISIBILITIES).default("private"),
-  content: z.string().trim().min(1, "Feedback content is required").max(5000),
+  // No length cap on user-content — Prisma column is `text`.
+  content: z.string().trim().min(1, "Feedback content is required"),
   relatedType: z.enum(RELATED_TYPES).optional().nullable(),
   relatedId: z.string().cuid().optional().nullable(),
 });

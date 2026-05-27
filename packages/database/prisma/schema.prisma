@@ -206,6 +206,7 @@ model Org {
   talentAssessments       TalentAssessment[]
   userAppRoles            UserAppRole[]
   userPermissionExtras    UserPermissionExtra[]
+  userTablePreferences    UserTablePreference[]
   wwwItems                WWWItem[]
   brands                  Brand[]
   AppRole                 QtAppRole[]
@@ -323,6 +324,7 @@ model User {
   talentAssessed          TalentAssessment[]               @relation("TalentAssessed")
   appRoles                UserAppRole[]
   permissionExtras        UserPermissionExtra[]
+  tablePreferences        UserTablePreference[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
   qtProjectUserRoles      QtProjectUserRole[]
@@ -836,6 +838,31 @@ model UserPermissionExtra {
   @@schema("app_quikscale")
 }
 
+/// Per-user, per-table column preferences (sort / hidden / frozen / widths)
+/// for QuikScale list pages. Lives inside app_quikscale (NOT auth.User) so
+/// adding a new table to the app doesn't require touching the shared User
+/// model. Migrates the legacy User.kpiFrozenCol / User.priorityFrozenCol /
+/// User.wwwFrozenCol (and matching) columns — those stay in place for
+/// rollback safety but are no longer read by the app.
+model UserTablePreference {
+  id         String   @id @default(cuid())
+  orgId      String
+  userId     String
+  tableName  String
+  frozenCol  String?
+  hiddenCols String?
+  sort       String?
+  colWidths  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, tableName])
+  @@index([userId, orgId])
+  @@schema("app_quikscale")
+}
+
 model Client {
   id              String                @id @default(cuid())
   orgId           String
@@ -1014,6 +1041,12 @@ model ClientWeeklyMeeting {
   segmentTime5           String?
   segmentTime6           String?
   segmentTime7           String?
+  /// Per-meeting punctuality override. UI label: "Planned Deviation In Time".
+  /// YES → call treated as punctual regardless of actualStartTime (an agreed
+  /// schedule deviation was honored). NO / NA → fall through to the regular
+  /// "actualStart <= plannedStart + 60s grace" check in clientMeetingsMath.
+  /// Mirrors ClientDailyHuddle.punctualityOverride.
+  punctualityOverride    ClientMeetingFlag                    @default(NA)
   /// Radio flags — order matches the form spec (Good News → OPSP Review).
   /// Each pairs with segmentTime1..7 for "<flag> Time" companion field.
   goodNewsSharing        ClientMeetingFlag                    @default(NA)

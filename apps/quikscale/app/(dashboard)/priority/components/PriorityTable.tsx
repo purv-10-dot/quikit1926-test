@@ -424,9 +424,15 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
       {/* Table */}
       <HorizontalScroller className="flex-1">
         <table
-          className={`border-collapse ${fillWidth ? "w-full" : ""}`}
+          className="border-collapse"
+          // `width: max-content` (instead of `width: 100%`) for the Dashboard
+          // preview lets the table size to its actual column-widths sum.
+          // Resizing one column (e.g. priorityName) no longer steals space
+          // from the elastic week columns — the table simply grows and the
+          // wrapping <HorizontalScroller> scrolls the overflow. Standalone
+          // page (fillWidth=false) keeps its original `minWidth: max-content`.
           style={fillWidth
-            ? { width: "100%", tableLayout: "fixed" }
+            ? { width: "max-content", tableLayout: "fixed" }
             : { minWidth: "max-content", tableLayout: "fixed" }}>
           {/* Sticky header — matches KPITable behaviour. Without `sticky top-0`
               on the <thead>, the header row scrolls away with the body during
@@ -516,11 +522,15 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                 );
               })}
 
-              {/* Week header cells */}
+              {/* Week header cells. `width` (not just minWidth) is required so
+                  table-layout: fixed locks the column to 76px. Without an
+                  explicit width these columns become "elastic" and silently
+                  shrink whenever the user resizes a named column wider —
+                  exactly the visual squish bug reported on 2026-05-27. */}
               {visibleWeeksList.map(w => (
                 <th key={w}
                   className="sticky top-0 z-20 bg-accent-50 border-b border-gray-200 border-r border-r-gray-100 text-center px-1 py-2 text-[10px] font-semibold text-gray-500 whitespace-nowrap select-none"
-                  style={{ minWidth: 76 }}>
+                  style={{ width: 76, minWidth: 76 }}>
                   <div>Week {w}</div>
                   <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? weekDateLabel(year, quarter, w, qStart)}</div>
                 </th>
@@ -759,7 +769,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
 
                     if (!inRange) {
                       return (
-                        <td key={w} className="border-r border-gray-100 px-0 py-0 bg-gray-50" style={{ minWidth: 64, height: 34 }}>
+                        <td key={w} className="border-r border-gray-100 px-0 py-0 bg-gray-50" style={{ width: 76, minWidth: 76, height: 34 }}>
                           <div className="w-full h-full flex items-center justify-center" style={{ minHeight: 34 }}>
                             <svg className="h-3 w-3 text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
@@ -771,7 +781,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
 
                     const isPastLocked = !canEditPastWeek && currentWeek !== null && w < currentWeek;
                     return (
-                      <td key={w} className="relative border-r border-gray-100 px-0 py-0" style={{ minWidth: 64, height: 34 }}>
+                      <td key={w} className="relative border-r border-gray-100 px-0 py-0" style={{ width: 76, minWidth: 76, height: 34 }}>
                         <WeekTooltip weekNumber={w} status={status} note={note}>
                           <button
                             onClick={() => {

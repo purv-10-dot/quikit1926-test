@@ -6,7 +6,7 @@
  * NEXTAUTH_SECRET so an attacker can't forge a state with a different userId.
  *
  * Ported from quiksocial-v2 verbatim except for:
- *   - appUrl() default → localhost:3006 (QuikSocial's port in QuikIT)
+ *   - appUrl() default → localhost:3007 (QuikSocial's port in QuikIT)
  *
  * TODO(integration): the state should also carry orgId so the callback
  * doesn't need to fall back to DEFAULT_ORG_ID. Adding orgId to OAuthState
@@ -49,6 +49,6 @@ export function appUrl(): string {
   return (
     process.env.NEXTAUTH_URL ??
     process.env.NEXT_PUBLIC_APP_URL ??
-    "http://localhost:3006"
+    "http://localhost:3007"
   );
 }

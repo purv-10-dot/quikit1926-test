@@ -18,11 +18,31 @@ import { useFilterContext } from "@/lib/context/FilterContext";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
-  AddButton, EmptyState, Segmented, FilterPicker, UserMultiPicker, Pagination, type ExportSelection,
+  AddButton, EmptyState, Segmented, FilterPicker, UserMultiPicker, Pagination, ColMenu, type ExportSelection,
 } from "@quikit/ui";
 import { Calendar, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useTableSort } from "@/lib/store";
+import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+
+const COL_WIDTHS_DEFAULT: Record<string, number> = {
+  meetingDate: 110,
+  client: 200,
+  callStatus: 110,
+  absentMembers: 200,
+  actualStartTime: 90,
+  actualEndTime: 90,
+  yesterdaysAchievements: 100,
+  todaysPriority: 90,
+  stuckIssues: 80,
+  createdBy: 160,
+  updatedBy: 160,
+  createdAt: 120,
+  updatedAt: 120,
+};
 import { toast } from "sonner";
 import { runExport } from "@/lib/export/xlsx";
 import { fmtAuditPayload, fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
@@ -108,7 +128,18 @@ export default function DailyHuddlePage() {
   const [filterClientId, setFilterClientId] = useState("");
   const [filterStatus, setFilterStatus] = useState<"" | Status>("");
 
-  const [hiddenCols, setHiddenCols] = useState<string[]>([]);
+  // Server-persisted column preferences (frozen / hidden / sort) via the
+  // UserTablePreference table in app_quikscale. Same shape as KPI / Priority /
+  // WWW — see lib/hooks/useTablePreferences.ts.
+  const {
+    hiddenCols,
+    setHiddenCols,
+    frozenCol,
+    setFrozenCol,
+    hideCol,
+  } = useTablePrefs("dailyHuddle");
+  const { sortBy, sortOrder, setSort } = useTableSort("dailyHuddle");
+  const { getColWidth, startResize } = useColumnResize("dailyHuddle", COL_WIDTHS_DEFAULT);
 
   const [editing, setEditing] = useState<{ id: string | null; tab: "log" | "edit"; form: typeof emptyForm } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -123,6 +154,8 @@ export default function DailyHuddlePage() {
       const qsParts: string[] = [];
       if (filterClientId) qsParts.push(`clientId=${filterClientId}`);
       if (viewTrash) qsParts.push("includeDeleted=true");
+      if (sortBy) qsParts.push(`sortBy=${sortBy}`);
+      if (sortBy && sortOrder) qsParts.push(`sortOrder=${sortOrder}`);
       const qs = qsParts.length ? `?${qsParts.join("&")}` : "";
       const [h, c, m] = await Promise.all([
         fetch(`/api/client-meetings/daily-huddles${qs}`).then(r => r.json()),
@@ -133,7 +166,7 @@ export default function DailyHuddlePage() {
       if (c.success) setClients(c.data);
       if (m.success) setMembers(m.data);
     } finally { setLoading(false); }
-  }, [filterClientId, viewTrash]);
+  }, [filterClientId, viewTrash, sortBy, sortOrder]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -461,8 +494,10 @@ export default function DailyHuddlePage() {
           </div>
         ) : (
           <div className="h-full flex flex-col min-h-0">
-            <div className="flex-1 overflow-auto min-h-0">
-            <table className="min-w-full text-xs bg-white">
+            <HorizontalScroller className="flex-1">
+            <table
+              className="text-xs bg-white border-separate border-spacing-0"
+              style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="sticky top-0 bg-accent-50 z-10">
                 <tr>
                   <th className="w-10 px-3 py-3 border-b border-gray-200">
@@ -481,19 +516,169 @@ export default function DailyHuddlePage() {
                   </th>
                   <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Log</th>
                   <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">ID</th>
-                  {!isHidden("meetingDate")            && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Meeting Date</th>}
-                  {!isHidden("client")                 && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Client</th>}
-                  {!isHidden("callStatus")             && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Call Status</th>}
-                  {!isHidden("absentMembers")          && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Absent Members</th>}
-                  {!isHidden("actualStartTime")        && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Start</th>}
-                  {!isHidden("actualEndTime")          && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">End</th>}
-                  {!isHidden("yesterdaysAchievements") && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Yesterday</th>}
-                  {!isHidden("todaysPriority")         && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Today</th>}
-                  {!isHidden("stuckIssues")            && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Stuck</th>}
-                  {!isHidden("createdBy")              && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Created By</th>}
-                  {!isHidden("updatedBy")              && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Updated By</th>}
-                  {!isHidden("createdAt")              && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Created Date</th>}
-                  {!isHidden("updatedAt")              && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Updated Date</th>}
+                  {!isHidden("meetingDate") && (
+                    <th data-col-key="meetingDate" style={{ width: getColWidth("meetingDate") }} className={`group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200 ${frozenCol === "meetingDate" ? "sticky left-0 z-[15] bg-accent-50" : ""}`}>
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Meeting Date{sortBy === "meetingDate" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
+                        <ColMenu colKey="meetingDate"
+                          onSort={(d) => setSort({ sortBy: "meetingDate", sortOrder: d })}
+                          onFreeze={() => setFrozenCol(frozenCol === "meetingDate" ? null : "meetingDate")}
+                          onHide={() => hideCol("meetingDate")}
+                          frozen={frozenCol === "meetingDate"} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("meetingDate", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("client") && (
+                    <th data-col-key="client" style={{ width: getColWidth("client") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Client{sortBy === "client" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
+                        <ColMenu colKey="client"
+                          onSort={(d) => setSort({ sortBy: "client", sortOrder: d })}
+                          onFreeze={() => setFrozenCol(frozenCol === "client" ? null : "client")}
+                          onHide={() => hideCol("client")}
+                          frozen={frozenCol === "client"} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("client", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("callStatus") && (
+                    <th data-col-key="callStatus" style={{ width: getColWidth("callStatus") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Call Status{sortBy === "callStatus" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
+                        <ColMenu colKey="callStatus"
+                          onSort={(d) => setSort({ sortBy: "callStatus", sortOrder: d })}
+                          onFreeze={() => setFrozenCol(frozenCol === "callStatus" ? null : "callStatus")}
+                          onHide={() => hideCol("callStatus")}
+                          frozen={frozenCol === "callStatus"} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("callStatus", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("absentMembers") && (
+                    <th data-col-key="absentMembers" style={{ width: getColWidth("absentMembers") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Absent Members</span>
+                        <ColMenu colKey="absentMembers"
+                          onFreeze={() => setFrozenCol(frozenCol === "absentMembers" ? null : "absentMembers")}
+                          onHide={() => hideCol("absentMembers")}
+                          frozen={frozenCol === "absentMembers"} showSort={false} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("absentMembers", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("actualStartTime") && (
+                    <th data-col-key="actualStartTime" style={{ width: getColWidth("actualStartTime") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Start{sortBy === "actualStartTime" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
+                        <ColMenu colKey="actualStartTime"
+                          onSort={(d) => setSort({ sortBy: "actualStartTime", sortOrder: d })}
+                          onFreeze={() => setFrozenCol(frozenCol === "actualStartTime" ? null : "actualStartTime")}
+                          onHide={() => hideCol("actualStartTime")}
+                          frozen={frozenCol === "actualStartTime"} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("actualStartTime", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("actualEndTime") && (
+                    <th data-col-key="actualEndTime" style={{ width: getColWidth("actualEndTime") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">End{sortBy === "actualEndTime" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
+                        <ColMenu colKey="actualEndTime"
+                          onSort={(d) => setSort({ sortBy: "actualEndTime", sortOrder: d })}
+                          onFreeze={() => setFrozenCol(frozenCol === "actualEndTime" ? null : "actualEndTime")}
+                          onHide={() => hideCol("actualEndTime")}
+                          frozen={frozenCol === "actualEndTime"} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("actualEndTime", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("yesterdaysAchievements") && (
+                    <th data-col-key="yesterdaysAchievements" style={{ width: getColWidth("yesterdaysAchievements") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Yesterday</span>
+                        <ColMenu colKey="yesterdaysAchievements"
+                          onFreeze={() => setFrozenCol(frozenCol === "yesterdaysAchievements" ? null : "yesterdaysAchievements")}
+                          onHide={() => hideCol("yesterdaysAchievements")}
+                          frozen={frozenCol === "yesterdaysAchievements"} showSort={false} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("yesterdaysAchievements", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("todaysPriority") && (
+                    <th data-col-key="todaysPriority" style={{ width: getColWidth("todaysPriority") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Today</span>
+                        <ColMenu colKey="todaysPriority"
+                          onFreeze={() => setFrozenCol(frozenCol === "todaysPriority" ? null : "todaysPriority")}
+                          onHide={() => hideCol("todaysPriority")}
+                          frozen={frozenCol === "todaysPriority"} showSort={false} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("todaysPriority", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("stuckIssues") && (
+                    <th data-col-key="stuckIssues" style={{ width: getColWidth("stuckIssues") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Stuck</span>
+                        <ColMenu colKey="stuckIssues"
+                          onFreeze={() => setFrozenCol(frozenCol === "stuckIssues" ? null : "stuckIssues")}
+                          onHide={() => hideCol("stuckIssues")}
+                          frozen={frozenCol === "stuckIssues"} showSort={false} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("stuckIssues", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("createdBy") && (
+                    <th data-col-key="createdBy" style={{ width: getColWidth("createdBy") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Created By</span>
+                        <ColMenu colKey="createdBy"
+                          onFreeze={() => setFrozenCol(frozenCol === "createdBy" ? null : "createdBy")}
+                          onHide={() => hideCol("createdBy")}
+                          frozen={frozenCol === "createdBy"} showSort={false} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("createdBy", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("updatedBy") && (
+                    <th data-col-key="updatedBy" style={{ width: getColWidth("updatedBy") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Updated By</span>
+                        <ColMenu colKey="updatedBy"
+                          onFreeze={() => setFrozenCol(frozenCol === "updatedBy" ? null : "updatedBy")}
+                          onHide={() => hideCol("updatedBy")}
+                          frozen={frozenCol === "updatedBy"} showSort={false} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("updatedBy", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("createdAt") && (
+                    <th data-col-key="createdAt" style={{ width: getColWidth("createdAt") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Created Date{sortBy === "createdAt" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
+                        <ColMenu colKey="createdAt"
+                          onSort={(d) => setSort({ sortBy: "createdAt", sortOrder: d })}
+                          onFreeze={() => setFrozenCol(frozenCol === "createdAt" ? null : "createdAt")}
+                          onHide={() => hideCol("createdAt")}
+                          frozen={frozenCol === "createdAt"} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("createdAt", e.clientX)} />
+                    </th>
+                  )}
+                  {!isHidden("updatedAt") && (
+                    <th data-col-key="updatedAt" style={{ width: getColWidth("updatedAt") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
+                      <div className="flex items-center gap-1">
+                        <span className="flex-1">Updated Date{sortBy === "updatedAt" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
+                        <ColMenu colKey="updatedAt"
+                          onSort={(d) => setSort({ sortBy: "updatedAt", sortOrder: d })}
+                          onFreeze={() => setFrozenCol(frozenCol === "updatedAt" ? null : "updatedAt")}
+                          onHide={() => hideCol("updatedAt")}
+                          frozen={frozenCol === "updatedAt"} />
+                      </div>
+                      <ResizeHandle onStart={(e) => startResize("updatedAt", e.clientX)} />
+                    </th>
+                  )}
                   <th className="w-10 px-3 py-3 border-b border-gray-200" />
                 </tr>
               </thead>
@@ -522,55 +707,85 @@ export default function DailyHuddlePage() {
                     <td className="px-3 py-3">
                       <button onClick={() => openDetail(r, "edit")} className="text-blue-600 hover:underline font-medium">{r.displayId}</button>
                     </td>
-                    {!isHidden("meetingDate") && <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{fmtDate(r.meetingDate)}</td>}
-                    {!isHidden("client")      && <td className="px-3 py-3 text-gray-700">{r.clientName}</td>}
-                    {!isHidden("callStatus")  && (
-                      <td className="px-3 py-3">
+                    {/* Each <td> mirrors its <th>'s explicit width so table-layout: fixed
+                        locks columns. overflow-hidden keeps long content from spilling. */}
+                    {!isHidden("meetingDate") && (
+                      <td style={{ width: getColWidth("meetingDate") }} className="px-3 py-3 text-gray-700 whitespace-nowrap overflow-hidden">
+                        {fmtDate(r.meetingDate)}
+                      </td>
+                    )}
+                    {!isHidden("client") && (
+                      <td style={{ width: getColWidth("client") }} className="px-3 py-3 text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap">
+                        {r.clientName}
+                      </td>
+                    )}
+                    {!isHidden("callStatus") && (
+                      <td style={{ width: getColWidth("callStatus") }} className="px-3 py-3 overflow-hidden">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}>
                           {statusLabel(r.callStatus)}
                         </span>
                       </td>
                     )}
                     {!isHidden("absentMembers") && (
-                      <td className="px-3 py-3 text-gray-600">
+                      <td style={{ width: getColWidth("absentMembers") }} className="px-3 py-3 text-gray-600 overflow-hidden">
                         {r.absentTeamMemberNames.length === 0 ? <span className="text-gray-300">—</span> : (
-                          <span title={r.absentTeamMemberNames.join(", ")}>
+                          <span title={r.absentTeamMemberNames.join(", ")} className="whitespace-nowrap text-ellipsis overflow-hidden block">
                             {r.absentTeamMemberNames.slice(0, 2).join(", ")}
                             {r.absentTeamMemberNames.length > 2 && ` +${r.absentTeamMemberNames.length - 2}`}
                           </span>
                         )}
                       </td>
                     )}
-                    {!isHidden("actualStartTime") && <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{r.actualStartTime ?? <span className="text-gray-300">—</span>}</td>}
-                    {!isHidden("actualEndTime")   && <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{r.actualEndTime ?? <span className="text-gray-300">—</span>}</td>}
-                    {!isHidden("yesterdaysAchievements") && <td className="px-3 py-3 text-gray-600">{r.yesterdaysAchievements ? "✓" : "✗"}</td>}
-                    {!isHidden("todaysPriority")         && <td className="px-3 py-3 text-gray-600">{r.todaysPriority ? "✓" : "✗"}</td>}
-                    {!isHidden("stuckIssues")            && <td className="px-3 py-3 text-gray-600">{r.stuckIssues ? "✓" : "✗"}</td>}
+                    {!isHidden("actualStartTime") && (
+                      <td style={{ width: getColWidth("actualStartTime") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
+                        {r.actualStartTime ?? <span className="text-gray-300">—</span>}
+                      </td>
+                    )}
+                    {!isHidden("actualEndTime") && (
+                      <td style={{ width: getColWidth("actualEndTime") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
+                        {r.actualEndTime ?? <span className="text-gray-300">—</span>}
+                      </td>
+                    )}
+                    {!isHidden("yesterdaysAchievements") && (
+                      <td style={{ width: getColWidth("yesterdaysAchievements") }} className="px-3 py-3 text-gray-600 overflow-hidden">
+                        {r.yesterdaysAchievements ? "✓" : "✗"}
+                      </td>
+                    )}
+                    {!isHidden("todaysPriority") && (
+                      <td style={{ width: getColWidth("todaysPriority") }} className="px-3 py-3 text-gray-600 overflow-hidden">
+                        {r.todaysPriority ? "✓" : "✗"}
+                      </td>
+                    )}
+                    {!isHidden("stuckIssues") && (
+                      <td style={{ width: getColWidth("stuckIssues") }} className="px-3 py-3 text-gray-600 overflow-hidden">
+                        {r.stuckIssues ? "✓" : "✗"}
+                      </td>
+                    )}
                     {!isHidden("createdBy") && (
-                      <td className="px-3 py-3">
+                      <td style={{ width: getColWidth("createdBy") }} className="px-3 py-3 overflow-hidden">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">{r.createdByInitials}</span>
-                          <span className="text-xs text-gray-700 whitespace-nowrap">{r.createdByName}</span>
+                          <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.createdByName}</span>
                         </div>
                       </td>
                     )}
                     {!isHidden("updatedBy") && (
-                      <td className="px-3 py-3">
+                      <td style={{ width: getColWidth("updatedBy") }} className="px-3 py-3 overflow-hidden">
                         {r.updatedByName ? (
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">{r.updatedByInitials}</span>
-                            <span className="text-xs text-gray-700 whitespace-nowrap">{r.updatedByName}</span>
+                            <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.updatedByName}</span>
                           </div>
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     )}
                     {!isHidden("createdAt") && (
-                      <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
+                      <td style={{ width: getColWidth("createdAt") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.createdAt)}</span>
                       </td>
                     )}
                     {!isHidden("updatedAt") && (
-                      <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
+                      <td style={{ width: getColWidth("updatedAt") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.updatedAt)}</span>
                       </td>
                     )}
@@ -589,7 +804,7 @@ export default function DailyHuddlePage() {
                 ))}
               </tbody>
             </table>
-            </div>
+            </HorizontalScroller>
             {filtered.length > 0 && (
               <Pagination
                 page={page}

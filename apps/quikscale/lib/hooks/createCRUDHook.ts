@@ -170,7 +170,10 @@ export function createCRUDHook<Item, Filters>(
     const queryClient = useQueryClient();
     return useMutation({
       mutationFn: (id: string) => deleteItem(id),
-      onSuccess: () => {
+      onSuccess: (_data, id) => {
+        // Bust the detail cache too — a tab open on the just-deleted row
+        // would otherwise keep rendering stale data from before the delete.
+        queryClient.invalidateQueries({ queryKey: keys.detail(id) });
         queryClient.invalidateQueries({ queryKey: keys.lists() });
         queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
       },

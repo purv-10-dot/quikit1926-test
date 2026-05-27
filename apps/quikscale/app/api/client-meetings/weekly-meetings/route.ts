@@ -1,14 +1,40 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
+import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
+const WEEKLY_SORT_WHITELIST = [
+  "meetingDate",
+  "client",
+  "callStatus",
+  "actualStartTime",
+  "actualEndTime",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+function mapWeeklySort(key: string, dir: SortDirection): Prisma.ClientWeeklyMeetingOrderByWithRelationInput {
+  if (key === "client") return { client: { name: dir } };
+  if (key === "callStatus") return { callStatus: dir };
+  if (key === "actualStartTime") return { actualStartTime: dir };
+  if (key === "actualEndTime") return { actualEndTime: dir };
+  if (key === "createdAt") return { createdAt: dir };
+  if (key === "updatedAt") return { updatedAt: dir };
+  return { meetingDate: key === "meetingDate" ? dir : "desc" }; // default keeps legacy `meetingDate desc`
+}
+
 /**
  * GET /api/client-meetings/weekly-meetings?clientId=&from=&to=&includeDeleted=
- * Ordered newest first. By default soft-deleted rows are hidden.
+ *     &sortBy=<col>&sortOrder=<asc|desc>
+ *
+ * Ordered newest first by default. By default soft-deleted rows are hidden.
  * When `includeDeleted=true` ONLY soft-deleted rows are returned — trash view.
+ * `sortBy` is whitelist-enforced; unknown keys fall through to the legacy
+ * `meetingDate desc` order.
  */
 export const GET = withOrgAuth(async ({ orgId }, request) => {
   const url = new URL(request.url);
@@ -33,9 +59,10 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     where.meetingDate = range;
   }
 
+  const { orderBy } = parseSort(request, WEEKLY_SORT_WHITELIST, mapWeeklySort);
   const rows = await db.clientWeeklyMeeting.findMany({
     where,
-    orderBy: { meetingDate: "desc" },
+    orderBy,
     include: {
       client: { select: { id: true, name: true } },
       absentMembers: true,
@@ -78,6 +105,7 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       segmentTime5: r.segmentTime5,
       segmentTime6: r.segmentTime6,
       segmentTime7: r.segmentTime7,
+      punctualityOverride: r.punctualityOverride,
       goodNewsSharing: r.goodNewsSharing,
       kpDashboard: r.kpDashboard,
       gaps: r.gaps,
@@ -182,6 +210,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       segmentTime5: d.segmentTime5 ?? null,
       segmentTime6: d.segmentTime6 ?? null,
       segmentTime7: d.segmentTime7 ?? null,
+      punctualityOverride: d.punctualityOverride,
       goodNewsSharing: d.goodNewsSharing,
       kpDashboard: d.kpDashboard,
       gaps: d.gaps,

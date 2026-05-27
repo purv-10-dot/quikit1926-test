@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 
-export type TableName = "kpi" | "priority" | "www";
+export type TableName =
+  | "kpi"
+  | "priority"
+  | "www"
+  | "clientMaster"
+  | "clientMembers"
+  | "dailyHuddle"
+  | "weeklyMeeting";
 
 export interface TablePref {
   frozenCol: string | null;
@@ -11,14 +18,18 @@ export interface TablePref {
   colWidths: Record<string, number>;
 }
 
-interface AllPrefs {
-  kpi: TablePref;
-  priority: TablePref;
-  www: TablePref;
-}
+type AllPrefs = Record<TableName, TablePref>;
 
 const EMPTY_PREF: TablePref = { frozenCol: null, hiddenCols: [], sort: null, colWidths: {} };
-const EMPTY_ALL: AllPrefs = { kpi: EMPTY_PREF, priority: EMPTY_PREF, www: EMPTY_PREF };
+const EMPTY_ALL: AllPrefs = {
+  kpi: EMPTY_PREF,
+  priority: EMPTY_PREF,
+  www: EMPTY_PREF,
+  clientMaster: EMPTY_PREF,
+  clientMembers: EMPTY_PREF,
+  dailyHuddle: EMPTY_PREF,
+  weeklyMeeting: EMPTY_PREF,
+};
 
 let cache: AllPrefs | null = null;
 const listeners = new Set<() => void>();
@@ -27,18 +38,35 @@ function notifyListeners() {
   listeners.forEach((l) => l());
 }
 
+const TABLE_KEYS: TableName[] = [
+  "kpi",
+  "priority",
+  "www",
+  "clientMaster",
+  "clientMembers",
+  "dailyHuddle",
+  "weeklyMeeting",
+];
+
 async function fetchPreferences() {
   try {
     const res = await fetch("/api/settings/table-preferences", { cache: "no-store" });
     const json = await res.json();
     if (json.success) {
-      // Ensure colWidths is always present (old records may not have it)
-      const data = json.data;
-      cache = {
-        kpi: { ...EMPTY_PREF, ...data.kpi, colWidths: data.kpi?.colWidths ?? {} },
-        priority: { ...EMPTY_PREF, ...data.priority, colWidths: data.priority?.colWidths ?? {} },
-        www: { ...EMPTY_PREF, ...data.www, colWidths: data.www?.colWidths ?? {} },
-      };
+      // Build the cache from the API response. Tables the user hasn't
+      // customized yet come back as EMPTY defaults (the API normalizes
+      // missing rows). `colWidths` is defensively defaulted in case an
+      // older record predates that column.
+      const data = json.data as Partial<Record<TableName, Partial<TablePref>>>;
+      cache = TABLE_KEYS.reduce((acc, key) => {
+        const incoming = data[key] ?? {};
+        acc[key] = {
+          ...EMPTY_PREF,
+          ...incoming,
+          colWidths: incoming.colWidths ?? {},
+        };
+        return acc;
+      }, {} as AllPrefs);
     } else {
       cache = EMPTY_ALL;
     }

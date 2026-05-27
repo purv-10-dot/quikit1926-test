@@ -943,6 +943,11 @@ export default function OrgTeamsPage() {
     if (json.success) {
       toast.success(`Restored team "${team.name}"`);
       crud.refetch();
+      // A restored team becomes pickable again everywhere — invalidate shared caches.
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } else {
       toast.error(json.error ?? "Failed to restore team");
     }
@@ -967,6 +972,10 @@ export default function OrgTeamsPage() {
       }
       crud.clearSelection();
       crud.refetch();
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } else {
       toast.error(json.error ?? "Failed to restore teams");
     }
@@ -1021,10 +1030,16 @@ export default function OrgTeamsPage() {
       }
       return [...prev, team];
     });
-    // Invalidate the shared TanStack Query `["teams"]` cache so consumers
-    // like the Team KPI page's `useTeams()` see the new/renamed team without
-    // a full page reload.
+    // After ANY team mutation (create / rename / add-member / etc.) bust the
+    // shared user-list caches. Without this the Dashboard's Owner filter and
+    // every modal that calls `useUsers()` keep serving stale data — a team
+    // member added in Org Setup wouldn't appear in the dashboard's Owner
+    // dropdown until a hard refresh. `["dashboard"]` is also busted so the
+    // aggregated summary refetches with the new membership.
     queryClient.invalidateQueries({ queryKey: ["teams"] });
+    queryClient.invalidateQueries({ queryKey: ["users"] });
+    queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   }
 
   async function handleRemoveMember(team: OrgTeam, userId: string) {
@@ -1044,6 +1059,11 @@ export default function OrgTeamsPage() {
           : t
       )
     );
+    // Membership change → refresh consumers that filter by team membership.
+    queryClient.invalidateQueries({ queryKey: ["teams"] });
+    queryClient.invalidateQueries({ queryKey: ["users"] });
+    queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   }
 
   function toggleExpand(id: string) {
@@ -1343,7 +1363,19 @@ export default function OrgTeamsPage() {
       <ConfirmDialog
         open={!!crud.deleteTarget}
         teamName={crud.deleteTarget?.name ?? ""}
-        onConfirm={() => crud.confirmDelete()}
+        onConfirm={async () => {
+          const ok = await crud.confirmDelete();
+          // Team delete affects every team-aware consumer (dashboard filter,
+          // KPI/Priority team pickers, Owner dropdown filtered by team).
+          // useTableCRUD only updates its local state, so we bust the shared
+          // TanStack caches here.
+          if (ok) {
+            queryClient.invalidateQueries({ queryKey: ["teams"] });
+            queryClient.invalidateQueries({ queryKey: ["users"] });
+            queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+            queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+          }
+        }}
         onCancel={() => crud.setDeleteTarget(null)}
       />
     </div>

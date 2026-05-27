@@ -8,6 +8,8 @@ import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption, FiscalPeriodPicker, type FiscalQuarter } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { useTeams } from "@/lib/hooks/useTeams";
+import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
@@ -967,21 +969,14 @@ export default function DashboardPage() {
     () => (summaryData?.wwwItems ?? []) as WWWItem[],
     [summaryData],
   );
-  const allOrgUsers = useMemo(
-    () => summaryData?.users ?? [],
-    [summaryData],
-  );
-  const allOrgTeams = useMemo(
-    () => summaryData?.teams ?? [],
-    [summaryData],
-  );
-
-  // Teams list for pickers. The consolidated payload returns tenant-wide
-  // teams; membership-based visibility is derived below via the KPI/team
-  // ownership map so non-admins still only pick from teams they work in.
+  // Teams come from the dedicated `useTeams()` query so the team-create
+  // mutation in Org Setup (which invalidates `["teams"]`) is reflected here
+  // without a hard refresh. Previously this was derived from the dashboard
+  // summary payload, whose own cache key isn't busted on team create.
+  const { data: teamsData = [] } = useTeams();
   const teams = useMemo(
-    () => allOrgTeams.map((t) => ({ id: t.id, name: t.name })),
-    [allOrgTeams],
+    () => teamsData.map((t) => ({ id: t.id, name: t.name })),
+    [teamsData],
   );
 
   // ── Team tab filters (3-stage) ──
@@ -1039,34 +1034,20 @@ export default function DashboardPage() {
     }
   }, [activeTab, teamTabTeamId, teamTabOwnerId, userId, setFilterTeam, setFilterOwner]);
 
-  // Team id → Set<userId> lookup, derived from KPI ownership so we can
-  // filter the users list client-side without refetching.
-  const teamMemberIdsByTeam = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    for (const k of allIndKpis) {
-      if (k.teamId && k.owner) {
-        if (!map.has(k.teamId)) map.set(k.teamId, new Set());
-        map.get(k.teamId)!.add(k.owner);
-      }
-    }
-    for (const k of allTeamKpis) {
-      if (k.teamId) {
-        if (!map.has(k.teamId)) map.set(k.teamId, new Set());
-        for (const id of (k.ownerIds ?? [])) map.get(k.teamId)!.add(id);
-      }
-    }
-    return map;
-  }, [allIndKpis, allTeamKpis]);
-
   // Active scope team — only the Team tab uses a team filter now (My Dashboard
   // is hard-locked to the current user, no team filter).
   const selectedTeamId = activeTab === "team" ? (teamTabTeamId || undefined) : undefined;
 
-  const users = useMemo(() => {
-    if (!selectedTeamId) return allOrgUsers;
-    const ids = teamMemberIdsByTeam.get(selectedTeamId);
-    return ids ? allOrgUsers.filter((u) => ids.has(u.id)) : allOrgUsers;
-  }, [allOrgUsers, selectedTeamId, teamMemberIdsByTeam]);
+  // Owner picker source — paginated user list from /api/users (sorted server-side
+  // by firstName asc, 25 per page). When a team is selected, the API filters to
+  // actual OrgMember.teamId membership, which fixes the previous KPI-ownership-
+  // derived heuristic that hid team members without KPIs and showed strangers.
+  const {
+    users,
+    hasNextPage: usersHasMore,
+    isFetchingNextPage: usersLoadingMore,
+    fetchNextPage: usersLoadMore,
+  } = useInfiniteUsers(selectedTeamId);
 
   // Set of user IDs belonging to the selected team (all org members when no team selected)
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
@@ -1294,6 +1275,9 @@ export default function DashboardPage() {
                       onChange={setTeamTabOwnerId}
                       options={users.map(userToFilterOption)}
                       allLabel="All Users"
+                      hasMore={usersHasMore}
+                      loadingMore={usersLoadingMore}
+                      onLoadMore={() => { void usersLoadMore(); }}
                     />
                   </div>
                   {(teamTabTeamId || teamTabOwnerId || teamTabKpiType !== "individual") && (
