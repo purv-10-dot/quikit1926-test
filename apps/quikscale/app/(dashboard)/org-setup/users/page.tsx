@@ -21,6 +21,7 @@ import {
   RightPanelSubmitButton,
   Pagination,
 } from "@quikit/ui";
+import { useQueryClient } from "@tanstack/react-query";
 import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -1016,6 +1017,12 @@ export default function OrgUsersPage() {
   const canViewUserMgmt = myPerms.isAdmin || myPerms.has("User", "view");
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  // Shared cache invalidator — every user mutation (create/edit/status-change/
+  // delete) updates membership-driven views elsewhere (Dashboard Owner filter,
+  // KPI/Priority pickers, team member counts on Org Setup → Teams). Without
+  // these invalidations consumers hold stale data until the 5-minute staleTime
+  // elapses or the user hard-refreshes.
+  const queryClient = useQueryClient();
 
   const crud = useTableCRUD<OrgUser>({
     apiEndpoint: "/api/org/users",
@@ -1101,6 +1108,12 @@ export default function OrgUsersPage() {
       }
       return [...prev, user];
     });
+    // Bust shared caches — user team assignment / role / status changes ripple
+    // into every consumer that reads users or teams.
+    queryClient.invalidateQueries({ queryKey: ["teams"] });
+    queryClient.invalidateQueries({ queryKey: ["users"] });
+    queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     // Surface the plaintext temp password ONCE for the inviting admin.
     // Lives only in React state until the modal closes — never persisted.
     if (user.tempPassword) {
