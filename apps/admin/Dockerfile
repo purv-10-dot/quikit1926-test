@@ -6,9 +6,9 @@
 #   → runner (standalone output + Prisma engines, non-root)
 #
 # Build (from monorepo root):
-#   docker build -f apps/admin/Dockerfile -t adminatest .
+# docker build -f apps/admin/Dockerfile -t adminatest .
 # Build with custom DATABASE_URL (optional — defaults pass build-time Prisma init):
-#   docker build --build-arg DATABASE_URL="postgresql://..." -f apps/admin/Dockerfile -t adminatest .
+# docker build --build-arg DATABASE_URL="postgresql://..." -f apps/admin/Dockerfile -t adminatest .
 
 FROM node:20-alpine AS base
 
