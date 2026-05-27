@@ -1,0 +1,48 @@
+# docker-compose for local/staging QuikInfra stack.
+# Run: docker compose -f apps/quikinfra/docker-compose.yml up
+# Override secrets via an adjacent .env file (not committed).
+
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: quikinfra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: quikinfra
+    volumes:
+      - quikinfra-db:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quikinfra"]
+      interval: 10s
+      retries: 5
+
+  app:
+    build:
+      context: ../..
+      dockerfile: apps/quikinfra/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://quikinfra:${POSTGRES_PASSWORD:-change-me}@db:5432/quikinfra
+      DATABASE_URL_DIRECT: postgresql://quikinfra:${POSTGRES_PASSWORD:-change-me}@db:5432/quikinfra
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3007}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-this-in-production}
+      QUIKIT_URL: ${QUIKIT_URL:-http://quikit:3000}
+      NEXT_PUBLIC_QUIKIT_URL: ${NEXT_PUBLIC_QUIKIT_URL:-http://localhost:3000}
+      QUIKIT_CLIENT_ID: ${QUIKIT_CLIENT_ID:-quikinfra}
+      QUIKIT_CLIENT_SECRET: ${QUIKIT_CLIENT_SECRET:-change-me}
+      QC_DOCS_ROOT: /app/uploads
+      NODE_ENV: production
+    ports:
+      - "3007:3007"
+    volumes:
+      - quikinfra-uploads:/app/uploads
+
+volumes:
+  quikinfra-db:
+  quikinfra-uploads:

@@ -387,7 +387,7 @@ you actually want.
 A. The API supports it; the rename UI hasn't been built yet. Coming in
 the next iteration.
 
-**Q. Does this affect QuikVC or QuikConstruction?**
+**Q. Does this affect QuikVC or QuikInfra?**
 A. No. Each app has its own roles. A role you create here is QuikScale-
 only.
 

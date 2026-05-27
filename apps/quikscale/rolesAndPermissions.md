@@ -28,7 +28,7 @@ Postgres has multiple schemas in `quikscale_dev`:
 | `public` | Identity / platform — `User`, `Tenant`, `App`, `Membership`, `UserAppAccess`, `OAuth*` |
 | `app_quikscale` | QuikScale-specific data — `KPI`, `Priority`, `WWWItem`, `OPSP*`, etc. |
 | `app_quikvc` | QuikVC-specific data |
-| `app_quikconstruction` | QuikConstruction-specific data |
+| `app_quikinfra` | QuikInfra-specific data |
 
 **The three new role tables live in `app_quikscale`.** Reasoning:
 - Roles are app-specific (a QuikScale "Manager" grants permissions on KPI / Priority / WWW; a QuikVC "Manager" would grant Deal / Portfolio).

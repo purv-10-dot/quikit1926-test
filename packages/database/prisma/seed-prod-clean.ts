@@ -7,12 +7,12 @@
  * the first real Tenant by hand, invites real users from there.
  *
  * What this script does:
- *   1. WIPE every row in app_quikscale.*, app_quikvc.*, app_quikconstruction.*
+ *   1. WIPE every row in app_quikscale.*, app_quikvc.*, app_quikinfra.*
  *      and every public.* data table EXCEPT public._prisma_migrations.
  *      Migration history preserved so the next deploy doesn't re-attempt.
  *   2. CREATE one User: SUPERADMIN_EMAIL with bcrypt(SUPERADMIN_PASSWORD),
  *      isSuperAdmin=true. No memberships.
- *   3. CREATE 4 App registry rows (admin, quikscale, quikvc, quikconstruction)
+ *   3. CREATE 4 App registry rows (admin, quikscale, quikvc, quikinfra)
  *      with prod URLs from env vars (refuses to seed localhost in production).
  *   4. CREATE 4 OAuthClient rows with bcrypt-hashed plaintext secrets pulled
  *      from <APP>_OAUTH_CLIENT_SECRET env vars (refuses placeholder strings).
@@ -26,11 +26,11 @@
  *   QUIKSCALE_URL=https://quikscale.vercel.app \
  *   ADMIN_URL=https://quik-it-admin.vercel.app \
  *   QUIKVC_URL=https://quikvc.vercel.app \
- *   QUIKCONSTRUCTION_URL=https://quikconstruction.vercel.app \
+ *   QUIKINFRA_URL=https://quikinfra.vercel.app \
  *   QUIKSCALE_OAUTH_CLIENT_SECRET='...' \
  *   ADMIN_OAUTH_CLIENT_SECRET='...' \
  *   QUIKVC_OAUTH_CLIENT_SECRET='...' \
- *   QUIKCONSTRUCTION_OAUTH_CLIENT_SECRET='...' \
+ *   QUIKINFRA_OAUTH_CLIENT_SECRET='...' \
  *   npx tsx prisma/seed-prod-clean.ts --confirm
  *
  * The `--confirm` flag is mandatory. Without it the script aborts.
@@ -88,7 +88,7 @@ async function wipe(): Promise<void> {
   const tables = await prisma.$queryRaw<Array<{ schemaname: string; tablename: string }>>`
     SELECT schemaname, tablename
     FROM pg_tables
-    WHERE schemaname IN ('public', 'app_quikscale', 'app_quikvc', 'app_quikconstruction')
+    WHERE schemaname IN ('public', 'app_quikscale', 'app_quikvc', 'app_quikinfra')
       AND tablename != '_prisma_migrations'
     ORDER BY schemaname, tablename;
   `;
@@ -129,7 +129,7 @@ async function seedAppsAndOAuth(): Promise<void> {
 
   const QUIKSCALE_BASE = resolveAppUrl("QUIKSCALE_URL");
   const ADMIN_BASE = resolveAppUrl("ADMIN_URL");
-  const QUIKCONSTRUCTION_BASE = resolveAppUrl("QUIKCONSTRUCTION_URL");
+  const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL");
   const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL");
 
   const APPS = [
@@ -160,16 +160,16 @@ async function seedAppsAndOAuth(): Promise<void> {
       },
     },
     {
-      slug: "quikconstruction",
-      name: "QuikConstruction",
+      slug: "quikinfra",
+      name: "QuikInfra",
       description:
         "Construction ERP — Projects, BOQ/DPR, Purchase, Store, Finance, HRMS, Safety, Quality.",
-      baseUrl: QUIKCONSTRUCTION_BASE,
-      iconUrl: "/app-icons/quikconstruction.png",
+      baseUrl: QUIKINFRA_BASE,
+      iconUrl: "/app-icons/quikinfra.png",
       oauth: {
-        clientId: "quikconstruction",
-        clientSecretPlain: resolveClientSecret("QUIKCONSTRUCTION_OAUTH_CLIENT_SECRET"),
-        redirectUris: [`${QUIKCONSTRUCTION_BASE}/api/auth/callback/quikit`],
+        clientId: "quikinfra",
+        clientSecretPlain: resolveClientSecret("QUIKINFRA_OAUTH_CLIENT_SECRET"),
+        redirectUris: [`${QUIKINFRA_BASE}/api/auth/callback/quikit`],
       },
     },
     {

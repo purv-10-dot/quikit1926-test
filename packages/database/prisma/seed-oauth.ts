@@ -56,14 +56,14 @@ function resolveClientSecret(envName: string, devFallback: string): string {
 // Dev fallbacks match `next dev -p <port>` in each app's package.json. The
 // monorepo's local routing architecture is:
 //   auth → 3000   quikit → 3001   admin → 3002   quikscale → 3003
-//   quiktrack → 3004   quikconstruction → 3005   quiksocial → 3006
+//   quiktrack → 3004   quikinfra → 3005   quiksocial → 3006
 //   quikvc → 3007 (moved off 3006 to make room for quiksocial)
 // In production these URLs MUST be passed via env vars (resolveAppUrl throws
 // when NODE_ENV=production and the env var is unset).
 const ADMIN_BASE = resolveAppUrl("ADMIN_URL", "http://localhost:3002"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKSCALE_BASE = resolveAppUrl("QUIKSCALE_URL", "http://localhost:3003"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKTRACK_BASE = resolveAppUrl("QUIKTRACK_URL", "http://localhost:3004"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
-const QUIKCONSTRUCTION_BASE = resolveAppUrl("QUIKCONSTRUCTION_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3006"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 
@@ -117,17 +117,17 @@ const APPS = [
     },
   },
   {
-    slug: "quikconstruction",
-    name: "QuikConstruction",
+    slug: "quikinfra",
+    name: "QuikInfra",
     description: "Construction ERP — Projects, BOQ/DPR, Purchase, Store, Finance, HRMS, Safety, Quality.",
-    baseUrl: QUIKCONSTRUCTION_BASE,
-    iconUrl: "/app-icons/quikconstruction.png",
+    baseUrl: QUIKINFRA_BASE,
+    iconUrl: "/app-icons/quikinfra.png",
     status: "active",
     oauth: {
-      clientId: "quikconstruction",
-      clientSecretPlain: resolveClientSecret("QUIKCONSTRUCTION_OAUTH_CLIENT_SECRET", "quikconstruction-dev-secret-change-in-prod"),
+      clientId: "quikinfra",
+      clientSecretPlain: resolveClientSecret("QUIKINFRA_OAUTH_CLIENT_SECRET", "quikinfra-dev-secret-change-in-prod"),
       redirectUris: [
-        `${QUIKCONSTRUCTION_BASE}/api/auth/callback/quikit`,
+        `${QUIKINFRA_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },
@@ -236,7 +236,7 @@ Generate fresh secrets with:  openssl rand -base64 32
 Then re-run this seed with the env vars set:
   QUIKSCALE_OAUTH_CLIENT_SECRET=... ADMIN_OAUTH_CLIENT_SECRET=... \\
   QUIKTRACK_OAUTH_CLIENT_SECRET=... \\
-  QUIKCONSTRUCTION_OAUTH_CLIENT_SECRET=... QUIKVC_OAUTH_CLIENT_SECRET=... \\
+  QUIKINFRA_OAUTH_CLIENT_SECRET=... QUIKVC_OAUTH_CLIENT_SECRET=... \\
   QUIKSOCIAL_OAUTH_CLIENT_SECRET=... \\
   npx tsx prisma/seed-oauth.ts
 `);

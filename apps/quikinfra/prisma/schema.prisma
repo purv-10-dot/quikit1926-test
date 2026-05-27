@@ -1,0 +1,2471 @@
+// QuikInfra â€” Prisma Schema
+// Construction ERP Domain Models
+//
+// IMPORTANT DESIGN PRINCIPLES:
+// - All qty/money fields use Decimal (never Float)
+// - stock_ledger is APPEND-ONLY â€” never update/delete rows
+// - All entities are tenant-scoped (tenantId + organizationId)
+// - Soft delete via status = 'inactive' â€” no hard deletes on masters
+// - System-managed computed fields are never written by frontend
+
+generator client {
+  provider        = "prisma-client-js"
+  // Dedicated output path â€” avoids collision with the root workspace schema
+  // in the pnpm virtual store. Multiple apps share @prisma/client in pnpm
+  // and the last `prisma generate` wins, so our models get overwritten by
+  // the root KPI schema on every workspace postinstall. Custom output solves it.
+  output          = "../node_modules/.prisma-qc2/client"
+  // Linux engine for Vercel's serverless runtime (rhel-openssl-3.0.x) on
+  // top of `native` for local dev. Without this, deploys generate only the
+  // host engine and Vercel functions crash with "Query Engine not found".
+  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
+  // multiSchema lets us address the dedicated `app_quikinfra` namespace
+  // that physically holds every cn_* table in the shared quikit_dev cluster.
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["app_quikinfra"]
+}
+
+// ============================================================================
+// MASTER DATA
+// ============================================================================
+
+model CnCompany {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  legalName   String
+  shortName   String?
+  gstin       String
+  pan         String
+  cin         String?
+  address     String
+  city        String
+  state       String
+  pincode     String
+  phone       String?
+  email       String?
+  website     String?
+  logoUrl     String?
+  bankName    String?
+  branchName  String?
+  accountNo   String?
+  ifscCode    String?
+  accountType String?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+  updatedBy   String
+
+  projects CnProject[]
+  banks    CnBank[]
+  finYears CnFinancialYear[]
+
+  @@index([orgId])
+  @@index([gstin])
+  @@map("Companies")
+  @@schema("app_quikinfra")
+}
+
+model CnFinancialYear {
+  id        String   @id @default(cuid())
+  orgId     String
+  companyId String
+  label     String
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean  @default(false)
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String
+  updatedBy String
+
+  company CnCompany @relation(fields: [companyId], references: [id])
+
+  @@index([orgId])
+  @@map("Financial_years")
+  @@schema("app_quikinfra")
+}
+
+model CnProject {
+  id               String    @id @default(cuid())
+  orgId            String
+  code             String
+  name             String
+  description      String?
+  projectType      String?
+  companyId        String
+  clientId         String?
+  departmentId     String?
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  siteGstin        String?
+  startDate        DateTime?
+  expectedEndDate  DateTime?
+  actualEndDate    DateTime?
+  projectValue     Decimal?  @db.Decimal(18, 2)
+  budget           Decimal?  @db.Decimal(18, 2)
+  purchaseLimit    Decimal?  @db.Decimal(18, 2)
+  projectManagerId String?
+  status           String    @default("active")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  company          CnCompany               @relation(fields: [companyId], references: [id])
+  client           CnCustomer?             @relation(fields: [clientId], references: [id])
+  locations        CnLocation[]
+  boqItems         CnBOQItem[]
+  purchaseReqs     CnPurchaseRequisition[]
+  indents          CnPurchaseIndent[]
+  pos              CnPurchaseOrder[]
+  grns             CnGoodsReceiptNote[]
+  issues           CnMaterialIssue[]
+  transfers        CnStockTransfer[]
+  reconciliations  CnStockReconciliation[]
+  workOrders       CnWorkOrder[]
+  dprs             CnDailyProgressReport[]
+  rabs             CnRunningAccountBill[]
+  stockLedger      CnStockLedger[]
+  estimations      CnMaterialEstimation[]
+  dieselLogs       CnDieselLog[]
+  gatePasses       CnGatePass[]
+  goodReturns      CnGoodReturn[]
+  internalReturns  CnInternalReturn[]
+  boqRev2Items     CnBOQItemV2[]
+  boqImportBatches CnBOQImportBatch[]
+  boqLockState     CnBOQLockState?
+  wbsTasks         CnWBSTask[]
+  hindrances       CnHindrance[]
+  documents        CnProjectDocument[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@index([companyId])
+  @@map("Projects")
+  @@schema("app_quikinfra")
+}
+
+model CnHindrance {
+  id                   String    @id @default(cuid())
+  orgId                String
+  hindranceNo          String
+  projectId            String
+  category             String
+  dateFrom             DateTime
+  dateTo               DateTime?
+  daysLost             Int       @default(0)
+  status               String    @default("Active")
+  description          String
+  impactOnCriticalPath String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String
+  updatedBy            String
+
+  project CnProject @relation(fields: [projectId], references: [id])
+
+  @@unique([orgId, hindranceNo])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([status])
+  @@index([dateFrom])
+  @@map("Hindrances")
+  @@schema("app_quikinfra")
+}
+
+model CnItemGroup {
+  id             String   @id @default(cuid())
+  orgId          String
+  name           String
+  parentId       String?
+  depth          Int      @default(0)
+  sortOrder      Int      @default(0)
+  workCategoryId String?
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String
+  updatedBy      String
+
+  parent    CnItemGroup?  @relation("ItemGroupHierarchy", fields: [parentId], references: [id])
+  children  CnItemGroup[] @relation("ItemGroupHierarchy")
+  items     CnItem[]
+  locations CnLocation[]
+
+  @@index([orgId])
+  @@index([parentId])
+  @@map("Item_groups")
+  @@schema("app_quikinfra")
+}
+
+model CnItem {
+  id            String   @id @default(cuid())
+  orgId         String
+  code          String
+  name          String
+  description   String?
+  itemType      String?
+  groupId       String
+  /// Denormalized category label for reporting/export (kept in sync with group.name).
+  category      String?
+  uomId         String
+  uomIds        String[] @default([])
+  hsnCode       String?
+  gstRate       Decimal? @db.Decimal(5, 2)
+  minStockLevel Decimal? @db.Decimal(18, 4)
+  reorderLevel  Decimal? @db.Decimal(18, 4)
+  standardRate  Decimal? @db.Decimal(18, 2)
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdBy     String
+  updatedBy     String
+
+  group       CnItemGroup     @relation(fields: [groupId], references: [id])
+  uom         CnUOM           @relation(fields: [uomId], references: [id])
+  stockLedger CnStockLedger[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@index([groupId])
+  @@index([orgId, status, createdAt(sort: Desc)])
+  @@map("Items")
+  @@schema("app_quikinfra")
+}
+
+model CnUOM {
+  id        String   @id @default(cuid())
+  orgId     String
+  code      String
+  name      String
+  type      String?
+  precision Int      @default(0)
+  isBase    Boolean  @default(false)
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String
+  updatedBy String
+
+  items CnItem[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Uoms")
+  @@schema("app_quikinfra")
+}
+
+model CnVendor {
+  id               String    @id @default(cuid())
+  orgId            String
+  code             String
+  name             String
+  legalName        String?
+  companyName      String?
+  vendorType       String?
+  category         String?
+  gstin            String?
+  gstType          String?
+  pan              String?
+  msmeStatus       String?
+  msmeNumber       String?
+  contactPerson    String?
+  phone            String?
+  email            String?
+  address          String?
+  city             String?
+  state            String?
+  pincode          String?
+  bankName         String?
+  bankAccountNo    String?
+  bankIfsc         String?
+  paymentTerms     String?
+  paymentTermsDays Int?
+  blacklistReason  String?
+  blacklistedAt    DateTime?
+  blacklistedUntil DateTime?
+  rating           Int?
+  status           String    @default("active")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  pos         CnPurchaseOrder[]
+  grns        CnGoodsReceiptNote[]
+  goodReturns CnGoodReturn[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@index([gstin])
+  @@map("Vendors")
+  @@schema("app_quikinfra")
+}
+
+model CnContractor {
+  id             String   @id @default(cuid())
+  orgId          String
+  code           String
+  name           String
+  legalName      String?
+  gstin          String?
+  pan            String?
+  contactPerson  String?
+  phone          String?
+  email          String?
+  address        String?
+  city           String?
+  state          String?
+  licenseNo      String?
+  specialization String?
+  bankName       String?
+  branchName     String?
+  accountNo      String?
+  ifscCode       String?
+  accountType    String?
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String
+  updatedBy      String
+
+  workOrders CnWorkOrder[]
+  rabs       CnRunningAccountBill[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Contractors")
+  @@schema("app_quikinfra")
+}
+
+model CnCustomer {
+  id              String   @id @default(cuid())
+  orgId           String
+  code            String
+  name            String
+  customerType    String?
+  contactPerson   String?
+  phone           String?
+  email           String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  gstin           String?
+  pan             String?
+  billingAddress  String?
+  shippingAddress String?
+  bankName        String?
+  accountNumber   String?
+  ifscCode        String?
+  paymentTerms    String?
+  creditLimit     Decimal? @db.Decimal(18, 2)
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String
+  updatedBy       String
+
+  projects CnProject[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Customers")
+  @@schema("app_quikinfra")
+}
+
+model CnLocation {
+  id              String   @id @default(cuid())
+  orgId           String
+  code            String
+  name            String
+  type            String // site | warehouse | head_office | yard
+  projectId       String?
+  address         String?
+  city            String?
+  state           String?
+  inCharge        String?
+  capacity        String?
+  itemGroupId     String?
+  itemIds         String[] @default([])
+  /// Per-item quantities captured in the Locations master UI.
+  /// Shape: { [itemId: string]: string | number }
+  itemQtyByItemId Json?
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String
+  updatedBy       String
+
+  project     CnProject?      @relation(fields: [projectId], references: [id])
+  itemGroup   CnItemGroup?    @relation(fields: [itemGroupId], references: [id])
+  stockLedger CnStockLedger[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([itemGroupId])
+  @@map("Locations")
+  @@schema("app_quikinfra")
+}
+
+model CnGSTCode {
+  id            String    @id @default(cuid())
+  orgId         String
+  code          String
+  codeType      String?
+  description   String
+  rate          Decimal   @db.Decimal(5, 2)
+  cgstRate      Decimal   @db.Decimal(5, 2)
+  sgstRate      Decimal   @db.Decimal(5, 2)
+  igstRate      Decimal   @db.Decimal(5, 2)
+  isRcm         Boolean   @default(false)
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  itemGroupId   String?
+  itemGroupName String?
+  status        String    @default("active")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String
+  updatedBy     String
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Gst_codes")
+  @@schema("app_quikinfra")
+}
+
+model CnTDSCode {
+  id              String   @id @default(cuid())
+  orgId           String
+  section         String
+  description     String
+  rate            Decimal  @db.Decimal(5, 2)
+  thresholdAmount Decimal? @db.Decimal(18, 2)
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String
+  updatedBy       String
+
+  @@index([orgId])
+  @@map("Tds_codes")
+  @@schema("app_quikinfra")
+}
+
+model CnBank {
+  id          String   @id @default(cuid())
+  orgId       String
+  bankName    String
+  branchName  String?
+  accountNo   String
+  ifscCode    String
+  accountType String // current | savings
+  companyId   String
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+  updatedBy   String
+
+  company CnCompany @relation(fields: [companyId], references: [id])
+
+  @@index([orgId])
+  @@map("Banks")
+  @@schema("app_quikinfra")
+}
+
+model CnDepartment {
+  id         String   @id @default(cuid())
+  orgId      String
+  code       String
+  name       String
+  costCenter String?
+  headUserId String?
+  status     String   @default("active")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  createdBy  String
+  updatedBy  String
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Departments")
+  @@schema("app_quikinfra")
+}
+
+model CnWorkCategory {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  sacCode     String?
+  sortOrder   Int?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+  updatedBy   String
+
+  @@index([orgId])
+  @@map("Work_categories")
+  @@schema("app_quikinfra")
+}
+
+model CnCostCenter {
+  id        String   @id @default(cuid())
+  orgId     String
+  code      String
+  name      String
+  projectId String?
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String
+  updatedBy String
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Cost_centers")
+  @@schema("app_quikinfra")
+}
+
+model CnMachinery {
+  id             String   @id @default(cuid())
+  orgId          String
+  code           String
+  name           String
+  type           String
+  make           String?
+  model          String?
+  registrationNo String?
+  projectId      String?
+  locationId     String?
+  fuelType       String?
+  capacity       String?
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String
+  updatedBy      String
+
+  dieselLogs CnDieselLog[]
+
+  @@unique([orgId, code])
+  @@index([orgId])
+  @@map("Machinery")
+  @@schema("app_quikinfra")
+}
+
+model CnTermsCondition {
+  id           String   @id @default(cuid())
+  orgId        String
+  title        String
+  body         String
+  applicableTo String // po | wo | rfq | general
+  isDefault    Boolean  @default(false)
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String
+  updatedBy    String
+
+  @@index([orgId])
+  @@map("Terms_conditions")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// PURCHASE & PROCUREMENT
+// ============================================================================
+
+model CnPurchaseRequisition {
+  id                   String    @id @default(cuid())
+  orgId                String
+  prNumber             String
+  projectId            String
+  requestedById        String
+  requestDate          DateTime
+  requiredDate         DateTime?
+  purpose              String?
+  isUrgent             Boolean   @default(false)
+  urgencyJustification String?
+  workCategoryId       String?
+  deliveryLocationId   String?
+  estimatedTotal       Decimal?  @db.Decimal(18, 2)
+  stockCheckSummary    String?
+  status               String    @default("draft")
+  approvalId           String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String
+  updatedBy            String
+
+  project CnProject                   @relation(fields: [projectId], references: [id])
+  lines   CnPurchaseRequisitionLine[]
+
+  @@unique([orgId, prNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([status])
+  // Composite indexes for the hot list queries â€” match the repo's
+  // `WHERE tenantId=? AND orgId=? AND (status=?|projectId=?) ORDER BY createdAt DESC`
+  // patterns so Postgres can satisfy filter + sort from a single index walk.
+  @@index([orgId, status, createdAt(sort: Desc)])
+  @@index([orgId, projectId, createdAt(sort: Desc)])
+  @@map("Purchase_requisitions")
+  @@schema("app_quikinfra")
+}
+
+model CnPurchaseRequisitionLine {
+  id               String   @id @default(cuid())
+  prId             String
+  itemId           String
+  quantity         Decimal  @db.Decimal(18, 4)
+  uomId            String
+  estimatedRate    Decimal? @db.Decimal(18, 2)
+  estimatedAmount  Decimal? @db.Decimal(18, 2)
+  specification    String?
+  priority         String?
+  currentStock     Decimal? @db.Decimal(18, 4)
+  stockCheckStatus String?
+  remarks          String?
+
+  pr CnPurchaseRequisition @relation(fields: [prId], references: [id], onDelete: Cascade)
+
+  @@index([prId])
+  @@map("Purchase_requisition_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnPurchaseIndent {
+  id                 String    @id @default(cuid())
+  orgId              String
+  indentNumber       String
+  prId               String?
+  sourceMrNumber     String?
+  projectId          String
+  requestedById      String
+  indentDate         DateTime
+  requiredDate       DateTime?
+  isUrgent           Boolean   @default(false)
+  directIndentReason String?
+  estimatedTotal     Decimal?  @db.Decimal(18, 2)
+  status             String    @default("draft")
+  approvalId         String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  createdBy          String
+  updatedBy          String
+
+  project CnProject              @relation(fields: [projectId], references: [id])
+  lines   CnPurchaseIndentLine[]
+
+  @@unique([orgId, indentNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([status])
+  // Composite indexes â€” match `ORDER BY indentDate DESC` in the repo so
+  // status-tab and project-scoped lists hit a single covering walk.
+  @@index([orgId, status, indentDate(sort: Desc)])
+  @@index([orgId, projectId, indentDate(sort: Desc)])
+  @@map("Purchase_indents")
+  @@schema("app_quikinfra")
+}
+
+model CnPurchaseIndentLine {
+  id                String   @id @default(cuid())
+  indentId          String
+  prLineId          String?
+  itemId            String
+  requiredQty       Decimal  @db.Decimal(18, 4)
+  indentedQty       Decimal  @db.Decimal(18, 4)
+  orderedQty        Decimal  @default(0) @db.Decimal(18, 4)
+  pendingQty        Decimal  @db.Decimal(18, 4)
+  uomId             String
+  estimatedRate     Decimal? @db.Decimal(18, 2)
+  estimatedAmount   Decimal? @db.Decimal(18, 2)
+  preferredVendorId String?
+  qualitySpec       String?
+  lineStatus        String?
+  remarks           String?
+
+  indent CnPurchaseIndent @relation(fields: [indentId], references: [id], onDelete: Cascade)
+
+  @@index([indentId])
+  @@map("Purchase_indent_lines")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// RFQ (Request for Quotation)
+// ============================================================================
+
+model CnRfq {
+  id                 String    @id @default(cuid())
+  orgId              String
+  rfqNumber          String
+  projectId          String
+  sourceIndentId     String?
+  sourceIndentNumber String?
+  rfqDate            DateTime
+  dueDate            DateTime?
+  purpose            String?
+  contactPerson      String?
+  contactMobile      String?
+  /// Delivery / site address printed on the outgoing RFQ PDF. Free
+  /// text so the raiser can override whatever the project master has.
+  /// Falls back to the project's address at PDF render time when null.
+  address            String?
+  /// Selected T&C template id (cn_terms_conditions.id). Frozen at RFQ
+  /// create time so later edits to the template don't retroactively
+  /// change what was sent to the vendor.
+  termsTemplateId    String?
+  status             String    @default("draft")
+  approvalId         String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  createdBy          String
+  updatedBy          String
+
+  lines   CnRfqLine[]
+  vendors CnRfqVendor[]
+
+  @@unique([orgId, rfqNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([sourceIndentId])
+  @@index([status])
+  // Composite indexes â€” match `ORDER BY rfqDate DESC` in listRfqs.
+  @@index([orgId, status, rfqDate(sort: Desc)])
+  @@index([orgId, projectId, rfqDate(sort: Desc)])
+  @@map("Rfqs")
+  @@schema("app_quikinfra")
+}
+
+model CnRfqLine {
+  id                 String  @id @default(cuid())
+  rfqId              String
+  itemId             String
+  uomId              String?
+  quantity           Decimal @db.Decimal(18, 4)
+  specification      String?
+  sourceIndentLineId String?
+
+  rfq CnRfq @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+
+  @@index([rfqId])
+  @@map("Rfq_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnRfqVendor {
+  id              String    @id @default(cuid())
+  rfqId           String
+  vendorId        String
+  email           String?
+  vendorName      String?
+  // Per-vendor item subset. Empty array = "send all RFQ items" (the
+  // legacy default). Non-empty array = row ids from the RFQ's line
+  // list for this specific vendor. Stored as a JSON string for
+  // Postgres + SQLite portability via Prisma's String type.
+  assignedItemIds Json      @default("[]")
+  sentAt          DateTime?
+  respondedAt     DateTime?
+
+  /// The rates this vendor quoted, captured from the Add Quote modal.
+  /// Shape: [{ lineId: string, rate: string, remarks?: string }].
+  /// Stored as JSON so the shape can evolve without DB migrations.
+  quotedRates  Json      @default("[]")
+  /// Free-form remarks / terms the vendor sent with the quote â€” may
+  /// include a marker like `[Attached quotation: <filename>]` once
+  /// file upload is wired up.
+  quoteRemarks String?
+  /// Timestamp of the most recent rate save. Cleared back to null if
+  /// every rate is removed.
+  quotedAt     DateTime?
+
+  rfq CnRfq @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+
+  @@index([rfqId])
+  @@index([vendorId])
+  @@map("Rfq_vendors")
+  @@schema("app_quikinfra")
+}
+
+model CnPurchaseOrder {
+  id                   String    @id @default(cuid())
+  orgId                String
+  poNumber             String
+  projectId            String
+  vendorId             String
+  indentId             String?
+  rfqId                String?
+  poDate               DateTime
+  deliveryDate         DateTime?
+  deliveryLocationId   String?
+  /// Free-text delivery/site address â€” snapshot at PO create time so
+  /// later edits to the project master don't retroactively change a
+  /// PO that was already sent to a vendor.
+  deliveryAddress      String?
+  subtotal             Decimal   @db.Decimal(18, 2)
+  taxAmount            Decimal   @db.Decimal(18, 2)
+  totalAmount          Decimal   @db.Decimal(18, 2)
+  /// Separated finance fields â€” the existing `subtotal` stores the
+  /// material-value-ex-GST. Freight is priced alongside but kept
+  /// separately so GST-on-freight and freight-less reports work.
+  freightCharges       Decimal?  @db.Decimal(18, 2)
+  /// Extra header-level charges (non-freight) shown on the PDF line
+  /// above the GST block.
+  otherCharges         Decimal?  @db.Decimal(18, 2)
+  /// Advance paid to the vendor at PO issue â€” deducted from the first
+  /// invoice amount.
+  advanceAmount        Decimal?  @db.Decimal(18, 2)
+  /// GST breakdown. Exactly one of (IGST) or (CGST+SGST) is non-zero
+  /// depending on whether the vendor state matches the buyer state.
+  totalIGST            Decimal?  @db.Decimal(18, 2)
+  totalCGST            Decimal?  @db.Decimal(18, 2)
+  totalSGST            Decimal?  @db.Decimal(18, 2)
+  /// Subject / "Supply For" line printed on the PDF.
+  purpose              String?
+  /// Buyer-side contact(s). Comma-separated when multiple.
+  contactPerson        String?
+  contactMobile        String?
+  status               String    @default("draft")
+  approvalId           String?
+  approvalThresholdMet Boolean   @default(false)
+  paymentTermsDays     Int?
+  termsConditionId     String?
+  /// Snapshot of the T&C body at PO create time so later edits to the
+  /// template master don't change what the vendor agreed to.
+  termsAndConditions   String?
+  remarks              String?
+  isUrgentLocal        Boolean   @default(false)
+  urgentLocalReason    String?
+  /// Manual closure metadata â€” set when the user closes a PO via the
+  /// detail-page "Close PO" action (typically because the delivery
+  /// date passed without a complete GRN). `closeReason` is required
+  /// at close-time so the audit trail captures why each PO was killed.
+  closedAt             DateTime?
+  closedBy             String?
+  closeReason          String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String
+  updatedBy            String
+
+  project CnProject             @relation(fields: [projectId], references: [id])
+  vendor  CnVendor              @relation(fields: [vendorId], references: [id])
+  lines   CnPurchaseOrderLine[]
+  grns    CnGoodsReceiptNote[]
+
+  @@unique([orgId, poNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([vendorId])
+  @@index([status])
+  // Composite indexes â€” match `ORDER BY poDate DESC` in listPOs. Vendor
+  // composite covers the "POs from this vendor" drill-down.
+  @@index([orgId, status, poDate(sort: Desc)])
+  @@index([orgId, projectId, poDate(sort: Desc)])
+  @@index([orgId, vendorId, poDate(sort: Desc)])
+  @@map("Purchase_orders")
+  @@schema("app_quikinfra")
+}
+
+model CnPurchaseOrderLine {
+  id            String    @id @default(cuid())
+  poId          String
+  indentLineId  String?
+  itemId        String
+  quantity      Decimal   @db.Decimal(18, 4)
+  orderedQty    Decimal   @db.Decimal(18, 4)
+  receivedQty   Decimal   @default(0) @db.Decimal(18, 4)
+  pendingQty    Decimal   @db.Decimal(18, 4)
+  unitRate      Decimal   @db.Decimal(18, 2)
+  amount        Decimal   @db.Decimal(18, 2)
+  gstCodeId     String?
+  /// Per-line GST breakdown so the PDF can render IGST vs CGST+SGST
+  /// without recomputing from vendor state.
+  gstRate       Decimal?  @db.Decimal(5, 2)
+  igstAmount    Decimal?  @db.Decimal(18, 2)
+  cgstAmount    Decimal?  @db.Decimal(18, 2)
+  sgstAmount    Decimal?  @db.Decimal(18, 2)
+  taxAmount     Decimal   @default(0) @db.Decimal(18, 2)
+  totalAmount   Decimal   @db.Decimal(18, 2)
+  uomId         String
+  deliveryDate  DateTime?
+  specification String?
+  remarks       String?
+
+  po CnPurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+
+  @@index([poId])
+  @@map("Purchase_order_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnGoodsReceiptNote {
+  id                   String    @id @default(cuid())
+  orgId                String
+  grnNumber            String
+  poId                 String
+  projectId            String
+  vendorId             String
+  grnDate              DateTime
+  locationId           String
+  storageLocationId    String?
+  supplierInvoiceNo    String?
+  supplierInvoiceDate  DateTime?
+  challanNo            String?
+  challanDate          DateTime?
+  receivedById         String
+  /// Free-text fallback when the receiver isn't a platform user yet.
+  /// Written when the form's "Received By / Inspector" field gets a
+  /// name rather than a user-id â€” UI collects the name directly.
+  receivedByName       String?
+  inspectedById        String?
+  weighbridgeSlipNo    String?
+  /// Vehicle / truck number that delivered the goods.
+  vehicleNo            String?
+  /// GSTN E-Way Bill number (12 digits) â€” mandatory when the invoice
+  /// value is >= \u20B950,000.
+  ewayBillNo           String?
+  /// Approximate invoice value quoted by the supplier at receipt
+  /// time. Used as the basis for the E-Way Bill gate above.
+  approxInvoiceValue   Decimal?  @db.Decimal(18, 2)
+  /// Filename(s) of the uploaded challan scan / photo attachment.
+  /// Stored comma-separated when the user picks multiple files. The
+  /// full-blob upload pipeline is TBD; for now this is the
+  /// reference the validator and detail page both read.
+  challanAttachment    String?
+  /// Overall quality verdict captured at GRN create time â€”
+  /// complements the per-line Condition field and is used to route
+  /// the approval workflow (rejections â†’ QC step).
+  overallQualityStatus String?   @default("Accepted")
+  status               String    @default("draft")
+  approvalId           String?
+  remarks              String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String
+  updatedBy            String
+
+  po      CnPurchaseOrder @relation(fields: [poId], references: [id])
+  project CnProject       @relation(fields: [projectId], references: [id])
+  vendor  CnVendor        @relation(fields: [vendorId], references: [id])
+  lines   CnGRNLine[]
+
+  @@unique([orgId, grnNumber])
+  @@index([orgId])
+  @@index([poId])
+  @@index([projectId])
+  @@index([status])
+  // Composite indexes â€” match `ORDER BY grnDate DESC` in listGRNs.
+  @@index([orgId, status, grnDate(sort: Desc)])
+  @@index([orgId, projectId, grnDate(sort: Desc)])
+  @@map("Goods_receipt_notes")
+  @@schema("app_quikinfra")
+}
+
+model CnGRNLine {
+  id                String  @id @default(cuid())
+  grnId             String
+  poLineId          String
+  itemId            String
+  receivedQty       Decimal @db.Decimal(18, 4)
+  acceptedQty       Decimal @db.Decimal(18, 4)
+  rejectedQty       Decimal @default(0) @db.Decimal(18, 4)
+  shortQty          Decimal @default(0) @db.Decimal(18, 4)
+  uomId             String
+  unitRate          Decimal @db.Decimal(18, 2)
+  amount            Decimal @db.Decimal(18, 2)
+  qualityStatus     String  @default("pending") // pending | accepted | rejected | conditional
+  batchNo           String?
+  heatNo            String?
+  condition         String?
+  testCertRef       String?
+  shortDeliveryNote String?
+  remarks           String?
+
+  grn CnGoodsReceiptNote @relation(fields: [grnId], references: [id], onDelete: Cascade)
+
+  @@index([grnId])
+  @@map("Grn_lines")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// STORE & INVENTORY
+// ============================================================================
+
+// CRITICAL: This table is APPEND-ONLY. Never update or delete rows.
+// All stock = SUM(qtyIn) - SUM(qtyOut) for each item+location.
+// Reversals MUST create compensating entries.
+model CnStockLedger {
+  id                   String   @id @default(cuid())
+  orgId                String
+  projectId            String
+  locationId           String
+  itemId               String
+  transactionType      String // grn | issue | return_vendor | return_internal | transfer_out | transfer_in | reconciliation_adj | opening_balance
+  transactionRefId     String
+  transactionRefNumber String
+  transactionDate      DateTime
+  qtyIn                Decimal  @default(0) @db.Decimal(18, 4)
+  qtyOut               Decimal  @default(0) @db.Decimal(18, 4)
+  unitRate             Decimal  @db.Decimal(18, 2)
+  amount               Decimal  @db.Decimal(18, 2)
+  uomId                String
+  createdAt            DateTime @default(now())
+  createdBy            String
+
+  project  CnProject  @relation(fields: [projectId], references: [id])
+  location CnLocation @relation(fields: [locationId], references: [id])
+  item     CnItem     @relation(fields: [itemId], references: [id])
+
+  @@index([orgId])
+  @@index([projectId, locationId, itemId])
+  @@index([itemId])
+  @@index([transactionType])
+  @@index([transactionDate])
+  @@map("Stock_ledger")
+  @@schema("app_quikinfra")
+}
+
+model CnMaterialIssue {
+  id                 String    @id @default(cuid())
+  orgId              String
+  issueNumber        String
+  projectId          String
+  projectName        String?
+  locationId         String?
+  locationName       String?
+  issuedToId         String?
+  issuedById         String?
+  issueDate          DateTime
+  issueType          String?
+  contractorId       String?
+  contractorName     String?
+  teamDepartment     String?
+  issuedToName       String?
+  issuedBy           String?
+  receivedBy         String?
+  prId               String?
+  prNumber           String?
+  prReference        String?
+  woReference        String?
+  vehicleNo          String?
+  gatePassNo         String?
+  driverName         String?
+  driverMobileNo     String?
+  challanNo          String?
+  transactionAmount  Decimal?  @db.Decimal(18, 2)
+  intercityTransfer  Boolean   @default(false)
+  ewayBillNo         String?
+  securityGuard      String?
+  materialCondition  String?
+  weighbridgeReading String?
+  photoAttachment    String?
+  purpose            String?
+  remarks            String?
+  lineCount          Int       @default(0)
+  materials          Json?
+  status             String    @default("draft")
+  approvalId         String?
+  rejectionReason    String?
+  returnReason       String?
+  submittedAt        DateTime?
+  submittedBy        String?
+  approvedAt         DateTime?
+  approvedBy         String?
+  rejectedAt         DateTime?
+  rejectedBy         String?
+  returnedAt         DateTime?
+  returnedBy         String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  createdBy          String
+  updatedBy          String
+
+  project CnProject             @relation(fields: [projectId], references: [id])
+  lines   CnMaterialIssueLine[]
+
+  @@unique([orgId, issueNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([status])
+  // Composite indexes â€” match `ORDER BY issueDate DESC` in listMaterialIssues.
+  @@index([orgId, status, issueDate(sort: Desc)])
+  @@index([orgId, projectId, issueDate(sort: Desc)])
+  @@map("Material_issues")
+  @@schema("app_quikinfra")
+}
+
+model CnMaterialIssueLine {
+  id        String  @id @default(cuid())
+  issueId   String
+  itemId    String
+  issuedQty Decimal @db.Decimal(18, 4)
+  uomId     String
+  unitRate  Decimal @db.Decimal(18, 2)
+  amount    Decimal @db.Decimal(18, 2)
+  remarks   String?
+
+  issue CnMaterialIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId])
+  @@map("Material_issue_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnGatePass {
+  id                 String    @id @default(cuid())
+  orgId              String
+  gatePassNumber     String
+  projectId          String?
+  projectName        String?
+  locationId         String?
+  locationName       String?
+  type               String // inward | outward | returnable | non_returnable
+  referenceType      String? // grn | issue | return | transfer
+  referenceId        String?
+  referenceNumber    String?
+  referenceNo        String?
+  vehicleNo          String?
+  driverName         String?
+  driverPhone        String?
+  driverMobileNo     String?
+  challanNo          String?
+  transactionAmount  Decimal?  @db.Decimal(18, 2)
+  intercityTransfer  Boolean   @default(false)
+  ewayBillNo         String?
+  securityGuard      String?
+  materialCondition  String?
+  weighbridgeReading String?
+  vehiclePhoto       String?
+  purpose            String?
+  remarks            String?
+  lineCount          Int       @default(0)
+  materials          Json?
+  gatePassDate       DateTime
+  expectedReturnDate DateTime?
+  actualReturnDate   DateTime?
+  authorizedById     String?
+  status             String    @default("draft")
+  approvalId         String?
+  rejectionReason    String?
+  returnReason       String?
+  submittedAt        DateTime?
+  submittedBy        String?
+  approvedAt         DateTime?
+  approvedBy         String?
+  rejectedAt         DateTime?
+  rejectedBy         String?
+  returnedAt         DateTime?
+  returnedBy         String?
+  closedAt           DateTime?
+  closedBy           String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  createdBy          String
+  updatedBy          String
+
+  project CnProject?       @relation(fields: [projectId], references: [id])
+  lines   CnGatePassLine[]
+
+  @@unique([orgId, gatePassNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([status])
+  @@map("Gate_passes")
+  @@schema("app_quikinfra")
+}
+
+model CnGatePassLine {
+  id         String  @id @default(cuid())
+  gatePassId String
+  itemId     String
+  quantity   Decimal @db.Decimal(18, 4)
+  uomId      String
+  remarks    String?
+
+  gatePass CnGatePass @relation(fields: [gatePassId], references: [id], onDelete: Cascade)
+
+  @@index([gatePassId])
+  @@map("Gate_pass_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnGoodReturn {
+  id                String    @id @default(cuid())
+  orgId             String
+  returnNumber      String
+  projectId         String?
+  projectName       String?
+  locationId        String?
+  locationName      String?
+  vendorId          String?
+  vendorName        String?
+  grnId             String?
+  grnNumber         String?
+  returnDate        DateTime
+  reason            String?
+  remarks           String?
+  // Vehicle / driver / challan â€” mirror Gate Pass so the dispatch
+  // paperwork the store fills in at create-time is preserved through
+  // approval and shown on the detail page.
+  vehicleNo         String?
+  driverName        String?
+  driverMobileNo    String?
+  challanNo         String?
+  transactionAmount Decimal?  @db.Decimal(18, 2)
+  intercityTransfer Boolean   @default(false)
+  ewayBillNo        String?
+  photoAttachment   String?
+  lineCount         Int       @default(0)
+  materials         Json?
+  status            String    @default("draft")
+  approvalId        String?
+  rejectionReason   String?
+  returnReason      String?
+  submittedAt       DateTime?
+  submittedBy       String?
+  approvedAt        DateTime?
+  approvedBy        String?
+  rejectedAt        DateTime?
+  rejectedBy        String?
+  returnedAt        DateTime?
+  returnedBy        String?
+  dispatchedAt      DateTime?
+  dispatchedBy      String?
+  dispatchVehicleNo String?
+  dispatchRemarks   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  createdBy         String
+  updatedBy         String
+
+  project CnProject?         @relation(fields: [projectId], references: [id])
+  vendor  CnVendor?          @relation(fields: [vendorId], references: [id])
+  lines   CnGoodReturnLine[]
+
+  @@unique([orgId, returnNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([status])
+  @@map("Good_returns")
+  @@schema("app_quikinfra")
+}
+
+model CnGoodReturnLine {
+  id        String  @id @default(cuid())
+  returnId  String
+  itemId    String
+  returnQty Decimal @db.Decimal(18, 4)
+  uomId     String
+  unitRate  Decimal @db.Decimal(18, 2)
+  amount    Decimal @db.Decimal(18, 2)
+  reason    String?
+
+  goodReturn CnGoodReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([returnId])
+  @@map("Good_return_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnInternalReturn {
+  id           String   @id @default(cuid())
+  orgId        String
+  returnNumber String
+  projectId    String
+  locationId   String
+  returnedById String
+  issueId      String?
+  returnDate   DateTime
+  status       String   @default("draft")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    String
+  updatedBy    String
+
+  project CnProject              @relation(fields: [projectId], references: [id])
+  lines   CnInternalReturnLine[]
+
+  @@unique([orgId, returnNumber])
+  @@index([orgId])
+  @@map("Internal_returns")
+  @@schema("app_quikinfra")
+}
+
+model CnInternalReturnLine {
+  id          String  @id @default(cuid())
+  returnId    String
+  itemId      String
+  returnedQty Decimal @db.Decimal(18, 4)
+  uomId       String
+  condition   String?
+  remarks     String?
+
+  internalReturn CnInternalReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([returnId])
+  @@map("Internal_return_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnStockTransfer {
+  id                     String    @id @default(cuid())
+  orgId                  String
+  transferNumber         String
+  transferType           String?
+  transferReason         String?
+  fromProjectId          String?
+  sourceProjectId        String?
+  sourceProjectName      String?
+  destinationProjectId   String?
+  destinationProjectName String?
+  fromLocationId         String?
+  fromLocationName       String?
+  fromState              String?
+  fromCity               String?
+  toProjectId            String?
+  toLocationId           String?
+  toLocationName         String?
+  toState                String?
+  toCity                 String?
+  transferDate           DateTime
+  dispatchDateTime       DateTime?
+  estTransitDays         String?
+  vehicleNo              String?
+  ewayBillNo             String?
+  transactionAmount      Decimal?  @db.Decimal(18, 2)
+  interstateTransfer     Boolean   @default(false)
+  chargeableTransfer     Boolean   @default(false)
+  initiatedById          String?
+  receivedById           String?
+  receivedDate           DateTime?
+  remarks                String?
+  lineCount              Int       @default(0)
+  materials              Json?
+  assets                 Json?
+  status                 String    @default("draft")
+  approvalId             String?
+  rejectionReason        String?
+  returnReason           String?
+  submittedAt            DateTime?
+  submittedBy            String?
+  approvedAt             DateTime?
+  approvedBy             String?
+  rejectedAt             DateTime?
+  rejectedBy             String?
+  returnedAt             DateTime?
+  returnedBy             String?
+  dispatchedAt           DateTime?
+  dispatchedBy           String?
+  receivedAt             DateTime?
+  receivedBy             String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  createdBy              String
+  updatedBy              String
+
+  fromProject CnProject?            @relation(fields: [fromProjectId], references: [id])
+  lines       CnStockTransferLine[]
+
+  @@unique([orgId, transferNumber])
+  @@index([orgId])
+  @@index([sourceProjectId])
+  @@index([status])
+  // Composite indexes â€” match `ORDER BY transferDate DESC` in listStockTransfers.
+  @@index([orgId, status, transferDate(sort: Desc)])
+  @@index([orgId, sourceProjectId, transferDate(sort: Desc)])
+  @@map("Stock_transfers")
+  @@schema("app_quikinfra")
+}
+
+model CnStockTransferLine {
+  id          String   @id @default(cuid())
+  transferId  String
+  itemId      String
+  sentQty     Decimal  @db.Decimal(18, 4)
+  receivedQty Decimal? @db.Decimal(18, 4)
+  uomId       String
+  remarks     String?
+
+  transfer CnStockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  @@index([transferId])
+  @@map("Stock_transfer_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnStockReconciliation {
+  id                   String   @id @default(cuid())
+  orgId                String
+  reconciliationNumber String
+  projectId            String
+  locationId           String
+  reconciliationDate   DateTime
+  conductedById        String
+  approvedById         String?
+  status               String   @default("draft")
+  approvalId           String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdBy            String
+  updatedBy            String
+
+  project CnProject                   @relation(fields: [projectId], references: [id])
+  lines   CnStockReconciliationLine[]
+
+  @@unique([orgId, reconciliationNumber])
+  @@index([orgId])
+  // Composite indexes â€” match `ORDER BY reconciliationDate DESC` in
+  // the reconciliations list route.
+  @@index([orgId, status, reconciliationDate(sort: Desc)])
+  @@index([orgId, projectId, reconciliationDate(sort: Desc)])
+  @@map("Stock_reconciliations")
+  @@schema("app_quikinfra")
+}
+
+model CnStockReconciliationLine {
+  id               String  @id @default(cuid())
+  reconciliationId String
+  itemId           String
+  systemQty        Decimal @db.Decimal(18, 4)
+  physicalQty      Decimal @db.Decimal(18, 4)
+  varianceQty      Decimal @db.Decimal(18, 4)
+  uomId            String
+  reason           String?
+
+  reconciliation CnStockReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+
+  @@index([reconciliationId])
+  @@map("Stock_reconciliation_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnDieselLog {
+  id             String   @id @default(cuid())
+  orgId          String
+  projectId      String
+  locationId     String
+  logDate        DateTime
+  machineryId    String
+  openingReading Decimal? @db.Decimal(18, 2)
+  closingReading Decimal? @db.Decimal(18, 2)
+  quantityIssued Decimal  @db.Decimal(18, 4)
+  unitRate       Decimal  @db.Decimal(18, 2)
+  totalCost      Decimal  @db.Decimal(18, 2)
+  operatorName   String?
+  remarks        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String
+  updatedBy      String
+
+  project   CnProject   @relation(fields: [projectId], references: [id])
+  machinery CnMachinery @relation(fields: [machineryId], references: [id])
+
+  @@index([orgId])
+  @@index([projectId])
+  @@index([machineryId])
+  @@map("Diesel_logs")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// PROJECT MANAGEMENT
+// ============================================================================
+
+model CnBOQItem {
+  id              String   @id @default(cuid())
+  orgId           String
+  projectId       String
+  parentId        String?
+  depth           Int      @default(0)
+  sortOrder       Int      @default(0)
+  isLeaf          Boolean  @default(true)
+  category        String? // Civil | Electrical | Road | Non-SOR
+  itemCode        String?
+  description     String
+  uomId           String?
+  quantity        Decimal? @db.Decimal(18, 4)
+  contractRate    Decimal? @db.Decimal(18, 2)
+  workingRate     Decimal? @db.Decimal(18, 2)
+  contractAmount  Decimal? @db.Decimal(18, 2)
+  workingAmount   Decimal? @db.Decimal(18, 2)
+  executedQty     Decimal  @default(0) @db.Decimal(18, 4)
+  executedAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  progressPercent Decimal  @default(0) @db.Decimal(5, 2)
+  status          String   @default("active")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String
+  updatedBy       String
+
+  project  CnProject   @relation(fields: [projectId], references: [id])
+  parent   CnBOQItem?  @relation("BOQHierarchy", fields: [parentId], references: [id])
+  children CnBOQItem[] @relation("BOQHierarchy")
+
+  @@index([orgId])
+  @@index([projectId])
+  @@index([parentId])
+  @@map("Boq_items")
+  @@schema("app_quikinfra")
+}
+
+model CnMaterialEstimation {
+  id              String    @id @default(cuid())
+  orgId           String
+  projectId       String
+  projectName     String?
+  boqItemId       String
+  boqNo           String?
+  boqDescription  String?
+  boqQuantity     Decimal?  @db.Decimal(18, 4)
+  boqUnit         String?
+  phase           String?   @default("Foundation")
+  status          String    @default("draft")
+  totalQty        Decimal   @default(0) @db.Decimal(18, 4)
+  totalCost       Decimal   @default(0) @db.Decimal(18, 2)
+  materialCount   Int       @default(0)
+  materials       Json?
+  approvalId      String?
+  rejectionReason String?
+  returnReason    String?
+  submittedAt     DateTime?
+  submittedBy     String?
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  returnedAt      DateTime?
+  returnedBy      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String
+  updatedBy       String
+
+  project CnProject @relation(fields: [projectId], references: [id])
+
+  @@index([orgId])
+  @@index([projectId])
+  @@index([boqItemId])
+  @@index([status])
+  @@map("Material_estimations")
+  @@schema("app_quikinfra")
+}
+
+model CnWorkOrder {
+  id               String   @id @default(cuid())
+  orgId            String
+  woNumber         String
+  projectId        String
+  contractorId     String
+  workCategoryId   String?
+  title            String
+  description      String?
+  startDate        DateTime
+  endDate          DateTime
+  totalAmount      Decimal  @db.Decimal(18, 2)
+  status           String   @default("draft")
+  approvalId       String?
+  termsConditionId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  project    CnProject              @relation(fields: [projectId], references: [id])
+  contractor CnContractor           @relation(fields: [contractorId], references: [id])
+  lines      CnWorkOrderLine[]
+  rabs       CnRunningAccountBill[]
+
+  @@unique([orgId, woNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([contractorId])
+  @@index([status])
+  // Composite indexes â€” match `ORDER BY createdAt DESC` in the WO list route.
+  @@index([orgId, status, createdAt(sort: Desc)])
+  @@index([orgId, projectId, createdAt(sort: Desc)])
+  @@map("Work_orders")
+  @@schema("app_quikinfra")
+}
+
+model CnWorkOrderLine {
+  id             String  @id @default(cuid())
+  woId           String
+  boqItemId      String
+  description    String
+  quantity       Decimal @db.Decimal(18, 4)
+  uomId          String
+  negotiatedRate Decimal @db.Decimal(18, 2)
+  amount         Decimal @db.Decimal(18, 2)
+
+  workOrder CnWorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
+
+  @@index([woId])
+  @@map("Work_order_lines")
+  @@schema("app_quikinfra")
+}
+
+model CnDailyProgressReport {
+  id               String   @id @default(cuid())
+  orgId            String
+  dprNumber        String
+  projectId        String
+  reportDate       DateTime
+  submittedById    String
+  weatherCondition String?
+  /// Open-Meteo daily snapshot at save time (max/min Â°C, precip mm, wind km/h, WMO code).
+  weatherDetail    Json?
+  remarks          String?
+  status           String   @default("draft")
+  approvalId       String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  project          CnProject             @relation(fields: [projectId], references: [id])
+  workItems        CnDPRWorkItem[]
+  labourEntries    CnDPRLabourEntry[]
+  machineryEntries CnDPRMachineryEntry[]
+  materialEntries  CnDPRMaterialEntry[]
+
+  @@unique([orgId, dprNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([reportDate])
+  @@index([status])
+  // Composite indexes â€” match `ORDER BY reportDate DESC, createdAt DESC`
+  // in the DPR list route.
+  @@index([orgId, status, reportDate(sort: Desc)])
+  @@index([orgId, projectId, reportDate(sort: Desc)])
+  @@map("Daily_progress_reports")
+  @@schema("app_quikinfra")
+}
+
+model CnProjectDocument {
+  id               String   @id @default(cuid())
+  orgId            String
+  projectId        String
+  documentName     String
+  category         String
+  version          String?
+  remarks          String?
+  fileUrl          String
+  fileName         String
+  mimeType         String?
+  fileSizeBytes    Int?
+  uploadedBy       String
+  uploadedByUserId String
+  uploadDate       DateTime?
+  fileObjectId     String?
+  status           String   @default("active")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        String
+  updatedBy        String
+
+  project CnProject @relation(fields: [projectId], references: [id])
+
+  @@index([orgId])
+  @@index([orgId, projectId])
+  @@index([status])
+  @@map("Project_documents")
+  @@schema("app_quikinfra")
+}
+
+model CnDPRWorkItem {
+  id            String  @id @default(cuid())
+  dprId         String
+  boqItemId     String
+  woId          String?
+  description   String
+  todayQty      Decimal @db.Decimal(18, 4)
+  cumulativeQty Decimal @db.Decimal(18, 4)
+  uomId         String
+  remarks       String?
+
+  dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
+
+  @@index([dprId])
+  @@map("Dpr_work_items")
+  @@schema("app_quikinfra")
+}
+
+model CnDPRLabourEntry {
+  id           String  @id @default(cuid())
+  dprId        String
+  category     String
+  skillType    String
+  count        Int
+  hoursWorked  Decimal @db.Decimal(5, 2)
+  contractorId String?
+
+  dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
+
+  @@index([dprId])
+  @@map("Dpr_labour_entries")
+  @@schema("app_quikinfra")
+}
+
+model CnDPRMachineryEntry {
+  id           String   @id @default(cuid())
+  dprId        String
+  machineryId  String
+  hoursWorked  Decimal  @db.Decimal(5, 2)
+  fuelConsumed Decimal? @db.Decimal(18, 4)
+  operatorName String?
+  remarks      String?
+
+  dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
+
+  @@index([dprId])
+  @@map("Dpr_machinery_entries")
+  @@schema("app_quikinfra")
+}
+
+model CnDPRMaterialEntry {
+  id          String  @id @default(cuid())
+  dprId       String
+  itemId      String
+  consumedQty Decimal @db.Decimal(18, 4)
+  uomId       String
+  remarks     String?
+
+  dpr CnDailyProgressReport @relation(fields: [dprId], references: [id], onDelete: Cascade)
+
+  @@index([dprId])
+  @@map("Dpr_material_entries")
+  @@schema("app_quikinfra")
+}
+
+model CnRunningAccountBill {
+  id                 String   @id @default(cuid())
+  orgId              String
+  rabNumber          String
+  projectId          String
+  contractorId       String
+  woId               String
+  billPeriodFrom     DateTime
+  billPeriodTo       DateTime
+  previousBillAmount Decimal  @db.Decimal(18, 2)
+  currentBillAmount  Decimal  @db.Decimal(18, 2)
+  cumulativeAmount   Decimal  @db.Decimal(18, 2)
+  retentionPercent   Decimal? @db.Decimal(5, 2)
+  retentionAmount    Decimal? @db.Decimal(18, 2)
+  deductions         Decimal? @db.Decimal(18, 2)
+  netPayable         Decimal  @db.Decimal(18, 2)
+  status             String   @default("draft")
+  approvalId         String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  createdBy          String
+  updatedBy          String
+
+  project    CnProject    @relation(fields: [projectId], references: [id])
+  contractor CnContractor @relation(fields: [contractorId], references: [id])
+  workOrder  CnWorkOrder  @relation(fields: [woId], references: [id])
+  lines      CnRABLine[]
+
+  @@unique([orgId, rabNumber])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([contractorId])
+  // Composite indexes â€” match `ORDER BY createdAt DESC` in the RAB list,
+  // plus a covering index for the `previousBillAmount` aggregation in
+  // the create route (filters by `woId + status='approved'`).
+  @@index([orgId, status, createdAt(sort: Desc)])
+  @@index([orgId, projectId, createdAt(sort: Desc)])
+  @@index([orgId, woId, status])
+  @@map("Running_account_bills")
+  @@schema("app_quikinfra")
+}
+
+model CnRABLine {
+  id               String  @id @default(cuid())
+  rabId            String
+  boqItemId        String
+  woLineId         String
+  description      String
+  uomId            String
+  totalQty         Decimal @db.Decimal(18, 4)
+  previousQty      Decimal @db.Decimal(18, 4)
+  currentQty       Decimal @db.Decimal(18, 4)
+  cumulativeQty    Decimal @db.Decimal(18, 4)
+  rate             Decimal @db.Decimal(18, 2)
+  previousAmount   Decimal @db.Decimal(18, 2)
+  currentAmount    Decimal @db.Decimal(18, 2)
+  cumulativeAmount Decimal @db.Decimal(18, 2)
+
+  rab CnRunningAccountBill @relation(fields: [rabId], references: [id], onDelete: Cascade)
+
+  @@index([rabId])
+  @@map("Rab_lines")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// WBS / Project Planning
+// ============================================================================
+
+model CnWBSTask {
+  id        String @id @default(cuid())
+  orgId     String
+  projectId String
+
+  parentId  String?
+  wbsCode   String
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  status    String   @default("not_started") // not_started | in_progress | completed | on_hold
+  progress  Int      @default(0) // 0..100
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String
+  updatedBy String
+
+  project  CnProject   @relation(fields: [projectId], references: [id])
+  parent   CnWBSTask?  @relation("WBSTaskHierarchy", fields: [parentId], references: [id])
+  children CnWBSTask[] @relation("WBSTaskHierarchy")
+
+  predecessors CnWBSDependency[] @relation("WBSDepTo")
+  successors   CnWBSDependency[] @relation("WBSDepFrom")
+
+  @@unique([orgId, projectId, wbsCode])
+  @@index([orgId])
+  @@index([projectId])
+  @@index([parentId])
+  @@index([orgId, projectId])
+  @@map("Wbs_tasks")
+  @@schema("app_quikinfra")
+}
+
+model CnWBSDependency {
+  id        String @id @default(cuid())
+  orgId     String
+  projectId String
+
+  fromTaskId String
+  toTaskId   String
+
+  createdAt DateTime @default(now())
+  createdBy String
+
+  fromTask CnWBSTask @relation("WBSDepFrom", fields: [fromTaskId], references: [id], onDelete: Cascade)
+  toTask   CnWBSTask @relation("WBSDepTo", fields: [toTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, projectId, fromTaskId, toTaskId])
+  @@index([orgId, projectId])
+  @@index([fromTaskId])
+  @@index([toTaskId])
+  @@map("Wbs_dependencies")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// APPROVAL WORKFLOW ENGINE
+// ============================================================================
+
+model CnApprovalWorkflow {
+  id         String   @id @default(cuid())
+  orgId      String
+  // Null = tenant-wide Default workflow that applies to every project
+  // unless that project has its own override row for the same entityType.
+  // Set = override scoped to a single project. Resolution at submit time
+  // prefers the project-specific row over the default.
+  projectId  String?
+  name       String
+  entityType String // purchase_requisitions | purchase_indents | purchase_order | grn | work_order | dpr | stock_reconciliation | good_return
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  createdBy  String
+  updatedBy  String
+
+  steps     CnApprovalWorkflowStep[]
+  instances CnApprovalInstance[]
+
+  @@index([orgId])
+  @@index([entityType])
+  @@index([projectId, entityType])
+  @@map("Approval_workflows")
+  @@schema("app_quikinfra")
+}
+
+model CnApprovalWorkflowStep {
+  id                   String   @id @default(cuid())
+  workflowId           String
+  stepOrder            Int
+  approverRoleId       String?
+  /// Single legacy approver. Kept for back-compat with rows seeded before
+  /// `approverUserIds` existed. New writes should populate the array; the
+  /// resolver reads `approverUserIds` first and falls back to this field
+  /// when the array is empty so old data keeps working untouched.
+  approverUserId       String?
+  /// Pool of users eligible to act on this step. Any one of them can
+  /// approve (whichever clicks first), with the requester auto-excluded
+  /// at resolve time. Empty array means "fall back to approverUserId / role".
+  approverUserIds      String[]
+  approverDepartmentId String?
+  amountThresholdMin   Decimal? @db.Decimal(18, 2)
+  amountThresholdMax   Decimal? @db.Decimal(18, 2)
+  isConditional        Boolean  @default(false)
+  conditionField       String?
+  conditionOperator    String?
+  conditionValue       String?
+
+  workflow CnApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@map("Approval_workflow_steps")
+  @@schema("app_quikinfra")
+}
+
+model CnApprovalInstance {
+  id               String    @id @default(cuid())
+  orgId            String
+  workflowId       String
+  entityType       String
+  entityId         String
+  entityNumber     String
+  currentStepOrder Int
+  status           String    @default("pending_approval")
+  requestedById    String
+  requestedAt      DateTime  @default(now())
+  completedAt      DateTime?
+
+  workflow CnApprovalWorkflow  @relation(fields: [workflowId], references: [id])
+  history  CnApprovalHistory[]
+
+  @@index([orgId])
+  @@index([entityType, entityId])
+  @@index([status])
+  @@index([requestedById])
+  // Composite index for the approvals/pending route â€” filters by
+  // tenant + status='pending_approval' + entityType, sorts by
+  // requestedAt DESC. The shared `(tenantId, orgId)` index forced
+  // a full scan before this.
+  @@index([status, entityType, requestedAt(sort: Desc)])
+  @@map("Approval_instances")
+  @@schema("app_quikinfra")
+}
+
+model CnApprovalHistory {
+  id         String   @id @default(cuid())
+  instanceId String
+  stepOrder  Int
+  action     String // approve | reject | return | reverse
+  actionById String
+  actionAt   DateTime @default(now())
+  comments   String?
+
+  instance CnApprovalInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@map("Approval_history")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// NOTIFICATIONS & AUDIT
+// ============================================================================
+
+model CnNotification {
+  id         String   @id @default(cuid())
+  orgId      String
+  userId     String
+  title      String
+  message    String
+  category   String // approval | stock_alert | info | action
+  entityType String?
+  entityId   String?
+  actionUrl  String?
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([orgId, userId])
+  @@index([userId, isRead])
+  @@map("Notifications")
+  @@schema("app_quikinfra")
+}
+
+model CnAuditLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  entityType String
+  entityId   String
+  action     String // create | update | delete | approve | reject | reverse | status_change
+  userId     String
+  timestamp  DateTime @default(now())
+  changes    Json?
+  ipAddress  String?
+
+  @@index([orgId])
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([timestamp])
+  // Composite index for the "audit history of one entity" query
+  // (e.g. PO approval history page) â€” filters by entity + sorts newest
+  // first. Walks one index instead of an entityType+entityId scan
+  // followed by a sort.
+  @@index([entityType, entityId, timestamp(sort: Desc)])
+  @@map("Audit_logs")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// BOQ V2 â€” Canonical models per Aakar BOQ Import Developer Spec v2.0
+// Replaces legacy CnBOQItem (kept for back-compat). See src/lib/boq/types.ts.
+// ============================================================================
+
+model CnBOQItemV2 {
+  id        String @id @default(cuid())
+  orgId     String
+  projectId String
+  category  String // "Civil Building" | "Electrical" | "Road Works"
+
+  // Hierarchy
+  boqNo       String // e.g. "4.1.1.4"
+  parentBoqNo String?
+  depth       Int     @default(0)
+  sortOrder   Int     @default(0)
+  isGroup     Boolean @default(false)
+
+  // Display
+  displayName String
+  description String  @default("")
+  unit        String? // null for groups
+
+  // Imported (frozen once lock applied)
+  tenderQty   Decimal? @db.Decimal(18, 4)
+  rate        Decimal? @db.Decimal(18, 2)
+  estimateAmt Decimal  @default(0) @db.Decimal(18, 2)
+
+  // Operational (updated by DPR/RAB workflows)
+  scopeQty    Decimal @default(0) @db.Decimal(18, 4)
+  subDoneQty  Decimal @default(0) @db.Decimal(18, 4)
+  selfDoneQty Decimal @default(0) @db.Decimal(18, 4)
+  billedQty   Decimal @default(0) @db.Decimal(18, 4)
+
+  // Schedule â€” optional planned start/end for this BOQ row. Both groups
+  // and leaves can carry dates: a group's range is the phase-level
+  // rollup the planner uses; a leaf's range is the executable window.
+  startDate DateTime?
+  endDate   DateTime?
+
+  // Metadata
+  isNegative    Boolean @default(false)
+  sourceSheet   String  @default("")
+  importBatchId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String
+  updatedBy String
+
+  // Soft delete â€” rows with deletedAt != null are hidden from every read
+  // path. Hard delete is never used so historical DPR/RAB postings that
+  // reference the row stay coherent.
+  deletedAt DateTime?
+  deletedBy String?
+
+  project     CnProject         @relation(fields: [projectId], references: [id])
+  importBatch CnBOQImportBatch? @relation(fields: [importBatchId], references: [id])
+
+  @@unique([projectId, category, boqNo])
+  @@index([orgId])
+  @@index([projectId, category])
+  @@index([projectId, parentBoqNo])
+  @@index([projectId, isGroup])
+  @@index([importBatchId])
+  @@index([deletedAt])
+  @@map("Boq_items_v2")
+  @@schema("app_quikinfra")
+}
+
+model CnBOQImportBatch {
+  id             String   @id @default(cuid())
+  orgId          String
+  projectId      String
+  uploadedBy     String
+  uploadedByName String?
+  fileName       String?
+  status         String   @default("processing") // processing | preview_ready | imported | failed | cancelled
+  rowCount       Int      @default(0)
+  errorDetail    Json?
+  parsedNodes    Json? // staged ParsedBOQNode[] for two-stage confirm
+  createdAt      DateTime @default(now())
+
+  project CnProject     @relation(fields: [projectId], references: [id])
+  items   CnBOQItemV2[]
+
+  @@index([orgId])
+  @@index([projectId])
+  @@index([status])
+  @@map("Boq_import_batches")
+  @@schema("app_quikinfra")
+}
+
+model CnBOQLockState {
+  projectId String    @id
+  orgId     String
+  isLocked  Boolean   @default(false)
+  lockedAt  DateTime?
+  lockedBy  String?
+  version   Int       @default(1)
+  updatedAt DateTime  @updatedAt
+
+  project CnProject @relation(fields: [projectId], references: [id])
+
+  @@index([orgId])
+  @@map("Boq_lock_state")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// RBAC â€” Role / Permission / RolePermission
+// ============================================================================
+
+model CnRole {
+  id          String   @id @default(cuid())
+  orgId       String
+  key         String // e.g. "admin", "site_admin", "user", "super_admin"
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) // seeded roles cannot be deleted
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String
+  updatedBy   String
+
+  permissions CnRolePermission[]
+
+  @@unique([orgId, key])
+  @@index([orgId])
+  @@map("Roles")
+  @@schema("app_quikinfra")
+}
+
+model CnPermission {
+  id          String  @id @default(cuid())
+  key         String  @unique // e.g. "boq.read", "boq.import", "boq.lock", "rab.approve"
+  name        String
+  module      String // "boq" | "purchase" | "rab" | "dpr" | "wo" | "masters" | "settings"
+  description String?
+
+  roles CnRolePermission[]
+
+  @@index([module])
+  @@map("Permissions")
+  @@schema("app_quikinfra")
+}
+
+model CnRolePermission {
+  roleId       String
+  permissionId String
+
+  role       CnRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission CnPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("Role_permissions")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// LEDGERS & BALANCES â€” transaction-safe side-effect storage
+// ============================================================================
+
+// Fast current-quantity cache for (project, location, item).
+// Updated ONLY as a side effect of appending to CnStockLedger, inside the
+// same Prisma transaction. Never mutated directly from route handlers.
+model CnStockBalance {
+  orgId      String
+  projectId  String
+  locationId String
+  itemId     String
+  quantity   Decimal  @default(0) @db.Decimal(18, 4)
+  avgRate    Decimal  @default(0) @db.Decimal(18, 2)
+  lastTxnAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@id([projectId, locationId, itemId])
+  @@index([orgId])
+  @@index([itemId])
+  @@index([orgId, itemId])
+  @@map("Stock_balances")
+  @@schema("app_quikinfra")
+}
+
+// Append-only record of every BOQ progress posting from DPR approvals.
+// Authoritative source for `subDoneQty`/`selfDoneQty` â€” the aggregate on
+// CnBOQItemV2 is a cached rollup kept in sync by the same transaction.
+//
+// Reversals create a compensating row with direction = -1, never mutate.
+model CnBOQProgressLedger {
+  id             String   @id @default(cuid())
+  orgId          String
+  projectId      String
+  boqItemId      String
+  boqNo          String
+  category       String
+  qty            Decimal  @db.Decimal(18, 4)
+  direction      Int // +1 for apply, -1 for reverse
+  workType       String // "sub_contractor" | "self"
+  dprId          String?
+  dprLineId      String?
+  overrideFlag   Boolean  @default(false)
+  overrideReason String?
+  createdAt      DateTime @default(now())
+  createdBy      String
+
+  @@index([orgId])
+  @@index([projectId, boqNo])
+  @@index([boqItemId])
+  @@index([dprId])
+  @@index([createdAt])
+  @@map("Boq_progress_ledger")
+  @@schema("app_quikinfra")
+}
+
+// Append-only record of every BOQ billing posting from RAB approvals.
+// Same pattern as progress ledger.
+model CnBOQBillingLedger {
+  id             String   @id @default(cuid())
+  orgId          String
+  projectId      String
+  boqItemId      String
+  boqNo          String
+  category       String
+  qty            Decimal  @db.Decimal(18, 4)
+  direction      Int // +1 for bill, -1 for reverse
+  rabId          String?
+  rabLineId      String?
+  overrideFlag   Boolean  @default(false)
+  overrideReason String?
+  createdAt      DateTime @default(now())
+  createdBy      String
+
+  @@index([orgId])
+  @@index([projectId, boqNo])
+  @@index([boqItemId])
+  @@index([rabId])
+  @@index([createdAt])
+  @@map("Boq_billing_ledger")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// IDEMPOTENCY â€” HTTP idempotency keys for mutating routes
+// ============================================================================
+//
+// Client sends an `Idempotency-Key` header on critical POSTs (approve, submit,
+// confirm). Server hashes the request body and caches the response. Retries
+// with the same key + body return the cached response; same key + different
+// body returns 409.
+
+model CnIdempotencyKey {
+  key          String   @id
+  orgId        String
+  userId       String
+  route        String
+  bodyHash     String
+  statusCode   Int
+  responseJson Json
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@index([orgId, userId])
+  @@index([expiresAt])
+  @@map("Idempotency_keys")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// DEMO USERS â€” seeded accounts with real login for testing role restrictions
+// ============================================================================
+//
+// Not a platform-wide User table â€” this is a small, scoped table the
+// QuikInfra app owns for demo + QA. When the root workspace User
+// table becomes the authoritative source, this table disappears and the
+// NextAuth CredentialsProvider switches to querying the root User model
+// instead.
+//
+// Password is stored as scrypt hash (node:crypto built-in, no bcrypt dep).
+// Format: "<salt_hex>:<hash_hex>".
+// Demo password for every seeded row is "12345" â€” change via the seed or
+// a /api/admin/password route (not yet built).
+model CnDemoUser {
+  id           String   @id @default(cuid())
+  orgId        String   @default("default")
+  email        String   @unique
+  passwordHash String
+  name         String
+  displayRole  String // UI label: SUPER_ADMIN | ADMIN | HO_USER | SITE_ADMIN | USER
+  roleKey      String // maps to cn_roles.key (super_admin, admin, ho_user, site_admin, user)
+  department   String?
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([email])
+  @@map("Demo_users")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// USERS â€” tenant-invited user accounts (persisted)
+// ============================================================================
+//
+// This is the real application user table. Rows are created by the
+// "Settings â†’ Users â†’ Add User" invite flow (POST /api/settings/users)
+// and live for the lifetime of the tenant.
+//
+// `cn_demo_users` stays as the seeded 5-account table used by the
+// demo login page. Both are checked by NextAuth's `authorize()` â€” the
+// seeded accounts first, then this table. Eventually cn_demo_users can
+// be removed entirely once the login page is updated to stop advertising
+// the seed accounts.
+//
+// A unique index on (tenantId, email) enforces "one account per email
+// per tenant", matching how multi-tenant SaaS systems usually shape it.
+// Plain `email` is also indexed for the NextAuth lookup path which
+// doesn't carry tenant context at authorize-time.
+model CnUser {
+  id    String @id @default(cuid())
+  orgId String @default("default")
+
+  // Identity
+  email        String
+  username     String
+  fullName     String
+  mobile       String? // 10-digit Indian mobile (optional)
+  department   String?
+  passwordHash String // scrypt "salt:hash" â€” never plaintext
+
+  // Authorisation
+  userType         String // USER_TYPES key: ADMIN | HO_USER | SITE_ADMIN | USER
+  roleKey          String // materialised at invite time from USER_TYPE_CATALOG.backingRole
+  modulesAssigned  String[] @default([]) // scope: module keys this user is allowed to see
+  projectsAssigned String[] @default([]) // scope: per-site restrictions
+
+  // Account lifecycle
+  status             String    @default("active") // active | inactive | suspended
+  mustChangePassword Boolean   @default(true)
+  lastLoginAt        DateTime?
+
+  // Invite metadata
+  inviteToken        String?
+  inviteTokenExpires DateTime?
+  invitedAt          DateTime  @default(now())
+  invitedBy          String? // user id of the admin who invited
+  invitedByName      String?
+  acceptedAt         DateTime?
+
+  // Per-menu Add/Edit/Delete/View matrix edited on the Permissions page.
+  // Shape: { [menuKey]: { add, edit, delete, view: boolean } }. Null until
+  // the admin saves the matrix for the first time.
+  permissionMatrix Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  @@unique([orgId, email])
+  @@unique([orgId, username])
+  @@index([email])
+  @@index([status])
+  @@index([inviteToken])
+  @@map("User")
+  @@schema("app_quikinfra")
+}
+
+// ============================================================================
+// FILE OBJECTS â€” generic attachment pointer (attaches to any entity)
+// ============================================================================
+
+model CnFileObject {
+  id    String @id @default(cuid())
+  orgId String
+
+  // Optional parent scoping â€” lets the object key layout reflect ownership
+  companyId String?
+  projectId String?
+
+  // The attached-to entity
+  entityType String // "boq_import" | "grn" | "po" | "wo" | "dpr" | "rab" | "safety_incident" | "quality_inspection" | "project_document"
+  entityId   String
+
+  // Original file metadata
+  fileName      String
+  mimeType      String?
+  sizeBytes     Int?
+  checksum      String? // sha256 hex â€” optional integrity check
+  storageKey    String // canonical object key, e.g. tenants/T123/companies/C1/projects/P1/grn/G1/2026/04/<uuid>-challan.pdf
+  storageKind   String  @default("s3") // "s3" | "r2" | "local"
+  storageBucket String? // logical bucket name â€” useful when one tenant has its own bucket
+
+  // Lifecycle
+  status     String    @default("active") // "pending_upload" | "active" | "deleted"
+  uploadedBy String
+  uploadedAt DateTime  @default(now())
+  deletedAt  DateTime?
+  deletedBy  String?
+
+  @@index([orgId])
+  @@index([entityType, entityId])
+  @@index([projectId])
+  @@index([status])
+  @@map("File_objects")
+  @@schema("app_quikinfra")
+}
+
+model CnAsset {
+  id              String    @id @default(cuid())
+  orgId           String
+  assetCode       String
+  name            String
+  category        String?
+  projectId       String?
+  condition       String?
+  currentLocation String?
+  purchaseDate    DateTime?
+  purchaseValue   Decimal?  @db.Decimal(18, 2)
+  currentStock    Decimal?  @db.Decimal(18, 4)
+  minStockLevel   Decimal?  @db.Decimal(18, 4)
+  reorderLevel    Decimal?  @db.Decimal(18, 4)
+  status          String    @default("In Use")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String
+  updatedBy       String
+
+  @@unique([orgId, assetCode])
+  @@index([orgId])
+  @@index([projectId])
+  @@map("Assets")
+  @@schema("app_quikinfra")
+}

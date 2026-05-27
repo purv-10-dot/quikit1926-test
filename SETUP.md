@@ -55,7 +55,7 @@ QuikIT/
 │   ├── admin/                     # :3002 — admin portal
 │   ├── quikscale/                 # :3003 — OKR / KPI tool
 │   ├── quiktrack/                 # :3004 — task / project tracker
-│   ├── quikconstruction/          # :3005 — construction ERP
+│   ├── quikinfra/          # :3005 — construction ERP
 │   ├── quiksocial/                # :3006 — AI social media
 │   ├── quikvc/                    # :3007 — QuikVC
 │   └── _template/                 # :3010 — scaffold (NOT a workspace; excluded)
@@ -87,7 +87,7 @@ QuikIT/
 | **3002** | [apps/admin](apps/admin/) | Admin portal (tenant / org / user / app management). |
 | **3003** | [apps/quikscale](apps/quikscale/) | OKR / KPI / Priority / WWW tooling. |
 | **3004** | [apps/quiktrack](apps/quiktrack/) | Task / project tracker. |
-| **3005** | [apps/quikconstruction](apps/quikconstruction/) | Construction ERP (BOQ, DPR/RAB, stock, procurement). |
+| **3005** | [apps/quikinfra](apps/quikinfra/) | Construction ERP (BOQ, DPR/RAB, stock, procurement). |
 | **3006** | [apps/quiksocial](apps/quiksocial/) | AI social media management. |
 | **3007** | [apps/quikvc](apps/quikvc/) | QuikVC. |
 | **3010** | [apps/_template](apps/_template/) | Reference scaffold for new apps. Not in workspaces. |
@@ -128,7 +128,7 @@ First install takes 2–5 minutes. Subsequent installs are cached.
 
 ## 5. PostgreSQL setup
 
-Every app talks to **one shared local database**. Schemas (`auth`, `quikit`, `public`, `app_quikscale`, `app_quiktrack`, `app_quikconstruction`, `app_quikvc`, `app_quiksocial`) namespace each app's models inside that single database.
+Every app talks to **one shared local database**. Schemas (`auth`, `quikit`, `public`, `app_quikscale`, `app_quiktrack`, `app_quikinfra`, `app_quikvc`, `app_quiksocial`) namespace each app's models inside that single database.
 
 ### 5.1 Create the database
 
@@ -433,9 +433,9 @@ SMTP_PASS="Q!kS#uPp0rt\$24%G4"
 SMTP_FROM="support@quikit.ai"
 ```
 
-### 8.6 [apps/quikconstruction](apps/quikconstruction/) (port 3005)
+### 8.6 [apps/quikinfra](apps/quikinfra/) (port 3005)
 
-Use the same shape as the other sub-apps. No `.env.example` is committed; build `apps/quikconstruction/.env.local` like this:
+Use the same shape as the other sub-apps. No `.env.example` is committed; build `apps/quikinfra/.env.local` like this:
 
 ```bash
 DATABASE_URL="postgresql://postgres:sa%40123@localhost:5432/quikit_dev"
@@ -447,8 +447,8 @@ NEXT_PUBLIC_SUPER_ADMIN_URL="http://localhost:3001"
 NEXT_PUBLIC_QUIKIT_URL="http://localhost:3001"
 
 QUIKIT_URL="http://localhost:3001"
-QUIKIT_CLIENT_ID="quikconstruction"
-QUIKIT_CLIENT_SECRET="quikconstruction-dev-secret-change-in-prod"
+QUIKIT_CLIENT_ID="quikinfra"
+QUIKIT_CLIENT_SECRET="quikinfra-dev-secret-change-in-prod"
 
 NEXT_PUBLIC_AUTH_URL="http://localhost:3000"
 INTERNAL_SECRET="shared-secret-for-internal-calls"
@@ -461,7 +461,7 @@ SMTP_SECURE="false"
 SMTP_USER="support@quikit.ai"
 SMTP_PASS="Q!kS#uPp0rt\$24%G4"
 SMTP_FROM="support@quikit.ai"
-MAIL_FROM="QuikConstruction <support@quikit.ai>"
+MAIL_FROM="QuikInfra <support@quikit.ai>"
 
 LOG_LEVEL="info"
 FEATURE_AI_INSIGHTS="false"
@@ -560,7 +560,7 @@ After creating `quikit_dev` and writing your `.env.local` files, push the schema
 npm run db:push
 ```
 
-This calls `prisma db push` with the schema at [packages/database/prisma/schema.prisma](packages/database/prisma/schema.prisma). It creates every schema (`auth`, `quikit`, `public`, `app_quikscale`, `app_quiktrack`, `app_quikconstruction`, `app_quikvc`, `app_quiksocial`) and every table.
+This calls `prisma db push` with the schema at [packages/database/prisma/schema.prisma](packages/database/prisma/schema.prisma). It creates every schema (`auth`, `quikit`, `public`, `app_quikscale`, `app_quiktrack`, `app_quikinfra`, `app_quikvc`, `app_quiksocial`) and every table.
 
 > `db:push` is the fastest path for local dev. Use `db:migrate` only if you're authoring a new migration.
 
@@ -615,7 +615,7 @@ Other seeds live inside [packages/database/prisma/](packages/database/prisma/) a
 cd packages/database
 npx tsx prisma/seed.ts                    # base seed
 npx tsx prisma/seed-superadmin.ts         # creates a super-admin user
-npx tsx prisma/seed-oauth.ts              # registers the OAuth clients (admin, quikscale, quiktrack, quikconstruction, quiksocial, quikvc)
+npx tsx prisma/seed-oauth.ts              # registers the OAuth clients (admin, quikscale, quiktrack, quikinfra, quiksocial, quikvc)
 npx tsx prisma/seed-moreyeahs.ts          # demo org "MoreYeahs"
 npx tsx prisma/seed-quikvc-demo.ts        # quikvc demo data
 ```
@@ -641,7 +641,7 @@ A few apps ship their own dummy-data scripts:
 cd apps/quikscale && npm run db:seed:dummy
 cd apps/quiktrack && npm run db:seed:dummy
 cd apps/quiksocial && npm run db:seed:dummy
-cd apps/quikconstruction && npm run db:seed:dummy
+cd apps/quikinfra && npm run db:seed:dummy
 ```
 
 ---
@@ -659,7 +659,7 @@ npm run dev:quikscale     # apps/quikscale on :3003
 
 # Any other app (uses the workspace name)
 npx turbo dev --filter=quiktrack
-npx turbo dev --filter=quikconstruction
+npx turbo dev --filter=quikinfra
 npx turbo dev --filter=quiksocial
 npx turbo dev --filter=quikvc
 
