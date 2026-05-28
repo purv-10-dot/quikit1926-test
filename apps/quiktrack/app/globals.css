@@ -137,6 +137,37 @@ html.dark .qt-status-pill:hover {
   filter: none !important;
 }
 
+/* Issue full-view status pills (issue-details-panel, subtask-row, child-work-items).
+   Light mode uses bg-{green|blue|gray}-100 + text-{...}-700. In dark mode the
+   gray-100 variant collapses to #1e293b — identical to the dropdown panel bg
+   (bg-white → #1e293b) — so the chip disappears. Re-tint with stronger overlays
+   and a thin inset ring so all three variants read as defined pills on the dark
+   slate surface. */
+html.dark .qt-issue-status-pill--todo {
+  background-color: rgba(148, 163, 184, 0.22) !important;
+  color: #e2e8f0 !important;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.35) !important;
+}
+html.dark .qt-issue-status-pill--todo:hover {
+  background-color: rgba(148, 163, 184, 0.32) !important;
+}
+html.dark .qt-issue-status-pill--progress {
+  background-color: rgba(59, 130, 246, 0.3) !important;
+  color: #bfdbfe !important;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.4) !important;
+}
+html.dark .qt-issue-status-pill--progress:hover {
+  background-color: rgba(59, 130, 246, 0.42) !important;
+}
+html.dark .qt-issue-status-pill--done {
+  background-color: rgba(16, 185, 129, 0.28) !important;
+  color: #a7f3d0 !important;
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.42) !important;
+}
+html.dark .qt-issue-status-pill--done:hover {
+  background-color: rgba(16, 185, 129, 0.4) !important;
+}
+
 /* Autofill in dark mode — Chrome paints a yellow box otherwise. */
 html.dark input:-webkit-autofill,
 html.dark textarea:-webkit-autofill,

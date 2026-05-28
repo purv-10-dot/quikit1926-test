@@ -208,9 +208,9 @@ export function rollUpDueDate(subtasks: { dueDate?: string | null }[]): string |
 }
 
 function statusPillCls(cat: Status["category"] | undefined) {
-  if (cat === "DONE") return "bg-green-100 text-green-800";
-  if (cat === "IN_PROGRESS") return "bg-blue-100 text-blue-800";
-  return "bg-gray-200 text-gray-700";
+  if (cat === "DONE") return "qt-issue-status-pill qt-issue-status-pill--done bg-green-100 text-green-800";
+  if (cat === "IN_PROGRESS") return "qt-issue-status-pill qt-issue-status-pill--progress bg-blue-100 text-blue-800";
+  return "qt-issue-status-pill qt-issue-status-pill--todo bg-gray-200 text-gray-700";
 }
 
 export function EditIssueModal({

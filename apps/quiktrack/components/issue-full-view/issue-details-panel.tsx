@@ -44,9 +44,9 @@ function userInitials(u: Member["user"]) {
   return ((f[0] ?? "") + (l[0] ?? "")).toUpperCase() || (u.email[0] ?? "?").toUpperCase();
 }
 function statusPillClass(category?: string) {
-  if (category === "DONE") return "bg-green-100 text-green-700 hover:bg-green-200";
-  if (category === "IN_PROGRESS") return "bg-blue-100 text-blue-700 hover:bg-blue-200";
-  return "bg-gray-100 text-gray-700 hover:bg-gray-200";
+  if (category === "DONE") return "qt-issue-status-pill qt-issue-status-pill--done bg-green-100 text-green-700 hover:bg-green-200";
+  if (category === "IN_PROGRESS") return "qt-issue-status-pill qt-issue-status-pill--progress bg-blue-100 text-blue-700 hover:bg-blue-200";
+  return "qt-issue-status-pill qt-issue-status-pill--todo bg-gray-100 text-gray-700 hover:bg-gray-200";
 }
 
 /**

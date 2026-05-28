@@ -955,9 +955,9 @@ function StatusPicker({
   }, [open]);
 
   function pillCls(cat: Status["category"]) {
-    if (cat === "DONE") return "bg-green-100 text-green-800";
-    if (cat === "IN_PROGRESS") return "bg-blue-100 text-blue-800";
-    return "bg-gray-200 text-gray-700"; // TODO + BACKLOG
+    if (cat === "DONE") return "qt-issue-status-pill qt-issue-status-pill--done bg-green-100 text-green-800";
+    if (cat === "IN_PROGRESS") return "qt-issue-status-pill qt-issue-status-pill--progress bg-blue-100 text-blue-800";
+    return "qt-issue-status-pill qt-issue-status-pill--todo bg-gray-200 text-gray-700"; // TODO + BACKLOG
   }
 
   const selected = statuses.find((s) => s.id === value) ?? null;
@@ -968,7 +968,7 @@ function StatusPicker({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex items-center gap-1 h-7 px-2 text-xs font-semibold uppercase tracking-wide rounded ${
-          selected ? pillCls(selected.category) : "bg-gray-200 text-gray-700"
+          selected ? pillCls(selected.category) : "qt-issue-status-pill qt-issue-status-pill--todo bg-gray-200 text-gray-700"
         }`}
       >
         <span>{selected?.name ?? "Status"}</span>
