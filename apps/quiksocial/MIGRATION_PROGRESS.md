@@ -101,9 +101,32 @@ None.
 
 These v2 feature additions don't block typecheck and don't break runtime. Ship as a separate "quiksocial v2 page features" PR after this migration lands.
 
-1. **Brand Creation Wizard** (`app/dashboard/brands/create/page.tsx`) — v2 ships unified `ScrapedOffering` shape + `CatalogDiscoveryStep.tsx` + Phase 5 marketability scoring. Monorepo's wizard still uses `ScrapedProduct` + `ScrapedService` client-side interfaces; works (POST /api/brands accepts both legacy and offerings[] shapes) but doesn't get v2's catalog discovery UX.
+1. ~~**Brand Creation Wizard**~~ — **DONE in post-batch fix** (commits `6b12ecae` sidebar + wizard port after Batch 7 — see "Post-batch fixes" section). v2's 6-step wizard with `CatalogDiscoveryStep.tsx` (1106 LOC) is now in place, replacing the legacy 5-step monorepo wizard. `WIZARD_TOTAL_STEPS = 6` constant + dynamic `WizardProgress` segments.
 2. **Calendar / Campaigns / Content-Hub / Posts-Create / Settings pages** — large v2 deltas (likely Phase 2 unified-offering UI, marketability sorting, etc.). Functional today; cosmetically lag v2.
-3. **`ScheduleModal.tsx` + `dashboard-layout.tsx`** — both exist in the monorepo at adapted state. v2's versions might have new features (post-now flow, etc.) worth diffing in the follow-up.
+3. **`ScheduleModal.tsx` + `dashboard-layout.tsx`** — `dashboard-layout.tsx` was partly addressed in the post-batch sidebar fix (catalog dropdown → single link, Auto-reply nav item, MessageSquareReply icon alias). `ScheduleModal.tsx` v2 deltas still pending.
+
+## Post-batch fixes (after Batch 7, surfaced during local testing)
+
+### Sidebar fix (commit `6b12ecae`)
+
+`components/layout/dashboard-layout.tsx` — runtime issues found in local QA:
+- Catalog dropdown rendered Products + Services children pointing at deleted pages → replaced with a single `SidebarNavLink` to `/dashboard/catalog`.
+- Auto-reply nav item was missing from `socialNavLinksBeforeCatalog` → added.
+- `MessageSquareReply` icon doesn't exist in installed `lucide-react@0.294.0` → aliased as `MessageCircle`.
+- Dropped unused `catalogOpen` state and auto-expand `useEffect`.
+
+(Approval visibility is unchanged — gated on `canSeeApproval = isWorkspaceAdmin`. Member-role users correctly don't see it; admin-role users do. Test-user role can be set via `UPDATE app_quiksocial."BrandMembership" SET role = 'admin' WHERE …`.)
+
+### Brand Creation Wizard port (current commit)
+
+`app/dashboard/brands/create/page.tsx` (1487 → 1991 LOC) + new `app/dashboard/brands/create/CatalogDiscoveryStep.tsx` (1106 LOC).
+
+- 5-step wizard → 6-step wizard. New Step 3 ("Pick what to market") inserts catalog discovery between AI Analysis and Visual Identity.
+- `WIZARD_TOTAL_STEPS = 6` constant + dynamic `WizardProgress` (was hardcoded `[1,2,3,4,5]`).
+- Unified `ScrapedOffering` shape (drops `ScrapedProduct`/`ScrapedService` interfaces).
+- Phase 5 marketability scoring fields on `ScrapedOffering`.
+- Adapted to monorepo: `useActiveBrandId()` hook, `unwrap()` on every `await res.json()` (5 endpoints all use the `{success, data}` envelope: scrape/start, scrape/status, brands/[id], brands, offerings, offerings/explore-category).
+- `CatalogDiscoveryStep.tsx` inlines a `Checkbox` component (v2 imported from `@/components/ui/Checkbox` but that component doesn't exist in the monorepo; inlining keeps the change scoped to the wizard directory per migration guardrails). Future cleanup: extract to `components/ui/Checkbox.tsx` if needed elsewhere.
 
 ### Batch 5 (this commit) — Auto-reply subsystem (new)
 
