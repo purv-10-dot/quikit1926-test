@@ -11,8 +11,8 @@ Feature branch: `feature/quiksocial-v2-port` (off `quiksocial-latest`)
 | Batch 2 — Offering API + UI | ✅ done | d156460b |
 | Batch 3 — Brands/Posts/Campaigns adaptation | ✅ done | b4e47415 |
 | Batch 4 — Components + dashboard pages | ✅ done (minimum) | 3a9f4cba |
-| Batch 5 — Auto-reply subsystem | ✅ done | (current) |
-| Batch 6 — Meta / publisher / cron merge | pending | — |
+| Batch 5 — Auto-reply subsystem | ✅ done | 59f4da5e |
+| Batch 6 — Meta / publisher / cron merge | ✅ done | (current) |
 | Batch 7 — Drop v2-only orphans + final cleanup | pending | — |
 | .env.example update | pending | — |
 | Final verify (typecheck + lint + test + migration SQL) | pending | — |
@@ -124,6 +124,17 @@ Decisions made by the porting agent (worth knowing for future maintenance):
 - `AutoReplyCursor` upsert key uses `orgId_socialAccountId_postId` (matching the new schema's unique).
 - `MessageSquareReply` icon doesn't exist in the installed `lucide-react` → aliased as `MessageCircle`.
 - Cron `DEFAULT_ORG_ID` resolution falls through to legacy `DEFAULT_TENANT_ID` then a sentinel for env-file compatibility.
+
+### Batch 6 (this commit) — meta + cron merge
+
+After diff:
+- `lib/meta/dispatch.ts` — monorepo is AHEAD of v2 (already orgId-scoped, already has env-var fallback for UAT/demo). **No port needed.**
+- `lib/meta/{facebook-publisher,instagram-publisher,token-validator}.ts` — byte-identical to v2 (CRLF only). **No port needed.**
+- `lib/cron/scheduler.ts` — **Edited** to add a second `setInterval` that polls `/api/cron/auto-reply-monitor` every 60s alongside the existing 30s `publish-scheduled` poll. Refactored the single-purpose `tick()` into a parameterised `callCronRoute(path, label)` so both ticks share the same auth + base-URL + error logging.
+
+The auto-reply cron route was added in Batch 5; this batch just wires the in-process timer to it. Without this edit, auto-reply would only run when `vercel.json` schedules the prod cron — local/dev wouldn't tick.
+
+Default port in `resolveBaseUrl()` updated `3006` → `3007` to match the monorepo's quiksocial dev port (next.config.js / package.json scripts).
 
 ## Resume instructions if compacted
 
