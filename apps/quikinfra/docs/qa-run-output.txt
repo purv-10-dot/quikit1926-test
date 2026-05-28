@@ -1,0 +1,215 @@
+=== QuikInfra QA Audit ===
+
+→ Data presence
+  ✓ [data] customers exist — count=2
+  ✓ [data] vendors exist — count=3
+  ✓ [data] projects exist — count=1
+  ✓ [data] items exist — count=2
+  ✓ [data] employees exist — count=5
+  ✓ [data] poLines exist — count=1
+  ✓ [data] grns exist — count=1
+  ✓ [data] ledgerRows exist — count=3
+  ✓ [data] invoices exist — count=1
+  ✓ [data] bills exist — count=1
+  ✓ [data] expenses exist — count=3
+  ✓ [data] attendance exist — count=100
+  ✓ [data] rules exist — count=3
+  ✓ [data] incidents exist — count=2
+
+→ Stock ledger invariant (Σqty_in − Σqty_out ≥ 0 per (project, location, item))
+  ✓ [invariant] no negative stock balance — 2 cells · 0 negative
+  ✓ [invariant] transfer pairs balanced (in==out per ref) — 0 transfers · 0 unbalanced
+
+→ Finance formulas
+  ✓ [formula] invoice paidAmount in [0, total] and paid-status implies paid==total — 1 invoices · 0 fails
+  ✓ [formula] bill paidAmount integrity — 1 bills · 0 fails
+  ✓ [formula] receipt allocations sum == allocatedAmount and ≤ amount — 0 receipts · 0 fails
+  ✓ [formula] payment allocations sum == allocatedAmount and ≤ amount — 0 payments · 0 fails
+
+→ RAB formulas
+  ✓ [formula] RAB line: currentPeriodQty == cumulative − prior && amount == qty × rate — 1 RABs · 0 line fails
+
+→ Payroll formula
+  ✓ [formula] payroll totalGross/totalNet == sum of lines — 0 payrolls · 0 fails
+
+→ Credit/Debit note apply math
+  ✓ [formula] applied credit note amount ≤ invoice paidAmount — 0 applied · 0 inconsistent
+
+→ Tenant isolation
+  ✓ [security] other tenants' ledger rows don't leak into scope — scoped query returns 0; foreign count=0 (expected isolated)
+  ✓ [config] approval rules configured — 3 rules
+  ✓ [config] number sequence table exists — 0 counters (new tenant)
+  ✓ [config] audit log populated — 0 events
+
+=== Summary: 27 passed, 0 failed ===
+
+---RESULTS-JSON---
+{
+  "pass": 27,
+  "fail": 0,
+  "total": 27,
+  "results": [
+    {
+      "category": "data",
+      "name": "customers exist",
+      "ok": true,
+      "details": "count=2"
+    },
+    {
+      "category": "data",
+      "name": "vendors exist",
+      "ok": true,
+      "details": "count=3"
+    },
+    {
+      "category": "data",
+      "name": "projects exist",
+      "ok": true,
+      "details": "count=1"
+    },
+    {
+      "category": "data",
+      "name": "items exist",
+      "ok": true,
+      "details": "count=2"
+    },
+    {
+      "category": "data",
+      "name": "employees exist",
+      "ok": true,
+      "details": "count=5"
+    },
+    {
+      "category": "data",
+      "name": "poLines exist",
+      "ok": true,
+      "details": "count=1"
+    },
+    {
+      "category": "data",
+      "name": "grns exist",
+      "ok": true,
+      "details": "count=1"
+    },
+    {
+      "category": "data",
+      "name": "ledgerRows exist",
+      "ok": true,
+      "details": "count=3"
+    },
+    {
+      "category": "data",
+      "name": "invoices exist",
+      "ok": true,
+      "details": "count=1"
+    },
+    {
+      "category": "data",
+      "name": "bills exist",
+      "ok": true,
+      "details": "count=1"
+    },
+    {
+      "category": "data",
+      "name": "expenses exist",
+      "ok": true,
+      "details": "count=3"
+    },
+    {
+      "category": "data",
+      "name": "attendance exist",
+      "ok": true,
+      "details": "count=100"
+    },
+    {
+      "category": "data",
+      "name": "rules exist",
+      "ok": true,
+      "details": "count=3"
+    },
+    {
+      "category": "data",
+      "name": "incidents exist",
+      "ok": true,
+      "details": "count=2"
+    },
+    {
+      "category": "invariant",
+      "name": "no negative stock balance",
+      "ok": true,
+      "details": "2 cells · 0 negative"
+    },
+    {
+      "category": "invariant",
+      "name": "transfer pairs balanced (in==out per ref)",
+      "ok": true,
+      "details": "0 transfers · 0 unbalanced"
+    },
+    {
+      "category": "formula",
+      "name": "invoice paidAmount in [0, total] and paid-status implies paid==total",
+      "ok": true,
+      "details": "1 invoices · 0 fails"
+    },
+    {
+      "category": "formula",
+      "name": "bill paidAmount integrity",
+      "ok": true,
+      "details": "1 bills · 0 fails"
+    },
+    {
+      "category": "formula",
+      "name": "receipt allocations sum == allocatedAmount and ≤ amount",
+      "ok": true,
+      "details": "0 receipts · 0 fails"
+    },
+    {
+      "category": "formula",
+      "name": "payment allocations sum == allocatedAmount and ≤ amount",
+      "ok": true,
+      "details": "0 payments · 0 fails"
+    },
+    {
+      "category": "formula",
+      "name": "RAB line: currentPeriodQty == cumulative − prior && amount == qty × rate",
+      "ok": true,
+      "details": "1 RABs · 0 line fails"
+    },
+    {
+      "category": "formula",
+      "name": "payroll totalGross/totalNet == sum of lines",
+      "ok": true,
+      "details": "0 payrolls · 0 fails"
+    },
+    {
+      "category": "formula",
+      "name": "applied credit note amount ≤ invoice paidAmount",
+      "ok": true,
+      "details": "0 applied · 0 inconsistent"
+    },
+    {
+      "category": "security",
+      "name": "other tenants' ledger rows don't leak into scope",
+      "ok": true,
+      "details": "scoped query returns 0; foreign count=0 (expected isolated)"
+    },
+    {
+      "category": "config",
+      "name": "approval rules configured",
+      "ok": true,
+      "details": "3 rules"
+    },
+    {
+      "category": "config",
+      "name": "number sequence table exists",
+      "ok": true,
+      "details": "0 counters (new tenant)"
+    },
+    {
+      "category": "config",
+      "name": "audit log populated",
+      "ok": true,
+      "details": "0 events"
+    }
+  ]
+}

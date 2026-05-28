@@ -46,7 +46,7 @@ export async function GET() {
       { url: process.env.QUIKSCALE_URL, label: "quikscale" },
       { url: process.env.ADMIN_URL, label: "admin" },
       { url: process.env.QUIKVC_URL, label: "quikvc" },
-      { url: process.env.QUIKCONSTRUCTION_URL, label: "quikconstruction" },
+      { url: process.env.QUIKINFRA_URL, label: "quikinfra" },
     ].filter((s): s is { url: string; label: string } => Boolean(s.url));
 
     if (servers.length > 0) {

@@ -15,7 +15,7 @@ test-results
 .DS_Store
 .vercel
 apps/quikscale.zip
-apps/quikconstruction/uploads/*
+apps/quikinfra/uploads/*
 packages/database/.env.tmp
 
 # ────────────────────────────────────────────────────────────────────────────

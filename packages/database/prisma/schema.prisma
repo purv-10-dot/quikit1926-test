@@ -7,7 +7,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_DIRECT")
-  schemas   = ["app_quikconstruction", "app_quikscale", "app_quiksocial", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
+  schemas   = ["app_quikinfra", "app_quikscale", "app_quiksocial", "app_quiktrack", "app_quikvc", "auth", "public", "quikit"]
 }
 
 model App {
@@ -206,6 +206,7 @@ model Org {
   talentAssessments       TalentAssessment[]
   userAppRoles            UserAppRole[]
   userPermissionExtras    UserPermissionExtra[]
+  userTablePreferences    UserTablePreference[]
   wwwItems                WWWItem[]
   brands                  Brand[]
   AppRole                 QtAppRole[]
@@ -323,6 +324,7 @@ model User {
   talentAssessed          TalentAssessment[]               @relation("TalentAssessed")
   appRoles                UserAppRole[]
   permissionExtras        UserPermissionExtra[]
+  tablePreferences        UserTablePreference[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
   qtProjectUserRoles      QtProjectUserRole[]
@@ -836,6 +838,31 @@ model UserPermissionExtra {
   @@schema("app_quikscale")
 }
 
+/// Per-user, per-table column preferences (sort / hidden / frozen / widths)
+/// for QuikScale list pages. Lives inside app_quikscale (NOT auth.User) so
+/// adding a new table to the app doesn't require touching the shared User
+/// model. Migrates the legacy User.kpiFrozenCol / User.priorityFrozenCol /
+/// User.wwwFrozenCol (and matching) columns — those stay in place for
+/// rollback safety but are no longer read by the app.
+model UserTablePreference {
+  id         String   @id @default(cuid())
+  orgId      String
+  userId     String
+  tableName  String
+  frozenCol  String?
+  hiddenCols String?
+  sort       String?
+  colWidths  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, tableName])
+  @@index([userId, orgId])
+  @@schema("app_quikscale")
+}
+
 model Client {
   id              String                @id @default(cuid())
   orgId           String
@@ -1014,6 +1041,12 @@ model ClientWeeklyMeeting {
   segmentTime5           String?
   segmentTime6           String?
   segmentTime7           String?
+  /// Per-meeting punctuality override. UI label: "Planned Deviation In Time".
+  /// YES → call treated as punctual regardless of actualStartTime (an agreed
+  /// schedule deviation was honored). NO / NA → fall through to the regular
+  /// "actualStart <= plannedStart + 60s grace" check in clientMeetingsMath.
+  /// Mirrors ClientDailyHuddle.punctualityOverride.
+  punctualityOverride    ClientMeetingFlag                    @default(NA)
   /// Radio flags — order matches the form spec (Good News → OPSP Review).
   /// Each pairs with segmentTime1..7 for "<flag> Time" companion field.
   goodNewsSharing        ClientMeetingFlag                    @default(NA)
@@ -1848,7 +1881,7 @@ model CnCompany {
   @@index([orgId])
   @@index([orgId, gstin])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnVendor {
@@ -1890,7 +1923,7 @@ model CnVendor {
   @@index([orgId])
   @@index([orgId, name])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnCustomer {
@@ -1920,7 +1953,7 @@ model CnCustomer {
   @@unique([orgId, code])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnContractor {
@@ -1951,7 +1984,7 @@ model CnContractor {
   @@unique([orgId, code])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnUOM {
@@ -1989,7 +2022,7 @@ model CnUOM {
   @@unique([orgId, code])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnItemGroup {
@@ -2013,7 +2046,7 @@ model CnItemGroup {
   @@index([orgId])
   @@index([parentId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnItem {
@@ -2059,7 +2092,7 @@ model CnItem {
   @@index([orgId])
   @@index([orgId, groupId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnBank {
@@ -2084,7 +2117,7 @@ model CnBank {
   @@index([orgId])
   @@index([orgId, companyId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnDepartment {
@@ -2105,7 +2138,7 @@ model CnDepartment {
   @@unique([orgId, code])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnWorkCategory {
@@ -2124,7 +2157,7 @@ model CnWorkCategory {
 
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnCostCenter {
@@ -2144,7 +2177,7 @@ model CnCostCenter {
   @@unique([orgId, code])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnLocation {
@@ -2183,7 +2216,7 @@ model CnLocation {
   @@index([orgId])
   @@index([orgId, type])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnGSTCode {
@@ -2206,7 +2239,7 @@ model CnGSTCode {
   @@unique([orgId, code])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnTDSCode {
@@ -2227,7 +2260,7 @@ model CnTDSCode {
   @@unique([orgId, section])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnTermsCondition {
@@ -2248,7 +2281,7 @@ model CnTermsCondition {
   @@index([orgId])
   @@index([orgId, applicableTo])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnFinancialYear {
@@ -2272,7 +2305,7 @@ model CnFinancialYear {
   @@index([orgId])
   @@index([orgId, companyId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnProject {
@@ -2332,7 +2365,7 @@ model CnProject {
   @@index([orgId])
   @@index([orgId, companyId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnMachinery {
@@ -2360,7 +2393,7 @@ model CnMachinery {
   @@unique([orgId, code])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnAsset {
@@ -2384,7 +2417,7 @@ model CnAsset {
   @@unique([orgId, code])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnPurchaseRequisition {
@@ -2412,7 +2445,7 @@ model CnPurchaseRequisition {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnPurchaseRequisitionLine {
@@ -2432,7 +2465,7 @@ model CnPurchaseRequisitionLine {
 
   @@index([prId])
   @@index([itemId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnPurchaseOrder {
@@ -2472,7 +2505,7 @@ model CnPurchaseOrder {
   @@index([vendorId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnPurchaseOrderLine {
@@ -2496,7 +2529,7 @@ model CnPurchaseOrderLine {
 
   @@index([poId])
   @@index([itemId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnGoodsReceiptNote {
@@ -2539,7 +2572,7 @@ model CnGoodsReceiptNote {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnGRNLine {
@@ -2562,7 +2595,7 @@ model CnGRNLine {
 
   @@index([grnId])
   @@index([itemId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnStockLedger {
@@ -2592,7 +2625,7 @@ model CnStockLedger {
   @@index([orgId, projectId, locationId, itemId])
   @@index([itemId])
   @@index([transactionRefId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnMaterialIssue {
@@ -2624,7 +2657,7 @@ model CnMaterialIssue {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnMaterialIssueLine {
@@ -2642,7 +2675,7 @@ model CnMaterialIssueLine {
 
   @@index([issueId])
   @@index([itemId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnPurchaseIndent {
@@ -2670,7 +2703,7 @@ model CnPurchaseIndent {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnPurchaseIndentLine {
@@ -2687,7 +2720,7 @@ model CnPurchaseIndentLine {
 
   @@index([indentId])
   @@index([itemId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnRFQ {
@@ -2714,7 +2747,7 @@ model CnRFQ {
   @@index([orgId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnRFQLine {
@@ -2729,7 +2762,7 @@ model CnRFQLine {
   uom           CnUOM   @relation(fields: [uomId], references: [id])
 
   @@index([rfqId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnRFQVendor {
@@ -2744,7 +2777,7 @@ model CnRFQVendor {
 
   @@unique([rfqId, vendorId])
   @@index([rfqId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnGatePass {
@@ -2776,7 +2809,7 @@ model CnGatePass {
   @@index([orgId])
   @@index([projectId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnGoodReturn {
@@ -2808,7 +2841,7 @@ model CnGoodReturn {
   @@index([orgId])
   @@index([grnId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnGoodReturnLine {
@@ -2825,7 +2858,7 @@ model CnGoodReturnLine {
   uom       CnUOM        @relation(fields: [uomId], references: [id])
 
   @@index([returnId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnInternalReturn {
@@ -2856,7 +2889,7 @@ model CnInternalReturn {
   @@index([orgId])
   @@index([issueId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnInternalReturnLine {
@@ -2873,7 +2906,7 @@ model CnInternalReturnLine {
   uom       CnUOM            @relation(fields: [uomId], references: [id])
 
   @@index([returnId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnStockTransfer {
@@ -2902,7 +2935,7 @@ model CnStockTransfer {
   @@unique([orgId, transferNumber])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnStockTransferLine {
@@ -2919,7 +2952,7 @@ model CnStockTransferLine {
   uom        CnUOM           @relation(fields: [uomId], references: [id])
 
   @@index([transferId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnStockReconciliation {
@@ -2946,7 +2979,7 @@ model CnStockReconciliation {
   @@unique([orgId, reconciliationNumber])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnStockReconciliationLine {
@@ -2966,7 +2999,7 @@ model CnStockReconciliationLine {
   uom              CnUOM                 @relation(fields: [uomId], references: [id])
 
   @@index([reconciliationId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnDieselLog {
@@ -2999,7 +3032,7 @@ model CnDieselLog {
   @@index([orgId])
   @@index([projectId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnBOQ {
@@ -3032,7 +3065,7 @@ model CnBOQ {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnBOQItem {
@@ -3068,7 +3101,7 @@ model CnBOQItem {
   @@index([boqId])
   @@index([parentId])
   @@index([itemId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnDPR {
@@ -3102,7 +3135,7 @@ model CnDPR {
   @@index([dprDate])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 /// Materials consumed on a DPR. On post, each row writes a `dpr_consumption`
@@ -3124,7 +3157,7 @@ model CnDPRMaterial {
 
   @@index([dprId])
   @@index([itemId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnDPRLine {
@@ -3149,7 +3182,7 @@ model CnDPRLine {
 
   @@index([dprId])
   @@index([boqItemId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnHindrance {
@@ -3178,7 +3211,7 @@ model CnHindrance {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnEstimation {
@@ -3209,7 +3242,7 @@ model CnEstimation {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnEstimationItem {
@@ -3234,7 +3267,7 @@ model CnEstimationItem {
 
   @@index([estimationId])
   @@index([parentId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnWorkOrder {
@@ -3273,7 +3306,7 @@ model CnWorkOrder {
   @@index([contractorId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnWorkOrderLine {
@@ -3295,7 +3328,7 @@ model CnWorkOrderLine {
   wo           CnWorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
 
   @@index([woId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnRAB {
@@ -3337,7 +3370,7 @@ model CnRAB {
   @@index([boqId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnRABLine {
@@ -3362,7 +3395,7 @@ model CnRABLine {
 
   @@index([rabId])
   @@index([boqItemId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnClientInvoice {
@@ -3406,7 +3439,7 @@ model CnClientInvoice {
   @@index([rabId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnClientReceipt {
@@ -3433,7 +3466,7 @@ model CnClientReceipt {
   @@index([orgId])
   @@index([customerId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnClientReceiptAllocation {
@@ -3446,7 +3479,7 @@ model CnClientReceiptAllocation {
 
   @@unique([receiptId, invoiceId])
   @@index([invoiceId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnVendorBill {
@@ -3492,7 +3525,7 @@ model CnVendorBill {
   @@index([projectId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnVendorPayment {
@@ -3519,7 +3552,7 @@ model CnVendorPayment {
   @@index([orgId])
   @@index([vendorId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnVendorPaymentAllocation {
@@ -3532,7 +3565,7 @@ model CnVendorPaymentAllocation {
 
   @@unique([paymentId, billId])
   @@index([billId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnEmployee {
@@ -3565,7 +3598,7 @@ model CnEmployee {
   @@unique([orgId, empCode])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnAttendance {
@@ -3588,7 +3621,7 @@ model CnAttendance {
   @@unique([orgId, employeeId, date])
   @@index([orgId])
   @@index([date])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnPayroll {
@@ -3614,7 +3647,7 @@ model CnPayroll {
   @@unique([orgId, runNumber])
   @@index([orgId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnPayrollLine {
@@ -3632,7 +3665,7 @@ model CnPayrollLine {
 
   @@index([payrollId])
   @@index([employeeId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnApprovalRule {
@@ -3654,7 +3687,7 @@ model CnApprovalRule {
   @@index([orgId])
   @@index([orgId, docType])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnApprovalRequest {
@@ -3676,7 +3709,7 @@ model CnApprovalRequest {
   @@index([orgId])
   @@index([approverId, status])
   @@index([docType, docId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnQCInspection {
@@ -3703,7 +3736,7 @@ model CnQCInspection {
   @@index([orgId])
   @@index([grnId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnQCDefect {
@@ -3718,7 +3751,7 @@ model CnQCDefect {
   item         CnItem?        @relation(fields: [itemId], references: [id])
 
   @@index([inspectionId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnSafetyIncident {
@@ -3747,7 +3780,7 @@ model CnSafetyIncident {
   @@index([orgId])
   @@index([status])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnSafetyChecklist {
@@ -3772,7 +3805,7 @@ model CnSafetyChecklist {
   @@index([orgId])
   @@index([checklistDate])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnDocument {
@@ -3792,7 +3825,7 @@ model CnDocument {
 
   @@index([orgId, refType, refId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 model CnExpense {
@@ -3821,7 +3854,7 @@ model CnExpense {
   @@index([orgId])
   @@index([projectId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 /// Optional line items for client invoices. When present, subtotal/taxAmount
@@ -3843,7 +3876,7 @@ model CnClientInvoiceLine {
   uom         CnUOM?          @relation(fields: [uomId], references: [id])
 
   @@index([invoiceId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 /// Optional line items for vendor bills. See CnClientInvoiceLine for shape rationale.
@@ -3863,7 +3896,7 @@ model CnVendorBillLine {
   uom         CnUOM?       @relation(fields: [uomId], references: [id])
 
   @@index([billId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 /// Credit Note — reduces customer receivable. Can be linked to an invoice
@@ -3892,7 +3925,7 @@ model CnCreditNote {
   @@index([orgId])
   @@index([customerId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 /// Debit Note — adjustment against a vendor. Typically reduces a bill payable
@@ -3921,7 +3954,7 @@ model CnDebitNote {
   @@index([orgId])
   @@index([vendorId])
   @@index([deletedAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 /// Audit log. Free-form old/new JSON snapshots, indexed for per-entity
@@ -3943,7 +3976,7 @@ model CnAuditLog {
 
   @@index([orgId, entityType, entityId])
   @@index([orgId, createdAt])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 /// Per-tenant, per-prefix monotonic counters. Atomic `nextval()` via
@@ -3961,7 +3994,7 @@ model CnNumberSequence {
 
   @@unique([orgId, prefix, fyKey])
   @@index([orgId])
-  @@schema("app_quikconstruction")
+  @@schema("app_quikinfra")
 }
 
 /// Per-tenant VC OS configuration. 1:1 with Tenant when QuikVC is enabled.

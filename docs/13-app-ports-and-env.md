@@ -15,7 +15,7 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 | **admin** | `3002` | [apps/admin/package.json](../apps/admin/package.json) | Admin portal (tenant/org/user/app management). |
 | **quikscale** | `3003` | [apps/quikscale/package.json](../apps/quikscale/package.json) | QuikScale — OKR / KPI / Priority / WWW tooling. |
 | **quiktrack** | `3004` | [apps/quiktrack/package.json](../apps/quiktrack/package.json) | QuikTrack — task / project tracker. |
-| **quikconstruction** | `3005` | [apps/quikconstruction/package.json](../apps/quikconstruction/package.json) | QuikConstruction — construction ERP (BOQ, DPR/RAB, stock, procurement). |
+| **quikinfra** | `3005` | [apps/quikinfra/package.json](../apps/quikinfra/package.json) | QuikInfra — construction ERP (BOQ, DPR/RAB, stock, procurement). |
 | **quiksocial** | `3006` | [apps/quiksocial/package.json](../apps/quiksocial/package.json) | QuikSocial — AI social media management. Talks to a Python AI service on Railway. |
 | **quikvc** | `3007` | [apps/quikvc/package.json](../apps/quikvc/package.json) | QuikVC. |
 | **_template** | `3010` | [apps/_template/package.json](../apps/_template/package.json) | Reference scaffold for new apps. Don't run alongside a real app on `3010`. |
@@ -36,7 +36,7 @@ A single reference for every app in the [QuikIT monorepo](../) — what port it 
 | `NEXT_PUBLIC_LAUNCHER_URL` | `http://localhost:3001/apps` | apps/auth (post-login redirect) |
 | `NEXT_PUBLIC_ADMIN_URL` / `ADMIN_URL` | `http://localhost:3002` | auth, quikit |
 | `QUIKSCALE_URL` / `NEXT_PUBLIC_QUIKSCALE_URL` | `http://localhost:3003` | quikit, admin |
-| `NEXT_PUBLIC_SUPER_ADMIN_URL` | `http://localhost:3001` | quikscale, quiktrack, quikconstruction (super-admin lives inside quikit) |
+| `NEXT_PUBLIC_SUPER_ADMIN_URL` | `http://localhost:3001` | quikscale, quiktrack, quikinfra (super-admin lives inside quikit) |
 
 ---
 
@@ -46,7 +46,7 @@ These MUST be identical across every app in the cluster. A mismatched `NEXTAUTH_
 
 ### 2.1 Database (shared Postgres)
 
-All apps share **one** Postgres database (`quikit_dev` in dev). Schemas are namespaced (`auth.*`, `quikit.*`, `public.*`, `app_quikscale.*`, `app_quiktrack.*`, `app_quikconstruction.*`, …).
+All apps share **one** Postgres database (`quikit_dev` in dev). Schemas are namespaced (`auth.*`, `quikit.*`, `public.*`, `app_quikscale.*`, `app_quiktrack.*`, `app_quikinfra.*`, …).
 
 | Variable | Required | Purpose |
 |---|---|---|
@@ -70,7 +70,7 @@ Encode special chars in the password (e.g. `@` → `%40`). Example: `postgresql:
 | `NEXT_PUBLIC_AUTH_URL` | yes | Central credentials login service URL (`http://localhost:3000` in dev). Middleware redirects unauthenticated users here. |
 | `QUIKIT_URL` | yes (sub-apps) | Base URL of the QuikIT OAuth IdP (`http://localhost:3001` in dev). Used for OAuth discovery and the AppSwitcher "View all apps" link. |
 | `NEXT_PUBLIC_QUIKIT_URL` | yes (sub-apps) | Same value as `QUIKIT_URL`, exposed to the client so `signIn("quikit")` knows where to send the browser. |
-| `QUIKIT_CLIENT_ID` | yes (sub-apps) | OAuth client ID for this app (e.g. `quikscale`, `quiktrack`, `quikconstruction`, `quiksocial`). |
+| `QUIKIT_CLIENT_ID` | yes (sub-apps) | OAuth client ID for this app (e.g. `quikscale`, `quiktrack`, `quikinfra`, `quiksocial`). |
 | `QUIKIT_CLIENT_SECRET` | yes (sub-apps) | OAuth client secret. In dev: `<app>-dev-secret-change-in-prod`. In prod: set on Vercel only. |
 | `QUIKIT_ISSUER_URL` | template apps | Legacy alias of `QUIKIT_URL` used by `_template` / `quikvc` / `quiktrack` / `quiksocial` `.env.example` files. |
 
@@ -92,7 +92,7 @@ Used by every app for transactional email (invites, OTPs, notifications). When a
 | `SMTP_USER` | recommended | The mailbox (`support@quikit.ai`). |
 | `SMTP_PASS` | recommended | Mailbox password. **Backslash-escape `$`** (e.g. `Q!kS#uPp0rt\$24%G4`) to prevent Next.js dotenv-expand from substituting `$24`. |
 | `SMTP_FROM` | recommended | Bare sender address. |
-| `MAIL_FROM` | quikconstruction only | RFC 5322 display-name override (e.g. `QuikConstruction <support@quikit.ai>`). |
+| `MAIL_FROM` | quikinfra only | RFC 5322 display-name override (e.g. `QuikInfra <support@quikit.ai>`). |
 | `RESEND_API_KEY` | auth only (fallback) | Used by `apps/auth` only if `SMTP_HOST` is unset. |
 
 ### 2.6 Logging & feature flags (most apps)
@@ -157,7 +157,7 @@ Variables listed in §2 apply everywhere and are not repeated here.
 | `AWS_SECRET_ACCESS_KEY` | S3 secret. |
 | `AWS_S3_BUCKET` | Bucket name for document/asset uploads (e.g. `quikit-bucket`). |
 
-### 3.6 [apps/quikconstruction](../apps/quikconstruction/)
+### 3.6 [apps/quikinfra](../apps/quikinfra/)
 
 | Variable | Purpose |
 |---|---|

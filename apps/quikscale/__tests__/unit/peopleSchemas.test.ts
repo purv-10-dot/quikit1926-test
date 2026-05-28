@@ -173,10 +173,10 @@ describe("createFeedbackSchema", () => {
     ).toBe(false);
   });
 
-  it("rejects content longer than 5000 chars", () => {
+  it("accepts very long content (no length cap on user-content)", () => {
     expect(
-      createFeedbackSchema.safeParse({ ...base, content: "x".repeat(5001) }).success,
-    ).toBe(false);
+      createFeedbackSchema.safeParse({ ...base, content: "x".repeat(20000) }).success,
+    ).toBe(true);
   });
 
   it("rejects non-cuid toUserId", () => {
