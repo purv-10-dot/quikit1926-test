@@ -20,6 +20,7 @@ import {
   RightPanelSubmitButton,
   UserSelect,
 } from "@quikit/ui";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 
 
 function formatDate(iso?: string | null): string {
@@ -187,12 +188,6 @@ function EditTab({
 }) {
   return (
     <div className="space-y-4">
-      {errors._ && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
-          {errors._}
-        </div>
-      )}
-
       {readOnly && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
           Read-only — only the creator, assignee, or an admin can edit this item.
@@ -564,20 +559,25 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       onTabChange={(k) => setTab(k as Tab)}
       footer={
         tab === "edit" ? (
-          <RightPanelFooter>
-            <RightPanelCancelButton onClick={onClose} />
-            {/* RBAC v2: hide Save entirely when the role doesn't grant update. */}
-            {(mode === "create" || canUpdate) && (
-              <RightPanelSubmitButton
-                onClick={handleSubmit}
-                saving={saving}
-                disabled={readOnly}
-                icon={mode === "create" ? "plus" : "check"}
-                label={mode === "create" ? "Create Item" : "Save Changes"}
-                title={readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
-              />
-            )}
-          </RightPanelFooter>
+          // Column wrapper keeps the server-error banner pinned just above
+          // the Cancel/Submit row regardless of how far the user scrolled.
+          <div className="flex flex-col gap-2 w-full">
+            <FormErrorBanner message={errors._} />
+            <RightPanelFooter>
+              <RightPanelCancelButton onClick={onClose} />
+              {/* RBAC v2: hide Save entirely when the role doesn't grant update. */}
+              {(mode === "create" || canUpdate) && (
+                <RightPanelSubmitButton
+                  onClick={handleSubmit}
+                  saving={saving}
+                  disabled={readOnly}
+                  icon={mode === "create" ? "plus" : "check"}
+                  label={mode === "create" ? "Create Item" : "Save Changes"}
+                  title={readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+                />
+              )}
+            </RightPanelFooter>
+          </div>
         ) : null
       }
     >

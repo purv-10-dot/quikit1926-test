@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useTeams, type Team } from "@/lib/hooks/useTeams";
 import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, DropdownPicker } from "@quikit/ui";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
@@ -244,24 +245,23 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
       title="Add New Priority"
       subtitle={`${fiscalYearLabel(parseInt(form.year))} · ${form.quarter}`}
       footer={
-        <RightPanelFooter>
-          <RightPanelCancelButton onClick={onClose} />
-          <RightPanelSubmitButton
-            onClick={handleSubmit}
-            saving={saving}
-            icon="plus"
-            label="Create Priority"
-          />
-        </RightPanelFooter>
+        // Column wrapper pins the server-error banner directly above the
+        // Cancel/Create row. Matches the pattern used by every form drawer.
+        <div className="flex flex-col gap-2 w-full">
+          <FormErrorBanner message={errors._} />
+          <RightPanelFooter>
+            <RightPanelCancelButton onClick={onClose} />
+            <RightPanelSubmitButton
+              onClick={handleSubmit}
+              saving={saving}
+              icon="plus"
+              label="Create Priority"
+            />
+          </RightPanelFooter>
+        </div>
       }
     >
       <>
-        {errors._ && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
-              {errors._}
-            </div>
-          )}
-
           {/* Row 1: Team | Priority Name */}
           <div className="grid grid-cols-2 gap-4">
             <div>

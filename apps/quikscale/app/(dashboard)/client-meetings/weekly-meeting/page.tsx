@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { TrashBanner, ColMenu } from "@quikit/ui";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort } from "@/lib/store";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
@@ -73,7 +74,8 @@ type Status =
   | "HELD"
   | "CALL_CANCELLED_BY_CLIENT"
   | "HOLIDAY_FOR_CLIENT"
-  | "HOLIDAY_FOR_SUCCESS_ALCHEMIST";
+  | "HOLIDAY_FOR_SUCCESS_ALCHEMIST"
+  | "OTHER";
 
 const FLAG_OPTS: Array<{ value: Flag; label: string }> = [
   { value: "YES", label: "YES" },
@@ -89,6 +91,7 @@ const STATUS_OPTS: Array<{ value: Status; label: string }> = [
     value: "HOLIDAY_FOR_SUCCESS_ALCHEMIST",
     label: "Holiday for Success Alchemist",
   },
+  { value: "OTHER", label: "Other" },
 ];
 
 const RADIO_FIELDS = [
@@ -140,6 +143,7 @@ interface MeetingRow {
   clientName: string;
   meetingDate: string;
   callStatus: Status;
+  callStatusOther: string | null;
   actualStartTime: string | null;
   actualEndTime: string | null;
   segmentTime1: string | null;
@@ -203,6 +207,7 @@ const emptyForm = {
   clientId: "",
   meetingDate: new Date().toISOString().slice(0, 10),
   callStatus: "HELD" as Status,
+  callStatusOther: "",
   actualStartTime: "",
   actualEndTime: "",
   segmentTime1: "",
@@ -238,13 +243,18 @@ function fmtDate(iso: string) {
   });
 }
 function statusBadge(s: Status) {
-  return s === "HELD"
-    ? "bg-green-100 text-green-700"
-    : s === "CALL_CANCELLED_BY_CLIENT"
-      ? "bg-red-100 text-red-700"
-      : "bg-amber-100 text-amber-700";
+  if (s === "HELD") return "bg-green-100 text-green-700";
+  if (s === "CALL_CANCELLED_BY_CLIENT") return "bg-red-100 text-red-700";
+  // OTHER uses a neutral gray badge so it visually reads as "uncategorized"
+  // rather than blending into the holiday-style amber.
+  if (s === "OTHER") return "bg-gray-100 text-gray-700";
+  return "bg-amber-100 text-amber-700";
 }
-function statusLabel(s: Status) {
+function statusLabel(s: Status, custom?: string | null) {
+  // For OTHER rows, surface the user-entered text so the cell isn't a
+  // useless "Other" — falls back to the bare label if the column is blank
+  // (legacy rows or in-flight migration).
+  if (s === "OTHER") return custom?.trim() || "Other";
   return STATUS_OPTS.find((o) => o.value === s)?.label ?? s;
 }
 
@@ -363,7 +373,7 @@ export default function WeeklyMeetingPage() {
       <th
         data-col-key={props.k}
         style={{ width: getColWidth(props.k) }}
-        className={`group relative overflow-hidden px-3 py-2 text-left whitespace-nowrap ${frozen ? "sticky left-0 z-[15] bg-accent-50" : ""}`}
+        className={`group relative overflow-hidden px-3 py-2 text-left whitespace-nowrap ${frozen ? "sticky left-[104px] z-[15] bg-accent-50" : ""}`}
       >
         <div className="flex items-center gap-1">
           {/* `truncate min-w-0` lets the label shrink inside the fixed-width <th>
@@ -470,6 +480,7 @@ export default function WeeklyMeetingPage() {
         clientId: row.clientId,
         meetingDate: row.meetingDate.slice(0, 10),
         callStatus: row.callStatus,
+        callStatusOther: row.callStatusOther ?? "",
         actualStartTime: row.actualStartTime ?? "",
         actualEndTime: row.actualEndTime ?? "",
         segmentTime1: detail.segmentTime1 ?? "",
@@ -535,10 +546,16 @@ export default function WeeklyMeetingPage() {
   function setCallStatus(s: Status) {
     setEditing((e) => {
       if (!e) return null;
-      if (s === "HELD") return { ...e, form: { ...e.form, callStatus: s } };
+      if (s === "HELD") {
+        // Switching back to HELD clears any stale OTHER label.
+        return { ...e, form: { ...e.form, callStatus: s, callStatusOther: "" } };
+      }
       const cleared: typeof emptyForm = {
         ...e.form,
         callStatus: s,
+        // Preserve whatever the user already typed when staying on / entering
+        // OTHER; clear it for every other non-HELD status.
+        callStatusOther: s === "OTHER" ? e.form.callStatusOther : "",
         actualStartTime: "",
         actualEndTime: "",
         segmentTime1: "",
@@ -626,6 +643,10 @@ export default function WeeklyMeetingPage() {
       setError("Pick a client");
       return;
     }
+    if (f.callStatus === "OTHER" && !f.callStatusOther.trim()) {
+      setError("Please specify the call status text");
+      return;
+    }
     if (
       f.actualStartTime &&
       f.actualEndTime &&
@@ -679,6 +700,7 @@ export default function WeeklyMeetingPage() {
         clientId: f.clientId,
         meetingDate: f.meetingDate,
         callStatus: f.callStatus,
+        callStatusOther: f.callStatus === "OTHER" ? f.callStatusOther.trim() : null,
         actualStartTime: f.actualStartTime || null,
         actualEndTime: f.actualEndTime || null,
         segmentTime1: f.segmentTime1 || null,
@@ -922,7 +944,7 @@ export default function WeeklyMeetingPage() {
     const q = searchQuery.toLowerCase();
     return (
       r.clientName.toLowerCase().includes(q) ||
-      statusLabel(r.callStatus).toLowerCase().includes(q)
+      statusLabel(r.callStatus, r.callStatusOther).toLowerCase().includes(q)
     );
   });
   const visibleIds = visibleRows.map((r) => r.id);
@@ -1023,7 +1045,7 @@ export default function WeeklyMeetingPage() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden p-6 min-h-0">
+      <div className="flex-1 flex flex-col overflow-hidden p-1 min-h-0">
         {viewTrash && (
           <div className="mb-3">
             <TrashBanner count={rows.length} onExit={() => setViewTrash(false)} />
@@ -1045,7 +1067,8 @@ export default function WeeklyMeetingPage() {
               style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="bg-accent-50 text-gray-600 sticky top-0 z-10">
                 <tr>
-                  <th className="px-2 py-2 w-8">
+                  <th className="sticky z-[35] px-2 py-2 bg-accent-50 border-r border-gray-200"
+                      style={{ left: 0, width: 32, minWidth: 32, maxWidth: 32 }}>
                     <label
                       onClickCapture={(e) => {
                         if (!canDelete) {
@@ -1063,10 +1086,12 @@ export default function WeeklyMeetingPage() {
                       />
                     </label>
                   </th>
-                  <th className="px-1 py-2 w-8 text-center font-semibold">
+                  <th className="sticky z-[35] px-1 py-2 text-center font-semibold bg-accent-50 border-r border-gray-200"
+                      style={{ left: 32, width: 32, minWidth: 32, maxWidth: 32 }}>
                     Log
                   </th>
-                  <th className="px-1 py-2 w-10 text-center font-semibold">
+                  <th className="sticky z-[35] px-1 py-2 text-center font-semibold bg-accent-50 border-r border-gray-200"
+                      style={{ left: 64, width: 40, minWidth: 40, maxWidth: 40 }}>
                     #
                   </th>
                   <HeaderCell k="meetingDate" label="Meeting Date" sortable />
@@ -1104,7 +1129,8 @@ export default function WeeklyMeetingPage() {
                     key={r.id}
                     className="border-t border-gray-100 hover:bg-blue-50/30"
                   >
-                    <td className="px-2 py-2">
+                    <td className="sticky z-[15] bg-white px-2 py-2 border-r border-gray-100"
+                        style={{ left: 0, width: 32, minWidth: 32, maxWidth: 32 }}>
                       <label
                         onClickCapture={(e) => {
                           if (!canDelete) {
@@ -1122,7 +1148,8 @@ export default function WeeklyMeetingPage() {
                         />
                       </label>
                     </td>
-                    <td className="px-1 py-2 text-center">
+                    <td className="sticky z-[15] bg-white px-1 py-2 text-center border-r border-gray-100"
+                        style={{ left: 32, width: 32, minWidth: 32, maxWidth: 32 }}>
                       <button
                         type="button"
                         onClick={() => openLogs(r)}
@@ -1132,7 +1159,8 @@ export default function WeeklyMeetingPage() {
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
-                    <td className="px-1 py-2 text-center">
+                    <td className="sticky z-[15] bg-white px-1 py-2 text-center border-r border-gray-100"
+                        style={{ left: 64, width: 40, minWidth: 40, maxWidth: 40 }}>
                       <button
                         type="button"
                         onClick={() => openEdit(r)}
@@ -1144,17 +1172,18 @@ export default function WeeklyMeetingPage() {
                     {/* Body cells — each pairs tdHideClass + tdWidthStyle so the column
                         collapses when hidden and locks to the resized width when shown.
                         The sticky-left rule mirrors the matching <th> when frozen. */}
-                    <td style={tdWidthStyle("meetingDate")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("meetingDate")} ${frozenCol === "meetingDate" ? "sticky left-0 z-[10] bg-white" : ""}`}>
+                    <td style={tdWidthStyle("meetingDate")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("meetingDate")} ${frozenCol === "meetingDate" ? "sticky left-[104px] z-[10] bg-white" : ""}`}>
                       {fmtDate(r.meetingDate)}
                     </td>
-                    <td style={tdWidthStyle("client")} className={`px-3 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${tdHideClass("client")} ${frozenCol === "client" ? "sticky left-0 z-[10] bg-white" : ""}`}>
+                    <td style={tdWidthStyle("client")} className={`px-3 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${tdHideClass("client")} ${frozenCol === "client" ? "sticky left-[104px] z-[10] bg-white" : ""}`}>
                       {r.clientName}
                     </td>
-                    <td style={tdWidthStyle("callStatus")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("callStatus")} ${frozenCol === "callStatus" ? "sticky left-0 z-[10] bg-white" : ""}`}>
+                    <td style={tdWidthStyle("callStatus")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("callStatus")} ${frozenCol === "callStatus" ? "sticky left-[104px] z-[10] bg-white" : ""}`}>
                       <span
                         className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}
+                        title={r.callStatus === "OTHER" ? r.callStatusOther ?? undefined : undefined}
                       >
-                        {statusLabel(r.callStatus)}
+                        {statusLabel(r.callStatus, r.callStatusOther)}
                       </span>
                     </td>
                     <td style={tdWidthStyle("absentMembers")} className={`px-3 py-2 text-gray-600 overflow-hidden text-ellipsis ${tdHideClass("absentMembers")}`}>
@@ -1289,17 +1318,23 @@ export default function WeeklyMeetingPage() {
             // and then batch-PATCHes any staged/typed score rows.
             // RBAC v2: hide Save when the role doesn't grant the relevant action.
             isEdit && activeTab === "update" ? undefined : (
-              <RightPanelFooter>
-                <RightPanelCancelButton onClick={() => setEditing(null)} />
-                {(isEdit ? canUpdate : canCreate) && (
-                  <RightPanelSubmitButton
-                    onClick={save}
-                    saving={saving}
-                    icon={isEdit ? "check" : "plus"}
-                    label={isEdit ? "Update" : "Submit"}
-                  />
-                )}
-              </RightPanelFooter>
+              // Column wrapper pins the server-error banner directly above
+              // the Cancel/Submit row, visible without scrolling. The Update
+              // tab has no submit, so the banner is also hidden there.
+              <div className="flex flex-col gap-2 w-full">
+                <FormErrorBanner message={error} />
+                <RightPanelFooter>
+                  <RightPanelCancelButton onClick={() => setEditing(null)} />
+                  {(isEdit ? canUpdate : canCreate) && (
+                    <RightPanelSubmitButton
+                      onClick={save}
+                      saving={saving}
+                      icon={isEdit ? "check" : "plus"}
+                      label={isEdit ? "Update" : "Submit"}
+                    />
+                  )}
+                </RightPanelFooter>
+              </div>
             )
           }
         >
@@ -1328,11 +1363,6 @@ export default function WeeklyMeetingPage() {
             </fieldset>
           ) : (
             <>
-              {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                  {error}
-                </div>
-              )}
               {drawerLocked && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                   Read-only — your role doesn&apos;t grant {isEdit ? "update" : "create"} access on Weekly Meeting.
@@ -1355,6 +1385,23 @@ export default function WeeklyMeetingPage() {
                   />
                 </Field>
               </div>
+
+              {editing.form.callStatus === "OTHER" && (
+                // Free-text label shown only for the "Other" status. The save
+                // handler trims this and the Zod refine on the server rejects
+                // empty / whitespace-only values so a bare "Other" can't be
+                // persisted.
+                <Field label="Specify Other" required>
+                  <input
+                    type="text"
+                    value={editing.form.callStatusOther}
+                    onChange={(e) => updateField("callStatusOther", e.target.value)}
+                    maxLength={200}
+                    placeholder="Enter call status…"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-accent-400 focus:ring-1 focus:ring-accent-400 focus:outline-none"
+                  />
+                </Field>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Client Name" required>

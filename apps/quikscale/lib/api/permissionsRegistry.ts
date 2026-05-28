@@ -84,8 +84,42 @@ export const PERMISSION_TREE: PermissionModule[] = [
     label: "Org Setup",
     leaves: [
       { resource: "Team", label: "Teams", actions: ACTIONS },
-      { resource: "User", label: "Users", actions: ACTIONS },
       { resource: "Quarter", label: "Quarter Settings", actions: ACTIONS },
+    ],
+    // `User` is a SubModule (not a flat leaf) so it can host UI-only
+    // sub-permissions for the Add User button and the User Management tab —
+    // mirrors the OPSP.History → EditFinalize nesting pattern.
+    subModules: [
+      {
+        key: "User",
+        label: "Users",
+        leaves: [
+          { resource: "User", label: "Users", actions: ACTIONS },
+        ],
+        subModules: [
+          {
+            // UI-only: gates the "Add User" button on the Users tab. Server
+            // still enforces `User.create` on POST /api/org/users, so this
+            // sub-permission can hide the affordance without weakening the
+            // API. Action is `create` (the button triggers a create flow).
+            key: "User.AddUser",
+            label: "Add User Button",
+            leaves: [
+              { resource: "User.AddUser", label: "Add User Button", actions: ["create"] },
+            ],
+          },
+          {
+            // UI-only: gates visibility of the "User Management" tab in the
+            // page navigation. Inside the tab, role-mgmt actions still gate
+            // on the `Role` resource (server- and UI-side).
+            key: "User.Management",
+            label: "User Management Tab",
+            leaves: [
+              { resource: "User.Management", label: "User Management Tab", actions: ["view"] },
+            ],
+          },
+        ],
+      },
     ],
   },
   {

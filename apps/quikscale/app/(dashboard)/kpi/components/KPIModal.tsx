@@ -11,6 +11,7 @@ import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { Lock, ChevronDown } from "lucide-react";
@@ -670,36 +671,36 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       title={panelTitle}
       subtitle={panelSubtitle}
       footer={
-        <RightPanelFooter>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving || readOnly}
-            title={readOnly ? "Only the creator, assignee, team head, or an admin can edit this KPI" : undefined}
-            className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {saving && (
-              <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            )}
-            {submitLabel}
-          </button>
-        </RightPanelFooter>
+        // Column wrapper pins the server-error banner directly above the
+        // Cancel/Create buttons so it's visible without scrolling — long forms
+        // had users missing the old top-of-body banner.
+        <div className="flex flex-col gap-2 w-full">
+          <FormErrorBanner message={errors._} />
+          <RightPanelFooter>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={saving || readOnly}
+              title={readOnly ? "Only the creator, assignee, team head, or an admin can edit this KPI" : undefined}
+              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {saving && (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
+              {submitLabel}
+            </button>
+          </RightPanelFooter>
+        </div>
       }
     >
-          {errors._ && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
-              {errors._}
-            </div>
-          )}
-
           {readOnly && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
               Read-only — only the creator, assignee, team head, or an admin can edit this KPI.
