@@ -1,9 +1,10 @@
 "use client";
 
-import { unwrap } from "@/lib/utils/api-fetch";
 import { useEffect, useMemo, useState } from "react";
 import { X, Check, Info, ImageIcon, Package, Briefcase } from "lucide-react";
 import { ImageWithFallback } from "@/components/ui/ImageWithFallback";
+import { unwrap } from "@/lib/utils/api-fetch";
+import { offeringLabel } from "@/lib/offerings/labels";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -17,22 +18,15 @@ interface Asset {
   thumbnailUrl?: string | null;
 }
 
-interface Product {
+// Unified catalog row (Phase 2 — Product + Service collapsed into Offering).
+// `type` is a free string (product / service / menu_item / treatment / …);
+// the picker no longer pre-splits by it.
+interface Offering {
   _id: string;
+  type: string;
   name: string;
   description?: string | null;
   price?: string | null;
-  currency?: string | null;
-  category?: string | null;
-  tags?: string[];
-  imageUrls?: string[];
-}
-
-interface Service {
-  _id: string;
-  name: string;
-  description?: string | null;
-  pricing?: string | null;
   currency?: string | null;
   category?: string | null;
   duration?: string | null;
@@ -42,8 +36,7 @@ interface Service {
 
 export type AttachmentSelection =
   | { kind: "asset"; asset: Asset }
-  | { kind: "product"; product: Product }
-  | { kind: "service"; service: Service };
+  | { kind: "offering"; offering: Offering };
 
 interface SelectMediaModalProps {
   brandId: string;
@@ -52,7 +45,15 @@ interface SelectMediaModalProps {
   onSelect: (selection: AttachmentSelection) => void;
 }
 
-type Tab = "library" | "product" | "service";
+type Tab = "library" | "catalog";
+
+// Single page with a generous limit — most brands have under 100 offerings.
+// Matches /dashboard/catalog's FETCH_LIMIT; if a real brand exceeds it we'll
+// see it on the AI service source-contribution log and revisit with paging.
+const FETCH_LIMIT = 100;
+
+// Sentinel for the "All types" filter option.
+const ALL_TYPES = "__all__";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
@@ -64,23 +65,24 @@ export default function SelectMediaModal({
   onClose,
   onSelect,
 }: SelectMediaModalProps) {
-  const [tab, setTab] = useState<Tab>(initial?.kind === "service" ? "service" : initial?.kind === "product" ? "product" : "library");
+  const [tab, setTab] = useState<Tab>(
+    initial?.kind === "offering" ? "catalog" : "library",
+  );
 
-  // Single-select across all three tabs (mutual exclusion per CLAUDE.md
+  // Single-select across both tabs (mutual exclusion per CLAUDE.md
   // "Asset vs Catalog" rule). Reset whenever the user picks something new.
   const [picked, setPicked] = useState<AttachmentSelection | null>(initial ?? null);
 
   // Per-tab data + loading state. Each tab fetches lazily on first open.
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
+  const [offerings, setOfferings] = useState<Offering[]>([]);
 
   const [loadingAssets, setLoadingAssets] = useState(false);
-  const [loadingProducts, setLoadingProducts] = useState(false);
-  const [loadingServices, setLoadingServices] = useState(false);
+  const [loadingOfferings, setLoadingOfferings] = useState(false);
 
-  const [productFilter, setProductFilter] = useState("");
-  const [serviceFilter, setServiceFilter] = useState("");
+  // Catalog tab filters: a type dropdown ("All types" default) + a name search.
+  const [typeFilter, setTypeFilter] = useState<string>(ALL_TYPES);
+  const [search, setSearch] = useState("");
 
   // ── Fetch on tab switch / mount ──────────────────────────────────────────
 
@@ -93,52 +95,75 @@ export default function SelectMediaModal({
         .then((d) => setAssets(d.assets ?? []))
         .catch(() => {})
         .finally(() => setLoadingAssets(false));
-    } else if (tab === "product" && products.length === 0 && !loadingProducts) {
-      // Unified catalog (Phase 2). The Offering API returns one row per item
-      // with a free-string `type` column; filter to the conventional types
-      // that the modal labels as "Products" vs "Services" so the existing
-      // tabs keep working without UI changes.
-      setLoadingProducts(true);
-      fetch(`/api/offerings?brandId=${brandId}&page=1&limit=50`, { credentials: "include" })
-        .then((r) => (r.ok ? r.json() : { offerings: [] })).then(unwrap)
-        .then((d: { offerings?: Array<{ type?: string }> }) => {
-          const all = d.offerings ?? [];
-          setProducts(
-            all.filter(
-              (o) => o.type !== "service" && o.type !== "treatment",
-            ) as typeof products,
-          );
-        })
-        .catch(() => {})
-        .finally(() => setLoadingProducts(false));
-    } else if (tab === "service" && services.length === 0 && !loadingServices) {
-      setLoadingServices(true);
-      fetch(`/api/offerings?brandId=${brandId}&page=1&limit=50&type=service`, {
+    } else if (tab === "catalog" && offerings.length === 0 && !loadingOfferings) {
+      setLoadingOfferings(true);
+      // Phase 2: one /api/offerings call (no ?type filter) returns every
+      // offering type. Grouping + the type dropdown happen client-side so the
+      // picker works whether a brand has 1 type or 10.
+      fetch(`/api/offerings?brandId=${brandId}&limit=${FETCH_LIMIT}`, {
         credentials: "include",
       })
         .then((r) => (r.ok ? r.json() : { offerings: [] })).then(unwrap)
-        .then((d: { offerings?: Array<unknown> }) =>
-          setServices((d.offerings ?? []) as typeof services),
-        )
+        .then((d: { offerings?: Offering[] }) => setOfferings(d.offerings ?? []))
         .catch(() => {})
-        .finally(() => setLoadingServices(false));
+        .finally(() => setLoadingOfferings(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, brandId]);
 
-  // ── Filtered lists ───────────────────────────────────────────────────────
+  // ── Type counts (drives the filter dropdown) ───────────────────────────────
 
-  const filteredProducts = useMemo(() => {
-    if (!productFilter.trim()) return products;
-    const q = productFilter.toLowerCase();
-    return products.filter((p) => p.name.toLowerCase().includes(q));
-  }, [products, productFilter]);
+  const typeCounts = useMemo(() => {
+    // Map type → count, preserving first-seen order (the API sorts by
+    // sortOrder asc / createdAt desc, so this mirrors the catalog page).
+    const counts = new Map<string, number>();
+    for (const o of offerings) {
+      const t = (o.type || "product").trim() || "product";
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    return counts;
+  }, [offerings]);
 
-  const filteredServices = useMemo(() => {
-    if (!serviceFilter.trim()) return services;
-    const q = serviceFilter.toLowerCase();
-    return services.filter((s) => s.name.toLowerCase().includes(q));
-  }, [services, serviceFilter]);
+  // If the active type filter points at a type that no longer exists once data
+  // loads (e.g. an `initial` from an older session), fall back to All types.
+  const activeType =
+    typeFilter !== ALL_TYPES && typeCounts.has(typeFilter) ? typeFilter : ALL_TYPES;
+
+  // ── Filtered + grouped offerings ────────────────────────────────────────────
+
+  const searchMatch = (o: Offering) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return o.name.toLowerCase().includes(q);
+  };
+
+  // When a specific type is selected → flat list of that type (search-filtered).
+  const flatOfferings = useMemo(() => {
+    if (activeType === ALL_TYPES) return [];
+    return offerings.filter(
+      (o) => ((o.type || "product").trim() || "product") === activeType && searchMatch(o),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offerings, activeType, search]);
+
+  // When "All types" → grouped by type, headers shown, search applied per item.
+  const groupedOfferings = useMemo(() => {
+    if (activeType !== ALL_TYPES) return [];
+    const byType = new Map<string, Offering[]>();
+    for (const o of offerings) {
+      if (!searchMatch(o)) continue;
+      const t = (o.type || "product").trim() || "product";
+      if (!byType.has(t)) byType.set(t, []);
+      byType.get(t)!.push(o);
+    }
+    return Array.from(byType.entries()).map(([type, items]) => ({ type, items }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offerings, activeType, search]);
+
+  const hasAnyMatch =
+    activeType === ALL_TYPES
+      ? groupedOfferings.some((g) => g.items.length > 0)
+      : flatOfferings.length > 0;
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -148,8 +173,8 @@ export default function SelectMediaModal({
   };
 
   const isPickedAsset = (a: Asset) => picked?.kind === "asset" && picked.asset._id === a._id;
-  const isPickedProduct = (p: Product) => picked?.kind === "product" && picked.product._id === p._id;
-  const isPickedService = (s: Service) => picked?.kind === "service" && picked.service._id === s._id;
+  const isPickedOffering = (o: Offering) =>
+    picked?.kind === "offering" && picked.offering._id === o._id;
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -169,7 +194,6 @@ export default function SelectMediaModal({
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        // Primary glass token from design-tokens.md.
         style={{
           width: "min(720px, 96vw)",
           maxHeight: "min(720px, 92vh)",
@@ -198,7 +222,7 @@ export default function SelectMediaModal({
             <h3 style={{ color: "#ffffff", fontSize: 16, fontWeight: 600, margin: 0 }}>
               Select Media
             </h3>
-            {/* Pill tab switcher — Social/Email-style container per design-tokens.md §2 */}
+            {/* Pill tab switcher */}
             <div
               style={{
                 display: "flex",
@@ -214,8 +238,7 @@ export default function SelectMediaModal({
               {(
                 [
                   { key: "library", label: "Library" },
-                  { key: "product", label: "Product" },
-                  { key: "service", label: "Service" },
+                  { key: "catalog", label: "Catalog" },
                 ] as { key: Tab; label: string }[]
               ).map((t) => {
                 const active = tab === t.key;
@@ -264,12 +287,17 @@ export default function SelectMediaModal({
           </button>
         </div>
 
-        {/* ── Body ──────────────────────────────────────────────────────
-              overflow:hidden — the grid wraps naturally to multiple rows;
-              we never show a scrollbar inside the modal. The modal's own
-              maxHeight clips any overflow rather than producing a
-              horizontal-scroll artifact (SC1 bug). */}
-        <div style={{ padding: "0 22px 18px", overflow: "hidden", flex: 1 }}>
+        {/* ── Body ────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            padding: "0 22px 18px",
+            overflow: "hidden",
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+          }}
+        >
           {tab === "library" && (
             <LibraryTab
               loading={loadingAssets}
@@ -278,26 +306,20 @@ export default function SelectMediaModal({
               onPick={(a) => setPicked({ kind: "asset", asset: a })}
             />
           )}
-          {tab === "product" && (
+          {tab === "catalog" && (
             <CatalogTab
-              kind="product"
-              loading={loadingProducts}
-              items={filteredProducts}
-              filter={productFilter}
-              onFilterChange={setProductFilter}
-              isPicked={(p) => isPickedProduct(p as Product)}
-              onPick={(p) => setPicked({ kind: "product", product: p as Product })}
-            />
-          )}
-          {tab === "service" && (
-            <CatalogTab
-              kind="service"
-              loading={loadingServices}
-              items={filteredServices}
-              filter={serviceFilter}
-              onFilterChange={setServiceFilter}
-              isPicked={(s) => isPickedService(s as Service)}
-              onPick={(s) => setPicked({ kind: "service", service: s as Service })}
+              loading={loadingOfferings}
+              total={offerings.length}
+              typeCounts={typeCounts}
+              activeType={activeType}
+              onTypeChange={setTypeFilter}
+              search={search}
+              onSearchChange={setSearch}
+              grouped={groupedOfferings}
+              flat={flatOfferings}
+              hasAnyMatch={hasAnyMatch}
+              isPicked={isPickedOffering}
+              onPick={(o) => setPicked({ kind: "offering", offering: o })}
             />
           )}
         </div>
@@ -350,7 +372,7 @@ function LibraryTab({
   onPick: (a: Asset) => void;
 }) {
   return (
-    <div>
+    <div style={{ overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0 }}>
       <div style={sectionLabelRow}>
         <span style={sectionLabel}>Brand Library</span>
         <Info size={13} style={{ color: "rgba(255,255,255,0.40)" }} />
@@ -378,11 +400,7 @@ function LibraryTab({
                 <div style={tileImageWrap}>
                   {a.thumbnailUrl || a.url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={a.thumbnailUrl ?? a.url}
-                      alt=""
-                      style={tileImage}
-                    />
+                    <img src={a.thumbnailUrl ?? a.url} alt="" style={tileImage} />
                   ) : (
                     <div style={tileImagePlaceholder}>
                       <ImageIcon size={20} />
@@ -401,98 +419,174 @@ function LibraryTab({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Catalog tab — generic for products + services (same shape, different icon)
+// Catalog tab — every Offering for the brand, filterable by type
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CatalogTab({
-  kind,
   loading,
-  items,
-  filter,
-  onFilterChange,
+  total,
+  typeCounts,
+  activeType,
+  onTypeChange,
+  search,
+  onSearchChange,
+  grouped,
+  flat,
+  hasAnyMatch,
   isPicked,
   onPick,
 }: {
-  kind: "product" | "service";
   loading: boolean;
-  items: { _id: string; name: string; imageUrls?: string[] }[];
-  filter: string;
-  onFilterChange: (v: string) => void;
-  isPicked: (item: any) => boolean;
-  onPick: (item: any) => void;
+  total: number;
+  typeCounts: Map<string, number>;
+  activeType: string;
+  onTypeChange: (v: string) => void;
+  search: string;
+  onSearchChange: (v: string) => void;
+  grouped: { type: string; items: Offering[] }[];
+  flat: Offering[];
+  hasAnyMatch: boolean;
+  isPicked: (o: Offering) => boolean;
+  onPick: (o: Offering) => void;
 }) {
-  const placeholderIcon = kind === "product" ? <Package size={20} /> : <Briefcase size={20} />;
-  const labelText = kind === "product" ? "Select Product" : "Select Service";
-  const inputPlaceholder = kind === "product" ? "Search products by name…" : "Search services by name…";
-
   return (
-    <div>
+    <>
       <div style={sectionLabelRow}>
-        <span style={sectionLabel}>{labelText}</span>
+        <span style={sectionLabel}>Select from Catalog</span>
         <Info size={13} style={{ color: "rgba(255,255,255,0.40)" }} />
       </div>
 
-      {/* Search/filter input acting as the "dropdown" from v1 — typing
-          narrows the grid below. */}
-      <input
-        type="text"
-        value={filter}
-        onChange={(e) => onFilterChange(e.target.value)}
-        placeholder={inputPlaceholder}
-        style={{
-          width: "100%",
-          height: 38,
-          background: "rgba(255,255,255,0.08)",
-          border: "1px solid rgba(255,255,255,0.15)",
-          borderRadius: 10,
-          color: "#ffffff",
-          fontSize: 13,
-          padding: "0 14px",
-          outline: "none",
-          marginBottom: 14,
-          boxSizing: "border-box",
-        }}
-      />
+      {/* Filter row: type dropdown ("All types" default) + name search. The
+          dropdown lists only types that exist for this brand, with counts. */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <select
+          value={activeType}
+          onChange={(e) => onTypeChange(e.target.value)}
+          aria-label="Filter by offering type"
+          disabled={loading || total === 0}
+          style={{
+            height: 38,
+            flexShrink: 0,
+            minWidth: 150,
+            background: "rgba(255,255,255,0.08)",
+            border: "1px solid rgba(255,255,255,0.15)",
+            borderRadius: 10,
+            color: "#ffffff",
+            fontSize: 13,
+            padding: "0 12px",
+            outline: "none",
+            cursor: loading || total === 0 ? "not-allowed" : "pointer",
+            colorScheme: "dark",
+            boxSizing: "border-box",
+          }}
+        >
+          <option value={ALL_TYPES}>All types ({total})</option>
+          {Array.from(typeCounts.entries()).map(([type, count]) => (
+            <option key={type} value={type}>
+              {offeringLabel(type, "plural")} ({count})
+            </option>
+          ))}
+        </select>
 
-      {loading ? (
-        <SkeletonGrid />
-      ) : items.length === 0 ? (
-        <EmptyState
-          icon={placeholderIcon}
-          title={`No ${kind}s found`}
-          hint={
-            filter
-              ? "Try a different name."
-              : `Add ${kind}s from the Catalog page to use them here.`
-          }
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search catalog items..."
+          style={{
+            flex: 1,
+            height: 38,
+            background: "rgba(255,255,255,0.08)",
+            border: "1px solid rgba(255,255,255,0.15)",
+            borderRadius: 10,
+            color: "#ffffff",
+            fontSize: 13,
+            padding: "0 14px",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
         />
-      ) : (
-        <div style={gridStyle}>
-          {items.map((item) => {
-            const picked = isPicked(item);
-            const cover = item.imageUrls?.[0] ?? null;
-            return (
-              <button
-                key={item._id}
-                type="button"
-                onClick={() => onPick(item)}
-                style={tileStyle(picked)}
-                title={item.name}
-              >
-                <div style={tileImageWrap}>
-                  {cover ? (
-                    <ImageWithFallback src={cover} alt="" style={tileImage} />
-                  ) : (
-                    <div style={tileImagePlaceholder}>{placeholderIcon}</div>
-                  )}
-                  {picked && <CheckOverlay />}
+      </div>
+
+      <div style={{ overflowY: "auto", overflowX: "hidden", flex: 1, minHeight: 0 }}>
+        {loading ? (
+          <SkeletonGrid />
+        ) : total === 0 ? (
+          <EmptyState
+            icon={<Package size={20} />}
+            title="No catalog items yet"
+            hint="Add offerings from the Catalog page to use them here."
+          />
+        ) : !hasAnyMatch ? (
+          <EmptyState
+            icon={<Package size={20} />}
+            title="No matching items"
+            hint="Try a different name or type filter."
+          />
+        ) : activeType === ALL_TYPES ? (
+          // Grouped view — section header per type, then a grid.
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {grouped
+              .filter((g) => g.items.length > 0)
+              .map((g) => (
+                <div key={g.type}>
+                  <div style={groupHeaderRow}>
+                    <span style={groupHeaderLabel}>{offeringLabel(g.type, "plural")}</span>
+                    <span style={groupHeaderCount}>{g.items.length}</span>
+                  </div>
+                  <OfferingGrid items={g.items} isPicked={isPicked} onPick={onPick} />
                 </div>
-                <div style={tileLabel}>{item.name}</div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+              ))}
+          </div>
+        ) : (
+          // Flat view — single type, no header.
+          <OfferingGrid items={flat} isPicked={isPicked} onPick={onPick} />
+        )}
+      </div>
+    </>
+  );
+}
+
+function OfferingGrid({
+  items,
+  isPicked,
+  onPick,
+}: {
+  items: Offering[];
+  isPicked: (o: Offering) => boolean;
+  onPick: (o: Offering) => void;
+}) {
+  return (
+    <div style={gridStyle}>
+      {items.map((item) => {
+        const picked = isPicked(item);
+        const cover = item.imageUrls?.[0] ?? null;
+        const placeholderIcon =
+          item.type === "service" || item.type === "treatment" ? (
+            <Briefcase size={20} />
+          ) : (
+            <Package size={20} />
+          );
+        return (
+          <button
+            key={item._id}
+            type="button"
+            onClick={() => onPick(item)}
+            style={tileStyle(picked)}
+            title={item.name}
+          >
+            <div style={tileImageWrap}>
+              {cover ? (
+                <ImageWithFallback src={cover} alt="" style={tileImage} />
+              ) : (
+                <div style={tileImagePlaceholder}>{placeholderIcon}</div>
+              )}
+              {picked && <CheckOverlay />}
+            </div>
+            <div style={tileLabel}>{item.name}</div>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -586,7 +680,7 @@ function EmptyState({
   );
 }
 
-// ── Style tokens (kept inline so the modal is portable) ─────────────────────
+// ── Style tokens ────────────────────────────────────────────────────────────
 
 const sectionLabelRow: React.CSSProperties = {
   display: "flex",
@@ -601,16 +695,29 @@ const sectionLabel: React.CSSProperties = {
   fontWeight: 500,
 };
 
+const groupHeaderRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  marginBottom: 10,
+};
+
+const groupHeaderLabel: React.CSSProperties = {
+  color: "rgba(255,255,255,0.85)",
+  fontSize: 13,
+  fontWeight: 600,
+};
+
+const groupHeaderCount: React.CSSProperties = {
+  color: "rgba(255,255,255,0.40)",
+  fontSize: 12,
+  fontWeight: 400,
+};
+
 const gridStyle: React.CSSProperties = {
   display: "grid",
-  // minmax(0, 1fr) — without the explicit 0 minimum, CSS Grid tracks
-  // default to min-width: auto, which a long product name with
-  // whiteSpace: nowrap inflates beyond the column width and produces
-  // the horizontal scrollbar visible in SC1. The 0 minimum lets the
-  // track shrink so the column sticks to its 1fr share.
   gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
   gap: 12,
-  overflow: "hidden",
 };
 
 const tileImageWrap: React.CSSProperties = {
@@ -651,10 +758,6 @@ const tileLabel: React.CSSProperties = {
 
 function tileStyle(picked: boolean): React.CSSProperties {
   return {
-    // minWidth: 0 — belt-and-suspenders alongside the grid track's
-    // minmax(0, 1fr). A grid item's default min-width is auto, which
-    // means its label (whiteSpace: nowrap) can override the cell's
-    // assigned share. Forcing 0 lets the cell collapse cleanly.
     minWidth: 0,
     background: "transparent",
     border: "none",

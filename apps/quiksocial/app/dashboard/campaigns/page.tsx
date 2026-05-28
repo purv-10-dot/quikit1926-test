@@ -749,29 +749,21 @@ function CreateCampaignModal({
         // /api/campaigns POST handler (and the FastAPI request model)
         // expect. Mutually exclusive — only one of the three is non-null.
         const att = form.attachment;
-        const attachedProduct =
-          att?.kind === "product"
+        const attachedOffering =
+          att?.kind === "offering"
             ? {
-                name: att.product.name,
-                description: att.product.description ?? null,
-                price: att.product.price ?? null,
-                currency: att.product.currency ?? null,
-                category: att.product.category ?? null,
-                tags: att.product.tags ?? [],
-                imageUrl: att.product.imageUrls?.[0] ?? null,
-              }
-            : null;
-        const attachedService =
-          att?.kind === "service"
-            ? {
-                name: att.service.name,
-                description: att.service.description ?? null,
-                price: att.service.pricing ?? null,
-                currency: att.service.currency ?? null,
-                duration: att.service.duration ?? null,
-                category: att.service.category ?? null,
-                tags: att.service.tags ?? [],
-                imageUrl: att.service.imageUrls?.[0] ?? null,
+                // Offering's free-string `type` flows through verbatim; Python's
+                // _build_attachment_directive branches on it for type-specific
+                // prompts.
+                type: att.offering.type || "product",
+                name: att.offering.name,
+                description: att.offering.description ?? null,
+                price: att.offering.price ?? null,
+                currency: att.offering.currency ?? null,
+                duration: att.offering.duration ?? null,
+                category: att.offering.category ?? null,
+                tags: att.offering.tags ?? [],
+                imageUrl: att.offering.imageUrls?.[0] ?? null,
               }
             : null;
         const attachedAsset =
@@ -800,8 +792,7 @@ function CreateCampaignModal({
             describeConcept: form.describeConcept.trim() || null,
             includeLogo: form.includeLogo,
             templateId: template?.id ?? null,
-            attachedProduct,
-            attachedService,
+            attachedOffering,
             attachedAsset,
           }),
         });
@@ -1093,32 +1084,32 @@ function CreateCampaignModal({
           </Field>
         )}
 
-        {/* Optional attachment — Library / Product / Service. Same picker
-            as Create Post. The selected item drives the per-post prompt
-            directive AND is sent to Gemini as a multimodal reference so
-            every post in the campaign features the actual item. */}
+        {/* Optional attachment — Library / Catalog. Same picker as Create
+            Post. The selected item drives the per-post prompt directive AND
+            is sent to Gemini as a multimodal reference so every post in the
+            campaign features the actual item. */}
         {mode !== "clone" && (() => {
           const att = form.attachment;
           const label =
-            att?.kind === "product"
-              ? att.product.name
-              : att?.kind === "service"
-              ? att.service.name
+            att?.kind === "offering"
+              ? att.offering.name
               : att?.kind === "asset"
               ? att.asset.name
               : null;
           const thumb =
-            att?.kind === "product"
-              ? att.product.imageUrls?.[0]
-              : att?.kind === "service"
-              ? att.service.imageUrls?.[0]
+            att?.kind === "offering"
+              ? att.offering.imageUrls?.[0]
               : att?.kind === "asset"
               ? att.asset.thumbnailUrl ?? att.asset.url
               : null;
           const icon =
-            att?.kind === "product" ? <Package size={14} /> :
-            att?.kind === "service" ? <Briefcase size={14} /> :
-            att?.kind === "asset" ? <ImageIcon size={14} /> : null;
+            att?.kind === "offering"
+              ? att.offering.type === "service" || att.offering.type === "treatment"
+                ? <Briefcase size={14} />
+                : <Package size={14} />
+              : att?.kind === "asset"
+              ? <ImageIcon size={14} />
+              : null;
           return (
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <button

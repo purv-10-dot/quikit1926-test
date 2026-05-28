@@ -222,37 +222,26 @@ export default function CreatePostPage() {
   const buildAttachmentPayload = useCallback((
     sel: AttachmentSelection | null,
   ): {
-    attachedProduct?: Record<string, unknown>;
-    attachedService?: Record<string, unknown>;
+    attachedOffering?: Record<string, unknown>;
     attachedAsset?: Record<string, unknown>;
   } => {
     if (!sel) return {};
-    if (sel.kind === "product") {
-      const p = sel.product;
+    if (sel.kind === "offering") {
+      const o = sel.offering;
+      // The offering's own free-string `type` (product / service / menu_item /
+      // treatment / …) flows through verbatim — Python's
+      // _build_attachment_directive branches on it for type-specific prompts.
       return {
-        attachedProduct: {
-          name: p.name,
-          description: p.description ?? null,
-          price: p.price ?? null,
-          currency: p.currency ?? null,
-          category: p.category ?? null,
-          tags: p.tags ?? [],
-          imageUrl: p.imageUrls?.[0] ?? null,
-        },
-      };
-    }
-    if (sel.kind === "service") {
-      const s = sel.service;
-      return {
-        attachedService: {
-          name: s.name,
-          description: s.description ?? null,
-          price: s.pricing ?? null,
-          currency: s.currency ?? null,
-          duration: s.duration ?? null,
-          category: s.category ?? null,
-          tags: s.tags ?? [],
-          imageUrl: s.imageUrls?.[0] ?? null,
+        attachedOffering: {
+          type: o.type || "product",
+          name: o.name,
+          description: o.description ?? null,
+          price: o.price ?? null,
+          currency: o.currency ?? null,
+          duration: o.duration ?? null,
+          category: o.category ?? null,
+          tags: o.tags ?? [],
+          imageUrl: o.imageUrls?.[0] ?? null,
         },
       };
     }
@@ -811,25 +800,25 @@ export default function CreatePostPage() {
   function Step1() {
     const att = data.attachment;
     const attLabel =
-      att?.kind === "product"
-        ? att.product.name
-        : att?.kind === "service"
-        ? att.service.name
+      att?.kind === "offering"
+        ? att.offering.name
         : att?.kind === "asset"
         ? att.asset.name
         : null;
     const attThumb =
-      att?.kind === "product"
-        ? att.product.imageUrls?.[0]
-        : att?.kind === "service"
-        ? att.service.imageUrls?.[0]
+      att?.kind === "offering"
+        ? att.offering.imageUrls?.[0]
         : att?.kind === "asset"
         ? att.asset.thumbnailUrl ?? att.asset.url
         : null;
     const attIcon =
-      att?.kind === "product" ? <Package size={14} /> :
-      att?.kind === "service" ? <Briefcase size={14} /> :
-      att?.kind === "asset" ? <ImageIcon size={14} /> : null;
+      att?.kind === "offering"
+        ? att.offering.type === "service" || att.offering.type === "treatment"
+          ? <Briefcase size={14} />
+          : <Package size={14} />
+        : att?.kind === "asset"
+        ? <ImageIcon size={14} />
+        : null;
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
