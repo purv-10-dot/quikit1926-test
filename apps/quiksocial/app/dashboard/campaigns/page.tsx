@@ -656,6 +656,11 @@ interface CreateModalProps {
   mode: ModalMode;
   template?: CampaignTemplate;
   sourceCampaign?: Campaign;
+  // Festival → campaign handoff from the calendar day panel's "Campaign"
+  // button. Only set in "scratch" mode. Pre-fills name + concept + a short
+  // 7-day window anchored on the festival date.
+  festival?: string;
+  scheduledDate?: string;
   brandId: string;
   onClose: () => void;
   onCreated: (c: Campaign) => void;
@@ -665,6 +670,8 @@ function CreateCampaignModal({
   mode,
   template,
   sourceCampaign,
+  festival,
+  scheduledDate,
   brandId,
   onClose,
   onCreated,
@@ -674,17 +681,31 @@ function CreateCampaignModal({
     .toISOString()
     .split("T")[0];
 
+  // Festival flow: anchor a SHORT campaign on the festival date — a few posts
+  // around the event (teaser → day-of → follow-up), not a month-long arc. The
+  // window defaults to 7 days starting at the festival; the user can change it.
+  const festivalStart = scheduledDate || today;
+  let festivalEnd = defaultEnd;
+  if (scheduledDate) {
+    const t = new Date(scheduledDate).getTime();
+    festivalEnd = Number.isNaN(t)
+      ? defaultEnd
+      : new Date(t + 7 * 86_400_000).toISOString().split("T")[0];
+  }
+
   const [form, setForm] = useState<CampaignFormData>({
     name:
       mode === "template" && template
         ? `${template.name} Campaign`
         : mode === "clone" && sourceCampaign
         ? `${sourceCampaign.name} (Copy)`
+        : festival
+        ? `${festival} Campaign`
         : "",
     objective:
       mode === "template" && template ? template.objective : "Brand Awareness",
-    startDate: today,
-    endDate: defaultEnd,
+    startDate: festivalStart,
+    endDate: festivalEnd,
     frequency:
       mode === "template" && template
         ? template.frequency
@@ -696,7 +717,11 @@ function CreateCampaignModal({
     postTime:
       mode === "clone" && sourceCampaign ? sourceCampaign.postTime : "09:00",
     describeConcept:
-      mode === "template" && template ? template.conceptDirection : "",
+      mode === "template" && template
+        ? template.conceptDirection
+        : festival
+        ? `Create a campaign celebrating ${festival}.`
+        : "",
     includeLogo: true,
     totalPosts:
       mode === "template" && template
@@ -1418,6 +1443,8 @@ export default function CampaignsPage() {
     mode: ModalMode;
     template?: CampaignTemplate;
     sourceCampaign?: Campaign;
+    festival?: string;
+    scheduledDate?: string;
   } | null>(null);
 
   // Per-campaign generation state. Indexed by campaign._id.
@@ -1467,6 +1494,22 @@ export default function CampaignsPage() {
   }, [brandId]);
 
   useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
+
+  // Festival → campaign handoff from the calendar day panel's "Campaign"
+  // button: /dashboard/campaigns?festival=…&scheduledDate=YYYY-MM-DD opens the
+  // create modal pre-filled. Read once on mount via window.location (not
+  // useSearchParams — avoids the Suspense-boundary requirement on `next build`),
+  // then strip the query so a refresh / remount doesn't reopen the modal.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const festival = sp.get("festival") ?? undefined;
+    const rawDate = sp.get("scheduledDate");
+    const scheduledDate =
+      rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : undefined;
+    if (!festival && !scheduledDate) return;
+    setModal({ mode: "scratch", festival, scheduledDate });
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   const handleCreated = (c: Campaign) => {
     setCampaigns((prev) => [c, ...prev]);
@@ -2065,6 +2108,8 @@ export default function CampaignsPage() {
           mode={modal.mode}
           template={modal.template}
           sourceCampaign={modal.sourceCampaign}
+          festival={modal.festival}
+          scheduledDate={modal.scheduledDate}
           brandId={brandId}
           onClose={() => setModal(null)}
           onCreated={handleCreated}
