@@ -50,6 +50,10 @@ const createCampaignSchema = z.object({
   totalPosts: z.number().int().min(0).optional(),
   describeConcept: z.string().nullish(),
   includeLogo: z.boolean().optional(),
+  offeringIds: z.array(z.string()).optional(),
+  // Legacy aliases — accept productIds + serviceIds from older clients and
+  // fold them into offeringIds so a stale frontend doesn't break campaign
+  // creation. Drop these once v3 wizards everywhere.
   productIds: z.array(z.string()).optional(),
   serviceIds: z.array(z.string()).optional(),
   assetIds: z.array(z.string()).optional(),
@@ -62,6 +66,8 @@ const createCampaignSchema = z.object({
     .optional(),
   templateId: z.string().nullish(),
   clonedFromId: z.string().nullish(),
+  attachedOffering: z.unknown().optional(),
+  // Legacy — see comment above on productIds/serviceIds.
   attachedProduct: z.unknown().optional(),
   attachedService: z.unknown().optional(),
   attachedAsset: z.unknown().optional(),
@@ -125,6 +131,18 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     }
   }
 
+  // Fold legacy productIds + serviceIds into offeringIds. Empty if everything
+  // was empty; dedupe to be safe.
+  const offeringIds = Array.from(
+    new Set([
+      ...(body.offeringIds ?? []),
+      ...(body.productIds ?? []),
+      ...(body.serviceIds ?? []),
+    ]),
+  );
+  const attachedOffering =
+    body.attachedOffering ?? body.attachedProduct ?? body.attachedService ?? undefined;
+
   const created = await db.campaign.create({
     data: {
       orgId,
@@ -143,16 +161,14 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
       totalPosts: body.totalPosts ?? 0,
       describeConcept: body.describeConcept?.trim() ?? null,
       includeLogo: body.includeLogo ?? true,
-      productIds: body.productIds ?? [],
-      serviceIds: body.serviceIds ?? [],
+      offeringIds,
       assetIds: body.assetIds ?? [],
       brandColorPrimary: body.brandColors?.primary ?? null,
       brandColorSecondary: body.brandColors?.secondary ?? null,
       brandColorAccent: body.brandColors?.accent ?? null,
       templateId: body.templateId ?? null,
       clonedFromId: body.clonedFromId ?? null,
-      attachedProduct: (body.attachedProduct ?? undefined) as never,
-      attachedService: (body.attachedService ?? undefined) as never,
+      attachedOffering: (attachedOffering ?? undefined) as never,
       attachedAsset: (body.attachedAsset ?? undefined) as never,
     },
   });

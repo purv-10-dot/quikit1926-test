@@ -8,8 +8,8 @@ Feature branch: `feature/quiksocial-v2-port` (off `quiksocial-latest`)
 | --- | --- | --- |
 | Phase A — Schema | ✅ done | e22320a1 |
 | Batch 1 — Lib utilities | ✅ done | eeba2a3c |
-| Batch 2 — Offering API + UI | ✅ done | (current) |
-| Batch 3 — Brands/Posts/Campaigns adaptation | ⏳ next | — |
+| Batch 2 — Offering API + UI | ✅ done | d156460b |
+| Batch 3 — Brands/Posts/Campaigns adaptation | ✅ done | (current) |
 | Batch 4 — Components + dashboard pages | pending | — |
 | Batch 5 — Auto-reply subsystem | pending | — |
 | Batch 6 — Meta / publisher / cron merge | pending | — |
@@ -64,19 +64,35 @@ Remaining errors are all in Batch 3/7 territory:
 
 **No new errors from Batch 2.** Error count down from ~40 (after schema change) to ~24 (Product/Service routes themselves now deleted).
 
+## Typecheck status after Batch 3
+
+✅ **`npx tsc --noEmit` is GREEN** — all schema-driven errors resolved. Zero remaining errors.
+
+### Batch 3 (this commit)
+- **Edited**:
+  - `app/api/brands/route.ts` — POST body schema unified: drops the separate `productInputSchema`/`serviceInputSchema`, accepts `offerings[]` (with optional legacy `products[]`/`services[]` arrays folded into Offering rows). Transaction now writes `tx.offering.createMany(...)` instead of `tx.product.createMany` + `tx.service.createMany`.
+  - `app/api/campaigns/route.ts` — POST body schema accepts `offeringIds` + `attachedOffering` (with legacy `productIds`/`serviceIds`/`attachedProduct`/`attachedService` folded in). DB write uses `offeringIds` + `attachedOffering`.
+  - `app/api/campaigns/[id]/clone/route.ts` — `useSameOfferings` flag (alias: `useSameProducts`); clones `offeringIds` from source instead of product/service ID arrays.
+  - `app/api/campaigns/generate/route.ts` — reads `campaign.offeringIds`, queries `db.offering.findMany`, re-splits into `products`/`services` arrays for the AI service payload by Offering.type. Maps `Offering.price` → AI service's `service.pricing` field. Uses `attachedOffering` from campaign.
+  - `app/api/posts/route.ts` — POST body schema accepts `attachedOffering` (with legacy attached fields folded in); writes `attachedOffering` to Post.
+  - `app/api/posts/[id]/publish-now/route.ts` — already ported; added v2's platform-override body parsing (`{ platform: "facebook" | "instagram" }`) and persist the actually-published platform on success/failure.
+  - `scripts/seed-dummy.ts` — wipe step uses `db.offering.deleteMany`; seed loops use `db.offering.create` with `type: "product"` or `type: "service"`.
+- **Deleted**:
+  - `app/api/admin/fix-product-images/route.ts` (and the empty `admin/` directory). One-shot legacy backfill that operated on the now-removed Product/Service tables; clean-slate DB approach makes it dead code. If a future Offering-image fix tool is needed, build it then.
+
 ## Deviations from plan
 
 None.
 
-## Next: Batch 3 — Brands/Posts/Campaigns adaptation
+## Next: Batch 4 — Components + dashboard pages
 
-Will:
-1. Rewrite `app/api/brands/route.ts` POST to write unified Offering rows (drop Product/Service branches; accept v2's `body.offerings[]` array with optional legacy `body.products[]` / `body.services[]` migration mapping).
-2. Rewrite `app/api/campaigns/{route,[id]/clone,generate}.ts` — replace `productIds`/`serviceIds` with `offeringIds`; `attachedProduct`/`attachedService` with `attachedOffering`; replace `db.product`/`db.service` reads with `db.offering`.
-3. Rewrite `app/api/posts/route.ts` to use `attachedOffering` + `selectedOfferingIds`.
-4. Decide on `app/api/admin/fix-product-images/route.ts` — port to Offering or delete (admin-only utility).
-5. Update `scripts/seed-dummy.ts` to seed Offering rows.
-6. Port any missing v2 routes for Brand/Post/Campaign that the monorepo doesn't have yet (e.g. `app/api/posts/[id]/publish-now/route.ts`).
+Will diff & merge v2's UI surface into the monorepo's existing components/pages:
+- `app/dashboard/{page,layout,settings,integrations,brands,assets,approval,calendar,campaigns,content-hub,posts/create}/` — copy v2's bodies, fix `src/` imports, swap `useSession.activeBrandId` for `useActiveBrandId`, unwrap API envelopes.
+- `components/{calendar,posts,providers,ui,quik-post}` — diff & merge.
+- `components/layout/dashboard-layout.tsx` — copy from v2 (the dashboard layout shell).
+- `components/posts/ScheduleModal.tsx` — copy from v2 (new modal).
+- `app/dashboard/brands/create/CatalogDiscoveryStep.tsx` — copy from v2.
+- Drop v2's `components/providers/SessionProvider.tsx` — the monorepo uses Providers (SessionProvider + QueryClientProvider + ThemeProvider).
 
 ## Resume instructions if compacted
 

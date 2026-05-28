@@ -34,6 +34,9 @@ const createPostSchema = z.object({
   scheduledFor: z.string().nullish(),
   imageUrl: z.string().nullish(),
   prompt: z.string().nullish(),
+  attachedOffering: z.unknown().optional(),
+  // Legacy aliases — fold into attachedOffering if attachedOffering itself
+  // wasn't supplied. Drop these once every client ships the unified shape.
   attachedProduct: z.unknown().optional(),
   attachedService: z.unknown().optional(),
   attachedAsset: z.unknown().optional(),
@@ -163,8 +166,10 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
         typeof body.prompt === "string" && body.prompt.trim()
           ? body.prompt.trim()
           : null,
-      attachedProduct: (body.attachedProduct ?? undefined) as never,
-      attachedService: (body.attachedService ?? undefined) as never,
+      attachedOffering: ((body.attachedOffering ??
+        body.attachedProduct ??
+        body.attachedService ??
+        undefined) as never),
       attachedAsset: (body.attachedAsset ?? undefined) as never,
     },
   });

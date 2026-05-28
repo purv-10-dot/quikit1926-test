@@ -10,7 +10,7 @@
  * Ported to QuikIT (Phase 3, Batch 2).
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { isAdminInBrand } from "@/lib/auth/rbac";
@@ -34,7 +34,7 @@ function aliasPost<T extends AnyRow>(
 }
 
 export const POST = withOrgAuth<{ id: string }>(
-  async ({ orgId, userId }, _req, { params }) => {
+  async ({ orgId, userId }, req: NextRequest, { params }) => {
     const post = await db.post.findFirst({
       where: { id: params.id, orgId },
     });
@@ -68,11 +68,24 @@ export const POST = withOrgAuth<{ id: string }>(
       );
     }
 
+    // Optional platform override from the ScheduleModal "Post Now" pill —
+    // user picks Facebook vs Instagram at publish time. Falls back to the
+    // stored post.platform when missing or invalid.
+    const body = (await req.json().catch(() => null)) as
+      | { platform?: unknown }
+      | null;
+    const rawPlatform =
+      typeof body?.platform === "string"
+        ? body.platform.trim().toLowerCase()
+        : null;
+    const overridePlatform =
+      rawPlatform === "facebook" || rawPlatform === "instagram" ? rawPlatform : null;
+
     const dispatch = await publishPost({
       orgId: post.orgId,
       brandId: post.brandId,
       userId: post.createdBy,
-      platform: post.platform,
+      platform: overridePlatform ?? post.platform,
       content: post.content,
       imageUrls: post.imageUrls,
       aiImageUrl: post.aiImageUrl,
@@ -87,6 +100,9 @@ export const POST = withOrgAuth<{ id: string }>(
         where: { id: params.id },
         data: {
           status: PostStatus.Published,
+          // Persist the actual published-to platform (normalized by the
+          // dispatcher) so the row matches reality, not the create default.
+          platform: dispatch.platform,
           publishedAt: new Date(),
           publishedMediaId: dispatch.mediaId,
           permalink: dispatch.permalink ?? null,
@@ -114,6 +130,8 @@ export const POST = withOrgAuth<{ id: string }>(
       where: { id: params.id },
       data: {
         status: PostStatus.Failed,
+        // Persist the attempted platform so a retry targets the same one.
+        platform: dispatch.platform,
         failedReason: reason,
         lockedAt: null,
         updatedBy: userId,
