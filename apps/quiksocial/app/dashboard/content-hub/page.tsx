@@ -2934,6 +2934,37 @@ export default function ContentHubPage() {
     setScheduleTarget({ post, mode });
   };
 
+  // Deep-link from the calendar day panel / Day view: there is no standalone
+  // post page, so "View" / "Reschedule" land here as
+  // /dashboard/content-hub?post=<id>[&reschedule=true]. Fetch the post by id
+  // (it may not be on the current page) and open its detail modal, or the
+  // reschedule flow. Runs once on mount; strips the params so a refresh won't
+  // reopen it.
+  useEffect(() => {
+    const postId = searchParams.get("post");
+    if (!postId) return;
+    const wantReschedule = searchParams.get("reschedule") === "true";
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/posts/${postId}`, { credentials: "include" });
+        if (!res.ok || cancelled) return;
+        const data = unwrap<{ post?: Post }>(await res.json());
+        if (!data?.post || cancelled) return;
+        if (wantReschedule) openSchedule(data.post, "reschedule");
+        else setSelectedPost(data.post);
+      } catch {
+        // A bad / forbidden id simply opens nothing.
+      }
+    })();
+    // Strip ?post=…&reschedule=… so a later refresh doesn't reopen the modal.
+    window.history.replaceState(null, "", window.location.pathname);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Member: "Suggest & Send for Review" — submits the chosen time as
   // requestedPublishTime and transitions the post to "review". Returns
   // null on success (modal will close), error string on failure. The

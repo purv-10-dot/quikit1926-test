@@ -780,7 +780,7 @@ export default function CalendarPage() {
                     )}
                     {post.status === "overdue" && (
                       <Link
-                        href={`/dashboard/posts/${post._id}?reschedule=true`}
+                        href={`/dashboard/content-hub?post=${post._id}&reschedule=true`}
                         style={{
                           fontSize: 12,
                           padding: "4px 10px",
@@ -794,7 +794,7 @@ export default function CalendarPage() {
                       </Link>
                     )}
                     <Link
-                      href={`/dashboard/posts/${post._id}`}
+                      href={`/dashboard/content-hub?post=${post._id}`}
                       style={{
                         fontSize: 12,
                         padding: "4px 10px",

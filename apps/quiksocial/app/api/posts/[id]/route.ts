@@ -33,6 +33,47 @@ const patchPostSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/posts/[id] — single post fetch, org + workspace-role scoped.
+//
+// Backs the calendar → Content Hub deep-link (?post=<id>): the calendar day
+// panel has no standalone post page, so "View"/"Reschedule" open the post's
+// detail/reschedule modal in Content Hub, which needs to load a post that
+// may not be on its current page. Member scoping mirrors the list route
+// (own posts only); admin/approver see every post in the brand.
+// ---------------------------------------------------------------------------
+export const GET = withOrgAuth<{ id: string }>(
+  async ({ orgId, userId }, _req, { params }) => {
+    const post = await db.post.findFirst({
+      where: { id: params.id, orgId },
+    });
+    if (!post) {
+      return NextResponse.json(
+        { success: false, error: "Post not found", code: "POST_NOT_FOUND" },
+        { status: 404 },
+      );
+    }
+
+    const role = await getWorkspaceRole(orgId, userId, post.brandId);
+    if (!role) {
+      return NextResponse.json(
+        { success: false, error: "You do not have access to this brand", code: "NO_BRAND_ACCESS" },
+        { status: 403 },
+      );
+    }
+    const isAdmin = role === "admin" || role === "approver";
+
+    if (!isAdmin && post.createdBy !== userId) {
+      return NextResponse.json(
+        { success: false, error: "You can only view your own posts", code: "NOT_POST_OWNER" },
+        { status: 403 },
+      );
+    }
+
+    return NextResponse.json({ success: true, data: { post: aliasPost(post) } });
+  },
+);
+
+// ---------------------------------------------------------------------------
 // DELETE /api/posts/[id]
 // ---------------------------------------------------------------------------
 export const DELETE = withOrgAuth<{ id: string }>(
