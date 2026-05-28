@@ -117,7 +117,66 @@ These v2 feature additions don't block typecheck and don't break runtime. Ship a
 
 (Approval visibility is unchanged — gated on `canSeeApproval = isWorkspaceAdmin`. Member-role users correctly don't see it; admin-role users do. Test-user role can be set via `UPDATE app_quiksocial."BrandMembership" SET role = 'admin' WHERE …`.)
 
-### Brand Creation Wizard port (current commit)
+### Sprint 2 v2 fixes synced (commits 250afa89 → 12bdc2c8)
+
+Five bugfix commits from quiksocial-v2 main shipped between May 27–28
+that need to be in the monorepo before this PR ships. Synced one-to-one
+preserving v2's commit-level coherence; each adapts to the monorepo
+patterns (orgId, withOrgAuth, unwrap, { success, data } envelope).
+
+1. **`250afa89` ← v2 `9307580`** — SelectMediaModal unified Offering.
+   Replaces Batch 4's surgical patch (Products/Services tabs with type-
+   filtered fetches that missed menu_item/treatment/etc.) with the
+   proper v2 UX rewrite: single Catalog tab, one unfiltered /api/offerings
+   call, grouped client-side by Offering.type with an "All types"
+   dropdown + name search. AttachmentSelection union: asset|product|
+   service → asset|offering. Posts/Campaigns create flows now send
+   attachedOffering with the offering's free-string type.
+
+2. **`cc27b321` ← v2 `f3cb51e`** — Calendar 4 bugs.
+   - Date click → Create Post flow with locked date. Week-view columns
+     now clickable; Day view gets "+ Create post for this day" button.
+     ScheduleModal gains lockDate prop (greys out the calendar grid,
+     clears the pre-selected slot).
+   - Week view stuck on "Apr 27 – May 3" — currentDate was pinned to
+     the 1st of the month; now inits to today.
+   - "Plan this Month" pill now shows in all three views.
+   - Published posts missing from calendar — /api/posts date filter
+     broadened to OR over scheduledFor / publishedAt / createdAt;
+     client postsByDay keys off the same relevantDate.
+
+3. **`8f088384` ← v2 `31f88e0`** — Global dark `<select>` theme +
+   campaign festival pre-fill.
+   - One CSS rule in globals.css darkens the OS-rendered option list
+     (which inline styles cannot reach) — fixes every native select
+     across catalog/campaigns/settings/media-picker.
+   - Campaigns page reads ?festival=…&scheduledDate=… on mount, opens
+     the create modal in scratch mode pre-filled with name + concept +
+     a 7-day window anchored on the festival date.
+
+4. **`09ea0ec1` ← v2 `03afefa`** — Calendar deep-link → Content Hub.
+   - Added GET /api/posts/[id] (org + workspace-role scoped) so the
+     content-hub deep-link can fetch a post not on its current page.
+   - Repointed Day-view "View"/"Reschedule" links to
+     /dashboard/content-hub?post=<id>[&reschedule=true]. CalendarDayPanel
+     was already aligned in Batch 4.
+   - Content Hub reads ?post=…[&reschedule=…] on mount, fetches the
+     post, opens the detail or reschedule modal, strips the query.
+
+5. **`12bdc2c8` ← v2 `88e5255`** — Drop demo env-fallback + Post-Now
+   platform.
+   - dispatch.ts: removed META_PAGE_ACCESS_TOKEN/META_IG_ACCOUNT_ID/
+     META_PAGE_ID env-var fallback (was silently publishing to a shared
+     demo account, masking "not connected" state). Source narrowed to
+     "social-account" only. **Behavioral change for UAT/demo:** posts
+     without a connected SocialAccount now go to status=Failed with a
+     "connect account" message instead of "publishing" to nowhere.
+   - ScheduleModal.onPublishNow signature: () → (platform: string).
+     Content Hub + posts/create handlers now thread the user's platform
+     pill through to publish-now via JSON body. posts/create also uses
+     it on the draft create (was hardcoded "instagram").
+
+### Brand Creation Wizard port (commit 3492660f)
 
 `app/dashboard/brands/create/page.tsx` (1487 → 1991 LOC) + new `app/dashboard/brands/create/CatalogDiscoveryStep.tsx` (1106 LOC).
 
