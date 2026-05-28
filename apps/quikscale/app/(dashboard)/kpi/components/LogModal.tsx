@@ -13,6 +13,7 @@ import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
+import { humanizeApiError } from "@/lib/utils/humanizeError";
 import {
   buildBreakdown,
   buildOwnerBreakdown,
@@ -1193,14 +1194,17 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         const batchResult = await updateWeeklyBatch.mutateAsync(weeklyInputs);
         if (batchResult.failed > 0) {
           const firstErr = batchResult.results.find(r => !r.ok)?.error ?? "Some weekly values could not be saved";
-          throw new Error(`${batchResult.failed} of ${batchResult.results.length} weeks failed: ${firstErr}`);
+          const total = batchResult.results.length;
+          const friendly = humanizeApiError(new Error(firstErr), { context: "weekly value" });
+          const prefix = total > 1 ? `${batchResult.failed} of ${total} weeks couldn't be saved — ` : "";
+          throw new Error(`${prefix}${friendly}`);
         }
       }
 
       onRefresh();
       onClose();
-    } catch (e: any) {
-      setSaveError(e.message || "Failed to save");
+    } catch (e: unknown) {
+      setSaveError(humanizeApiError(e, { context: "weekly value", fallback: "Couldn't save your changes. Please try again." }));
     } finally {
       setSaving(false);
     }

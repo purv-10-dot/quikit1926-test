@@ -2,8 +2,11 @@ import { z } from "zod";
 
 // Shared field set for create/update (kept in one place to avoid drift)
 const kpiBaseFields = {
-  name: z.string().min(1, "KPI name is required").max(200),
-  description: z.string().max(1000).optional().nullable(),
+  // No length cap on user-content fields — Prisma columns are `text` (no DB
+  // limit) and product wants users to enter long descriptive names freely.
+  // `.min(1)` stays so empty names are still rejected.
+  name: z.string().min(1, "KPI name is required"),
+  description: z.string().optional().nullable(),
   kpiLevel: z.enum(["individual", "team"]).default("individual"),
   owner: z.string().cuid("Invalid owner ID").optional().nullable(),
   // Team KPI multi-owner fields
@@ -25,7 +28,7 @@ const kpiBaseFields = {
   // Team KPI: optional per-owner override for the auto-created child Individual
   // KPI's name. Shape: { userId: "Custom name" }. Missing entries → child uses
   // the Team KPI's `name`.
-  ownerKpiNames: z.record(z.string(), z.string().min(1).max(200)).optional().nullable(),
+  ownerKpiNames: z.record(z.string(), z.string().min(1)).optional().nullable(),
   currency: z.string().optional().nullable(),
   targetScale: z.string().optional().nullable(),
   reverseColor: z.boolean().optional(),
@@ -75,8 +78,8 @@ export const createKPISchema = z
 // existing row in the PUT handler.
 export const updateKPISchema = z
   .object({
-    name: z.string().min(1).max(200),
-    description: z.string().max(1000).optional().nullable(),
+    name: z.string().min(1),
+    description: z.string().optional().nullable(),
     kpiLevel: z.enum(["individual", "team"]).optional(),
     owner: z.string().cuid().optional().nullable(),
     ownerIds: z.array(z.string().cuid()).optional(),
@@ -95,7 +98,7 @@ export const updateKPISchema = z
     weeklyOwnerTargets: z.record(z.string(), z.record(z.string(), z.number())).optional().nullable(),
     // Per-owner Individual KPI name override. Only meaningful when the row is a
     // Team KPI; the PUT handler uses it to rename child Individual KPIs.
-    ownerKpiNames: z.record(z.string(), z.string().min(1).max(200)).optional().nullable(),
+    ownerKpiNames: z.record(z.string(), z.string().min(1)).optional().nullable(),
     currency: z.string().optional().nullable(),
     targetScale: z.string().optional().nullable(),
     reverseColor: z.boolean().optional(),

@@ -39,7 +39,7 @@ falling back to the DB row. Set these if you want to override the DB:
 | `ADMIN_URL` | admin portal |
 | `QUIKSCALE_URL` | quikscale |
 | `QUIKVC_URL` | quikvc |
-| `QUIKCONSTRUCTION_URL` | quikconstruction |
+| `QUIKINFRA_URL` | quikinfra |
 | (`QUIKIT_URL` itself) | launcher tile |
 
 ---
@@ -87,7 +87,7 @@ falling back to the DB row. Set these if you want to override the DB:
 
 ---
 
-## 4. Per-app projects (quikscale, quiktrack, quikconstruction, …)
+## 4. Per-app projects (quikscale, quiktrack, quikinfra, …)
 
 Each app project needs at least:
 

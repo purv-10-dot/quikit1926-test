@@ -10,6 +10,7 @@ import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, Right
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
+import { humanizeApiError } from "@/lib/utils/humanizeError";
 
 interface Props {
   defaultYear?: number;
@@ -63,8 +64,8 @@ function TeamSelect({ value, onChange, teams }: { value: string; onChange: (id: 
       setOpen(false);
       setAdding(false);
       setNewName("");
-    } catch (e: any) {
-      setErr(e.message || "Failed to create team");
+    } catch (e: unknown) {
+      setErr(humanizeApiError(e, { context: "team", fallback: "Couldn't create the team. Please try again." }));
     } finally {
       setSaving(false);
     }
@@ -229,8 +230,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
       } as any);
       onSuccess();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save priority";
-      setErrors({ _: msg });
+      setErrors({ _: humanizeApiError(err, { context: "Priority", fallback: "Couldn't save the Priority. Please try again." }) });
     } finally {
       setSaving(false);
     }

@@ -12,8 +12,8 @@ This is a multi-week build. The plan organizes it into 6 incremental phases so e
 
 ## Pre-Flight Findings (from exploration)
 
-**Free port:** 3006 (admin=3005, quikconstruction=3007, quikvc=3008 already taken)
-**Existing schemas:** `public, app_quikscale, app_quikconstruction, app_quikvc` → add `app_quiktrack`.
+**Free port:** 3006 (admin=3005, quikinfra=3007, quikvc=3008 already taken)
+**Existing schemas:** `public, app_quikscale, app_quikinfra, app_quikvc` → add `app_quiktrack`.
 **Template:** `apps/_template/` is the canonical scaffold — clone wholesale, then rename.
 **No "quiktrack" stubs anywhere in repo.**
 **No screenshots in PDF folder** — only `.pdf` specs. Visual fidelity must come from the PDFs and any references the user pastes inline; otherwise we follow Jira-like conventions plus QuikIT design tokens.
@@ -425,7 +425,7 @@ This is the first pixel-perfect screen. Saved to `apps/quiktrack/docs/visual-che
 1. Test gap analysis — ensure every endpoint has 401 / cross-tenant / happy. Add component tests for drag-drop and drawer interactions.
 2. Coverage ratchet update.
 3. End-to-end happy path Playwright spec: create project → create sprint → add issues → start sprint → drag on board → log time → complete sprint → view report.
-4. Lint/typecheck/test green across **all** workspaces (no regressions in admin/quikconstruction/quikit/quikvc/quikscale).
+4. Lint/typecheck/test green across **all** workspaces (no regressions in admin/quikinfra/quikit/quikvc/quikscale).
 5. Final implementation report listing files, endpoints, models, indexes, and known TODOs.
 
 ---

@@ -15,7 +15,16 @@ import { useCallback, useEffect, useState } from "react";
 // type system and persistence layer pick it up automatically.
 // ───────────────────────────────────────────────────────────────────────────
 
-export const TABLE_MODULES = ["kpi", "kpiTeams", "priority", "www"] as const;
+export const TABLE_MODULES = [
+  "kpi",
+  "kpiTeams",
+  "priority",
+  "www",
+  "clientMaster",
+  "clientMembers",
+  "dailyHuddle",
+  "weeklyMeeting",
+] as const;
 export type TableModule = (typeof TABLE_MODULES)[number];
 
 export type SortOrder = "asc" | "desc";
@@ -33,6 +42,10 @@ const TABLE_DEFAULTS: Record<TableModule, TableState> = {
   kpiTeams: { sortBy: "createdAt", sortOrder: "desc", search: "" },
   priority: { sortBy: "", sortOrder: "asc", search: "" },
   www: { sortBy: "", sortOrder: "asc", search: "" },
+  clientMaster: { sortBy: "", sortOrder: "asc", search: "" },
+  clientMembers: { sortBy: "", sortOrder: "asc", search: "" },
+  dailyHuddle: { sortBy: "", sortOrder: "desc", search: "" },
+  weeklyMeeting: { sortBy: "", sortOrder: "desc", search: "" },
 };
 
 interface TablesState {

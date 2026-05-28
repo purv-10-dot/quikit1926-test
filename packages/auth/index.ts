@@ -497,7 +497,7 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
           "https://quiktrack.vercel.app",
           "https://quikvc.vercel.app",
           "https://quiksocial.vercel.app",
-          "https://quikconstruction.vercel.app",
+          "https://quikinfra.vercel.app",
           "https://apps.quikit.ai",
           "https://scale.quikit.ai",
           "https://orgadmin.quikit.ai",

@@ -124,9 +124,9 @@ describe("createKPISchema — field validation", () => {
     expect(createKPISchema.safeParse(input).success).toBe(false);
   });
 
-  it("rejects name over 200 chars", () => {
-    const input = { ...baseIndividual, name: "x".repeat(201) };
-    expect(createKPISchema.safeParse(input).success).toBe(false);
+  it("accepts a very long name (no length cap — Prisma column is text)", () => {
+    const input = { ...baseIndividual, name: "x".repeat(5000) };
+    expect(createKPISchema.safeParse(input).success).toBe(true);
   });
 
   it("rejects year 2019", () => {

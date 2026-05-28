@@ -186,17 +186,9 @@ describe("categorySchema", () => {
       }
     });
 
-    it("rejects name exceeding 200 characters", () => {
+    it("accepts a very long name (no length cap on user-content fields)", () => {
       const result = createCategorySchema.safeParse({
-        name: "a".repeat(201),
-        dataType: "Number",
-      });
-      expect(result.success).toBe(false);
-    });
-
-    it("accepts name at exactly 200 characters", () => {
-      const result = createCategorySchema.safeParse({
-        name: "a".repeat(200),
+        name: "a".repeat(5000),
         dataType: "Number",
       });
       expect(result.success).toBe(true);
@@ -228,13 +220,13 @@ describe("categorySchema", () => {
       expect(result.success).toBe(false);
     });
 
-    it("rejects description exceeding 2000 characters", () => {
+    it("accepts a very long description (no length cap on user-content fields)", () => {
       const result = createCategorySchema.safeParse({
         name: "Test",
         dataType: "Number",
-        description: "a".repeat(2001),
+        description: "a".repeat(10000),
       });
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
     });
 
     it("rejects wrong types for fields", () => {
@@ -272,10 +264,11 @@ describe("categorySchema", () => {
       expect(updateCategorySchema.safeParse({ description: null }).success).toBe(true);
     });
 
-    it("enforces max lengths on update", () => {
-      expect(updateCategorySchema.safeParse({ name: "a".repeat(201) }).success).toBe(false);
+    it("accepts long name/description on update; still rejects malformed currency code", () => {
+      expect(updateCategorySchema.safeParse({ name: "a".repeat(5000) }).success).toBe(true);
+      expect(updateCategorySchema.safeParse({ description: "a".repeat(10000) }).success).toBe(true);
+      // Currency is a format guard (ISO code), still capped.
       expect(updateCategorySchema.safeParse({ currency: "a".repeat(11) }).success).toBe(false);
-      expect(updateCategorySchema.safeParse({ description: "a".repeat(2001) }).success).toBe(false);
     });
   });
 });
@@ -315,27 +308,26 @@ describe("settingsSchema", () => {
       expect(updateProfileSchema.safeParse({ lastName: "" }).success).toBe(false);
     });
 
-    it("enforces firstName max 50", () => {
-      expect(updateProfileSchema.safeParse({ firstName: "a".repeat(51) }).success).toBe(false);
-      expect(updateProfileSchema.safeParse({ firstName: "a".repeat(50) }).success).toBe(true);
+    it("enforces firstName max 100", () => {
+      expect(updateProfileSchema.safeParse({ firstName: "a".repeat(101) }).success).toBe(false);
+      expect(updateProfileSchema.safeParse({ firstName: "a".repeat(100) }).success).toBe(true);
     });
 
-    it("enforces lastName max 50", () => {
-      expect(updateProfileSchema.safeParse({ lastName: "a".repeat(51) }).success).toBe(false);
+    it("enforces lastName max 100", () => {
+      expect(updateProfileSchema.safeParse({ lastName: "a".repeat(101) }).success).toBe(false);
     });
 
-    it("enforces country max 5", () => {
+    it("enforces country max 5 (ISO 3166 format)", () => {
       expect(updateProfileSchema.safeParse({ country: "a".repeat(6) }).success).toBe(false);
       expect(updateProfileSchema.safeParse({ country: "US" }).success).toBe(true);
     });
 
-    it("enforces timezone max 100", () => {
+    it("enforces timezone max 100 (IANA format)", () => {
       expect(updateProfileSchema.safeParse({ timezone: "a".repeat(101) }).success).toBe(false);
     });
 
-    it("enforces bio max 275", () => {
-      expect(updateProfileSchema.safeParse({ bio: "a".repeat(276) }).success).toBe(false);
-      expect(updateProfileSchema.safeParse({ bio: "a".repeat(275) }).success).toBe(true);
+    it("accepts very long bio (no length cap on user-content)", () => {
+      expect(updateProfileSchema.safeParse({ bio: "a".repeat(5000) }).success).toBe(true);
     });
 
     it("rejects wrong types", () => {

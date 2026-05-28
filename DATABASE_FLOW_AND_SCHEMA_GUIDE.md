@@ -16,7 +16,7 @@ The datasource is declared in `packages/database/prisma/schema.prisma`:
 | `quikit` | App registry, organizations, memberships, per-user and per-org app access, OAuth IdP tables |
 | `public` | Shared cross-app tables (teams, notifications, audit, telemetry, billing-related rows, super-admin instrumentation, etc.) |
 | `app_quikscale` | QuikScale domain data |
-| `app_quikconstruction` | QuikConstruction domain data |
+| `app_quikinfra` | QuikInfra domain data |
 | `app_quikvc` | QuikVC domain data |
 
 **Connection variables**
@@ -85,7 +85,7 @@ Tenant-owned rows use **`orgId`** (FK to `quikit.Org` / Prisma `Tenant`).
 
 ---
 
-### `app_quikconstruction` ? QuikConstruction (79 models)
+### `app_quikinfra` ? QuikInfra (79 models)
 
 Construction / ERP-style domain: companies, projects, procurement, inventory, finance, HR, QC, safety, documents, expenses, numbering, construction-local audit, etc.
 
@@ -140,7 +140,7 @@ There is no `tenantId` column in the current Prisma schema for tenant scoping; a
 3. For each app it checks **`quikit.UserAppAccess`** for `(userId, orgId)` to set `installed` and `role` on each tile.
 4. **`baseUrl`** for each tile can be overridden per environment so local dev does not follow production URLs stored in the DB:
 
-   `QUIKIT_URL`, `QUIKSCALE_URL`, `ADMIN_URL`, `QUIKVC_URL`, `QUIKCONSTRUCTION_URL`
+   `QUIKIT_URL`, `QUIKSCALE_URL`, `ADMIN_URL`, `QUIKVC_URL`, `QUIKINFRA_URL`
 
 5. Response includes `quikitUrl` for client navigation (from `QUIKIT_URL` or `NEXTAUTH_URL`). Response is marked **private** HTTP cache (`Cache-Control: private, max-age=30, stale-while-revalidate=60`).
 
@@ -157,7 +157,7 @@ Uses **`@quikit/database`** to manage platform configuration: org and access mod
 | App | Port (dev) | Primary data schema |
 |-----|------------|---------------------|
 | `quikscale` | 3002 | `app_quikscale` + shared schemas as needed |
-| `quikconstruction` | 3007 | `app_quikconstruction` + shared |
+| `quikinfra` | 3007 | `app_quikinfra` + shared |
 | `quikvc` | 3008 | `app_quikvc` + shared |
 
 Each app still reads session and org context from **`auth`** / **`quikit`** (and **`public`** for teams, flags, notifications, etc.) as required.
@@ -172,7 +172,7 @@ Each app still reads session and org context from **`auth`** / **`quikit`** (and
 | `apps/quikit` (launcher) | Read **`quikit`** for registry and access; read **`public`** for shared features used by the launcher |
 | `apps/admin` | **`quikit`** + **`public`** for administration |
 | `apps/quikscale` | **`app_quikscale`** + shared schemas |
-| `apps/quikconstruction` | **`app_quikconstruction`** + shared schemas |
+| `apps/quikinfra` | **`app_quikinfra`** + shared schemas |
 | `apps/quikvc` | **`app_quikvc`** + shared schemas |
 
 ---
@@ -187,7 +187,7 @@ Each app still reads session and org context from **`auth`** / **`quikit`** (and
 | QuikScale | 3002 |
 | Auth | 3004 |
 | Admin | 3005 |
-| QuikConstruction | 3007 |
+| QuikInfra | 3007 |
 | QuikVC | 3008 |
 | `_template` (scaffold, not in npm workspaces) | 3010 |
 

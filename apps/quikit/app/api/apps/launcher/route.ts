@@ -149,7 +149,7 @@ export async function GET(req: NextRequest) {
     admin: process.env.ADMIN_URL,
     quiktrack: process.env.QUIKTRACK_URL,
     quikvc: process.env.QUIKVC_URL,
-    quikconstruction: process.env.QUIKCONSTRUCTION_URL,
+    quikinfra: process.env.QUIKINFRA_URL,
     quiksocial: process.env.QUIKSOCIAL_URL,
   };
 
@@ -166,7 +166,7 @@ export async function GET(req: NextRequest) {
     admin: "http://localhost:3002",
     quikscale: "http://localhost:3003",
     quiktrack: "http://localhost:3004",
-    quikconstruction: "http://localhost:3006",
+    quikinfra: "http://localhost:3006",
     quikvc: "http://localhost:3005",
   };
 

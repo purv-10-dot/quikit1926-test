@@ -147,7 +147,7 @@ export default function FlipCard({
                 style={{ backgroundColor: `color-mix(in srgb, var(--brand) 25%, transparent)` }}
               />
               {/* Icon — kept on a white tile so black-on-transparent
-                   logos (QuikScale, QuikConstruction) stay visible against
+                   logos (QuikScale, QuikInfra) stay visible against
                    the dark card body. */}
               <div
                 className={cn(

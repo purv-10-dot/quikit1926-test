@@ -8,14 +8,14 @@
  *
  * Ashwin (existing super_admin) is preserved as-is.
  *
- * Grants UserAppAccess for QuikScale, QuikTrack, QuikSocial and QuikConstruction
+ * Grants UserAppAccess for QuikScale, QuikTrack, QuikSocial and QuikInfra
  * to all four members so any one user can pop between every product app.
  *
  * Seeds rich domain data scoped to Moreyeahs orgId for the three shared-schema
- * apps. QuikConstruction has its own schema (separate Prisma client + JIT-
+ * apps. QuikInfra has its own schema (separate Prisma client + JIT-
  * provisioned CnUser rows) — the demo data there lives under tenantId="default"
  * which is what every JIT-mirrored user lands in. Run the per-app
- * apps/quikconstruction/scripts/seed-dummy.ts to populate that side.
+ * apps/quikinfra/scripts/seed-dummy.ts to populate that side.
  *
  * Idempotent: wipes only Moreyeahs-scoped demo data + the three new users'
  * memberships, then re-seeds. Other orgs and ashwin's data are untouched.
@@ -31,10 +31,10 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { scryptSync, randomBytes } from "node:crypto";
-// QuikConstruction has its own Prisma client + schema (snake_case tables under
-// app_quikconstruction). It's generated to a custom path so root postinstall
+// QuikInfra has its own Prisma client + schema (snake_case tables under
+// app_quikinfra). It's generated to a custom path so root postinstall
 // doesn't clobber it. Construction data lives outside the shared schema.
-import { PrismaClient as QcPrismaClient, Prisma as QcPrisma } from "../../../apps/quikconstruction/node_modules/.prisma-qc/client";
+import { PrismaClient as QcPrismaClient, Prisma as QcPrisma } from "../../../apps/quikinfra/node_modules/.prisma-qc/client";
 
 const db = new PrismaClient();
 const qc = new QcPrismaClient();
@@ -48,7 +48,7 @@ function scryptHash(plain: string): string {
 const ORG_SLUG = "moreyeahs";
 const PASSWORD = "Test@123";
 
-const PRODUCT_APP_SLUGS = ["quikscale", "quiktrack", "quiksocial", "quikconstruction"];
+const PRODUCT_APP_SLUGS = ["quikscale", "quiktrack", "quiksocial", "quikinfra"];
 
 const ASHWIN_EMAIL = "ashwin@moreyeahs.com";
 
@@ -968,9 +968,9 @@ async function seedQuiksocial(orgId: string, userIds: Record<string, string>) {
   }
 }
 
-// ── 5. QUIKCONSTRUCTION ─────────────────────────────────────────────────────
+// ── 5. QUIKINFRA ─────────────────────────────────────────────────────
 // Construction is a parallel auth + data world: its own Prisma client, its
-// own User table (CnUser → "app_quikconstruction"."User"), scrypt passwords.
+// own User table (CnUser → "app_quikinfra"."User"), scrypt passwords.
 // We pre-create CnUser rows for the four Moreyeahs members so they can log
 // in directly with email + password (no JIT round-trip), then seed master
 // data scoped to tenantId = Moreyeahs orgId so construction data is isolated.
@@ -1117,7 +1117,7 @@ async function wipeQuikconstruction(tenantId: string) {
 }
 
 async function seedQuikconstruction(orgId: string) {
-  console.log("\n🏗️  Seeding QuikConstruction (Company / Vendors / Items / Project)…");
+  console.log("\n🏗️  Seeding QuikInfra (Company / Vendors / Items / Project)…");
   // Use the Moreyeahs orgId as both tenantId AND orgId in construction —
   // construction's data model duplicates these fields and we want to keep
   // Moreyeahs construction data isolated from the "default" tenant.
@@ -1797,7 +1797,7 @@ async function main() {
 
   console.log("\n🎉 Done. Login credentials:");
   console.log(`   ashwin@moreyeahs.com         (existing central password) — for QuikScale/QuikTrack/QuikSocial`);
-  console.log(`   ashwin@moreyeahs.com         password: ${PASSWORD}     — for QuikConstruction (separate auth)`);
+  console.log(`   ashwin@moreyeahs.com         password: ${PASSWORD}     — for QuikInfra (separate auth)`);
   for (const u of NEW_USERS) {
     console.log(`   ${u.email.padEnd(28)} password: ${PASSWORD}     ${u.role}`);
   }

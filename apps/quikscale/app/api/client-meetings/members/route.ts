@@ -1,20 +1,34 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createClientMemberSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.members");
+
+const MEMBER_SORT_WHITELIST = ["name", "email", "createdAt", "updatedAt"] as const;
+
+function mapMemberSort(key: string, dir: SortDirection): Prisma.ClientMemberOrderByWithRelationInput {
+  if (key === "name") return { name: dir };
+  if (key === "email") return { email: dir };
+  if (key === "updatedAt") return { updatedAt: dir };
+  return { createdAt: key === "createdAt" ? dir : "asc" };
+}
 
 /**
  * GET /api/client-meetings/members
  *   ?includeDeleted=true → return ONLY soft-deleted rows (trash view)
+ *   ?sortBy=<col>&sortOrder=<asc|desc> → server-side sort (whitelist enforced).
+ *     Falls back to the historical `createdAt asc` when omitted/invalid.
  */
 export const GET = withOrgAuth(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
+  const { orderBy } = parseSort(request, MEMBER_SORT_WHITELIST, mapMemberSort);
   const rows = await db.clientMember.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
-    orderBy: { createdAt: "asc" },
+    orderBy,
     select: {
       id: true, name: true, email: true,
       createdAt: true, updatedAt: true,
