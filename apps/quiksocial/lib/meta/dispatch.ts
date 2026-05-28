@@ -49,8 +49,8 @@ interface ResolvedCredentials {
   accountId: string;
   /** Always the Page ID. Same as accountId for Facebook. */
   pageId: string | null;
-  /** "social-account" if from DB, "env" if from env vars. */
-  source: "social-account" | "env";
+  /** Always from a connected SocialAccount row (no env-var fallback). */
+  source: "social-account";
 }
 
 function pickFirstImage(post: {
@@ -119,48 +119,16 @@ async function resolveCredentials(
     }
   }
 
-  // 3. Env-var fallback (UAT / demo)
-  const envToken = process.env.META_PAGE_ACCESS_TOKEN;
-  if (envToken) {
-    if (platform === "instagram") {
-      const igId = process.env.META_IG_ACCOUNT_ID;
-      const pageId = process.env.META_PAGE_ID ?? null;
-      if (!igId) {
-        return {
-          error:
-            "META_IG_ACCOUNT_ID is not configured. Connect Instagram in Integrations or set the env var.",
-        };
-      }
-      return {
-        creds: {
-          accessToken: envToken,
-          accountId: igId,
-          pageId,
-          source: "env",
-        },
-      };
-    }
-    // facebook
-    const pageId = process.env.META_PAGE_ID;
-    if (!pageId) {
-      return {
-        error:
-          "META_PAGE_ID is not configured. Connect Facebook in Integrations or set the env var.",
-      };
-    }
-    return {
-      creds: {
-        accessToken: envToken,
-        accountId: pageId,
-        pageId,
-        source: "env",
-      },
-    };
-  }
-
-  // No SocialAccount row for the brand or user, AND no env-var fallback.
+  // No connected SocialAccount for the brand or user. There is deliberately
+  // NO env-var fallback: publishing to a shared demo account
+  // (META_PAGE_ACCESS_TOKEN / META_IG_ACCOUNT_ID / META_PAGE_ID) silently
+  // "succeeds" and flips the post to Published even though nothing reached
+  // the user's selected page — masking the real "not connected" state. The
+  // cron + publish-now routes turn this error into status='failed' with the
+  // message as `failedReason` so the Content Hub surfaces a clear
+  // "connect account" prompt.
   return {
-    error: `No social account connected for ${platform}. Connect ${platform} in Integrations and try again.`,
+    error: `No ${platform} account connected for this brand. Connect ${platform} in Integrations and try again.`,
   };
 }
 

@@ -690,7 +690,7 @@ export default function CreatePostPage() {
   // create flow can reuse the same publish-now route the Content Hub uses
   // for retries; the brief "draft" intermediate state is invisible to the
   // user because we navigate away on success.
-  const handlePublishNowFromCreate = async (): Promise<string | null> => {
+  const handlePublishNowFromCreate = async (platform: string): Promise<string | null> => {
     setPublishingNow(true);
     try {
       const brandId = activeBrand?._id ?? activeBrand?.id;
@@ -707,12 +707,11 @@ export default function CreatePostPage() {
         body: JSON.stringify({
           brandId,
           content: caption,
-          // platform here is informational metadata for the draft. The
-          // publish-now route resolves the actual destination via the
-          // brand's connected SocialAccount lookup, so an "instagram"
-          // default is safe even if the user later picked Facebook on
-          // the modal pills.
-          platform: "instagram",
+          // The user's selected platform from the ScheduleModal pill. Drives
+          // which publisher fires — publish-now reads post.platform, so the
+          // old hardcoded "instagram" sent every Post Now to IG even when the
+          // user picked Facebook. Also passed explicitly to publish-now below.
+          platform,
           imageUrl: data.imageUrl,
           status: "draft",
           prompt: data.prompt,
@@ -728,7 +727,9 @@ export default function CreatePostPage() {
       const postId = createJson.post._id as string;
       const publishRes = await fetch(`/api/posts/${postId}/publish-now`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({ platform }),
       });
       const publishJson = unwrap(await publishRes.json().catch(() => ({})));
       if (!publishRes.ok || !publishJson?.success) {

@@ -64,7 +64,7 @@ interface ScheduleModalProps {
   // Admin-only "Post Now" override. When provided, a Zap-icon button
   // appears beside Save/Schedule and invokes this directly. Returns null
   // on success, error string on failure.
-  onPublishNow?: () => Promise<string | null>;
+  onPublishNow?: (platform: string) => Promise<string | null>;
   publishingNow?: boolean;
   isAdmin?: boolean;
   // Mode toggle:
@@ -228,7 +228,7 @@ export default function ScheduleModal({
   const handlePostNow = async () => {
     if (!onPublishNow) return;
     setError("");
-    const errMsg = await onPublishNow();
+    const errMsg = await onPublishNow(selectedPlatform);
     if (errMsg) setError(errMsg);
   };
 

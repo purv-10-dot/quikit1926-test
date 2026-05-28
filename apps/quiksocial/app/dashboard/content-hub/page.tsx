@@ -3076,14 +3076,16 @@ export default function ContentHubPage() {
   // ScheduleModal Post Now — admin override that publishes immediately.
   // Closes the modal on success, returns the error string on failure so
   // the modal can render it without unmounting.
-  const handleSchedulePublishNow = async (): Promise<string | null> => {
+  const handleSchedulePublishNow = async (platform: string): Promise<string | null> => {
     const target = scheduleTarget?.post;
     if (!target) return "No post selected";
     setSchedulePublishingNow(true);
     try {
       const res = await fetch(`/api/posts/${target._id}/publish-now`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({ platform }),
       });
       const data = unwrap(await res.json().catch(() => ({})));
       if (res.ok) {
