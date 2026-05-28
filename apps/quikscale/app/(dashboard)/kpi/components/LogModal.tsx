@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useUpdateKPI, useUpdateWeeklyValuesBatch, useNotes, useAddNote } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -13,6 +13,7 @@ import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
+import { humanizeApiError } from "@/lib/utils/humanizeError";
 import {
   buildBreakdown,
   buildOwnerBreakdown,
@@ -337,35 +338,21 @@ function EditTab({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Division Type</label>
-          <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
-            {(["Cumulative", "Standalone"] as const).map(dt => (
-              <button key={dt} type="button" onClick={() => setDivisionType(dt)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                  form.divisionType === dt ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                }`}>
-                {dt}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-gray-400 mt-1">
-            {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
-          </p>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Division Type</label>
+        <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
+          {(["Cumulative", "Standalone"] as const).map(dt => (
+            <button key={dt} type="button" onClick={() => setDivisionType(dt)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                form.divisionType === dt ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              }`}>
+              {dt}
+            </button>
+          ))}
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-          <div className="flex gap-3 mt-1">
-            {(["active", "paused", "completed"] as const).map(s => (
-              <label key={s} className="flex items-center gap-1.5 cursor-pointer">
-                <input type="radio" name="editStatus" value={s} checked={form.status === s}
-                  onChange={() => set("status", s)} className="text-accent-600" />
-                <span className="text-xs text-gray-600 capitalize">{s}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+        <p className="text-[10px] text-gray-400 mt-1">
+          {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
+        </p>
       </div>
 
       {/* Color Coding Mode */}
@@ -924,6 +911,11 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
   // Current week-of-quarter for the header pill. DB-driven: respects tenant's
   // QuarterSetting.startDate (may be offset from Apr 1 / Jul 1 / etc.).
   const headerCurrentWeek = useCurrentWeek(kpi.year, kpi.quarter);
+  // Past-week edit flag — when off (default), the batch endpoint will reject
+  // any row with weekNumber < currentWeek. The save handler uses this to
+  // skip past weeks instead of sending them and getting a confusing
+  // "N of 13 weeks failed" partial-success error back.
+  const { canEditPastWeek: canEditPastWeekAtSave } = usePastWeekFlags();
 
   const isTeamKPI = kpi.kpiLevel === "team";
   const currentUserId = session?.user?.id ?? "";
@@ -1060,6 +1052,13 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
     return out;
   });
 
+  // Frozen snapshot of the weekly state at modal open — used in the save
+  // handler to send ONLY weeks the user actually changed. Without this, every
+  // Save shipped all 13 weeks, and the server's `value ?? 0` coercion turned
+  // every untouched-but-empty week into a literal 0, wiping the column.
+  const initialWeeklyStateRef = useRef<Record<number, { value: string; notes: string }>>(weeklyState);
+  const initialTeamWeeklyStateRef = useRef<Record<string, Record<number, { value: string; notes: string }>>>(teamWeeklyState);
+
   async function handleSave() {
     // Validate edit form
     const errs: Record<string, string> = {};
@@ -1140,29 +1139,47 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
       // Collect weekly inputs WITHOUT starting the requests yet.
       // Metadata must commit first so the weekly endpoint reads the updated qtdGoal
       // when recomputing progressPercent — otherwise a race condition leaves it stale.
+      //
+      // Two filters applied per row:
+      //   1. Past-week lock — skip when the tenant has it on (default) and the
+      //      week is before the current quarter week. Prevents the misleading
+      //      "N of 13 weeks failed" partial-success error from the server.
+      //   2. Diff against the frozen snapshot at modal open — only include weeks
+      //      where value OR notes actually changed. Without this, the server's
+      //      `value ?? 0` coercion would turn every untouched-but-empty week
+      //      into a literal 0, wiping the column on every save.
       type WeeklyInput = { weekNumber: number; value: number | null; notes: string | null; userId?: string };
       const weeklyInputs: WeeklyInput[] = [];
+      const isPastWeekLocked = (w: number) =>
+        !canEditPastWeekAtSave && headerCurrentWeek !== null && w < headerCurrentWeek;
+      const cellsDiffer = (
+        cur: { value: string; notes: string } | undefined,
+        prev: { value: string; notes: string } | undefined,
+      ) =>
+        (cur?.value ?? "") !== (prev?.value ?? "") ||
+        (cur?.notes ?? "") !== (prev?.notes ?? "");
       if (isTeamKPI) {
         for (const ownerId of Object.keys(teamWeeklyState)) {
           // Skip owners the actor can't edit (to avoid 403 responses that would roll back the batch)
           const canEditThisOwner = canEditAnyOwner || ownerId === currentUserId;
           if (!canEditThisOwner) continue;
           for (const w of ALL_WEEKS) {
-            const { value, notes } = teamWeeklyState[ownerId]?.[w] ?? { value: "", notes: "" };
+            if (isPastWeekLocked(w)) continue;
+            const cur = teamWeeklyState[ownerId]?.[w];
+            const prev = initialTeamWeeklyStateRef.current[ownerId]?.[w];
+            if (!cellsDiffer(cur, prev)) continue;
+            const { value, notes } = cur ?? { value: "", notes: "" };
             weeklyInputs.push({ weekNumber: w, value: value !== "" ? parseFloat(value) : null, notes: notes || null, userId: ownerId });
           }
         }
       } else {
         for (const w of ALL_WEEKS) {
-          const newWeeklyTarget = parseFloat(editForm.weeklyBreakdown[w]) || 0;
-          if (newWeeklyTarget === 0) {
-            // No target for this week after the save — wipe any existing value + notes
-            // so stale data doesn't persist in the DB or skew stats calculations.
-            weeklyInputs.push({ weekNumber: w, value: null, notes: null });
-          } else {
-            const { value, notes } = weeklyState[w] ?? { value: "", notes: "" };
-            weeklyInputs.push({ weekNumber: w, value: value !== "" ? parseFloat(value) : null, notes: notes || null });
-          }
+          if (isPastWeekLocked(w)) continue;
+          const cur = weeklyState[w];
+          const prev = initialWeeklyStateRef.current[w];
+          if (!cellsDiffer(cur, prev)) continue;
+          const { value, notes } = cur ?? { value: "", notes: "" };
+          weeklyInputs.push({ weekNumber: w, value: value !== "" ? parseFloat(value) : null, notes: notes || null });
         }
       }
 
@@ -1177,14 +1194,17 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
         const batchResult = await updateWeeklyBatch.mutateAsync(weeklyInputs);
         if (batchResult.failed > 0) {
           const firstErr = batchResult.results.find(r => !r.ok)?.error ?? "Some weekly values could not be saved";
-          throw new Error(`${batchResult.failed} of ${batchResult.results.length} weeks failed: ${firstErr}`);
+          const total = batchResult.results.length;
+          const friendly = humanizeApiError(new Error(firstErr), { context: "weekly value" });
+          const prefix = total > 1 ? `${batchResult.failed} of ${total} weeks couldn't be saved — ` : "";
+          throw new Error(`${prefix}${friendly}`);
         }
       }
 
       onRefresh();
       onClose();
-    } catch (e: any) {
-      setSaveError(e.message || "Failed to save");
+    } catch (e: unknown) {
+      setSaveError(humanizeApiError(e, { context: "weekly value", fallback: "Couldn't save your changes. Please try again." }));
     } finally {
       setSaving(false);
     }
@@ -1282,7 +1302,7 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
 
         {/* Tab content. `<fieldset disabled>` natively disables every input,
             select, textarea and button inside when RBAC denies `update`. */}
-        <fieldset disabled={!canUpdate} className={`flex-1 overflow-y-auto px-6 py-5 ${!canUpdate ? "opacity-70" : ""}`}>
+        <fieldset disabled={!canUpdate} className={`flex-1 min-w-0 overflow-y-auto px-6 py-5 ${!canUpdate ? "opacity-70" : ""}`}>
           {!canUpdate && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 mb-4">
               Read-only — your role doesn&apos;t grant update access on this KPI.

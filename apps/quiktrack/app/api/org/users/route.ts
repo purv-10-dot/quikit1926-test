@@ -10,12 +10,12 @@ import {
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
 import {
-  DEFAULT_INVITE_PASSWORD,
   INVITE_METHOD,
   renderInvitationEmail,
   type SsoProvider,
 } from "@quikit/shared";
 import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
+import { generateTempPassword } from "@quikit/shared/temp-password";
 import { sendEmail } from "@/lib/email/sendEmail";
 
 type InviteMethod = (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
@@ -57,9 +57,9 @@ const createUserSchema = z
      */
     invitationMethod: z.enum(["native", "sso"]).optional(),
   })
-  // No refine on password — Native invites without a password get the
-  // DEFAULT_INVITE_PASSWORD seeded server-side. If a password IS supplied,
-  // Zod's `min(8)` on the field itself still enforces strength.
+  // No refine on password — Native invites without a password get a
+  // freshly-generated temp password seeded server-side. If a password IS
+  // supplied, Zod's `min(8)` on the field itself still enforces strength.
   ;
 
 function buildUserResponse(
@@ -234,12 +234,13 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
   const projectAssignList = Array.from(projectMap.values());
 
   // Mirrors quikscale: compute defaults once, up front. Native + no admin
-  // password → seed the shared DEFAULT_INVITE_PASSWORD ("Quikit123") so the
-  // hash matches the value the onboarding email renders.
+  // password → generate a fresh friendly temp password so the hash matches
+  // the value the onboarding email renders and the admin can be shown once.
   const isNativeNewUser =
     !linkExistingUserId && invitationMethod === INVITE_METHOD.NATIVE;
   const usedDefaultPassword = isNativeNewUser && !password;
-  const effectivePassword = usedDefaultPassword ? DEFAULT_INVITE_PASSWORD : password;
+  const generatedTempPassword = usedDefaultPassword ? generateTempPassword() : null;
+  const effectivePassword = generatedTempPassword ?? password;
 
   // ─── Resolve newUserId across the three paths ───
   let newUserId: string;
@@ -297,10 +298,10 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
       // Path C — create the User row.
       //
       // SSO → password stays NULL so the credentials provider can't auth.
-      // Native → admin-supplied password, OR DEFAULT_INVITE_PASSWORD
-      //          ("Quikit123") if the admin left it blank. The default
-      //          gets emailed to the invitee verbatim; they're forced to
-      //          change it on first login via the accept-invite flow.
+      // Native → admin-supplied password, OR a freshly-generated friendly
+      //          temp password if the admin left it blank. The temp gets
+      //          emailed to the invitee verbatim; they're forced to change
+      //          it on first login via the accept-invite flow.
       const hashedPassword = isSso
         ? null
         : await bcrypt.hash(effectivePassword!.trim(), 12);
@@ -508,6 +509,7 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
         appBaseUrl,
         inviteMethod: invitationMethod as InviteMethod,
         ssoProvider,
+        tempPassword: generatedTempPassword ?? "",
       });
 
       await sendEmail({ to: normalisedEmail, subject, html });
@@ -520,7 +522,12 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
   return NextResponse.json(
     {
       success: true,
-      data: buildUserResponse(membership!, appRole, []),
+      data: {
+        ...buildUserResponse(membership!, appRole, []),
+        // Plaintext temp password — shown ONCE in the QuikTrack admin UI
+        // when the server generated one (Native + no admin-supplied pw).
+        tempPassword: generatedTempPassword ?? undefined,
+      },
       meta: { usedDefaultPassword, newUserCreated },
     },
     { status: 201 },

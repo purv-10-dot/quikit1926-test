@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { PriorityRow } from "@/lib/types/priority";
 import { ALL_WEEKS, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
+import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { PriorityModal } from "./PriorityModal";
 import { PriorityLogModal } from "./PriorityLogModal";
 import { PriorityLogsModal } from "./PriorityLogsModal";
@@ -13,8 +15,10 @@ import { useTableSort } from "@/lib/store";
 import { ColMenu } from "@/components/table/ColMenu";
 import { SortIndicator } from "@/components/table/SortIndicator";
 import { HiddenColsPill } from "@/components/table/HiddenColsPill";
+import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { Pagination } from "@quikit/ui";
@@ -177,6 +181,11 @@ interface Props {
 }
 
 export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quarter, defaultYear, defaultQuarter, onSelectionChange, hideColumns, readOnly, maxRows, page, pageSize, total, onPageChange, onPageSizeChange, fillWidth, canDelete = true, canUpdate = true }: Props) {
+  // Cross-surface cache invalidation — when the inline cell picker saves a
+  // weekly status/note, the Dashboard's `useDashboardSummary` query must
+  // refetch so the Last Note / week cells update without a page reload.
+  // Mirrors what `useUpdateWeeklyStatus` does for the modal-edit path.
+  const queryClient = useQueryClient();
   const priorities = maxRows != null ? prioritiesAll.slice(0, maxRows) : prioritiesAll;
   const paginationEnabled = page != null && pageSize != null && total != null && onPageChange != null;
   const totalPages = paginationEnabled ? Math.max(1, Math.ceil((total as number) / (pageSize as number))) : 1;
@@ -197,6 +206,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const { canEditPastWeek } = usePastWeekFlags();
   const currentWeek = useCurrentWeek(year, quarter);
   const weekLabels = useWeekLabels(year, quarter);
+  const { getStartDate: getQuarterStartDate } = useQuarterStartDates();
+  const qStart = getQuarterStartDate(year, quarter);
 
   // Freeze + hidden cols stay in the DB-backed user pref. Sort moved to the
   // global Redux tables slice (lib/store) so it shares the same persistence
@@ -231,29 +242,68 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   }
 
   async function handleWeeklyStatusSave(priorityId: string, weekNumber: number, status: string, notes: string) {
-    // Optimistic update
-    setOptimisticStatuses(prev => ({
-      ...prev,
-      [priorityId]: { ...prev[priorityId], [weekNumber]: status },
-    }));
-    setOptimisticNotes(prev => ({
-      ...prev,
-      [priorityId]: { ...prev[priorityId], [weekNumber]: notes },
-    }));
+    // Build the list of (week, status, notes) writes for this save.
+    // When the user marks a week as "completed", cascade Completed forward to
+    // every subsequent week up to the end of the quarter (week 13). Existing
+    // notes are preserved. If the priority's endWeek is shorter, it is
+    // auto-extended to 13 via a parallel PUT so the grid shows blue cells
+    // (instead of out-of-range X markers) for those weeks.
+    const QUARTER_END = 13;
+    const priority = prioritiesAll.find(p => p.id === priorityId);
+    const currentEnd = priority?.endWeek ?? QUARTER_END;
+
+    const writes: Array<{ weekNumber: number; status: string; notes: string }> = [
+      { weekNumber, status, notes },
+    ];
+    if (status === "completed" && priority) {
+      for (let w = weekNumber + 1; w <= QUARTER_END; w++) {
+        if (getWeekStatus(priority, w) === "completed") continue;
+        writes.push({ weekNumber: w, status: "completed", notes: getWeekNote(priority, w) });
+      }
+    }
+    const shouldExtendEndWeek = status === "completed" && currentEnd < QUARTER_END;
+
+    // Optimistic update — apply all writes at once
+    setOptimisticStatuses(prev => {
+      const inner = { ...(prev[priorityId] ?? {}) };
+      for (const wr of writes) inner[wr.weekNumber] = wr.status;
+      return { ...prev, [priorityId]: inner };
+    });
+    setOptimisticNotes(prev => {
+      const inner = { ...(prev[priorityId] ?? {}) };
+      for (const wr of writes) inner[wr.weekNumber] = wr.notes;
+      return { ...prev, [priorityId]: inner };
+    });
     try {
-      await fetch(`/api/priority/${priorityId}/weekly`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weekNumber, status, notes }),
-      });
+      await Promise.all([
+        ...writes.map(wr =>
+          fetch(`/api/priority/${priorityId}/weekly`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ weekNumber: wr.weekNumber, status: wr.status, notes: wr.notes }),
+          }),
+        ),
+        ...(shouldExtendEndWeek
+          ? [fetch(`/api/priority/${priorityId}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ endWeek: QUARTER_END }),
+            })]
+          : []),
+      ]);
+      // Invalidate cross-surface caches so the Dashboard (and any other
+      // React Query consumer of `priority` lists) refetches on next render.
+      // Mirrors `useUpdateWeeklyStatus`'s onSuccess — same keys, same effect.
+      queryClient.invalidateQueries({ queryKey: ["priority"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       onRefresh();
     } catch {
-      // revert
+      // revert all writes
       setOptimisticStatuses(prev => {
         const copy = { ...prev };
         if (copy[priorityId]) {
           const inner = { ...copy[priorityId] };
-          delete inner[weekNumber];
+          for (const wr of writes) delete inner[wr.weekNumber];
           copy[priorityId] = inner;
         }
         return copy;
@@ -262,7 +312,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
         const copy = { ...prev };
         if (copy[priorityId]) {
           const inner = { ...copy[priorityId] };
-          delete inner[weekNumber];
+          for (const wr of writes) delete inner[wr.weekNumber];
           copy[priorityId] = inner;
         }
         return copy;
@@ -291,10 +341,16 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   }
 
   // Column layout — checkbox/log/id are ALWAYS frozen/visible; others are user-controlled
-  const COL_ORDER_FULL = ["_cb", "_log", "_id", "team", "priorityName", "owner", "startWeek", "endWeek", "lastNote"];
+  const COL_ORDER_FULL = [
+    "_cb", "_log", "_id", "team", "priorityName", "owner",
+    "startWeek", "endWeek", "lastNote",
+    // Audit columns — last, before week columns.
+    "createdBy", "updatedBy", "createdAt", "updatedAt",
+  ];
   const COL_WIDTHS: Record<string, number> = {
     _cb: 40, _log: 40, _id: 40, team: 120, priorityName: 260, owner: 140,
     startWeek: 170, endWeek: 170, lastNote: 200,
+    createdBy: 160, updatedBy: 160, createdAt: 130, updatedAt: 130,
   };
   // Drag-to-resize: persisted widths override the defaults above.
   // _cb/_log/_id stay at their defaults (always-frozen chrome — no handle rendered).
@@ -302,6 +358,8 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
   const COL_LABELS: Record<string, string> = {
     team: "Team", priorityName: "Priority Name", owner: "Owner",
     startWeek: "Start Week", endWeek: "End Week", lastNote: "Last Note",
+    createdBy: "Created By", updatedBy: "Updated By",
+    createdAt: "Created Date", updatedAt: "Updated Date",
   };
   const ALWAYS_VISIBLE = new Set(["_cb", "_log", "_id"]);
   const ALWAYS_FROZEN = new Set(["_cb", "_log", "_id"]);
@@ -366,9 +424,15 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
       {/* Table */}
       <HorizontalScroller className="flex-1">
         <table
-          className={`border-collapse ${fillWidth ? "w-full" : ""}`}
+          className="border-collapse"
+          // `width: max-content` (instead of `width: 100%`) for the Dashboard
+          // preview lets the table size to its actual column-widths sum.
+          // Resizing one column (e.g. priorityName) no longer steals space
+          // from the elastic week columns — the table simply grows and the
+          // wrapping <HorizontalScroller> scrolls the overflow. Standalone
+          // page (fillWidth=false) keeps its original `minWidth: max-content`.
           style={fillWidth
-            ? { width: "100%", tableLayout: "fixed" }
+            ? { width: "max-content", tableLayout: "fixed" }
             : { minWidth: "max-content", tableLayout: "fixed" }}>
           {/* Sticky header — matches KPITable behaviour. Without `sticky top-0`
               on the <thead>, the header row scrolls away with the body during
@@ -432,7 +496,10 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                               <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                             </svg>
                           )}
-                          <span className={isSorted ? "text-accent-700" : ""}>{label}</span>
+                          {/* `title` surfaces the full label as a native tooltip
+                              when the column is narrow enough to ellipsize
+                              (common on Dashboard previews). */}
+                          <span title={label} className={isSorted ? "text-accent-700" : ""}>{label}</span>
                           <SortIndicator active={!!isSorted} direction={sortDir} />
                         </span>
                         {showMenu && (
@@ -455,13 +522,17 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                 );
               })}
 
-              {/* Week header cells */}
+              {/* Week header cells. `width` (not just minWidth) is required so
+                  table-layout: fixed locks the column to 76px. Without an
+                  explicit width these columns become "elastic" and silently
+                  shrink whenever the user resizes a named column wider —
+                  exactly the visual squish bug reported on 2026-05-27. */}
               {visibleWeeksList.map(w => (
                 <th key={w}
                   className="sticky top-0 z-20 bg-accent-50 border-b border-gray-200 border-r border-r-gray-100 text-center px-1 py-2 text-[10px] font-semibold text-gray-500 whitespace-nowrap select-none"
-                  style={{ minWidth: 76 }}>
+                  style={{ width: 76, minWidth: 76 }}>
                   <div>Week {w}</div>
-                  <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? weekDateLabel(year, quarter, w)}</div>
+                  <div className="text-[9px] font-normal text-gray-400">{weekLabels[w - 1] ?? weekDateLabel(year, quarter, w, qStart)}</div>
                 </th>
               ))}
             </tr>
@@ -592,7 +663,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                       {priority.startWeek != null ? (
                         <span className="text-xs text-gray-700 whitespace-nowrap">
                           Week {priority.startWeek}{" "}
-                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.startWeek)})</span>
+                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.startWeek, qStart)})</span>
                         </span>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
@@ -612,7 +683,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                       {priority.endWeek != null ? (
                         <span className="text-xs text-gray-700 whitespace-nowrap">
                           Week {priority.endWeek}{" "}
-                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.endWeek)})</span>
+                          <span className="text-gray-400">({getWeekDateRange(year, quarter, priority.endWeek, qStart)})</span>
                         </span>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
@@ -620,30 +691,16 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                     </td>
                   )}
 
-                  {/* Last Note — user-freezable, hidable. Shows the most recent weekly note (highest week with a note). */}
+                  {/* Last Note — user-freezable, hidable. Shows the most
+                      RECENTLY EDITED weekly note (max updatedAt), not the
+                      highest-numbered week. Optimistic edits always win
+                      because they're the freshest. See `getLatestPriorityNote`. */}
                   {COL_ORDER.includes("lastNote") && (() => {
-                    // Find the most recent weekly note (highest weekNumber with a non-empty note, considering optimistic updates)
-                    let lastNote = "";
-                    let lastWeek = 0;
-                    for (const ws of priority.weeklyStatuses) {
-                      const n = getWeekNote(priority, ws.weekNumber);
-                      if (n && ws.weekNumber > lastWeek) {
-                        lastNote = n;
-                        lastWeek = ws.weekNumber;
-                      }
-                    }
-                    // Also check any optimistic-only notes (not in weeklyStatuses)
-                    const optNotes = optimisticNotes[priority.id] ?? {};
-                    for (const [wStr, n] of Object.entries(optNotes)) {
-                      const w = parseInt(wStr, 10);
-                      if (n && w > lastWeek) {
-                        lastNote = n;
-                        lastWeek = w;
-                      }
-                    }
-                    // Fall back to priority.notes (priority-level note) if no weekly notes
-                    if (!lastNote && priority.notes) lastNote = priority.notes;
-
+                    const latest = getLatestPriorityNote(
+                      priority.weeklyStatuses,
+                      optimisticNotes[priority.id],
+                      priority.notes,
+                    );
                     return (
                       <td className={`z-20 border-r border-gray-100 px-2 py-1.5 bg-inherit ${isColFrozen("lastNote") ? "sticky" : ""}`}
                         style={{
@@ -652,17 +709,56 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                           minWidth: getColWidth("lastNote"),
                           boxShadow: lastFrozenKey === "lastNote" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
                         }}>
-                        {lastNote ? (
-                          <span className="text-xs text-gray-600 truncate block" title={lastNote}>
-                            {lastWeek > 0 && <span className="text-gray-400 mr-1">W{lastWeek}:</span>}
-                            {lastNote}
-                          </span>
+                        {latest ? (
+                          // Mirror KPI Name's wrap-with-3-line-scroll pattern
+                          // (KPITable.tsx). `max-h-[3.25rem]` fits 3 lines of
+                          // text-xs/leading-snug; longer notes scroll inside
+                          // the cell rather than stretching the column.
+                          // `break-all` handles pasted unbreakable strings
+                          // (URLs, IDs, gibberish) without horizontal overflow.
+                          <div
+                            className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-xs text-gray-600 cursor-default pr-1"
+                            style={{ scrollbarWidth: "thin" }}
+                            title={latest.note}
+                          >
+                            {latest.weekNumber != null && (
+                              <span className="text-gray-400 mr-1">W{latest.weekNumber}:</span>
+                            )}
+                            {latest.note}
+                          </div>
                         ) : (
                           <span className="text-xs text-gray-300">—</span>
                         )}
                       </td>
                     );
                   })()}
+
+                  {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
+                      Populated by GET /api/priority via decorateAudit. */}
+                  {COL_ORDER.includes("createdBy") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
+                      style={{ width: getColWidth("createdBy"), minWidth: getColWidth("createdBy") }}>
+                      <UserAuditCell name={priority.createdByName} initials={priority.createdByInitials} />
+                    </td>
+                  )}
+                  {COL_ORDER.includes("updatedBy") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
+                      style={{ width: getColWidth("updatedBy"), minWidth: getColWidth("updatedBy") }}>
+                      <UserAuditCell name={priority.updatedByName} initials={priority.updatedByInitials} />
+                    </td>
+                  )}
+                  {COL_ORDER.includes("createdAt") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
+                      style={{ width: getColWidth("createdAt"), minWidth: getColWidth("createdAt") }}>
+                      <DateAuditCell iso={priority.createdAt} />
+                    </td>
+                  )}
+                  {COL_ORDER.includes("updatedAt") && (
+                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
+                      style={{ width: getColWidth("updatedAt"), minWidth: getColWidth("updatedAt") }}>
+                      <DateAuditCell iso={priority.updatedAt} />
+                    </td>
+                  )}
 
                   {/* Week cells */}
                   {visibleWeeksList.map(w => {
@@ -673,7 +769,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
 
                     if (!inRange) {
                       return (
-                        <td key={w} className="border-r border-gray-100 px-0 py-0 bg-gray-50" style={{ minWidth: 64, height: 34 }}>
+                        <td key={w} className="border-r border-gray-100 px-0 py-0 bg-gray-50" style={{ width: 76, minWidth: 76, height: 34 }}>
                           <div className="w-full h-full flex items-center justify-center" style={{ minHeight: 34 }}>
                             <svg className="h-3 w-3 text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
@@ -685,7 +781,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
 
                     const isPastLocked = !canEditPastWeek && currentWeek !== null && w < currentWeek;
                     return (
-                      <td key={w} className="relative border-r border-gray-100 px-0 py-0" style={{ minWidth: 64, height: 34 }}>
+                      <td key={w} className="relative border-r border-gray-100 px-0 py-0" style={{ width: 76, minWidth: 76, height: 34 }}>
                         <WeekTooltip weekNumber={w} status={status} note={note}>
                           <button
                             onClick={() => {
@@ -696,12 +792,10 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                             title={isPastLocked ? "Past week editing is disabled. Enable in Settings > Configurations." : undefined}
                             className={`w-full h-full flex items-center justify-center transition-opacity ${statusDotColor(status)} ${(isPastLocked || readOnly) ? "cursor-default" : "hover:opacity-80"} ${isPastLocked ? "opacity-50" : ""}`}
                             style={{ minHeight: 34 }}>
-                            {isPastLocked ? (
+                            {isPastLocked && (
                               <svg className="h-2.5 w-2.5 text-white/60" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                               </svg>
-                            ) : status && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-white/60" />
                             )}
                           </button>
                         </WeekTooltip>

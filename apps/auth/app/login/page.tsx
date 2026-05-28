@@ -1,5 +1,10 @@
 "use client";
 
+// Force dynamic — the page reads URL params + spawns a confetti canvas + lots
+// of stateful sub-components. Static prerender of `useContext`-heavy children
+// (next-auth/react, etc.) blows up in our shared @quikit/ui package.
+export const dynamic = "force-dynamic";
+
 import { useSearchParams } from "next/navigation";
 import { SignInComponent } from "@quikit/ui";
 import { requireProdEnv } from "@quikit/shared";
@@ -15,7 +20,9 @@ const REASON_MESSAGES: Record<string, string> = {
 const VALID_INITIAL_STEPS = new Set([
   "email",
   "password",
+  "login",
   "profile",
+  "forgot-email",
   "forgot-otp",
   "new-password",
 ]);
@@ -28,7 +35,14 @@ export default function LoginPage() {
   const initialError = reason ? REASON_MESSAGES[reason] ?? null : null;
   const initialStep =
     stepParam && VALID_INITIAL_STEPS.has(stepParam)
-      ? (stepParam as "email" | "password" | "profile" | "forgot-otp" | "new-password")
+      ? (stepParam as
+          | "email"
+          | "password"
+          | "login"
+          | "profile"
+          | "forgot-email"
+          | "forgot-otp"
+          | "new-password")
       : undefined;
 
   return (

@@ -42,6 +42,8 @@ export const useWWWItems  = www.useList;
 export const useCreateWWW = www.useCreate;
 export const useUpdateWWW = www.useUpdate;
 export const useDeleteWWW = www.useDelete;
+export const useRestoreWWW = www.useRestore;
+export const useBulkRestoreWWW = www.useBulkRestore;
 
 /** Change-history log for a WWW item (AuditLog rows). */
 export function useWWWLogs(itemId: string) {

@@ -235,6 +235,34 @@ export async function POST(req: NextRequest) {
 
     const period = `${moduleKey}:${cardType}`;
 
+    // Snapshot pre-update state for the audit-log drawer to diff against.
+    const prev = await db.oPSPReviewEntry.findUnique({
+      where: {
+        orgId_opspId_horizon_rowIndex_period: {
+          orgId,
+          opspId: opsp.id,
+          horizon: "critical",
+          rowIndex: 0,
+          period,
+        },
+      },
+      select: { achievedValue: true, comment: true, category: true },
+    });
+    const oldSnapshot = {
+      module: moduleKey,
+      cardType,
+      category: prev?.category ?? null,
+      achievedValue: prev?.achievedValue != null ? Number(prev.achievedValue) : null,
+      comment: prev?.comment ?? null,
+    };
+    const newSnapshot = {
+      module: moduleKey,
+      cardType,
+      category,
+      achievedValue,
+      comment,
+    };
+
     const saved = await db.oPSPReviewEntry.upsert({
       where: {
         orgId_opspId_horizon_rowIndex_period: {
@@ -271,8 +299,10 @@ export async function POST(req: NextRequest) {
       action: "UPDATE",
       entityType: "Review",
       entityId: opsp.id,
+      oldValues: oldSnapshot,
+      newValues: newSnapshot,
       changes: [`critical:${moduleKey}:${cardType}`],
-      reason: `OPSP Critical Hash Review: ${moduleKey} ${cardType} (${category})`,
+      reason: `OPSP Critical (${moduleKey}:${cardType}): ${category}`,
     });
 
     return NextResponse.json({

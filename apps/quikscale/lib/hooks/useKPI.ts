@@ -92,6 +92,44 @@ export function useDeleteKPI() {
   });
 }
 
+// Restore KPI — undo soft-delete for a single row.
+export function useRestoreKPI() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/kpi/${id}/restore`, { method: "POST" });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to restore KPI");
+      return json.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+// Bulk restore KPIs — undo soft-delete in batch.
+export function useBulkRestoreKPI() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch(`/api/kpi/bulk-restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to restore KPIs");
+      return (json.data ?? { restored: 0 }) as { restored: number };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: kpiKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
 // Get weekly values
 export function useWeeklyValues(kpiId: string) {
   return useQuery({

@@ -25,7 +25,8 @@ const entrySchema = z.object({
   // is "auto" on the client, this field is disabled and won't be in the
   // payload.
   lastYearSamePeriod: z.number().nullable().optional(),
-  comment: z.string().max(2000).nullable().optional(),
+  // No length cap on user-content — Prisma columns are `text`.
+  comment: z.string().nullable().optional(),
 });
 
 /**
@@ -37,7 +38,7 @@ export const opspReviewSaveSchema = z.object({
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]),
   horizon: horizonEnum,
   rowIndex: z.number().int().min(0).max(20),
-  category: z.string().min(1).max(200),
+  category: z.string().min(1),
   entries: z.array(entrySchema).min(1).max(5),
 });
 
@@ -51,9 +52,9 @@ export const opspReviewSecondarySaveSchema = z.object({
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]),
   horizon: horizonEnum,
   rowIndex: z.number().int().min(0).max(50),
-  category: z.string().min(1).max(500),
-  status: z.string().max(50).nullable().optional(),
-  comment: z.string().max(2000).nullable().optional(),
+  category: z.string().min(1),
+  status: z.string().nullable().optional(),
+  comment: z.string().nullable().optional(),
 });
 
 export type OpspReviewSaveInput = z.infer<typeof opspReviewSaveSchema>;

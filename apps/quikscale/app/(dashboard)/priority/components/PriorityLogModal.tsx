@@ -11,6 +11,7 @@ import { UserPicker } from "@quikit/ui";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
+import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 
 interface Props {
   priority: PriorityRow;
@@ -68,6 +69,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   // DB-scoped fiscal years via shared hook
   const { years: fyYears } = useFiscalYears();
   const yearOptions = fyYears.length ? fyYears : [CURRENT_YEAR];
+  const { getStartDate: getQuarterStartDate } = useQuarterStartDates();
 
   // Notes tab state
   const [notes, setNotes] = useState(priority.notes ?? "");
@@ -140,12 +142,65 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
   }
 
   async function handleWeeklyStatusChange(weekNumber: number, status: string) {
-    setWeeklyData(prev => ({ ...prev, [weekNumber]: { ...prev[weekNumber], status } }));
+    // Build the list of (week, status, notes) writes for this change. When the
+    // user marks a week as "completed", cascade Completed forward to every
+    // subsequent week up to the end of the quarter (week 13). Existing notes
+    // on cascaded weeks are preserved. If the priority's endWeek is shorter,
+    // it is auto-extended to 13 so the grid shows blue cells (instead of
+    // out-of-range X markers) for those weeks.
+    const QUARTER_END = 13;
+    const currentEnd = parseInt(form.endWeek) || QUARTER_END;
+    const cascadeUpper = status === "completed" ? QUARTER_END : currentEnd;
+
+    const writes: Array<{ weekNumber: number; status: string; notes: string }> = [
+      { weekNumber, status, notes: weeklyData[weekNumber]?.notes ?? "" },
+    ];
+    if (status === "completed") {
+      for (let w = weekNumber + 1; w <= cascadeUpper; w++) {
+        if (weeklyData[w]?.status === "completed") continue;
+        writes.push({ weekNumber: w, status: "completed", notes: weeklyData[w]?.notes ?? "" });
+      }
+    }
+
+    // Snapshot for rollback
+    const previous: Record<number, { status: string; notes: string }> = {};
+    for (const wr of writes) {
+      previous[wr.weekNumber] = weeklyData[wr.weekNumber] ?? { status: "", notes: "" };
+    }
+    const previousEndWeek = form.endWeek;
+    const shouldExtendEndWeek = status === "completed" && currentEnd < QUARTER_END;
+
+    // Optimistic update — apply all writes at once
+    setWeeklyData(prev => {
+      const next = { ...prev };
+      for (const wr of writes) next[wr.weekNumber] = { status: wr.status, notes: wr.notes };
+      return next;
+    });
+    if (shouldExtendEndWeek) {
+      setForm(f => ({ ...f, endWeek: String(QUARTER_END) }));
+    }
+
     try {
-      await updateWeeklyStatus.mutateAsync({ weekNumber, status, notes: weeklyData[weekNumber]?.notes });
+      await Promise.all([
+        ...writes.map(wr =>
+          updateWeeklyStatus.mutateAsync({ weekNumber: wr.weekNumber, status: wr.status, notes: wr.notes }),
+        ),
+        ...(shouldExtendEndWeek
+          ? [updatePriority.mutateAsync({ endWeek: QUARTER_END } as any)]
+          : []),
+      ]);
     } catch {
-      // revert on error
-      setWeeklyData(prev => ({ ...prev, [weekNumber]: { ...prev[weekNumber], status: priority.weeklyStatuses.find(ws => ws.weekNumber === weekNumber)?.status ?? "" } }));
+      // revert all writes on error
+      setWeeklyData(prev => {
+        const next = { ...prev };
+        for (const [wStr, val] of Object.entries(previous)) {
+          next[parseInt(wStr, 10)] = val;
+        }
+        return next;
+      });
+      if (shouldExtendEndWeek) {
+        setForm(f => ({ ...f, endWeek: previousEndWeek }));
+      }
     }
   }
 
@@ -263,7 +318,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   <select value={form.startWeek} onChange={e => handleStartWeekChange(e.target.value)}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white">
                     {WEEK_OPTIONS.map(w => (
-                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>
+                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter))})</option>
                     ))}
                   </select>
                 </div>
@@ -272,7 +327,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                   <select value={form.endWeek} onChange={e => setField("endWeek", e.target.value)}
                     className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white ${errors.endWeek ? "border-red-400" : "border-gray-200"}`}>
                     {WEEK_OPTIONS.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => (
-                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w)})</option>
+                      <option key={w} value={w}>Week {w}  ({getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter))})</option>
                     ))}
                   </select>
                   {errors.endWeek && <p className="text-[10px] text-red-500 mt-0.5">{errors.endWeek}</p>}
@@ -323,7 +378,7 @@ export function PriorityLogModal({ priority, onClose, onSuccess, logsOnly = fals
                       <div>
                         <span className="text-xs font-medium text-gray-700">Week {weekNum}</span>
                         <span className="text-[10px] text-gray-400 ml-2">
-                          {priorityWeekLabels[weekNum - 1] ?? weekDateLabel(priority.year, priority.quarter, weekNum)}
+                          {priorityWeekLabels[weekNum - 1] ?? weekDateLabel(priority.year, priority.quarter, weekNum, getQuarterStartDate(priority.year, priority.quarter))}
                         </span>
                         {isPast && <span className="ml-2 text-[10px] text-amber-600">· past-week locked</span>}
                         {isFuture && <span className="ml-2 text-[10px] text-gray-400">· future week</span>}

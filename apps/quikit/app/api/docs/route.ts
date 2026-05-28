@@ -7,7 +7,7 @@ import { authOptions } from "@/lib/auth";
  *
  * Serves a Swagger UI page rendering the auto-generated combined OpenAPI 3.0
  * spec across all 5 QuikIT apps (quikit, quikscale, admin, quikvc,
- * quikconstruction).
+ * quikinfra).
  *
  * Internal-only — gated by getServerSession. The middleware excludes the
  * `api/` prefix so this handler does its own auth.

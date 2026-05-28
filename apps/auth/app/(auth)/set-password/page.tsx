@@ -7,11 +7,10 @@ import { requireProdEnv } from "@quikit/shared";
 /**
  * FRD FR-SA-009 / FR-SA-010 — Set Password screen.
  *
- * Shown ONCE on first login for users created via native invite (still on
- * the system default password Quikit2026). They may either save a new
- * password or click Skip to keep the default; either action clears
- * `User.mustChangePassword` so subsequent logins go straight to the
- * dashboard (BR-008).
+ * Shown ONCE on first login for users created via native invite. They MUST
+ * save a new password — the legacy "Skip for now" affordance was removed
+ * when temp passwords became unique per-invite (a one-time password must
+ * never be kept as the user's standing credential).
  *
  * Reached when `mustChangePassword` is true (the sign-in flow routes here
  * before the user is sent on to the launcher).
@@ -83,28 +82,6 @@ export default function SetPasswordPage() {
     }
   }
 
-  async function handleSkip() {
-    setError(null);
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/auth/me/set-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skip: true }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        setError(json.error ?? "Could not skip. Please try again.");
-        setSubmitting(false);
-        return;
-      }
-      window.location.href = launcherUrl;
-    } catch {
-      setError("Network error. Please try again.");
-      setSubmitting(false);
-    }
-  }
-
   void router; // reserved for future inline back-link
 
   return (
@@ -114,8 +91,7 @@ export default function SetPasswordPage() {
           Set your password
         </h1>
         <p className="mb-6 text-sm text-slate-600">
-          You&apos;re using a temporary password. Set a new one now, or skip and
-          keep the default for now.
+          You&apos;re using a temporary password. Set a new one to continue.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -173,14 +149,6 @@ export default function SetPasswordPage() {
             className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "Saving…" : "Save & Continue"}
-          </button>
-          <button
-            type="button"
-            onClick={handleSkip}
-            disabled={submitting}
-            className="w-full rounded-md bg-white px-4 py-2 text-sm font-medium text-slate-700 ring-1 ring-slate-300 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Skip for now
           </button>
         </form>
       </div>

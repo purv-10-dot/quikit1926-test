@@ -44,7 +44,7 @@ Mirrors the QuikIT super-admin's first-Org-Admin invite. The POST
   MX-validated). Stores `inviteProvider` on `OrgMember`. No password
   seeded. On first sign-in, `@quikit/auth`'s shared jwt callback
   auto-accepts pending SSO invites.
-- **Native** — User row seeded with `bcrypt(DEFAULT_INVITE_PASSWORD)`
+- **Native** — User row seeded with `bcrypt(generateTempPassword())` from `@quikit/shared/temp-password`. Plaintext is emailed to the invitee AND returned in the API response so the inviting admin can display it once
   + `mustChangePassword=true`. The Set-Password screen fires on first
   login (BR-008). Invitation link points at `/invitations/setup?token=…`.
 

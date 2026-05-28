@@ -351,6 +351,84 @@ describe("resolveCritTier (achieved → tier band)", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Unified-algorithm coverage (see docs/OPSP_CRITICAL_COLOR_LOGIC.md).
+// All 3 condition shapes — descending, ascending, random — exercise the same
+// `resolveCritTier`. Examples mirror the manager-facing spec exactly.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("resolveCritTier — Condition 1: Descending (SG=90, LG=60, Y=40, R=20)", () => {
+  const bullets = [90, 60, 40, 20];
+  it("10  → red          (below the lowest threshold)", () => {
+    expect(resolveCritTier(10, bullets)).toBe("red");
+  });
+  it("25  → red          (in [20, 40))", () => {
+    expect(resolveCritTier(25, bullets)).toBe("red");
+  });
+  it("45  → yellow       (in [40, 60))", () => {
+    expect(resolveCritTier(45, bullets)).toBe("yellow");
+  });
+  it("75  → lightGreen   (in [60, 90))", () => {
+    expect(resolveCritTier(75, bullets)).toBe("lightGreen");
+  });
+  it("100 → superGreen   (≥ 90)", () => {
+    expect(resolveCritTier(100, bullets)).toBe("superGreen");
+  });
+});
+
+describe("resolveCritTier — Condition 2: Ascending (SG=20, LG=40, Y=60, R=90)", () => {
+  const bullets = [20, 40, 60, 90];
+  it("10  → superGreen   (below the lowest threshold)", () => {
+    expect(resolveCritTier(10, bullets)).toBe("superGreen");
+  });
+  it("25  → superGreen   (in [20, 40))", () => {
+    expect(resolveCritTier(25, bullets)).toBe("superGreen");
+  });
+  it("45  → lightGreen   (in [40, 60))", () => {
+    expect(resolveCritTier(45, bullets)).toBe("lightGreen");
+  });
+  it("80  → yellow       (in [60, 90))", () => {
+    expect(resolveCritTier(80, bullets)).toBe("yellow");
+  });
+  it("120 → red          (≥ 90)", () => {
+    expect(resolveCritTier(120, bullets)).toBe("red");
+  });
+});
+
+describe("resolveCritTier — Condition 3: Random (SG=60, LG=20, Y=40, R=90)", () => {
+  // Sorted ascending: LG 20 → Y 40 → SG 60 → R 90.
+  const bullets = [60, 20, 40, 90];
+  it("15  → lightGreen   (below the lowest threshold)", () => {
+    expect(resolveCritTier(15, bullets)).toBe("lightGreen");
+  });
+  it("30  → lightGreen   (in [20, 40))", () => {
+    expect(resolveCritTier(30, bullets)).toBe("lightGreen");
+  });
+  it("50  → yellow       (in [40, 60))", () => {
+    expect(resolveCritTier(50, bullets)).toBe("yellow");
+  });
+  it("80  → superGreen   (in [60, 90))", () => {
+    expect(resolveCritTier(80, bullets)).toBe("superGreen");
+  });
+  it("105 → red          (≥ 90)", () => {
+    expect(resolveCritTier(105, bullets)).toBe("red");
+  });
+  it("at-boundary values land in the band starting at that threshold", () => {
+    expect(resolveCritTier(20, bullets)).toBe("lightGreen");
+    expect(resolveCritTier(40, bullets)).toBe("yellow");
+    expect(resolveCritTier(60, bullets)).toBe("superGreen");
+    expect(resolveCritTier(90, bullets)).toBe("red");
+  });
+});
+
+describe("resolveCritTier — duplicate thresholds (stable tie-break by source order)", () => {
+  // SG and LG both 50; sorted [(SG,50), (LG,50), (Y,60), (R,80)] — SG wins the
+  // [50, 60) band because it appears earlier in the source [SG, LG, Y, R] order.
+  it("ties resolve to the tier earlier in source [SG, LG, Y, R]", () => {
+    expect(resolveCritTier(55, [50, 50, 60, 80])).toBe("superGreen");
+  });
+});
+
 describe("critTierCellClasses", () => {
   it("returns distinct Tailwind classes for each tier", () => {
     expect(critTierCellClasses("superGreen")).toContain("green-700");

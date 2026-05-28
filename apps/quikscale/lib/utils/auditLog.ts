@@ -113,6 +113,10 @@ const MEETING_FIELD_LABELS: Record<string, string> = {
   opspReview: "OPSP review",
   notesKPDashboard: "K&P dashboard notes",
   otherNotes: "Other notes",
+  absentUserIds: "Absent members",
+  dashboardNAUserIds: "Dashboard N/A members",
+  absentClientMemberIds: "Absent members",
+  dashboardNAClientMemberIds: "Dashboard N/A members",
   // Daily Huddle specific
   format1Status: "Yesterday's achievements",
   format2Status: "Today's priority",
@@ -138,6 +142,63 @@ const STATUS_LABELS: Record<string, string> = {
   PENDING: "Pending",
 };
 
+/**
+ * Field-name → human label map used by OPSP Review audit logs (primary,
+ * secondary, and Critical # Review rows). Kept separate from
+ * MEETING_FIELD_LABELS so entity-specific label changes don't cross-contaminate.
+ *
+ * Primary review snapshots use compound keys `${period}.${field}` so the
+ * diff renders one row per cell. The combos are precomputed below.
+ */
+const OPSP_PERIODS: Record<string, string> = {
+  // Quarter (actions) — m1/m2/m3 are the three months of the quarter
+  m1: "Month 1",
+  m2: "Month 2",
+  m3: "Month 3",
+  // Yearly (goals) — one row per fiscal quarter
+  q1: "Q1",
+  q2: "Q2",
+  q3: "Q3",
+  q4: "Q4",
+  // 3-5yr (targets)
+  y1: "Year 1",
+  y2: "Year 2",
+  y3: "Year 3",
+  y4: "Year 4",
+  y5: "Year 5",
+};
+
+const OPSP_CELL_FIELDS: Record<string, string> = {
+  target: "Target",
+  achieved: "Achieved",
+  lastYear: "Last year same period",
+  comment: "Comment",
+};
+
+export const OPSP_FIELD_LABELS: Record<string, string> = (() => {
+  const out: Record<string, string> = {
+    // Flat (non-period) fields — used by Critical # Review + Secondary rows.
+    targetValue: "Target",
+    achievedValue: "Achieved",
+    lastYearSamePeriod: "Last year same period",
+    comment: "Comment",
+    period: "Period",
+    module: "Module",
+    cardType: "Card type",
+    status: "Status",
+    horizon: "Horizon",
+    rowIndex: "Row",
+    category: "Category",
+  };
+  // Compound keys for Primary review snapshots: e.g. `m1.target` → "Month 1 · Target"
+  for (const [pk, pl] of Object.entries(OPSP_PERIODS)) {
+    for (const [fk, fl] of Object.entries(OPSP_CELL_FIELDS)) {
+      out[`${pk}.${fk}`] = `${pl} · ${fl}`;
+    }
+  }
+  return out;
+})();
+
 const FLAG_LABELS: Record<string, string> = {
   YES: "Yes",
   NO: "No",
@@ -157,7 +218,10 @@ function humanizeKey(k: string): string {
     .trim();
 }
 
-const labelFor = (k: string): string => MEETING_FIELD_LABELS[k] ?? humanizeKey(k);
+const labelFor = (
+  k: string,
+  overrides?: Record<string, string>,
+): string => overrides?.[k] ?? MEETING_FIELD_LABELS[k] ?? humanizeKey(k);
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T/;
 const CUID_RE = /^c[a-z0-9]{20,}$/;
@@ -172,7 +236,20 @@ const CUID_RE = /^c[a-z0-9]{20,}$/;
 export interface FriendlyAuditOptions {
   /** Resolve any id (clientId / userId / clientMemberId) → display name. */
   nameById?: (id: string) => string | undefined;
+  /**
+   * Per-call field-label override. Takes precedence over MEETING_FIELD_LABELS.
+   * Use OPSP_FIELD_LABELS (or any entity-specific map) to render OPSP / KPI /
+   * Priority / WWW logs without polluting the shared meeting map.
+   */
+  fieldLabels?: Record<string, string>;
 }
+
+const MEMBER_LIST_KEYS = new Set([
+  "absentUserIds",
+  "dashboardNAUserIds",
+  "absentClientMemberIds",
+  "dashboardNAClientMemberIds",
+]);
 
 function fmtValue(
   key: string,
@@ -180,8 +257,27 @@ function fmtValue(
   opts: FriendlyAuditOptions = {},
 ): string {
   if (v === null || v === undefined || v === "") return "—";
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "—";
+    if (MEMBER_LIST_KEYS.has(key)) {
+      return v
+        .map((id) => {
+          if (typeof id !== "string") return String(id);
+          const resolved = opts.nameById?.(id);
+          if (resolved) return resolved;
+          return CUID_RE.test(id) ? `${id.slice(0, 6)}…${id.slice(-6)}` : id;
+        })
+        .join(", ");
+    }
+    return v.map((x) => fmtValue(key, x, opts)).join(", ");
+  }
   if (typeof v === "boolean") return v ? "Yes" : "No";
-  if (typeof v === "number") return String(v);
+  if (typeof v === "number") {
+    // Thousand separators + cap at 2 decimal places. Matches the
+    // formatReviewNumber() style used elsewhere on the OPSP Review screen
+    // so audit-log values look the same as the table cells.
+    return Number.isFinite(v) ? v.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(v);
+  }
   if (typeof v === "string") {
     if (key === "callStatus" && STATUS_LABELS[v]) return STATUS_LABELS[v];
     if (FLAG_LABELS[v] && (key === "goodNewsSharing" || key === "kpDashboard" ||
@@ -267,7 +363,7 @@ export function fmtFriendlyAuditEntry(
     const scoreKeys = ["kpiWeeklyQTD", "kpiCoding", "priorityNotes", "priorityStartEndDate", "priorityColor"];
     const rows = scoreKeys
       .filter((k) => newObj[k] !== undefined)
-      .map((k) => ({ label: labelFor(k), newValue: fmtValue(k, newObj[k], opts) }));
+      .map((k) => ({ label: labelFor(k, opts.fieldLabels), newValue: fmtValue(k, newObj[k], opts) }));
     return { headline, rows };
   }
 
@@ -277,7 +373,7 @@ export function fmtFriendlyAuditEntry(
       ? "Updated"
       : `Updated ${changes.length} field${changes.length === 1 ? "" : "s"}`;
     const rows = changes.map((c) => ({
-      label: labelFor(c.key),
+      label: labelFor(c.key, opts.fieldLabels),
       oldValue: fmtValue(c.key, c.oldValue, opts),
       newValue: fmtValue(c.key, c.newValue, opts),
     }));
@@ -298,7 +394,7 @@ export function fmtFriendlyAuditEntry(
     ...Object.keys(newObj).filter((k) => !NOISE_KEYS.has(k) && !PRIORITY_KEYS.includes(k as typeof PRIORITY_KEYS[number])),
   ];
   const rows = ordered.map((k) => ({
-    label: labelFor(k),
+    label: labelFor(k, opts.fieldLabels),
     newValue: fmtValue(k, newObj[k], opts),
   }));
   return { headline, rows };

@@ -24,7 +24,7 @@ export function HiddenColsMenu({ hiddenCols, allCols, onShow }: {
         </svg>{hidden.length} hidden
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+        <div className="absolute top-full right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
           <p className="text-[10px] text-gray-400 px-3 py-1.5 font-medium uppercase tracking-wider">Hidden Columns</p>
           {hidden.map(col => (
             <button key={col} onClick={() => onShow(col)}

@@ -22,9 +22,59 @@ function isProd(): boolean {
 /**
  * Returns `process.env[name]`. In production, throws if unset. In dev / test,
  * returns the provided `devFallback` (or throws if no fallback and unset).
+ *
+ * Implementation note: webpack's DefinePlugin can only statically replace
+ * `process.env.NEXT_PUBLIC_X` (literal member access), NOT
+ * `process.env[varName]` (dynamic). For client components to read these
+ * values at runtime in the browser, each known name needs LITERAL access
+ * so webpack inlines the build-time value into the bundle. Hence the
+ * explicit switch instead of the previous one-liner `process.env[name]`.
+ *
+ * The default branch keeps dynamic behavior for any var name not
+ * enumerated — that path still works server-side (Node has process.env
+ * at runtime) but will return undefined in the browser.
  */
 export function requireProdEnv(name: string, devFallback?: string): string {
-  const v = process.env[name];
+  let v: string | undefined;
+  switch (name) {
+    // NEXT_PUBLIC_* — literal access required so webpack inlines values
+    // into client bundles.
+    case "NEXT_PUBLIC_LAUNCHER_URL":
+      v = process.env.NEXT_PUBLIC_LAUNCHER_URL;
+      break;
+    case "NEXT_PUBLIC_AUTH_URL":
+      v = process.env.NEXT_PUBLIC_AUTH_URL;
+      break;
+    case "NEXT_PUBLIC_QUIKIT_URL":
+      v = process.env.NEXT_PUBLIC_QUIKIT_URL;
+      break;
+    case "NEXT_PUBLIC_ADMIN_URL":
+      v = process.env.NEXT_PUBLIC_ADMIN_URL;
+      break;
+    case "NEXT_PUBLIC_LOGIN_URL":
+      v = process.env.NEXT_PUBLIC_LOGIN_URL;
+      break;
+    case "NEXT_PUBLIC_SUPER_ADMIN_URL":
+      v = process.env.NEXT_PUBLIC_SUPER_ADMIN_URL;
+      break;
+    case "NEXT_PUBLIC_QUIKSCALE_URL":
+      v = process.env.NEXT_PUBLIC_QUIKSCALE_URL;
+      break;
+    // Server-only names — these still read at runtime fine via Node's
+    // process.env. Listed explicitly so all known names go through the
+    // same switch shape.
+    case "NEXTAUTH_URL":
+      v = process.env.NEXTAUTH_URL;
+      break;
+    case "QUIKIT_URL":
+      v = process.env.QUIKIT_URL;
+      break;
+    default:
+      // Fallback for any future name. Works server-side; client-side
+      // dynamic access returns undefined and triggers the prod-required
+      // throw below.
+      v = process.env[name];
+  }
   if (v) return v;
   if (isProd()) {
     throw new Error(

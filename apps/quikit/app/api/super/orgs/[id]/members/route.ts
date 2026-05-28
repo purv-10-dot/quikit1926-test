@@ -6,10 +6,10 @@ import { logAudit } from "@/lib/auditLog";
 import { sendMemberAddedEmail } from "@/lib/email";
 import { directAddMemberSchema } from "@/lib/schemas/superAdminSchemas";
 import {
-  DEFAULT_INVITE_PASSWORD,
   MEMBERSHIP_ROLES,
   MEMBERSHIP_ROLE_LABELS,
 } from "@quikit/shared";
+import { generateTempPassword } from "@quikit/shared/temp-password";
 import { assignAppRoles } from "@quikit/auth/assign-app-roles";
 import bcrypt from "bcryptjs";
 
@@ -83,16 +83,20 @@ export const POST = withSuperAdminAuth<{ id: string }>(
         }
       }
 
-      // Look up user; create with default password if new.
+      // Look up user; create with a freshly-generated temp password if new.
+      // Plaintext is emailed AND returned in this API response (for new
+      // users only) so the inviting admin can display it once.
       let user = await db.user.findUnique({ where: { email } });
       let isNewUser = false;
+      let tempPassword: string | null = null;
       if (!user) {
+        tempPassword = generateTempPassword();
         user = await db.user.create({
           data: {
             email,
             firstName,
             lastName,
-            password: await bcrypt.hash(DEFAULT_INVITE_PASSWORD, 10),
+            password: await bcrypt.hash(tempPassword, 10),
             mustChangePassword: true,
           },
         });
@@ -176,12 +180,23 @@ export const POST = withSuperAdminAuth<{ id: string }>(
         to: user.email,
         orgName: org.name,
         role: roleLabel,
-        tempPassword: isNewUser ? DEFAULT_INVITE_PASSWORD : undefined,
+        tempPassword: isNewUser && tempPassword ? tempPassword : undefined,
       }).catch((err) =>
         console.error("[email] Failed to send member added email:", user.email, err)
       );
 
-      return NextResponse.json({ success: true, data: membership }, { status: 201 });
+      return NextResponse.json(
+        {
+          success: true,
+          data: {
+            ...membership,
+            // Plaintext temp password — shown ONCE in the super-admin UI.
+            // Only present for newly created users.
+            tempPassword: isNewUser && tempPassword ? tempPassword : undefined,
+          },
+        },
+        { status: 201 },
+      );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Operation failed";
       return NextResponse.json({ success: false, error: message }, { status: 500 });

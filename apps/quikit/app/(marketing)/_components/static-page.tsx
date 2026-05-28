@@ -1,5 +1,5 @@
 import Script from "next/script";
-import { requireProdEnv } from "@quikit/shared";
+import { buildLoginUrl } from "@quikit/shared/login-url";
 import { getPageSchemas } from "../_lib/schema";
 
 export type StaticPageData = {
@@ -12,16 +12,20 @@ export type StaticPageData = {
 };
 
 /**
- * Launcher login URL. The marketing site is auth-less; its "Log in" CTA
- * deep-links into the QuikIT launcher's existing /login (NextAuth + SSO).
- * Driven by `NEXT_PUBLIC_LOGIN_URL` only — dev falls back to the local
- * launcher, prod throws at build/render time if the var is missing so we
- * never accidentally ship a stale Vercel preview URL.
+ * Launcher login URL. Marketing is auth-less; its "Log in" CTA redirects
+ * to the central auth app (`NEXT_PUBLIC_AUTH_URL/login`) carrying a
+ * `callbackUrl` so successful sign-in returns the user to the launcher
+ * `/apps` page on this app's own origin.
+ *
+ * The previous in-page modal (login-modal.tsx) is retired — every sub-app
+ * now uses the same auth-app-driven login flow for parity, and the
+ * auth app's `redirect` callback allow-lists the launcher origin so the
+ * round-trip works.
  */
-const LOGIN_URL = requireProdEnv(
-  "NEXT_PUBLIC_LOGIN_URL",
-  "http://localhost:3001/login",
-);
+const LOGIN_URL = buildLoginUrl({
+  appUrl: process.env.NEXT_PUBLIC_QUIKIT_URL,
+  postLoginPath: "/apps",
+});
 
 /**
  * Inject a "Log in" CTA into the baked-in marketing navbar (desktop

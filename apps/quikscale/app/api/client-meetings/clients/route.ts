@@ -1,22 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { createClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.clients");
+
+const CLIENT_SORT_WHITELIST = [
+  "name",
+  "createdAt",
+  "updatedAt",
+  "isActive",
+  "weeklyStartTime",
+  "dailyStartTime",
+] as const;
+
+function mapClientSort(key: string, dir: SortDirection): Prisma.ClientOrderByWithRelationInput {
+  if (key === "name") return { name: dir };
+  if (key === "updatedAt") return { updatedAt: dir };
+  if (key === "isActive") return { isActive: dir };
+  if (key === "weeklyStartTime") return { weeklyStartTime: dir };
+  if (key === "dailyStartTime") return { dailyStartTime: dir };
+  return { createdAt: key === "createdAt" ? dir : "asc" }; // default preserves the legacy order
+}
 
 /**
  * GET /api/client-meetings/clients
  *   ?includeDeleted=true → return ONLY soft-deleted rows (trash view).
+ *   ?sortBy=<col>&sortOrder=<asc|desc> → server-side sort (whitelist enforced).
+ *     Falls back to the historical `createdAt asc` when omitted/invalid.
  */
 export const GET = withOrgAuth(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
+  const { orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
   const rows = await db.client.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
-    orderBy: { createdAt: "asc" },
+    orderBy,
     include: {
       teamMembers: { include: { member: { select: { id: true, name: true, email: true } } } },
       _count: { select: { memberships: { where: { deletedAt: null } } } },
@@ -79,9 +102,19 @@ export async function POST(request: NextRequest) {
     }
     const d = parsed.data;
 
-    const existing = await db.client.findFirst({ where: { orgId, name: d.name, deletedAt: null } });
-    if (existing)
-      return NextResponse.json({ success: false, error: "A client with that name already exists" }, { status: 409 });
+    // Uniqueness check spans soft-deleted rows because the DB constraint
+    // `@@unique([orgId, name])` does too — otherwise a trashed name leaks
+    // through and Prisma throws P2002 at insert time.
+    const existing = await db.client.findFirst({
+      where: { orgId, name: d.name },
+      select: { id: true, deletedAt: true },
+    });
+    if (existing) {
+      const msg = existing.deletedAt
+        ? "A deleted client with that name is still in Trash. Restore it or choose a different name."
+        : "A client with that name already exists";
+      return NextResponse.json({ success: false, error: msg }, { status: 409 });
+    }
 
     // Confirm all requested team members exist for this tenant.
     if (d.teamMemberIds.length) {
@@ -124,6 +157,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });
   } catch (error: unknown) {
+    // Race-loss safety net for the (orgId, name) unique constraint — keep
+    // the response shape consistent with the pre-check above.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        { success: false, error: "A client with that name already exists" },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create client") }, { status: 500 });
   }
 }

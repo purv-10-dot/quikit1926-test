@@ -735,33 +735,3 @@ html.dark .qt-shimmer {
 .qt-route-dot   { animation: qt-route-dot 1.4s ease-in-out infinite; }
 .qt-route-dot-2 { animation-delay: 0.15s; }
 .qt-route-dot-3 { animation-delay: 0.3s; }
-
-/* ============================================================================
-   ███ SURFACE RECOLOR — #F7F8F9 base + #DFE1E6 borders (TEMPORARY) ███
-   Replaces pure white (#FFF) with #F7F8F9 across the app and recolors the
-   common gray borders to #DFE1E6 for a flat Jira-style surface. Light mode
-   only (`html:not(.dark)`) so dark mode is untouched.
-
-   👉 TO REVERT: delete this entire block (everything down to the matching
-      end marker below). Nothing else references it.
-   ============================================================================ */
-html:not(.dark) {
-  --color-bg-primary: #f7f8f9;
-  --color-bg-secondary: #f7f8f9;
-}
-html:not(.dark) body                 { background-color: #f7f8f9; }
-
-/* Surfaces that were white → #F7F8F9 */
-html:not(.dark) .bg-white            { background-color: #f7f8f9 !important; }
-html:not(.dark) .bg-gray-50          { background-color: #f7f8f9 !important; }
-html:not(.dark) .bg-slate-50         { background-color: #f7f8f9 !important; }
-html:not(.dark) .hover\:bg-white:hover   { background-color: #eef0f2 !important; }
-
-/* Common neutral borders → #DFE1E6 (semantic colored borders left alone) */
-html:not(.dark) .border-gray-100,
-html:not(.dark) .border-gray-200,
-html:not(.dark) .border-gray-300,
-html:not(.dark) .border-slate-100,
-html:not(.dark) .border-slate-200,
-html:not(.dark) .border-slate-300    { border-color: #dfe1e6 !important; }
-/* ███ END SURFACE RECOLOR ███ */

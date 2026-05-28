@@ -17,24 +17,46 @@
  */
 
 import type { KPIRow } from "@/lib/types/kpi";
-import { progressColor, fmt } from "@/lib/utils/kpiHelpers";
+import { fmt, getProgressBadgeColors } from "@/lib/utils/kpiHelpers";
 import { computeKPIStats, computeQtd } from "./kpiStats";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 
 export function StatsTab({ kpi }: { kpi: KPIRow }) {
-  const colors = progressColor(kpi.progressPercent ?? 0);
   // kpi.target is the user-set quarterly target; kpi.qtdGoal is a derived aggregate
   // that can lag behind after a target edit. Use kpi.target as the primary.
   const target = kpi.target ?? kpi.qtdGoal ?? 0;
-  const achieved = kpi.qtdAchieved ?? 0;
-  const { filledWeeks, avgPerWeek, bestWeek } = computeKPIStats(kpi);
+  // Standalone vs Cumulative — drives both the QTD tile math AND the Overall
+  // Progress panel below. Defaults to Cumulative (schema default).
+  const divisionType: "Cumulative" | "Standalone" =
+    kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
+  const { filledWeeks, avgPerWeek, bestWeek, bestValue } = computeKPIStats(kpi);
 
   // Week-of-quarter (1..13) — DB-driven, respects tenant's QuarterSetting.
   const currentWeek = useCurrentWeek(kpi.year, kpi.quarter);
 
   // Compute QTD totals over [1 .. currentWeek-1]. Falls back to full-quarter
   // totals when currentWeek is unresolvable.
-  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek);
+  const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, divisionType);
+
+  // Overall Progress — for Standalone, mirror the computed qtdAchieved (the
+  // documented average) because the server-stamped `kpi.qtdAchieved` is a
+  // cumulative SUM unconditionally and would show 341% on a Standalone KPI
+  // whose true progress is 113%. For Cumulative, preserve today's behavior
+  // (read the row's qtdAchieved which includes the in-progress week — slightly
+  // different denominator from the QTD tile but unchanged from before).
+  const achieved =
+    divisionType === "Standalone"
+      ? (qtdAchieved ?? 0)
+      : (kpi.qtdAchieved ?? 0);
+  // Badge-colors helper — runs the canonical `getColorByPercentage`
+  // internally and maps the result to READABLE-on-white text tones plus
+  // a human status label. Use it because the percentage label here sits
+  // on a white panel (not a colored cell).
+  const pct = target > 0 ? (achieved / target) * 100 : 0;
+  const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
+  const colors = kpi.qtdAchieved != null
+    ? getProgressBadgeColors(achieved, target, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+    : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
 
   // Weekly Goal tile shows "<latest reported value> / <that week's target>".
   // We look at the most recent week (≤ currentWeek when known, else any week)
@@ -73,7 +95,7 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
           <div className="flex items-end justify-between mb-3">
             <div>
               <div className={`text-3xl font-bold ${colors.text}`}>
-                {(kpi.progressPercent ?? 0).toFixed(0)}%
+                {pct.toFixed(0)}%
               </div>
               <div className="text-xs text-gray-500 mt-0.5">{colors.label}</div>
             </div>
@@ -90,7 +112,7 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
           <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
             <div
               className={`h-3 rounded-full transition-all ${colors.bar}`}
-              style={{ width: `${Math.min(kpi.progressPercent ?? 0, 100)}%` }}
+              style={{ width: `${Math.min(pct, 100)}%` }}
             />
           </div>
         </div>
@@ -98,15 +120,26 @@ export function StatsTab({ kpi }: { kpi: KPIRow }) {
 
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Weeks Reported", value: String(filledWeeks.length) },
-          { label: "Avg / Week", value: fmt(avgPerWeek) },
-          { label: "Best Week", value: bestWeek ? `W${bestWeek}` : "—" },
+          { label: "Weeks Reported", value: String(filledWeeks.length), sub: undefined },
+          { label: "Avg / Week", value: fmt(avgPerWeek), sub: undefined },
+          {
+            label: "Best Week",
+            value: bestWeek ? `W${bestWeek}` : "—",
+            // Sub-label surfaces the achieved value for the best-performing
+            // week so the stat reads like "W1 — 4.45" instead of a bare label.
+            sub: bestWeek ? fmt(bestValue) : undefined,
+          },
         ].map((s) => (
           <div
             key={s.label}
             className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-center"
           >
-            <div className="text-lg font-semibold text-gray-800">{s.value}</div>
+            <div className="text-lg font-semibold text-gray-800">
+              {s.value}
+              {s.sub != null && (
+                <span className="text-xs font-normal text-gray-500 ml-1.5">· {s.sub}</span>
+              )}
+            </div>
             <div className="text-[10px] text-gray-500 mt-0.5">{s.label}</div>
           </div>
         ))}

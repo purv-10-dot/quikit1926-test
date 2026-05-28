@@ -28,12 +28,14 @@ describe("computeKPIStats — empty input", () => {
     const kpi = makeKPI([]);
     delete (kpi as Partial<KPIRow>).weeklyValues;
     const out = computeKPIStats(kpi);
-    expect(out).toEqual({ filledWeeks: [], avgPerWeek: 0, bestWeek: 0 });
+    // Branch added `bestValue` to the result shape.
+    expect(out).toEqual({ filledWeeks: [], avgPerWeek: 0, bestWeek: 0, bestValue: 0 });
   });
 
   it("returns empty stats when weeklyValues is an empty array", () => {
     const out = computeKPIStats(makeKPI([]));
-    expect(out).toEqual({ filledWeeks: [], avgPerWeek: 0, bestWeek: 0 });
+    // Branch added `bestValue` to the result shape.
+    expect(out).toEqual({ filledWeeks: [], avgPerWeek: 0, bestWeek: 0, bestValue: 0 });
   });
 
   it("treats null values as unfilled", () => {

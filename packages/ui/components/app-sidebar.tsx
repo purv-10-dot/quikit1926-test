@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * AppSidebar — unified sidebar shared across QuikScale, QuikConstruction, Admin.
+ * AppSidebar — unified sidebar shared across QuikScale, QuikInfra, Admin.
  *
  * Supports:
  *   - light (brand-refresh default) + dark (legacy accent-800) themes

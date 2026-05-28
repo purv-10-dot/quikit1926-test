@@ -32,6 +32,8 @@ let pastWeekFlagsState = { canAddPastWeek: false, canEditPastWeek: false, loaded
 vi.mock("@/lib/hooks/useKPI", () => ({
   useUpdateKPI: () => ({ mutateAsync: mockUpdateKPIMutate }),
   useUpdateWeeklyValue: () => ({ mutateAsync: mockUpdateWeeklyMutate }),
+  // Branch added a batched-update hook used by LogModal's Updates tab.
+  useUpdateWeeklyValuesBatch: () => ({ mutateAsync: vi.fn() }),
   useNotes: () => ({ data: [], refetch: vi.fn() }),
   useAddNote: () => ({ mutateAsync: mockAddNoteMutate }),
 }));

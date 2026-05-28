@@ -8,13 +8,13 @@ import { sendOnboardingInvitationEmail } from "@/lib/email";
 import { provisionAppRolesForOrg } from "@/lib/provisionAppRoles";
 import { parsePaginationParams, paginationToSkipTake, buildPaginationResponse } from "@quikit/shared/pagination";
 import {
-  DEFAULT_INVITE_PASSWORD,
   INVITE_METHOD,
   MEMBERSHIP_ROLE_LABELS,
   MEMBERSHIP_ROLES,
   type SsoProvider,
 } from "@quikit/shared";
 import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
+import { generateTempPassword } from "@quikit/shared/temp-password";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -180,17 +180,23 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
       // FR-SA-003 — first member is always Org Admin.
       const isNative = admin.inviteMethod === INVITE_METHOD.NATIVE;
 
-      // Create or reuse the User. A native invite seeds the system default
-      // password and sets mustChangePassword=true so the Set-Password screen
-      // fires on first login (FR-SA-009 / BR-008). SSO users get no password.
+      // Create or reuse the User. A native invite seeds a freshly-generated
+      // friendly temp password and sets mustChangePassword=true so the
+      // Set-Password screen fires on first login (FR-SA-009 / BR-008). SSO
+      // users get no password.
       let adminUser = await tx.user.findUnique({ where: { email: admin.email } });
+      let createdTempPassword: string | null = null;
       if (!adminUser) {
+        if (isNative) createdTempPassword = generateTempPassword();
         adminUser = await tx.user.create({
           data: {
             email: admin.email,
             firstName: admin.firstName,
             lastName: admin.lastName,
-            password: isNative ? await bcrypt.hash(DEFAULT_INVITE_PASSWORD, 10) : null,
+            password:
+              isNative && createdTempPassword
+                ? await bcrypt.hash(createdTempPassword, 10)
+                : null,
             mustChangePassword: isNative,
           },
         });
@@ -224,7 +230,14 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
         },
       });
 
-      return { org, membership, invitationToken, adminUser, appNames: appsToProvision.map((a) => a.name) };
+      return {
+        org,
+        membership,
+        invitationToken,
+        adminUser,
+        tempPassword: createdTempPassword,
+        appNames: appsToProvision.map((a) => a.name),
+      };
     });
 
     logAudit({
@@ -284,6 +297,7 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
         token: result.invitationToken,
         inviteMethod: admin.inviteMethod,
         ssoProvider,
+        tempPassword: result.tempPassword ?? "",
       });
 
       // Audit the email lifecycle event so the super-admin dashboard can
@@ -312,6 +326,10 @@ export const POST = withSuperAdminAuth(async ({ userId }, request: NextRequest) 
         data: {
           org: result.org,
           adminInvited: !!result.membership,
+          // Plaintext temp password — shown ONCE in the super-admin UI when
+          // the first Org Admin was invited via Native. Absent for SSO and
+          // when no admin block was provided.
+          tempPassword: result.tempPassword ?? undefined,
         },
         warning: emailWarning,
       },

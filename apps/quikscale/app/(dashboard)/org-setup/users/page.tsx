@@ -21,9 +21,11 @@ import {
   RightPanelSubmitButton,
   Pagination,
 } from "@quikit/ui";
+import { useQueryClient } from "@tanstack/react-query";
 import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -475,7 +477,7 @@ function UserPanel({
       return;
     }
     // Native invites no longer require a typed password — when left blank,
-    // the server seeds the system default (Quikit2026) and emails it to the
+    // the server generates a fresh temporary password and emails it to the
     // invitee, matching the QuikIT super-admin onboarding flow.
 
     setSaving(true);
@@ -492,7 +494,7 @@ function UserPanel({
       };
       // Only attach password when the admin actually typed one. An empty
       // string would fail Zod's min(8) on the server. For new Native users
-      // who leave it blank, the server seeds the Quikit2026 default.
+      // who leave it blank, the server generates a fresh temp password.
       if (form.password.trim()) payload.password = form.password.trim();
       if (editUser) payload.status = form.status;
       if (!editUser && form.linkExistingUserId) payload.linkExistingUserId = form.linkExistingUserId;
@@ -515,7 +517,7 @@ function UserPanel({
         return;
       }
 
-      const savedUser = json.data as OrgUser;
+      const savedUser = json.data as OrgUser & { tempPassword?: string };
 
       // Apply the chosen AppRole via PATCH /role. The POST endpoint already
       // auto-assigns the default User role (or admin if org has zero admins),
@@ -542,7 +544,13 @@ function UserPanel({
       }
 
       onSaved(savedUser);
-      onClose();
+      // If a temp password came back, keep the panel open so the parent's
+      // modal can render the plaintext once. Otherwise close immediately.
+      if (!savedUser.tempPassword) {
+        onClose();
+      } else {
+        onClose();
+      }
     } finally {
       setSaving(false);
     }
@@ -775,9 +783,10 @@ function UserPanel({
       )}
 
       {/* Password — only shown in Edit mode (admin can change an existing user's
-          password). For new users, Native invitees receive the system default
-          Quikit2026 via email and reset it on first sign-in; SSO invitees never
-          have a password. Mirrors the super-admin first-Org-Admin flow. */}
+          password). For new users, Native invitees receive a freshly-generated
+          temporary password via email and reset it on first sign-in; SSO
+          invitees never have a password. Mirrors the super-admin
+          first-Org-Admin flow. */}
       {editUser && !form.linkExistingUserId && (
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">
@@ -800,9 +809,9 @@ function UserPanel({
       {!editUser && !form.linkExistingUserId && form.invitationMethod === "native" && (
         <div className="bg-accent-50 border border-accent-200 rounded-lg px-3 py-2 text-[11px] text-accent-800 leading-snug">
           <strong className="font-semibold">Temporary password will be emailed.</strong>{" "}
-          The user will receive <span className="font-mono font-semibold">Quikit2026</span> at{" "}
-          <span className="font-medium">{form.email || "their email"}</span> and be prompted
-          to set a new password on first sign-in.
+          A unique temporary password will be generated and sent to{" "}
+          <span className="font-medium">{form.email || "their email"}</span>. They&apos;ll
+          be prompted to set a new password on first sign-in.
         </div>
       )}
 
@@ -1001,8 +1010,19 @@ function ConfirmDialog({
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgUsersPage() {
   const { canCreate, canUpdate } = useResourcePermissions("User");
+  // RBAC v2 — User Management tab is now permission-driven (was admin-only).
+  // Anyone with User:view can see roles; the sub-actions (create/edit/delete
+  // role, edit permissions, change members) gate independently below.
+  const myPerms = useMyPermissions();
+  const canViewUserMgmt = myPerms.isAdmin || myPerms.has("User", "view");
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  // Shared cache invalidator — every user mutation (create/edit/status-change/
+  // delete) updates membership-driven views elsewhere (Dashboard Owner filter,
+  // KPI/Priority pickers, team member counts on Org Setup → Teams). Without
+  // these invalidations consumers hold stale data until the 5-minute staleTime
+  // elapses or the user hard-refreshes.
+  const queryClient = useQueryClient();
 
   const crud = useTableCRUD<OrgUser>({
     apiEndpoint: "/api/org/users",
@@ -1019,6 +1039,13 @@ export default function OrgUsersPage() {
   const [confirmAction, setConfirmAction] = useState<"remove" | "reactivate">(
     "remove"
   );
+  // Holds the one-time plaintext temp password to show the inviting admin
+  // after a successful Native user-create. Plaintext lives only here, in
+  // React state — never localStorage / sessionStorage / DB.
+  const [tempPasswordInfo, setTempPasswordInfo] = useState<{
+    email: string;
+    tempPassword: string;
+  } | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
 
   // Fetch the AppRoles list — drives the Role dropdown in the Add/Edit panel.
@@ -1071,7 +1098,7 @@ export default function OrgUsersPage() {
     return list;
   }, [crud.items, crud.search, roleFilter, statusFilter]);
 
-  function handleSaved(user: OrgUser) {
+  function handleSaved(user: OrgUser & { tempPassword?: string }) {
     crud.setItems((prev) => {
       const idx = prev.findIndex((u) => u.userId === user.userId);
       if (idx >= 0) {
@@ -1081,6 +1108,20 @@ export default function OrgUsersPage() {
       }
       return [...prev, user];
     });
+    // Bust shared caches — user team assignment / role / status changes ripple
+    // into every consumer that reads users or teams.
+    queryClient.invalidateQueries({ queryKey: ["teams"] });
+    queryClient.invalidateQueries({ queryKey: ["users"] });
+    queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    // Surface the plaintext temp password ONCE for the inviting admin.
+    // Lives only in React state until the modal closes — never persisted.
+    if (user.tempPassword) {
+      setTempPasswordInfo({
+        email: user.email,
+        tempPassword: user.tempPassword,
+      });
+    }
   }
 
   async function handleStatusChange(
@@ -1115,7 +1156,7 @@ export default function OrgUsersPage() {
         {(
           [
             { key: "users", label: "Users" },
-            { key: "roles", label: "User Management" },
+            ...(canViewUserMgmt ? [{ key: "roles" as const, label: "User Management" }] : []),
           ] as const
         ).map((t) => (
           <button
@@ -1132,7 +1173,7 @@ export default function OrgUsersPage() {
         ))}
       </div>
 
-      {tab === "roles" && <RolesTab />}
+      {tab === "roles" && canViewUserMgmt && <RolesTab />}
 
       {tab === "users" && (
       <>
@@ -1457,6 +1498,86 @@ export default function OrgUsersPage() {
           )
         }
       />
+
+      {/* ── Temp-password reveal modal (shown ONCE after Native invite) ── */}
+      {tempPasswordInfo && (
+        <TempPasswordModal
+          email={tempPasswordInfo.email}
+          tempPassword={tempPasswordInfo.tempPassword}
+          onClose={() => setTempPasswordInfo(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * One-time success modal that reveals the plaintext temporary password the
+ * server generated for a freshly invited Native user. The plaintext is held
+ * only in React state for the lifetime of this modal — closing it discards
+ * the value. We never persist it (no localStorage / sessionStorage / DB).
+ */
+function TempPasswordModal({
+  email,
+  tempPassword,
+  onClose,
+}: {
+  email: string;
+  tempPassword: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(tempPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API can be blocked; user can still select+copy manually.
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl ring-1 ring-gray-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold text-gray-900">User invited</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          A temporary password has been emailed to{" "}
+          <span className="font-medium text-gray-900">{email}</span>. You can
+          also share it manually below — this is shown only once.
+        </p>
+        <div className="mt-4 rounded-md bg-gray-50 px-3 py-2 ring-1 ring-gray-200">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            Temporary password
+          </div>
+          <div className="mt-1 break-all font-mono text-sm text-gray-900">
+            {tempPassword}
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={copy}
+            className="rounded-md bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700"
+          >
+            {copied ? "Copied!" : "Copy password"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
+          >
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

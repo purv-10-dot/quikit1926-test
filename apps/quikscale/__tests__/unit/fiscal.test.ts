@@ -174,3 +174,69 @@ describe("weekDateLabel", () => {
     expect(label).toMatch(/Apr.*May/);
   });
 });
+
+// ── actualStartDate parameter ────────────────────────────────────────────────
+//
+// Locks in the contract that lets tenants whose `QuarterSetting.startDate`
+// is week-aligned (e.g. Monday on/before the 1st of the quarter's first
+// month) display week-date labels anchored on the real start instead of
+// the hardcoded calendar-month boundaries.
+
+describe("getQuarterStart with actualStartDate override", () => {
+  it("uses the actual start date when passed (ISO string)", () => {
+    // Success Alchemists Q4/2025 starts Mon Dec 29, 2025 (not Jan 1, 2026)
+    const d = getQuarterStart(2025, "Q4", "2025-12-29");
+    expect(d.getFullYear()).toBe(2025);
+    expect(d.getMonth()).toBe(11);
+    expect(d.getDate()).toBe(29);
+  });
+
+  it("uses the actual start date when passed (Date object)", () => {
+    const real = new Date(2025, 8, 29); // Mon Sep 29, 2025 (Q3 start)
+    const d = getQuarterStart(2025, "Q3", real);
+    expect(d.getFullYear()).toBe(2025);
+    expect(d.getMonth()).toBe(8);
+    expect(d.getDate()).toBe(29);
+  });
+
+  it("falls back to QUARTER_STARTS when actualStartDate is null/undefined", () => {
+    expect(getQuarterStart(2026, "Q1").getDate()).toBe(1);
+    expect(getQuarterStart(2026, "Q1", null).getDate()).toBe(1);
+    expect(getQuarterStart(2026, "Q1", undefined).getDate()).toBe(1);
+  });
+});
+
+describe("getWeekDateRange with actualStartDate override", () => {
+  it("Q4 anchored on Dec 29: Week 6 is Feb 2 – Feb 8", () => {
+    // Replays the user-reported case: Q4/2025 in Success Alchemists
+    // → mongo text-1 'Week 6 (Feb 2 - Feb 8)' must round-trip exactly.
+    expect(getWeekDateRange(2025, "Q4", 6, "2025-12-29")).toBe("2 Feb – 8 Feb");
+  });
+
+  it("Q4 anchored on Dec 29: Week 13 is Mar 23 – Mar 29", () => {
+    expect(getWeekDateRange(2025, "Q4", 13, "2025-12-29")).toBe("23 Mar – 29 Mar");
+  });
+
+  it("Q3 anchored on Sep 29: Week 2 is Oct 6 – Oct 12", () => {
+    expect(getWeekDateRange(2025, "Q3", 2, "2025-09-29")).toBe("6 Oct – 12 Oct");
+  });
+
+  it("falls back to calendar-month start when actualStartDate is null", () => {
+    expect(getWeekDateRange(2026, "Q1", 1, null)).toBe("1 Apr – 7 Apr");
+  });
+});
+
+describe("weekDateLabel with actualStartDate override", () => {
+  it("Q4 anchored on Dec 29: Week 6 compact label is '2–8 Feb'", () => {
+    expect(weekDateLabel(2025, "Q4", 6, "2025-12-29")).toBe("2–8 Feb");
+  });
+
+  it("Q4 anchored on Dec 29: Week 1 spans Dec→Jan, both months shown", () => {
+    const label = weekDateLabel(2025, "Q4", 1, "2025-12-29");
+    expect(label).toMatch(/Dec.*Jan/);
+  });
+
+  it("falls back to calendar-month start when actualStartDate is omitted", () => {
+    expect(weekDateLabel(2026, "Q1", 1)).toBe("1–7 Apr");
+  });
+});

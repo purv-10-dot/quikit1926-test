@@ -1,11 +1,14 @@
 import { z } from "zod";
 
+// Caps kept on structural identifiers (country = ISO 3166 2-letter code,
+// timezone = IANA name) and on identifier-like fields (firstName/lastName).
+// Bio is user-content and now uncapped.
 export const updateProfileSchema = z.object({
-  firstName: z.string().min(1).max(50).optional(),
-  lastName: z.string().min(1).max(50).optional(),
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(1).max(100).optional(),
   country: z.string().max(5).optional().nullable(),
   timezone: z.string().max(100).optional().nullable(),
-  bio: z.string().max(275).optional().nullable(),
+  bio: z.string().optional().nullable(),
 });
 
 export const updateCompanySchema = z.object({

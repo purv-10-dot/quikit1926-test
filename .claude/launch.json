@@ -37,9 +37,9 @@
       "autoPort": false
     },
     {
-      "name": "quikconstruction",
+      "name": "quikinfra",
       "runtimeExecutable": "/bin/bash",
-      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npx turbo dev --filter=quikconstruction"],
+      "runtimeArgs": ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec npx turbo dev --filter=quikinfra"],
       "port": 3005,
       "autoPort": false
     },

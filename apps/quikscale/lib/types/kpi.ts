@@ -67,4 +67,19 @@ export interface KPIRow {
   weeklyValues?: WeeklyValue[];
   // Phase 2: per-owner raw weekly values for team KPIs. Individual KPIs omit this.
   weeklyOwnerValues?: Record<string, WeeklyValue[]>;
+  // Audit columns — populated by GET /api/kpi via `decorateAudit` so the
+  // KPI table can render Created By / Updated By / Created Date / Updated
+  // Date columns without an extra round-trip. updatedBy/updatedByName/
+  // updatedByInitials are null on a brand-new row that has never been
+  // edited.
+  createdAt?: string;
+  updatedAt?: string;
+  // `createdBy` matches the Prisma column (NOT NULL). `updatedBy` is
+  // nullable — Prisma allows null for rows that haven't been edited.
+  createdBy?: string;
+  updatedBy?: string | null;
+  createdByName?: string;
+  createdByInitials?: string;
+  updatedByName?: string | null;
+  updatedByInitials?: string | null;
 }

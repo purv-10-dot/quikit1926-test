@@ -1,21 +1,52 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
+import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
 
+const WEEKLY_SORT_WHITELIST = [
+  "meetingDate",
+  "client",
+  "callStatus",
+  "actualStartTime",
+  "actualEndTime",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+function mapWeeklySort(key: string, dir: SortDirection): Prisma.ClientWeeklyMeetingOrderByWithRelationInput {
+  if (key === "client") return { client: { name: dir } };
+  if (key === "callStatus") return { callStatus: dir };
+  if (key === "actualStartTime") return { actualStartTime: dir };
+  if (key === "actualEndTime") return { actualEndTime: dir };
+  if (key === "createdAt") return { createdAt: dir };
+  if (key === "updatedAt") return { updatedAt: dir };
+  return { meetingDate: key === "meetingDate" ? dir : "desc" }; // default keeps legacy `meetingDate desc`
+}
+
 /**
- * GET /api/client-meetings/weekly-meetings?clientId=&from=&to=
- * Ordered newest first; soft-deleted hidden.
+ * GET /api/client-meetings/weekly-meetings?clientId=&from=&to=&includeDeleted=
+ *     &sortBy=<col>&sortOrder=<asc|desc>
+ *
+ * Ordered newest first by default. By default soft-deleted rows are hidden.
+ * When `includeDeleted=true` ONLY soft-deleted rows are returned — trash view.
+ * `sortBy` is whitelist-enforced; unknown keys fall through to the legacy
+ * `meetingDate desc` order.
  */
 export const GET = withOrgAuth(async ({ orgId }, request) => {
   const url = new URL(request.url);
   const clientId = url.searchParams.get("clientId") ?? undefined;
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
+  const includeDeleted = url.searchParams.get("includeDeleted") === "true";
 
-  const where: Record<string, unknown> = { orgId, deletedAt: null };
+  const where: Record<string, unknown> = {
+    orgId,
+    deletedAt: includeDeleted ? { not: null } : null,
+  };
   if (clientId) where.clientId = clientId;
   if (from || to) {
     const range: Record<string, Date> = {};
@@ -28,9 +59,10 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     where.meetingDate = range;
   }
 
+  const { orderBy } = parseSort(request, WEEKLY_SORT_WHITELIST, mapWeeklySort);
   const rows = await db.clientWeeklyMeeting.findMany({
     where,
-    orderBy: { meetingDate: "desc" },
+    orderBy,
     include: {
       client: { select: { id: true, name: true } },
       absentMembers: true,
@@ -43,6 +75,18 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       },
     },
   });
+
+  // Resolve createdBy / updatedBy → name + initials for the table's audit columns.
+  const actorIds = [...new Set(rows.flatMap((r) => [r.createdBy, r.updatedBy].filter(Boolean) as string[]))];
+  const users = actorIds.length
+    ? await db.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, firstName: true, lastName: true } })
+    : [];
+  const actorMap: Record<string, { name: string; initials: string }> = {};
+  for (const u of users) {
+    const name = `${u.firstName} ${u.lastName}`.trim() || "—";
+    const initials = `${u.firstName[0] ?? ""}${u.lastName[0] ?? ""}`.toUpperCase() || "??";
+    actorMap[u.id] = { name, initials };
+  }
 
   return NextResponse.json({
     success: true,
@@ -61,6 +105,7 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       segmentTime5: r.segmentTime5,
       segmentTime6: r.segmentTime6,
       segmentTime7: r.segmentTime7,
+      punctualityOverride: r.punctualityOverride,
       goodNewsSharing: r.goodNewsSharing,
       kpDashboard: r.kpDashboard,
       gaps: r.gaps,
@@ -80,6 +125,15 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
       dashboardNAClientMemberNames: r.dashboardNATeamMembers.map(
         (a) => a.member.name
       ),
+      // Audit fields surfaced on the Weekly Meeting table.
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+      createdBy: r.createdBy,
+      createdByName: actorMap[r.createdBy]?.name ?? "—",
+      createdByInitials: actorMap[r.createdBy]?.initials ?? "??",
+      updatedBy: r.updatedBy,
+      updatedByName: r.updatedBy ? (actorMap[r.updatedBy]?.name ?? null) : null,
+      updatedByInitials: r.updatedBy ? (actorMap[r.updatedBy]?.initials ?? null) : null,
     })),
   });
 });
@@ -156,6 +210,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       segmentTime5: d.segmentTime5 ?? null,
       segmentTime6: d.segmentTime6 ?? null,
       segmentTime7: d.segmentTime7 ?? null,
+      punctualityOverride: d.punctualityOverride,
       goodNewsSharing: d.goodNewsSharing,
       kpDashboard: d.kpDashboard,
       gaps: d.gaps,

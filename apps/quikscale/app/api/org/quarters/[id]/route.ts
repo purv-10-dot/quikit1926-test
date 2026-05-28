@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { updateQuarterSchema } from "@/lib/schemas/quarterSchema";
 import { addDays } from "@/lib/utils/quarterGen";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { fyHasData, fyLabel } from "@/lib/api/quartersFyHasData";
 const withOrgAuth = withOrgAuthForModule("orgSetup.quarters");
 
 const DAYS_PER_QUARTER = 91; // 13 weeks
@@ -30,6 +31,14 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId }, request, { para
     // Only Q1 can be edited
     if (existing.quarter !== "Q1")
       return NextResponse.json({ success: false, error: "Only Q1 start date can be changed. All other quarters are auto-calculated." }, { status: 400 });
+
+    // Lock once any KPI / Priority / OPSP exists for this FY — changing the
+    // Q1 start would shift every quarter boundary and orphan existing data.
+    if (await fyHasData(orgId, existing.fiscalYear))
+      return NextResponse.json({
+        success: false,
+        error: `Quarter dates are locked — data exists for ${fyLabel(existing.fiscalYear)}.`,
+      }, { status: 409 });
 
     const parsed = updateQuarterSchema.safeParse(await request.json());
     if (!parsed.success) {
@@ -116,6 +125,12 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId }, _request, { 
     const existing = await db.quarterSetting.findFirst({ where: { id: params.id, orgId } });
     if (!existing)
       return NextResponse.json({ success: false, error: "Quarter not found" }, { status: 404 });
+
+    if (await fyHasData(orgId, existing.fiscalYear))
+      return NextResponse.json({
+        success: false,
+        error: `Quarter cannot be deleted — data exists for ${fyLabel(existing.fiscalYear)}.`,
+      }, { status: 409 });
 
     await db.quarterSetting.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });

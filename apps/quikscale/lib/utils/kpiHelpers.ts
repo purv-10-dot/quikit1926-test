@@ -41,6 +41,45 @@ export function progressColor(pct: number, reverse: boolean = false) {
 }
 
 /**
+ * Badge-friendly variant of the color helper for progress READOUTS — places
+ * where a percentage label sits on a white card/row alongside a filled bar.
+ *
+ * Why this exists separately from `getColorByPercentage`: that helper's
+ * `text` field is `"text-white"` for BLUE/GREEN/YELLOW/RED because it's
+ * designed for cells where the colored background covers the text (e.g.
+ * the weekly KPI cells). Reusing that `text` value on a white row makes
+ * the percentage invisible.
+ *
+ * This helper maps the same color bucket to a **readable-on-white** text
+ * tone and a human label, while internally calling `getColorByPercentage`
+ * so every documented rule (isUpdated gating, reverse mode, target ≤ 0
+ * special-case) stays honored.
+ *
+ * Use it for:
+ *   - KPICard on the Dashboard
+ *   - Progress column in KPITable
+ *   - StatsTab "Overall Progress" block
+ *   - Any future inline progress readout
+ *
+ * Do NOT use it for cells that paint the full background with the color
+ * (weekly KPI cells, QTD Achieved cell). Those want `getColorByPercentage`
+ * directly so `text-white` applies on top of the colored bg.
+ */
+export function getProgressBadgeColors(
+  value: number,
+  target: number,
+  isUpdated: boolean,
+  reverse: boolean = false,
+): { bar: string; text: string; label: string } {
+  const color = getColorByPercentage(value, target, isUpdated, reverse);
+  if (color.bg === "bg-blue-600")   return { bar: "bg-blue-600",   text: "text-blue-700",   label: reverse ? "Much Better"    : "Exceeded"     };
+  if (color.bg === "bg-green-600")  return { bar: "bg-green-600",  text: "text-green-700",  label: reverse ? "On Track"       : "Achieved"     };
+  if (color.bg === "bg-yellow-500") return { bar: "bg-yellow-500", text: "text-yellow-600", label: reverse ? "Slightly Worse" : "Near Target"  };
+  if (color.bg === "bg-red-600")    return { bar: "bg-red-600",    text: "text-red-700",    label: reverse ? "Poor"           : "Below Target" };
+  return { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
+}
+
+/**
  * Returns bg + text classes for a KPI week cell.
  *
  * Weekly target is always derived from qtdGoal (fallback to target) divided by 13.
@@ -70,4 +109,35 @@ export function weekCellColors(
     else label = "Neutral";
   }
   return { bg: color.bg, text: color.text, label };
+}
+
+/**
+ * Resolve the "last note" to display in the KPI table's Last Notes column.
+ *
+ * Source priority:
+ *   1. Highest weekNumber in `weeklyValues` that has a non-empty `notes`
+ *      (mirrors Priority's `lastNote` pattern — most recent weekly note wins)
+ *   2. Fallback to `kpi.lastNotes` — the denormalized field written ONLY by
+ *      `POST /api/kpi/[id]/notes` (the general KPI-level notes endpoint).
+ *      Per-week notes save to `KPIWeeklyValue.notes` and do NOT update that
+ *      field, so reading it alone misses weekly notes entirely (the bug this
+ *      helper fixes).
+ *
+ * Returns `null` when nothing is available, so callers can render `—`.
+ */
+export function getLatestWeeklyNote(kpi: {
+  weeklyValues?: Array<{ weekNumber: number; notes?: string | null }> | null;
+  lastNotes?: string | null;
+}): { note: string; weekNumber: number | null } | null {
+  let best: { note: string; weekNumber: number } | null = null;
+  for (const wv of kpi.weeklyValues ?? []) {
+    const n = wv.notes?.trim();
+    if (n && (best == null || wv.weekNumber > best.weekNumber)) {
+      best = { note: n, weekNumber: wv.weekNumber };
+    }
+  }
+  if (best) return best;
+  const fallback = kpi.lastNotes?.trim();
+  if (fallback) return { note: fallback, weekNumber: null };
+  return null;
 }

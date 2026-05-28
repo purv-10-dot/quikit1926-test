@@ -4,7 +4,7 @@ info:
   version: "0.1.0"
   description: |
     Auto-generated OpenAPI 3.0 spec covering ALL 5 QuikIT apps:
-    quikit (launcher + super-admin), quikscale, admin, quikvc, quikconstruction.
+    quikit (launcher + super-admin), quikscale, admin, quikvc, quikinfra.
 
     **Filter by tag** in the Swagger UI sidebar to scope to a single app
     (`app:quikscale`) or a single module (`kpi`, `opsp`, etc.).
@@ -19,7 +19,7 @@ info:
     name: "QuikIT Platform Team"
 
 # servers: injected at runtime by app/api/docs/spec/route.ts from env vars
-# (QUIKIT_URL, QUIKSCALE_URL, ADMIN_URL, QUIKVC_URL, QUIKCONSTRUCTION_URL).
+# (QUIKIT_URL, QUIKSCALE_URL, ADMIN_URL, QUIKVC_URL, QUIKINFRA_URL).
 # Local dev uses http://localhost:* via .env.local; prod uses Vercel env.
 servers: []
 
@@ -63,8 +63,8 @@ tags:
     description: "All endpoints belonging to admin."
   - name: "app:quikvc"
     description: "All endpoints belonging to quikvc."
-  - name: "app:quikconstruction"
-    description: "All endpoints belonging to quikconstruction."
+  - name: "app:quikinfra"
+    description: "All endpoints belonging to quikinfra."
   - name: "quikit:apps"
     description: "apps module of the quikit app."
   - name: "quikit:auth"
@@ -195,36 +195,36 @@ tags:
     description: "verticals module of the quikvc app."
   - name: "quikvc:webhooks"
     description: "webhooks module of the quikvc app."
-  - name: "quikconstruction:approvals"
-    description: "approvals module of the quikconstruction app."
-  - name: "quikconstruction:audit"
-    description: "audit module of the quikconstruction app."
-  - name: "quikconstruction:dashboard"
-    description: "dashboard module of the quikconstruction app."
-  - name: "quikconstruction:docs"
-    description: "docs module of the quikconstruction app."
-  - name: "quikconstruction:documents"
-    description: "documents module of the quikconstruction app."
-  - name: "quikconstruction:finance"
-    description: "finance module of the quikconstruction app."
-  - name: "quikconstruction:hrms"
-    description: "hrms module of the quikconstruction app."
-  - name: "quikconstruction:masters"
-    description: "masters module of the quikconstruction app."
-  - name: "quikconstruction:projects"
-    description: "projects module of the quikconstruction app."
-  - name: "quikconstruction:purchase"
-    description: "purchase module of the quikconstruction app."
-  - name: "quikconstruction:quality"
-    description: "quality module of the quikconstruction app."
-  - name: "quikconstruction:reports"
-    description: "reports module of the quikconstruction app."
-  - name: "quikconstruction:safety"
-    description: "safety module of the quikconstruction app."
-  - name: "quikconstruction:sequence"
-    description: "sequence module of the quikconstruction app."
-  - name: "quikconstruction:store"
-    description: "store module of the quikconstruction app."
+  - name: "quikinfra:approvals"
+    description: "approvals module of the quikinfra app."
+  - name: "quikinfra:audit"
+    description: "audit module of the quikinfra app."
+  - name: "quikinfra:dashboard"
+    description: "dashboard module of the quikinfra app."
+  - name: "quikinfra:docs"
+    description: "docs module of the quikinfra app."
+  - name: "quikinfra:documents"
+    description: "documents module of the quikinfra app."
+  - name: "quikinfra:finance"
+    description: "finance module of the quikinfra app."
+  - name: "quikinfra:hrms"
+    description: "hrms module of the quikinfra app."
+  - name: "quikinfra:masters"
+    description: "masters module of the quikinfra app."
+  - name: "quikinfra:projects"
+    description: "projects module of the quikinfra app."
+  - name: "quikinfra:purchase"
+    description: "purchase module of the quikinfra app."
+  - name: "quikinfra:quality"
+    description: "quality module of the quikinfra app."
+  - name: "quikinfra:reports"
+    description: "reports module of the quikinfra app."
+  - name: "quikinfra:safety"
+    description: "safety module of the quikinfra app."
+  - name: "quikinfra:sequence"
+    description: "sequence module of the quikinfra app."
+  - name: "quikinfra:store"
+    description: "store module of the quikinfra app."
 
 paths:
   "/api/apps/enable":
@@ -569,7 +569,7 @@ paths:
         
         Serves a Swagger UI page rendering the auto-generated combined OpenAPI 3.0
         spec across all 5 QuikIT apps (quikit, quikscale, admin, quikvc,
-        quikconstruction).
+        quikinfra).
         
         Internal-only — gated by getServerSession. The middleware excludes the
         `api/` prefix so this handler does its own auth.
@@ -14555,12 +14555,12 @@ paths:
 
   "/api/approvals/requests/{id}":
     get:
-      operationId: quikconstructionGetApprovalsRequestsId
+      operationId: quikinfraGetApprovalsRequestsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:approvals"
-      x-source-file: "apps/quikconstruction/app/api/approvals/requests/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:approvals"
+      x-source-file: "apps/quikinfra/app/api/approvals/requests/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -14600,12 +14600,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     patch:
-      operationId: quikconstructionPatchApprovalsRequestsId
+      operationId: quikinfraPatchApprovalsRequestsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:approvals"
-      x-source-file: "apps/quikconstruction/app/api/approvals/requests/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:approvals"
+      x-source-file: "apps/quikinfra/app/api/approvals/requests/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -14646,12 +14646,12 @@ paths:
 
   "/api/approvals/requests":
     get:
-      operationId: quikconstructionGetApprovalsRequests
+      operationId: quikinfraGetApprovalsRequests
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:approvals"
-      x-source-file: "apps/quikconstruction/app/api/approvals/requests/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:approvals"
+      x-source-file: "apps/quikinfra/app/api/approvals/requests/route.ts"
       responses:
         '200':
           description: "OK"
@@ -14685,12 +14685,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostApprovalsRequests
+      operationId: quikinfraPostApprovalsRequests
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:approvals"
-      x-source-file: "apps/quikconstruction/app/api/approvals/requests/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:approvals"
+      x-source-file: "apps/quikinfra/app/api/approvals/requests/route.ts"
       responses:
         '200':
           description: "OK"
@@ -14731,12 +14731,12 @@ paths:
 
   "/api/approvals/rules/{id}":
     delete:
-      operationId: quikconstructionDeleteApprovalsRulesId
+      operationId: quikinfraDeleteApprovalsRulesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:approvals"
-      x-source-file: "apps/quikconstruction/app/api/approvals/rules/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:approvals"
+      x-source-file: "apps/quikinfra/app/api/approvals/rules/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -14777,12 +14777,12 @@ paths:
 
   "/api/approvals/rules":
     get:
-      operationId: quikconstructionGetApprovalsRules
+      operationId: quikinfraGetApprovalsRules
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:approvals"
-      x-source-file: "apps/quikconstruction/app/api/approvals/rules/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:approvals"
+      x-source-file: "apps/quikinfra/app/api/approvals/rules/route.ts"
       responses:
         '200':
           description: "OK"
@@ -14816,12 +14816,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostApprovalsRules
+      operationId: quikinfraPostApprovalsRules
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:approvals"
-      x-source-file: "apps/quikconstruction/app/api/approvals/rules/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:approvals"
+      x-source-file: "apps/quikinfra/app/api/approvals/rules/route.ts"
       responses:
         '200':
           description: "OK"
@@ -14862,12 +14862,12 @@ paths:
 
   "/api/audit":
     get:
-      operationId: quikconstructionGetAudit
+      operationId: quikinfraGetAudit
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:audit"
-      x-source-file: "apps/quikconstruction/app/api/audit/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:audit"
+      x-source-file: "apps/quikinfra/app/api/audit/route.ts"
       responses:
         '200':
           description: "OK"
@@ -14902,7 +14902,7 @@ paths:
 
   "/api/dashboard":
     get:
-      operationId: quikconstructionGetDashboard
+      operationId: quikinfraGetDashboard
       summary: "Returns:"
       description: |-
         GET /api/dashboard — single rollup for the landing page.
@@ -14916,9 +14916,9 @@ paths:
         incidents  : 5 most-recent open safety incidents
         stockLow   : 10 lowest positive balances (as-of now) across project/location/item
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:dashboard"
-      x-source-file: "apps/quikconstruction/app/api/dashboard/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:dashboard"
+      x-source-file: "apps/quikinfra/app/api/dashboard/route.ts"
       responses:
         '200':
           description: "OK"
@@ -14953,16 +14953,16 @@ paths:
 
   "/api/docs":
     get:
-      operationId: quikconstructionGetDocs
-      summary: "pre-filtered to the `app:quikconstruction` tag."
+      operationId: quikinfraGetDocs
+      summary: "pre-filtered to the `app:quikinfra` tag."
       description: |-
         GET /api/docs — redirects to the platform-wide Swagger UI hosted on QuikIT,
-        pre-filtered to the `app:quikconstruction` tag.
+        pre-filtered to the `app:quikinfra` tag.
         See apps/quikit/app/api/docs/route.ts.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:docs"
-      x-source-file: "apps/quikconstruction/app/api/docs/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:docs"
+      x-source-file: "apps/quikinfra/app/api/docs/route.ts"
       responses:
         '200':
           description: "OK"
@@ -14997,12 +14997,12 @@ paths:
 
   "/api/documents/{id}/download":
     get:
-      operationId: quikconstructionGetDocumentsIdDownload
+      operationId: quikinfraGetDocumentsIdDownload
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:documents"
-      x-source-file: "apps/quikconstruction/app/api/documents/[id]/download/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:documents"
+      x-source-file: "apps/quikinfra/app/api/documents/[id]/download/route.ts"
       parameters:
         - name: id
           in: path
@@ -15043,12 +15043,12 @@ paths:
 
   "/api/documents/{id}":
     delete:
-      operationId: quikconstructionDeleteDocumentsId
+      operationId: quikinfraDeleteDocumentsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:documents"
-      x-source-file: "apps/quikconstruction/app/api/documents/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:documents"
+      x-source-file: "apps/quikinfra/app/api/documents/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -15089,15 +15089,15 @@ paths:
 
   "/api/documents":
     get:
-      operationId: quikconstructionGetDocuments
+      operationId: quikinfraGetDocuments
       summary: "fields: refType (required), refId (required), file (required)"
       description: |-
         POST /api/documents — multipart upload.
         fields: refType (required), refId (required), file (required)
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:documents"
-      x-source-file: "apps/quikconstruction/app/api/documents/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:documents"
+      x-source-file: "apps/quikinfra/app/api/documents/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15131,15 +15131,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostDocuments
+      operationId: quikinfraPostDocuments
       summary: "fields: refType (required), refId (required), file (required)"
       description: |-
         POST /api/documents — multipart upload.
         fields: refType (required), refId (required), file (required)
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:documents"
-      x-source-file: "apps/quikconstruction/app/api/documents/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:documents"
+      x-source-file: "apps/quikinfra/app/api/documents/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15180,12 +15180,12 @@ paths:
 
   "/api/finance/bills/{id}":
     get:
-      operationId: quikconstructionGetFinanceBillsId
+      operationId: quikinfraGetFinanceBillsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/bills/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/bills/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -15225,12 +15225,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     patch:
-      operationId: quikconstructionPatchFinanceBillsId
+      operationId: quikinfraPatchFinanceBillsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/bills/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/bills/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -15271,16 +15271,16 @@ paths:
 
   "/api/finance/bills/from-grn/{grnId}":
     post:
-      operationId: quikconstructionPostFinanceBillsFromGrnGrnId
+      operationId: quikinfraPostFinanceBillsFromGrnGrnId
       summary: "vendor bill. Totals copied from GRN lines. GRN must be status=posted and"
       description: |-
         POST /api/finance/bills/from-grn/[grnId] — materialize a posted GRN into a
         vendor bill. Totals copied from GRN lines. GRN must be status=posted and
         not already billed (enforced by CnVendorBill.grnId @@unique).
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/bills/from-grn/[grnId]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/bills/from-grn/[grnId]/route.ts"
       parameters:
         - name: grnId
           in: path
@@ -15327,12 +15327,12 @@ paths:
 
   "/api/finance/bills":
     get:
-      operationId: quikconstructionGetFinanceBills
+      operationId: quikinfraGetFinanceBills
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/bills/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/bills/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15366,12 +15366,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostFinanceBills
+      operationId: quikinfraPostFinanceBills
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/bills/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/bills/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15412,12 +15412,12 @@ paths:
 
   "/api/finance/credit-notes/{id}":
     delete:
-      operationId: quikconstructionDeleteFinanceCreditNotesId
+      operationId: quikinfraDeleteFinanceCreditNotesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/credit-notes/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/credit-notes/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -15458,7 +15458,7 @@ paths:
 
   "/api/finance/credit-notes":
     get:
-      operationId: quikconstructionGetFinanceCreditNotes
+      operationId: quikinfraGetFinanceCreditNotes
       summary: "Issues a credit against a customer. If `invoiceId` provided, we atomically"
       description: |-
         POST /api/finance/credit-notes
@@ -15468,9 +15468,9 @@ paths:
         capped at total) and set note.status="applied". Otherwise the note stays
         "issued" for manual allocation later.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/credit-notes/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/credit-notes/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15504,7 +15504,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostFinanceCreditNotes
+      operationId: quikinfraPostFinanceCreditNotes
       summary: "Issues a credit against a customer. If `invoiceId` provided, we atomically"
       description: |-
         POST /api/finance/credit-notes
@@ -15514,9 +15514,9 @@ paths:
         capped at total) and set note.status="applied". Otherwise the note stays
         "issued" for manual allocation later.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/credit-notes/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/credit-notes/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15557,12 +15557,12 @@ paths:
 
   "/api/finance/debit-notes/{id}":
     delete:
-      operationId: quikconstructionDeleteFinanceDebitNotesId
+      operationId: quikinfraDeleteFinanceDebitNotesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/debit-notes/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/debit-notes/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -15603,15 +15603,15 @@ paths:
 
   "/api/finance/debit-notes":
     get:
-      operationId: quikconstructionGetFinanceDebitNotes
+      operationId: quikinfraGetFinanceDebitNotes
       summary: "pattern as credit-note but against CnVendorBill."
       description: |-
         POST /api/finance/debit-notes — reduces a vendor bill's outstanding. Same
         pattern as credit-note but against CnVendorBill.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/debit-notes/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/debit-notes/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15645,15 +15645,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostFinanceDebitNotes
+      operationId: quikinfraPostFinanceDebitNotes
       summary: "pattern as credit-note but against CnVendorBill."
       description: |-
         POST /api/finance/debit-notes — reduces a vendor bill's outstanding. Same
         pattern as credit-note but against CnVendorBill.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/debit-notes/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/debit-notes/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15694,12 +15694,12 @@ paths:
 
   "/api/finance/expenses/{id}":
     delete:
-      operationId: quikconstructionDeleteFinanceExpensesId
+      operationId: quikinfraDeleteFinanceExpensesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/expenses/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/expenses/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -15740,12 +15740,12 @@ paths:
 
   "/api/finance/expenses":
     get:
-      operationId: quikconstructionGetFinanceExpenses
+      operationId: quikinfraGetFinanceExpenses
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/expenses/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/expenses/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15779,12 +15779,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostFinanceExpenses
+      operationId: quikinfraPostFinanceExpenses
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/expenses/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/expenses/route.ts"
       responses:
         '200':
           description: "OK"
@@ -15825,12 +15825,12 @@ paths:
 
   "/api/finance/invoices/{id}":
     delete:
-      operationId: quikconstructionDeleteFinanceInvoicesId
+      operationId: quikinfraDeleteFinanceInvoicesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/invoices/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/invoices/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -15870,12 +15870,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetFinanceInvoicesId
+      operationId: quikinfraGetFinanceInvoicesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/invoices/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/invoices/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -15916,16 +15916,16 @@ paths:
 
   "/api/finance/invoices/from-rab/{rabId}":
     post:
-      operationId: quikconstructionPostFinanceInvoicesFromRabRabId
+      operationId: quikinfraPostFinanceInvoicesFromRabRabId
       summary: "into a client invoice. Snapshots customer from project.clientId. RAB must be"
       description: |-
         POST /api/finance/invoices/from-rab/[rabId] — materialize an approved RAB
         into a client invoice. Snapshots customer from project.clientId. RAB must be
         status=approved (or paid) and not already invoiced.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/invoices/from-rab/[rabId]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/invoices/from-rab/[rabId]/route.ts"
       parameters:
         - name: rabId
           in: path
@@ -15972,12 +15972,12 @@ paths:
 
   "/api/finance/invoices":
     get:
-      operationId: quikconstructionGetFinanceInvoices
+      operationId: quikinfraGetFinanceInvoices
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/invoices/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/invoices/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16011,12 +16011,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostFinanceInvoices
+      operationId: quikinfraPostFinanceInvoices
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/invoices/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/invoices/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16057,12 +16057,12 @@ paths:
 
   "/api/finance/payments/{id}":
     get:
-      operationId: quikconstructionGetFinancePaymentsId
+      operationId: quikinfraGetFinancePaymentsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/payments/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/payments/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -16103,16 +16103,16 @@ paths:
 
   "/api/finance/payments":
     get:
-      operationId: quikconstructionGetFinancePayments
+      operationId: quikinfraGetFinancePayments
       summary: "Same pattern as client receipts, but against CnVendorBill. Bills must be"
       description: |-
         POST /api/finance/payments — record a vendor payment + allocations.
         Same pattern as client receipts, but against CnVendorBill. Bills must be
         status ∈ {approved, partial} to accept payment.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/payments/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/payments/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16146,16 +16146,16 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostFinancePayments
+      operationId: quikinfraPostFinancePayments
       summary: "Same pattern as client receipts, but against CnVendorBill. Bills must be"
       description: |-
         POST /api/finance/payments — record a vendor payment + allocations.
         Same pattern as client receipts, but against CnVendorBill. Bills must be
         status ∈ {approved, partial} to accept payment.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/payments/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/payments/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16196,12 +16196,12 @@ paths:
 
   "/api/finance/receipts/{id}":
     get:
-      operationId: quikconstructionGetFinanceReceiptsId
+      operationId: quikinfraGetFinanceReceiptsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/receipts/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/receipts/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -16242,7 +16242,7 @@ paths:
 
   "/api/finance/receipts":
     get:
-      operationId: quikconstructionGetFinanceReceipts
+      operationId: quikinfraGetFinanceReceipts
       summary: "Transaction:"
       description: |-
         POST /api/finance/receipts — record a client receipt + allocations.
@@ -16254,9 +16254,9 @@ paths:
         4. Create receipt + allocations
         5. For each invoice: increment paidAmount, update status (partial/paid)
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/receipts/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/receipts/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16290,7 +16290,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostFinanceReceipts
+      operationId: quikinfraPostFinanceReceipts
       summary: "Transaction:"
       description: |-
         POST /api/finance/receipts — record a client receipt + allocations.
@@ -16302,9 +16302,9 @@ paths:
         4. Create receipt + allocations
         5. For each invoice: increment paidAmount, update status (partial/paid)
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/receipts/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/receipts/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16345,7 +16345,7 @@ paths:
 
   "/api/finance/summary":
     get:
-      operationId: quikconstructionGetFinanceSummary
+      operationId: quikinfraGetFinanceSummary
       summary: "AR (Accounts Receivable) = outstanding on non-cancelled invoices (total - paidAmount)"
       description: |-
         GET /api/finance/summary — AR + AP snapshot.
@@ -16354,9 +16354,9 @@ paths:
         AP (Accounts Payable)    = outstanding on non-cancelled bills (total - paidAmount)
         Also returns overdue sub-totals (dueDate < today, status ≠ paid/cancelled).
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:finance"
-      x-source-file: "apps/quikconstruction/app/api/finance/summary/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:finance"
+      x-source-file: "apps/quikinfra/app/api/finance/summary/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16391,15 +16391,15 @@ paths:
 
   "/api/hrms/attendance":
     get:
-      operationId: quikconstructionGetHrmsAttendance
+      operationId: quikinfraGetHrmsAttendance
       summary: "One tx. Deletes prior rows for same (tenantId, employeeId, date) then inserts."
       description: |-
         POST /api/hrms/attendance — upsert attendance rows for a given date.
         One tx. Deletes prior rows for same (tenantId, employeeId, date) then inserts.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/attendance/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/attendance/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16433,15 +16433,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostHrmsAttendance
+      operationId: quikinfraPostHrmsAttendance
       summary: "One tx. Deletes prior rows for same (tenantId, employeeId, date) then inserts."
       description: |-
         POST /api/hrms/attendance — upsert attendance rows for a given date.
         One tx. Deletes prior rows for same (tenantId, employeeId, date) then inserts.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/attendance/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/attendance/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16482,12 +16482,12 @@ paths:
 
   "/api/hrms/employees/{id}":
     delete:
-      operationId: quikconstructionDeleteHrmsEmployeesId
+      operationId: quikinfraDeleteHrmsEmployeesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/employees/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/employees/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -16527,12 +16527,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetHrmsEmployeesId
+      operationId: quikinfraGetHrmsEmployeesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/employees/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/employees/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -16572,12 +16572,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     patch:
-      operationId: quikconstructionPatchHrmsEmployeesId
+      operationId: quikinfraPatchHrmsEmployeesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/employees/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/employees/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -16618,12 +16618,12 @@ paths:
 
   "/api/hrms/employees":
     get:
-      operationId: quikconstructionGetHrmsEmployees
+      operationId: quikinfraGetHrmsEmployees
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/employees/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/employees/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16657,12 +16657,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostHrmsEmployees
+      operationId: quikinfraPostHrmsEmployees
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/employees/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/employees/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16703,12 +16703,12 @@ paths:
 
   "/api/hrms/payroll/{id}/finalize":
     post:
-      operationId: quikconstructionPostHrmsPayrollIdFinalize
+      operationId: quikinfraPostHrmsPayrollIdFinalize
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/payroll/[id]/finalize/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/payroll/[id]/finalize/route.ts"
       parameters:
         - name: id
           in: path
@@ -16755,12 +16755,12 @@ paths:
 
   "/api/hrms/payroll/{id}":
     delete:
-      operationId: quikconstructionDeleteHrmsPayrollId
+      operationId: quikinfraDeleteHrmsPayrollId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/payroll/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/payroll/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -16800,12 +16800,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetHrmsPayrollId
+      operationId: quikinfraGetHrmsPayrollId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/payroll/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/payroll/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -16846,7 +16846,7 @@ paths:
 
   "/api/hrms/payroll":
     get:
-      operationId: quikconstructionGetHrmsPayroll
+      operationId: quikinfraGetHrmsPayroll
       summary: "Algorithm (per employee):"
       description: |-
         POST /api/hrms/payroll — generate a payroll run from attendance.
@@ -16861,9 +16861,9 @@ paths:
         - deductions = 0 (extend later)
         - netAmount = basicAmount
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/payroll/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/payroll/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16897,7 +16897,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostHrmsPayroll
+      operationId: quikinfraPostHrmsPayroll
       summary: "Algorithm (per employee):"
       description: |-
         POST /api/hrms/payroll — generate a payroll run from attendance.
@@ -16912,9 +16912,9 @@ paths:
         - deductions = 0 (extend later)
         - netAmount = basicAmount
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:hrms"
-      x-source-file: "apps/quikconstruction/app/api/hrms/payroll/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:hrms"
+      x-source-file: "apps/quikinfra/app/api/hrms/payroll/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16955,12 +16955,12 @@ paths:
 
   "/api/masters/banks":
     get:
-      operationId: quikconstructionGetMastersBanks
+      operationId: quikinfraGetMastersBanks
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/banks/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/banks/route.ts"
       responses:
         '200':
           description: "OK"
@@ -16994,12 +16994,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersBanks
+      operationId: quikinfraPostMastersBanks
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/banks/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/banks/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17040,12 +17040,12 @@ paths:
 
   "/api/masters/companies/{id}":
     delete:
-      operationId: quikconstructionDeleteMastersCompaniesId
+      operationId: quikinfraDeleteMastersCompaniesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/companies/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/companies/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -17085,12 +17085,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetMastersCompaniesId
+      operationId: quikinfraGetMastersCompaniesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/companies/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/companies/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -17130,12 +17130,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     patch:
-      operationId: quikconstructionPatchMastersCompaniesId
+      operationId: quikinfraPatchMastersCompaniesId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/companies/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/companies/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -17176,12 +17176,12 @@ paths:
 
   "/api/masters/companies":
     get:
-      operationId: quikconstructionGetMastersCompanies
+      operationId: quikinfraGetMastersCompanies
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/companies/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/companies/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17215,12 +17215,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersCompanies
+      operationId: quikinfraPostMastersCompanies
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/companies/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/companies/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17261,12 +17261,12 @@ paths:
 
   "/api/masters/contractors":
     get:
-      operationId: quikconstructionGetMastersContractors
+      operationId: quikinfraGetMastersContractors
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/contractors/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/contractors/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17300,12 +17300,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersContractors
+      operationId: quikinfraPostMastersContractors
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/contractors/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/contractors/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17346,12 +17346,12 @@ paths:
 
   "/api/masters/customers":
     get:
-      operationId: quikconstructionGetMastersCustomers
+      operationId: quikinfraGetMastersCustomers
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/customers/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/customers/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17385,12 +17385,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersCustomers
+      operationId: quikinfraPostMastersCustomers
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/customers/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/customers/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17431,12 +17431,12 @@ paths:
 
   "/api/masters/financial-years/{id}":
     delete:
-      operationId: quikconstructionDeleteMastersFinancialYearsId
+      operationId: quikinfraDeleteMastersFinancialYearsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/financial-years/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/financial-years/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -17476,12 +17476,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetMastersFinancialYearsId
+      operationId: quikinfraGetMastersFinancialYearsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/financial-years/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/financial-years/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -17521,12 +17521,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     patch:
-      operationId: quikconstructionPatchMastersFinancialYearsId
+      operationId: quikinfraPatchMastersFinancialYearsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/financial-years/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/financial-years/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -17567,12 +17567,12 @@ paths:
 
   "/api/masters/financial-years":
     get:
-      operationId: quikconstructionGetMastersFinancialYears
+      operationId: quikinfraGetMastersFinancialYears
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/financial-years/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/financial-years/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17606,12 +17606,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersFinancialYears
+      operationId: quikinfraPostMastersFinancialYears
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/financial-years/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/financial-years/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17652,12 +17652,12 @@ paths:
 
   "/api/masters/item-groups":
     get:
-      operationId: quikconstructionGetMastersItemGroups
+      operationId: quikinfraGetMastersItemGroups
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/item-groups/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/item-groups/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17691,12 +17691,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersItemGroups
+      operationId: quikinfraPostMastersItemGroups
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/item-groups/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/item-groups/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17737,12 +17737,12 @@ paths:
 
   "/api/masters/items":
     get:
-      operationId: quikconstructionGetMastersItems
+      operationId: quikinfraGetMastersItems
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/items/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/items/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17776,12 +17776,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersItems
+      operationId: quikinfraPostMastersItems
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/items/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/items/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17822,12 +17822,12 @@ paths:
 
   "/api/masters/projects/{id}":
     delete:
-      operationId: quikconstructionDeleteMastersProjectsId
+      operationId: quikinfraDeleteMastersProjectsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/projects/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/projects/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -17867,12 +17867,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetMastersProjectsId
+      operationId: quikinfraGetMastersProjectsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/projects/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/projects/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -17912,12 +17912,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     patch:
-      operationId: quikconstructionPatchMastersProjectsId
+      operationId: quikinfraPatchMastersProjectsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/projects/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/projects/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -17958,12 +17958,12 @@ paths:
 
   "/api/masters/projects":
     get:
-      operationId: quikconstructionGetMastersProjects
+      operationId: quikinfraGetMastersProjects
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/projects/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/projects/route.ts"
       responses:
         '200':
           description: "OK"
@@ -17997,12 +17997,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersProjects
+      operationId: quikinfraPostMastersProjects
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/projects/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/projects/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18043,12 +18043,12 @@ paths:
 
   "/api/masters/uom":
     get:
-      operationId: quikconstructionGetMastersUom
+      operationId: quikinfraGetMastersUom
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/uom/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/uom/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18082,12 +18082,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersUom
+      operationId: quikinfraPostMastersUom
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/uom/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/uom/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18128,15 +18128,15 @@ paths:
 
   "/api/masters/users":
     get:
-      operationId: quikconstructionGetMastersUsers
+      operationId: quikinfraGetMastersUsers
       summary: "Returns only active memberships; excludes soft-deleted users."
       description: |-
         GET /api/masters/users — tenant members for picker components.
         Returns only active memberships; excludes soft-deleted users.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/users/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/users/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18171,12 +18171,12 @@ paths:
 
   "/api/masters/vendors/{id}":
     delete:
-      operationId: quikconstructionDeleteMastersVendorsId
+      operationId: quikinfraDeleteMastersVendorsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/vendors/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/vendors/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -18216,12 +18216,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetMastersVendorsId
+      operationId: quikinfraGetMastersVendorsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/vendors/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/vendors/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -18261,12 +18261,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     patch:
-      operationId: quikconstructionPatchMastersVendorsId
+      operationId: quikinfraPatchMastersVendorsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/vendors/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/vendors/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -18307,12 +18307,12 @@ paths:
 
   "/api/masters/vendors":
     get:
-      operationId: quikconstructionGetMastersVendors
+      operationId: quikinfraGetMastersVendors
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/vendors/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/vendors/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18346,12 +18346,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostMastersVendors
+      operationId: quikinfraPostMastersVendors
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:masters"
-      x-source-file: "apps/quikconstruction/app/api/masters/vendors/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:masters"
+      x-source-file: "apps/quikinfra/app/api/masters/vendors/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18392,16 +18392,16 @@ paths:
 
   "/api/projects/boq/{id}/items":
     patch:
-      operationId: quikconstructionPatchProjectsBoqIdItems
+      operationId: quikinfraPatchProjectsBoqIdItems
       summary: "BOQ items. Owner BOQ must belong to the tenant. Fields are orthogonal to"
       description: |-
         PATCH /api/projects/boq/[id]/items — bulk-update schedule/progress for
         BOQ items. Owner BOQ must belong to the tenant. Fields are orthogonal to
         the BOQ's locked status — schedules can be revised post-lock.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/boq/[id]/items/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/boq/[id]/items/route.ts"
       parameters:
         - name: id
           in: path
@@ -18442,16 +18442,16 @@ paths:
 
   "/api/projects/boq/{id}/lock":
     post:
-      operationId: quikconstructionPostProjectsBoqIdLock
+      operationId: quikinfraPostProjectsBoqIdLock
       summary: "docs (Work Orders, RAB, DPR with boqItem refs) can safely reference it."
       description: |-
         POST /api/projects/boq/[id]/lock — draft → locked. Once locked, downstream
         docs (Work Orders, RAB, DPR with boqItem refs) can safely reference it.
         Lock is reversible via /unlock.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/boq/[id]/lock/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/boq/[id]/lock/route.ts"
       parameters:
         - name: id
           in: path
@@ -18498,12 +18498,12 @@ paths:
 
   "/api/projects/boq/{id}":
     delete:
-      operationId: quikconstructionDeleteProjectsBoqId
+      operationId: quikinfraDeleteProjectsBoqId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/boq/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/boq/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -18543,12 +18543,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetProjectsBoqId
+      operationId: quikinfraGetProjectsBoqId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/boq/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/boq/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -18589,12 +18589,12 @@ paths:
 
   "/api/projects/boq/{id}/unlock":
     post:
-      operationId: quikconstructionPostProjectsBoqIdUnlock
+      operationId: quikinfraPostProjectsBoqIdUnlock
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/boq/[id]/unlock/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/boq/[id]/unlock/route.ts"
       parameters:
         - name: id
           in: path
@@ -18641,7 +18641,7 @@ paths:
 
   "/api/projects/boq/import-commit":
     post:
-      operationId: quikconstructionPostProjectsBoqImportCommit
+      operationId: quikinfraPostProjectsBoqImportCommit
       summary: "body: {"
       description: |-
         POST /api/projects/boq/import-commit
@@ -18654,9 +18654,9 @@ paths:
         items. If a row has `group` field set, the server will auto-create a group
         header with that name (once) and attach items to it.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/boq/import-commit/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/boq/import-commit/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18697,7 +18697,7 @@ paths:
 
   "/api/projects/boq/import-preview":
     post:
-      operationId: quikconstructionPostProjectsBoqImportPreview
+      operationId: quikinfraPostProjectsBoqImportPreview
       summary: "multipart/form-data with field \"file\" (.xlsx / .csv)"
       description: |-
         POST /api/projects/boq/import-preview
@@ -18709,9 +18709,9 @@ paths:
         Returns a parsed rows preview without persisting. User confirms, then calls
         /import-commit with the sanitized rows + target project/boq info.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/boq/import-preview/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/boq/import-preview/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18752,7 +18752,7 @@ paths:
 
   "/api/projects/boq":
     get:
-      operationId: quikconstructionGetProjectsBoq
+      operationId: quikinfraGetProjectsBoq
       summary: "Creates a BOQ with its items. Hierarchy: items carry `parentId` referencing"
       description: |-
         POST /api/projects/boq
@@ -18765,9 +18765,9 @@ paths:
         
         Totals (subtotal, tax, total) are computed server-side.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/boq/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/boq/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18801,7 +18801,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostProjectsBoq
+      operationId: quikinfraPostProjectsBoq
       summary: "Creates a BOQ with its items. Hierarchy: items carry `parentId` referencing"
       description: |-
         POST /api/projects/boq
@@ -18814,9 +18814,9 @@ paths:
         
         Totals (subtotal, tax, total) are computed server-side.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/boq/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/boq/route.ts"
       responses:
         '200':
           description: "OK"
@@ -18857,16 +18857,16 @@ paths:
 
   "/api/projects/dpr/{id}/materials":
     put:
-      operationId: quikconstructionPutProjectsDprIdMaterials
+      operationId: quikinfraPutProjectsDprIdMaterials
       summary: "plan for a draft/submitted DPR. No ledger impact. Posting writes the"
       description: |-
         PUT /api/projects/dpr/[id]/materials — replace the material consumption
         plan for a draft/submitted DPR. No ledger impact. Posting writes the
         ledger separately.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/dpr/[id]/materials/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/dpr/[id]/materials/route.ts"
       parameters:
         - name: id
           in: path
@@ -18907,7 +18907,7 @@ paths:
 
   "/api/projects/dpr/{id}/post":
     post:
-      operationId: quikconstructionPostProjectsDprIdPost
+      operationId: quikinfraPostProjectsDprIdPost
       summary: "Locks the DPR and writes stock ledger `dpr_consumption` qtyOut rows for"
       description: |-
         POST /api/projects/dpr/[id]/post
@@ -18921,9 +18921,9 @@ paths:
         If materials is empty, this is still a valid "lock" operation — it seals
         the labour/activity log but writes no stock rows.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/dpr/[id]/post/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/dpr/[id]/post/route.ts"
       parameters:
         - name: id
           in: path
@@ -18970,12 +18970,12 @@ paths:
 
   "/api/projects/dpr/{id}":
     delete:
-      operationId: quikconstructionDeleteProjectsDprId
+      operationId: quikinfraDeleteProjectsDprId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/dpr/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/dpr/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -19015,12 +19015,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetProjectsDprId
+      operationId: quikinfraGetProjectsDprId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/dpr/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/dpr/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -19061,12 +19061,12 @@ paths:
 
   "/api/projects/dpr/{id}/submit":
     post:
-      operationId: quikconstructionPostProjectsDprIdSubmit
+      operationId: quikinfraPostProjectsDprIdSubmit
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/dpr/[id]/submit/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/dpr/[id]/submit/route.ts"
       parameters:
         - name: id
           in: path
@@ -19113,12 +19113,12 @@ paths:
 
   "/api/projects/dpr":
     get:
-      operationId: quikconstructionGetProjectsDpr
+      operationId: quikinfraGetProjectsDpr
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/dpr/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/dpr/route.ts"
       responses:
         '200':
           description: "OK"
@@ -19152,12 +19152,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostProjectsDpr
+      operationId: quikinfraPostProjectsDpr
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/dpr/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/dpr/route.ts"
       responses:
         '200':
           description: "OK"
@@ -19198,7 +19198,7 @@ paths:
 
   "/api/projects/estimation/{id}/convert-to-boq":
     post:
-      operationId: quikconstructionPostProjectsEstimationIdConvertToBoq
+      operationId: quikinfraPostProjectsEstimationIdConvertToBoq
       summary: "Creates a BOQ from this estimation. Clones item tree preserving hierarchy."
       description: |-
         POST /api/projects/estimation/[id]/convert-to-boq
@@ -19206,9 +19206,9 @@ paths:
         Creates a BOQ from this estimation. Clones item tree preserving hierarchy.
         Marks estimation as converted + links to the new BOQ.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/estimation/[id]/convert-to-boq/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/estimation/[id]/convert-to-boq/route.ts"
       parameters:
         - name: id
           in: path
@@ -19255,12 +19255,12 @@ paths:
 
   "/api/projects/estimation/{id}":
     delete:
-      operationId: quikconstructionDeleteProjectsEstimationId
+      operationId: quikinfraDeleteProjectsEstimationId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/estimation/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/estimation/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -19300,12 +19300,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetProjectsEstimationId
+      operationId: quikinfraGetProjectsEstimationId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/estimation/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/estimation/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -19346,12 +19346,12 @@ paths:
 
   "/api/projects/estimation":
     get:
-      operationId: quikconstructionGetProjectsEstimation
+      operationId: quikinfraGetProjectsEstimation
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/estimation/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/estimation/route.ts"
       responses:
         '200':
           description: "OK"
@@ -19385,12 +19385,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostProjectsEstimation
+      operationId: quikinfraPostProjectsEstimation
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/estimation/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/estimation/route.ts"
       responses:
         '200':
           description: "OK"
@@ -19431,16 +19431,16 @@ paths:
 
   "/api/projects/hindrance/{id}/close":
     post:
-      operationId: quikconstructionPostProjectsHindranceIdClose
+      operationId: quikinfraPostProjectsHindranceIdClose
       summary: "open → resolved/closed. If no endDate on the hindrance yet, caller provides"
       description: |-
         POST /api/projects/hindrance/[id]/close  body: { endDate?: string }
         open → resolved/closed. If no endDate on the hindrance yet, caller provides
         one so daysImpacted can be computed.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/hindrance/[id]/close/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/hindrance/[id]/close/route.ts"
       parameters:
         - name: id
           in: path
@@ -19487,12 +19487,12 @@ paths:
 
   "/api/projects/hindrance/{id}":
     delete:
-      operationId: quikconstructionDeleteProjectsHindranceId
+      operationId: quikinfraDeleteProjectsHindranceId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/hindrance/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/hindrance/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -19532,12 +19532,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetProjectsHindranceId
+      operationId: quikinfraGetProjectsHindranceId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/hindrance/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/hindrance/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -19578,12 +19578,12 @@ paths:
 
   "/api/projects/hindrance":
     get:
-      operationId: quikconstructionGetProjectsHindrance
+      operationId: quikinfraGetProjectsHindrance
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/hindrance/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/hindrance/route.ts"
       responses:
         '200':
           description: "OK"
@@ -19617,12 +19617,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostProjectsHindrance
+      operationId: quikinfraPostProjectsHindrance
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/hindrance/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/hindrance/route.ts"
       responses:
         '200':
           description: "OK"
@@ -19663,12 +19663,12 @@ paths:
 
   "/api/projects/rab/{id}/approve":
     post:
-      operationId: quikconstructionPostProjectsRabIdApprove
+      operationId: quikinfraPostProjectsRabIdApprove
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/rab/[id]/approve/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/rab/[id]/approve/route.ts"
       parameters:
         - name: id
           in: path
@@ -19715,12 +19715,12 @@ paths:
 
   "/api/projects/rab/{id}":
     delete:
-      operationId: quikconstructionDeleteProjectsRabId
+      operationId: quikinfraDeleteProjectsRabId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/rab/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/rab/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -19760,12 +19760,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetProjectsRabId
+      operationId: quikinfraGetProjectsRabId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/rab/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/rab/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -19806,7 +19806,7 @@ paths:
 
   "/api/projects/rab":
     get:
-      operationId: quikconstructionGetProjectsRab
+      operationId: quikinfraGetProjectsRab
       summary: "For each line:"
       description: |-
         POST /api/projects/rab — create a Running Account Bill.
@@ -19822,9 +19822,9 @@ paths:
         
         billSeqNo auto-allocated as (max prior on project) + 1.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/rab/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/rab/route.ts"
       responses:
         '200':
           description: "OK"
@@ -19858,7 +19858,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostProjectsRab
+      operationId: quikinfraPostProjectsRab
       summary: "For each line:"
       description: |-
         POST /api/projects/rab — create a Running Account Bill.
@@ -19874,9 +19874,9 @@ paths:
         
         billSeqNo auto-allocated as (max prior on project) + 1.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/rab/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/rab/route.ts"
       responses:
         '200':
           description: "OK"
@@ -19917,12 +19917,12 @@ paths:
 
   "/api/projects/work-orders/{id}/complete":
     post:
-      operationId: quikconstructionPostProjectsWorkOrdersIdComplete
+      operationId: quikinfraPostProjectsWorkOrdersIdComplete
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/work-orders/[id]/complete/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/work-orders/[id]/complete/route.ts"
       parameters:
         - name: id
           in: path
@@ -19969,12 +19969,12 @@ paths:
 
   "/api/projects/work-orders/{id}":
     delete:
-      operationId: quikconstructionDeleteProjectsWorkOrdersId
+      operationId: quikinfraDeleteProjectsWorkOrdersId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/work-orders/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/work-orders/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -20014,12 +20014,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetProjectsWorkOrdersId
+      operationId: quikinfraGetProjectsWorkOrdersId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/work-orders/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/work-orders/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -20060,12 +20060,12 @@ paths:
 
   "/api/projects/work-orders/{id}/send":
     post:
-      operationId: quikconstructionPostProjectsWorkOrdersIdSend
+      operationId: quikinfraPostProjectsWorkOrdersIdSend
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/work-orders/[id]/send/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/work-orders/[id]/send/route.ts"
       parameters:
         - name: id
           in: path
@@ -20112,12 +20112,12 @@ paths:
 
   "/api/projects/work-orders":
     get:
-      operationId: quikconstructionGetProjectsWorkOrders
+      operationId: quikinfraGetProjectsWorkOrders
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/work-orders/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/work-orders/route.ts"
       responses:
         '200':
           description: "OK"
@@ -20151,12 +20151,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostProjectsWorkOrders
+      operationId: quikinfraPostProjectsWorkOrders
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:projects"
-      x-source-file: "apps/quikconstruction/app/api/projects/work-orders/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:projects"
+      x-source-file: "apps/quikinfra/app/api/projects/work-orders/route.ts"
       responses:
         '200':
           description: "OK"
@@ -20197,12 +20197,12 @@ paths:
 
   "/api/purchase/indents/{id}":
     delete:
-      operationId: quikconstructionDeletePurchaseIndentsId
+      operationId: quikinfraDeletePurchaseIndentsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/indents/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/indents/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -20242,12 +20242,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetPurchaseIndentsId
+      operationId: quikinfraGetPurchaseIndentsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/indents/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/indents/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -20288,12 +20288,12 @@ paths:
 
   "/api/purchase/indents":
     get:
-      operationId: quikconstructionGetPurchaseIndents
+      operationId: quikinfraGetPurchaseIndents
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/indents/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/indents/route.ts"
       responses:
         '200':
           description: "OK"
@@ -20327,12 +20327,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostPurchaseIndents
+      operationId: quikinfraPostPurchaseIndents
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/indents/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/indents/route.ts"
       responses:
         '200':
           description: "OK"
@@ -20373,12 +20373,12 @@ paths:
 
   "/api/purchase/orders/{id}/close":
     post:
-      operationId: quikconstructionPostPurchaseOrdersIdClose
+      operationId: quikinfraPostPurchaseOrdersIdClose
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/orders/[id]/close/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/orders/[id]/close/route.ts"
       parameters:
         - name: id
           in: path
@@ -20425,12 +20425,12 @@ paths:
 
   "/api/purchase/orders/{id}":
     delete:
-      operationId: quikconstructionDeletePurchaseOrdersId
+      operationId: quikinfraDeletePurchaseOrdersId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/orders/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/orders/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -20470,12 +20470,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetPurchaseOrdersId
+      operationId: quikinfraGetPurchaseOrdersId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/orders/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/orders/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -20516,12 +20516,12 @@ paths:
 
   "/api/purchase/orders/{id}/send":
     post:
-      operationId: quikconstructionPostPurchaseOrdersIdSend
+      operationId: quikinfraPostPurchaseOrdersIdSend
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/orders/[id]/send/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/orders/[id]/send/route.ts"
       parameters:
         - name: id
           in: path
@@ -20568,12 +20568,12 @@ paths:
 
   "/api/purchase/orders":
     get:
-      operationId: quikconstructionGetPurchaseOrders
+      operationId: quikinfraGetPurchaseOrders
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/orders/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/orders/route.ts"
       responses:
         '200':
           description: "OK"
@@ -20607,12 +20607,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostPurchaseOrders
+      operationId: quikinfraPostPurchaseOrders
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/orders/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/orders/route.ts"
       responses:
         '200':
           description: "OK"
@@ -20653,12 +20653,12 @@ paths:
 
   "/api/purchase/requisitions/{id}":
     delete:
-      operationId: quikconstructionDeletePurchaseRequisitionsId
+      operationId: quikinfraDeletePurchaseRequisitionsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/requisitions/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/requisitions/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -20698,12 +20698,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetPurchaseRequisitionsId
+      operationId: quikinfraGetPurchaseRequisitionsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/requisitions/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/requisitions/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -20744,7 +20744,7 @@ paths:
 
   "/api/purchase/requisitions/{id}/submit":
     post:
-      operationId: quikconstructionPostPurchaseRequisitionsIdSubmit
+      operationId: quikinfraPostPurchaseRequisitionsIdSubmit
       summary: "draft → submitted. Applies approval gate (Phase 8) — if a CnApprovalRule"
       description: |-
         POST /api/purchase/requisitions/[id]/submit
@@ -20753,9 +20753,9 @@ paths:
         matches for docType="pr" above threshold, an approved CnApprovalRequest
         must exist for this PR.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/requisitions/[id]/submit/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/requisitions/[id]/submit/route.ts"
       parameters:
         - name: id
           in: path
@@ -20802,12 +20802,12 @@ paths:
 
   "/api/purchase/requisitions":
     get:
-      operationId: quikconstructionGetPurchaseRequisitions
+      operationId: quikinfraGetPurchaseRequisitions
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/requisitions/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/requisitions/route.ts"
       responses:
         '200':
           description: "OK"
@@ -20841,12 +20841,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostPurchaseRequisitions
+      operationId: quikinfraPostPurchaseRequisitions
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/requisitions/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/requisitions/route.ts"
       responses:
         '200':
           description: "OK"
@@ -20887,16 +20887,16 @@ paths:
 
   "/api/purchase/rfqs/{id}/award":
     post:
-      operationId: quikconstructionPostPurchaseRfqsIdAward
+      operationId: quikinfraPostPurchaseRfqsIdAward
       summary: "Marks ONE vendor as awarded on the RFQ (and captures their quoted amount)."
       description: |-
         POST /api/purchase/rfqs/[id]/award
         Marks ONE vendor as awarded on the RFQ (and captures their quoted amount).
         Flips RFQ status → awarded. Other vendors' rows stay (isAwarded=false).
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/rfqs/[id]/award/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/rfqs/[id]/award/route.ts"
       parameters:
         - name: id
           in: path
@@ -20943,14 +20943,14 @@ paths:
 
   "/api/purchase/rfqs/{id}/convert-to-po":
     post:
-      operationId: quikconstructionPostPurchaseRfqsIdConvertToPo
+      operationId: quikinfraPostPurchaseRfqsIdConvertToPo
       summary: "Per-RFQ-line final rate (user enters based on awarded vendor's quote)."
       description: |-
         Per-RFQ-line final rate (user enters based on awarded vendor's quote).
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/rfqs/[id]/convert-to-po/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/rfqs/[id]/convert-to-po/route.ts"
       parameters:
         - name: id
           in: path
@@ -20997,12 +20997,12 @@ paths:
 
   "/api/purchase/rfqs/{id}":
     delete:
-      operationId: quikconstructionDeletePurchaseRfqsId
+      operationId: quikinfraDeletePurchaseRfqsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/rfqs/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/rfqs/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -21042,12 +21042,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetPurchaseRfqsId
+      operationId: quikinfraGetPurchaseRfqsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/rfqs/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/rfqs/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -21088,12 +21088,12 @@ paths:
 
   "/api/purchase/rfqs":
     get:
-      operationId: quikconstructionGetPurchaseRfqs
+      operationId: quikinfraGetPurchaseRfqs
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/rfqs/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/rfqs/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21127,12 +21127,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostPurchaseRfqs
+      operationId: quikinfraPostPurchaseRfqs
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:purchase"
-      x-source-file: "apps/quikconstruction/app/api/purchase/rfqs/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:purchase"
+      x-source-file: "apps/quikinfra/app/api/purchase/rfqs/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21173,12 +21173,12 @@ paths:
 
   "/api/quality/inspections/{id}":
     delete:
-      operationId: quikconstructionDeleteQualityInspectionsId
+      operationId: quikinfraDeleteQualityInspectionsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:quality"
-      x-source-file: "apps/quikconstruction/app/api/quality/inspections/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:quality"
+      x-source-file: "apps/quikinfra/app/api/quality/inspections/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -21218,12 +21218,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetQualityInspectionsId
+      operationId: quikinfraGetQualityInspectionsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:quality"
-      x-source-file: "apps/quikconstruction/app/api/quality/inspections/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:quality"
+      x-source-file: "apps/quikinfra/app/api/quality/inspections/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -21263,12 +21263,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     patch:
-      operationId: quikconstructionPatchQualityInspectionsId
+      operationId: quikinfraPatchQualityInspectionsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:quality"
-      x-source-file: "apps/quikconstruction/app/api/quality/inspections/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:quality"
+      x-source-file: "apps/quikinfra/app/api/quality/inspections/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -21309,12 +21309,12 @@ paths:
 
   "/api/quality/inspections":
     get:
-      operationId: quikconstructionGetQualityInspections
+      operationId: quikinfraGetQualityInspections
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:quality"
-      x-source-file: "apps/quikconstruction/app/api/quality/inspections/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:quality"
+      x-source-file: "apps/quikinfra/app/api/quality/inspections/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21348,12 +21348,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostQualityInspections
+      operationId: quikinfraPostQualityInspections
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:quality"
-      x-source-file: "apps/quikconstruction/app/api/quality/inspections/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:quality"
+      x-source-file: "apps/quikinfra/app/api/quality/inspections/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21394,12 +21394,12 @@ paths:
 
   "/api/reports/ap-aging":
     get:
-      operationId: quikconstructionGetReportsApAging
+      operationId: quikinfraGetReportsApAging
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:reports"
-      x-source-file: "apps/quikconstruction/app/api/reports/ap-aging/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:reports"
+      x-source-file: "apps/quikinfra/app/api/reports/ap-aging/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21434,12 +21434,12 @@ paths:
 
   "/api/reports/ar-aging":
     get:
-      operationId: quikconstructionGetReportsArAging
+      operationId: quikinfraGetReportsArAging
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:reports"
-      x-source-file: "apps/quikconstruction/app/api/reports/ar-aging/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:reports"
+      x-source-file: "apps/quikinfra/app/api/reports/ar-aging/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21474,7 +21474,7 @@ paths:
 
   "/api/reports/project-pnl":
     get:
-      operationId: quikconstructionGetReportsProjectPnl
+      operationId: quikinfraGetReportsProjectPnl
       summary: "Revenue = Σ CnClientInvoice.total (non-cancelled) per project."
       description: |-
         GET /api/reports/project-pnl
@@ -21492,9 +21492,9 @@ paths:
         Allocate `basicAmount × daysPerProject / totalPaidDays` to each project.
         Attendance rows with null projectId → not allocated to any project.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:reports"
-      x-source-file: "apps/quikconstruction/app/api/reports/project-pnl/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:reports"
+      x-source-file: "apps/quikinfra/app/api/reports/project-pnl/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21529,7 +21529,7 @@ paths:
 
   "/api/reports/stock-valuation":
     get:
-      operationId: quikconstructionGetReportsStockValuation
+      operationId: quikinfraGetReportsStockValuation
       summary: "Per (project, location, item): qty = Σ qtyIn − Σ qtyOut."
       description: |-
         GET /api/reports/stock-valuation
@@ -21537,9 +21537,9 @@ paths:
         Per (project, location, item): qty = Σ qtyIn − Σ qtyOut.
         Value approximated as qty × moving-avg rate (weighted avg of inbound rows).
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:reports"
-      x-source-file: "apps/quikconstruction/app/api/reports/stock-valuation/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:reports"
+      x-source-file: "apps/quikinfra/app/api/reports/stock-valuation/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21574,7 +21574,7 @@ paths:
 
   "/api/reports/vendor-performance":
     get:
-      operationId: quikconstructionGetReportsVendorPerformance
+      operationId: quikinfraGetReportsVendorPerformance
       summary: "Per vendor:"
       description: |-
         GET /api/reports/vendor-performance
@@ -21584,9 +21584,9 @@ paths:
         - grnOnTimePct — GRN date <= PO deliveryDate
         - qualityAcceptPct — accepted GRN lines / total GRN lines
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:reports"
-      x-source-file: "apps/quikconstruction/app/api/reports/vendor-performance/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:reports"
+      x-source-file: "apps/quikinfra/app/api/reports/vendor-performance/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21621,12 +21621,12 @@ paths:
 
   "/api/safety/checklists":
     get:
-      operationId: quikconstructionGetSafetyChecklists
+      operationId: quikinfraGetSafetyChecklists
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:safety"
-      x-source-file: "apps/quikconstruction/app/api/safety/checklists/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:safety"
+      x-source-file: "apps/quikinfra/app/api/safety/checklists/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21660,12 +21660,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostSafetyChecklists
+      operationId: quikinfraPostSafetyChecklists
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:safety"
-      x-source-file: "apps/quikconstruction/app/api/safety/checklists/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:safety"
+      x-source-file: "apps/quikinfra/app/api/safety/checklists/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21706,12 +21706,12 @@ paths:
 
   "/api/safety/incidents/{id}":
     delete:
-      operationId: quikconstructionDeleteSafetyIncidentsId
+      operationId: quikinfraDeleteSafetyIncidentsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:safety"
-      x-source-file: "apps/quikconstruction/app/api/safety/incidents/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:safety"
+      x-source-file: "apps/quikinfra/app/api/safety/incidents/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -21751,12 +21751,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetSafetyIncidentsId
+      operationId: quikinfraGetSafetyIncidentsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:safety"
-      x-source-file: "apps/quikconstruction/app/api/safety/incidents/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:safety"
+      x-source-file: "apps/quikinfra/app/api/safety/incidents/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -21796,12 +21796,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     patch:
-      operationId: quikconstructionPatchSafetyIncidentsId
+      operationId: quikinfraPatchSafetyIncidentsId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:safety"
-      x-source-file: "apps/quikconstruction/app/api/safety/incidents/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:safety"
+      x-source-file: "apps/quikinfra/app/api/safety/incidents/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -21842,12 +21842,12 @@ paths:
 
   "/api/safety/incidents":
     get:
-      operationId: quikconstructionGetSafetyIncidents
+      operationId: quikinfraGetSafetyIncidents
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:safety"
-      x-source-file: "apps/quikconstruction/app/api/safety/incidents/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:safety"
+      x-source-file: "apps/quikinfra/app/api/safety/incidents/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21881,12 +21881,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostSafetyIncidents
+      operationId: quikinfraPostSafetyIncidents
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:safety"
-      x-source-file: "apps/quikconstruction/app/api/safety/incidents/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:safety"
+      x-source-file: "apps/quikinfra/app/api/safety/incidents/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21927,7 +21927,7 @@ paths:
 
   "/api/sequence/next":
     get:
-      operationId: quikconstructionGetSequenceNext
+      operationId: quikinfraGetSequenceNext
       summary: "Returns { number: \"INV/FY2526/000042\" } — atomic, collision-free."
       description: |-
         GET /api/sequence/next?prefix=INV&useFy=true
@@ -21936,9 +21936,9 @@ paths:
         Front-end forms should call this when opening "New <Doc>" to prefill the
         number field, replacing the `Date.now().toString().slice(-6)` pattern.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:sequence"
-      x-source-file: "apps/quikconstruction/app/api/sequence/next/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:sequence"
+      x-source-file: "apps/quikinfra/app/api/sequence/next/route.ts"
       responses:
         '200':
           description: "OK"
@@ -21973,12 +21973,12 @@ paths:
 
   "/api/store/diesel-log/{id}":
     delete:
-      operationId: quikconstructionDeleteStoreDieselLogId
+      operationId: quikinfraDeleteStoreDieselLogId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/diesel-log/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/diesel-log/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22018,12 +22018,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetStoreDieselLogId
+      operationId: quikinfraGetStoreDieselLogId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/diesel-log/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/diesel-log/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22064,12 +22064,12 @@ paths:
 
   "/api/store/diesel-log":
     get:
-      operationId: quikconstructionGetStoreDieselLog
+      operationId: quikinfraGetStoreDieselLog
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/diesel-log/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/diesel-log/route.ts"
       responses:
         '200':
           description: "OK"
@@ -22103,12 +22103,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostStoreDieselLog
+      operationId: quikinfraPostStoreDieselLog
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/diesel-log/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/diesel-log/route.ts"
       responses:
         '200':
           description: "OK"
@@ -22149,12 +22149,12 @@ paths:
 
   "/api/store/gate-pass/{id}":
     delete:
-      operationId: quikconstructionDeleteStoreGatePassId
+      operationId: quikinfraDeleteStoreGatePassId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/gate-pass/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/gate-pass/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22194,12 +22194,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetStoreGatePassId
+      operationId: quikinfraGetStoreGatePassId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/gate-pass/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/gate-pass/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22240,12 +22240,12 @@ paths:
 
   "/api/store/gate-pass":
     get:
-      operationId: quikconstructionGetStoreGatePass
+      operationId: quikinfraGetStoreGatePass
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/gate-pass/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/gate-pass/route.ts"
       responses:
         '200':
           description: "OK"
@@ -22279,12 +22279,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostStoreGatePass
+      operationId: quikinfraPostStoreGatePass
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/gate-pass/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/gate-pass/route.ts"
       responses:
         '200':
           description: "OK"
@@ -22325,7 +22325,7 @@ paths:
 
   "/api/store/good-return/{id}/post":
     post:
-      operationId: quikconstructionPostStoreGoodReturnIdPost
+      operationId: quikinfraPostStoreGoodReturnIdPost
       summary: "Transactional: writes NEGATIVE stock rows (transactionType = \"return_vendor\")"
       description: |-
         POST /api/store/good-return/[id]/post
@@ -22334,9 +22334,9 @@ paths:
         so qtyOut decrements the ledger balance for that item at that location.
         Pre-checks current balance >= returnQty to prevent negative stock after post.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/good-return/[id]/post/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/good-return/[id]/post/route.ts"
       parameters:
         - name: id
           in: path
@@ -22383,12 +22383,12 @@ paths:
 
   "/api/store/good-return/{id}":
     delete:
-      operationId: quikconstructionDeleteStoreGoodReturnId
+      operationId: quikinfraDeleteStoreGoodReturnId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/good-return/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/good-return/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22428,12 +22428,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetStoreGoodReturnId
+      operationId: quikinfraGetStoreGoodReturnId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/good-return/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/good-return/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22474,12 +22474,12 @@ paths:
 
   "/api/store/good-return":
     get:
-      operationId: quikconstructionGetStoreGoodReturn
+      operationId: quikinfraGetStoreGoodReturn
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/good-return/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/good-return/route.ts"
       responses:
         '200':
           description: "OK"
@@ -22513,12 +22513,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostStoreGoodReturn
+      operationId: quikinfraPostStoreGoodReturn
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/good-return/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/good-return/route.ts"
       responses:
         '200':
           description: "OK"
@@ -22559,7 +22559,7 @@ paths:
 
   "/api/store/grn/{id}/post":
     post:
-      operationId: quikconstructionPostStoreGrnIdPost
+      operationId: quikinfraPostStoreGrnIdPost
       summary: "Transitions a DRAFT GRN to POSTED. This is the only code path that writes"
       description: |-
         POST /api/store/grn/[id]/post
@@ -22577,9 +22577,9 @@ paths:
         If any step fails, the whole transaction rolls back. Re-posting a posted
         GRN is a no-op (returns 409).
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/grn/[id]/post/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/grn/[id]/post/route.ts"
       parameters:
         - name: id
           in: path
@@ -22626,12 +22626,12 @@ paths:
 
   "/api/store/grn/{id}":
     delete:
-      operationId: quikconstructionDeleteStoreGrnId
+      operationId: quikinfraDeleteStoreGrnId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/grn/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/grn/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22671,12 +22671,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetStoreGrnId
+      operationId: quikinfraGetStoreGrnId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/grn/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/grn/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22717,7 +22717,7 @@ paths:
 
   "/api/store/grn":
     get:
-      operationId: quikconstructionGetStoreGrn
+      operationId: quikinfraGetStoreGrn
       summary: "IMPORTANT: Creating a GRN does NOT write to the stock ledger. Only posting"
       description: |-
         POST /api/store/grn — create GRN as DRAFT.
@@ -22728,9 +22728,9 @@ paths:
         typos in qty/rate can be fixed while draft, but once posted the GRN is
         immutable and the ledger row is created.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/grn/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/grn/route.ts"
       responses:
         '200':
           description: "OK"
@@ -22764,7 +22764,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostStoreGrn
+      operationId: quikinfraPostStoreGrn
       summary: "IMPORTANT: Creating a GRN does NOT write to the stock ledger. Only posting"
       description: |-
         POST /api/store/grn — create GRN as DRAFT.
@@ -22775,9 +22775,9 @@ paths:
         typos in qty/rate can be fixed while draft, but once posted the GRN is
         immutable and the ledger row is created.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/grn/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/grn/route.ts"
       responses:
         '200':
           description: "OK"
@@ -22818,16 +22818,16 @@ paths:
 
   "/api/store/internal-return/{id}/post":
     post:
-      operationId: quikconstructionPostStoreInternalReturnIdPost
+      operationId: quikinfraPostStoreInternalReturnIdPost
       summary: "Internal Return posting: stock comes BACK IN (qtyIn > 0) at the issue"
       description: |-
         Internal Return posting: stock comes BACK IN (qtyIn > 0) at the issue
         location. No upstream balance check needed — adding to stock can't go
         negative. transactionType = "return_internal".
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/internal-return/[id]/post/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/internal-return/[id]/post/route.ts"
       parameters:
         - name: id
           in: path
@@ -22874,12 +22874,12 @@ paths:
 
   "/api/store/internal-return/{id}":
     delete:
-      operationId: quikconstructionDeleteStoreInternalReturnId
+      operationId: quikinfraDeleteStoreInternalReturnId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/internal-return/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/internal-return/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22919,12 +22919,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetStoreInternalReturnId
+      operationId: quikinfraGetStoreInternalReturnId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/internal-return/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/internal-return/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -22965,12 +22965,12 @@ paths:
 
   "/api/store/internal-return":
     get:
-      operationId: quikconstructionGetStoreInternalReturn
+      operationId: quikinfraGetStoreInternalReturn
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/internal-return/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/internal-return/route.ts"
       responses:
         '200':
           description: "OK"
@@ -23004,12 +23004,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostStoreInternalReturn
+      operationId: quikinfraPostStoreInternalReturn
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/internal-return/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/internal-return/route.ts"
       responses:
         '200':
           description: "OK"
@@ -23050,7 +23050,7 @@ paths:
 
   "/api/store/material-issue/{id}/post":
     post:
-      operationId: quikconstructionPostStoreMaterialIssueIdPost
+      operationId: quikinfraPostStoreMaterialIssueIdPost
       summary: "DRAFT → POSTED. Writes negative stock (qtyOut) rows to CnStockLedger in a"
       description: |-
         POST /api/store/material-issue/[id]/post
@@ -23059,9 +23059,9 @@ paths:
         single transaction. Validates running balance per item+location before
         issuing to prevent negative stock.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/material-issue/[id]/post/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/material-issue/[id]/post/route.ts"
       parameters:
         - name: id
           in: path
@@ -23108,12 +23108,12 @@ paths:
 
   "/api/store/material-issue/{id}":
     delete:
-      operationId: quikconstructionDeleteStoreMaterialIssueId
+      operationId: quikinfraDeleteStoreMaterialIssueId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/material-issue/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/material-issue/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -23153,12 +23153,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetStoreMaterialIssueId
+      operationId: quikinfraGetStoreMaterialIssueId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/material-issue/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/material-issue/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -23199,15 +23199,15 @@ paths:
 
   "/api/store/material-issue":
     get:
-      operationId: quikconstructionGetStoreMaterialIssue
+      operationId: quikinfraGetStoreMaterialIssue
       summary: "No stock effect until POST /material-issue/[id]/post."
       description: |-
         POST /api/store/material-issue — create MI as DRAFT.
         No stock effect until POST /material-issue/[id]/post.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/material-issue/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/material-issue/route.ts"
       responses:
         '200':
           description: "OK"
@@ -23241,15 +23241,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostStoreMaterialIssue
+      operationId: quikinfraPostStoreMaterialIssue
       summary: "No stock effect until POST /material-issue/[id]/post."
       description: |-
         POST /api/store/material-issue — create MI as DRAFT.
         No stock effect until POST /material-issue/[id]/post.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/material-issue/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/material-issue/route.ts"
       responses:
         '200':
           description: "OK"
@@ -23290,7 +23290,7 @@ paths:
 
   "/api/store/stock-ledger":
     get:
-      operationId: quikconstructionGetStoreStockLedger
+      operationId: quikinfraGetStoreStockLedger
       summary: "Two modes:"
       description: |-
         GET /api/store/stock-ledger?projectId&locationId&itemId
@@ -23301,9 +23301,9 @@ paths:
         2. itemId + projectId + locationId → full ledger with row-by-row running
         balance (for drill-down / audit view).
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-ledger/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-ledger/route.ts"
       responses:
         '200':
           description: "OK"
@@ -23338,7 +23338,7 @@ paths:
 
   "/api/store/stock-reconciliation/{id}/post":
     post:
-      operationId: quikconstructionPostStoreStockReconciliationIdPost
+      operationId: quikinfraPostStoreStockReconciliationIdPost
       summary: "Reconciliation post: writes adjustment rows."
       description: |-
         Reconciliation post: writes adjustment rows.
@@ -23347,9 +23347,9 @@ paths:
         adjustmentQty = 0 → skip (no ledger row needed)
         transactionType = "reconciliation_adj".
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-reconciliation/[id]/post/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-reconciliation/[id]/post/route.ts"
       parameters:
         - name: id
           in: path
@@ -23396,12 +23396,12 @@ paths:
 
   "/api/store/stock-reconciliation/{id}":
     delete:
-      operationId: quikconstructionDeleteStoreStockReconciliationId
+      operationId: quikinfraDeleteStoreStockReconciliationId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-reconciliation/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-reconciliation/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -23441,12 +23441,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetStoreStockReconciliationId
+      operationId: quikinfraGetStoreStockReconciliationId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-reconciliation/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-reconciliation/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -23487,12 +23487,12 @@ paths:
 
   "/api/store/stock-reconciliation":
     get:
-      operationId: quikconstructionGetStoreStockReconciliation
+      operationId: quikinfraGetStoreStockReconciliation
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-reconciliation/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-reconciliation/route.ts"
       responses:
         '200':
           description: "OK"
@@ -23526,12 +23526,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostStoreStockReconciliation
+      operationId: quikinfraPostStoreStockReconciliation
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-reconciliation/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-reconciliation/route.ts"
       responses:
         '200':
           description: "OK"
@@ -23572,7 +23572,7 @@ paths:
 
   "/api/store/stock-transfer/{id}/post":
     post:
-      operationId: quikconstructionPostStoreStockTransferIdPost
+      operationId: quikinfraPostStoreStockTransferIdPost
       summary: "Posts BOTH legs of the transfer atomically:"
       description: |-
         POST /api/store/stock-transfer/[id]/post
@@ -23584,9 +23584,9 @@ paths:
         Only valid if source has sufficient stock. Both ledger rows share the same
         transactionRefId so reconciliation reports can pair them.
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-transfer/[id]/post/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-transfer/[id]/post/route.ts"
       parameters:
         - name: id
           in: path
@@ -23633,12 +23633,12 @@ paths:
 
   "/api/store/stock-transfer/{id}":
     delete:
-      operationId: quikconstructionDeleteStoreStockTransferId
+      operationId: quikinfraDeleteStoreStockTransferId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-transfer/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-transfer/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -23678,12 +23678,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     get:
-      operationId: quikconstructionGetStoreStockTransferId
+      operationId: quikinfraGetStoreStockTransferId
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-transfer/[id]/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-transfer/[id]/route.ts"
       parameters:
         - name: id
           in: path
@@ -23724,12 +23724,12 @@ paths:
 
   "/api/store/stock-transfer":
     get:
-      operationId: quikconstructionGetStoreStockTransfer
+      operationId: quikinfraGetStoreStockTransfer
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-transfer/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-transfer/route.ts"
       responses:
         '200':
           description: "OK"
@@ -23763,12 +23763,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
     post:
-      operationId: quikconstructionPostStoreStockTransfer
+      operationId: quikinfraPostStoreStockTransfer
       summary: "(no summary)"
       tags:
-        - "app:quikconstruction"
-        - "quikconstruction:store"
-      x-source-file: "apps/quikconstruction/app/api/store/stock-transfer/route.ts"
+        - "app:quikinfra"
+        - "quikinfra:store"
+      x-source-file: "apps/quikinfra/app/api/store/stock-transfer/route.ts"
       responses:
         '200':
           description: "OK"

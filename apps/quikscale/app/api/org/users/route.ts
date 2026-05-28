@@ -9,12 +9,12 @@ import { createOrgUserSchema } from "@/lib/schemas/userSchema";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 import { seedAllDefaultRoles, ensureUserOnRole } from "@/lib/api/seedAdminAppRole";
 import {
-  DEFAULT_INVITE_PASSWORD,
   INVITE_METHOD,
   renderInvitationEmail,
   type SsoProvider,
 } from "@quikit/shared";
 import { classifySsoProviderAsync } from "@quikit/shared/sso-domain-server";
+import { generateTempPassword } from "@quikit/shared/temp-password";
 import { sendEmail } from "@/lib/services/email";
 
 
@@ -176,13 +176,14 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     }
   }
 
-  // For Native invites with no admin-supplied password, seed the system
-  // default (Quikit2026) so the user receives it via email and must change
-  // it on first login. Matches the super-admin first-Org-Admin flow.
+  // For Native invites with no admin-supplied password, generate a fresh
+  // friendly temp password so the user receives it via email and must
+  // change it on first login. Matches the super-admin first-Org-Admin flow.
   const isNativeNewUser =
     !linkExistingUserId && invitationMethod === INVITE_METHOD.NATIVE;
   const usedDefaultPassword = isNativeNewUser && !password;
-  const effectivePassword = usedDefaultPassword ? DEFAULT_INVITE_PASSWORD : password;
+  const generatedTempPassword = usedDefaultPassword ? generateTempPassword() : null;
+  const effectivePassword = generatedTempPassword ?? password;
 
   let newUserId: string;
   let newUserCreated = false;
@@ -379,6 +380,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
         appBaseUrl,
         inviteMethod: invitationMethod,
         ssoProvider,
+        tempPassword: generatedTempPassword ?? "",
       });
 
       await sendEmail({ to: normalisedEmail, subject, html });
@@ -390,7 +392,12 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   return NextResponse.json(
     {
       success: true,
-      data: buildUserResponse(membership!, appRole),
+      data: {
+        ...buildUserResponse(membership!, appRole),
+        // Plaintext temp password — shown ONCE in the QuikScale admin UI
+        // when the server generated one (Native + no admin-supplied pw).
+        tempPassword: generatedTempPassword ?? undefined,
+      },
       meta: {
         usedDefaultPassword,
         newUserCreated,

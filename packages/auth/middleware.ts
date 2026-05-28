@@ -92,19 +92,45 @@ export function createMiddleware(config: MiddlewareConfig) {
         cookie: request.headers.get("cookie") ?? undefined,
       });
       if (!remote.valid && !remote.error) {
-        const loginTarget = config.centralLoginUrl
-          ? `${config.centralLoginUrl}?reason=session_expired`
-          : new URL(`${config.loginRoute}?reason=session_expired`, request.url).toString();
+        // Same callbackUrl preservation as the unauthenticated branch
+        // below — keep the user heading back to where they were.
+        const callback = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+        const callbackAbsolute = new URL(callback, request.url).toString();
+        let loginTarget: string;
+        if (config.centralLoginUrl) {
+          const central = new URL(config.centralLoginUrl);
+          central.searchParams.set("reason", "session_expired");
+          central.searchParams.set("callbackUrl", callbackAbsolute);
+          loginTarget = central.toString();
+        } else {
+          const local = new URL(config.loginRoute, request.url);
+          local.searchParams.set("reason", "session_expired");
+          local.searchParams.set("callbackUrl", callback);
+          loginTarget = local.toString();
+        }
         return safeRedirect(loginTarget);
       }
     }
 
-    // Unauthenticated users → central login or local login
+    // Unauthenticated users → central login or local login.
+    //
+    // We always append `callbackUrl=<absolute-original-URL>` so the
+    // login page (and any post-login bridge) can return the user to the
+    // page they wanted, not the central post-login default. Without this
+    // the auth host's middleware falls through to its "no callback"
+    // branches (e.g. super-admin → admin URL), which is the wrong
+    // destination for someone who was on /apps a moment ago.
     if (!token && !isPublicRoute) {
+      const callback = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+      const callbackAbsolute = new URL(callback, request.url).toString();
       if (config.centralLoginUrl) {
-        return safeRedirect(config.centralLoginUrl);
+        const central = new URL(config.centralLoginUrl);
+        central.searchParams.set("callbackUrl", callbackAbsolute);
+        return safeRedirect(central.toString());
       }
-      return safeRedirect(new URL(config.loginRoute, request.url));
+      const local = new URL(config.loginRoute, request.url);
+      local.searchParams.set("callbackUrl", callback);
+      return safeRedirect(local);
     }
 
     // Authenticated user on local login page → honor callbackUrl, else go to dashboard
