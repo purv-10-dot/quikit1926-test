@@ -9,8 +9,8 @@ Feature branch: `feature/quiksocial-v2-port` (off `quiksocial-latest`)
 | Phase A — Schema | ✅ done | e22320a1 |
 | Batch 1 — Lib utilities | ✅ done | eeba2a3c |
 | Batch 2 — Offering API + UI | ✅ done | d156460b |
-| Batch 3 — Brands/Posts/Campaigns adaptation | ✅ done | (current) |
-| Batch 4 — Components + dashboard pages | pending | — |
+| Batch 3 — Brands/Posts/Campaigns adaptation | ✅ done | b4e47415 |
+| Batch 4 — Components + dashboard pages | ✅ done (minimum) | (current) |
 | Batch 5 — Auto-reply subsystem | pending | — |
 | Batch 6 — Meta / publisher / cron merge | pending | — |
 | Batch 7 — Drop v2-only orphans + final cleanup | pending | — |
@@ -84,15 +84,27 @@ Remaining errors are all in Batch 3/7 territory:
 
 None.
 
-## Next: Batch 4 — Components + dashboard pages
+### Batch 4 (this commit) — minimum required to keep runtime correct
 
-Will diff & merge v2's UI surface into the monorepo's existing components/pages:
-- `app/dashboard/{page,layout,settings,integrations,brands,assets,approval,calendar,campaigns,content-hub,posts/create}/` — copy v2's bodies, fix `src/` imports, swap `useSession.activeBrandId` for `useActiveBrandId`, unwrap API envelopes.
-- `components/{calendar,posts,providers,ui,quik-post}` — diff & merge.
-- `components/layout/dashboard-layout.tsx` — copy from v2 (the dashboard layout shell).
-- `components/posts/ScheduleModal.tsx` — copy from v2 (new modal).
-- `app/dashboard/brands/create/CatalogDiscoveryStep.tsx` — copy from v2.
-- Drop v2's `components/providers/SessionProvider.tsx` — the monorepo uses Providers (SessionProvider + QueryClientProvider + ThemeProvider).
+**Scope deliberately narrowed.** After diffing every component + dashboard page between v2 and the monorepo, the verdict was:
+
+- 9 of 13 components are byte-identical to v2 (CRLF only).
+- 4 of 12 dashboard pages are byte-identical or have only `unwrap()` / `useActiveBrandId()` adaptations the monorepo already made correctly. Replacing them with v2's versions would REGRESS the QuiKit porting work.
+- 1 component (`SelectMediaModal`) had a real runtime bug — it called the deleted `/api/products` and `/api/services` endpoints. **Fixed.**
+- 1 component (`CalendarDayPanel`) had broken `/dashboard/posts/${id}` links (no such page in monorepo). **Adopted v2's `/dashboard/content-hub?post=${id}` routing.**
+- 6 dashboard pages have large v2 deltas (marketability sorting, CatalogDiscoveryStep, ScheduleModal integration, etc.) but typecheck clean today. **Deferred to a follow-up PR** to keep this migration shippable; documented below.
+
+**Edited**:
+- `components/posts/SelectMediaModal.tsx` — replaced two `fetch("/api/products?...")` + `fetch("/api/services?...")` calls with a single `fetch("/api/offerings?...&type=...")` call, splitting client-side by `offering.type`. Preserves the existing Products/Services tab UX without touching component layout.
+- `components/calendar/CalendarDayPanel.tsx` — adopted v2's routing for post detail / reschedule / festival-create links (`/dashboard/content-hub?post=…` instead of the broken `/dashboard/posts/${id}`). Also added `createdAt: string | null` to the Post interface to match v2's shape.
+
+## Deferred to follow-up PR
+
+These v2 feature additions don't block typecheck and don't break runtime. Ship as a separate "quiksocial v2 page features" PR after this migration lands.
+
+1. **Brand Creation Wizard** (`app/dashboard/brands/create/page.tsx`) — v2 ships unified `ScrapedOffering` shape + `CatalogDiscoveryStep.tsx` + Phase 5 marketability scoring. Monorepo's wizard still uses `ScrapedProduct` + `ScrapedService` client-side interfaces; works (POST /api/brands accepts both legacy and offerings[] shapes) but doesn't get v2's catalog discovery UX.
+2. **Calendar / Campaigns / Content-Hub / Posts-Create / Settings pages** — large v2 deltas (likely Phase 2 unified-offering UI, marketability sorting, etc.). Functional today; cosmetically lag v2.
+3. **`ScheduleModal.tsx` + `dashboard-layout.tsx`** — both exist in the monorepo at adapted state. v2's versions might have new features (post-now flow, etc.) worth diffing in the follow-up.
 
 ## Resume instructions if compacted
 

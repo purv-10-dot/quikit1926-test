@@ -94,17 +94,32 @@ export default function SelectMediaModal({
         .catch(() => {})
         .finally(() => setLoadingAssets(false));
     } else if (tab === "product" && products.length === 0 && !loadingProducts) {
+      // Unified catalog (Phase 2). The Offering API returns one row per item
+      // with a free-string `type` column; filter to the conventional types
+      // that the modal labels as "Products" vs "Services" so the existing
+      // tabs keep working without UI changes.
       setLoadingProducts(true);
-      fetch(`/api/products?brandId=${brandId}&page=1&limit=50`, { credentials: "include" })
-        .then((r) => (r.ok ? r.json() : { products: [] })).then(unwrap)
-        .then((d) => setProducts(d.products ?? []))
+      fetch(`/api/offerings?brandId=${brandId}&page=1&limit=50`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : { offerings: [] })).then(unwrap)
+        .then((d: { offerings?: Array<{ type?: string }> }) => {
+          const all = d.offerings ?? [];
+          setProducts(
+            all.filter(
+              (o) => o.type !== "service" && o.type !== "treatment",
+            ) as typeof products,
+          );
+        })
         .catch(() => {})
         .finally(() => setLoadingProducts(false));
     } else if (tab === "service" && services.length === 0 && !loadingServices) {
       setLoadingServices(true);
-      fetch(`/api/services?brandId=${brandId}&page=1&limit=50`, { credentials: "include" })
-        .then((r) => (r.ok ? r.json() : { services: [] })).then(unwrap)
-        .then((d) => setServices(d.services ?? []))
+      fetch(`/api/offerings?brandId=${brandId}&page=1&limit=50&type=service`, {
+        credentials: "include",
+      })
+        .then((r) => (r.ok ? r.json() : { offerings: [] })).then(unwrap)
+        .then((d: { offerings?: Array<unknown> }) =>
+          setServices((d.offerings ?? []) as typeof services),
+        )
         .catch(() => {})
         .finally(() => setLoadingServices(false));
     }
