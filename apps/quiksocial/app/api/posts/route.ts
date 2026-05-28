@@ -72,12 +72,22 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   if (!isAdmin) where.createdBy = userId;
   if (status && status !== "all") where.status = status;
 
-  if (startDate && endDate) {
-    where.scheduledFor = { gte: new Date(startDate), lte: new Date(endDate) };
-  } else if (startDate) {
-    where.scheduledFor = { gte: new Date(startDate) };
-  } else if (endDate) {
-    where.scheduledFor = { lte: new Date(endDate) };
+  if (startDate || endDate) {
+    const range: { gte?: Date; lte?: Date } = {};
+    if (startDate) range.gte = new Date(startDate);
+    if (endDate) range.lte = new Date(endDate);
+    // A post appears on the calendar by its most relevant date:
+    //   scheduledFor  → scheduled / overdue
+    //   publishedAt   → published (these carry NO scheduledFor, so the old
+    //                   scheduledFor-only filter silently dropped them)
+    //   createdAt     → drafts / approved with no date set yet
+    // The calendar is the only caller that passes startDate/endDate, so
+    // broadening this filter doesn't affect Content Hub / Campaigns / etc.
+    where.OR = [
+      { scheduledFor: range },
+      { publishedAt: range },
+      { scheduledFor: null, publishedAt: null, createdAt: range },
+    ];
   }
 
   const PAGE_SIZE = 12;

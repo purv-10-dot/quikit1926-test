@@ -188,6 +188,30 @@ export default function CreatePostPage() {
   // Active when the admin's "Post Now" button (in ScheduleModal) is in flight.
   const [publishingNow, setPublishingNow] = useState(false);
 
+  // Scheduling date carried in from a calendar-cell click
+  // (/dashboard/posts/create?scheduledDate=YYYY-MM-DD). When present, Step 4's
+  // ScheduleModal opens locked to this date — the user only picks a time.
+  const [lockedScheduledDate, setLockedScheduledDate] = useState<Date | null>(null);
+
+  // Read the calendar-supplied scheduledDate once on mount. Parsed from
+  // window.location rather than useSearchParams to avoid the Suspense-boundary
+  // requirement that would otherwise trip `next build`.
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("scheduledDate");
+    if (!raw) return;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (!m) return;
+    const y = Number(m[1]);
+    const mo = Number(m[2]) - 1;
+    const d = Number(m[3]);
+    // Default to noon so the modal opens on the right day regardless of TZ;
+    // the time is irrelevant since lockDate clears the pre-selected slot.
+    const dt = new Date(y, mo, d, 12, 0, 0, 0);
+    // Reject impossible dates (e.g. 2026-02-31 rolling over to March).
+    if (Number.isNaN(dt.getTime()) || dt.getMonth() !== mo || dt.getDate() !== d) return;
+    setLockedScheduledDate(dt);
+  }, []);
+
   // Per-brand role drives Step 4 mode (admin: schedule; member: suggest).
   const activeBrandIdForRole = activeBrand?._id ?? activeBrand?.id ?? null;
   const { isAdmin } = useWorkspaceRole(activeBrandIdForRole);
@@ -1282,6 +1306,9 @@ export default function CreatePostPage() {
           brandId={activeBrand?._id ?? activeBrand?.id ?? ""}
           imageUrl={data.imageUrl}
           caption={data.caption}
+          // Pre-fill + lock the date when arriving from a calendar-cell click.
+          initialScheduledFor={lockedScheduledDate}
+          lockDate={!!lockedScheduledDate}
           onClose={() => setShowSchedule(false)}
           onSave={handleSave}
           saving={saving}
