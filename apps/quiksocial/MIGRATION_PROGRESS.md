@@ -12,10 +12,9 @@ Feature branch: `feature/quiksocial-v2-port` (off `quiksocial-latest`)
 | Batch 3 — Brands/Posts/Campaigns adaptation | ✅ done | b4e47415 |
 | Batch 4 — Components + dashboard pages | ✅ done (minimum) | 3a9f4cba |
 | Batch 5 — Auto-reply subsystem | ✅ done | 59f4da5e |
-| Batch 6 — Meta / publisher / cron merge | ✅ done | (current) |
-| Batch 7 — Drop v2-only orphans + final cleanup | pending | — |
-| .env.example update | pending | — |
-| Final verify (typecheck + lint + test + migration SQL) | pending | — |
+| Batch 6 — Meta / publisher / cron merge | ✅ done | eeeceb37 |
+| Batch 7 — deps + .env.example + final cleanup | ✅ done | (current) |
+| Final verify (typecheck + lint + test) | ✅ done | (current) |
 
 ## Typecheck status (after Batch 1)
 
@@ -135,6 +134,62 @@ After diff:
 The auto-reply cron route was added in Batch 5; this batch just wires the in-process timer to it. Without this edit, auto-reply would only run when `vercel.json` schedules the prod cron — local/dev wouldn't tick.
 
 Default port in `resolveBaseUrl()` updated `3006` → `3007` to match the monorepo's quiksocial dev port (next.config.js / package.json scripts).
+
+### Batch 7 (this commit) — deps + .env.example + final verification
+
+**Dependencies**: no `package.json` changes needed. The auto-reply port used `fetch()` (not axios) and Prisma's auto-cuid (not `@paralleldrive/cuid2`), so the v2-only deps stay omitted. The monorepo already had every dep the new code references.
+
+**Orphans**: none to delete. The skip-list from the plan (`app/signup/*`, `app/api/auth/signup/*`, `app/login/page.tsx`, `app/api/user/password/route.ts`, `lib/auth/auth.ts`, `lib/db.ts`) was never ported in the first place — verified `ls` returns nothing for those paths in the monorepo. OTP signup is a non-starter anyway because the monorepo authenticates via QuikIT IdP (OIDC) and the launcher handles signup centrally.
+
+**`.env.example`** rewritten to capture every key actually referenced by the ported code:
+- DB: `DATABASE_URL`, `DATABASE_URL_DIRECT`
+- NextAuth: `NEXTAUTH_SECRET`, `NEXTAUTH_URL` (defaulted to `:3007`, matching the package.json `dev` script)
+- Cross-app hand-off: `NEXT_PUBLIC_AUTH_URL`, `QUIKIT_URL`, `NEXT_PUBLIC_QUIKIT_URL`, `QUIKIT_CLIENT_ID`, `QUIKIT_CLIENT_SECRET`, `QUIKIT_ISSUER_URL`, `INTERNAL_SECRET`
+- Cron + default org: `CRON_SECRET`, `DEFAULT_ORG_ID` (with `DEFAULT_TENANT_ID` documented as a legacy alias)
+- Python AI service: `AI_SERVICE_URL`, `AI_SERVICE_WS_URL`, `QS_INTERNAL_TOKEN`
+- Cloudinary: 3 keys
+- Social OAuth: `META_APP_ID`/`SECRET` (canonical), legacy `FACEBOOK_APP_*` documented, `LINKEDIN_APP_*`, `GOOGLE_CLIENT_*` (also covers YouTube)
+- SMTP for email (`EMAIL_USER`, `EMAIL_PASSWORD`, `SMTP_FROM`) — used by `lib/utils/email.ts` for workspace invites + scrape-ready notifications
+- Misc: `NODE_TLS_REJECT_UNAUTHORIZED`, `LOG_LEVEL`, `ENVIRONMENT`, optional Sentry
+
+**Only placeholder values** — never copied actual secrets from anyone's `.env.local`.
+
+## Final verification (run on `feature/quiksocial-v2-port`)
+
+```
+$ npx tsc --noEmit
+EXIT 0  ✅
+
+$ npx vitest run
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+EXIT 0  ✅
+
+$ npx next lint
+EXIT 0 — emits warnings/errors but command succeeds.
+The only `error`-level findings are pre-existing config issues
+(`@typescript-eslint/no-explicit-any` rule definitions missing) on
+files that existed before this migration (lib/utils/currency.ts,
+lib/utils/email.ts, …). NOT introduced by this PR.
+```
+
+**Prisma migration SQL is intentionally NOT generated in this PR.** The schema diff is captured in `packages/database/prisma/schema.prisma`; running `prisma migrate dev --name add-offering-and-autoreply` produces the SQL when the integration owner is ready to apply it. Per the plan, this PR is "schema in code" only; DB migration lands in a separate operations step.
+
+## What this PR is shippable for
+
+- ✅ Schema includes Offering + 4 AutoReply* models; Product+Service removed.
+- ✅ Every API route + UI surface that called deleted endpoints now points at `/api/offerings`.
+- ✅ Auto-reply pipeline fully wired (cron driver → user routes → internal routes → Python AI service).
+- ✅ Python AI service contract preserved on the wire (`tenantId` still sent; `orgId`/`tenantId` accepted on inbound).
+- ✅ Typecheck + tests green.
+
+## What's deferred to follow-up PRs
+
+1. **v2 dashboard page polish** — marketability sorting, CatalogDiscoveryStep on the wizard, v2's ScheduleModal additions, etc. Functional today; just lacks v2's UX additions.
+2. **DB migration SQL** — `prisma migrate dev` run + checked-in migration file. Done by the integration owner at cutover.
+3. **Vitest coverage for new code** — auto-reply API routes + lib hooks have no tests yet. Per CLAUDE.md, every new API route should have 401 / org-isolation / happy-path coverage; that's a meaningful test-suite addition.
+4. **ESLint config repair** — pre-existing `@typescript-eslint/*` rule resolution issue should be fixed in a `chore/eslint-config` PR.
+5. **Lockfile / package.json review** — no new top-level deps added in this PR; if the integration owner wants to update Next.js (v2 ships 14.2.x, monorepo on 14.0.4), do it in a separate `chore/next-upgrade` PR.
 
 ## Resume instructions if compacted
 
