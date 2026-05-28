@@ -10,8 +10,8 @@ Feature branch: `feature/quiksocial-v2-port` (off `quiksocial-latest`)
 | Batch 1 — Lib utilities | ✅ done | eeba2a3c |
 | Batch 2 — Offering API + UI | ✅ done | d156460b |
 | Batch 3 — Brands/Posts/Campaigns adaptation | ✅ done | b4e47415 |
-| Batch 4 — Components + dashboard pages | ✅ done (minimum) | (current) |
-| Batch 5 — Auto-reply subsystem | pending | — |
+| Batch 4 — Components + dashboard pages | ✅ done (minimum) | 3a9f4cba |
+| Batch 5 — Auto-reply subsystem | ✅ done | (current) |
 | Batch 6 — Meta / publisher / cron merge | pending | — |
 | Batch 7 — Drop v2-only orphans + final cleanup | pending | — |
 | .env.example update | pending | — |
@@ -105,6 +105,25 @@ These v2 feature additions don't block typecheck and don't break runtime. Ship a
 1. **Brand Creation Wizard** (`app/dashboard/brands/create/page.tsx`) — v2 ships unified `ScrapedOffering` shape + `CatalogDiscoveryStep.tsx` + Phase 5 marketability scoring. Monorepo's wizard still uses `ScrapedProduct` + `ScrapedService` client-side interfaces; works (POST /api/brands accepts both legacy and offerings[] shapes) but doesn't get v2's catalog discovery UX.
 2. **Calendar / Campaigns / Content-Hub / Posts-Create / Settings pages** — large v2 deltas (likely Phase 2 unified-offering UI, marketability sorting, etc.). Functional today; cosmetically lag v2.
 3. **`ScheduleModal.tsx` + `dashboard-layout.tsx`** — both exist in the monorepo at adapted state. v2's versions might have new features (post-now flow, etc.) worth diffing in the follow-up.
+
+### Batch 5 (this commit) — Auto-reply subsystem (new)
+
+Ported the entire v2 auto-reply pipeline: 36 new files across API routes, UI, lib hooks. Typecheck green.
+
+Delegated to a general-purpose agent with explicit conversion rules. Files created:
+- **8 user-facing API routes** (`app/api/auto-reply/{logs, platform-toggle, post-control, rules, rules/[id], rules/[id]/toggle, social-accounts, stats}`): wrapped in `withOrgAuth`, `orgId` everywhere, `{ success, data }` envelope, Zod input validation.
+- **6 internal API routes** (`app/api/internal/auto-reply/{cursor, log, log/[id], monitor-batch, responder-context, sweep-stale}`): `checkInternalToken` guard, accept BOTH `orgId` and legacy `tenantId` in body via `resolveOrgId()` helper in `lib/auto-reply/types.ts`. Response shapes preserved unmodified for Python parser compatibility.
+- **1 cron route** (`app/api/cron/auto-reply-monitor`): Bearer-secret auth, uses `DEFAULT_ORG_ID` env fallback.
+- **1 dashboard page** (`app/dashboard/auto-reply/page.tsx`): uses `useActiveBrandId()`, three-tab UI (Rules / Activity / Post Controls).
+- **20 components** (`components/auto-reply/{ActivityView, KpiStrip, LogEntry, PlatformToggleStrip, PostControlRow, PostControlsView, RuleCard, RuleWizard, RulesView, WizardStep*}` + 6 primitives).
+- **8 lib files** (`lib/auto-reply/{ai-service-client, client-types, types, use-*}`): React Query hooks + ai-service-client + shared types. `internal-auth.ts` was already in the monorepo from Batch 2.
+
+Decisions made by the porting agent (worth knowing for future maintenance):
+- Internal routes accept both `orgId` and `tenantId` body aliases via a shared `resolveOrgId()` helper in `lib/auto-reply/types.ts`. Python wire format still ships `tenantId` until the AI service updates.
+- `ai-service-client.ts` sends `tenantId` on the wire (Python expects it) but accepts `orgId` as the JS parameter.
+- `AutoReplyCursor` upsert key uses `orgId_socialAccountId_postId` (matching the new schema's unique).
+- `MessageSquareReply` icon doesn't exist in the installed `lucide-react` → aliased as `MessageCircle`.
+- Cron `DEFAULT_ORG_ID` resolution falls through to legacy `DEFAULT_TENANT_ID` then a sentinel for env-file compatibility.
 
 ## Resume instructions if compacted
 
