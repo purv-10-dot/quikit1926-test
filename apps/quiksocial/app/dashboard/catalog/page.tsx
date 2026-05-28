@@ -2,26 +2,42 @@
 
 export const dynamic = "force-dynamic";
 
-import { unwrap } from "@/lib/utils/api-fetch";
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useActiveBrandId } from "@/hooks/useActiveBrandId";
-import { Pagination } from "@/components/ui/Pagination";
+/**
+ * Unified Catalog page (Phase 2 follow-up).
+ *
+ * Replaces the v1 /dashboard/products and /dashboard/services split
+ * pages with a single grouped view of every Offering on the active
+ * brand. Groups are keyed by `Offering.type` (the free-string column);
+ * each group's header label is rendered via offeringLabel() so unknown
+ * types (e.g. "amenity_kit" → "Amenity Kits") still get a presentable
+ * heading. Expand/collapse interaction matches the brand-wizard's
+ * Catalog Discovery step for consistency.
+ *
+ * QuiKit handoff:
+ *   - Active brand id comes from useActiveBrandId() (not session.user).
+ *   - API responses are unwrapped from the { success, data } envelope.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Plus,
-  Pencil,
-  Trash2,
-  X,
-  Package,
-  Loader2,
   AlertCircle,
+  Briefcase,
+  Loader2,
+  Package,
+  Pencil,
+  Plus,
+  Trash2,
   Upload,
-  Image as ImageIcon,
-  Tag,
-  Layers,
+  X,
 } from "lucide-react";
 import TagInput from "@/components/ui/TagInput";
 import { ImageWithFallback } from "@/components/ui/ImageWithFallback";
+import { useActiveBrandId } from "@/hooks/useActiveBrandId";
+import { unwrap } from "@/lib/utils/api-fetch";
+import {
+  KNOWN_OFFERING_TYPES,
+  offeringLabel,
+} from "@/lib/offerings/labels";
 import {
   CURRENCY_OPTIONS,
   defaultCurrencyForCountry,
@@ -29,15 +45,17 @@ import {
   stripCurrencyFromPrice,
 } from "@/lib/utils/currency";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Product {
+interface Offering {
   _id: string;
+  type: string;
   name: string;
   description?: string | null;
   price?: string | null;
   currency?: string | null;
   category?: string | null;
+  duration?: string | null;
   tags: string[];
   imageUrls: string[];
   sku?: string | null;
@@ -45,28 +63,37 @@ interface Product {
 }
 
 interface FormState {
+  type: string;
   name: string;
   description: string;
   price: string;
   currency: string;
   category: string;
+  duration: string;
   tags: string[];
   imageUrls: string[];
   sku: string;
 }
 
-const EMPTY_FORM: FormState = {
-  name: "",
-  description: "",
-  price: "",
-  currency: "",
-  category: "",
-  tags: [],
-  imageUrls: [],
-  sku: "",
-};
+function emptyForm(defaults: Partial<FormState> = {}): FormState {
+  return {
+    type: "product",
+    name: "",
+    description: "",
+    price: "",
+    currency: "",
+    category: "",
+    duration: "",
+    tags: [],
+    imageUrls: [],
+    sku: "",
+    ...defaults,
+  };
+}
 
-// ─── Image uploader (reuses /api/assets) ─────────────────────────────────────
+const FETCH_LIMIT = 100;
+
+// ─── Image upload helper ──────────────────────────────────────────────────────
 
 function useImageUpload(brandId: string) {
   const [uploading, setUploading] = useState(false);
@@ -80,8 +107,8 @@ function useImageUpload(brandId: string) {
       fd.append("type", "image");
       const res = await fetch("/api/assets", { method: "POST", body: fd });
       if (!res.ok) return null;
-      const data = unwrap(await res.json());
-      return data.asset?.url ?? null;
+      const data = unwrap<{ asset?: { url?: string } }>(await res.json());
+      return data?.asset?.url ?? null;
     } finally {
       setUploading(false);
     }
@@ -90,9 +117,9 @@ function useImageUpload(brandId: string) {
   return { upload, uploading };
 }
 
-// ─── Product Modal ────────────────────────────────────────────────────────────
+// ─── Offering Modal (add/edit) ────────────────────────────────────────────────
 
-function ProductModal({
+function OfferingModal({
   brandId,
   brandCountry,
   initial,
@@ -101,20 +128,17 @@ function ProductModal({
 }: {
   brandId: string;
   brandCountry: string | null;
-  initial: Product | null;
+  initial: Offering | null;
   onClose: () => void;
-  onSaved: (p: Product) => void;
+  onSaved: (o: Offering) => void;
 }) {
   const [form, setForm] = useState<FormState>(
     initial
       ? {
+          type: initial.type || "product",
           name: initial.name,
           description: initial.description ?? "",
           price: initial.price ?? "",
-          // Seed currency: prefer the row's saved value; otherwise sniff
-          // an existing symbol from the price string; otherwise use the
-          // brand-country default. Editing a row never silently rewrites
-          // its currency without the user touching the selector.
           currency:
             (initial.currency ?? "").trim() ||
             resolveCurrencySymbol({
@@ -123,18 +147,19 @@ function ProductModal({
               brandCountry,
             }),
           category: initial.category ?? "",
+          duration: initial.duration ?? "",
           tags: initial.tags ?? [],
           imageUrls: initial.imageUrls ?? [],
           sku: initial.sku ?? "",
         }
-      : { ...EMPTY_FORM, currency: defaultCurrencyForCountry(brandCountry) }
+      : emptyForm({ currency: defaultCurrencyForCountry(brandCountry) })
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { upload, uploading } = useImageUpload(brandId);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
-  function set(key: keyof FormState, val: string | string[]) {
+  function set<K extends keyof FormState>(key: K, val: FormState[K]) {
     setForm((f) => ({ ...f, [key]: val }));
   }
 
@@ -151,28 +176,27 @@ function ProductModal({
 
   async function handleSave() {
     if (!form.name.trim()) {
-      setError("Product name is required.");
+      setError("Name is required.");
       return;
     }
     setSaving(true);
     setError("");
-
     try {
-      const url = initial ? `/api/products/${initial._id}` : "/api/products";
+      const url = initial ? `/api/offerings/${initial._id}` : "/api/offerings";
       const method = initial ? "PUT" : "POST";
       const body = { ...form, brandId };
-
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = unwrap(await res.json());
+      const json = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "Failed to save product");
+        setError(json.error ?? "Failed to save offering");
         return;
       }
-      onSaved(data.product);
+      const data = unwrap<{ offering: Offering }>(json);
+      onSaved(data.offering);
     } finally {
       setSaving(false);
     }
@@ -209,7 +233,6 @@ function ProductModal({
           overflowY: "auto",
         }}
       >
-        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -219,7 +242,9 @@ function ProductModal({
           }}
         >
           <h2 style={{ color: "#fff", fontSize: 18, fontWeight: 600 }}>
-            {initial ? "Edit Product" : "Add Product"}
+            {initial
+              ? `Edit ${offeringLabel(form.type, "singular")}`
+              : `Add ${offeringLabel(form.type, "singular")}`}
           </h2>
           <button
             onClick={onClose}
@@ -236,10 +261,23 @@ function ProductModal({
           </button>
         </div>
 
-        {/* Fields */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          {/* Name */}
-          <Field label="Product Name *">
+          <Field label="Type">
+            <select
+              value={form.type}
+              onChange={(e) => set("type", e.target.value)}
+              style={{ ...inputStyle, cursor: "pointer", colorScheme: "dark" }}
+              aria-label="Offering type"
+            >
+              {KNOWN_OFFERING_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {offeringLabel(t, "singular")}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label={`${offeringLabel(form.type, "singular")} Name *`}>
             <input
               type="text"
               value={form.name}
@@ -249,18 +287,16 @@ function ProductModal({
             />
           </Field>
 
-          {/* Description */}
           <Field label="Description">
             <textarea
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
-              placeholder="What is this product? Who is it for?"
+              placeholder="What is this? Who is it for?"
               rows={3}
               style={{ ...inputStyle, resize: "vertical" }}
             />
           </Field>
 
-          {/* Price + SKU */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Price">
               <div style={{ display: "flex", gap: 8 }}>
@@ -300,7 +336,6 @@ function ProductModal({
             </Field>
           </div>
 
-          {/* Category */}
           <Field label="Category">
             <input
               type="text"
@@ -311,7 +346,6 @@ function ProductModal({
             />
           </Field>
 
-          {/* Tags */}
           <Field label="Tags">
             <TagInput
               tags={form.tags}
@@ -320,7 +354,6 @@ function ProductModal({
             />
           </Field>
 
-          {/* Images */}
           <Field label="Images">
             <input
               ref={imgInputRef}
@@ -401,7 +434,6 @@ function ProductModal({
           </Field>
         </div>
 
-        {/* Error */}
         {error && (
           <div
             style={{
@@ -422,7 +454,6 @@ function ProductModal({
           </div>
         )}
 
-        {/* Actions */}
         <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
           <button
             onClick={onClose}
@@ -466,7 +497,7 @@ function ProductModal({
             ) : initial ? (
               "Save Changes"
             ) : (
-              "Add Product"
+              `Add ${offeringLabel(form.type, "singular")}`
             )}
           </button>
         </div>
@@ -475,15 +506,7 @@ function ProductModal({
   );
 }
 
-// ─── Field wrapper ────────────────────────────────────────────────────────────
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <label
@@ -513,12 +536,7 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-// ─── Lazy thumbnail with skeleton ─────────────────────────────────────────────
-// Renders an <img loading="lazy">, swaps in over a subtle pulse background
-// on load, and falls back to the placeholder icon if the image fails to
-// decode. Used by both ProductCard and ServiceCard (services file imports
-// nothing from this — it has its own copy at module scope, kept separate
-// so the two pages remain self-contained).
+// ─── LazyThumb ────────────────────────────────────────────────────────────────
 
 function LazyThumb({
   src,
@@ -531,9 +549,7 @@ function LazyThumb({
 }) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
-
   if (!src || errored) return <>{fallback}</>;
-
   return (
     <>
       {!loaded && (
@@ -549,6 +565,7 @@ function LazyThumb({
           }}
         />
       )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
         alt={alt}
@@ -569,19 +586,19 @@ function LazyThumb({
   );
 }
 
-// ─── Product Card ─────────────────────────────────────────────────────────────
+// ─── Offering Card ────────────────────────────────────────────────────────────
 
-function ProductCard({
-  product,
+function OfferingCard({
+  offering,
   brandLogoUrl,
   brandCountry,
   onEdit,
   onDelete,
 }: {
-  product: Product;
+  offering: Offering;
   brandLogoUrl: string | null;
   brandCountry: string | null;
-  onEdit: (p: Product) => void;
+  onEdit: (o: Offering) => void;
   onDelete: (id: string) => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -594,18 +611,14 @@ function ProductCard({
       return;
     }
     setDeleting(true);
-    const res = await fetch(`/api/products/${product._id}`, { method: "DELETE" });
-    if (res.ok) onDelete(product._id);
+    const res = await fetch(`/api/offerings/${offering._id}`, { method: "DELETE" });
+    if (res.ok) onDelete(offering._id);
     setDeleting(false);
     setConfirmDelete(false);
   }
 
-  // Pick the first product image that is NOT the brand logo. The scraper
-  // sometimes assigns the brand's site-wide logo as a product's image_url
-  // (when a real product photo can't be found) — rendering that here makes
-  // every product card look identical, which is worse than a placeholder.
   const thumb = (() => {
-    const urls = product.imageUrls ?? [];
+    const urls = offering.imageUrls ?? [];
     const logoNorm = (brandLogoUrl ?? "").trim().toLowerCase();
     for (const u of urls) {
       if (!u) continue;
@@ -615,19 +628,15 @@ function ProductCard({
     return null;
   })();
 
-  // Smart price rendering — see lib/utils/currency.ts. Replaces the old
-  // hardcoded $ icon which produced "$₹999" double-symbol output for
-  // any non-US brand.
   const priceSymbol = resolveCurrencySymbol({
-    currency: product.currency,
-    priceText: product.price,
+    currency: offering.currency,
+    priceText: offering.price,
     brandCountry,
   });
-  const priceAmount = stripCurrencyFromPrice(product.price);
+  const priceAmount = stripCurrencyFromPrice(offering.price);
 
   return (
     <div
-      // Tokens — see apps/web/src/lib/constants/design-tokens.md (Primary glass card).
       style={{
         display: "flex",
         gap: 16,
@@ -647,7 +656,6 @@ function ProductCard({
         setConfirmDelete(false);
       }}
     >
-      {/* Thumbnail */}
       <div
         style={{
           width: 72,
@@ -665,12 +673,17 @@ function ProductCard({
       >
         <LazyThumb
           src={thumb}
-          alt={product.name}
-          fallback={<Package size={28} style={{ color: "rgba(255,255,255,0.2)" }} />}
+          alt={offering.name}
+          fallback={
+            offering.type === "service" || offering.type === "treatment" ? (
+              <Briefcase size={28} style={{ color: "rgba(255,255,255,0.2)" }} />
+            ) : (
+              <Package size={28} style={{ color: "rgba(255,255,255,0.2)" }} />
+            )
+          }
         />
       </div>
 
-      {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
@@ -691,9 +704,9 @@ function ProductCard({
                 whiteSpace: "nowrap",
               }}
             >
-              {product.name}
+              {offering.name}
             </p>
-            {product.category && (
+            {offering.category && (
               <p
                 style={{
                   color: "rgba(255,255,255,0.40)",
@@ -701,16 +714,15 @@ function ProductCard({
                   marginTop: 1,
                 }}
               >
-                {product.category}
+                {offering.category}
               </p>
             )}
           </div>
 
-          {/* Action buttons */}
           {hovered && (
             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
               <button
-                onClick={() => onEdit(product)}
+                onClick={() => onEdit(offering)}
                 style={{
                   padding: "5px 10px",
                   borderRadius: 7,
@@ -756,8 +768,7 @@ function ProductCard({
           )}
         </div>
 
-        {/* Description */}
-        {product.description && (
+        {offering.description && (
           <p
             style={{
               color: "rgba(255,255,255,0.55)",
@@ -769,11 +780,10 @@ function ProductCard({
               overflow: "hidden",
             }}
           >
-            {product.description}
+            {offering.description}
           </p>
         )}
 
-        {/* Meta row */}
         <div
           style={{
             display: "flex",
@@ -783,7 +793,7 @@ function ProductCard({
             alignItems: "center",
           }}
         >
-          {product.price && (
+          {offering.price && (
             <span
               style={{
                 display: "flex",
@@ -795,18 +805,19 @@ function ProductCard({
               }}
             >
               <span style={{ fontWeight: 600 }}>{priceSymbol}</span>
-              {priceAmount || product.price}
+              {priceAmount || offering.price}
             </span>
           )}
-          {product.tags?.length > 0 && (
+          {offering.tags?.length > 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {product.tags.slice(0, 4).map((tag, i) => (
+              {offering.tags.slice(0, 4).map((tag, i) => (
                 <span
                   key={i}
                   style={{
                     padding: "2px 8px",
                     borderRadius: 20,
-                    background: "linear-gradient(135deg,rgba(244,114,182,0.25),rgba(251,146,60,0.25))",
+                    background:
+                      "linear-gradient(135deg,rgba(244,114,182,0.25),rgba(251,146,60,0.25))",
                     border: "1px solid rgba(244,114,182,0.2)",
                     color: "rgba(255,255,255,0.75)",
                     fontSize: 11,
@@ -815,9 +826,9 @@ function ProductCard({
                   {tag}
                 </span>
               ))}
-              {product.tags.length > 4 && (
+              {offering.tags.length > 4 && (
                 <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}>
-                  +{product.tags.length - 4}
+                  +{offering.tags.length - 4}
                 </span>
               )}
             </div>
@@ -828,78 +839,56 @@ function ProductCard({
   );
 }
 
+// ─── Grouping ─────────────────────────────────────────────────────────────────
+
+interface TypeGroup {
+  type: string;
+  items: Offering[];
+}
+
+function groupByType(offerings: Offering[]): TypeGroup[] {
+  const byType = new Map<string, Offering[]>();
+  for (const o of offerings) {
+    const t = (o.type || "product").trim() || "product";
+    if (!byType.has(t)) byType.set(t, []);
+    byType.get(t)!.push(o);
+  }
+  return Array.from(byType.entries()).map(([type, items]) => ({ type, items }));
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const PAGE_SIZE = 15;
-
-export default function ProductsPage() {
-  const activeBrandId = useActiveBrandId();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [products, setProducts] = useState<Product[]>([]);
+export default function CatalogPage() {
+  const brandId = useActiveBrandId() ?? "";
+  const [offerings, setOfferings] = useState<Offering[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState<{ open: boolean; editing: Product | null }>({
+  const [modal, setModal] = useState<{ open: boolean; editing: Offering | null }>({
     open: false,
     editing: null,
   });
-  // Brand metadata used for currency defaults and logo-as-thumb filtering.
-  // Fetched once on mount alongside the products list.
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [brandCountry, setBrandCountry] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
 
-  // Pagination — page number is URL-persistent. Refresh keeps you on
-  // the same page; back/forward navigates between pages.
-  const page = Math.max(1, parseInt(searchParams?.get("page") ?? "1", 10) || 1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
-
-  const setPage = useCallback(
-    (next: number) => {
-      const params = new URLSearchParams(searchParams?.toString() ?? "");
-      if (next <= 1) params.delete("page");
-      else params.set("page", String(next));
-      const qs = params.toString();
-      router.replace(qs ? `?${qs}` : "?", { scroll: false });
-    },
-    [router, searchParams],
-  );
-
-  const brandId = activeBrandId ?? "";
-
-  const fetchProducts = useCallback(async () => {
+  const fetchOfferings = useCallback(async () => {
     if (!brandId) return;
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/products?brandId=${brandId}&page=${page}&limit=${PAGE_SIZE}`
+        `/api/offerings?brandId=${brandId}&limit=${FETCH_LIMIT}`,
       );
       if (!res.ok) return;
-      const data = unwrap(await res.json());
-      setProducts(data.products ?? []);
-      const total = data.pagination?.total ?? data.products?.length ?? 0;
-      setTotalItems(total);
-      setTotalPages(Math.max(1, Math.ceil(total / PAGE_SIZE)));
+      const data = unwrap<{ offerings?: Offering[] }>(await res.json());
+      setOfferings(data?.offerings ?? []);
     } finally {
       setLoading(false);
     }
-  }, [brandId, page]);
+  }, [brandId]);
 
   useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    fetchOfferings();
+  }, [fetchOfferings]);
 
-  // If a delete leaves the current page empty (and we're past page 1),
-  // step one page back so the user isn't stranded on a blank screen.
-  useEffect(() => {
-    if (!loading && products.length === 0 && page > 1) {
-      setPage(page - 1);
-    }
-  }, [loading, products.length, page, setPage]);
-
-  // Resolve the brand's logoUrl and country once, used by the cards and
-  // the modal. Failures are silent — both are nice-to-have hints, not
-  // hard requirements (the cards fall back gracefully to "$" + showing
-  // any image including the logo if this fetch fails).
   useEffect(() => {
     if (!brandId) {
       setBrandLogoUrl(null);
@@ -911,42 +900,50 @@ export default function ProductsPage() {
       try {
         const res = await fetch(`/api/brands/${brandId}`, { credentials: "include" });
         if (!res.ok || cancelled) return;
-        const { brand } = unwrap(await res.json());
-        if (cancelled || !brand) return;
-        setBrandLogoUrl(brand.logoUrl ?? null);
-        setBrandCountry(brand.country ?? null);
+        const data = unwrap<{ brand?: { logoUrl?: string | null; country?: string | null } }>(
+          await res.json(),
+        );
+        if (cancelled || !data?.brand) return;
+        setBrandLogoUrl(data.brand.logoUrl ?? null);
+        setBrandCountry(data.brand.country ?? null);
       } catch {
-        // ignore — defaults already in place
+        // defaults are fine
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [brandId]);
 
-  function handleSaved(product: Product) {
-    setProducts((prev) => {
-      const exists = prev.findIndex((p) => p._id === product._id);
-      if (exists >= 0) {
+  function handleSaved(offering: Offering) {
+    setOfferings((prev) => {
+      const idx = prev.findIndex((o) => o._id === offering._id);
+      if (idx >= 0) {
         const next = [...prev];
-        next[exists] = product;
+        next[idx] = offering;
         return next;
       }
-      return [product, ...prev];
+      return [offering, ...prev];
     });
     setModal({ open: false, editing: null });
-    // Refetch so the total/pagination reflects the new row. Local
-    // state update above keeps the UI snappy in the meantime.
-    fetchProducts();
+    fetchOfferings();
   }
 
   function handleDeleted(id: string) {
-    setProducts((prev) => prev.filter((p) => p._id !== id));
-    // Refetch for the same reason — total + page boundary changes.
-    fetchProducts();
+    setOfferings((prev) => prev.filter((o) => o._id !== id));
+    fetchOfferings();
   }
 
+  const groups = useMemo(() => groupByType(offerings), [offerings]);
+  const totalCount = offerings.length;
+
+  const activeType =
+    activeTab && groups.some((g) => g.type === activeTab)
+      ? activeTab
+      : groups[0]?.type ?? null;
+  const activeGroup = groups.find((g) => g.type === activeType) ?? null;
+
   return (
-    /* Outer page wrapper — no padding/margin/max-width. The
-       dashboard layout shell owns all outer spacing. */
     <div>
       {/* Header */}
       <div
@@ -960,15 +957,25 @@ export default function ProductsPage() {
         }}
       >
         <div>
-          <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 500, marginBottom: 4 }}>
-            Products
+          <h1
+            style={{
+              color: "#fff",
+              fontSize: 24,
+              fontWeight: 500,
+              marginBottom: 4,
+            }}
+          >
+            Catalog
           </h1>
           <p style={{ color: "rgba(255,255,255,0.50)", fontSize: 14 }}>
-            {loading ? "Loading…" : `${totalItems} product${totalItems !== 1 ? "s" : ""} in your catalog`}
+            {loading
+              ? "Loading…"
+              : `${totalCount} ${totalCount === 1 ? "item" : "items"} across ${groups.length} ${groups.length === 1 ? "type" : "types"}`}
           </p>
         </div>
         <button
           onClick={() => setModal({ open: true, editing: null })}
+          disabled={!brandId}
           style={{
             display: "flex",
             alignItems: "center",
@@ -980,22 +987,21 @@ export default function ProductsPage() {
             color: "#0A0A0A",
             fontSize: 14,
             fontWeight: 600,
-            cursor: "pointer",
+            cursor: brandId ? "pointer" : "not-allowed",
+            opacity: brandId ? 1 : 0.5,
           }}
         >
           <Plus size={16} />
-          Add Product
+          Add Offering
         </button>
       </div>
 
-      {/* List */}
+      {/* Body */}
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              // Match the real ProductRow's primary-glass tint so the
-              // wallpaper shows through. qs-pulse keyframe is in globals.css.
               style={{
                 height: 104,
                 borderRadius: 16,
@@ -1008,7 +1014,7 @@ export default function ProductsPage() {
             />
           ))}
         </div>
-      ) : products.length === 0 ? (
+      ) : totalCount === 0 ? (
         <div
           style={{
             display: "flex",
@@ -1035,14 +1041,16 @@ export default function ProductsPage() {
           </div>
           <div style={{ textAlign: "center" }}>
             <p style={{ color: "#fff", fontSize: 16, fontWeight: 500 }}>
-              No products yet
+              No catalog items yet
             </p>
             <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 14, marginTop: 4 }}>
-              Add products to use them in AI-generated posts and campaigns.
+              Add products, services, or any offering to use them in AI-generated
+              posts and campaigns.
             </p>
           </div>
           <button
             onClick={() => setModal({ open: true, editing: null })}
+            disabled={!brandId}
             style={{
               display: "flex",
               alignItems: "center",
@@ -1054,47 +1062,117 @@ export default function ProductsPage() {
               color: "#0A0A0A",
               fontSize: 14,
               fontWeight: 600,
-              cursor: "pointer",
+              cursor: brandId ? "pointer" : "not-allowed",
               marginTop: 8,
+              opacity: brandId ? 1 : 0.5,
             }}
           >
             <Plus size={16} />
-            Add your first product
+            Add your first offering
           </button>
         </div>
       ) : (
-        <>
-          {/* Strict 3-column grid, 24px gap. Cards stretch to fill
-              cells. See design-tokens.md (Primary glass card). */}
+        <div>
           <div
+            role="tablist"
+            aria-label="Offering types"
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: 24,
+              display: "flex",
+              gap: 8,
+              marginBottom: 24,
+              overflowX: "auto",
+              paddingBottom: 4,
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
             }}
           >
-            {products.map((p) => (
-              <ProductCard
-                key={p._id}
-                product={p}
-                brandLogoUrl={brandLogoUrl}
-                brandCountry={brandCountry}
-                onEdit={(prod) => setModal({ open: true, editing: prod })}
-                onDelete={handleDeleted}
-              />
-            ))}
+            {groups.map((group) => {
+              const isActive = group.type === activeType;
+              return (
+                <button
+                  key={group.type}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setActiveTab(group.type)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    flexShrink: 0,
+                    padding: "8px 16px",
+                    borderRadius: 10,
+                    border: "1px solid",
+                    borderColor: isActive
+                      ? "rgba(255,255,255,0.18)"
+                      : "rgba(255,255,255,0.10)",
+                    background: isActive
+                      ? "rgba(255,255,255,0.16)"
+                      : "rgba(255,255,255,0.04)",
+                    color: isActive ? "#fff" : "rgba(255,255,255,0.65)",
+                    fontSize: 14,
+                    fontWeight: isActive ? 600 : 500,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    transition: "background 0.15s, color 0.15s, border-color 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLElement).style.background =
+                        "rgba(255,255,255,0.08)";
+                      (e.currentTarget as HTMLElement).style.color = "#fff";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      (e.currentTarget as HTMLElement).style.background =
+                        "rgba(255,255,255,0.04)";
+                      (e.currentTarget as HTMLElement).style.color =
+                        "rgba(255,255,255,0.65)";
+                    }
+                  }}
+                >
+                  {offeringLabel(group.type, "plural")}
+                  <span
+                    style={{
+                      color: isActive
+                        ? "rgba(255,255,255,0.65)"
+                        : "rgba(255,255,255,0.40)",
+                      fontWeight: 400,
+                    }}
+                  >
+                    ({group.items.length})
+                  </span>
+                </button>
+              );
+            })}
           </div>
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-          />
-        </>
+
+          {activeGroup && (
+            <div
+              role="tabpanel"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 24,
+              }}
+            >
+              {activeGroup.items.map((o) => (
+                <OfferingCard
+                  key={o._id}
+                  offering={o}
+                  brandLogoUrl={brandLogoUrl}
+                  brandCountry={brandCountry}
+                  onEdit={(off) => setModal({ open: true, editing: off })}
+                  onDelete={handleDeleted}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
-      {/* Modal */}
       {modal.open && brandId && (
-        <ProductModal
+        <OfferingModal
           brandId={brandId}
           brandCountry={brandCountry}
           initial={modal.editing}

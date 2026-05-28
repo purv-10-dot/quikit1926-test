@@ -1,9 +1,9 @@
 /**
- * /api/products/[id] — PUT update, DELETE soft-delete (isActive=false).
+ * /api/offerings/[id] — PUT update, DELETE soft-delete (isActive=false).
  *
- * Ported to QuikIT (Phase 3, Batch 1). Both routes scope by
- * (orgId, createdBy=userId) so users can only mutate their own products.
- * DELETE preserves historical post references via soft delete.
+ * Replaces /api/products/[id] + /api/services/[id]. The `type` field is
+ * editable on PUT — uncommon but supported (e.g. user reclassifies an
+ * accidentally-typed offering).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -17,24 +17,27 @@ function withCompatId<T extends AnyRow>(row: T): T & { _id: unknown } {
   return { ...row, _id: row.id };
 }
 
-const updateProductSchema = z.object({
+const updateOfferingSchema = z.object({
+  type: z.string().optional(),
   name: z.string().min(1),
   description: z.string().nullish(),
   price: z.string().nullish(),
   currency: z.string().nullish(),
   category: z.string().nullish(),
+  duration: z.string().nullish(),
   tags: z.array(z.string()).optional(),
   imageUrls: z.array(z.string()).optional(),
   sku: z.string().nullish(),
+  url: z.string().nullish(),
 });
 
 // ---------------------------------------------------------------------------
-// PUT /api/products/[id]
+// PUT /api/offerings/[id]
 // ---------------------------------------------------------------------------
 export const PUT = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req: NextRequest, { params }) => {
     const json = await req.json().catch(() => null);
-    const parsed = updateProductSchema.safeParse(json);
+    const parsed = updateOfferingSchema.safeParse(json);
     if (!parsed.success) {
       return NextResponse.json(
         { success: false, error: parsed.error.issues.map((i) => i.message).join(", ") },
@@ -43,22 +46,25 @@ export const PUT = withOrgAuth<{ id: string }>(
     }
     const body = parsed.data;
 
-    const existing = await db.product.findFirst({
+    const existing = await db.offering.findFirst({
       where: { id: params.id, orgId, createdBy: userId },
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ success: false, error: "Product not found" }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Offering not found" }, { status: 404 });
     }
 
-    const updated = await db.product.update({
+    const updated = await db.offering.update({
       where: { id: params.id },
       data: {
+        ...(body.type?.trim() ? { type: body.type.trim() } : {}),
         name: body.name.trim(),
         description: body.description?.trim() ?? null,
         price: body.price?.trim() ?? null,
         currency: body.currency?.trim() || null,
         category: body.category?.trim() ?? null,
+        duration: body.duration?.trim() ?? null,
+        url: body.url?.trim() ?? null,
         tags: body.tags ?? [],
         imageUrls: body.imageUrls ?? [],
         sku: body.sku?.trim() ?? null,
@@ -68,25 +74,25 @@ export const PUT = withOrgAuth<{ id: string }>(
 
     return NextResponse.json({
       success: true,
-      data: { product: { ...withCompatId(updated), userId: updated.createdBy } },
+      data: { offering: { ...withCompatId(updated), userId: updated.createdBy } },
     });
   },
 );
 
 // ---------------------------------------------------------------------------
-// DELETE /api/products/[id] — soft delete
+// DELETE /api/offerings/[id] — soft delete
 // ---------------------------------------------------------------------------
 export const DELETE = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
-    const existing = await db.product.findFirst({
+    const existing = await db.offering.findFirst({
       where: { id: params.id, orgId, createdBy: userId },
       select: { id: true },
     });
     if (!existing) {
-      return NextResponse.json({ success: false, error: "Product not found" }, { status: 404 });
+      return NextResponse.json({ success: false, error: "Offering not found" }, { status: 404 });
     }
 
-    await db.product.update({
+    await db.offering.update({
       where: { id: params.id },
       data: { isActive: false, updatedBy: userId },
     });

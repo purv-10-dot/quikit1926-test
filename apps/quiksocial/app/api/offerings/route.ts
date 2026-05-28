@@ -1,8 +1,12 @@
 /**
- * /api/services — GET list (paginated), POST create.
+ * /api/offerings — GET list (paginated, filterable by type), POST create.
  *
- * Ported to QuikIT (Phase 3, Batch 1). Same pagination contract as
- * /api/products. _id alias preserved.
+ * Unified replacement for the old /api/products + /api/services pair.
+ * The Catalog page is a single grid; the optional ?type=X filter scopes
+ * to one entity type (product, service, menu_item, project, course, ...).
+ *
+ * Ported to QuikIT (Phase 3 batch 2). _id alias preserved for legacy
+ * frontend code that still reads `offering._id`.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,20 +20,23 @@ function withCompatId<T extends AnyRow>(row: T): T & { _id: unknown } {
   return { ...row, _id: row.id };
 }
 
-const createServiceSchema = z.object({
+const createOfferingSchema = z.object({
   brandId: z.string().min(1),
+  type: z.string().optional(),
   name: z.string().min(1).max(200),
   description: z.string().nullish(),
-  pricing: z.string().nullish(),
+  price: z.string().nullish(),
   currency: z.string().nullish(),
   category: z.string().nullish(),
+  duration: z.string().nullish(),
   tags: z.array(z.string()).optional(),
   imageUrls: z.array(z.string()).optional(),
-  duration: z.string().nullish(),
+  sku: z.string().nullish(),
+  url: z.string().nullish(),
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/services?brandId=X&page=1&limit=15
+// GET /api/offerings?brandId=X&type=product&page=1&limit=15
 // ---------------------------------------------------------------------------
 export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   const { searchParams } = new URL(req.url);
@@ -38,6 +45,7 @@ export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
     return NextResponse.json({ success: false, error: "brandId is required" }, { status: 400 });
   }
 
+  const type = searchParams.get("type");
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10) || 1);
   const limit = Math.min(
     100,
@@ -45,39 +53,44 @@ export const GET = withOrgAuth(async ({ orgId }, req: NextRequest) => {
   );
   const skip = (page - 1) * limit;
 
-  const where = { orgId, brandId, isActive: true };
+  const where: Record<string, unknown> = {
+    orgId,
+    brandId,
+    isActive: true,
+    ...(type ? { type } : {}),
+  };
   const [rows, total] = await Promise.all([
-    db.service.findMany({
+    db.offering.findMany({
       where,
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
       skip,
       take: limit,
     }),
-    db.service.count({ where }),
+    db.offering.count({ where }),
   ]);
 
-  const services = rows.map((s) => ({ ...withCompatId(s), userId: s.createdBy }));
+  const offerings = rows.map((o) => ({ ...withCompatId(o), userId: o.createdBy }));
 
   return NextResponse.json({
     success: true,
     data: {
-      services,
+      offerings,
       pagination: {
         page,
         pageSize: limit,
         total,
-        hasMore: skip + services.length < total,
+        hasMore: skip + offerings.length < total,
       },
     },
   });
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/services
+// POST /api/offerings
 // ---------------------------------------------------------------------------
 export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   const json = await req.json().catch(() => null);
-  const parsed = createServiceSchema.safeParse(json);
+  const parsed = createOfferingSchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(
       { success: false, error: parsed.error.issues.map((i) => i.message).join(", ") },
@@ -86,24 +99,27 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   }
   const body = parsed.data;
 
-  const created = await db.service.create({
+  const created = await db.offering.create({
     data: {
       orgId,
       brandId: body.brandId,
       createdBy: userId,
+      type: body.type?.trim() || "product",
       name: body.name.trim(),
       description: body.description?.trim() ?? null,
-      pricing: body.pricing?.trim() ?? null,
+      price: body.price?.trim() ?? null,
       currency: body.currency?.trim() || null,
       category: body.category?.trim() ?? null,
+      duration: body.duration?.trim() ?? null,
+      url: body.url?.trim() ?? null,
       tags: body.tags ?? [],
       imageUrls: body.imageUrls ?? [],
-      duration: body.duration?.trim() ?? null,
+      sku: body.sku?.trim() ?? null,
     },
   });
 
   return NextResponse.json(
-    { success: true, data: { service: { ...withCompatId(created), userId: created.createdBy } } },
+    { success: true, data: { offering: { ...withCompatId(created), userId: created.createdBy } } },
     { status: 201 },
   );
 });
