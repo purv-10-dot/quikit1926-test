@@ -3,9 +3,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 
-// RBAC v2 — gates the per-role detail/edit endpoints on User:view/update/delete.
-// Was previously `requireAdmin` only. The `isSystem` check on PATCH/DELETE is
-// preserved below so the admin role still can't be renamed or deleted.
+// RBAC v2: gated by the `User` resource. The `isSystem` check on PATCH/DELETE
+// is preserved below so the admin role still can't be renamed or deleted
+// regardless of grants.
 const auth = withOrgAuthForResource("orgSetup.users", "User");
 
 const patchRoleSchema = z.object({

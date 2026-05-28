@@ -228,6 +228,52 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     }
   }
 
+  // Duplicate-name guard — mirrors POST. Same name allowed when any of
+  // owner/team, measurement unit, division type, or color-coding differ.
+  // Excludes self via NOT: { id }. Soft-deleted and auto-created child KPIs
+  // (parentKPIId set) are excluded.
+  {
+    const effectiveQuarter = validated.quarter ?? existingKPI.quarter;
+    const effectiveYear = validated.year ?? existingKPI.year;
+    const effectiveMeasurementUnit = validated.measurementUnit ?? existingKPI.measurementUnit;
+    const effectiveDivisionType = validated.divisionType ?? existingKPI.divisionType;
+    const effectiveReverseColor = validated.reverseColor ?? existingKPI.reverseColor ?? false;
+    const effectiveOwner = effectiveLevel === "team"
+      ? null
+      : (validated.owner ?? existingKPI.owner);
+    const effectiveTeamId = effectiveLevel === "team"
+      ? (validated.teamId ?? existingKPI.teamId)
+      : null;
+    const dup = await db.kPI.findFirst({
+      where: {
+        orgId,
+        name: validated.name,
+        quarter: effectiveQuarter,
+        year: effectiveYear,
+        kpiLevel: effectiveLevel,
+        measurementUnit: effectiveMeasurementUnit,
+        divisionType: effectiveDivisionType,
+        reverseColor: effectiveReverseColor,
+        ...(effectiveLevel === "team"
+          ? { teamId: effectiveTeamId }
+          : { owner: effectiveOwner }),
+        deletedAt: null,
+        parentKPIId: null,
+        NOT: { id: params.id },
+      },
+      select: { id: true },
+    });
+    if (dup) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `A KPI named "${validated.name}" with the same ${effectiveLevel === "team" ? "team" : "owner"}, measurement unit, division type, and color coding already exists for ${effectiveQuarter} ${effectiveYear}.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   // When qtdGoal or target changes, recompute progressPercent from existing qtdAchieved
   // so the header badge and stats display don't show stale data after save.
   const newQtdGoal = validated.qtdGoal !== undefined

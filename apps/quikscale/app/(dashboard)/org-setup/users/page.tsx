@@ -1009,12 +1009,19 @@ function ConfirmDialog({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgUsersPage() {
+  // `canCreate` (server-side User.create) still controls whether the edit
+  // drawer can submit a create. The Add User BUTTON visibility is gated
+  // separately below by the UI-only `User.AddUser.create` sub-permission.
   const { canCreate, canUpdate } = useResourcePermissions("User");
-  // RBAC v2 — User Management tab is now permission-driven (was admin-only).
-  // Anyone with User:view can see roles; the sub-actions (create/edit/delete
-  // role, edit permissions, change members) gate independently below.
+  // RBAC v2 — Add User button + User Management tab are gated by the nested
+  // UI-only sub-permissions under OrgSetup → Users (mirrors OPSP.History →
+  // EditFinalize). Admin role bypass is handled inside `useMyPermissions()`.
+  // Strict gating: a Member who has `User.create` on the API but no
+  // `User.AddUser.create` will NOT see the button — the sub-permission is
+  // the single source of truth for button visibility.
   const myPerms = useMyPermissions();
-  const canViewUserMgmt = myPerms.isAdmin || myPerms.has("User", "view");
+  const canShowAddUser = myPerms.isAdmin || myPerms.has("User.AddUser", "create");
+  const canViewUserMgmt = myPerms.isAdmin || myPerms.has("User.Management", "view");
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   // Shared cache invalidator — every user mutation (create/edit/status-change/
@@ -1268,8 +1275,8 @@ export default function OrgUsersPage() {
             )}
           </div>
 
-          {/* Add User — RBAC v2 gated */}
-          {canCreate && (
+          {/* Add User — gated by the dedicated `User.AddUser.create` sub-permission. */}
+          {canShowAddUser && (
             <button
               onClick={() => crud.openCreate()}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg"

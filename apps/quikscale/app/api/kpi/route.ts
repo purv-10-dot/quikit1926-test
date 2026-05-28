@@ -361,25 +361,32 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   const parentErr = await validateParentKPI(validated.parentKPIId, orgId);
   if (parentErr) return parentErr;
 
-  // Duplicate-name guard — KPI name must be unique within (tenant, quarter, year).
-  // Auto-created child KPIs (parentKPIId set) are excluded so a user can pick a
-  // child KPI's name for an unrelated new KPI without false-positive blocks.
+  // Duplicate-name guard — same name allowed when any of owner/team, measurement
+  // unit, division type, or color-coding differ. Soft-deleted and auto-created
+  // child KPIs (parentKPIId set) are excluded.
   const dup = await db.kPI.findFirst({
     where: {
       orgId,
       name: validated.name,
       quarter: validated.quarter,
       year: validated.year,
+      kpiLevel: isTeamLevel ? "team" : "individual",
+      measurementUnit: validated.measurementUnit,
+      divisionType: validated.divisionType,
+      reverseColor: validated.reverseColor ?? false,
+      ...(isTeamLevel
+        ? { teamId: validated.teamId }
+        : { owner: validated.owner }),
       deletedAt: null,
       parentKPIId: null,
     },
-    select: { id: true, kpiLevel: true },
+    select: { id: true },
   });
   if (dup) {
     return NextResponse.json(
       {
         success: false,
-        error: `A KPI named "${validated.name}" already exists for ${validated.quarter} ${validated.year}.`,
+        error: `A KPI named "${validated.name}" with the same ${isTeamLevel ? "team" : "owner"}, measurement unit, division type, and color coding already exists for ${validated.quarter} ${validated.year}.`,
       },
       { status: 400 },
     );
