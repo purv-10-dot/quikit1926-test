@@ -48,7 +48,12 @@ export default function DashboardLayout({
       <ImpersonationBanner />
       <NoAccessGate>
         <div className="flex flex-col h-screen bg-white">
-          {!fullscreen && <Header onToggleSidebar={() => setSidebarVisible((v) => !v)} />}
+          {!fullscreen && (
+            <Header
+              onToggleSidebar={() => setSidebarVisible((v) => !v)}
+              sidebarOpen={sidebarVisible && !isSettings}
+            />
+          )}
           <div className="flex flex-1 overflow-hidden">
             {!fullscreen && sidebarVisible && !isSettings && <Sidebar />}
             <main className="flex-1 overflow-y-auto bg-white">{children}</main>

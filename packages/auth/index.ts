@@ -68,7 +68,12 @@ function nextAuthIp(
  * Fail-closed (return {ok: false}) only in production. In dev / tests,
  * the in-memory fallback works fine for a single process.
  */
-const FAIL_CLOSED = process.env.NODE_ENV === "production";
+// Fail-closed only when Redis is actually configured. Without this
+// guard, a production Vercel deploy with no REDIS_URL would reject
+// every login (the rate limiter falls back to {ok:false} on every
+// call). When you later wire up Upstash/etc, this flips automatically.
+const FAIL_CLOSED =
+  process.env.NODE_ENV === "production" && !!process.env.REDIS_URL;
 
 export function createAuthOptions(config: AuthConfig): NextAuthOptions {
   return {

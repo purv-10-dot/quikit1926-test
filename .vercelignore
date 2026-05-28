@@ -1,15 +1,50 @@
-# Never bundle env files — Vercel uses Project Environment Variables.
-# Local .env / .env.local symlinks point at ~/Desktop/QuikIT-Secrets which
-# don't exist in Vercel's build container; bundling them causes stat ENOENT.
+# Env files — Vercel uses Project Environment Variables, never bundle these
+.env
+.env.local
+.env.*.local
 **/.env
 **/.env.local
 **/.env.*.local
 
-# Local-only dev artifacts
+# Build artefacts (must not be shipped — keeps upload under the 100 MB cap)
+node_modules
+.next
+.turbo
+.vercel
+coverage
+dist
+build
+**/node_modules
 **/.next
 **/.turbo
-**/node_modules
-**/coverage
+**/.vercel
+apps/*/node_modules
+apps/*/.next
+packages/*/node_modules
+packages/*/dist
 
-# Tasks scratchpad
+# IDE / OS / archives
+.DS_Store
+.vscode
+.idea
+*.log
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Tests + scratchpads + local migration artefacts
 tasks/
+**/__tests__/
+**/test-results/
+**/playwright-report/
+QuiktrackDump/
+D:/QuiktrackDump/
+
+# Git
+.git
+.github
+
+# Misc dev-only files
+.claude
+*.local

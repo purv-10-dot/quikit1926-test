@@ -163,7 +163,7 @@ export function Sidebar() {
   return (
     <aside
       data-tour="sidebar"
-      className="w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-[calc(100vh-48px)] overflow-y-auto"
+      className="w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto"
     >
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">
@@ -296,7 +296,7 @@ export function Sidebar() {
           )}
         </div>
 
-        <div className="my-2 mx-3 border-t border-gray-200" />
+        <div className="my-2" />
 
         <div className="px-2 space-y-0.5">
           <FiltersSection />
@@ -335,7 +335,7 @@ export function Sidebar() {
                 label="Default dashboard"
                 indent
               />
-              <div className="my-1.5 border-t border-gray-100" />
+              <div className="my-1.5" />
               {/* <NavRow
                 href="/dashboards"
                 icon={LayoutDashboard}
@@ -402,7 +402,7 @@ export function Sidebar() {
           */}
         </div>
 
-        <div className="my-2 mx-3 border-t border-gray-200" />
+        <div className="my-2" />
 {/* 
         <div className="px-2 space-y-0.5">
           <NavRow href="https://confluence" icon={Map} label="Confluence" external />
