@@ -8,7 +8,8 @@ import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { computeQtd, weeklyGoalFor } from "./kpiStats";
 import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
-import { useStickyOffsets } from "../hooks/useStickyOffsets";
+import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
+import { FreezeIcon } from "@/components/ui/FreezeIcon";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { ResizeHandle as SharedResizeHandle } from "@/lib/hooks/useColumnResize";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
@@ -24,16 +25,6 @@ import { X } from "lucide-react";
 import { Pagination } from "@quikit/ui";
 import { toast } from "sonner";
 export { HiddenColsMenu } from "./HiddenColsMenu";
-
-// ── Lock icon for freeze boundary ────────────────────────────────────────────
-
-function FreezeIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg className={`h-3 w-3 text-blue-400 flex-shrink-0 ${className}`} fill="currentColor" viewBox="0 0 20 20">
-      <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-    </svg>
-  );
-}
 
 // ── Resize handle ────────────────────────────────────────────────────────────
 

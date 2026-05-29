@@ -13,7 +13,7 @@ import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
   AddButton, EmptyState, Modal, ModalContent, ModalHeader, ModalTitle, ModalBody,
-  FilterPicker, Pagination, ColMenu, type ExportSelection,
+  FilterPicker, Pagination, type ExportSelection,
 } from "@quikit/ui";
 import { Users, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
@@ -21,7 +21,9 @@ import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort } from "@/lib/store";
-import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
+import { HeaderCell } from "@/components/table/HeaderCell";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 
 // Defaults for the drag-to-resize widths. Users can drag any column to any
@@ -95,12 +97,89 @@ export default function ClientMembersPage() {
   const {
     hiddenCols,
     setHiddenCols,
-    frozenCol,
+    frozenCol: frozenUpTo,
     setFrozenCol,
     hideCol,
   } = useTablePrefs("clientMembers");
   const { sortBy, sortOrder, setSort } = useTableSort("clientMembers");
-  const { getColWidth, startResize } = useColumnResize("clientMembers", COL_WIDTHS_DEFAULT);
+  const { getColWidth, startResize, colWidths } = useColumnResize("clientMembers", COL_WIDTHS_DEFAULT);
+
+  // Cascade-freeze infrastructure — mirrors KPI / Weekly Meeting / Daily
+  // Huddle / Client Master. Freezing column C pins every column from the
+  // always-frozen rail up to and including C as a sticky group.
+  const COL_ORDER = useMemo(
+    () => [
+      "_checkbox", "_log", "_id",
+      "name", "email",
+      "createdBy", "updatedBy", "createdAt", "updatedAt",
+    ],
+    [],
+  );
+  const hiddenSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
+  const headerRowRef = useRef<HTMLTableRowElement>(null);
+  // Seed sticky offsets from colWidths so the first paint already positions
+  // frozen cells correctly. DOM measurement still takes over after layout.
+  const stickyFallback = useMemo(
+    () => ({
+      colOrder: COL_ORDER,
+      railWidths: { _checkbox: 40, _log: 56, _id: 56 } as const,
+      getColWidth,
+    }),
+    [COL_ORDER, getColWidth],
+  );
+  const { getStickyLeft } = useStickyOffsets(
+    headerRowRef,
+    frozenUpTo,
+    hiddenSet,
+    colWidths,
+    stickyFallback,
+  );
+  const isFrozen = useCallback(
+    (col: string): boolean => {
+      if (!frozenUpTo) return false;
+      const i = COL_ORDER.indexOf(col);
+      const j = COL_ORDER.indexOf(frozenUpTo);
+      return i !== -1 && j !== -1 && i <= j;
+    },
+    [frozenUpTo, COL_ORDER],
+  );
+  const handleFreeze = useCallback(
+    (col: string) => setFrozenCol(frozenUpTo === col ? null : col),
+    [frozenUpTo, setFrozenCol],
+  );
+  function tdFreezeClass(k: string): string {
+    return isFrozen(k) ? "sticky z-[10] bg-white" : "";
+  }
+  function freezeStyle(k: string): React.CSSProperties {
+    const w = getColWidth(k);
+    if (isFrozen(k)) return { width: w, minWidth: w, left: getStickyLeft(k) };
+    return { width: w };
+  }
+  const isHidden = (k: string) => hiddenCols.includes(k);
+
+  // Adapter that binds local table state to the shared <HeaderCell>.
+  const Header = (props: {
+    k: string;
+    label: string;
+    sortable?: boolean;
+    sortKey?: string;
+  }) => (
+    <HeaderCell
+      {...props}
+      isHidden={isHidden}
+      getColWidth={getColWidth}
+      startResize={startResize}
+      hideCol={hideCol}
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      setSort={setSort}
+      isFrozen={isFrozen}
+      getStickyLeft={getStickyLeft}
+      frozenUpTo={frozenUpTo}
+      onFreeze={handleFreeze}
+      thClassName="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200"
+    />
+  );
 
   const [editing, setEditing] = useState<{ id: string | null; form: typeof emptyForm } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -174,7 +253,6 @@ export default function ClientMembersPage() {
     { key: "updatedAt",   label: "Updated Date" },
   ];
   const visibleColKeys = moduleColumns.filter(c => !hiddenCols.includes(c.key)).map(c => c.key);
-  const isHidden = (key: string) => hiddenCols.includes(key);
 
   // Export handler — pulls rows per scope, formats via runExport (xlsx).
   async function handleExport(sel: ExportSelection) {
@@ -395,8 +473,12 @@ export default function ClientMembersPage() {
               className="text-xs bg-white border-separate border-spacing-0"
               style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="sticky top-0 bg-accent-50 z-10">
-                <tr>
-                  <th className="sticky z-[35] px-3 py-3 bg-accent-50 border-b border-r border-gray-200"
+                {/* `ref` + `data-col-key` on every `<th>` (rail + user cols)
+                    feed useStickyOffsets so each frozen column gets a `left`
+                    measured from the actual DOM — no hardcoded pixel offsets. */}
+                <tr ref={headerRowRef}>
+                  <th data-col-key="_checkbox"
+                      className="sticky z-[35] px-3 py-3 bg-accent-50 border-b border-r border-gray-200"
                       style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                     <label
                       onClickCapture={(e) => {
@@ -413,98 +495,18 @@ export default function ClientMembersPage() {
                         className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                     </label>
                   </th>
-                  <th className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                  <th data-col-key="_log"
+                      className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
                       style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>Log</th>
-                  <th className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                  <th data-col-key="_id"
+                      className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
                       style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>ID</th>
-                  {!isHidden("name") && (
-                    <th data-col-key="name"
-                        style={{ width: getColWidth("name") }}
-                        className={`group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200 ${frozenCol === "name" ? "sticky left-[152px] z-[15] bg-accent-50" : ""}`}>
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Name{sortBy === "name" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="name"
-                          onSort={(d) => setSort({ sortBy: "name", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "name" ? null : "name")}
-                          onHide={() => hideCol("name")}
-                          frozen={frozenCol === "name"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("name", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("email") && (
-                    <th data-col-key="email"
-                        style={{ width: getColWidth("email") }}
-                        className={`group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200 ${frozenCol === "email" ? "sticky left-[152px] z-[15] bg-accent-50" : ""}`}>
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Email{sortBy === "email" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="email"
-                          onSort={(d) => setSort({ sortBy: "email", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "email" ? null : "email")}
-                          onHide={() => hideCol("email")}
-                          frozen={frozenCol === "email"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("email", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("createdBy") && (
-                    <th data-col-key="createdBy"
-                        style={{ width: getColWidth("createdBy") }}
-                        className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Created By</span>
-                        <ColMenu colKey="createdBy"
-                          onFreeze={() => setFrozenCol(frozenCol === "createdBy" ? null : "createdBy")}
-                          onHide={() => hideCol("createdBy")}
-                          frozen={frozenCol === "createdBy"} showSort={false} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("createdBy", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("updatedBy") && (
-                    <th data-col-key="updatedBy"
-                        style={{ width: getColWidth("updatedBy") }}
-                        className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Updated By</span>
-                        <ColMenu colKey="updatedBy"
-                          onFreeze={() => setFrozenCol(frozenCol === "updatedBy" ? null : "updatedBy")}
-                          onHide={() => hideCol("updatedBy")}
-                          frozen={frozenCol === "updatedBy"} showSort={false} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("updatedBy", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("createdAt") && (
-                    <th data-col-key="createdAt"
-                        style={{ width: getColWidth("createdAt") }}
-                        className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Created Date{sortBy === "createdAt" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="createdAt"
-                          onSort={(d) => setSort({ sortBy: "createdAt", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "createdAt" ? null : "createdAt")}
-                          onHide={() => hideCol("createdAt")}
-                          frozen={frozenCol === "createdAt"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("createdAt", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("updatedAt") && (
-                    <th data-col-key="updatedAt"
-                        style={{ width: getColWidth("updatedAt") }}
-                        className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Updated Date{sortBy === "updatedAt" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="updatedAt"
-                          onSort={(d) => setSort({ sortBy: "updatedAt", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "updatedAt" ? null : "updatedAt")}
-                          onHide={() => hideCol("updatedAt")}
-                          frozen={frozenCol === "updatedAt"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("updatedAt", e.clientX)} />
-                    </th>
-                  )}
+                  <Header k="name" label="Name" sortable />
+                  <Header k="email" label="Email" sortable />
+                  <Header k="createdBy" label="Created By" />
+                  <Header k="updatedBy" label="Updated By" />
+                  <Header k="createdAt" label="Created Date" sortable />
+                  <Header k="updatedAt" label="Updated Date" sortable />
                   <th className="w-10 px-3 py-3 border-b border-gray-200" />
                 </tr>
               </thead>
@@ -540,19 +542,19 @@ export default function ClientMembersPage() {
                         `overflow-hidden` prevents wide content from blowing past the fixed
                         column width set by table-layout: fixed. */}
                     {!isHidden("name") && (
-                      <td style={{ width: getColWidth("name") }} className="px-3 py-3 text-gray-800 overflow-hidden text-ellipsis whitespace-nowrap">
+                      <td style={freezeStyle("name")} className={`px-3 py-3 text-gray-800 overflow-hidden text-ellipsis whitespace-nowrap ${tdFreezeClass("name")}`}>
                         {r.name}
                       </td>
                     )}
                     {!isHidden("email") && (
-                      <td style={{ width: getColWidth("email") }} className="px-3 py-3 overflow-hidden">
+                      <td style={freezeStyle("email")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("email")}`}>
                         <a href={`mailto:${r.email}`} className="text-xs text-gray-700 hover:text-blue-500 hover:underline whitespace-nowrap text-ellipsis overflow-hidden block">
                           {r.email}
                         </a>
                       </td>
                     )}
                     {!isHidden("createdBy") && (
-                      <td style={{ width: getColWidth("createdBy") }} className="px-3 py-3 overflow-hidden">
+                      <td style={freezeStyle("createdBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("createdBy")}`}>
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
                             {r.createdByInitials}
@@ -562,7 +564,7 @@ export default function ClientMembersPage() {
                       </td>
                     )}
                     {!isHidden("updatedBy") && (
-                      <td style={{ width: getColWidth("updatedBy") }} className="px-3 py-3 overflow-hidden">
+                      <td style={freezeStyle("updatedBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("updatedBy")}`}>
                         {r.updatedByName ? (
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
@@ -574,12 +576,12 @@ export default function ClientMembersPage() {
                       </td>
                     )}
                     {!isHidden("createdAt") && (
-                      <td style={{ width: getColWidth("createdAt") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
+                      <td style={freezeStyle("createdAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("createdAt")}`}>
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.createdAt)}</span>
                       </td>
                     )}
                     {!isHidden("updatedAt") && (
-                      <td style={{ width: getColWidth("updatedAt") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
+                      <td style={freezeStyle("updatedAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("updatedAt")}`}>
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.updatedAt)}</span>
                       </td>
                     )}
