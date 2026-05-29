@@ -556,12 +556,16 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     return (
                       <td className={tdClass("lastNotes")} style={stickyStyle("lastNotes", getColWidth("lastNotes"))}>
                         {latest ? (
-                          <span className="line-clamp-2 text-gray-500 leading-snug cursor-default" title={latest.note}>
+                          <div
+                            className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-500 cursor-default pr-1"
+                            style={{ scrollbarWidth: "thin" }}
+                            title={latest.note}
+                          >
                             {latest.weekNumber != null && (
                               <span className="text-gray-400 mr-1">W{latest.weekNumber}:</span>
                             )}
                             {latest.note}
-                          </span>
+                          </div>
                         ) : (
                           <span className="text-gray-300">—</span>
                         )}

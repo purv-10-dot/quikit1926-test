@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-const withOrgAuth = withOrgAuthForModule("orgSetup.users");
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+// RBAC v2: per-action `User` grants gate the Users tab. Replaces the prior
+// module-level gate so admins can delegate "invite users" to a non-admin
+// role without also granting role-management. Admin role bypass is handled
+// inside `userCan()` so admins still pass without any matrix ticks.
+const auth = withOrgAuthForResource("orgSetup.users", "User");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createOrgUserSchema } from "@/lib/schemas/userSchema";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
@@ -74,7 +78,7 @@ const USER_TEAMS_INCLUDE = (orgId: string) => ({
 // org + the QuikScale app appear. Org members who only have access to
 // other apps (e.g. QuikTrack via UserAppAccess but no QuikScale role)
 // are filtered out — they shouldn't show up on the QuikScale Users page.
-export const GET = withOrgAuth(async ({ orgId }, req) => {
+export const GET = auth.view(async ({ orgId }, req) => {
   const { page, limit, skip, take } = parsePagination(req);
   const appId = await getQuikScaleAppId();
 
@@ -145,7 +149,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
 }, { fallbackErrorMessage: "Failed to fetch users" });
 
 // POST /api/org/users
-export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
+export const POST = auth.create(async ({ orgId, userId }, req) => {
   const parsed = createOrgUserSchema.safeParse(await req.json());
   if (!parsed.success) {
     return NextResponse.json(

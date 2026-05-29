@@ -128,8 +128,22 @@ export const PUT = withOrgAuth<{ id: string }>(
     }
 
     const sortIds = <T extends string>(arr: T[]): T[] => [...arr].sort();
+
+    // Compute callStatusOther taking the partial-update semantics into account:
+    //   - status changing to OTHER  → use the new label (refine enforced presence)
+    //   - status changing to non-OTHER → force null so a stale label can't survive
+    //   - only the label changed     → write the new label as-is (existing status stays OTHER)
+    //   - neither field provided     → undefined (Prisma leaves the column untouched)
+    const newCallStatusOther: string | null | undefined = (() => {
+      if (d.callStatus === "OTHER") return d.callStatusOther?.trim() || null;
+      if (d.callStatus !== undefined) return null;
+      if (d.callStatusOther !== undefined) return d.callStatusOther?.trim() || null;
+      return undefined;
+    })();
+
     const oldSnapshot = JSON.stringify({
       callStatus: existing.callStatus,
+      callStatusOther: existing.callStatusOther,
       meetingDate: existing.meetingDate.toISOString(),
       actualStartTime: existing.actualStartTime,
       actualEndTime: existing.actualEndTime,
@@ -162,6 +176,7 @@ export const PUT = withOrgAuth<{ id: string }>(
         data: {
           meetingDate: d.meetingDate ? new Date(d.meetingDate) : undefined,
           callStatus: d.callStatus,
+          callStatusOther: newCallStatusOther,
           actualStartTime: d.actualStartTime,
           actualEndTime: d.actualEndTime,
           segmentTime1: d.segmentTime1,
@@ -242,6 +257,7 @@ export const PUT = withOrgAuth<{ id: string }>(
       where: { id: params.id },
       select: {
         callStatus: true,
+        callStatusOther: true,
         meetingDate: true,
         actualStartTime: true,
         actualEndTime: true,
@@ -276,6 +292,7 @@ export const PUT = withOrgAuth<{ id: string }>(
         oldValue: oldSnapshot,
         newValue: JSON.stringify({
           callStatus: updated?.callStatus,
+          callStatusOther: updated?.callStatusOther,
           meetingDate: updated?.meetingDate.toISOString() ?? null,
           actualStartTime: updated?.actualStartTime,
           actualEndTime: updated?.actualEndTime,

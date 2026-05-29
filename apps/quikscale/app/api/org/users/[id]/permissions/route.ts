@@ -1,13 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 import {
   isResource,
   isAction,
   isValidPermissionPair,
 } from "@/lib/api/permissionsRegistry";
+
+// RBAC v2: editing a user's permission extras still mutates the user record,
+// so `User.view` reads and `User.update` writes. Role rows are unchanged.
+const auth = withOrgAuthForResource("orgSetup.users", "User");
 
 /**
  * Per-user additive permission grants — the "user extras" concept from
@@ -37,15 +41,8 @@ const postBodySchema = z.object({
 
 /* ─────────────────────── GET ─────────────────────── */
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const GET = auth.view<{ id: string }>(async ({ orgId }, _req, { params }) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId } = auth as { orgId: string };
-
     const appId = await getQuikScaleAppId();
     if (!appId) {
       return NextResponse.json(
@@ -128,19 +125,12 @@ export async function GET(
       error instanceof Error ? error.message : "Failed to fetch permissions";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
 
 /* ─────────────────────── POST (atomic replace) ─────────────────────── */
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const POST = auth.update<{ id: string }>(async ({ orgId, userId: actorId }, req, { params }) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId: actorId } = auth as { orgId: string; userId: string };
-
     const parsed = postBodySchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -201,4 +191,4 @@ export async function POST(
       error instanceof Error ? error.message : "Failed to save user permissions";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});

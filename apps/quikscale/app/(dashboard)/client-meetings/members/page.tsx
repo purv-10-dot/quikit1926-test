@@ -17,6 +17,7 @@ import {
 } from "@quikit/ui";
 import { Users, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort } from "@/lib/store";
@@ -395,7 +396,8 @@ export default function ClientMembersPage() {
               style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="sticky top-0 bg-accent-50 z-10">
                 <tr>
-                  <th className="w-10 px-3 py-3 border-b border-gray-200">
+                  <th className="sticky z-[35] px-3 py-3 bg-accent-50 border-b border-r border-gray-200"
+                      style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                     <label
                       onClickCapture={(e) => {
                         if (!canDelete) {
@@ -411,12 +413,14 @@ export default function ClientMembersPage() {
                         className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                     </label>
                   </th>
-                  <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Log</th>
-                  <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">ID</th>
+                  <th className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                      style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>Log</th>
+                  <th className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                      style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>ID</th>
                   {!isHidden("name") && (
                     <th data-col-key="name"
                         style={{ width: getColWidth("name") }}
-                        className={`group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200 ${frozenCol === "name" ? "sticky left-0 z-[15] bg-accent-50" : ""}`}>
+                        className={`group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200 ${frozenCol === "name" ? "sticky left-[152px] z-[15] bg-accent-50" : ""}`}>
                       <div className="flex items-center gap-1">
                         <span className="flex-1">Name{sortBy === "name" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
                         <ColMenu colKey="name"
@@ -431,7 +435,7 @@ export default function ClientMembersPage() {
                   {!isHidden("email") && (
                     <th data-col-key="email"
                         style={{ width: getColWidth("email") }}
-                        className={`group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200 ${frozenCol === "email" ? "sticky left-0 z-[15] bg-accent-50" : ""}`}>
+                        className={`group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200 ${frozenCol === "email" ? "sticky left-[152px] z-[15] bg-accent-50" : ""}`}>
                       <div className="flex items-center gap-1">
                         <span className="flex-1">Email{sortBy === "email" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
                         <ColMenu colKey="email"
@@ -507,7 +511,8 @@ export default function ClientMembersPage() {
               <tbody>
                 {pagedMembers.map(r => (
                   <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
-                    <td className="px-3 py-3 text-center">
+                    <td className="sticky z-[15] bg-white px-3 py-3 text-center border-b border-r border-gray-100"
+                        style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                       <label
                         onClickCapture={(e) => {
                           if (!canDelete) {
@@ -521,12 +526,14 @@ export default function ClientMembersPage() {
                           className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                       </label>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
+                        style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>
                       <button onClick={() => openLog(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
+                        style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>
                       <button onClick={() => openEdit(r)} className="text-blue-600 hover:underline font-medium">{r.displayId}</button>
                     </td>
                     {/* Data cells — explicit width matches the <th> so column-resize sticks.
@@ -617,19 +624,23 @@ export default function ClientMembersPage() {
           title="Client Members"
           subtitle={editing.id ? "Edit record" : "Create new record"}
           footer={
-            <RightPanelFooter>
-              <RightPanelCancelButton onClick={() => setEditing(null)} />
-              {!drawerLocked && (
-                <RightPanelSubmitButton
-                  onClick={handleSubmit} saving={saving}
-                  icon={editing.id ? "check" : "plus"}
-                  label={editing.id ? "Submit" : "Submit"}
-                />
-              )}
-            </RightPanelFooter>
+            // Column wrapper pins the server-error banner above the Cancel/
+            // Submit row so it stays visible on long forms without scrolling.
+            <div className="flex flex-col gap-2 w-full">
+              <FormErrorBanner message={error} />
+              <RightPanelFooter>
+                <RightPanelCancelButton onClick={() => setEditing(null)} />
+                {!drawerLocked && (
+                  <RightPanelSubmitButton
+                    onClick={handleSubmit} saving={saving}
+                    icon={editing.id ? "check" : "plus"}
+                    label={editing.id ? "Submit" : "Submit"}
+                  />
+                )}
+              </RightPanelFooter>
+            </div>
           }
         >
-          {error && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">{error}</div>}
           {drawerLocked && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
               Read-only — your role doesn&apos;t grant {editing.id ? "update" : "create"} access on Client Members.

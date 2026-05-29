@@ -1,13 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 import {
   seedAdminAppRole,
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
 import { assertWouldNotEmptyAdmin, AdminLockoutError } from "@/lib/api/preventAdminLockout";
+
+// RBAC v2: assigning/revoking a user's app role mutates the user record, so
+// it lives under the `User.update` grant (not `Role.update` — the role row
+// itself is unchanged).
+const auth = withOrgAuthForResource("orgSetup.users", "User");
 
 const bodySchema = z.object({
   /** AppRole.id, or null to revoke. Special value "admin" auto-seeds + uses
@@ -29,18 +34,8 @@ const bodySchema = z.object({
  * Pre-condition: the user must already have a `quikit.UserAppAccess` row
  * for QuikScale. If not, returns 409 — the admin must invite them first.
  */
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export const PATCH = auth.update<{ id: string }>(async ({ orgId, userId: actorId }, req, { params }) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId: actorId } = auth as {
-      orgId: string;
-      userId: string;
-    };
-
     const parsed = bodySchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -159,4 +154,4 @@ export async function PATCH(
       { status: 500 },
     );
   }
-}
+});

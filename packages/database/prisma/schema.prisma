@@ -1029,6 +1029,9 @@ model ClientWeeklyMeeting {
   clientId               String
   meetingDate            DateTime
   callStatus             ClientMeetingStatus                  @default(HELD)
+  /// Free-text label entered when callStatus = OTHER. NULL otherwise.
+  /// API handler enforces this invariant on every write.
+  callStatusOther        String?
   /// Overall actual start/end (HH:mm).
   actualStartTime        String?
   actualEndTime          String?
@@ -5992,6 +5995,7 @@ enum ClientMeetingStatus {
   CALL_CANCELLED_BY_CLIENT
   HOLIDAY_FOR_CLIENT
   HOLIDAY_FOR_SUCCESS_ALCHEMIST
+  OTHER
 
   @@schema("app_quikscale")
 }

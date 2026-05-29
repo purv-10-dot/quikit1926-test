@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-const withOrgAuth = withOrgAuthForModule("orgSetup.users");
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+// RBAC v2: per-action `User` grants gate PUT/DELETE. Admin role bypass is
+// handled by `userCan()` so admins still pass without explicit matrix ticks.
+const auth = withOrgAuthForResource("orgSetup.users", "User");
 import { updateOrgUserSchema } from "@/lib/schemas/userSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
 
 // PUT /api/org/users/[id]
-export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const membership = await db.orgMember.findUnique({
     where: { orgId_userId: { orgId, userId: params.id } },
   });
@@ -107,7 +109,7 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
 }, { fallbackErrorMessage: "Failed to update user" });
 
 // DELETE /api/org/users/[id] — deactivate membership
-export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
+export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   if (params.id === userId)
     return NextResponse.json({ success: false, error: "You cannot remove yourself" }, { status: 400 });
 
