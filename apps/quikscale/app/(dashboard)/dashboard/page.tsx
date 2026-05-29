@@ -8,6 +8,7 @@ import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption, FiscalPeriodPicker, type FiscalQuarter } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
@@ -999,8 +1000,15 @@ export default function DashboardPage() {
   // "TeamKPI" = Team KPI. Pattern matches the sidebar's existing nav-gate
   // (components/dashboard/sidebar.tsx).
   const perms = useMyPermissions();
-  const canViewIndividualKPI = perms.has("KPI", "view");
-  const canViewTeamKPI = perms.has("TeamKPI", "view");
+  // Also gate on the org-level feature flags so super-admin disabling
+  // `kpi.individual` or `kpi.teams` for this tenant hides the matching side
+  // of the KPI Type toggle (mirrors how the sidebar gates the nav links —
+  // see components/dashboard/sidebar.tsx). Without this, the toggle still
+  // appeared in the Team-tab filter even when the matching module link was
+  // hidden from the sidebar, snapping users to an empty data view.
+  const disabled = useDisabledModules();
+  const canViewIndividualKPI = perms.has("KPI", "view") && !disabled.has("kpi.individual");
+  const canViewTeamKPI = perms.has("TeamKPI", "view") && !disabled.has("kpi.teams");
   const showKpiTypeToggle = canViewIndividualKPI && canViewTeamKPI;
 
   // If the user's current selection points at a permission they don't have
@@ -1234,7 +1242,17 @@ export default function DashboardPage() {
               </button>
 
               {showFilter && (
-                <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
+                <div
+                  // Stop mousedown from bubbling to the document-level
+                  // click-outside handler. Without this, picking an option in
+                  // the inner FilterPicker dropdown races with React's
+                  // unmount of that button and the outer popover closes too
+                  // — leaving users unable to set multiple filters in one
+                  // session. Clicks truly outside this panel still bubble
+                  // through and close as expected.
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4"
+                >
                   {/* A — Team scope */}
                   <div>
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
@@ -1267,12 +1285,19 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   )}
-                  {/* C — Owner */}
+                  {/* C — Owner. Picking an owner is treated as the "done"
+                      signal for the filter step — committing it auto-closes
+                      the popover so the user gets immediate feedback that
+                      the filter is applied. Team + KPI Type selections keep
+                      the popover open so users can still narrow further. */}
                   <div>
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
                     <FilterPicker
                       value={teamTabOwnerId}
-                      onChange={setTeamTabOwnerId}
+                      onChange={(v) => {
+                        setTeamTabOwnerId(v);
+                        setShowFilter(false);
+                      }}
                       options={users.map(userToFilterOption)}
                       allLabel="All Users"
                       hasMore={usersHasMore}
