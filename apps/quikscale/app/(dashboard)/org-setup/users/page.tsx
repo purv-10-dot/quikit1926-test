@@ -1106,6 +1106,9 @@ export default function OrgUsersPage() {
   }, [crud.items, crud.search, roleFilter, statusFilter]);
 
   function handleSaved(user: OrgUser & { tempPassword?: string }) {
+    // Optimistic write keeps the list responsive while the temp-password
+    // modal opens — no ~150ms gap between "User invited" toast and the new
+    // row appearing.
     crud.setItems((prev) => {
       const idx = prev.findIndex((u) => u.userId === user.userId);
       if (idx >= 0) {
@@ -1115,6 +1118,13 @@ export default function OrgUsersPage() {
       }
       return [...prev, user];
     });
+    // Reconcile with server. The POST response doesn't always carry every
+    // field the canonical GET returns — auto-assigned UserAppRole, joined
+    // team names, lastSignInAt, etc. land via downstream hooks (the
+    // optional PATCH /role, default-role seeder, audit-log writer). Without
+    // this refetch the optimistically-written row could stay partially
+    // stale until the admin hard-reloaded the page.
+    crud.refetch();
     // Bust shared caches — user team assignment / role / status changes ripple
     // into every consumer that reads users or teams.
     queryClient.invalidateQueries({ queryKey: ["teams"] });
@@ -1547,7 +1557,11 @@ function TempPasswordModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      // `z-[200]` so the modal sits above the `z-[100]` dashboard header in
+      // `components/dashboard/header.tsx`. Matches the convention used by the
+      // confirm-delete modal at line 987 in this file. Lower z-indexes left
+      // the header + sidebar bright and clickable on top of the backdrop.
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
       <div

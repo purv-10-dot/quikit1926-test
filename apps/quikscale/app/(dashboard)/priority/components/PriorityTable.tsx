@@ -425,14 +425,15 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
       <HorizontalScroller className="flex-1">
         <table
           className="border-collapse"
-          // `width: max-content` (instead of `width: 100%`) for the Dashboard
-          // preview lets the table size to its actual column-widths sum.
-          // Resizing one column (e.g. priorityName) no longer steals space
-          // from the elastic week columns — the table simply grows and the
-          // wrapping <HorizontalScroller> scrolls the overflow. Standalone
-          // page (fillWidth=false) keeps its original `minWidth: max-content`.
+          // `fillWidth=true` (Dashboard preview): stretch to the container so
+          // the table doesn't leave a gray gap on the right when the natural
+          // column-widths sum is narrower than the available space. The
+          // `minWidth: max-content` floor still kicks in when total widths
+          // EXCEED the container, so horizontal scroll continues to work via
+          // the wrapping <HorizontalScroller>.
+          // Standalone page (`fillWidth=false`) keeps natural sizing.
           style={fillWidth
-            ? { width: "max-content", tableLayout: "fixed" }
+            ? { width: "100%", minWidth: "max-content", tableLayout: "fixed" }
             : { minWidth: "max-content", tableLayout: "fixed" }}>
           {/* Sticky header — matches KPITable behaviour. Without `sticky top-0`
               on the <thead>, the header row scrolls away with the body during
@@ -736,26 +737,46 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                   {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
                       Populated by GET /api/priority via decorateAudit. */}
                   {COL_ORDER.includes("createdBy") && (
-                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
-                      style={{ width: getColWidth("createdBy"), minWidth: getColWidth("createdBy") }}>
+                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("createdBy") ? "sticky" : ""}`}
+                      style={{
+                        left: isColFrozen("createdBy") ? getLeftOffset("createdBy") : undefined,
+                        width: getColWidth("createdBy"),
+                        minWidth: getColWidth("createdBy"),
+                        boxShadow: lastFrozenKey === "createdBy" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                      }}>
                       <UserAuditCell name={priority.createdByName} initials={priority.createdByInitials} />
                     </td>
                   )}
                   {COL_ORDER.includes("updatedBy") && (
-                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
-                      style={{ width: getColWidth("updatedBy"), minWidth: getColWidth("updatedBy") }}>
+                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("updatedBy") ? "sticky" : ""}`}
+                      style={{
+                        left: isColFrozen("updatedBy") ? getLeftOffset("updatedBy") : undefined,
+                        width: getColWidth("updatedBy"),
+                        minWidth: getColWidth("updatedBy"),
+                        boxShadow: lastFrozenKey === "updatedBy" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                      }}>
                       <UserAuditCell name={priority.updatedByName} initials={priority.updatedByInitials} />
                     </td>
                   )}
                   {COL_ORDER.includes("createdAt") && (
-                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
-                      style={{ width: getColWidth("createdAt"), minWidth: getColWidth("createdAt") }}>
+                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("createdAt") ? "sticky" : ""}`}
+                      style={{
+                        left: isColFrozen("createdAt") ? getLeftOffset("createdAt") : undefined,
+                        width: getColWidth("createdAt"),
+                        minWidth: getColWidth("createdAt"),
+                        boxShadow: lastFrozenKey === "createdAt" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                      }}>
                       <DateAuditCell iso={priority.createdAt} />
                     </td>
                   )}
                   {COL_ORDER.includes("updatedAt") && (
-                    <td className="border-r border-gray-100 px-3 py-1.5 bg-inherit"
-                      style={{ width: getColWidth("updatedAt"), minWidth: getColWidth("updatedAt") }}>
+                    <td className={`z-20 border-r border-gray-100 px-3 py-1.5 bg-inherit ${isColFrozen("updatedAt") ? "sticky" : ""}`}
+                      style={{
+                        left: isColFrozen("updatedAt") ? getLeftOffset("updatedAt") : undefined,
+                        width: getColWidth("updatedAt"),
+                        minWidth: getColWidth("updatedAt"),
+                        boxShadow: lastFrozenKey === "updatedAt" ? "2px 0 4px -1px rgba(0,0,0,0.08)" : undefined,
+                      }}>
                       <DateAuditCell iso={priority.updatedAt} />
                     </td>
                   )}

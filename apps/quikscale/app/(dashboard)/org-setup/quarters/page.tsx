@@ -227,27 +227,6 @@ function EditPanel({
   );
 }
 
-/* ─── Confirm Delete ─────────────────────────────────────────────────────────── */
-function ConfirmDelete({
-  open, quarter, onConfirm, onCancel,
-}: { open: boolean; quarter: string; onConfirm: () => void; onCancel: () => void }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl p-6 w-80">
-        <h3 className="text-sm font-bold text-gray-900 mb-2">Delete {quarter}?</h3>
-        <p className="text-xs text-gray-500 mb-5">
-          This quarter setting will be permanently removed. This action cannot be undone.
-        </p>
-        <div className="flex items-center justify-end gap-2">
-          <button onClick={onCancel} className="px-4 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">Cancel</button>
-          <button onClick={onConfirm} className="px-4 py-2 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg">Delete</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ─── Confirm Delete Fiscal Year ─────────────────────────────────────────────
  *
  * Hard-delete confirmation for an entire FY (all 4 QuarterSetting rows).
@@ -510,7 +489,6 @@ export default function QuarterSettingsPage() {
   const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set());
   const [editRow,       setEditRow]       = useState<QuarterRow | null>(null);
   const [panelOpen,     setPanelOpen]     = useState(false);
-  const [deleteRow,     setDeleteRow]     = useState<QuarterRow | null>(null);
   const [deleteFY,      setDeleteFY]      = useState<number | null>(null);
   const [deletingFY,    setDeletingFY]    = useState(false);
   const [generateOpen,  setGenerateOpen]  = useState(false);
@@ -610,16 +588,6 @@ export default function QuarterSettingsPage() {
       fetchRows(fy);
       invalidateFiscalYearsCache();
     }
-  }
-
-  async function handleDelete(row: QuarterRow) {
-    const res  = await fetch(`/api/org/quarters/${row.id}`, { method: "DELETE" });
-    const json = await res.json();
-    if (json.success) {
-      setRows(prev => prev.filter(r => r.id !== row.id));
-      invalidateFiscalYearsCache();
-    }
-    setDeleteRow(null);
   }
 
   async function handleBulkDelete() {
@@ -747,19 +715,11 @@ export default function QuarterSettingsPage() {
                       </button>
                     )
                   )}
-                  {fyHasData ? (
-                    <span title="Quarter cannot be deleted — data exists for this fiscal year"
-                      className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-300 cursor-not-allowed">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => setDeleteRow(row)}
-                      className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+                  {/* Per-row delete intentionally removed — Quarter rows are
+                      a fixed Q1..Q4 set per fiscal year and only the FY-level
+                      Delete (in the header three-dot menu) is exposed. The
+                      Pencil above still edits Q1's start date when the year
+                      has no goals yet. */}
                 </div>
               </td>
             </tr>
@@ -963,14 +923,6 @@ export default function QuarterSettingsPage() {
         onSaved={handleSaved}
         row={editRow}
         canUpdate={canUpdate}
-      />
-
-      {/* ── Confirm Delete (single quarter) ── */}
-      <ConfirmDelete
-        open={!!deleteRow}
-        quarter={deleteRow?.quarter ?? ""}
-        onConfirm={() => deleteRow && handleDelete(deleteRow)}
-        onCancel={() => setDeleteRow(null)}
       />
 
       {/* ── Confirm Delete Fiscal Year (hard delete of all 4 quarters) ── */}

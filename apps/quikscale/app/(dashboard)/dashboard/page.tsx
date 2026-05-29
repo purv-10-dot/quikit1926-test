@@ -1402,7 +1402,12 @@ export default function DashboardPage() {
           }
         >
           {priLoading ? <Spinner /> : (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            // No `overflow-hidden` here — PriorityTable already wraps itself
+            // in HorizontalScroller, which IS the correct scroll context for
+            // its sticky frozen columns. Clipping at this outer layer
+            // prevented the inner sticky cascade from ever triggering when
+            // the column widths exceeded the dashboard container.
+            <div className="bg-white border border-gray-200 rounded-xl">
               <PriorityTable
                 priorities={pagedPriorities}
                 onRefresh={() => {}}
