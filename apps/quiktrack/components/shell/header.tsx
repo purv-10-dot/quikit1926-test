@@ -71,7 +71,7 @@ export function Header({ onToggleSidebar }: HeaderProps) {
     <header className="h-12 bg-white border-b border-gray-200 px-3 flex items-center gap-3 sticky top-0 z-50">
       <div className="flex items-center gap-2">
         <AppSwitcherVertical />
-        <Link href="/" className="flex items-center px-1">
+        <Link href="/dashboard" className="flex items-center px-1">
           <Image
             src="/header-icon.png"
             alt="QuikTrack"

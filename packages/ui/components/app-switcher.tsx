@@ -277,7 +277,31 @@ export function AppSwitcher({ apiUrl = "/api/apps/switcher", prefetch = true }: 
                       key={app.id}
                       onClick={() => {
                         setOpen(false);
-                        window.location.href = app.baseUrl;
+                        // Route the launch through the auth host's post-login
+                        // bridge so the user lands on the target app already
+                        // signed in. Direct navigation to app.baseUrl would
+                        // hit the target with no cookie (cookies don't cross
+                        // hosts/ports), bouncing the user back through
+                        // launcher → auth /login. The bridge reads the
+                        // existing auth-host session, mints a short-lived
+                        // handoff JWT, and redirects to the target's
+                        // /auth-handoff endpoint, which plants a host-scoped
+                        // session cookie before sending the user to
+                        // /dashboard. Same mechanism the marketing landing's
+                        // Login button uses (see buildLoginUrl).
+                        //
+                        // When already on the same app, skip the bridge —
+                        // it's just a navigation to its own dashboard.
+                        const target = `${app.baseUrl.replace(/\/+$/, "")}/dashboard`;
+                        if (isCurrent) {
+                          window.location.href = target;
+                          return;
+                        }
+                        const authBase = (
+                          (typeof process !== "undefined" && process.env.NEXT_PUBLIC_AUTH_URL) ||
+                          "http://localhost:3001"
+                        ).replace(/\/+$/, "");
+                        window.location.href = `${authBase}/api/post-login?callbackUrl=${encodeURIComponent(target)}`;
                       }}
                       className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-colors ${
                         isCurrent

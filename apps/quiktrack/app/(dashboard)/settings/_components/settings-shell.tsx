@@ -29,7 +29,7 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-[calc(100vh-48px)]">
       <aside className="w-60 shrink-0 border-r border-gray-200 bg-white flex flex-col">
         <div className="px-4 py-3 border-b border-gray-200">
-          <Link href="/" className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700">
+          <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700">
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to QuikTrack
           </Link>

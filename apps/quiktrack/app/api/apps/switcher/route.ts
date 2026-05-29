@@ -49,7 +49,42 @@ export async function GET() {
     : [];
 
   const accessSet = new Set(accessRecords.map((a) => a.appId));
-  const data = allApps.filter((app) => accessSet.has(app.id));
+
+  // Env-override map: if the deployment supplies a per-app URL via env, use
+  // it instead of the DB's stored baseUrl. Lets local dev (.env.local with
+  // localhost ports) run against a Neon DB whose App.baseUrl rows hold prod
+  // URLs. Mirrors apps/quikit/app/api/apps/launcher/route.ts.
+  const envBaseUrls: Record<string, string | undefined> = {
+    quikit: process.env.QUIKIT_URL,
+    quikscale: process.env.QUIKSCALE_URL,
+    admin: process.env.ADMIN_URL,
+    quiktrack: process.env.QUIKTRACK_URL,
+    quikvc: process.env.QUIKVC_URL,
+    quikinfra: process.env.QUIKINFRA_URL,
+    quiksocial: process.env.QUIKSOCIAL_URL,
+  };
+  const isDev = process.env.NODE_ENV !== "production";
+  const devLocalhostFallbacks: Record<string, string> = {
+    quikit: "http://localhost:3000",
+    auth: "http://localhost:3001",
+    admin: "http://localhost:3002",
+    quikscale: "http://localhost:3003",
+    quiktrack: "http://localhost:3004",
+    quikvc: "http://localhost:3005",
+    quikinfra: "http://localhost:3006",
+    quiksocial: "http://localhost:3007",
+  };
+  function resolveBaseUrl(slug: string, dbBaseUrl: string | null | undefined): string {
+    const fromEnv = envBaseUrls[slug];
+    if (fromEnv) return fromEnv;
+    if (dbBaseUrl) return dbBaseUrl;
+    if (isDev && devLocalhostFallbacks[slug]) return devLocalhostFallbacks[slug];
+    return "";
+  }
+
+  const data = allApps
+    .filter((app) => accessSet.has(app.id))
+    .map((app) => ({ ...app, baseUrl: resolveBaseUrl(app.slug, app.baseUrl) }));
   const quikitUrl = process.env.QUIKIT_URL ?? null;
 
   return NextResponse.json(

@@ -167,7 +167,7 @@ export function Sidebar() {
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">
           {canSee("home") && (
-            <NavRow href="/" icon={User} label="For you" active={isActive("/")} />
+            <NavRow href="/dashboard" icon={User} label="For you" active={isActive("/dashboard")} />
           )}
           {/* TODO: Recent + Plans + Starred + Apps — coming soon. Restore when ready.
           <div ref={recentRowRef}>

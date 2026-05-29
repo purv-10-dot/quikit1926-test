@@ -84,6 +84,7 @@ export async function getTenantContext(): Promise<TenantContext | null> {
     const authOptionsMod = await import("./next-auth-options");
     const session = await getServerSession(authOptionsMod.authOptions);
     if (!session?.user) {
+      logger.warn({ msg: "tenant_context_no_session" });
       return null;
     }
     const s = session.user as any;
@@ -116,6 +117,7 @@ export async function getTenantContext(): Promise<TenantContext | null> {
     if (!s.id || !s.roleKey) {
       logger.warn({
         msg: "tenant_context_session_missing_fields",
+        email: s.email,
         hasId: Boolean(s.id),
         hasRoleKey: Boolean(s.roleKey),
         hasOrgId: Boolean(s.orgId),
@@ -165,7 +167,13 @@ export async function getTenantContext(): Promise<TenantContext | null> {
       return null;
     }
     return buildContextFromSession(s);
-  } catch {
+  } catch (err) {
+    // Log the failure so silent 401s are diagnosable in the dev terminal.
+    logger.error({
+      msg: "tenant_context_threw",
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return null;
   }
 }

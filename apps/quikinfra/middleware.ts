@@ -31,7 +31,9 @@ function generateRequestId(): string {
 
 const sharedMiddleware = createMiddleware({
   loginRoute: "/login",
-  publicRoutes: ["/login", "/invite", "/reset-password", "/auth-handoff", "/api/auth"],
+  // `/` is public so the marketing landing renders without auth. The landing
+  // page component itself server-redirects authed users to /dashboard.
+  publicRoutes: ["/", "/login", "/invite", "/reset-password", "/auth-handoff", "/api/auth"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
@@ -122,7 +124,7 @@ export async function middleware(request: NextRequest) {
 }
 
 // Matcher covers API routes too (for the request-id header) but skips
-// static assets and Next internals.
+// static assets, Next internals, and the marketing /public asset folder.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|marketing/).*)"],
 };
