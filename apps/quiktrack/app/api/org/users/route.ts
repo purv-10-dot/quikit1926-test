@@ -97,9 +97,11 @@ function buildUserResponse(
   };
 }
 
-// GET /api/org/users — list every OrgMember who has been granted access to
-// QuikTrack (i.e. holds a UserAppAccess row for the QuikTrack app). Excludes
-// people who only belong to sibling apps like QuikScale / QuikIT launcher.
+// GET /api/org/users — list every OrgMember who is a member of at least one
+// QuikTrack project (QtProjectMember). Tightest signal for "real QuikTrack
+// user": UserAppAccess and QtUserAppRole are both auto-granted by side
+// flows (e.g. the Jira importer), which caused QuikScale-only / Jira-only
+// users to leak into this list.
 export const GET = withOrgAuth(async ({ orgId }) => {
   const appId = await getQuikTrackAppId();
 
@@ -108,14 +110,18 @@ export const GET = withOrgAuth(async ({ orgId }) => {
     return NextResponse.json({ success: true, data: [] });
   }
 
-  // Pre-resolve the userIds that actually have QuikTrack access in this org.
-  // Used to filter the OrgMember query so we don't ship members of other
-  // apps in the same org.
-  const accessRows = await db.userAppAccess.findMany({
-    where: { orgId, appId },
+  // Pre-resolve the userIds who actually belong to a QuikTrack project in
+  // this org. Scoped to non-deleted memberships on non-deleted projects in
+  // the current org.
+  const memberRows = await db.qtProjectMember.findMany({
+    where: {
+      isDeleted: false,
+      project: { orgId, isDeleted: false },
+    },
     select: { userId: true },
+    distinct: ["userId"],
   });
-  const quiktrackUserIds = accessRows.map((r) => r.userId);
+  const quiktrackUserIds = memberRows.map((r) => r.userId);
 
   if (quiktrackUserIds.length === 0) {
     return NextResponse.json({ success: true, data: [] });

@@ -13,9 +13,12 @@
  *   - Comments → QtIssueComment.
  *   - Worklog → QtTimesheetEntry.
  *
+ * Attachments: downloaded from Jira and re-uploaded to the QuikTrack S3
+ *   bucket, then linked via QtIssueAttachment. Files over
+ *   ATTACHMENT_MAX_BYTES are skipped (counted separately). Network/upload
+ *   failures are counted and the import continues.
+ *
  * NOT in v1:
- *   - Attachments (needs new QtIssueAttachment model + S3 wiring — separate
- *     migration; the importer logs how many were skipped per project).
  *   - Issue changelog / history.
  *   - Custom fields beyond Story Points (auto-detected).
  *
@@ -26,13 +29,23 @@
  */
 
 import { db } from "@/lib/db";
-import { JiraClient, adfToPlainText, type JiraCreds } from "./jira-client";
+import {
+  JiraClient,
+  adfToPlainText,
+  adfToHtml,
+  ATTACHMENT_PLACEHOLDER_PREFIX,
+  type JiraCreds,
+} from "./jira-client";
 import {
   seedAllDefaultRoles,
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
 import { getQuikTrackAppId } from "@/lib/api/permissions";
+import { buildIssueAttachmentKey, putObject } from "@/lib/s3";
 import crypto from "node:crypto";
+
+/** Cap per attachment. Anything larger is skipped + counted. */
+const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
 
 /* ──────────────────────── Types from Jira REST API ──────────────────────── */
 
@@ -164,7 +177,11 @@ export interface MigrationReport {
     issues: number;
     comments: number;
     worklog: number;
-    attachmentsSkipped: number;
+    attachments: {
+      imported: number;
+      skippedTooLarge: number;
+      failed: number;
+    };
   };
   /** Project-by-project breakdown for the success screen. */
   projectsImported: Array<{
@@ -219,7 +236,7 @@ export async function migrateFromJira(
       issues: 0,
       comments: 0,
       worklog: 0,
-      attachmentsSkipped: 0,
+      attachments: { imported: 0, skippedTooLarge: 0, failed: 0 },
     },
     projectsImported: [],
     unresolvedUsers: [],
@@ -279,6 +296,46 @@ export async function migrateFromJira(
   const humans = allJiraUsers.filter(
     (u) => u.active && u.accountType !== "app" && u.accountType !== "customer",
   );
+
+  // Privacy-mode fallback chain — /users/search returns emailAddress=null
+  // for users with "Only you" visibility. We try two endpoints in order to
+  // recover those addresses:
+  //   1. /rest/api/3/user/email/bulk — fastest, but Atlassian gates it to
+  //      Marketplace apps with whitelisted JWT; user-issued tokens get a
+  //      400. Tried first in case the tenant has it enabled.
+  //   2. /rest/api/3/user/bulk — accepts user tokens, returns full user
+  //      objects. Discovery-mode privacy doesn't always apply to targeted
+  //      lookups, so this sometimes releases emails /users/search hid.
+  // Patches `humans` in-place so the rest of the loop sees them as normal
+  // matched/created users.
+  let missingEmailIds = humans
+    .filter((u) => !u.emailAddress)
+    .map((u) => u.accountId);
+  if (missingEmailIds.length > 0) {
+    const recoveredEmails = await jira.getEmailsForAccountIds(missingEmailIds);
+    for (const h of humans) {
+      if (!h.emailAddress) {
+        const recovered = recoveredEmails.get(h.accountId);
+        if (recovered) h.emailAddress = recovered;
+      }
+    }
+  }
+  // Recompute the still-missing list after fallback 1 and try fallback 2.
+  missingEmailIds = humans
+    .filter((u) => !u.emailAddress)
+    .map((u) => u.accountId);
+  if (missingEmailIds.length > 0) {
+    const recoveredUsers = await jira.getUsersByAccountIds(missingEmailIds);
+    const byAcct = new Map(recoveredUsers.map((u) => [u.accountId, u] as const));
+    for (const h of humans) {
+      if (!h.emailAddress) {
+        const recovered = byAcct.get(h.accountId);
+        if (recovered?.emailAddress) {
+          h.emailAddress = recovered.emailAddress;
+        }
+      }
+    }
+  }
 
   for (const j of humans) {
     const lookupEmail = j.emailAddress?.trim().toLowerCase();
@@ -692,11 +749,20 @@ async function migrateOneProject(args: {
         }
       }
 
-      // Attachments — count + skip (no model yet).
-      const atts =
-        (ji.fields as unknown as { attachment?: Array<unknown> }).attachment ??
-        [];
-      report.counts.attachmentsSkipped += atts.length;
+      // Parse attachment metadata — actual download/upload happens after
+      // the issue row exists below (needs the QuikTrack issue id for the
+      // S3 key + FK).
+      const jiraAttachments =
+        ((ji.fields as unknown as {
+          attachment?: Array<{
+            id?: string;
+            filename?: string;
+            mimeType?: string;
+            size?: number;
+            content?: string;
+            author?: { accountId?: string };
+          }>;
+        }).attachment) ?? [];
 
       // Auto-join the assignee + reporter as project members so they can
       // see issues they own when they sign in. The actor was added when
@@ -721,13 +787,18 @@ async function migrateOneProject(args: {
         }
       }
 
+      // HTML so inline images (ADF `media` nodes) and basic formatting
+      // survive. Image src attributes start as ATTACHMENT_PLACEHOLDER_PREFIX
+      // and get rewritten to /api/issues/.../attachments/... URLs after
+      // attachments are uploaded below.
+      const description = adfToHtml(ji.fields.description);
+
       if (!dryRun && qtProjectId && resolvedStatusId) {
         // Idempotent by (projectId, key).
         const existing = await db.qtIssue.findFirst({
           where: { projectId: qtProjectId, key: ji.key },
           select: { id: true },
         });
-        const description = adfToPlainText(ji.fields.description);
         if (existing) {
           await db.qtIssue.update({
             where: { id: existing.id },
@@ -775,6 +846,120 @@ async function migrateOneProject(args: {
       }
       report.counts.issues += 1;
       issueCount += 1;
+
+      // Attachments — download from Jira, push to S3, link via
+      // QtIssueAttachment. Idempotent on (issueId, sourceSystem, sourceId)
+      // so re-running the import doesn't duplicate. Failures are counted
+      // but never abort the issue.
+      const qtIssueId = issueMap.get(ji.key);
+      // Two lookups for the description rewrite below:
+      //   1. attachment.id → QtIssueAttachment id (best when ADF media id
+      //      matches the REST attachment id — uncommon on real Jira sites)
+      //   2. filename → QtIssueAttachment id (the realistic match — the
+      //      ADF media node carries a Media Services UUID that has no
+      //      relation to the REST attachment.id, but `alt` always contains
+      //      the filename)
+      const jiraToQtAttId = new Map<string, string>();
+      const filenameToQtAttId = new Map<string, string>();
+      if (!dryRun && qtIssueId && qtProjectId && jiraAttachments.length > 0) {
+        for (const att of jiraAttachments) {
+          if (!att.content || !att.filename) continue;
+          if (typeof att.size === "number" && att.size > ATTACHMENT_MAX_BYTES) {
+            report.counts.attachments.skippedTooLarge += 1;
+            continue;
+          }
+          // Idempotency probe — skip if already imported.
+          if (att.id) {
+            const existingAtt = await db.qtIssueAttachment.findFirst({
+              where: {
+                issueId: qtIssueId,
+                sourceSystem: "jira",
+                sourceAttachmentId: att.id,
+              },
+              select: { id: true },
+            });
+            if (existingAtt) {
+              jiraToQtAttId.set(att.id, existingAtt.id);
+              filenameToQtAttId.set(att.filename, existingAtt.id);
+              report.counts.attachments.imported += 1;
+              continue;
+            }
+          }
+          try {
+            const { bytes, contentType } = await jira.fetchBinary(att.content);
+            if (bytes.byteLength > ATTACHMENT_MAX_BYTES) {
+              report.counts.attachments.skippedTooLarge += 1;
+              continue;
+            }
+            const mime = att.mimeType || contentType || "application/octet-stream";
+            const key = buildIssueAttachmentKey(
+              orgId,
+              qtProjectId,
+              qtIssueId,
+              att.filename,
+            );
+            await putObject(key, bytes, mime);
+            const uploaderQt = att.author?.accountId
+              ? userMap.get(att.author.accountId) ?? actorUserId
+              : actorUserId;
+            const createdAtt = await db.qtIssueAttachment.create({
+              data: {
+                orgId,
+                projectId: qtProjectId,
+                issueId: qtIssueId,
+                fileName: att.filename,
+                mimeType: mime,
+                sizeBytes: bytes.byteLength,
+                s3Key: key,
+                sourceSystem: "jira",
+                sourceAttachmentId: att.id ?? null,
+                uploadedBy: uploaderQt,
+              },
+              select: { id: true },
+            });
+            if (att.id) jiraToQtAttId.set(att.id, createdAtt.id);
+            filenameToQtAttId.set(att.filename, createdAtt.id);
+            report.counts.attachments.imported += 1;
+          } catch {
+            report.counts.attachments.failed += 1;
+          }
+        }
+
+        // Rewrite description placeholders → real download URLs. Operates
+        // on whole <img ...> tags so we can fall back to the filename-in-alt
+        // when the ADF media id doesn't match the REST attachment id (which
+        // is the common case — see comment on filenameToQtAttId above).
+        const hasAttachmentRows =
+          jiraToQtAttId.size > 0 || filenameToQtAttId.size > 0;
+        if (
+          hasAttachmentRows &&
+          description &&
+          description.includes(ATTACHMENT_PLACEHOLDER_PREFIX)
+        ) {
+          const rewritten = description.replace(
+            /<img\s+([^>]*?)src="quiktrack-attachment:([^"]+)"([^>]*?)\/?>/g,
+            (match: string, before: string, jiraId: string, after: string) => {
+              // Try by media id first, then by alt (filename).
+              let qtAttId = jiraToQtAttId.get(jiraId);
+              if (!qtAttId) {
+                const altMatch =
+                  /alt="([^"]+)"/.exec(before) ?? /alt="([^"]+)"/.exec(after);
+                if (altMatch) {
+                  qtAttId = filenameToQtAttId.get(altMatch[1]);
+                }
+              }
+              if (!qtAttId) return match;
+              return `<img ${before}src="/api/issues/${qtIssueId}/attachments/${qtAttId}?redirect=1"${after}/>`;
+            },
+          );
+          if (rewritten !== description) {
+            await db.qtIssue.update({
+              where: { id: qtIssueId },
+              data: { description: rewritten },
+            });
+          }
+        }
+      }
 
       // Comments + worklog after the issue row exists.
       if (!dryRun) {

@@ -29,7 +29,11 @@ interface MigrationReport {
     issues: number;
     comments: number;
     worklog: number;
-    attachmentsSkipped: number;
+    attachments: {
+      imported: number;
+      skippedTooLarge: number;
+      failed: number;
+    };
   };
   projectsImported: Array<{ key: string; name: string; issueCount: number; sprintCount: number }>;
   unresolvedUsers: string[];
@@ -265,14 +269,11 @@ function MigrationView() {
               />
             </div>
 
-            <div className="mt-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-200">
-              <strong className="font-semibold">
-                Attachments are not yet supported.
-              </strong>{" "}
-              The importer counts them but skips the upload. Adding attachment
-              support requires a new{" "}
-              <code className="font-mono">QtIssueAttachment</code> table + S3
-              wiring; tracked as a follow-up.
+            <div className="mt-5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 text-[12px] text-gray-700 dark:border-gray-700/50 dark:bg-gray-900/20 dark:text-gray-200">
+              <strong className="font-semibold">Attachments</strong> are
+              downloaded from Jira and uploaded to QuikTrack's S3 bucket. Files
+              larger than 25 MB are skipped (counted separately). Dry-run skips
+              the upload — uncheck dry-run to actually transfer files.
             </div>
           </StepCard>
         )}
@@ -558,9 +559,21 @@ function ReportPanel({ report }: { report: MigrationReport }) {
         />
       </div>
 
-      {report.counts.attachmentsSkipped > 0 && (
-        <p className="text-[12px] text-amber-700 dark:text-amber-300">
-          ⚠ {report.counts.attachmentsSkipped} attachment{report.counts.attachmentsSkipped === 1 ? "" : "s"} skipped (attachment support not built yet).
+      {(report.counts.attachments.imported > 0 ||
+        report.counts.attachments.skippedTooLarge > 0 ||
+        report.counts.attachments.failed > 0) && (
+        <p className="text-[12px] text-gray-700 dark:text-gray-300">
+          Attachments: {report.counts.attachments.imported} imported
+          {report.counts.attachments.skippedTooLarge > 0 && (
+            <span className="text-amber-700 dark:text-amber-300">
+              {" "}· {report.counts.attachments.skippedTooLarge} skipped (&gt; 25 MB)
+            </span>
+          )}
+          {report.counts.attachments.failed > 0 && (
+            <span className="text-red-700 dark:text-red-300">
+              {" "}· {report.counts.attachments.failed} failed
+            </span>
+          )}
         </p>
       )}
 

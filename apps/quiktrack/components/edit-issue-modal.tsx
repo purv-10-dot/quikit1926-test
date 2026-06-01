@@ -31,6 +31,7 @@ import {
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
+import { IssueAttachments } from "@/components/issue-attachments";
 import { AlertCircle } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
@@ -1054,6 +1055,9 @@ export function EditIssueModal({
                   onOpenIssue={(id) => setCurrentIssueId(id)}
                 />
               )}
+
+              {/* Attachments — read-only list, sourced from migration imports. */}
+              {issue?.id && <IssueAttachments issueId={issue.id} />}
 
               {/* Details (collapsible) */}
               <div className={`border border-gray-200 rounded-md ${!perms.loading && !canUpdateIssue ? "opacity-80" : ""}`}>
