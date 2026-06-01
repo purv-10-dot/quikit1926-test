@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -17,7 +18,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { receiptDate: "desc" },
   });
   return NextResponse.json({ success: true, data: list });
-});
+}, { permission: { resource: "construction.finance", action: "view" } });
 
 /**
  * POST /api/finance/receipts — record a client receipt + allocations.
@@ -86,4 +87,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   });
 
   return NextResponse.json({ success: true, data: result }, { status: 201 });
-});
+}, { permission: { resource: "construction.finance", action: "create" } });

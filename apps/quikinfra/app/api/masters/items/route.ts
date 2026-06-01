@@ -20,6 +20,11 @@ import { withListRoute, withMutationRoute, DomainError } from "@/lib/http";
  */
 
 export async function GET(req: NextRequest) {
+  // Items are lookup/reference data picked across modules (PR / BOQ / GRN /
+  // stock), so the LIST is readable by ANY authenticated user in the org —
+  // no Masters permission required. Still scoped to ctx.orgId below, so a
+  // user only ever sees their own org's items. Create/edit/delete (POST etc.)
+  // still require the full Masters permission.
   return withListRoute(
     req,
     { entityLabel: "item" },
@@ -67,6 +72,7 @@ export async function POST(req: NextRequest) {
     {
       entityLabel: "item",
       successStatus: 201,
+      requirePermission: "construction.masters.create",
       requireMatrix: { menuKey: "master.item", action: "add" },
       parseBody: (raw): ItemBody => {
         const body = (raw ?? {}) as Record<string, unknown>;

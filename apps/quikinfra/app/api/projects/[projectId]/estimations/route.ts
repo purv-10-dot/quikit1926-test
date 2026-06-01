@@ -1,6 +1,7 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   createEstimation,
@@ -24,10 +25,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { projectId: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
+  const ctxOrResp = await requireProjectsFinanceAction("construction.estimation", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   const data = await listEstimations(ctx.orgId, {
     projectId: params.projectId,
     allowedProjectIds: ctx.projectIds ?? null,
@@ -39,10 +39,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { projectId: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
+  const ctxOrResp = await requireProjectsFinanceAction("construction.estimation", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "pm.estimation", "add")) {
     return envelopeErr("FORBIDDEN", `Action "add" not allowed for pm.estimation`, 403);
   }

@@ -1,5 +1,6 @@
+import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { db } from "@/lib/db/prisma";
@@ -25,10 +26,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
+  const ctxOrResp = await requireStoreAction("construction.gatepass", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   const row = await findGatePassById(ctx.orgId, params.id);
   if (!row) {
     return NextResponse.json({ error: "Gate Pass not found" }, { status: 404 });
@@ -118,10 +118,9 @@ export async function GET(
 }
 
 async function handleUpdate(req: NextRequest, id: string) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
+  const ctxOrResp = await requireStoreAction("construction.gatepass", "edit");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "store.gate_pass", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.gate_pass`, 403);
   }
@@ -202,10 +201,9 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
+  const ctxOrResp = await requireStoreAction("construction.gatepass", "delete");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "store.gate_pass", "delete")) {
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for store.gate_pass`, 403);
   }

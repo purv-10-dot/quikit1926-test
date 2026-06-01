@@ -50,12 +50,12 @@ async function fetchMe(): Promise<MeResponse> {
   // 401 means the JWT cookie is still valid but the user no longer is —
   // typically because an admin deactivated the account. The server-side
   // getTenantContext() rejects deactivated cn_users rows; we react here
-  // by signing out, which clears the cookie and bounces to /login.
+  // by signing out, which clears the cookie and bounces to central auth.
   // Without this the user would keep clicking around with stale
   // permissions, getting 401s on each call.
   if (res.status === 401) {
     const { signOutAndClear } = await import("@/lib/auth/client-logout");
-    await signOutAndClear("/login");
+    await signOutAndClear();
     throw new Error("Session invalidated");
   }
   if (!res.ok) throw new Error(`Failed to load /api/me: ${res.status}`);

@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -14,4 +15,4 @@ export const GET = withOrgAuth(async ({ orgId }, _req, ctx: { params: { id: stri
   });
   if (!p) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: p });
-});
+}, { permission: { resource: "construction.finance", action: "view" } });

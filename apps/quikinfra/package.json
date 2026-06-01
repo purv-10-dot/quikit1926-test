@@ -11,8 +11,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
-    "test:watch": "vitest",
-    "db:seed:dummy": "tsx --env-file=.env.local scripts/seed-dummy.ts"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@quikit/auth": "*",

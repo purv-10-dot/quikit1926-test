@@ -12,6 +12,7 @@
  */
 
 import { db } from "@/lib/db/prisma";
+import { findCnUsersByIds } from "@/lib/users/lookup";
 
 export interface ApprovalHistoryRecord {
   id: string;
@@ -34,15 +35,10 @@ export async function listHistoryForInstance(
 
   if (rows.length === 0) return [];
 
-  const userIds = Array.from(new Set(rows.map((r: any) => r.actionById)));
-  const users = userIds.length
-    ? await (db as any).cnUser.findMany({
-        where: { id: { in: userIds } },
-        select: { id: true, fullName: true },
-      })
-    : [];
+  const userIds = Array.from(new Set(rows.map((r: any) => r.actionById))) as string[];
+  const users = await findCnUsersByIds(userIds);
   const nameById = new Map<string, string>(
-    users.map((u: any) => [u.id, u.fullName]),
+    users.map((u) => [u.id, u.fullName]),
   );
 
   return rows.map((r: any) => ({

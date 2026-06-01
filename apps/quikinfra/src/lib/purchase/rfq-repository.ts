@@ -206,6 +206,7 @@ function enrichVendor(
     vendorName:
       v.vendorName || master?.companyName || master?.name || "",
     email: v.email ?? master?.email ?? "",
+    phone: master?.phone ?? "",
     assignedItemIds,
     sentAt: v.sentAt?.toISOString?.() ?? null,
     respondedAt: v.respondedAt?.toISOString?.() ?? null,

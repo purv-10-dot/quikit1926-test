@@ -1,33 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { boqService, BOQError } from "@/lib/boq";
-import { requirePermission } from "@/lib/auth/context";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { getTenantContext } from "@/lib/auth/context";
 
 /**
  * Unlock BOQ — Super Admin override per spec §11.4
  * POST /api/projects/:projectId/boq/unlock
  *
- * Requires `boq.unlock` permission (typically granted only to Super Admin).
+ * v2 permission gate: `construction.boq` + `lock` — same authority as
+ * locking. There's no separate `unlock` action because anyone who can
+ * lock a BOQ also needs to be able to unlock it (otherwise BOQs get
+ * stranded).
  */
-export async function POST(
-  _req: NextRequest,
-  { params }: { params: { projectId: string } }
-) {
-  const ctxOrResponse = await requirePermission("boq.unlock", {
-    matrix: { menuKey: "pm.boq", action: "edit" },
-  });
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+const auth = withOrgAuthForResource("construction.boq");
 
-  try {
-    const state = await boqService.unlockBOQ(ctx, params.projectId);
-    return NextResponse.json({ success: true, lockState: state });
-  } catch (err: any) {
-    if (err instanceof BOQError) {
+export const POST = auth.lock<{ projectId: string }>(
+  async (_authCtx, _req, { params }) => {
+    const ctx = await getTenantContext();
+    if (!ctx) {
       return NextResponse.json(
-        { error: err.message, code: err.code },
-        { status: err.httpStatus }
+        { success: false, error: "Unauthorized" },
+        { status: 401 },
       );
     }
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
-}
+
+    try {
+      const state = await boqService.unlockBOQ(ctx, params.projectId);
+      return NextResponse.json({ success: true, lockState: state });
+    } catch (err: unknown) {
+      if (err instanceof BOQError) {
+        return NextResponse.json(
+          { success: false, error: err.message, code: err.code },
+          { status: err.httpStatus },
+        );
+      }
+      const message = err instanceof Error ? err.message : "Operation failed";
+      return NextResponse.json({ success: false, error: message }, { status: 500 });
+    }
+  },
+);

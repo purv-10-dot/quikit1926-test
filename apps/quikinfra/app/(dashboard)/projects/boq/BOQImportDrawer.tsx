@@ -447,6 +447,17 @@ function flattenSelfFill(
   return rows;
 }
 
+// A 403 from any BOQ upload/import endpoint means the user's role lacks the
+// `construction.boq.import` permission — surface a clear message instead of
+// the generic "Forbidden" the auth layer returns.
+const NO_IMPORT_PERMISSION_MSG =
+  "You don't have permission to import the BOQ. Please contact your administrator.";
+
+function boqUploadError(res: Response, json: any, fallback: string): string {
+  if (res.status === 403) return NO_IMPORT_PERMISSION_MSG;
+  return json?.error ?? json?.message ?? fallback;
+}
+
 export function BOQImportDrawer({ open, onClose, projectId }: Props) {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -541,7 +552,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
       );
       const json = await res.json();
       if (!res.ok) {
-        setError(json.error ?? json.message ?? "Failed to scan workbook");
+        setError(boqUploadError(res, json, "Failed to scan workbook"));
         setStage("pick");
         return;
       }
@@ -676,7 +687,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
       );
       const json = await res.json();
       if (!res.ok) {
-        setError(json.error ?? json.message ?? "Failed to parse workbook");
+        setError(boqUploadError(res, json, "Failed to parse workbook"));
         setStage("mapping");
         return;
       }
@@ -834,7 +845,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
       });
       const json = await res.json();
       if (!res.ok) {
-        setError(json.error ?? json.message ?? "Failed to parse file");
+        setError(boqUploadError(res, json, "Failed to parse file"));
         setStage("pick");
         return;
       }
@@ -945,7 +956,7 @@ export function BOQImportDrawer({ open, onClose, projectId }: Props) {
       const json = await res.json();
 
       if (!res.ok) {
-        setError(json.error ?? json.message ?? `Import failed (HTTP ${res.status})`);
+        setError(boqUploadError(res, json, `Import failed (HTTP ${res.status})`));
         setStage(mode === "SELF_FILL" ? "pick" : "preview");  // UNIVERSAL uses "preview" too
         return;
       }

@@ -168,46 +168,45 @@ export class BOQRepository {
   ): Promise<BOQItem[]> {
     if (parsedNodes.length === 0) return [];
 
-    // Run in a transaction so partial failures don't leave orphan rows.
-    const inserted = await db.$transaction(async (tx) => {
-      const out: any[] = [];
-      for (const n of parsedNodes) {
-        const estimateAmt = (n.tender_qty ?? 0) * (n.rate ?? 0);
-        const created = await (tx as any).cnBOQItemV2.create({
-          data: {
-            orgId: ctx.orgId,
-            projectId,
-            category: n.category,
-            boqNo: n.boq_no,
-            parentBoqNo: n.parent_boq_no,
-            depth: n.depth,
-            sortOrder: n.sort_order,
-            isGroup: n.is_group,
-            displayName: n.display_name,
-            description: n.description ?? "",
-            unit: n.unit,
-            tenderQty: n.tender_qty,
-            rate: n.rate,
-            estimateAmt,
-            scopeQty: n.scope_qty,
-            subDoneQty: n.sub_done_qty,
-            selfDoneQty: n.self_done_qty,
-            billedQty: n.billed_qty,
-            startDate: n.start_date ? new Date(n.start_date) : null,
-            endDate: n.end_date ? new Date(n.end_date) : null,
-            isNegative: n.is_negative,
-            sourceSheet: n.source_sheet,
-            importBatchId: n.import_batch_id,
-            createdBy: ctx.userId,
-            updatedBy: ctx.userId,
-          },
-        });
-        out.push(created);
-      }
-      return out;
+    // Single bulk INSERT … RETURNING instead of a per-row create loop inside
+    // an interactive transaction. The old loop made one round-trip per row;
+    // on a cold/slow DB a large import blew past Prisma's default 5s
+    // interactive-transaction timeout, which closed the tx mid-loop and
+    // surfaced "Transaction API error: Transaction not found" on the next
+    // create. `createManyAndReturn` is one statement (atomic on its own,
+    // so partial failures still can't leave orphan rows) and returns the
+    // created rows so the response mapping below is unchanged.
+    const inserted = await (db as any).cnBOQItemV2.createManyAndReturn({
+      data: parsedNodes.map((n) => ({
+        orgId: ctx.orgId,
+        projectId,
+        category: n.category,
+        boqNo: n.boq_no,
+        parentBoqNo: n.parent_boq_no,
+        depth: n.depth,
+        sortOrder: n.sort_order,
+        isGroup: n.is_group,
+        displayName: n.display_name,
+        description: n.description ?? "",
+        unit: n.unit,
+        tenderQty: n.tender_qty,
+        rate: n.rate,
+        estimateAmt: (n.tender_qty ?? 0) * (n.rate ?? 0),
+        scopeQty: n.scope_qty,
+        subDoneQty: n.sub_done_qty,
+        selfDoneQty: n.self_done_qty,
+        billedQty: n.billed_qty,
+        startDate: n.start_date ? new Date(n.start_date) : null,
+        endDate: n.end_date ? new Date(n.end_date) : null,
+        isNegative: n.is_negative,
+        sourceSheet: n.source_sheet,
+        importBatchId: n.import_batch_id,
+        createdBy: ctx.userId,
+        updatedBy: ctx.userId,
+      })),
     });
 
-    return inserted.map(toBOQItem);
+    return (inserted as any[]).map(toBOQItem);
   }
 
   // ─── Replace ─────────────────────────────────────────────────────

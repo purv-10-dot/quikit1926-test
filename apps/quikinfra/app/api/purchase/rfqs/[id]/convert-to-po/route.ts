@@ -122,4 +122,4 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
   });
 
   return NextResponse.json({ success: true, data: po }, { status: 201 });
-});
+}, { permission: { resource: "construction.po", action: "create" } });

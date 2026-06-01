@@ -31,7 +31,7 @@ function generateRequestId(): string {
 
 const sharedMiddleware = createMiddleware({
   loginRoute: "/login",
-  publicRoutes: ["/login", "/invite", "/reset-password", "/auth-handoff", "/api/auth"],
+  publicRoutes: ["/invite", "/auth-handoff", "/api/auth"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
@@ -66,19 +66,6 @@ export async function middleware(request: NextRequest) {
       res.headers.set("x-request-id", requestId);
       return res;
     }
-  }
-
-  // Forced password reset — only applies to local-credentials sessions
-  // that carry the mustChangePassword flag; central-auth sessions never
-  // set it.
-  if (
-    token &&
-    (token as { mustChangePassword?: boolean }).mustChangePassword === true &&
-    pathname !== "/reset-password"
-  ) {
-    const res = NextResponse.redirect(new URL("/reset-password", request.url));
-    res.headers.set("x-request-id", requestId);
-    return res;
   }
 
   // Delegate auth-gate + central-login redirect to the shared middleware.

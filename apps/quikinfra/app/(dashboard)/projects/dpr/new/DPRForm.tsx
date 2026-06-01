@@ -1389,8 +1389,8 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                   addLabel="Add a staff member"
                 />
               ) : (
-                <div className="border border-gray-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="border border-gray-200 rounded-xl overflow-x-auto">
+                  <table className="w-full text-sm min-w-[860px]">
                     <thead className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase font-bold text-gray-500">
                       <tr>
                         <th className="px-3 py-2 text-left">Name</th>
@@ -1473,8 +1473,8 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                   addLabel="Add machinery"
                 />
               ) : (
-                <div className="border border-gray-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="border border-gray-200 rounded-xl overflow-x-auto">
+                  <table className="w-full text-sm min-w-[960px]">
                     <thead className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase font-bold text-gray-500">
                       <tr>
                         <th className="px-3 py-2 text-left">Description</th>

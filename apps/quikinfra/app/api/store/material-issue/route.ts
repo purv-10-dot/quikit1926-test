@@ -21,7 +21,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { issueDate: "desc" },
   });
   return NextResponse.json({ success: true, data: issues });
-});
+}, { permission: { resource: "construction.issue", action: "view" } });
 
 /**
  * POST /api/store/material-issue — create MI as DRAFT.
@@ -76,4 +76,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   });
 
   return NextResponse.json({ success: true, data: issue }, { status: 201 });
-});
+}, { permission: { resource: "construction.issue", action: "create" } });

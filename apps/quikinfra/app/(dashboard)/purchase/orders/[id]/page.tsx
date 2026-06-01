@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Package, Download, Send, FileText, Mail, Phone, X as XIcon, Lock, AlertTriangle } from "lucide-react";
+import { Package, Download, Send, FileText, Mail, Phone, X as XIcon, Lock, AlertTriangle, Eye } from "lucide-react";
 import { WhatsAppLink } from "@/components/WhatsAppLink";
 import dynamic from "next/dynamic";
 const PoSubmitPreviewModal = dynamic(
@@ -598,20 +598,26 @@ export default function PODetailPage() {
                     <Package className="w-4 h-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="text-sm font-semibold text-gray-900">
-                        {vendorName}
-                      </span>
-                      {po.vendorEmail && (
-                        <span className="inline-flex items-center gap-1 text-xs text-gray-500 break-all">
-                          <Mail className="w-3 h-3 shrink-0" />
-                          {po.vendorEmail}
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="text-sm font-semibold text-gray-900">
+                          {vendorName}
                         </span>
-                      )}
-                      {po.vendorPhone && (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
-                          <Phone className="w-3 h-3 shrink-0" />
-                          {po.vendorPhone}
+                        {po.vendorEmail && (
+                          <span className="inline-flex items-center gap-1 text-xs text-gray-500 break-all">
+                            <Mail className="w-3 h-3 shrink-0" />
+                            {po.vendorEmail}
+                          </span>
+                        )}
+                        {po.vendorPhone && (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                            <Phone className="w-3 h-3 shrink-0" />
+                            {po.vendorPhone}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 ml-auto">
+                        {po.vendorPhone && (
                           <WhatsAppLink
                             phone={String(po.vendorPhone)}
                             message={
@@ -626,8 +632,20 @@ export default function PODetailPage() {
                             }
                             className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white hover:bg-[#20bd5a] transition-colors"
                           />
-                        </span>
-                      )}
+                        )}
+                        {lines.length > 0 && (
+                          <a
+                            href={`/api/purchase/orders/${id}/preview/pdf`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 hover:underline"
+                            title="Open the PO PDF in a new tab"
+                          >
+                            <Eye className="w-3 h-3" />
+                            View PDF
+                          </a>
+                        )}
+                      </div>
                     </div>
                     {po.vendorContactPerson && (
                       <p className="text-[11px] text-gray-500 mt-1">

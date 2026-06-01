@@ -22,7 +22,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params 
   });
   if (!grn) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: grn });
-});
+}, { permission: { resource: "construction.grn", action: "view" } });
 
 export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.cnGoodsReceiptNote.findFirst({
@@ -41,4 +41,4 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req
     data: { deletedAt: new Date(), updatedBy: userId },
   });
   return NextResponse.json({ success: true });
-});
+}, { permission: { resource: "construction.grn", action: "delete" } });

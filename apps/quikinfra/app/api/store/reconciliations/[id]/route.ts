@@ -1,6 +1,7 @@
+import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext } from "@/lib/auth/context";
+
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
 
@@ -17,11 +18,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
-
+  const ctxOrResp = await requireStoreAction("construction.reconciliation", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   const row = await (db as any).cnStockReconciliation.findFirst({
     where: { id: params.id, orgId: ctx.orgId },
     include: {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 import { getTenantContext } from "@/lib/auth/context";
 import {
   findFinancialYearById,
@@ -10,8 +11,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const row = await findFinancialYearById(ctx.orgId, params.id);
   if (!row) return NextResponse.json({ error: "Financial year not found" }, { status: 404 });
@@ -68,8 +70,9 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("delete");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   const ok = await deleteFinancialYear(ctx.orgId, params.id, ctx.userId);
   if (!ok) return NextResponse.json({ error: "Financial year not found" }, { status: 404 });
   return NextResponse.json({ success: true });

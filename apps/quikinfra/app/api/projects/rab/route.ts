@@ -1,6 +1,7 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";
 import { BOQError } from "@/lib/boq";
@@ -25,8 +26,9 @@ import { parsePagination } from "@/lib/http/pagination";
  */
 
 export async function GET(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  const ctxOrResp = await requireProjectsFinanceAction("construction.rab", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "";
@@ -94,8 +96,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await getTenantContext();
-    if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    const ctxOrResp = await requireProjectsFinanceAction("construction.rab", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
     if (!hasMatrixAction(ctx, "pm.dpr", "add")) {
       return envelopeErr("FORBIDDEN", `Action "add" not allowed for pm.dpr`, 403);
     }

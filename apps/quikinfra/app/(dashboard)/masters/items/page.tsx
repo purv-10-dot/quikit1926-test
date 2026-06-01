@@ -606,16 +606,14 @@ export default function ItemsPage() {
               />
             </Field>
             <Field label="Category" required error={errors.category}>
-              <div className="space-y-2">
-                <SelectInput
-                  value={form.category}
-                  onChange={onCategoryChange}
-                  options={effectiveCategoryOptions}
-                  placeholder="Select category"
-                  searchable={effectiveCategoryOptions.length >= 8}
-                  invalid={!!errors.category}
-                />
-              </div>
+              <SelectInput
+                value={form.category}
+                onChange={onCategoryChange}
+                options={effectiveCategoryOptions}
+                placeholder="Select category"
+                searchable={effectiveCategoryOptions.length >= 8}
+                invalid={!!errors.category}
+              />
             </Field>
           </FormRow>
           <Field label="Units of Measurement" required error={errors.uomIds} hint="Pick one or more — e.g. Bag and Kg" span={2}>

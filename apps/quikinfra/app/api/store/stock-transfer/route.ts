@@ -17,7 +17,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { transferDate: "desc" },
   });
   return NextResponse.json({ success: true, data: transfers });
-});
+}, { permission: { resource: "construction.transfer", action: "view" } });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
@@ -57,4 +57,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     include: { lines: true },
   });
   return NextResponse.json({ success: true, data: tr }, { status: 201 });
-});
+}, { permission: { resource: "construction.transfer", action: "create" } });

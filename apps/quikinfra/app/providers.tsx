@@ -24,6 +24,17 @@ export function Providers({ children }: { children: ReactNode }) {
           queries: {
             staleTime: 60 * 1000,
             refetchOnWindowFocus: false,
+            // Don't retry client errors (401/403/404/422) — retrying a
+            // doomed request (e.g. a non-admin hitting an admin-only
+            // endpoint) just hammers the server "again and again". Retry
+            // server/network errors once, in case the DB was briefly cold.
+            retry: (failureCount, error) => {
+              const status = (error as { status?: number })?.status;
+              if (typeof status === "number" && status >= 400 && status < 500) {
+                return false;
+              }
+              return failureCount < 1;
+            },
           },
         },
         mutationCache: new MutationCache({

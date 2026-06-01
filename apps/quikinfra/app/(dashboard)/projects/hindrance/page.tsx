@@ -23,6 +23,18 @@ const CATEGORY_OPTIONS = [
   { value: "Other", label: "Other" },
 ];
 
+function computeDaysLost(from: string, to: string): string {
+  if (!from) return "";
+  const start = new Date(`${from}T00:00:00`);
+  if (isNaN(start.getTime())) return "";
+  const endStr = to || new Date().toISOString().slice(0, 10);
+  const end = new Date(`${endStr}T00:00:00`);
+  if (isNaN(end.getTime())) return "";
+  const ms = end.getTime() - start.getTime();
+  const days = Math.floor(ms / 86400000) + 1;
+  return String(Math.max(0, days));
+}
+
 export default function HindrancePage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState("all");
@@ -59,13 +71,13 @@ export default function HindrancePage() {
         label: "Date From",
         type: "date" as const,
         required: true,
-        // When the start date moves forward past the current end date,
-        // wipe the end so the user has to re-pick — prevents stale
-        // invalid ranges sneaking through to submit.
         onChange: (v: string, formData: Record<string, string>) => {
-          if (formData.dateTo && v && formData.dateTo < v) {
-            return { dateTo: "" };
-          }
+          const wipeTo = !!(formData.dateTo && v && formData.dateTo < v);
+          const nextTo = wipeTo ? "" : formData.dateTo;
+          return {
+            ...(wipeTo ? { dateTo: "" } : {}),
+            daysLost: computeDaysLost(v, nextTo),
+          };
         },
       },
       {
@@ -74,6 +86,9 @@ export default function HindrancePage() {
         type: "date" as const,
         placeholder: "Leave blank if ongoing",
         min: (f: Record<string, string>) => f.dateFrom || undefined,
+        onChange: (v: string, formData: Record<string, string>) => ({
+          daysLost: computeDaysLost(formData.dateFrom, v),
+        }),
       },
       { key: "daysLost", label: "Days Lost", type: "number" as const, required: true, placeholder: "0" },
       { key: "status", label: "Status", type: "select" as const, required: true, options: [{ value: "Active", label: "Active" }, { value: "Resolved", label: "Resolved" }], placeholder: "Select status" },

@@ -43,7 +43,7 @@ export function DPRDrawer({
     <>
       <div className={RIGHT_DRAWER_BACKDROP} onClick={onClose} />
       <div className={RIGHT_DRAWER_FRAME}>
-        <div className={`${RIGHT_DRAWER_PANEL} max-w-3xl`}>
+        <div className={`${RIGHT_DRAWER_PANEL} max-w-[min(96vw,72rem)]`}>
         <button
           type="button"
           onClick={onClose}

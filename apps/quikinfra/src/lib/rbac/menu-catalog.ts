@@ -217,11 +217,59 @@ export function buildMatrixFromModules(
   const out: PermissionMatrix = {};
   for (const item of MENU_CATALOG) {
     const grant = assigned.has(item.module);
+    // Assigning a module grants the FULL action set (add/edit/delete/view)
+    // on its pages by default — so a user given a module can actually
+    // operate it, matching the role's grants. Unassigned modules get nothing.
+    // The admin can still untick specific actions and Save to narrow it.
     out[item.key] = {
       add: item.supports.add && grant,
       edit: item.supports.edit && grant,
       delete: item.supports.delete && grant,
       view: item.supports.view && grant,
+    };
+  }
+  return out;
+}
+
+/**
+ * Module-driven display matrix for the Permissions admin page.
+ *
+ * Starts from the assigned-modules view-only scaffold, then overlays the
+ * user's saved matrix ONLY for pages whose module is actually assigned.
+ * Pages in UNASSIGNED modules stay fully off — this suppresses the
+ * "granted-unless-revoked" display noise where a non-assigned page shows
+ * ticked just because:
+ *   - it shares a v2 resource with an assigned module (e.g. Assets/Tools
+ *     maps to `construction.stock`, the same resource as the Store module), or
+ *   - the revoke set didn't explicitly cover every action (leaving stray
+ *     ticks like delete-only on Quality pages or add-only on Projects), or
+ *   - a system page (Approvals/Reports) was never revoked.
+ *
+ * Result: the matrix shows ONLY the assigned modules' pages — view-ticked by
+ * default, with the admin's own within-module edits preserved.
+ */
+export function buildModuleScopedMatrix(
+  modulesAssigned: string[] | null | undefined,
+  saved: PermissionMatrix | null | undefined,
+): PermissionMatrix {
+  const assigned = new Set(
+    (modulesAssigned ?? [])
+      .map((k) => MODULE_KEY_TO_MENU_MODULE[k])
+      .filter(Boolean),
+  );
+  const out = buildMatrixFromModules(modulesAssigned);
+  if (!saved) return out;
+  for (const item of MENU_CATALOG) {
+    if (!assigned.has(item.module)) continue; // unassigned → keep base (off)
+    const row = saved[item.key];
+    if (!row) continue;
+    out[item.key] = {
+      add: item.supports.add && row.add === true,
+      edit: item.supports.edit && row.edit === true,
+      delete: item.supports.delete && row.delete === true,
+      // Assigned-module pages are viewable by default; respect an explicit
+      // saved deny (view === false) but default to on when unspecified.
+      view: item.supports.view && row.view !== false,
     };
   }
   return out;
