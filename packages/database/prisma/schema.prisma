@@ -219,6 +219,7 @@ model Org {
   QtTimesheetEntry        QtTimesheetEntry[]
   QtUserActivity          QtUserActivity[]
   QtUserViewPref          QtUserViewPref[]
+  QtReportView            QtReportView[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
   vcApplications          VCApplication[]
@@ -1199,27 +1200,27 @@ model OPSPData {
 }
 
 model OPSPReviewEntry {
-  id            String   @id @default(cuid())
-  orgId         String
-  opspId        String
-  userId        String
-  horizon       String
-  rowIndex      Int
-  category      String
-  period        String
-  targetValue   Decimal? @db.Decimal(20, 4)
-  achievedValue Decimal? @db.Decimal(20, 4)
+  id                 String   @id @default(cuid())
+  orgId              String
+  opspId             String
+  userId             String
+  horizon            String
+  rowIndex           Int
+  category           String
+  period             String
+  targetValue        Decimal? @db.Decimal(20, 4)
+  achievedValue      Decimal? @db.Decimal(20, 4)
   // Manually-entered "Last Year Same Period" — only populated when the prior
   // year's OPSPReviewEntry doesn't supply an auto value (in which case the
   // drawer disables the field). See app/api/opsp/review/route.ts.
   lastYearSamePeriod Decimal? @db.Decimal(20, 4)
-  comment       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  updatedBy     String?
-  opsp          OPSPData @relation(fields: [opspId], references: [id], onDelete: Cascade)
-  org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment            String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  updatedBy          String?
+  opsp               OPSPData @relation(fields: [opspId], references: [id], onDelete: Cascade)
+  org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, opspId, horizon, rowIndex, period])
   @@index([orgId])
@@ -4813,29 +4814,29 @@ model VCAuditLog {
 }
 
 model QtProject {
-  id          String            @id @default(cuid())
-  orgId       String
-  projectKey  String
-  name        String
-  description String?
-  projectType String            @default("software")
-  icon        String?
-  color       String?           @default("#2563eb")
-  status      String            @default("active")
-  startDate   DateTime?
-  endDate     DateTime?
-  leadUserId  String?
-  isDeleted   Boolean           @default(false)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  docs        QtDoc[]
-  issues      QtIssue[]
-  statuses    QtIssueStatus[]
-  issueTypes  QtIssueType[]
-  pages       QtPage[]
-  taskGroups  QtTaskGroup[]
+  id               String              @id @default(cuid())
+  orgId            String
+  projectKey       String
+  name             String
+  description      String?
+  projectType      String              @default("software")
+  icon             String?
+  color            String?             @default("#2563eb")
+  status           String              @default("active")
+  startDate        DateTime?
+  endDate          DateTime?
+  leadUserId       String?
+  isDeleted        Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  createdBy        String?
+  updatedBy        String?
+  docs             QtDoc[]
+  issues           QtIssue[]
+  statuses         QtIssueStatus[]
+  issueTypes       QtIssueType[]
+  pages            QtPage[]
+  taskGroups       QtTaskGroup[]
   org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   members          QtProjectMember[]
   teams            QtProjectTeam[]
@@ -4880,18 +4881,18 @@ model QtProjectMember {
 // QtProjectMember.projectRoleId assigns a ProjectRole to a project member.
 
 model QtAppRole {
-  id          String             @id @default(cuid())
-  orgId       String
-  appId       String
-  name        String
-  description String?
-  isSystem    Boolean            @default(false)
-  isDefault   Boolean            @default(false)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  createdBy   String?
-  app         App                @relation(fields: [appId], references: [id], onDelete: Cascade)
-  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id               String                  @id @default(cuid())
+  orgId            String
+  appId            String
+  name             String
+  description      String?
+  isSystem         Boolean                 @default(false)
+  isDefault        Boolean                 @default(false)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  createdBy        String?
+  app              App                     @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org              Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   navigations      QtRoleNavigation[]
   permissions      QtRolePermission[]
   fieldPermissions QtRoleFieldPermission[]
@@ -4964,7 +4965,7 @@ model QtRoleFieldPermission {
   roleId String
   entity String
   field  String
-  level  String    // "hidden" | "readonly" | "editable" | "required"
+  level  String // "hidden" | "readonly" | "editable" | "required"
   role   QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, entity, field])
@@ -4994,7 +4995,7 @@ model QtProjectRoleFieldPermission {
   projectRoleId String
   entity        String
   field         String
-  level         String        // "hidden" | "readonly" | "editable" | "required"
+  level         String // "hidden" | "readonly" | "editable" | "required"
   projectRole   QtProjectRole @relation(fields: [projectRoleId], references: [id], onDelete: Cascade)
 
   @@unique([projectRoleId, entity, field])
@@ -5439,6 +5440,26 @@ model QtUserViewPref {
 
   @@unique([userId, projectId, viewKey])
   @@index([orgId])
+  @@schema("app_quiktrack")
+}
+
+/// Saved filter+chart presets for the executive reports page. Each row is
+/// one preset owned by a single user (private to that user). `filtersJson`
+/// is the opaque blob the UI persists — shape is owned by the client; the
+/// server only validates that it is an object.
+model QtReportView {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String
+  kind        String   @default("executive")
+  name        String
+  filtersJson Json
+  isPinned    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  Org         Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, userId, kind])
   @@schema("app_quiktrack")
 }
 
