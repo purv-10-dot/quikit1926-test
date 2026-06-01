@@ -43,6 +43,7 @@ import {
   MessageCircle as MessageSquareReply,
 } from "lucide-react";
 import { QuikPostButton } from "@/components/quik-post";
+import { QuikitAppSwitcher } from "@/components/quikit-app-switcher";
 import { useBrandCreation } from "@/components/providers/BrandCreationContext";
 import { useWorkspaceRole } from "@/hooks/useWorkspaceRole";
 
@@ -1363,6 +1364,11 @@ export default function DashboardLayout({
             }),
           }}
         >
+          {/* QuiKit app switcher — 3×3 grid icon + glass popover, local
+              styled (see apps/quiksocial/components/quikit-app-switcher.tsx
+              for why we don't import @quikit/ui's AppSwitcher here). */}
+          <QuikitAppSwitcher />
+
           {/* Notification bell */}
           <button
             type="button"
