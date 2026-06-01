@@ -51,11 +51,33 @@ import { runExport } from "@/lib/export/xlsx";
 import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
 
-type Status = "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT";
+// All statuses that can appear in the data — mirrors the `ClientMeetingStatus`
+// Prisma enum. NOT_HELD stays in the union so legacy records still type-check
+// and display, even though it's no longer offered in the picker.
+type Status =
+  | "HELD"
+  | "NOT_HELD"
+  | "CALL_CANCELLED_BY_CLIENT"
+  | "HOLIDAY_FOR_CLIENT"
+  | "HOLIDAY_FOR_SUCCESS_ALCHEMIST";
+
+// Display labels for every status (used by the table cell + badge), so legacy
+// NOT_HELD rows still read nicely even though it isn't selectable.
+const STATUS_LABELS: Record<Status, string> = {
+  HELD: "Held",
+  NOT_HELD: "Not Held",
+  CALL_CANCELLED_BY_CLIENT: "Call cancelled by client",
+  HOLIDAY_FOR_CLIENT: "Holiday for client",
+  HOLIDAY_FOR_SUCCESS_ALCHEMIST: "Holiday for Success Alchemist",
+};
+
+// Options offered in the Create/Edit dropdown. NOT_HELD intentionally omitted
+// per product decision — existing NOT_HELD records still display via STATUS_LABELS.
 const STATUS_OPTS: Array<{ value: Status; label: string }> = [
-  { value: "HELD", label: "Held" },
-  { value: "NOT_HELD", label: "Not Held" },
-  { value: "CALL_CANCELLED_BY_CLIENT", label: "Cancelled by Client" },
+  { value: "HELD", label: STATUS_LABELS.HELD },
+  { value: "CALL_CANCELLED_BY_CLIENT", label: STATUS_LABELS.CALL_CANCELLED_BY_CLIENT },
+  { value: "HOLIDAY_FOR_CLIENT", label: STATUS_LABELS.HOLIDAY_FOR_CLIENT },
+  { value: "HOLIDAY_FOR_SUCCESS_ALCHEMIST", label: STATUS_LABELS.HOLIDAY_FOR_SUCCESS_ALCHEMIST },
 ];
 
 interface ClientOpt { id: string; name: string; teamMembers: { id: string; name: string; email: string }[] }
@@ -106,9 +128,10 @@ function fmtDateTime(iso: string) {
 function statusBadge(s: Status) {
   return s === "HELD" ? "bg-green-100 text-green-700"
        : s === "NOT_HELD" ? "bg-red-100 text-red-700"
-       : "bg-amber-100 text-amber-700";
+       : s === "CALL_CANCELLED_BY_CLIENT" ? "bg-amber-100 text-amber-700"
+       : "bg-blue-100 text-blue-700"; // holidays — neutral/info
 }
-function statusLabel(s: Status) { return STATUS_OPTS.find(o => o.value === s)?.label ?? s; }
+function statusLabel(s: Status) { return STATUS_LABELS[s] ?? s; }
 
 export default function DailyHuddlePage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("DailyHuddle");

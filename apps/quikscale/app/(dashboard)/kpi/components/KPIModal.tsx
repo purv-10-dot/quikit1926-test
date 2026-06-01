@@ -119,6 +119,13 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
+  // While a breakdown cell is focused we show the user's raw keystrokes instead
+  // of the reformatted/derived value. Reformatting to toFixed(2) on every
+  // keystroke made multi-digit entry impossible (e.g. "22" snapped back to
+  // "2.00" because the caret landed after the ".00"). The change handlers still
+  // run live (clamp + redistribution + final formatting) — this is display-only.
+  const [editingCell, setEditingCell] = useState<{ key: string; raw: string } | null>(null);
+
   // Team picker dropdown state (create mode, team scope)
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
   const [teamSearch, setTeamSearch] = useState("");
@@ -634,7 +641,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         const { quarter: _q, measurementUnit: _mu, currency: _c, owner: _o, ...editPayload } = payload;
         await updateKPI.mutateAsync(editPayload);
       }
-      notify.saved("KPI", mode === "create" ? "created" : "updated", { tint });
+      notify.saved(isTeamScope ? "Team KPI" : "Individual KPI", mode === "create" ? "created" : "updated", { tint });
       onSuccess();
     } catch (err: unknown) {
       const message = humanizeApiError(err, { context: "KPI", fallback: "Couldn't save the KPI. Please try again." });
@@ -1127,8 +1134,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                               <input
                                 type="number"
                                 min="0"
-                                value={displaySum}
-                                onChange={e => setTeamTotalWeekCell(w, e.target.value)}
+                                value={editingCell?.key === `tot-${w}` ? editingCell.raw : displaySum}
+                                onChange={e => { setEditingCell({ key: `tot-${w}`, raw: e.target.value }); setTeamTotalWeekCell(w, e.target.value); }}
+                                onBlur={() => setEditingCell(null)}
                                 readOnly={isLocked}
                                 title={isPast
                                   ? "Past week data entry is disabled. Enable in Settings > Configurations."
@@ -1185,8 +1193,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             <input
                               type="number"
                               min="0"
-                              value={form.weeklyBreakdown[w] ?? ""}
-                              onChange={e => setWeekBreakdown(w, e.target.value)}
+                              value={editingCell?.key === `ind-${w}` ? editingCell.raw : (form.weeklyBreakdown[w] ?? "")}
+                              onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, e.target.value); }}
+                              onBlur={() => setEditingCell(null)}
                               readOnly={isLocked}
                               title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : undefined}
                               className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
@@ -1256,8 +1265,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                 <input
                                   type="number"
                                   min="0"
-                                  value={ownerRow[w] ?? ""}
-                                  onChange={e => setOwnerWeekCell(id, w, e.target.value)}
+                                  value={editingCell?.key === `own-${id}-${w}` ? editingCell.raw : (ownerRow[w] ?? "")}
+                                  onChange={e => { setEditingCell({ key: `own-${id}-${w}`, raw: e.target.value }); setOwnerWeekCell(id, w, e.target.value); }}
+                                  onBlur={() => setEditingCell(null)}
                                   readOnly={isLocked}
                                   title={isPast ? "Past week data entry is disabled." : undefined}
                                   className={`w-full px-1 py-1 text-center text-[11px] border rounded focus:outline-none min-w-[72px] ${
