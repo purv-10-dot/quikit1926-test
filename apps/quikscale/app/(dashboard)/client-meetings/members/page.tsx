@@ -39,7 +39,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   createdAt: 120,
   updatedAt: 120,
 };
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
 import { fmtAuditPayload, diffAuditPayload } from "@/lib/utils/auditLog";
 
@@ -287,6 +287,7 @@ export default function ClientMembersPage() {
 
   async function handleRestore(id: string) {
     await fetch(`/api/client-meetings/members/${id}/restore`, { method: "POST" });
+    notify.saved("Member", "restored");
     refresh();
   }
 
@@ -330,8 +331,12 @@ export default function ClientMembersPage() {
         body: JSON.stringify({ name: f.name.trim(), email: f.email.trim() }) });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Failed to save"); return; }
+      notify.saved("Member", editing.id ? "updated" : "created");
       setEditing(null);
       await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      notify.error(err, { context: "member", fallback: "Couldn't save. Please try again." });
     } finally { setSaving(false); }
   }
 
@@ -339,6 +344,7 @@ export default function ClientMembersPage() {
     if (!selected.size) return;
     if (!confirm(`Delete ${selected.size} member${selected.size === 1 ? "" : "s"}?`)) return;
     await Promise.all([...selected].map(id => fetch(`/api/client-meetings/members/${id}`, { method: "DELETE" })));
+    notify.saved("Member", "deleted");
     setSelected(new Set());
     refresh();
   }
@@ -350,6 +356,7 @@ export default function ClientMembersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: [...selected] }),
     });
+    notify.saved("Member", "restored");
     setSelected(new Set());
     refresh();
   }
@@ -357,6 +364,7 @@ export default function ClientMembersPage() {
   async function handleDeleteOne(id: string) {
     if (!confirm("Delete this member?")) return;
     await fetch(`/api/client-meetings/members/${id}`, { method: "DELETE" });
+    notify.saved("Member", "deleted");
     refresh();
   }
 
@@ -485,7 +493,7 @@ export default function ClientMembersPage() {
                         if (!canDelete) {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.error("You don't have permission to delete");
+                          notify.error("You don't have permission to delete");
                         }
                       }}
                     >
@@ -520,7 +528,7 @@ export default function ClientMembersPage() {
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >

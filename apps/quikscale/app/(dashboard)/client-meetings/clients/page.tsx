@@ -42,7 +42,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   createdAt: 120,
   updatedAt: 120,
 };
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
 import { fmtAuditPayload, diffAuditPayload } from "@/lib/utils/auditLog";
 
@@ -344,8 +344,12 @@ export default function ClientsPage() {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Failed to save"); return; }
+      notify.saved("Client", editing.id ? "updated" : "created");
       setEditing(null);
       await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      notify.error(err, { context: "client", fallback: "Couldn't save. Please try again." });
     } finally { setSaving(false); }
   }
 
@@ -353,6 +357,7 @@ export default function ClientsPage() {
     if (!selected.size || !canDelete) return;
     if (!confirm(`Delete ${selected.size} client${selected.size === 1 ? "" : "s"}?`)) return;
     await Promise.all([...selected].map(id => fetch(`/api/client-meetings/clients/${id}`, { method: "DELETE" })));
+    notify.saved("Client", "deleted");
     setSelected(new Set());
     refresh();
   }
@@ -361,10 +366,12 @@ export default function ClientsPage() {
     if (!canDelete) return;
     if (!confirm("Delete this client?")) return;
     await fetch(`/api/client-meetings/clients/${id}`, { method: "DELETE" });
+    notify.saved("Client", "deleted");
     refresh();
   }
   async function handleRestore(id: string) {
     await fetch(`/api/client-meetings/clients/${id}/restore`, { method: "POST" });
+    notify.saved("Client", "restored");
     refresh();
   }
 
@@ -377,8 +384,11 @@ export default function ClientsPage() {
     });
     const json = await res.json().catch(() => ({ success: false }));
     if (!json.success) {
-      // Fall back to per-row restore if bulk endpoint isn't available.
+      // Fall back to per-row restore if bulk endpoint isn't available
+      // (handleRestore toasts per row).
       await Promise.all([...selected].map(id => handleRestore(id)));
+    } else {
+      notify.saved("Client", "restored");
     }
     setSelected(new Set());
     refresh();
@@ -554,7 +564,7 @@ export default function ClientsPage() {
                         if (!canDelete) {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.error("You don't have permission to delete");
+                          notify.error("You don't have permission to delete");
                         }
                       }}
                     >
@@ -591,7 +601,7 @@ export default function ClientsPage() {
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >

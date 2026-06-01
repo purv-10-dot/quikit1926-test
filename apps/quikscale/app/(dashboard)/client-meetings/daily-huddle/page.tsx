@@ -46,7 +46,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   createdAt: 120,
   updatedAt: 120,
 };
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
 import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
@@ -389,8 +389,12 @@ export default function DailyHuddlePage() {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Failed"); return; }
+      notify.saved("Daily huddle", editing.id ? "updated" : "created");
       setEditing(null);
       await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed");
+      notify.error(err, { context: "daily huddle", fallback: "Couldn't save. Please try again." });
     } finally { setSaving(false); }
   }
 
@@ -398,6 +402,7 @@ export default function DailyHuddlePage() {
     if (!selected.size) return;
     if (!confirm(`Delete ${selected.size} huddle${selected.size === 1 ? "" : "s"}?`)) return;
     await Promise.all([...selected].map(id => fetch(`/api/client-meetings/daily-huddles/${id}`, { method: "DELETE" })));
+    notify.saved("Daily huddle", "deleted");
     setSelected(new Set());
     refresh();
   }
@@ -405,10 +410,12 @@ export default function DailyHuddlePage() {
   async function handleDeleteOne(id: string) {
     if (!confirm("Delete this huddle?")) return;
     await fetch(`/api/client-meetings/daily-huddles/${id}`, { method: "DELETE" });
+    notify.saved("Daily huddle", "deleted");
     refresh();
   }
   async function handleRestore(id: string) {
     await fetch(`/api/client-meetings/daily-huddles/${id}/restore`, { method: "POST" });
+    notify.saved("Daily huddle", "restored");
     refresh();
   }
 
@@ -419,6 +426,7 @@ export default function DailyHuddlePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: [...selected] }),
     });
+    notify.saved("Daily huddle", "restored");
     setSelected(new Set());
     refresh();
   }
@@ -606,7 +614,7 @@ export default function DailyHuddlePage() {
                         if (!canDelete) {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.error("You don't have permission to delete");
+                          notify.error("You don't have permission to delete");
                         }
                       }}
                     >
@@ -646,7 +654,7 @@ export default function DailyHuddlePage() {
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -1041,7 +1049,7 @@ export default function DailyHuddlePage() {
         defaultClientId={filterClientId || null}
         onSubmit={async ({ from, to, clientId }: ExportRange) => {
           if (!clientId) {
-            toast.error("Please select a client to export.");
+            notify.error("Please select a client to export.");
             return;
           }
           // Backend builds the XLSX (with header block, member counts,
@@ -1054,7 +1062,7 @@ export default function DailyHuddlePage() {
           });
           if (!res.ok) {
             const errJson = await res.json().catch(() => null);
-            toast.error(errJson?.error ?? "Failed to export daily huddles");
+            notify.error(errJson?.error, { context: "daily huddle", fallback: "Couldn't export. Please try again." });
             return;
           }
           const blob = await res.blob();

@@ -23,7 +23,12 @@ export default function DashboardLayout({
     <ThemeApplier />
     <ImpersonationBanner />
     <FeatureDisabledToast />
-    <Toaster richColors position="top-right" />
+    <Toaster
+      richColors
+      closeButton
+      position="top-right"
+      toastOptions={{ classNames: { toast: "qs-toast", closeButton: "qs-toast-close" } }}
+    />
     <FilterProvider>
       <div className="flex h-screen bg-[var(--color-bg-secondary)]">
         {/* Sidebar - always visible on desktop, drawer on mobile */}

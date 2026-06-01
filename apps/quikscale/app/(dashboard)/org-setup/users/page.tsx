@@ -26,6 +26,7 @@ import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -543,6 +544,15 @@ function UserPanel({
         }
       }
 
+      // Success toast — match the actual action (edit / link-existing / invite).
+      if (editUser) {
+        notify.saved("User", "updated");
+      } else if (form.linkExistingUserId) {
+        notify.success("QuikScale access granted");
+      } else {
+        notify.success("User invited");
+      }
+
       onSaved(savedUser);
       // If a temp password came back, keep the panel open so the parent's
       // modal can render the plaintext once. Otherwise close immediately.
@@ -551,6 +561,9 @@ function UserPanel({
       } else {
         onClose();
       }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      notify.error(err, { context: "user" });
     } finally {
       setSaving(false);
     }
@@ -1145,14 +1158,26 @@ export default function OrgUsersPage() {
     user: OrgUser,
     newStatus: "inactive" | "active"
   ) {
-    const res = await fetch(`/api/org/users/${user.userId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    const json = await res.json();
-    if (json.success) handleSaved(json.data);
-    setConfirmUser(null);
+    try {
+      const res = await fetch(`/api/org/users/${user.userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        notify.error(json.error, { context: "user" });
+        return;
+      }
+      handleSaved(json.data);
+      notify.success(
+        newStatus === "active" ? "User reactivated" : "User deactivated",
+      );
+    } catch (err: unknown) {
+      notify.error(err, { context: "user" });
+    } finally {
+      setConfirmUser(null);
+    }
   }
 
   const activeCount = crud.items.filter((u) => u.status === "active").length;

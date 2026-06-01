@@ -23,7 +23,7 @@ import { ColMenu } from "@/components/table/ColMenu";
 import { SortIndicator } from "@/components/table/SortIndicator";
 import { X } from "lucide-react";
 import { Pagination } from "@quikit/ui";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 export { HiddenColsMenu } from "./HiddenColsMenu";
 
 // ── Resize handle ────────────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       if (!canDelete) {
                         e.preventDefault();
                         e.stopPropagation();
-                        toast.error("You don't have permission to delete");
+                        notify.error("You don't have permission to delete");
                       }
                     }}
                   >
@@ -315,7 +315,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                           if (!canDelete && !readOnly) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >

@@ -6,6 +6,7 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
+import { notify } from "@/lib/utils/notify";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
@@ -33,6 +34,8 @@ interface Props {
   teamId?: string;
   defaultYear?: number;
   defaultQuarter?: string;
+  /** Optional hex tint for success/error toasts (e.g. the team's color in Teams KPI). */
+  tint?: string | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -41,7 +44,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 /* ── Component ─────────────────────────────────────────────────────────── */
 
-export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter, onClose, onSuccess }: Props) {
+export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter, tint, onClose, onSuccess }: Props) {
   // Determine whether this modal instance operates in team-level scope.
   // Priority: explicit `scope` prop > existing kpi.kpiLevel (in edit mode) > default "individual"
   const isTeamScope = scope === "team" || kpi?.kpiLevel === "team";
@@ -631,9 +634,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         const { quarter: _q, measurementUnit: _mu, currency: _c, owner: _o, ...editPayload } = payload;
         await updateKPI.mutateAsync(editPayload);
       }
+      notify.saved("KPI", mode === "create" ? "created" : "updated", { tint });
       onSuccess();
     } catch (err: unknown) {
-      setErrors({ _: humanizeApiError(err, { context: "KPI", fallback: "Couldn't save the KPI. Please try again." }) });
+      const message = humanizeApiError(err, { context: "KPI", fallback: "Couldn't save the KPI. Please try again." });
+      setErrors({ _: message });
+      notify.error(err, { context: "KPI", fallback: "Couldn't save the KPI. Please try again.", tint });
     } finally {
       setSaving(false);
     }

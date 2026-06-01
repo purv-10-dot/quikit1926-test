@@ -25,7 +25,7 @@ import {
 import { useTableCRUD } from "@/lib/hooks/useTableCRUD";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface TeamMember {
@@ -313,15 +313,22 @@ function TeamPanel({
             setError(
               `Team created, but failed to add members: ${memJson.error ?? "unknown error"}. Use the Add Members panel to retry.`
             );
+            notify.warning(
+              `Team created, but failed to add members: ${memJson.error ?? "unknown error"}. Use the Add Members panel to retry.`
+            );
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           setError(
             `Team created, but failed to add members: ${msg}. Use the Add Members panel to retry.`
           );
+          notify.warning(
+            `Team created, but failed to add members: ${msg}. Use the Add Members panel to retry.`
+          );
         }
       }
 
+      notify.saved("Team", editTeam ? "updated" : "created", { tint: savedTeam?.color });
       onSaved(savedTeam);
       onClose();
     } finally {
@@ -941,7 +948,7 @@ export default function OrgTeamsPage() {
     const res = await fetch(`/api/org/teams/${team.id}/restore`, { method: "POST" });
     const json = await res.json();
     if (json.success) {
-      toast.success(`Restored team "${team.name}"`);
+      notify.success(`Restored team "${team.name}"`);
       crud.refetch();
       // A restored team becomes pickable again everywhere — invalidate shared caches.
       queryClient.invalidateQueries({ queryKey: ["teams"] });
@@ -949,7 +956,7 @@ export default function OrgTeamsPage() {
       queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } else {
-      toast.error(json.error ?? "Failed to restore team");
+      notify.error(json.error ?? "Failed to restore team", { context: "team" });
     }
   }
 
@@ -964,9 +971,9 @@ export default function OrgTeamsPage() {
     if (json.success) {
       const restored = json.data?.restored ?? 0;
       const skipped = json.data?.skipped as Array<{ name: string }> | undefined;
-      toast.success(`Restored ${restored} team${restored === 1 ? "" : "s"}`);
+      notify.success(`Restored ${restored} team${restored === 1 ? "" : "s"}`);
       if (skipped && skipped.length > 0) {
-        toast.warning(
+        notify.warning(
           `Skipped ${skipped.length} (name conflict): ${skipped.map((s) => s.name).join(", ")}`,
         );
       }
@@ -977,7 +984,7 @@ export default function OrgTeamsPage() {
       queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } else {
-      toast.error(json.error ?? "Failed to restore teams");
+      notify.error(json.error ?? "Failed to restore teams", { context: "team" });
     }
   }
 

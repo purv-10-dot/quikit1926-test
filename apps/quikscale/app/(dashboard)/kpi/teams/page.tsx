@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useTeamKPIs, useDeleteKPI } from "@/lib/hooks/useKPI";
+import { notify } from "@/lib/utils/notify";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { TableSkeleton } from "@/components/ui/Skeleton";
@@ -102,10 +103,16 @@ export default function TeamsKPIPage() {
   }, []);
   async function handleBulkDelete() {
     if (!unionSelectedIds.size) return;
-    await Promise.all([...unionSelectedIds].map(id => deleteKPI.mutateAsync(id)));
-    setSelectedByTeam({});
-    setClearSelectionTrigger(n => n + 1);
-    refetch();
+    const count = unionSelectedIds.size;
+    try {
+      await Promise.all([...unionSelectedIds].map(id => deleteKPI.mutateAsync(id)));
+      notify.success(`Deleted ${count} team KPI${count === 1 ? "" : "s"}`);
+      setSelectedByTeam({});
+      setClearSelectionTrigger(n => n + 1);
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "team KPI", fallback: "Couldn't delete the selected KPIs. Please try again." });
+    }
   }
 
   // View Trash toggle — when true list fetches ONLY soft-deleted team KPIs

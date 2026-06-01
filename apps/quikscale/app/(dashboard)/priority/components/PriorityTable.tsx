@@ -22,7 +22,7 @@ import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { BaseTooltip } from "@/components/ui/base-tooltip";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { Pagination } from "@quikit/ui";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 
 import { STATUS_PICKER_OPTIONS, statusDotColor } from "@/lib/constants/status";
 
@@ -480,7 +480,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -565,7 +565,7 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >

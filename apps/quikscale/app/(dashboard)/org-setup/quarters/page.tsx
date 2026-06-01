@@ -11,7 +11,7 @@ import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, Pagination,
 } from "@quikit/ui";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface QuarterRow {
@@ -113,8 +113,12 @@ function EditPanel({
       });
       const json = await res.json();
       if (!json.success) { setError(json.error || "Failed to save"); return; }
+      notify.saved("Quarter", "updated");
       onSaved(json.data);
       onClose();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      notify.error(err, { context: "quarter" });
     } finally { setSaving(false); }
   }
 
@@ -371,8 +375,12 @@ function GenerateModal({
       });
       const json = await res.json();
       if (!json.success) { setError(json.error || "Failed to generate"); return; }
+      notify.saved("Quarter", "created");
       onGenerated(json.data);
       onClose();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to generate");
+      notify.error(err, { context: "quarter" });
     } finally { setSaving(false); }
   }
 
@@ -591,10 +599,16 @@ export default function QuarterSettingsPage() {
   }
 
   async function handleBulkDelete() {
-    await Promise.all([...selectedIds].map(id => fetch(`/api/org/quarters/${id}`, { method: "DELETE" })));
-    setRows(prev => prev.filter(r => !selectedIds.has(r.id)));
-    setSelectedIds(new Set());
-    invalidateFiscalYearsCache();
+    const count = selectedIds.size;
+    try {
+      await Promise.all([...selectedIds].map(id => fetch(`/api/org/quarters/${id}`, { method: "DELETE" })));
+      setRows(prev => prev.filter(r => !selectedIds.has(r.id)));
+      setSelectedIds(new Set());
+      invalidateFiscalYearsCache();
+      notify.success(`Deleted ${count} quarter${count === 1 ? "" : "s"}`);
+    } catch (err: unknown) {
+      notify.error(err, { context: "quarter" });
+    }
   }
 
   // Hard-delete an entire fiscal year (all 4 quarters). Server endpoint:
@@ -622,9 +636,12 @@ export default function QuarterSettingsPage() {
         setSelectedYear(null);
         setRows([]);
       }
+      notify.saved("Quarter", "deleted", {
+        description: `FY ${year}-${String(year + 1).slice(-2)} removed.`,
+      });
     } catch (err) {
       console.error("[quarters] delete FY failed:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete fiscal year");
+      notify.error(err, { context: "quarter" });
     } finally {
       setDeletingFY(false);
     }

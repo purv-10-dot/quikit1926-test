@@ -6,6 +6,8 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { useCanEditWWW } from "@/lib/hooks/useCanEditWWW";
 import type { WWWItem } from "@/lib/types/www";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
+import { notify } from "@/lib/utils/notify";
+import { humanizeApiError } from "@/lib/utils/humanizeError";
 
 import {
   STATUS_SELECT_OPTIONS,
@@ -516,10 +518,11 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       } else {
         await updateWWW.mutateAsync(payload);
       }
+      notify.saved("Action item", mode === "create" ? "created" : "updated");
       onSuccess();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save";
-      setErrors({ _: msg });
+      setErrors({ _: humanizeApiError(err, { context: "action item" }) });
+      notify.error(err, { context: "action item", fallback: "Couldn't save the action item. Please try again." });
     } finally {
       setSaving(false);
     }

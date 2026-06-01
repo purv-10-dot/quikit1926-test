@@ -69,7 +69,7 @@ import { ExportDataModal, type ExportRange } from "@/components/client-meetings/
 import type { ExportSelection } from "@quikit/ui";
 import { Download } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 
 type Flag = "YES" | "NO" | "NA";
 type Status =
@@ -854,15 +854,22 @@ export default function WeeklyMeetingPage() {
           if (failed > 0) {
             // Meeting was created; surface a non-blocking warning. User can
             // re-open the meeting and re-save the affected rows.
-            setError(
-              `Meeting saved, but ${failed} member score row${failed === 1 ? "" : "s"} failed to save. Open the meeting to retry.`
-            );
+            const warn = `Meeting saved, but ${failed} member score row${failed === 1 ? "" : "s"} failed to save. Open the meeting to retry.`;
+            setError(warn);
+            notify.warning(warn);
+            setEditing(null);
+            await refresh();
+            return;
           }
         }
       }
 
+      notify.saved("Weekly meeting", editing.id ? "updated" : "created");
       setEditing(null);
       await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Save failed");
+      notify.error(err, { context: "weekly meeting", fallback: "Couldn't save. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -914,6 +921,7 @@ export default function WeeklyMeetingPage() {
         })
       )
     );
+    notify.saved("Weekly meeting", "deleted");
     setSelectedIds(new Set());
     refresh();
   }
@@ -923,7 +931,10 @@ export default function WeeklyMeetingPage() {
     const res = await fetch(`/api/client-meetings/weekly-meetings/${id}`, {
       method: "DELETE",
     });
-    if ((await res.json()).success) refresh();
+    if ((await res.json()).success) {
+      notify.saved("Weekly meeting", "deleted");
+      refresh();
+    }
   }
 
   async function restoreOne(id: string) {
@@ -932,10 +943,10 @@ export default function WeeklyMeetingPage() {
     });
     const json = await res.json();
     if (json.success) {
-      toast.success("Weekly meeting restored");
+      notify.success("Weekly meeting restored");
       refresh();
     } else {
-      toast.error(json.error ?? "Failed to restore");
+      notify.error(json.error ?? "Couldn't restore. Please try again.");
     }
   }
 
@@ -948,11 +959,11 @@ export default function WeeklyMeetingPage() {
     });
     const json = await res.json();
     if (json.success) {
-      toast.success(`Restored ${json.data?.restored ?? 0} meeting${json.data?.restored === 1 ? "" : "s"}`);
+      notify.success(`Restored ${json.data?.restored ?? 0} meeting${json.data?.restored === 1 ? "" : "s"}`);
       setSelectedIds(new Set());
       refresh();
     } else {
-      toast.error(json.error ?? "Failed to restore");
+      notify.error(json.error ?? "Couldn't restore. Please try again.");
     }
   }
 
@@ -1134,7 +1145,7 @@ export default function WeeklyMeetingPage() {
                         if (!canDelete) {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.error("You don't have permission to delete");
+                          notify.error("You don't have permission to delete");
                         }
                       }}
                     >
@@ -1198,7 +1209,7 @@ export default function WeeklyMeetingPage() {
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -1824,7 +1835,7 @@ export default function WeeklyMeetingPage() {
           defaultClientId={filterClientId || null}
           onSubmit={async ({ from, to, clientId }: ExportRange) => {
             if (!clientId) {
-              toast.error("Please select a client to export.");
+              notify.error("Please select a client to export.");
               return;
             }
             // Backend builds the XLSX (with header block, member counts,
@@ -1837,7 +1848,7 @@ export default function WeeklyMeetingPage() {
             });
             if (!res.ok) {
               const errJson = await res.json().catch(() => null);
-              toast.error(errJson?.error ?? "Failed to export weekly meetings");
+              notify.error(errJson?.error, { context: "weekly meeting", fallback: "Couldn't export. Please try again." });
               return;
             }
             const blob = await res.blob();
