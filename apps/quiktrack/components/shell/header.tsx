@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
@@ -71,15 +70,14 @@ export function Header({ onToggleSidebar }: HeaderProps) {
     <header className="h-12 bg-white border-b border-gray-200 px-3 flex items-center gap-3 sticky top-0 z-50">
       <div className="flex items-center gap-2">
         <AppSwitcherVertical />
-        <Link href="/dashboard" className="flex items-center px-1">
-          <Image
-            src="/header-icon.png"
+        <Link href="/dashboard" className="flex items-center gap-2 px-1">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/quiktrack.svg"
             alt="QuikTrack"
-            width={140}
-            height={28}
-            className="h-7 w-auto object-contain"
-            priority
+            className="h-7 w-7 object-contain rounded"
           />
+          <span className="text-sm font-semibold text-gray-900">QuikTrack</span>
         </Link>
         <button
           onClick={onToggleSidebar}

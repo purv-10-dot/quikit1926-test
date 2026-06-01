@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   description:
     "One platform to access all your business apps — KPI tracking, performance management, payroll, and more.",
   icons: {
-    icon: "/favicon.ico",
+    icon: "/icon.svg",
   },
 };
 

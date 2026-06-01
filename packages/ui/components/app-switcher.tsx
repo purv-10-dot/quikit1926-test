@@ -103,6 +103,21 @@ const ICON_FALLBACKS: Record<string, { emoji: string; bg: string }> = {
 const DEFAULT_ICON = { emoji: "📦", bg: "bg-gray-100" };
 
 /**
+ * Brand logos by slug. These override the API-provided `iconUrl`, which is an
+ * app-relative path (e.g. "/app-icons/quikscale.png") that only resolves on
+ * the launcher's origin — when the switcher is hosted inside another app it
+ * 404s and falls back to the emoji. Each app ships these SVGs in its own
+ * public/app-icons, so a slug-relative path resolves on every origin.
+ */
+const BRAND_ICONS: Record<string, string> = {
+  quikit: "/app-icons/quikit.svg",
+  admin: "/app-icons/admin.svg",
+  quikinfra: "/app-icons/quikinfra.svg",
+  quikscale: "/app-icons/quikscale.svg",
+  quiktrack: "/app-icons/quiktrack.svg",
+};
+
+/**
  * Google-style app switcher grid.
  *
  * Renders a 3x3 grid icon button that, when clicked, shows a popover with
@@ -270,6 +285,7 @@ export function AppSwitcher({ apiUrl = "/api/apps/switcher", prefetch = true }: 
               <div className="grid grid-cols-3 gap-1">
                 {apps.map((app) => {
                   const iconInfo = ICON_FALLBACKS[app.slug] || DEFAULT_ICON;
+                  const iconSrc = BRAND_ICONS[app.slug] ?? app.iconUrl;
                   const isCurrent = app.id === currentApp?.id;
 
                   return (
@@ -310,11 +326,12 @@ export function AppSwitcher({ apiUrl = "/api/apps/switcher", prefetch = true }: 
                       }`}
                       title={app.description || app.name}
                     >
-                      {app.iconUrl ? (
+                      {iconSrc ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={app.iconUrl}
+                          src={iconSrc}
                           alt={app.name}
-                          className="h-10 w-10 rounded-xl object-cover"
+                          className="h-10 w-10 rounded-xl object-contain"
                         />
                       ) : (
                         <div className={`h-10 w-10 rounded-xl ${iconInfo.bg} flex items-center justify-center text-xl`}>

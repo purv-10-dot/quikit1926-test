@@ -29,6 +29,16 @@ const ICON_FALLBACKS: Record<string, { emoji: string; bg: string }> = {
 };
 const DEFAULT_ICON = { emoji: "📦", bg: "bg-gray-100" };
 
+/** Brand logos by slug — override the app-relative API iconUrl (which 404s
+ *  cross-origin). Each app ships these SVGs in its own public/app-icons. */
+const BRAND_ICONS: Record<string, string> = {
+  quikit: "/app-icons/quikit.svg",
+  admin: "/app-icons/admin.svg",
+  quikinfra: "/app-icons/quikinfra.svg",
+  quikscale: "/app-icons/quikscale.svg",
+  quiktrack: "/app-icons/quiktrack.svg",
+};
+
 /**
  * QuikTrack's vertical AppSwitcher — same data source as the shared
  * @quikit/ui <AppSwitcher /> (GET /api/apps/switcher) but laid out as a
@@ -133,6 +143,7 @@ export function AppSwitcherVertical() {
             {!loading &&
               apps.map((app) => {
                 const iconInfo = ICON_FALLBACKS[app.slug] || DEFAULT_ICON;
+                const iconSrc = BRAND_ICONS[app.slug] ?? app.iconUrl;
                 const isCurrent = app.id === currentApp?.id;
                 return (
                   <button
@@ -149,12 +160,12 @@ export function AppSwitcherVertical() {
                     }`}
                     title={app.description || app.name}
                   >
-                    {app.iconUrl ? (
+                    {iconSrc ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={app.iconUrl}
+                        src={iconSrc}
                         alt={app.name}
-                        className="h-7 w-7 rounded-md object-cover shrink-0"
+                        className="h-7 w-7 rounded-md object-contain shrink-0"
                       />
                     ) : (
                       <div

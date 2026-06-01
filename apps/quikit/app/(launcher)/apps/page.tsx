@@ -40,6 +40,15 @@ const HAIRLINE = "rgba(13,17,23,0.08)";
 const SERIF = "'DM Serif Display', Georgia, serif";
 const SANS = "'Inter', system-ui, sans-serif";
 
+/* Brand icons for the launcher tiles — local assets override the DB
+   iconUrl so the launcher always renders the current brand logos. */
+const LAUNCHER_ICONS: Record<string, string> = {
+  admin: "/app-icons/admin.svg",
+  quikinfra: "/app-icons/quikinfra.svg",
+  quikscale: "/app-icons/quikscale.svg",
+  quiktrack: "/app-icons/quiktrack.svg",
+};
+
 function previewModules(slug: string): string[] {
   const cfg = getAppConfig(slug);
   if (!cfg) return [];
@@ -284,15 +293,18 @@ export default function AppLauncherPage() {
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <span
-                aria-hidden
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/brand/quikit.svg"
+                alt="QuikIT"
+                width={36}
+                height={36}
                 style={{
-                  width: 30,
-                  height: 30,
+                  width: 36,
+                  height: 36,
                   borderRadius: 9,
-                  background: ACCENT,
-                  boxShadow: `0 0 0 5px ${ACCENT_DIM}`,
                   display: "inline-block",
+                  objectFit: "contain",
                 }}
               />
               <div>
@@ -531,6 +543,7 @@ export default function AppLauncherPage() {
                 const mods = previewModules(app.slug);
                 const disabled =
                   app.status === "coming_soon" || app.status === "disabled";
+                const iconSrc = LAUNCHER_ICONS[app.slug] ?? app.iconUrl;
                 return (
                   <motion.button
                     key={app.id}
@@ -560,10 +573,10 @@ export default function AppLauncherPage() {
                     }}
                   >
                     <div className="flex items-center gap-3 mb-3.5">
-                      {app.iconUrl ? (
+                      {iconSrc ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={app.iconUrl}
+                          src={iconSrc}
                           alt=""
                           width={44}
                           height={44}
