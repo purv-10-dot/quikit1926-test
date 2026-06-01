@@ -16,7 +16,7 @@ import { useFilterContext } from "@/lib/context/FilterContext";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
-  AddButton, EmptyState, Modal, ModalContent, ModalHeader, ModalTitle, ModalBody,
+  AddButton, EmptyState,
   Segmented, FilterPicker, UserMultiPicker, Pagination, type ExportSelection,
 } from "@quikit/ui";
 import { Users, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
@@ -44,7 +44,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 };
 import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
-import { fmtAuditPayload, diffAuditPayload } from "@/lib/utils/auditLog";
+import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
 
 interface ClientRow {
   id: string;
@@ -63,12 +63,6 @@ interface ClientRow {
 
 interface MemberOption { id: string; name: string; email: string }
 
-interface AuditLogEntry {
-  id: string; action: string;
-  oldValue: unknown; newValue: unknown;
-  changedByName: string; reason: string | null; createdAt: string;
-}
-
 const emptyForm = {
   name: "", description: "", isActive: true as boolean,
   weeklyStartTime: "", weeklyEndTime: "",
@@ -80,13 +74,23 @@ function fmtDateShort(iso: string) {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
-function fmtDateTime(iso: string) {
-  return new Date(iso).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
 function fmtWindow(s: string | null, e: string | null) {
   if (s && e) return `${s} – ${e}`;
   return "—";
 }
+
+/** Friendly field labels for the Client audit log (passed to AuditLogDrawer). */
+const CLIENT_FIELD_LABELS: Record<string, string> = {
+  name: "Client name",
+  description: "Description",
+  isActive: "Active",
+  startDate: "Start date",
+  weeklyStartTime: "Weekly window start",
+  weeklyEndTime: "Weekly window end",
+  dailyStartTime: "Daily window start",
+  dailyEndTime: "Daily window end",
+  teamMemberIds: "Team members",
+};
 
 export default function ClientsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("ClientMaster");
@@ -208,8 +212,13 @@ export default function ClientsPage() {
   const [error, setError] = useState("");
 
   const [logOpen, setLogOpen] = useState<{ id: string; name: string } | null>(null);
-  const [logRows, setLogRows] = useState<AuditLogEntry[]>([]);
-  const [logLoading, setLogLoading] = useState(false);
+  // Resolve team-member ids → names for the audit log (teamMemberIds stores ids).
+  const memberNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const mem of members) m.set(mem.id, mem.name);
+    for (const c of rows) for (const tm of c.teamMembers) m.set(tm.id, tm.name);
+    return m;
+  }, [members, rows]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -301,16 +310,6 @@ export default function ClientsPage() {
         teamMemberIds:   row.teamMembers.map(m => m.id),
       },
     });
-  }
-
-  async function openLog(row: ClientRow) {
-    setLogOpen({ id: row.id, name: row.name });
-    setLogLoading(true); setLogRows([]);
-    try {
-      const res = await fetch(`/api/client-meetings/clients/${row.id}/logs`);
-      const json = await res.json();
-      if (json.success) setLogRows(json.data);
-    } finally { setLogLoading(false); }
   }
 
   async function handleSubmit() {
@@ -611,7 +610,7 @@ export default function ClientsPage() {
                     </td>
                     <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
                         style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>
-                      <button onClick={() => openLog(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
+                      <button onClick={() => setLogOpen({ id: r.id, name: r.name })} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
@@ -834,73 +833,16 @@ export default function ClientsPage() {
         );
       })()}
 
-      {/* Audit log modal */}
-      {logOpen && (
-        <Modal open onOpenChange={(o) => { if (!o) setLogOpen(null); }}>
-          <ModalContent className="max-w-2xl">
-            <ModalHeader>
-              <ModalTitle>Audit Log — {logOpen.name}</ModalTitle>
-            </ModalHeader>
-            <ModalBody>
-              {logLoading ? (
-                <p className="text-xs text-gray-400">Loading…</p>
-              ) : logRows.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">No changes recorded yet.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {logRows.map(entry => (
-                    <li key={entry.id} className="border border-gray-100 rounded-lg px-4 py-3 bg-gray-50">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                          entry.action === "CREATE" ? "bg-green-100 text-green-700"
-                          : entry.action === "UPDATE" ? "bg-blue-100 text-blue-700"
-                          : entry.action === "DELETE" ? "bg-red-100 text-red-700"
-                          : entry.action === "RESTORE" ? "bg-amber-100 text-amber-700"
-                          : "bg-gray-100 text-gray-700"
-                        }`}>{entry.action}</span>
-                        <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                          <span className="font-medium">{entry.changedByName}</span>
-                          <span>·</span>
-                          <span>{fmtDateTime(entry.createdAt)}</span>
-                        </div>
-                      </div>
-                      {entry.action === "UPDATE" && !!entry.oldValue && !!entry.newValue && (() => {
-                        const diffs = diffAuditPayload(entry.oldValue, entry.newValue);
-                        return diffs.length ? (
-                          <div className="text-[11px] space-y-0.5 mt-1">
-                            {diffs.map(({ key, oldValue, newValue }) => (
-                              <p key={key} className="text-gray-600">
-                                <span className="font-medium">{key}:</span>{" "}
-                                <span className="line-through text-gray-400">{JSON.stringify(oldValue ?? "")}</span>
-                                <span className="mx-1 text-gray-400">→</span>
-                                <span className="text-gray-800">{JSON.stringify(newValue ?? "")}</span>
-                              </p>
-                            ))}
-                          </div>
-                        ) : null;
-                      })()}
-                      {entry.action === "CREATE" && !!entry.newValue && (() => {
-                        const text = fmtAuditPayload(entry.newValue);
-                        return text ? (
-                          <div className="text-[11px] text-gray-600 mt-1 break-words">
-                            Created with: {text}
-                          </div>
-                        ) : null;
-                      })()}
-                      {entry.action === "DELETE" && (
-                        <div className="text-[11px] text-gray-600 mt-1 italic">Client deleted.</div>
-                      )}
-                      {entry.action === "RESTORE" && (
-                        <div className="text-[11px] text-gray-600 mt-1 italic">Client restored from trash.</div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </ModalBody>
-          </ModalContent>
-        </Modal>
-      )}
+      {/* Audit log — shared RightPanel drawer (same styling as Daily Huddle / Weekly Meeting) */}
+      <AuditLogDrawer
+        open={!!logOpen}
+        onClose={() => setLogOpen(null)}
+        entityType="Client"
+        entityId={logOpen?.id ?? ""}
+        title={logOpen ? `Audit Log — ${logOpen.name}` : "Audit Log"}
+        fieldLabels={CLIENT_FIELD_LABELS}
+        nameById={(id) => memberNameById.get(id)}
+      />
     </div>
   );
 }

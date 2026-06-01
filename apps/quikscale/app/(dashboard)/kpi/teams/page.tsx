@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useSession } from "next-auth/react";
 import { useTeamKPIs, useDeleteKPI } from "@/lib/hooks/useKPI";
 import { notify } from "@/lib/utils/notify";
 import { useTeams } from "@/lib/hooks/useTeams";
@@ -11,7 +10,6 @@ import {
   getFiscalYear, getFiscalQuarter, fiscalYearLabel,
 } from "@/lib/utils/fiscal";
 import { useCurrentWeek, useWeekDateRange } from "@/lib/hooks/useCurrentWeek";
-import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { KPIRow } from "@/lib/types/kpi";
 import { TeamSection } from "./components/TeamSection";
 import { KPIModal } from "../components/KPIModal";
@@ -118,7 +116,6 @@ export default function TeamsKPIPage() {
   // View Trash toggle — when true list fetches ONLY soft-deleted team KPIs
   const [viewTrash, setViewTrash] = useState(false);
 
-  const { data: session } = useSession();
   const { data: teams = [], isLoading: teamsLoading } = useTeams();
   const { data: kpiData, isLoading: kpisLoading, refetch } = useTeamKPIs({
     year,
@@ -126,17 +123,6 @@ export default function TeamsKPIPage() {
     ...({ includeDeleted: viewTrash } as any),
   });
   const kpis = useMemo(() => (kpiData?.data ?? []) as KPIRow[], [kpiData?.data]);
-
-  // Can the user add team KPIs? (admin-level role, super admin, or head of any team)
-  const canAddTeamKPI = useMemo(() => {
-    if (!session?.user?.id) return false;
-    const role = (session.user as { membershipRole?: string }).membershipRole;
-    const ADMIN_MIN = ROLE_HIERARCHY[ROLES.ADMIN];
-    if (role && (ROLE_HIERARCHY[role] ?? 0) >= ADMIN_MIN) return true;
-    if ((session.user as { isSuperAdmin?: boolean }).isSuperAdmin) return true;
-    // Head of at least one team
-    return teams.some(t => t.headId === session.user?.id);
-  }, [session, teams]);
 
   // Group KPIs by teamId client-side for rendering
   const kpisByTeam = useMemo(() => {
@@ -385,9 +371,11 @@ export default function TeamsKPIPage() {
             quarter={quarter}
           />
 
-          {/* + Add KPI — single page-level button. RBAC `create` AND legacy
-              admin/team-head check must both pass. */}
-          {canCreate && canAddTeamKPI && (
+          {/* + Add KPI — gated purely on the dynamic RBAC `TeamKPI:create`
+              grant (useResourcePermissions("TeamKPI") above). Internal app
+              roles/permissions are the source of truth; org-level
+              membershipRole no longer factors in. Server enforces it too. */}
+          {canCreate && (
             <AddButton onClick={() => setShowAddKPI(true)}>Add KPI</AddButton>
           )}
         </div>

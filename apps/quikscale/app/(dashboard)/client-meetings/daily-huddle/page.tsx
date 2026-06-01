@@ -58,7 +58,7 @@ const STATUS_OPTS: Array<{ value: Status; label: string }> = [
   { value: "CALL_CANCELLED_BY_CLIENT", label: "Cancelled by Client" },
 ];
 
-interface ClientOpt { id: string; name: string }
+interface ClientOpt { id: string; name: string; teamMembers: { id: string; name: string; email: string }[] }
 interface MemberOpt { id: string; name: string; email: string }
 
 interface HuddleRow {
@@ -296,11 +296,28 @@ export default function DailyHuddlePage() {
   const pagedHuddles = filtered.slice((page - 1) * pageSize, page * pageSize);
   const totalHuddlePages = Math.max(1, Math.ceil(filtered.length / pageSize));
 
-  // Adapt ClientMember → PickerUser for UserMultiPicker (splits "name" on first space).
-  const memberPickerOptions = useMemo(() => members.map(m => {
-    const parts = m.name.trim().split(/\s+/);
-    return { id: m.id, firstName: parts[0] ?? m.name, lastName: parts.slice(1).join(" "), email: m.email };
-  }), [members]);
+  // Members eligible to be marked absent — scoped to the SELECTED client's
+  // roster (the ClientTeamMember join returned by the clients API), NOT the
+  // org-wide member list: a huddle's absentees must belong to that client.
+  // Any already-selected id no longer on the roster (member removed after the
+  // huddle was saved) is unioned back in so editing an old record never
+  // silently drops a saved absentee. Adapted to PickerUser (name split on first space).
+  const clientMemberOptions = useMemo(() => {
+    const clientId = editing?.form.clientId;
+    if (!clientId) return [];
+    const roster = clients.find(c => c.id === clientId)?.teamMembers ?? [];
+    const byId = new Map(roster.map(m => [m.id, { id: m.id, name: m.name, email: m.email }]));
+    for (const id of editing?.form.absentClientMemberIds ?? []) {
+      if (!byId.has(id)) {
+        const m = members.find(mm => mm.id === id);
+        if (m) byId.set(id, { id: m.id, name: m.name, email: m.email });
+      }
+    }
+    return [...byId.values()].map(m => {
+      const parts = m.name.trim().split(/\s+/);
+      return { id: m.id, firstName: parts[0] ?? m.name, lastName: parts.slice(1).join(" "), email: m.email };
+    });
+  }, [editing?.form.clientId, editing?.form.absentClientMemberIds, clients, members]);
 
   function toggleAll() {
     if (selected.size === filtered.length && filtered.length > 0) setSelected(new Set());
@@ -915,7 +932,7 @@ export default function DailyHuddlePage() {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Client Name <span className="text-red-500">*</span></label>
                   <select value={editing.form.clientId} disabled={!!editing.id}
-                    onChange={e => setEditing({ ...editing, form: { ...editing.form, clientId: e.target.value } })}
+                    onChange={e => setEditing({ ...editing, form: { ...editing.form, clientId: e.target.value, absentClientMemberIds: [] } })}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white disabled:bg-gray-50">
                     <option value="">Select…</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -923,13 +940,15 @@ export default function DailyHuddlePage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Absent Members</label>
-                  {memberPickerOptions.length === 0 ? (
-                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No members — add in Client Members.</p>
+                  {!editing.form.clientId ? (
+                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Select a client first.</p>
+                  ) : clientMemberOptions.length === 0 ? (
+                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">This client has no members — add them in Client Master.</p>
                   ) : (
                     <UserMultiPicker
                       values={editing.form.absentClientMemberIds}
                       onChange={(ids) => setEditing({ ...editing, form: { ...editing.form, absentClientMemberIds: ids } })}
-                      users={memberPickerOptions}
+                      users={clientMemberOptions}
                       placeholder="Select members…"
                     />
                   )}

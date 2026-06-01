@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { calculateWeeklyMonthlyStats, previousMonths } from "@/lib/services/clientMeetingsMath";
 import { applyPctFill, applyHeader, workbookToBuffer } from "@/lib/exports/clientMeetingsExcel";
+import { WEEKLY_METRICS } from "@/lib/constants/clientMeetingsMetrics";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
 
@@ -86,17 +87,8 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
     months, client.weeklyStartTime, client.weeklyEndTime,
   );
 
-  const metrics = [
-    { key: "avgHeld",             label: "Meeting Held" },
-    { key: "avgPunctual",         label: "Punctuality" },
-    { key: "avgDurationFollowed", label: "Duration Followed" },
-    { key: "avgAuality",          label: "Dashboard Quality" },
-    { key: "avgKP",               label: "K&P Gaps Discussed" },
-    { key: "avgWWW",              label: "WWW Review" },
-    { key: "avgEF",               label: "Employee Feedback" },
-    { key: "avgCI",               label: "Collective Intelligence" },
-    { key: "avgAttendance",       label: "Attendance" },
-  ] as const;
+  // Full metric descriptions — shared with the dashboard so labels never drift.
+  const metrics = WEEKLY_METRICS;
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet(`${client.name} – Weekly`);
@@ -118,7 +110,9 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
   totalRow.getCell(2).font = { bold: true };
   stats.forEach((s, idx) => applyPctFill(totalRow.getCell(3 + idx), s.Total, s.isUpdate));
 
-  ws.columns = [{ width: 8 }, { width: 30 }, ...months.map(() => ({ width: 12 })), { width: 14 }];
+  // Metric Description (col B) holds full labels — widen so the longest
+  // ("Active discussion on K&P achivement gaps & action plan") shows in full.
+  ws.columns = [{ width: 8 }, { width: 66 }, ...months.map(() => ({ width: 12 })), { width: 14 }];
 
   const buf = await workbookToBuffer(wb);
   const filename = `${client.name}_${from.toISOString().slice(0, 7)}_to_${toEnd.toISOString().slice(0, 7)}_Weekly.xlsx`;
