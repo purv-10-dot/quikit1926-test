@@ -3,16 +3,16 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Nav from "./_components/Nav";
 import Hero from "./_components/Hero";
-import Outcomes from "./_components/Outcomes";
+import ScrollReveal from "./_components/ScrollReveal";
 import FourPillars from "./_components/FourPillars";
+import Outcomes from "./_components/Outcomes";
 import Workflows from "./_components/Workflows";
-import Comparison from "./_components/Comparison";
 import WhyQuikScale from "./_components/WhyQuikScale";
-import Testimonial from "./_components/Testimonial";
+import Comparison from "./_components/Comparison";
 import WhoItsFor from "./_components/WhoItsFor";
+import Testimonial from "./_components/Testimonial";
 import CoachModel from "./_components/CoachModel";
 import FooterCTA from "./_components/FooterCTA";
-import ScrollReveal from "./_components/ScrollReveal";
 
 /**
  * Public landing page at `/`.

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 
 const QUOTE =
-  "“We were paying ₹40,000 a month to Atlassian and honestly using maybe 30% of Jira. We moved to QuikTrack in a week. Nobody on the team noticed — except finance.”";
+  '“We set up QuikTrack in a day and ran our first sprint the same week. The visibility it gives us — across sprints, bugs, and releases in one place — completely changed how our engineering and product teams communicate.”';
 
 export default function Testimonial() {
   const wrapRef = useRef<HTMLElement | null>(null);
@@ -65,6 +65,14 @@ export default function Testimonial() {
               );
             })}
           </p>
+          <div className="testimonial-attribution">
+            <span className="testimonial-attribution-label">Trusted by</span>
+            <img
+              src="/moreyeahs-logo.png"
+              alt="MoreYeahs"
+              className="testimonial-logo"
+            />
+          </div>
         </blockquote>
       </div>
     </section>

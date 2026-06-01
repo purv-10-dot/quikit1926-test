@@ -244,22 +244,10 @@ ul { list-style: none; }
 .hero-bold {
   width: 100vw;
   margin-left: calc(50% - 50vw);
-  padding: 56px 4% 80px !important;
+  padding: 56px 4% 32px !important;
   display: flex;
   flex-direction: column;
   gap: 28px;
-}
-.hero-bold-eyebrow {
-  display: inline-block;
-  align-self: flex-start;
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  font-weight: 500;
-  padding: 6px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
 }
 .hero-bold-title {
   font-family: var(--heading);
@@ -322,7 +310,7 @@ ul { list-style: none; }
   transform: translateY(-1px);
 }
 .hero-bold-image {
-  margin-top: 18px;
+  margin-top: 10px;
   width: 100vw;
   margin-left: calc(50% - 50vw);
   border-radius: 0;
@@ -798,7 +786,7 @@ ul { list-style: none; }
   margin-left: calc(50% - 50vw);
   margin-top: 50px;
   padding: 72px 14vw !important;
-  background-image: url("/marketing/gradient_1920x1080 (29).png");
+  background-image: url("/gradient_1920x1080 (29).png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -810,7 +798,6 @@ ul { list-style: none; }
 }
 #compare .section-title { color: #fff; }
 #compare .section-lede { color: rgba(255, 255, 255, 0.78); }
-#compare .cmp-disclaimer { color: rgba(255, 255, 255, 0.55); }
 .cmp-wrap {
   width: 100%;
   background: var(--bg-card);
@@ -884,19 +871,6 @@ ul { list-style: none; }
 .cmp-table tbody tr:hover {
   background: var(--bg-card-softer);
 }
-.cmp-row-price td {
-  background: var(--bg-card-softer);
-  border-top: 1px solid var(--line);
-}
-.cmp-table td.cmp-td-price {
-  text-align: center;
-  font-family: var(--serif);
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--ink-soft);
-  letter-spacing: -0.01em;
-}
-.cmp-td-price-hi { color: var(--primary); font-weight: 600; }
 .cmp-callout {
   margin: 28px auto 0;
   text-align: center;
@@ -906,14 +880,6 @@ ul { list-style: none; }
   letter-spacing: -0.02em;
   color: #fff;
 }
-.cmp-disclaimer {
-  margin: 16px 0 0;
-  text-align: center;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
-  letter-spacing: 0.02em;
-}
-
 /* ---------- Workflows (2+3 light-theme showcase) ---------- */
 .workflows-grid {
   display: grid;
@@ -1225,13 +1191,6 @@ ul { list-style: none; }
   line-height: 1.6;
   color: var(--ink-soft);
 }
-.who-quote {
-  width: 100%;
-  margin: 0;
-  text-align: center;
-  padding: 0;
-}
-
 /* ---------- Testimonial — scroll-pinned word reveal ---------- */
 .testimonial-wrap {
   position: relative;
@@ -1270,36 +1229,41 @@ ul { list-style: none; }
   opacity: 0.18;
   will-change: opacity;
 }
+.testimonial-attribution {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 48px;
+}
+.testimonial-attribution-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #999;
+}
+.testimonial-logo {
+  width: 200px;
+  height: auto;
+  object-fit: contain;
+  opacity: 0.55;
+  transition: opacity 0.35s ease;
+}
+.testimonial-logo:hover {
+  opacity: 1;
+}
 @media (max-width: 720px) {
   .testimonial-wrap { height: calc((1 + 1.2) * 100vh); }
   .testimonial-sticky { padding: 0 6vw; }
   .testimonial-text { font-size: clamp(22px, 6vw, 32px); max-width: none; }
 }
-.who-quote p {
-  font-family: var(--serif);
-  font-size: clamp(32px, 3.6vw, 54px);
-  line-height: 1.15;
-  letter-spacing: -0.025em;
-  margin-bottom: 24px;
-}
-.who-cite {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  text-align: left;
-  font-size: 13px;
-}
-.who-cite-avatar {
-  width: 36px; height: 36px;
-  border-radius: 50%;
-}
-.who-cite strong { display: block; }
-.who-cite-sub { color: var(--ink-soft); font-size: 12px; }
 
 /* ---------- Coach card (dark) ---------- */
 .coach-card {
   background-color: var(--navy);
-  background-image: url("/marketing/gradient_1920x1080 (29).png");
+  background-image: url("/gradient_1920x1080 (29).png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -1739,7 +1703,6 @@ ul { list-style: none; }
   .btn-lg { padding: 12px 22px; font-size: 14px; }
 
   .hero-bold { padding: 32px 5% 48px !important; gap: 22px; }
-  .hero-bold-eyebrow { font-size: 11px; }
   .hero-bold-title { font-size: clamp(28px, 8vw, 44px); line-height: 1.08; }
   .hero-bold-line { white-space: normal; }
   .hero-bold-row { flex-direction: column; align-items: stretch; gap: 18px; }
@@ -1787,7 +1750,6 @@ ul { list-style: none; }
 
   .who-grid { grid-template-columns: 1fr; gap: 14px; }
   .who-tile { padding: 22px; }
-  .who-quote { padding: 32px 8px 0; }
 
   .coach-grid { gap: 28px; }
   .coach-list li { font-size: 13px; }
@@ -1876,7 +1838,6 @@ ul { list-style: none; }
   .pillars-hscroll { padding: 0 4% !important; }
   .feature-card { padding: 18px; }
   .who-tile { padding: 18px; }
-  .who-quote p { font-size: 17px; }
   .coach-card { padding: 28px 18px; }
   .footer-title { font-size: clamp(22px, 7vw, 28px); }
 }

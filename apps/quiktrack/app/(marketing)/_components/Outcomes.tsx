@@ -2,53 +2,52 @@ export default function Outcomes() {
   return (
     <section id="outcomes" className="surface-card section-card">
       <header className="section-header">
-        <span className="section-eyebrow">The problem</span>
+        <span className="section-eyebrow">The advantage</span>
         <h2 className="section-title">
-          <span className="serif">₹33,000/month for a tool</span>{" "}
-          <span className="serif-bold">your team uses at 20% capacity.</span>
+          <span className="serif">The command centre for every sprint,</span>{" "}
+          <span className="serif-bold">story, and release.</span>
         </h2>
         <p className="section-lede">
-          Jira was priced for Atlassian&apos;s enterprise clients — not Indian startups.
-          Add Confluence and a couple of plugins, and your bill is two to three times the
-          base price. Finance flags it. Engineers say it&apos;s slow. There&apos;s a
-          better option.
+          From sprint planning to post-release retrospectives — QuikTrack gives your
+          team the visibility, speed, and flexibility to ship with confidence, every
+          single cycle.
         </p>
       </header>
 
       <div className="outcomes-grid">
         <article className="outcome-card">
           <div className="outcome-stat">
-            <span className="outcome-number">90%</span>
-            <span className="outcome-unit">lower cost than Jira</span>
+            <span className="outcome-number">3×</span>
+            <span className="outcome-unit">faster sprint planning</span>
           </div>
-          <h3 className="outcome-title serif-bold">₹660/user vs ₹66</h3>
+          <h3 className="outcome-title serif-bold">Visual boards built for speed</h3>
           <p className="outcome-body">
-            Jira Standard runs about ₹660 per user per month. QuikTrack runs about ₹66 —
-            for identical core functionality. Same features, different invoice.
+            Drag-to-prioritize backlogs, real-time sprint goals, and velocity reports on
+            one screen. No pre-sprint spreadsheets. No back-and-forth in Slack.
           </p>
         </article>
 
         <article className="outcome-card">
           <div className="outcome-stat">
-            <span className="outcome-number">₹3.5L</span>
-            <span className="outcome-unit">saved every year</span>
+            <span className="outcome-number">100%</span>
+            <span className="outcome-unit">issue visibility</span>
           </div>
-          <h3 className="outcome-title serif-bold">For a 50-person team</h3>
+          <h3 className="outcome-title serif-bold">Nothing buried, nothing dropped</h3>
           <p className="outcome-body">
-            INR pricing, no exchange-rate risk, everything included in the base plan. No
-            Confluence, no Tempo, no surprise USD renewal quote.
+            Every bug, task, and feature request has an owner, a status, and a due date.
+            Full epic → story → task hierarchy with linked PRs and threaded comments.
           </p>
         </article>
 
         <article className="outcome-card">
           <div className="outcome-stat">
-            <span className="outcome-number">&lt; 1</span>
-            <span className="outcome-unit">week to migrate</span>
+            <span className="outcome-number">&lt; 5</span>
+            <span className="outcome-unit">days to first sprint</span>
           </div>
-          <h3 className="outcome-title serif-bold">Live in under a week</h3>
+          <h3 className="outcome-title serif-bold">Up and running immediately</h3>
           <p className="outcome-body">
-            Import your Jira projects, boards, and issue history. Your team&apos;s workflow
-            doesn&apos;t change — only the invoice does.
+            Intuitive setup means your team is running their first sprint within days —
+            not weeks. No lengthy onboarding, no training sessions required.
           </p>
         </article>
       </div>

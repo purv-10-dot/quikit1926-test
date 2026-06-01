@@ -5,7 +5,7 @@ export default function WhoItsFor() {
         <span className="section-eyebrow">Who it&apos;s for</span>
         <h2 className="section-title">
           <span className="serif">Built for the teams</span>{" "}
-          <span className="serif-bold">paying too much for Jira.</span>
+          <span className="serif-bold">who move fast and ship often.</span>
         </h2>
       </header>
 
@@ -21,9 +21,9 @@ export default function WhoItsFor() {
           </span>
           <h3 className="who-title serif-bold">Engineering managers &amp; CTOs</h3>
           <p className="who-body">
-            10–200 engineers, currently on Jira, watching the per-seat USD bill climb
-            with every hire. Same sprints, same backlog, same workflows — your team
-            won&apos;t notice the switch, except in finance.
+            Lead 10–200 engineers with full sprint visibility, real-time issue tracking,
+            and velocity reports that show you where to focus — before a deadline slips
+            and becomes a post-mortem.
           </p>
         </article>
         <article className="who-tile">
@@ -34,11 +34,11 @@ export default function WhoItsFor() {
               <path d="M12 6.5v2.6l1.8 1" />
             </svg>
           </span>
-          <h3 className="who-title serif-bold">Founders &amp; CFOs</h3>
+          <h3 className="who-title serif-bold">Founders &amp; Product teams</h3>
           <p className="who-body">
-            Atlassian is in your top 5 SaaS line items, and renewal quotes jump 10–15% a
-            year. QuikTrack is INR-priced with no exchange-rate risk — roughly ₹3.5L/year
-            cheaper for a 50-person team.
+            Stay close to every feature, bug, and release without drowning in status
+            meetings. One workspace connects product goals directly to engineering
+            execution — from BHAG to shipped build.
           </p>
         </article>
         <article className="who-tile">
@@ -52,8 +52,9 @@ export default function WhoItsFor() {
           </span>
           <h3 className="who-title serif-bold">Early-stage Indian startups</h3>
           <p className="who-body">
-            0–20 engineers. You know Jira is the standard but can&apos;t justify the price
-            on day one. Start on QuikTrack and grow with it — no migration ever required.
+            Start right from day one with a tool that scales with your team.
+            Full-featured sprint boards, backlogs, and custom workflows — built for
+            5 engineers today and ready for 200 tomorrow.
           </p>
         </article>
       </div>

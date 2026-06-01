@@ -5,8 +5,8 @@ const reasons = [
         <path d="M3 12h4l3-8 4 16 3-8h4" />
       </svg>
     ),
-    title: "90% lower cost than Jira",
-    body: "₹660/user vs ₹66. Same sprint boards, same backlog, same workflows. Same features — a very different invoice.",
+    title: "Instant sprint visibility",
+    body: "Velocity, burndown, and cycle time — live on one screen. Know exactly where your sprint stands before standup, not after the deadline slips.",
   },
   {
     icon: (
@@ -15,8 +15,8 @@ const reasons = [
         <path d="M3 9h18M9 3v18" />
       </svg>
     ),
-    title: "No currency surprises",
-    body: "Jira, Linear, and ClickUp bill in USD — so your SaaS budget moves with the dollar-rupee rate. QuikTrack bills in INR, always.",
+    title: "One workspace, every team",
+    body: "Engineering, product, and leadership aligned on the same source of truth. No context-switching, no stale status updates, no 'what sprint is this?' in Slack.",
   },
   {
     icon: (
@@ -25,8 +25,8 @@ const reasons = [
         <path d="M12 7v5l3 2" />
       </svg>
     ),
-    title: "Live in under a week",
-    body: "Import your Jira projects, boards, and issue history. Your workflow doesn't change — your team is running their first sprint on QuikTrack within days.",
+    title: "Up and running in days",
+    body: "Intuitive by design — your team is running their first sprint in under a week. No lengthy onboarding, no certification courses, no dedicated admin required.",
   },
   {
     icon: (
@@ -35,8 +35,8 @@ const reasons = [
         <path d="M9 12l2 2 4-4" />
       </svg>
     ),
-    title: "Everything included",
-    body: "Velocity reports, custom workflows, release tracking — all in the base plan. No Confluence, no Tempo, no marketplace add-ons to reach feature parity.",
+    title: "Everything in one plan",
+    body: "Sprint boards, backlog, custom workflows, velocity reports, and release tracking — all included. No add-ons, no paywalled features, no surprise upgrade prompts.",
   },
   {
     icon: (
@@ -45,7 +45,7 @@ const reasons = [
       </svg>
     ),
     title: "Connected Quikit OS",
-    body: "A deal closes in QuikCRM, a project opens in QuikTrack. Engineering KPIs flow into QuikScale — one suite, priced for India.",
+    body: "A deal closes in QuikCRM, a project opens in QuikTrack. Engineering KPIs flow into QuikScale — one seamlessly connected suite for your entire company.",
   },
   {
     icon: (
@@ -55,8 +55,8 @@ const reasons = [
         <path d="M11 11l4 2" />
       </svg>
     ),
-    title: "Nobody notices the switch",
-    body: "Same Scrum and Kanban boards your engineers learned on Jira. The team keeps its workflow; only finance sees the difference.",
+    title: "Workflows built your way",
+    body: "Custom statuses, transitions, validators, and approvals. Build the exact process your team runs — not the rigid default someone else decided you'd need.",
   },
 ] as const;
 
@@ -64,10 +64,10 @@ export default function WhyQuikScale() {
   return (
     <section id="why" className="surface-card section-card">
       <header className="section-header">
-        <span className="section-eyebrow">Why teams switch</span>
+        <span className="section-eyebrow">Why teams choose QuikTrack</span>
         <h2 className="section-title">
-          <span className="serif">Why Indian engineering teams</span>{" "}
-          <span className="serif-bold">switch to QuikTrack.</span>
+          <span className="serif">Why fast-moving engineering teams</span>{" "}
+          <span className="serif-bold">choose QuikTrack.</span>
         </h2>
       </header>
 

@@ -15,7 +15,6 @@ const rows: { label: string; marks: Cell[] }[] = [
   { label: "Built for Indian teams", marks: ["yes", "no", "no", "no", "no"] },
 ];
 
-const prices = ["~₹3,300", "~₹33,000", "~₹50,000", "~₹25,000", "Free*"];
 
 function Mark({ state }: { state: Cell }) {
   if (state === "yes") {
@@ -51,11 +50,12 @@ export default function Comparison() {
       <header className="section-header">
         <span className="section-eyebrow">Comparison</span>
         <h2 className="section-title">
-          <span className="serif">Same features.</span>{" "}
-          <span className="serif-bold">A fraction of the price.</span>
+          <span className="serif-bold">See how QuikTrack stacks up against others.</span>
         </h2>
         <p className="section-lede">
-          How QuikTrack stacks up against the tools your team is evaluating.
+          Every capability your engineering team needs — sprint boards, backlog, bug
+          tracking, custom workflows, and releases — compared across the tools your
+          team is evaluating.
         </p>
       </header>
 
@@ -80,23 +80,12 @@ export default function Comparison() {
                 ))}
               </tr>
             ))}
-            <tr className="cmp-row-price">
-              <td className="cmp-td-feature">Approx. price (50 users/mo)</td>
-              {prices.map((p, i) => (
-                <td key={i} className={`cmp-td-price${i === 0 ? " cmp-td-price-hi" : ""}`}>{p}</td>
-              ))}
-            </tr>
           </tbody>
         </table>
       </div>
 
-      <p className="cmp-callout">₹3.5L saved annually. Zero features lost.</p>
+      <p className="cmp-callout">Every feature your team needs. Zero add-ons required.</p>
 
-      <p className="cmp-disclaimer">
-        *Plane free = self-hosted only; requires DevOps setup and ongoing maintenance.
-        Comparison based on publicly available product information as of 2026. All
-        trademarks belong to their respective owners.
-      </p>
     </section>
   );
 }

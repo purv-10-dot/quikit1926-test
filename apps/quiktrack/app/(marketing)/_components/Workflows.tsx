@@ -5,11 +5,11 @@ export default function Workflows() {
         <span className="section-eyebrow">The Product</span>
         <h2 className="section-title">
           <span className="serif">Everything your engineering team needs.</span>{" "}
-          <span className="serif-bold">Nothing extra.</span>
+          <span className="serif-bold">All in one workspace.</span>
         </h2>
         <p className="section-lede">
-          The features your team actually uses — at approximately ₹66/user/month.
-          One subscription, everything included.
+          Sprint boards, issue tracking, custom workflows, velocity reporting, and
+          release management — connected in a single, fast, intuitive workspace.
         </p>
       </header>
 

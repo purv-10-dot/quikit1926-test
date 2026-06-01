@@ -1,0 +1,129 @@
+/* Sits in normal flow ABOVE the fixed BG overlay.
+   Min-height chosen so total scroll past hero gives the BG image
+   enough room: imageRendered ≈ 100vw × 4315/1920, needed scroll =
+   (that height − 100vh) / BG_SCRUB ≈ (224.7vw − 100vh) / 0.6.
+   Using ~6 viewports as a clean visual rhythm. */
+.fg {
+  position: relative;
+  z-index: 3;
+  /* Just enough for the RevealBlock pin (250vh) plus paddings.
+     FeaturesScroll follows immediately after. */
+  min-height: 0;
+  /* Top padding holds back the first text block briefly so the section
+     opens on the BG before the foreground content rises in. */
+  /* padding-bottom trimmed — the pin/freeze scroll math is driven by the
+     #pin-zone element's own height, so reducing it here only shrinks the
+     visual gap before FeaturesScroll, not the scroll functionality. */
+  padding: 130vh 10vw 0;
+  display: flex;
+  flex-direction: column;
+  gap: 75vh;
+  pointer-events: auto;
+  color: #fff;
+}
+
+.block {
+  max-width: 640px;
+}
+.block:nth-child(odd)  { align-self: flex-start; }
+.block:nth-child(even) { align-self: flex-end; text-align: right; }
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 999px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: rgba(255,255,255,0.75);
+  margin-bottom: 22px;
+  background: rgba(10,11,13,0.55);
+  backdrop-filter: blur(10px);
+}
+.dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74,222,128,0.9);
+}
+
+.title {
+  font-family: var(--font-serif), serif;
+  font-weight: 400;
+  font-size: clamp(48px, 6vw, 92px);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+  margin-bottom: 18px;
+  text-shadow: 0 6px 30px rgba(0,0,0,0.55);
+}
+.title em {
+  font-style: italic;
+  background: linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.55) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.heading {
+  font-family: var(--font-serif), serif;
+  font-weight: 400;
+  font-size: clamp(32px, 3.6vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+  text-shadow: 0 4px 24px rgba(0,0,0,0.55);
+}
+
+.body {
+  font-size: clamp(15px, 1.1vw, 18px);
+  line-height: 1.6;
+  color: rgba(255,255,255,0.82);
+  max-width: 42ch;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+}
+.block:nth-child(even) .body { margin-left: auto; }
+
+.cta {
+  align-self: center;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 40px;
+}
+
+.btnPrimary {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 22px;
+  background: #fff; color: #050507;
+  border-radius: 999px;
+  font-size: 12px; letter-spacing: 0.16em; font-weight: 600;
+  box-shadow: 0 10px 30px rgba(255,255,255,0.12);
+}
+.btnGhost {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.22);
+  font-size: 12px; letter-spacing: 0.16em; font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  background: rgba(10,11,13,0.4);
+  backdrop-filter: blur(6px);
+}
+
+@media (max-width: 720px) {
+  .fg { padding: 30vh 22px 0; gap: 40vh; }
+  .block { max-width: 100%; }
+  .block:nth-child(even) { align-self: flex-start; text-align: left; }
+  .block:nth-child(even) .body { margin-left: 0; }
+  .title { font-size: 40px; line-height: 1.05; }
+  .heading { font-size: 28px; }
+  .body { font-size: 14px; max-width: 100%; }
+  .cta { padding-top: 28px; gap: 12px; }
+  .btnPrimary, .btnGhost {
+    padding: 12px 18px;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+  }
+}

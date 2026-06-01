@@ -6,23 +6,23 @@ const pillars = [
   {
     key: "people",
     name: "Sprint Boards",
-    quote: "Your team's process stays the same. Your invoice doesn't.",
+    quote: "Your process, visible from kickoff to done.",
     body:
-      "Full Scrum and Kanban support — sprint planning, velocity, and burndown in one place. Run two-week sprints or continuous Kanban flow, without the Jira lag.",
+      "Full Scrum and Kanban support — sprint planning, velocity, and burndown in one place. Run two-week sprints or continuous Kanban flow with WIP limits and real-time progress.",
     inProduct: "Scrum + Kanban boards, sprint planning, velocity reports.",
   },
   {
     key: "strategy",
     name: "Backlog Management",
-    quote: "Product and engineering, one backlog.",
+    quote: "Product and engineering, one source of truth.",
     body:
-      "Same priorities, no offline spreadsheets, no “that’s not what we agreed” moments. Drag stories into a sprint, split epics, set story points — in seconds, not clicks.",
+      "Same priorities, no offline spreadsheets, no misaligned expectations. Drag stories into a sprint, split epics, set story points — in seconds, not clicks.",
     inProduct: "Drag-to-prioritize backlog with story points and estimates.",
   },
   {
     key: "execution",
     name: "Bug & Issue Tracking",
-    quote: "Nothing buried in Slack. Nothing quietly dropped.",
+    quote: "Every issue owned. Every resolution tracked.",
     body:
       "Every bug has an owner and a status. Capture issues with full hierarchy — epics, stories, tasks, bugs — link commits, attach screenshots, @-mention teammates.",
     inProduct: "Epics → stories → tasks, with Git, screenshots, and comments.",
@@ -30,9 +30,9 @@ const pillars = [
   {
     key: "cash",
     name: "Custom Workflows",
-    quote: "Your process. Not Atlassian's idea of your process.",
+    quote: "Your process, built exactly how you work.",
     body:
-      "Build the workflow your team actually uses — not the one Jira assumed you’d need in 2003. Custom statuses, transitions, validators, and approvals, no Marketplace add-on required.",
+      "Build the workflow your team actually uses. Custom statuses, transitions, validators, and approvals — designed around your engineering process, not a rigid default.",
     inProduct: "Custom statuses, transitions, releases — no paid plugins.",
   },
 ] as const;
@@ -102,15 +102,15 @@ export default function FourPillars() {
     >
       <div className="pillars-hscroll-pin">
         <header className="section-header pillars-hscroll-header">
-          <span className="section-eyebrow">Full Jira functionality. 1/10th the cost.</span>
+          <span className="section-eyebrow">Built for how engineering teams actually work.</span>
           <h2 className="section-title">
-            <span className="serif">Affordable project management software</span>{" "}
-            <span className="serif-bold">for Indian engineering teams.</span>
+            <span className="serif">Powerful project management</span>{" "}
+            <span className="serif-bold">for teams that move fast.</span>
           </h2>
           <p className="section-lede">
-            QuikTrack gives your dev team the features they actually use — sprints,
-            backlogs, bug tracking, and custom workflows — at approximately ₹66/user/month.
-            No marketplace dependencies. No USD pricing surprises.
+            Sprint boards, backlogs, issue tracking, and custom workflows — everything
+            your engineering team needs, connected in a single workspace designed for
+            speed and clarity.
           </p>
         </header>
 

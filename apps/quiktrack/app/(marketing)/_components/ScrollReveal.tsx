@@ -16,7 +16,6 @@ const CHILD_SELECTORS = [
   ".coach-copy",
   ".coach-visual",
   ".client-row",
-  ".hero-bold-eyebrow",
   ".hero-bold-title",
   ".hero-bold-row",
   ".hero-bold-image",

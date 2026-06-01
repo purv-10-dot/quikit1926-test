@@ -1,13 +1,29 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { ADMIN_TIER_ROLES } from "@quikit/shared";
 
 /**
  * GET /api/apps/switcher
  *
- * Returns the list of apps the current user has access to.
- * Used by the AppSwitcher component in the header.
+ * Returns the list of apps the current user can see in the in-app AppSwitcher
+ * (the grid dropdown in the header). This MUST match what the QuikIT launcher
+ * (`/apps` page → apps/quikit/app/api/apps/launcher/route.ts) shows for the
+ * same user + active org, so the switcher and the portal never disagree.
+ *
+ * Visibility rule (post 2026-05-04 role refactor — mirrors the launcher):
+ *   1. The org must have OrgAppAccess.enabled = true for the app (provisioning)
+ *   2. If App.requiresOrgAdmin = true, the caller's membership role must be in
+ *      ADMIN_TIER_ROLES (super_admin/org_admin) OR they're a platform super admin
+ *   3. Org Admin / Super Admin see EVERY provisioned app; everyone else needs an
+ *      explicit UserAppAccess row (UserAppAccess is an optional override, not a
+ *      blanket gate)
+ *   4. `quikit` itself is excluded — it's the launcher, not a switch target
+ *
+ * NOTE: inside consumer apps `session.user.isSuperAdmin` is forced to false
+ * (apps don't inherit super-admin), so the admin path is driven by
+ * `membershipRole` via ADMIN_TIER_ROLES.
  */
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -16,19 +32,26 @@ export async function GET() {
   }
 
   const userId = session.user.id;
+  const isSuperAdmin = session.user.isSuperAdmin === true;
   let orgId = session.user.orgId;
+  let memberRole = session.user.membershipRole;
 
+  // Fall back to first active membership if orgId not in session.
   if (!orgId) {
     const membership = await db.orgMember.findFirst({
       where: { userId, status: "active" },
-      select: { orgId: true },
+      select: { orgId: true, role: true },
       orderBy: { createdAt: "asc" },
     });
     orgId = membership?.orgId ?? undefined;
+    memberRole = membership?.role ?? memberRole;
   }
 
+  const memberIsAdmin = isSuperAdmin || ADMIN_TIER_ROLES.has(String(memberRole ?? ""));
+
+  // Catalog (active only). Exclude `quikit` — it's the launcher itself.
   const allApps = await db.app.findMany({
-    where: { status: { not: "disabled" } },
+    where: { status: { not: "disabled" }, slug: { not: "quikit" } },
     select: {
       id: true,
       name: true,
@@ -37,18 +60,30 @@ export async function GET() {
       iconUrl: true,
       baseUrl: true,
       status: true,
+      requiresOrgAdmin: true,
     },
     orderBy: { name: "asc" },
   });
 
-  const accessRecords = orgId
+  // Org-level entitlement: SPARSE storage, DEFAULT-OFF. Only apps with an
+  // OrgAppAccess row enabled:true are provisioned for this org.
+  const orgAllows = orgId
+    ? await db.orgAppAccess.findMany({
+        where: { orgId, enabled: true },
+        select: { appId: true },
+      })
+    : [];
+  const orgAllowedAppIds = new Set(orgAllows.map((a) => a.appId));
+
+  // Per-user app access. Presence = explicitly assigned; absence only blocks
+  // non-admin tiers (org admins / super admins get full-org visibility).
+  const userAccess = orgId
     ? await db.userAppAccess.findMany({
         where: { userId, orgId },
         select: { appId: true },
       })
     : [];
-
-  const accessSet = new Set(accessRecords.map((a) => a.appId));
+  const userAppIds = new Set(userAccess.map((u) => u.appId));
 
   // Env-override map: if the deployment supplies a per-app URL via env, use
   // it instead of the DB's stored baseUrl. Lets local dev (.env.local with
@@ -82,14 +117,27 @@ export async function GET() {
     return "";
   }
 
-  const data = allApps
-    .filter((app) => accessSet.has(app.id))
-    .map((app) => ({ ...app, baseUrl: resolveBaseUrl(app.slug, app.baseUrl) }));
+  // Visibility filter — identical rule to the launcher.
+  const visibleApps = allApps.filter((app) => {
+    if (!orgAllowedAppIds.has(app.id)) return false;
+    if (app.requiresOrgAdmin && !memberIsAdmin) return false;
+    if (!isSuperAdmin && !memberIsAdmin && !userAppIds.has(app.id)) {
+      return false;
+    }
+    return true;
+  });
+
+  const data = visibleApps.map((app) => ({
+    ...app,
+    baseUrl: resolveBaseUrl(app.slug, app.baseUrl),
+    installed: true, // visibility implies installed under the new rule
+  }));
   const quikitUrl = process.env.QUIKIT_URL ?? null;
 
   return NextResponse.json(
     { success: true, data, quikitUrl },
     {
+      // Per-user, dynamically scoped response — never share across users.
       headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" },
     },
   );

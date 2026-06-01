@@ -1,14 +1,12 @@
 export default function Hero() {
   return (
     <section className="hero-card surface-card hero-bold">
-      <div className="hero-bold-eyebrow">JIRA ALTERNATIVE · BUILT FOR INDIA</div>
-
-      <h1 className="hero-bold-title">
+<h1 className="hero-bold-title">
         <span className="hero-bold-line">
-          The <span className="accent-primary serif-bold">Jira Alternative</span> Built
+          The Engineering Workspace That
         </span>
         <span className="hero-bold-line">
-          for Indian Engineering Teams
+          <span className="accent-primary serif-bold">Ships Product Faster.</span>
         </span>
       </h1>
 
@@ -16,9 +14,9 @@ export default function Hero() {
 
       <div className="hero-bold-row">
         <p className="hero-bold-desc">
-          Sprint boards, backlog, bug tracking, custom workflows — everything Jira
-          does, at 1/10th the price. INR pricing. No Atlassian add-ons.{" "}
-          <strong>A 50-person team saves ₹3.5L a year. Without losing a feature.</strong>
+          Sprint boards, backlog, issue tracking, and custom workflows — all connected
+          in one fast, intelligent workspace.{" "}
+          <strong>Real-time visibility from sprint kickoff to release. No add-ons. No paywalled features.</strong>
         </p>
         <a href="#start" className="btn-bold-cta">
           START FREE TRIAL
@@ -26,7 +24,7 @@ export default function Hero() {
       </div>
 
       <div className="hero-bold-image">
-        <img src="/marketing/HEro BG.png" alt="QuikTrack sprint board — Jira alternative India" />
+        <img src="/HEro BG.png" alt="QuikTrack engineering workspace — sprint boards and issue tracking" />
       </div>
     </section>
   );

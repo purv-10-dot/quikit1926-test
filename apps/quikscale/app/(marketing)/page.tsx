@@ -3,17 +3,23 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Nav from "./_components/Nav";
 import Hero from "./_components/Hero";
+import ScrollReveal from "./_components/ScrollReveal";
 import FourPillars from "./_components/FourPillars";
 import Features from "./_components/Features";
+import Outcomes from "./_components/Outcomes";
+import Workflows from "./_components/Workflows";
+import WhyQuikScale from "./_components/WhyQuikScale";
+import Comparison from "./_components/Comparison";
+import AIAgents from "./_components/AIAgents";
+import ProductCards from "./_components/ProductCards";
 import WhoItsFor from "./_components/WhoItsFor";
+import Testimonial from "./_components/Testimonial";
 import CoachModel from "./_components/CoachModel";
 import FooterCTA from "./_components/FooterCTA";
-import ScrollReveal from "./_components/ScrollReveal";
 
 /**
  * Public landing page at `/`.
  *
- * Behaviour (Option 2):
  *   - Unauthenticated → render the landing page (200 OK)
  *   - Authenticated   → redirect to `/dashboard`
  *
@@ -28,11 +34,20 @@ export default async function MarketingPage() {
   }
 
   return (
-    <main className="stage">
+    <main className="stage" id="main-content">
       <Nav />
       <Hero />
+      <ProductCards />
       <FourPillars />
+      <Outcomes />
       <Features />
+      <Workflows />
+      <div className="compare-agents-band">
+        <Comparison />
+        <AIAgents />
+      </div>
+      <WhyQuikScale />
+      <Testimonial />
       <WhoItsFor />
       <CoachModel />
       <FooterCTA />

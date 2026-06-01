@@ -101,10 +101,110 @@ export const viewport: Viewport = {
   themeColor: "#2d88ff",
 };
 
+const FAQS: { q: string; a: string }[] = [
+  {
+    q: "What is QuikTrack?",
+    a: "QuikTrack is the engineering workspace that ships product faster. It brings sprint boards, backlog management, bug and issue tracking, custom workflows, velocity reporting, and release management into one connected workspace — giving your team real-time visibility from sprint kickoff to release.",
+  },
+  {
+    q: "What does QuikTrack's sprint planning look like?",
+    a: "QuikTrack supports full Scrum and Kanban workflows. Sprint planning, velocity tracking, burndown charts, and WIP limits are all built in. Your team gets instant sprint visibility — burndown, cycle time, and velocity live on one screen — so you know where the sprint stands before standup, not after a deadline slips.",
+  },
+  {
+    q: "How does issue tracking work in QuikTrack?",
+    a: "Every issue has an owner, a status, and a due date. QuikTrack tracks the full hierarchy — epics, stories, tasks, and bugs — with linked PRs, screenshots, and threaded comments. Every issue owned. Every resolution tracked.",
+  },
+  {
+    q: "Can I build custom workflows?",
+    a: "Yes. QuikTrack lets you define custom statuses, transitions, validators, and approvals. Build the exact process your team runs — not the rigid default someone else decided you'd need. No paid plugins required.",
+  },
+  {
+    q: "How quickly can my team get started?",
+    a: "Most teams are running their first sprint within 5 days. QuikTrack is intuitive by design — no lengthy onboarding, no certification courses, and no dedicated admin required to get up and running.",
+  },
+  {
+    q: "Does QuikTrack connect with other tools?",
+    a: "QuikTrack is part of the Quikit OS. When a deal closes in QuikCRM, a project opens automatically in QuikTrack. Engineering KPIs flow into QuikScale. One connected suite for your entire company — no integrations to maintain.",
+  },
+];
+
+const organizationJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Quikit",
+  url: "https://quikit.in",
+  logo: `${SITE_URL}/marketing/logo.png`,
+  sameAs: ["https://quikit.in"],
+};
+
+const softwareJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "QuikTrack",
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  description:
+    "QuikTrack is the engineering workspace that ships product faster — sprint boards, backlog management, issue tracking, custom workflows, velocity reporting, and release management in one connected platform.",
+  url: SITE_URL,
+  publisher: { "@type": "Organization", name: "Quikit", url: "https://quikit.in" },
+  featureList: [
+    "Sprint boards (Scrum and Kanban)",
+    "Backlog management",
+    "Bug and issue tracking",
+    "Custom workflows",
+    "Velocity reporting",
+    "Release management",
+    "Goal cascade",
+    "Quikit OS integration",
+  ],
+  offers: {
+    "@type": "Offer",
+    priceCurrency: "INR",
+    price: "66",
+    priceSpecification: {
+      "@type": "UnitPriceSpecification",
+      price: "66",
+      priceCurrency: "INR",
+      unitText: "per user per month",
+    },
+  },
+  aggregateRating: {
+    "@type": "AggregateRating",
+    ratingValue: "4.8",
+    reviewCount: "24",
+  },
+};
+
+const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQS.map((f) => ({
+    "@type": "Question",
+    name: f.q,
+    acceptedAnswer: { "@type": "Answer", text: f.a },
+  })),
+};
+
 export default function MarketingLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <div className={`${fraunces.variable} ${inter.variable}`}>{children}</div>;
+  return (
+    <div className={`${fraunces.variable} ${inter.variable}`}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
+      {children}
+    </div>
+  );
 }
