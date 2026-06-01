@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { requirePermission } from "@/lib/auth/context";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { getTenantContext } from "@/lib/auth/context";
 import { ok, err } from "@/lib/http/envelope";
 import { logger } from "@/lib/observability/logger";
 import { boqService, type ImportMode, type RawSheet } from "@/lib/boq";
+
+const auth = withOrgAuthForResource("construction.boq");
 
 /**
  * POST /api/projects/:projectId/boq/preview-upload
@@ -25,15 +28,13 @@ import { boqService, type ImportMode, type RawSheet } from "@/lib/boq";
  * The full row set is returned to keep the confirm step snappy. Client
  * either POSTs the rows back to /import or cancels.
  */
-export async function POST(
+export const POST = auth.importOrEdit<{ projectId: string }>(async (
+  _authCtx,
   req: NextRequest,
-  { params }: { params: { projectId: string } }
-) {
-  const ctxOrResponse = await requirePermission("boq.import", {
-    matrix: { menuKey: "pm.boq", action: "edit" },
-  });
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+  { params },
+) => {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // ── Read multipart body ────────────────────────────────────────
   let formData: FormData;
@@ -166,4 +167,4 @@ export async function POST(
       },
     },
   });
-}
+});

@@ -8,6 +8,18 @@ async function fetchApi<T>(url: string): Promise<T> {
   return res.json();
 }
 
+function extractErrorMessage(payload: any, fallback: string): string {
+  if (!payload) return fallback;
+  if (typeof payload === "string") return payload;
+  if (typeof payload.error === "string") return payload.error;
+  if (payload.error && typeof payload.error === "object") {
+    if (typeof payload.error.message === "string") return payload.error.message;
+    if (typeof payload.error.code === "string") return payload.error.code;
+  }
+  if (typeof payload.message === "string") return payload.message;
+  return fallback;
+}
+
 async function mutateApi<T>(url: string, method: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
@@ -15,8 +27,8 @@ async function mutateApi<T>(url: string, method: string, body?: unknown): Promis
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? "Request failed");
+    const payload = await res.json().catch(() => null);
+    throw new Error(extractErrorMessage(payload, res.statusText || "Request failed"));
   }
   return res.json();
 }

@@ -23,15 +23,18 @@
  *  - On success, returns a fully-populated TenantContext.
  */
 
+import { cache } from "react";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { db } from "@/lib/db/prisma";
+import { db as dbCentral } from "@quikit/database";
 import { logger } from "@/lib/observability/logger";
 import { ROLE_DEFINITIONS } from "@/lib/rbac/roles";
-import { ALL_PERMISSION_KEYS, filterPermissionsByModules } from "@/lib/rbac/permissions";
+import { ALL_PERMISSION_KEYS } from "@/lib/rbac/permissions";
 import type { MatrixAction } from "@/lib/rbac/menu-catalog";
-import { findByEmailForLogin } from "@/lib/users/repository";
-import { getUserTypeDescriptor } from "@/lib/rbac/user-types";
+import { getQuikInfraAppId } from "@/lib/rbac/userCan";
+import { modulesFromPermissions } from "@/lib/rbac/permissionsRegistry";
+import { loadProjectAccess } from "@/lib/rbac/applyProjectAccess";
+import { getDescriptorByRoleName } from "@/lib/rbac/user-types";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -78,251 +81,416 @@ export type AuthResult = TenantContext | NextResponse;
  * Single resolution path: a valid NextAuth session must be present and
  * the underlying user row must still be active. Anything else returns
  * null and the caller responds with 401.
+ *
+ * Wrapped in React `cache()` so the result is memoized for the lifetime
+ * of one server request — handlers that hit the auth-gate AND read the
+ * context inline only pay the DB cost once.
  */
-export async function getTenantContext(): Promise<TenantContext | null> {
+export const getTenantContext = cache(async (): Promise<TenantContext | null> => {
   try {
     const authOptionsMod = await import("./next-auth-options");
     const session = await getServerSession(authOptionsMod.authOptions);
     if (!session?.user) {
-      logger.warn({ msg: "tenant_context_no_session" });
       return null;
     }
-    const s = session.user as any;
+    const s = session.user as {
+      id?: string;
+      email?: string;
+      name?: string;
+      orgId?: string;
+      membershipRole?: string;
+      isSuperAdmin?: boolean;
+    };
 
-    // Central QuikIT auth sessions carry { id, email, orgId, membershipRole,
-    // isSuperAdmin } but no roleKey. Bridge to the local cn_users row by email
-    // so the rest of the app (which expects roleKey + cn_users.id) keeps
-    // working without a /login page on this app. If no row exists yet, auto-
-    // provision one mirroring the central auth's role — that way clicking the
-    // app from the launcher just works and never bounces back to login.
-    if (!s.roleKey && s.email) {
-      const existing = await findByEmailForLogin(s.email);
-      const cnUser =
-        existing ?? (await provisionUserFromSession(s));
-      if (!cnUser) {
-        logger.warn({
-          msg: "tenant_context_email_not_in_cn_users",
-          email: s.email,
-        });
-        return null;
-      }
-      const descriptor = getUserTypeDescriptor(cnUser.userType ?? "USER");
-      s.id = cnUser.id;
-      s.orgId = cnUser.orgId ?? s.orgId ?? "default";
-      s.roleKey = cnUser.roleKey ?? descriptor?.backingRole ?? "user";
-      s.displayRole = descriptor?.label ?? cnUser.userType ?? "";
-      s.department = cnUser.department ?? "";
-    }
-
-    if (!s.id || !s.roleKey) {
-      logger.warn({
-        msg: "tenant_context_session_missing_fields",
-        email: s.email,
-        hasId: Boolean(s.id),
-        hasRoleKey: Boolean(s.roleKey),
-        hasOrgId: Boolean(s.orgId),
-      });
-      return null;
-    }
-
-    // Stale-JWT guard: NextAuth uses JWT sessions, so a user who was
-    // deactivated/soft-deleted/hard-deleted in the DB still carries a
-    // valid signed cookie. Reject them here so the next API call
-    // returns 401 and the client signs them out.
+    // Skinny path — matches quikscale/quiktrack architecture:
+    //   - userId IS auth.User.id (no bridging to a local cn_users row)
+    //   - orgId comes from the JWT (already populated by central auth)
+    //   - permissions come from the v2 RBAC tables in app_quikinfra:
+    //         CnUserAppRole → CnAppRole → CnRolePermissionV2
+    //     and CnUserPermissionExtra for per-user additive grants
+    //   - if the user has no v2 role assignment for this org yet,
+    //     auto-assign the org's default role (lazy bootstrap)
+    //   - fall back to ROLE_DEFINITIONS only when the v2 tables aren't
+    //     reachable (registry App row missing on this env)
     //
-    // Sessions can originate from two tables:
-    //   - cn_users      — the real invited-user table
-    //   - cn_demo_users — the seeded admin accounts
-    // We look up BOTH in parallel and accept the JWT only when at
-    // least one table reports the user as active. Rules:
-    //   - active in either table   → allow
-    //   - present and inactive     → reject (admin disabled them)
-    //   - missing from both tables → reject (row was deleted)
-    //   - both lookups threw       → degrade open (DB outage; don't
-    //                                mass-logout the entire app)
-    const [cnRes, demoRes] = await Promise.allSettled([
-      (db as any).cnUser.findFirst({
-        where: { id: s.id, orgId: s.orgId },
-        select: { status: true },
-      }),
-      (db as any).cnDemoUser.findUnique({
-        where: { id: s.id },
-        select: { status: true },
-      }),
-    ]);
-    const cnStatus: string | null | undefined =
-      cnRes.status === "fulfilled" ? (cnRes.value?.status ?? null) : undefined;
-    const demoStatus: string | null | undefined =
-      demoRes.status === "fulfilled" ? (demoRes.value?.status ?? null) : undefined;
-    const activeSomewhere = cnStatus === "active" || demoStatus === "active";
-    const bothErrored = cnStatus === undefined && demoStatus === undefined;
-    if (!activeSomewhere && !bothErrored) {
+    // No JIT provision into cn_users. No password verification. No demo-
+    // user fallback. If the session has no userId/orgId, the caller gets
+    // a 401 and that's correct — the central auth → handoff chain is the
+    // only way to populate those.
+    const userId = s.id;
+    const orgId = s.orgId;
+    if (!userId || !orgId) {
       logger.warn({
-        msg: "tenant_context_user_not_active",
-        userId: s.id,
-        sessionOrgId: s.orgId,
-        cnStatus: cnStatus ?? "not_found",
-        demoStatus: demoStatus ?? "not_found",
+        msg: "tenant_context_missing_session_fields",
+        hasId: Boolean(userId),
+        hasOrgId: Boolean(orgId),
       });
       return null;
     }
-    return buildContextFromSession(s);
+
+    const appId = await getQuikInfraAppId();
+    const permissions = new Set<string>();
+    const extrasSet = new Set<string>(); // perms granted via CnUserPermissionExtra
+    let roleKey = "user";
+    let userType: string | null = null;
+    let isAdminRole = false;
+
+    if (appId) {
+      // Query the v2 RBAC tables — single round-trip with includes.
+      let assignment = await (dbCentral as any).cnUserAppRole.findFirst({
+        where: { userId, orgId, role: { appId } },
+        include: {
+          role: {
+            select: {
+              id: true,
+              name: true,
+              isSystem: true,
+              rolePermissions: { select: { resource: true, action: true } },
+            },
+          },
+        },
+      });
+
+      // No v2 assignment yet → auto-assign a role:
+      //
+      //   1. Central isSuperAdmin / membershipRole admin-tier → system
+      //      "admin" role.
+      //   2. Otherwise → org's isDefault role (normally "user").
+      //
+      // The previous codepath also consulted `app_quikinfra."User".userType`
+      // for an invite-time role choice. That fallback is gone — the invite
+      // flow now writes `CnUserAppRole` directly in POST /api/settings/users,
+      // so by the time an invitee first lands here the assignment already
+      // exists and we never reach this branch. Removing the per-request
+      // raw SQL cuts one query off every authenticated request.
+      if (!assignment) {
+        const central = s.membershipRole?.toLowerCase() ?? "";
+        const wantsAdmin =
+          s.isSuperAdmin === true ||
+          central === "super_admin" ||
+          central === "platform_super_admin" ||
+          central === "org_admin" ||
+          central === "admin";
+
+        const targetRoleQuery: Record<string, unknown> = wantsAdmin
+          ? { orgId, appId, isSystem: true, name: "admin" }
+          : { orgId, appId, isDefault: true };
+
+        let defaultRole = await (dbCentral as any).cnAppRole.findFirst({
+          where: targetRoleQuery,
+          select: {
+            id: true,
+            name: true,
+            isSystem: true,
+            permissions: { select: { resource: true, action: true } },
+          },
+        });
+
+        // Safety net: if the targeted role wasn't found (e.g., seeder hasn't
+        // run for this org yet), fall back to whatever isDefault role exists.
+        // Better to land them on a real role than bounce to 401.
+        if (!defaultRole) {
+          defaultRole = await (dbCentral as any).cnAppRole.findFirst({
+            where: { orgId, appId, isDefault: true },
+            select: {
+              id: true,
+              name: true,
+              isSystem: true,
+              rolePermissions: { select: { resource: true, action: true } },
+            },
+          });
+        }
+        if (defaultRole) {
+          try {
+            await (dbCentral as any).cnUserAppRole.upsert({
+              where: {
+                userId_orgId_roleId: {
+                  userId,
+                  orgId,
+                  roleId: defaultRole.id,
+                },
+              },
+              update: {},
+              create: {
+                userId,
+                orgId,
+                roleId: defaultRole.id,
+                assignedBy: "auto-default",
+              },
+            });
+            assignment = {
+              role: defaultRole,
+            } as typeof assignment;
+            logger.info({
+              msg: "tenant_context_auto_assigned_default_role",
+              userId,
+              orgId,
+              roleName: defaultRole.name,
+            });
+          } catch (err) {
+            // Race-condition path: two parallel requests from the same
+            // user both try to upsert the default role. Prisma's upsert
+            // isn't atomic — the SELECT-then-INSERT can race and the
+            // second one collides on the unique constraint. Treat that
+            // as success: another request already assigned the role,
+            // so we re-query to get the (now-existing) assignment.
+            const isUniqueViolation =
+              err instanceof Error &&
+              (err.message.includes("Unique constraint failed") ||
+                (err as { code?: string }).code === "P2002");
+
+            if (isUniqueViolation) {
+              const refetched = await (dbCentral as any).cnUserAppRole.findFirst({
+                where: { userId, orgId, role: { appId } },
+                include: {
+                  role: {
+                    select: {
+                      id: true,
+                      name: true,
+                      isSystem: true,
+                      rolePermissions: { select: { resource: true, action: true } },
+                    },
+                  },
+                },
+              });
+              if (refetched) {
+                assignment = refetched;
+                logger.info({
+                  msg: "tenant_context_assign_race_recovered",
+                  userId,
+                  orgId,
+                });
+              }
+            } else {
+              logger.warn({
+                msg: "tenant_context_auto_assign_failed",
+                userId,
+                orgId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+        }
+      }
+
+      if (assignment?.role) {
+        roleKey = assignment.role.name;
+        isAdminRole =
+          assignment.role.isSystem && assignment.role.name === "admin";
+        for (const rp of assignment.role.rolePermissions) {
+          permissions.add(`${rp.resource}.${rp.action}`);
+        }
+      }
+
+      // Per-user extras — both additive grants (revoke=false) and
+      // subtractive revokes (revoke=true, written by the Add User
+      // module-revoke flow). Apply grants first, then strip revokes
+      // so the resulting `permissions` set is the effective union.
+      // `extrasSet` only tracks GRANTS so the settings-strip block
+      // doesn't mistakenly count a revoked perm as an explicit override.
+      const extras: Array<{
+        resource: string;
+        action: string;
+        revoke: boolean;
+      }> = await (dbCentral as any).cnUserPermissionExtra.findMany({
+        where: { userId, orgId },
+        select: { resource: true, action: true, revoke: true },
+      });
+      for (const e of extras) {
+        const key = `${e.resource}.${e.action}`;
+        if (e.revoke) {
+          permissions.delete(key);
+        } else {
+          permissions.add(key);
+          extrasSet.add(key);
+        }
+      }
+    }
+
+    // Fallback: no v2 path available — derive from the JWT's
+    // membershipRole and the in-code ROLE_DEFINITIONS map. This keeps
+    // the app functional when the v2 App row is missing or the seeder
+    // hasn't run yet.
+    if (permissions.size === 0) {
+      const legacy = mapCentralRoleToLocal(s);
+      roleKey = legacy.roleKey;
+      userType = legacy.userType;
+      const def = ROLE_DEFINITIONS.find((r) => r.key === roleKey);
+      if (def) {
+        if (def.permissions === "*") {
+          for (const p of ALL_PERMISSION_KEYS) permissions.add(p);
+          permissions.add("*");
+        } else {
+          for (const p of def.permissions) permissions.add(p);
+        }
+        if (roleKey === "super_admin" || roleKey === "admin") {
+          isAdminRole = true;
+        }
+      }
+    } else {
+      // Derive userType label from the v2 role name so the sidebar chip
+      // still has something to display.
+      userType = v2RoleNameToUserType(roleKey);
+    }
+
+    // Distinguish a *central* admin (the org's own owner / super-admin)
+    // from an app-level "admin" role granted to a teammate ("sub-admin").
+    // This must be computed BEFORE we materialise wildcard permissions so
+    // the Settings gate below can actually take effect.
+    const isCentralAdmin =
+      s.isSuperAdmin === true ||
+      (typeof s.membershipRole === "string" &&
+        ["super_admin", "platform_super_admin", "org_admin", "admin"].includes(
+          s.membershipRole.toLowerCase(),
+        ));
+
+    // Admin-tier roles get broad access, but ONLY the central admin gets a
+    // literal "*" wildcard. A sub-admin instead gets every concrete
+    // permission key materialised — NOT "*". This matters because the
+    // client's `can()` / `canViewMenu()` (and route `permissions.has("*")`)
+    // short-circuit on "*", which would override the Settings strip below
+    // and show Settings → Users/Roles/Workflows even when the admin was
+    // NOT granted Settings access. Materialising concrete keys lets the
+    // strip remove exactly the 4 settings perms while leaving full access
+    // to every other module intact (same effective access as before for
+    // everything except Settings).
+    if (isAdminRole) {
+      if (isCentralAdmin) {
+        permissions.add("*");
+      } else {
+        for (const p of ALL_PERMISSION_KEYS) permissions.add(p);
+      }
+    }
+
+    // ── Settings access gate ────────────────────────────────────────
+    // Sub-admins (admin role given to them by another admin) do
+    // NOT see Settings → Users/Roles/Workflows by default. Only the real
+    // central org-admin / super-admin gets that automatically.
+    //
+    // Override: if the inviting admin ticked "Grant Settings access" on
+    // the invite/role-swap form, the corresponding settings permissions
+    // were inserted into CnUserPermissionExtra. Those are tracked in
+    // `extrasSet`. We honour them — extras are NEVER stripped here.
+    const SETTINGS_PERMS = [
+      "construction.settings.manage",
+      "construction.users.manage",
+      "construction.roles.manage",
+      "construction.workflows.manage",
+    ];
+
+    if (!isCentralAdmin) {
+      for (const key of SETTINGS_PERMS) {
+        // Only strip if the perm came from the role grant (not from
+        // a per-user extra — those are an explicit admin override).
+        if (!extrasSet.has(key)) {
+          permissions.delete(key);
+        }
+      }
+    }
+
+    // Settings visibility is now resolved directly from the v2 permission
+    // set (sidebar reads can("construction.users.manage") /
+    // can("construction.workflows.manage")), so the legacy
+    // userType === "SUPER_ADMIN" side-channel that used to feed the
+    // sidebar is no longer needed. We leave `extrasSet` populated only so
+    // the settings-strip block above keeps honouring per-user extras.
+    void extrasSet;
+
+    // Phase 4: derive modulesAssigned from the effective v2 permission
+    // set (role grants ∪ extras-grants − extras-revokes — already
+    // applied to `permissions` above by the revoke-honouring logic).
+    // For admins (`isAdminRole`), pass `null` to mean "no restriction"
+    // so the sidebar shows everything.
+    const scopedModulesAssigned: string[] | null = isAdminRole
+      ? null
+      : modulesFromPermissions(permissions);
+
+    // Phase 5: projectIds now come from CnUserProjectAccess (v2 table),
+    // not cn_users.projectsAssigned. Admins bypass via `isAdmin` so they
+    // see all projects; for non-admins we load the explicit grants.
+    //
+    // Item 6: permissionMatrix is now derived from CnUserPermissionExtra
+    // revoke rows (matrix is a *view* on top of v2 revokes). The matrix
+    // is built lazily — only used by `hasMatrixAction()` and the per-
+    // menu UI gates; since all migrated routes now go through `userCan`/
+    // `ctx.permissions.has()` directly, the matrix surface is shrinking.
+    let scopedProjectIds: string[] | undefined = undefined;
+    let scopedPermissionMatrix:
+      | Record<string, Record<string, boolean>>
+      | null = null;
+
+    // Cross-site roles (admin, HO User, super_admin) see EVERY project — no
+    // per-site filter — so we leave projectIds undefined ("all projects"),
+    // same as admins. Only genuinely site-scoped roles (site_admin, user,
+    // custom roles) load their explicit CnUserProjectAccess grants; a role
+    // with no grants then correctly gets an empty project list. Without this,
+    // a HO User (cross-site but not admin) loaded zero grants and saw NO
+    // projects in the BOQ/DPR pickers.
+    const isCrossSite = getDescriptorByRoleName(roleKey).crossSite;
+    if (!isAdminRole && !isCrossSite) {
+      try {
+        scopedProjectIds = await loadProjectAccess(
+          dbCentral as never,
+          userId,
+          orgId,
+        );
+      } catch {
+        // CnUserProjectAccess unreachable — leave undefined (no scope).
+      }
+    }
+
+    // Per-page matrix revokes still apply to every non-admin role — including
+    // the page-level HO User — so load them whenever the user isn't an admin,
+    // independent of the project-scope decision above.
+    if (!isAdminRole) {
+      try {
+        const revokes = (await (dbCentral as any).cnUserPermissionExtra.findMany({
+          where: { userId, orgId, revoke: true },
+          select: { resource: true, action: true },
+        })) as Array<{ resource: string; action: string }>;
+        // The matrix is rebuilt only if there are revokes — empty = null
+        // means "no restrictions" (preserves the legacy semantic where
+        // null matrix → hasMatrixAction returns true).
+        if (revokes.length > 0) {
+          const { revokesToMatrix } = await import(
+            "@/lib/rbac/matrixV2Bridge"
+          );
+          scopedPermissionMatrix = revokesToMatrix(revokes) as Record<
+            string,
+            Record<string, boolean>
+          >;
+        }
+      } catch {
+        // Non-fatal — leave matrix null (no restrictions).
+      }
+    }
+
+    return {
+      userId,
+      userEmail: s.email ?? "",
+      userName: s.name ?? "",
+      orgId,
+      roleKey,
+      userType,
+      permissions,
+      projectIds: scopedProjectIds,
+      modulesAssigned: scopedModulesAssigned,
+      permissionMatrix: scopedPermissionMatrix,
+    };
   } catch (err) {
-    // Log the failure so silent 401s are diagnosable in the dev terminal.
-    logger.error({
-      msg: "tenant_context_threw",
+    logger.warn({
+      msg: "tenant_context_unhandled_error",
       error: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : undefined,
     });
     return null;
   }
-}
+});
 
 /**
- * Build a full TenantContext from a NextAuth session user object.
- * Materializes the role's permission set by looking up CnRolePermission.
- * Session fields come from the jwt callback in next-auth-options.ts.
- */
-async function buildContextFromSession(sessionUser: {
-  id: string;
-  email?: string;
-  name?: string;
-  orgId: string;
-  roleKey: string;
-}): Promise<TenantContext> {
-  const permissions = new Set<string>();
-
-  // Resolve the role's permissions from cn_role_permissions. Wildcard ("*")
-  // roles (super/tenant admin) get every permission materialized.
-  try {
-    const role = await (db as any).cnRole.findFirst({
-      where: { orgId: sessionUser.orgId, key: sessionUser.roleKey },
-      include: { permissions: { include: { permission: true } } },
-    });
-    if (role?.permissions) {
-      for (const rp of role.permissions) {
-        permissions.add(rp.permission.key);
-      }
-    }
-  } catch {
-    // cn_role table missing — fall through to the role-definitions file
-  }
-
-  // Fallback: if the DB lookup produced nothing (fresh dev DB with no
-  // role_permissions), resolve from the in-code ROLE_DEFINITIONS.
-  if (permissions.size === 0) {
-    const role = ROLE_DEFINITIONS.find((r) => r.key === sessionUser.roleKey);
-    if (role) {
-      if (role.permissions === "*") {
-        for (const p of ALL_PERMISSION_KEYS) permissions.add(p);
-        permissions.add("*");
-      } else {
-        for (const p of role.permissions) permissions.add(p);
-      }
-    }
-  }
-
-  // Load the user's per-user restrictions (modulesAssigned, permissionMatrix)
-  // from cn_users. Tenant/platform super admins are treated as unrestricted
-  // regardless of what's saved on the row so they can never lock themselves out.
-  //
-  // `modulesAssigned` exists on the base schema; `permissionMatrix` was
-  // added later and may not exist yet on stale DBs (the migration has to
-  // run first). We run the two lookups separately so a missing
-  // `permissionMatrix` column doesn't also wipe out `modulesAssigned`.
-  let modulesAssigned: string[] | null = null;
-  let permissionMatrix: Record<string, Record<string, boolean>> | null = null;
-  let projectIds: string[] | undefined = undefined;
-  let userType: string | null = null;
-  const isSuperAdmin =
-    sessionUser.roleKey === "super_admin" ||
-    sessionUser.roleKey === "admin" ||
-    permissions.has("*");
-  // Pull userType regardless of admin status — the sidebar shows it for
-  // every user, and the field exists on every cn_users row.
-  try {
-    const row = await (db as any).cnUser.findFirst({
-      where: { id: sessionUser.id, orgId: sessionUser.orgId },
-      select: { userType: true },
-    });
-    userType = (row?.userType as string | null) ?? null;
-  } catch {
-    // cn_users table missing on this DB — leave null.
-  }
-  if (!isSuperAdmin) {
-    try {
-      const row = await (db as any).cnUser.findFirst({
-        where: { id: sessionUser.id, orgId: sessionUser.orgId },
-        select: { modulesAssigned: true, projectsAssigned: true },
-      });
-      if (row && Array.isArray(row.modulesAssigned) && row.modulesAssigned.length) {
-        modulesAssigned = row.modulesAssigned;
-      }
-      // projectsAssigned: the set of project IDs this user is allowed to
-      // see. We only apply the restriction when the list is NON-EMPTY:
-      //  - non-empty array → filter to those projects
-      //  - empty array or unset → treat as unrestricted (no filter)
-      // This prevents accidental lockouts when a user is created without
-      // any assignments yet. Admins who want strict access control should
-      // populate `projectsAssigned` before granting the account.
-      if (row && Array.isArray(row.projectsAssigned) && row.projectsAssigned.length > 0) {
-        projectIds = row.projectsAssigned;
-      }
-    } catch {
-      // Table missing — leave null so the caller falls back to role perms.
-    }
-    try {
-      const row = await (db as any).cnUser.findFirst({
-        where: { id: sessionUser.id, orgId: sessionUser.orgId },
-        select: { permissionMatrix: true },
-      });
-      permissionMatrix = (row?.permissionMatrix ?? null) as typeof permissionMatrix;
-    } catch {
-      // Column missing on stale DB — run the pending Prisma migration.
-      // We silently leave this null instead of noisy-logging so the dev
-      // console doesn't fill up until the migration is applied.
-    }
-  }
-
-  // Fallback for accounts where userType isn't set on the row (e.g. seeded
-  // platform/tenant admin demo users): infer it from the role key so the
-  // sidebar still shows a sensible chip.
-  if (!userType) {
-    if (sessionUser.roleKey === "super_admin") userType = "SUPER_ADMIN";
-    else if (sessionUser.roleKey === "admin") userType = "ADMIN";
-  }
-
-  // Narrow the role's permissions to those whose module is in the user's
-  // modulesAssigned. Super admins / wildcard holders bypass.
-  // modulesAssigned=null means "unrestricted" — leave permissions intact.
-  const effectivePermissions =
-    !isSuperAdmin && modulesAssigned !== null
-      ? filterPermissionsByModules(permissions, modulesAssigned)
-      : permissions;
-
-  return {
-    userId: sessionUser.id,
-    userEmail: sessionUser.email ?? "",
-    userName: sessionUser.name ?? "",
-    orgId: sessionUser.orgId,
-    roleKey: sessionUser.roleKey,
-    userType,
-    permissions: effectivePermissions,
-    projectIds,
-    modulesAssigned,
-    permissionMatrix,
-  };
-}
-
-// When the root workspace User + Membership tables become authoritative
-// (Phase 3b follow-up), add a resolver that queries them and merge it into
-// getTenantContext() above. The prior draft of that resolver is in git
-// history — delete this comment when the cutover lands.
-
-/**
- * Map a central-auth membershipRole (or isSuperAdmin flag) to the local
- * QuikInfra { userType, roleKey } pair. Used by auto-provisioning so
- * a user who's an admin in the central auth shows up as an admin here too.
+ * Map a central-auth membershipRole (or isSuperAdmin flag) to a legacy
+ * QuikInfra `{ userType, roleKey }` pair. Used ONLY in the fallback path
+ * when the v2 RBAC tables aren't reachable — the regular path resolves
+ * role/permissions from CnUserAppRole + CnRolePermissionV2.
  */
 function mapCentralRoleToLocal(s: {
   membershipRole?: string | null;
@@ -338,74 +506,19 @@ function mapCentralRoleToLocal(s: {
   return { userType: "USER", roleKey: "user" };
 }
 
-/**
- * Auto-provision a `cn_users` row for a freshly-arriving central-auth user.
- * Idempotent — re-runs on the same email no-op via the `where: { email }` upsert.
- * Returns the resulting UserRecord, or null if the upsert failed for any reason
- * (DB outage, missing column, etc.) so the caller can fall back to 401.
- */
-async function provisionUserFromSession(s: {
-  id?: string;
-  email?: string;
-  name?: string;
-  orgId?: string;
-  membershipRole?: string;
-  isSuperAdmin?: boolean;
-}) {
-  if (!s.email) return null;
-  const { userType, roleKey } = mapCentralRoleToLocal(s);
-  const username = s.email.split("@")[0] ?? s.email;
-  const orgId = s.orgId ?? "default";
-  const now = new Date();
-  try {
-    // CnUser's unique constraint is composite — @@unique([orgId, email]).
-    // Prisma exposes that as the `orgId_email` lookup key on upsert.
-    await (db as any).cnUser.upsert({
-      where: { orgId_email: { orgId, email: s.email } },
-      update: {},
-      create: {
-        id: s.id || (globalThis.crypto?.randomUUID?.() ?? `usr_${Date.now()}`),
-        orgId,
-        email: s.email,
-        username,
-        fullName: s.name ?? username,
-        passwordHash: "",
-        userType,
-        roleKey,
-        status: "active",
-        mustChangePassword: false,
-        invitedAt: now,
-        updatedAt: now,
-      },
-    });
-    logger.info({
-      msg: "tenant_context_auto_provisioned",
-      email: s.email,
-      userType,
-      roleKey,
-    });
-    return await findByEmailForLogin(s.email);
-  } catch (err: any) {
-    // Race-condition path: a concurrent request from the same session can
-    // hit `findByEmailForLogin → null → upsert` simultaneously, and the
-    // second one's INSERT collides on the `id` PK (P2002). Treat that as
-    // a successful provisioning by the other request — fetch and return.
-    if (err?.code === "P2002") {
-      const recovered = await findByEmailForLogin(s.email);
-      if (recovered) {
-        logger.info({
-          msg: "tenant_context_provision_race_recovered",
-          email: s.email,
-        });
-        return recovered;
-      }
-    }
-    logger.warn({
-      msg: "tenant_context_auto_provision_failed",
-      email: s.email,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
+/** Convert a v2 CnAppRole.name to the legacy USER_TYPE string for UI chips. */
+function v2RoleNameToUserType(name: string): string {
+  switch (name) {
+    case "admin":
+      return "ADMIN";
+    case "ho_user":
+      return "HO_USER";
+    case "site_admin":
+      return "SITE_ADMIN";
+    case "user":
+      return "USER";
+    default:
+      return name.toUpperCase();
   }
 }
 
@@ -504,27 +617,6 @@ export async function requireAllPermissions(permissionKeys: string[]): Promise<A
   const missing = permissionKeys.filter((k) => !ctx.permissions.has(k));
   if (missing.length > 0) return forbidden(`Missing: ${missing.join(", ")}`);
   return ctx;
-}
-
-/**
- * Require the current user to be a platform Super Admin (userType ===
- * "SUPER_ADMIN"). Tenant ADMINs — even with the `*` permission wildcard
- * — are rejected with 403. Used to gate platform-managed surfaces like
- * `/api/settings/users/*` and `/api/settings/workflows/*` where
- * provisioning is centralised on the MoreYeahs team.
- *
- *   const ctx = await requireSuperAdmin();
- *   if (ctx instanceof NextResponse) return ctx;
- *
- * Pair this with the sidebar `superAdminOnly` flag and the
- * `app/(dashboard)/settings/layout.tsx` server redirect so the same
- * rule applies at every layer (nav → page → API).
- */
-export async function requireSuperAdmin(): Promise<AuthResult> {
-  const ctx = await getTenantContext();
-  if (!ctx) return unauthorized();
-  if (ctx.userType === "SUPER_ADMIN") return ctx;
-  return forbidden("Super Admin only");
 }
 
 /**

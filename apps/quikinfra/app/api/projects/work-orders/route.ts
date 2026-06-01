@@ -1,6 +1,7 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext, tenantCreate, hasMatrixAction } from "@/lib/auth/context";
+import { tenantCreate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { parsePagination } from "@/lib/http/pagination";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
@@ -68,8 +69,9 @@ export async function GET(req: NextRequest) {
   const projectId = searchParams.get("projectId") ?? "";
   const search = searchParams.get("search")?.toLowerCase() ?? "";
 
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  const ctxOrResp = await requireProjectsFinanceAction("construction.wo", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const where: Record<string, unknown> = {
     orgId: ctx.orgId,
@@ -151,9 +153,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireProjectsFinanceAction("construction.wo", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "pm.work_order", "add")) {
     return envelopeErr("FORBIDDEN", `Action "add" not allowed for pm.work_order`, 403);
   }

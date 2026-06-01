@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -105,4 +106,4 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
 
   await logAudit({ orgId, userId, actionType: "post", entityType: "cnDPR", entityId: dpr.id, oldValues: { status: "draft" }, newValues: { status: "posted", materialsPosted: dpr.materials.length } });
   return NextResponse.json({ success: true, data: { id: dpr.id, status: "posted", postedAt, materialsPosted: dpr.materials.length } });
-});
+}, { permission: { resource: "construction.dpr", action: "approve" } });

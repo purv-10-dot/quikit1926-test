@@ -12,10 +12,10 @@
  *   type's scope requirements.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  UserCog, ShieldCheck, Send,
+  UserCog, Send, ShieldCheck,
   CheckCircle2, AlertTriangle, Copy, Check, X,
 } from "lucide-react";
 import { MasterListPage, type MasterColumnDef } from "@/components/MasterListPage";
@@ -24,23 +24,23 @@ import {
   TextInput, SelectInput, CheckboxInput,
 } from "@/components/FormDrawer";
 import {
-  useUsers, useCreateUser, useUpdateUser,
+  useUsers, useCreateUser, useUpdateUser, useRoles,
 } from "@/hooks/use-users";
 import { useProjects, useDepartments } from "@/hooks/use-masters";
 import {
-  USER_TYPES,
   ASSIGNABLE_MODULES,
-  getUserTypeDescriptor,
-  getClientSelectableUserTypes,
-  type UserType,
+  getDescriptorByRoleName,
+  formatRoleLabel,
 } from "@/lib/rbac/user-types";
 import { mergeModulesWithMatrix } from "@/lib/rbac/menu-catalog";
 import { toast } from "@/lib/toast";
 
 interface UserRow {
   id: string;
-  username: string;
-  fullName: string;
+  username: string;            // legacy column on cn_users; derived server-side from email
+  fullName: string;            // legacy column on cn_users; kept for back-compat in list responses
+  firstName?: string;          // preferred field — populated for new invites
+  lastName?: string;           // preferred field — populated for new invites
   email: string;
   mobile: string;
   userType: string;
@@ -56,13 +56,30 @@ interface UserRow {
   lastLoginAt?: string | null;
 }
 
-const USER_TYPE_LABELS: Record<string, string> = {
-  SUPER_ADMIN: "Super Admin",
-  ADMIN: "Admin",
-  HO_USER: "HO User",
-  SITE_ADMIN: "Site Admin",
-  USER: "User",
-};
+/* ─── Email-typeahead hit (existing org member) ─── */
+interface ExistingMemberHit {
+  userId: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  avatar: string | null;
+  status: string;
+  hasQuikInfraAccess: boolean;
+}
+
+function memberInitials(first?: string | null, last?: string | null) {
+  return (`${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase() || "?");
+}
+
+function memberAvatarColor(name: string) {
+  const colors = [
+    "bg-blue-500", "bg-purple-500", "bg-green-500", "bg-orange-500",
+    "bg-pink-500", "bg-teal-500", "bg-red-500", "bg-indigo-500",
+  ];
+  let hash = 0;
+  for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return colors[Math.abs(hash) % colors.length];
+}
 
 const USER_TYPE_COLORS: Record<string, string> = {
   SUPER_ADMIN: "bg-red-50 text-red-700 border-red-200",
@@ -73,11 +90,11 @@ const USER_TYPE_COLORS: Record<string, string> = {
 };
 
 const emptyForm = {
-  username: "",
-  fullName: "",
+  firstName: "",
+  lastName: "",
   email: "",
   mobile: "",
-  userType: "USER" as UserType,
+  userType: "user",
   modulesAssigned: [] as string[],
   projectsAssigned: [] as string[],
   department: "",
@@ -86,6 +103,21 @@ const emptyForm = {
   password: "",
   retypePassword: "",
   status: "active",
+  // When userType === "ADMIN" (company_admin), this checkbox controls
+  // whether the user also gets access to the Settings module. Default
+  // unchecked = sub-admins can't invite / manage roles, blocking the
+  // "admin sprawl" loophole. Wired to /api/settings/users (invite) and
+  // /api/org/users/[id]/role (role swap) as `enableSettings`.
+  enableSettings: false,
+  // How the invitee signs in. Default = native (temporary password
+  // emailed). SSO is for orgs that have Google / Microsoft workspace SSO
+  // configured at the central auth level — the invitee then signs in
+  // with their existing provider, no password needed.
+  invitationMethod: "native" as "native" | "sso",
+  // Set when the admin picks an existing org member from the email
+  // typeahead. Switches the create call to the "link existing user →
+  // grant QuikInfra access" path: no new account, no invite email.
+  linkExistingUserId: null as string | null,
 };
 
 interface InviteResult {
@@ -237,13 +269,13 @@ function InviteResultDialog({
 }
 
 export default function UsersPage() {
-  const router = useRouter();
   const { data: result, isLoading } = useUsers();
   const { data: projectsResult } = useProjects();
   const { data: deptsResult } = useDepartments();
   const createMutation = useCreateUser();
   const updateMutation = useUpdateUser();
 
+  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   // userIds whose resend request is currently in flight. Used to drop
@@ -259,15 +291,99 @@ export default function UsersPage() {
   const set = (key: keyof typeof emptyForm, val: any) =>
     setForm((prev) => ({ ...prev, [key]: val }));
 
-  // Catalog of role + project + department options
-  const userTypeOptions = useMemo(
-    () =>
-      getClientSelectableUserTypes().map((t) => ({
-        value: t.key,
-        label: t.label,
-      })),
-    []
-  );
+  // ── Email typeahead (link existing org member) ──────────────────────
+  // When the admin types an email in CREATE mode, debounce a search against
+  // /api/settings/users/search. Hits are existing OrgMembers of this org —
+  // they may already belong via QuikScale / QuikTrack / etc. and just need a
+  // UserAppAccess row for QuikInfra. Mirrors QuikScale's Add User panel.
+  const [emailSuggestions, setEmailSuggestions] = useState<ExistingMemberHit[]>([]);
+  const [emailDropOpen, setEmailDropOpen] = useState(false);
+  const [emailSearching, setEmailSearching] = useState(false);
+  const [emailSearchError, setEmailSearchError] = useState<string | null>(null);
+  const emailBoxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (editingId) return;            // Edit mode: email is locked
+    if (form.linkExistingUserId) return; // already linked — stop searching
+    const q = form.email.trim();
+    if (q.length < 2) {
+      setEmailSuggestions([]);
+      setEmailSearching(false);
+      setEmailSearchError(null);
+      return;
+    }
+    // Cancel any in-flight request when the query changes so a slow earlier
+    // response can't overwrite a newer one (the endpoint can take seconds).
+    const controller = new AbortController();
+    const handle = setTimeout(async () => {
+      setEmailSearching(true);
+      setEmailSearchError(null);
+      setEmailDropOpen(true); // open immediately so the user sees progress
+      try {
+        const res = await fetch(
+          `/api/settings/users/search?email=${encodeURIComponent(q)}`,
+          { signal: controller.signal },
+        );
+        const json = await res.json();
+        if (json.success) {
+          setEmailSuggestions(json.data as ExistingMemberHit[]);
+        } else {
+          setEmailSuggestions([]);
+          setEmailSearchError(json.error ?? "Search failed");
+        }
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return;
+        setEmailSuggestions([]);
+        setEmailSearchError("Search failed — check your connection");
+      } finally {
+        setEmailSearching(false);
+      }
+    }, 250);
+    return () => {
+      clearTimeout(handle);
+      controller.abort();
+    };
+  }, [form.email, form.linkExistingUserId, editingId]);
+
+  useEffect(() => {
+    function h(e: MouseEvent) {
+      if (emailBoxRef.current && !emailBoxRef.current.contains(e.target as Node))
+        setEmailDropOpen(false);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const pickExisting = (hit: ExistingMemberHit) => {
+    setForm((p) => ({
+      ...p,
+      firstName: hit.firstName ?? "",
+      lastName: hit.lastName ?? "",
+      email: hit.email,
+      linkExistingUserId: hit.userId,
+    }));
+    setEmailDropOpen(false);
+  };
+
+  const clearLink = () =>
+    setForm((p) => ({ ...p, firstName: "", lastName: "", email: "", linkExistingUserId: null }));
+
+  // Catalog of role + project + department options — driven by the
+  // dynamic /api/org/roles endpoint so any custom role created in
+  // Settings → Roles shows up automatically. System roles (admin /
+  // ho_user / site_admin / user) are listed first; custom roles after.
+  const { data: rolesResult } = useRoles();
+  const userTypeOptions = useMemo(() => {
+    const roles = rolesResult?.data ?? [];
+    const sorted = [...roles].sort((a, b) => {
+      if (a.isSystem !== b.isSystem) return a.isSystem ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return sorted.map((r) => ({
+      value: r.name,
+      label: formatRoleLabel(r.name),
+    }));
+  }, [rolesResult]);
   // Hide soft-deleted projects from the site-assignment picker so a user
   // can't be assigned to a project that no longer exists on the list page.
   const projects = (projectsResult?.data ?? []).filter(
@@ -279,14 +395,15 @@ export default function UsersPage() {
     label: d.name,
   }));
 
-  // Scope flags for the currently-selected user type
-  const descriptor = getUserTypeDescriptor(form.userType);
-  const needsModules = descriptor?.requiresModuleAssignment ?? false;
-  const needsSites = descriptor?.requiresSiteAssignment ?? false;
+  // Scope flags for the currently-selected role
+  const descriptor = getDescriptorByRoleName(form.userType);
+  const needsModules = descriptor.requiresModuleAssignment;
+  const needsSites = descriptor.requiresSiteAssignment;
   // ADMIN inherently has every module — surface the picker as fully-checked
   // and read-only so the admin-on-screen sees the implication explicitly
   // instead of an empty "?" gap.
-  const isAdminAllModules = form.userType === USER_TYPES.ADMIN;
+  const isAdminAllModules = (form.userType ?? "").toLowerCase() === "admin";
+
   const allModuleKeys = ASSIGNABLE_MODULES.map((m) => m.key);
 
   const toggleModule = (moduleKey: string) => {
@@ -311,12 +428,24 @@ export default function UsersPage() {
     setDrawerOpen(false);
     setEditingId(null);
     setForm(emptyForm);
+    setEmailSuggestions([]);
+    setEmailDropOpen(false);
+    setEmailSearching(false);
+    setEmailSearchError(null);
   };
 
   const handleSubmit = async () => {
-    if (!form.username) { toast.error("Username is required"); return; }
-    if (!form.fullName) { toast.error("Full Name is required"); return; }
+    if (!form.firstName.trim()) { toast.error("First Name is required"); return; }
+    if (!form.lastName.trim())  { toast.error("Last Name is required");  return; }
     if (!form.email) { toast.error("Email is required"); return; }
+    // Reject malformed emails (e.g. trailing text / spaces like
+    // "x@gmail.comprofile im"). Only enforced on create — in edit the email
+    // field is disabled/unchanged, so we don't trap an admin who's fixing
+    // other fields on a record whose email was saved before this check.
+    if (!editingId && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      toast.error("Enter a valid email address");
+      return;
+    }
     if (form.mobile && !/^[6-9]\d{9}$/.test(form.mobile)) {
       toast.error("Mobile must be 10 digits starting with 6, 7, 8, or 9");
       return;
@@ -332,6 +461,8 @@ export default function UsersPage() {
 
     // Don't ship passwords here — new users set their own via the
     // emailed invite link; existing users hit password reset (Phase 2).
+    // permissionMatrix is sent as-is when set; the server's matrix → revoke
+    // bridge (matrixV2Bridge) translates it into CnUserPermissionExtra rows.
     const { password: _p, retypePassword: _rp, ...payload } = form;
 
     try {
@@ -427,13 +558,20 @@ export default function UsersPage() {
     // so the picker shows the truth even if the DB row doesn't list them
     // explicitly (the descriptor sets requiresModuleAssignment=false, so
     // older rows may have been saved with an empty modulesAssigned).
-    const isAdmin = item.userType === USER_TYPES.ADMIN;
+    const roleName = (item.roleKey ?? item.userType ?? "user").toLowerCase();
+    const isAdmin = roleName === "admin";
+    // Source the new firstName/lastName from the row if present; otherwise
+    // fall back to splitting the legacy fullName on the first whitespace.
+    // The list endpoint will start returning firstName/lastName once the
+    // central CnUserProfile is the source of truth (Phase 2).
+    const legacyFull = String(item.fullName ?? "").trim();
+    const [legacyFirst, ...legacyRest] = legacyFull.split(/\s+/).filter(Boolean);
     setForm({
-      username: item.username ?? "",
-      fullName: item.fullName ?? "",
+      firstName: item.firstName ?? legacyFirst ?? "",
+      lastName:  item.lastName  ?? legacyRest.join(" ") ?? "",
       email: item.email ?? "",
       mobile: item.mobile ?? "",
-      userType: (item.userType ?? "USER") as UserType,
+      userType: roleName,
       modulesAssigned: isAdmin
         ? ASSIGNABLE_MODULES.map((m) => m.key)
         : mergeModulesWithMatrix(assigned, matrix),
@@ -444,6 +582,16 @@ export default function UsersPage() {
       password: "",
       retypePassword: "",
       status: item.status ?? "active",
+      // The list endpoint may surface a `hasSettingsAccess` flag (true
+      // when the user has the 4 settings-related UserPermissionExtra
+      // rows). Default to false — the API treats omission the same way.
+      enableSettings: !!item.hasSettingsAccess,
+      // Invitation method only applies to NEW users (the section is
+      // hidden in the edit drawer), but reset to the default so the
+      // value doesn't bleed across an Add → Edit sequence.
+      invitationMethod: "native",
+      // Edit mode never links — email is locked to the existing record.
+      linkExistingUserId: null,
     });
     setDrawerOpen(true);
   };
@@ -453,28 +601,39 @@ export default function UsersPage() {
       {
         key: "fullName",
         label: "Name",
-        render: (row) => (
-          <div>
-            <div className="font-medium text-gray-900">{row.fullName}</div>
-            <div className="text-[10px] text-gray-500 font-mono">@{row.username}</div>
-          </div>
-        ),
+        render: (row) => {
+          const displayName =
+            row.firstName || row.lastName
+              ? [row.firstName, row.lastName].filter(Boolean).join(" ")
+              : row.fullName;
+          return (
+            <div>
+              <div className="font-medium text-gray-900">{displayName}</div>
+              <div className="text-[10px] text-gray-500">{row.email}</div>
+            </div>
+          );
+        },
       },
       { key: "email", label: "Email" },
-      { key: "mobile", label: "Mobile", width: "120px" },
       {
         key: "userType",
-        label: "User Type",
+        label: "Role",
         width: "150px",
-        render: (row) => (
-          <span
-            className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${
-              USER_TYPE_COLORS[row.userType] ?? "bg-gray-50 text-gray-700 border-gray-200"
-            }`}
-          >
-            {USER_TYPE_LABELS[row.userType] ?? row.userType}
-          </span>
-        ),
+        render: (row) => {
+          // Prefer the lowercase `roleKey` from the API (matches CnAppRole.name).
+          // Fall back to the legacy uppercase `userType` for older payloads.
+          const roleName = ((row as any).roleKey ?? row.userType ?? "").toString();
+          const upperKey = roleName.toUpperCase().replace(/-/g, "_");
+          const color =
+            USER_TYPE_COLORS[upperKey] ?? "bg-gray-50 text-gray-700 border-gray-200";
+          return (
+            <span
+              className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${color}`}
+            >
+              {formatRoleLabel(roleName)}
+            </span>
+          );
+        },
       },
       { key: "department", label: "Department" },
       {
@@ -482,8 +641,9 @@ export default function UsersPage() {
         label: "Sites",
         width: "80px",
         render: (row) => {
-          const d = getUserTypeDescriptor(row.userType);
-          if (d?.crossSite) return <span className="text-[10px] text-gray-500">All sites</span>;
+          const roleName = ((row as any).roleKey ?? row.userType ?? "").toString();
+          const d = getDescriptorByRoleName(roleName);
+          if (d.crossSite) return <span className="text-[10px] text-gray-500">All sites</span>;
           const n = row.projectsAssigned?.length ?? 0;
           return <span className="text-xs text-gray-700">{n}</span>;
         },
@@ -491,133 +651,133 @@ export default function UsersPage() {
       {
         key: "status",
         label: "Status",
-        width: "140px",
+        width: "180px",
         render: (row) => {
           const isInactive = row.status === "inactive";
-          // A non-null lastLoginAt also counts as acceptance — covers users
-          // who logged in before the touchLastLogin auto-accept landed and
-          // whose acceptedAt was therefore never stamped.
+          // Either signal counts as "accepted":
+          //   acceptedAt   — quikit.OrgMember.acceptedAt, set when the
+          //                  launcher's set-password flow completes
+          //   lastLoginAt  — auth.User.lastSignInAt, set on every sign-in
+          // The list endpoint overrides both with their v2 sources.
           const accepted = !!row.acceptedAt || !!row.lastLoginAt;
           const inviteOpen = !accepted && !!row.inviteTokenExpires;
-          const inviteExpired =
-            inviteOpen &&
-            new Date(row.inviteTokenExpires as string).getTime() < Date.now();
-          if (isInactive) {
-            return (
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md border bg-gray-50 text-gray-500 border-gray-200">
-                Inactive
-              </span>
-            );
-          }
-          if (inviteExpired) {
-            return (
-              <span
-                className="text-[10px] font-semibold px-2 py-0.5 rounded-md border bg-red-50 text-red-700 border-red-200"
-                title="Invite link expired — resend to issue a new one"
-              >
-                Invite Expired
-              </span>
-            );
-          }
-          if (inviteOpen) {
-            return (
-              <span
-                className="text-[10px] font-semibold px-2 py-0.5 rounded-md border bg-amber-50 text-amber-700 border-amber-200"
-                title="Invite sent — waiting for the user to set their password"
-              >
-                Invite Pending
-              </span>
-            );
-          }
-          return (
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md border bg-green-50 text-green-700 border-green-200">
-              Active
-            </span>
-          );
-        },
-      },
-      {
-        key: "__rights",
-        label: "Actions",
-        width: "200px",
-        sortable: false,
-        render: (row) => {
-          const accepted = !!row.acceptedAt || !!row.lastLoginAt;
-          const isInvited = !accepted && !!row.inviteTokenExpires;
-          // Resend is only meaningful once the 72h invite token has elapsed.
-          // While the existing link is still valid, the button stays
-          // visible but disabled so admins can see *why* they can't resend
-          // (tooltip carries the expiry date) instead of the button just
-          // vanishing.
           const expiresAtMs = row.inviteTokenExpires
             ? new Date(row.inviteTokenExpires).getTime()
             : 0;
-          const inviteExpired = isInvited && expiresAtMs <= Date.now();
+          const inviteExpired = inviteOpen && expiresAtMs < Date.now();
           const sending = resendingIds.has(row.id);
-          const canResend = isInvited && inviteExpired && !sending;
-          // Coarse-grained countdown surfaced in the disabled button label so
-          // the admin doesn't have to hover to learn when resend unlocks.
-          // 72h windows don't warrant a ticking timer, so this is computed
-          // at render time only — refreshes whenever the list re-fetches.
-          const remainingMs = Math.max(0, expiresAtMs - Date.now());
-          const remainingLabel = (() => {
-            if (remainingMs <= 0) return "";
-            const totalMin = Math.ceil(remainingMs / 60_000);
-            if (totalMin < 60) return `${totalMin}m`;
-            const hours = Math.ceil(totalMin / 60);
-            return `${hours}h`;
-          })();
-          const resendTooltip = sending
-            ? "Sending invitation email…"
-            : inviteExpired
-              ? "Issue a fresh invite (current one has expired)"
-              : `Resend unlocks after the current invite expires on ${new Date(expiresAtMs).toLocaleString()}. The current invite remains valid for 72 hours from when it was sent.`;
-          return (
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  router.push(`/settings/users/${row.id}/permissions`);
-                }}
-                className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 hover:text-orange-900 hover:underline"
-                title="Configure per-menu Add/Edit/Delete/View permissions"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" /> Permissions
-              </button>
-              {isInvited && (
+
+          // Common wrapper — every variant returns the same flex
+          // structure so the pill is always anchored to the same
+          // top-left position, regardless of whether the variant adds
+          // a secondary line (Resend countdown / Resend button).
+          // Without this, Active/Inactive rows render as bare <span>s
+          // and visually drift up/down relative to the multi-line
+          // Invite Pending row.
+          const PILL_BASE =
+            "self-start text-[10px] font-semibold px-2 py-0.5 rounded-md border whitespace-nowrap";
+
+          if (isInactive) {
+            return (
+              <div className="flex flex-col items-start gap-0.5">
+                <span className={`${PILL_BASE} bg-gray-50 text-gray-500 border-gray-200`}>
+                  Inactive
+                </span>
+              </div>
+            );
+          }
+          if (inviteExpired) {
+            // Expired invites get an inline Resend action — sits BELOW
+            // the pill (matches the Pending layout), not beside it, so
+            // every multi-line variant has the same vertical rhythm.
+            return (
+              <div className="flex flex-col items-start gap-0.5">
+                <span
+                  className={`${PILL_BASE} bg-red-50 text-red-700 border-red-200`}
+                  title="Invite link expired — resend to issue a new one"
+                >
+                  Invite Expired
+                </span>
                 <button
                   type="button"
-                  disabled={!canResend}
+                  disabled={sending}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleResendInvite(row);
                   }}
-                  className={
-                    canResend
-                      ? "inline-flex items-center gap-1 text-xs font-medium text-orange-700 hover:text-orange-900 hover:underline"
-                      : "inline-flex items-center gap-1 text-xs font-medium text-gray-400 cursor-not-allowed"
-                  }
-                  title={resendTooltip}
+                  className="inline-flex items-center gap-1 text-[10px] font-medium text-orange-700 hover:text-orange-900 hover:underline disabled:text-gray-400 disabled:cursor-not-allowed disabled:no-underline"
+                  title="Send a fresh invite email"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  {sending
-                    ? "Sending…"
-                    : canResend
-                      ? "Resend"
-                      : `Resend · unlocks in ${remainingLabel}`}
+                  <Send className="w-3 h-3" />
+                  {sending ? "Sending…" : "Resend"}
                 </button>
-              )}
+              </div>
+            );
+          }
+          if (inviteOpen) {
+            const remainingMs = Math.max(0, expiresAtMs - Date.now());
+            const remainingLabel = (() => {
+              if (remainingMs <= 0) return "";
+              const totalMin = Math.ceil(remainingMs / 60_000);
+              if (totalMin < 60) return `${totalMin}m`;
+              const hours = Math.ceil(totalMin / 60);
+              return `${hours}h`;
+            })();
+            return (
+              <div className="flex flex-col items-start gap-0.5">
+                <span
+                  className={`${PILL_BASE} bg-amber-50 text-amber-700 border-amber-200`}
+                  title="Invite sent — waiting for the user to set their password"
+                >
+                  Invite Pending
+                </span>
+                {remainingLabel && (
+                  <span className="text-[10px] text-gray-400">
+                    Resend in {remainingLabel}
+                  </span>
+                )}
+              </div>
+            );
+          }
+          return (
+            <div className="flex flex-col items-start gap-0.5">
+              <span className={`${PILL_BASE} bg-green-50 text-green-700 border-green-200`}>
+                Active
+              </span>
             </div>
           );
         },
       },
+      {
+        key: "__permissions",
+        label: "Permissions",
+        width: "120px",
+        sortable: false,
+        render: (row) => (
+          // Cell-level permission overrides live on a dedicated full-
+          // width page (the matrix is too wide for the row-actions
+          // column). Role + modules already grant the typical case at
+          // invite time; this link is for the rare per-cell override.
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/settings/users/${row.id}/permissions`);
+            }}
+            className="inline-flex items-center gap-1 text-xs font-medium text-orange-700 hover:text-orange-900 hover:underline"
+            title="Configure per-menu Add/Edit/Delete/View permissions"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" /> Permissions
+          </button>
+        ),
+      },
     ],
-    // resendingIds is read inside the Actions cell render, so its changes
-    // must invalidate the memo — otherwise the in-flight "Sending…" label
-    // wouldn't appear until some unrelated render kicked the table.
+    // resendingIds is read inside the Status cell render (the inline
+    // Resend button), so its changes must invalidate the memo —
+    // otherwise the in-flight "Sending…" label wouldn't appear until
+    // some unrelated render kicked the table.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [router, resendingIds]
+    [resendingIds, router]
   );
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -641,16 +801,22 @@ export default function UsersPage() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         onRestore={handleRestore}
-        deleteConfirmMessage={(item: any) => (
-          <>
-            Deactivate user{" "}
-            <span className="font-semibold text-gray-900">“{item.fullName}”</span>
-            {item.username ? <> (<span className="font-mono">@{item.username}</span>)</> : null}?
-            <br />
-            The account will be marked inactive and hidden from login. You can
-            re-activate it via Edit.
-          </>
-        )}
+        deleteConfirmMessage={(item: any) => {
+          const display =
+            item.firstName || item.lastName
+              ? [item.firstName, item.lastName].filter(Boolean).join(" ")
+              : item.fullName;
+          return (
+            <>
+              Deactivate user{" "}
+              <span className="font-semibold text-gray-900">“{display}”</span>
+              {item.email ? <> (<span className="font-mono">{item.email}</span>)</> : null}?
+              <br />
+              The account will be marked inactive and hidden from login. You can
+              re-activate it via Edit.
+            </>
+          );
+        }}
         emptyIcon={<UserCog className="w-8 h-8" />}
         emptyDescription="Add users and assign roles, departments, and project access."
       />
@@ -662,39 +828,155 @@ export default function UsersPage() {
         subtitle={
           editingId
             ? "Update profile, role, and access scope"
-            : "Configure user details, role, and access scope"
+            : "Configure user details, role, and access scope. Fine-grained per-page permissions live on the Permissions page."
         }
         width="xl"
         onSubmit={handleSubmit}
         loading={isSaving}
-        submitLabel={editingId ? "Save Changes" : "Create User"}
+        submitLabel={
+          editingId
+            ? "Save Changes"
+            : form.linkExistingUserId
+              ? "Grant Access"
+              : "Send Invite"
+        }
       >
         <FormSection title="Basic Information">
           <FormRow>
-            <Field label="Username" required hint={editingId ? "Cannot be changed after creation" : undefined}>
+            <Field label="First Name" required>
               <TextInput
-                value={form.username}
-                onChange={(v) => set("username", v)}
-                placeholder="e.g. jdoe"
-                disabled={!!editingId}
+                value={form.firstName}
+                onChange={(v) => set("firstName", v)}
+                placeholder="John"
               />
             </Field>
-            <Field label="Full Name" required>
+            <Field label="Last Name" required>
               <TextInput
-                value={form.fullName}
-                onChange={(v) => set("fullName", v)}
-                placeholder="John Doe"
+                value={form.lastName}
+                onChange={(v) => set("lastName", v)}
+                placeholder="Doe"
               />
             </Field>
           </FormRow>
           <FormRow>
             <Field label="Email ID" required>
-              <TextInput
-                value={form.email}
-                onChange={(v) => set("email", v)}
-                type="email"
-                placeholder="john@company.com"
-              />
+              <div ref={emailBoxRef} className="relative">
+                <TextInput
+                  value={form.email}
+                  onChange={(v) => {
+                    if (form.linkExistingUserId) clearLink();
+                    set("email", v);
+                  }}
+                  type="email"
+                  placeholder="john@company.com"
+                  disabled={!!editingId || !!form.linkExistingUserId}
+                  onFocus={() => {
+                    if (!editingId && emailSuggestions.length > 0)
+                      setEmailDropOpen(true);
+                  }}
+                />
+                {form.linkExistingUserId && (
+                  <button
+                    type="button"
+                    onClick={clearLink}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-orange-700 hover:text-orange-900 px-2 py-0.5 rounded bg-white border border-orange-200"
+                    title="Clear and create a new user instead"
+                  >
+                    Clear
+                  </button>
+                )}
+                {!editingId &&
+                  !form.linkExistingUserId &&
+                  emailDropOpen &&
+                  form.email.trim().length >= 2 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
+                    <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                      <span>Existing members in this org</span>
+                      {emailSearching && (
+                        <span className="text-orange-500 normal-case font-medium">
+                          Searching…
+                        </span>
+                      )}
+                    </div>
+                    {emailSearchError ? (
+                      <div className="px-3 py-3 text-[11px] text-red-600">
+                        {emailSearchError}
+                      </div>
+                    ) : emailSearching && emailSuggestions.length === 0 ? (
+                      <div className="px-3 py-3 text-[11px] text-gray-400">
+                        Searching existing members…
+                      </div>
+                    ) : emailSuggestions.length === 0 ? (
+                      <div className="px-3 py-3 text-[11px] text-gray-500">
+                        No existing member matches{" "}
+                        <span className="font-medium">{form.email.trim()}</span>. A
+                        new account will be created on invite.
+                      </div>
+                    ) : (
+                    emailSuggestions.map((hit) => {
+                      const disabled = hit.hasQuikInfraAccess;
+                      const displayName =
+                        [hit.firstName, hit.lastName].filter(Boolean).join(" ") ||
+                        hit.email;
+                      return (
+                        <button
+                          key={hit.userId}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => !disabled && pickExisting(hit)}
+                          className={`w-full flex items-center gap-3 px-3 py-2 text-left ${
+                            disabled
+                              ? "opacity-60 cursor-not-allowed"
+                              : "hover:bg-orange-50"
+                          }`}
+                        >
+                          <div
+                            className={`h-7 w-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${memberAvatarColor(
+                              displayName,
+                            )}`}
+                          >
+                            {memberInitials(hit.firstName, hit.lastName)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-gray-800 truncate">
+                              {displayName}
+                            </div>
+                            <div className="text-[11px] text-gray-500 truncate">
+                              {hit.email}
+                            </div>
+                          </div>
+                          {disabled ? (
+                            <span className="text-[10px] font-semibold text-gray-400 flex-shrink-0">
+                              Already in QuikInfra
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-orange-600 flex-shrink-0">
+                              Add to QuikInfra
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })
+                    )}
+                  </div>
+                )}
+              </div>
+              {form.linkExistingUserId ? (
+                <div className="mt-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-[11px] text-orange-800 leading-snug">
+                  <strong className="font-semibold">Granting QuikInfra access</strong>{" "}
+                  to existing user{" "}
+                  <span className="font-medium">
+                    {[form.firstName, form.lastName].filter(Boolean).join(" ")}
+                  </span>
+                  . They keep their existing password — no new invite email is
+                  sent. The role &amp; scope below apply to QuikInfra only.
+                </div>
+              ) : !editingId ? (
+                <p className="text-[11px] text-gray-400 mt-1.5">
+                  Pick from the dropdown to grant QuikInfra access to an existing
+                  QuikIT user without re-creating their account.
+                </p>
+              ) : null}
             </Field>
             <Field
               label="Mobile No."
@@ -724,27 +1006,84 @@ export default function UsersPage() {
           </Field>
         </FormSection>
 
-        {/* New users set their own password via the invite email link,
-            so the Add form doesn't ask the admin to choose one. Edits
-            don't touch passwords either — use the resend-invite flow or
-            a dedicated password reset (Phase 2). */}
-        {!editingId && (
-          <FormSection title="Invitation">
-            <div className="text-xs text-gray-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 leading-relaxed">
-              When you click <span className="font-semibold">Create User</span>, an
-              invitation email with a one-time setup link will be sent to{" "}
-              <span className="font-mono">{form.email || "the user's email"}</span>.
-              The link expires in 72 hours. You&apos;ll also get a copy of the invite URL
-              in case you need to share it manually.
+        {/* Invitation method — Native (email + temp password) vs SSO
+            (existing Google / Microsoft provider). Only relevant for new
+            users; existing users keep whatever auth path they signed up
+            with. Hidden when linking an existing member — no invite is
+            sent in that path. Default = native. */}
+        {!editingId && !form.linkExistingUserId && (
+          <FormSection title="Invitation Method">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Native card */}
+              <button
+                type="button"
+                onClick={() => set("invitationMethod", "native")}
+                className={`text-left rounded-lg border px-4 py-3 transition-colors ${
+                  form.invitationMethod === "native"
+                    ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200"
+                    : "border-gray-200 bg-white hover:border-gray-300"
+                }`}
+              >
+                <div
+                  className={`text-sm font-semibold ${
+                    form.invitationMethod === "native" ? "text-orange-700" : "text-gray-900"
+                  }`}
+                >
+                  Native (Email + Password)
+                </div>
+                <div className="text-xs text-gray-600 mt-1 leading-relaxed">
+                  Admin sets a password. User signs in with email + password.
+                </div>
+              </button>
+
+              {/* SSO card */}
+              <button
+                type="button"
+                onClick={() => set("invitationMethod", "sso")}
+                className={`text-left rounded-lg border px-4 py-3 transition-colors ${
+                  form.invitationMethod === "sso"
+                    ? "border-orange-500 bg-orange-50 ring-2 ring-orange-200"
+                    : "border-gray-200 bg-white hover:border-gray-300"
+                }`}
+              >
+                <div
+                  className={`text-sm font-semibold ${
+                    form.invitationMethod === "sso" ? "text-orange-700" : "text-gray-900"
+                  }`}
+                >
+                  SSO (Google / Microsoft)
+                </div>
+                <div className="text-xs text-gray-600 mt-1 leading-relaxed">
+                  No password. User signs in via their existing provider.
+                </div>
+              </button>
             </div>
+
+            {/* Conditional info banner — explains what'll happen on submit
+                based on the chosen method. */}
+            {form.invitationMethod === "native" ? (
+              <div className="mt-3 text-xs text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 leading-relaxed">
+                <span className="font-semibold">Temporary password will be emailed.</span>{" "}
+                A unique temporary password will be generated and sent to{" "}
+                <span className="font-mono">{form.email || "their email"}</span>.
+                They&apos;ll be prompted to set a new password on first sign-in.
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 leading-relaxed">
+                <span className="font-semibold">SSO invite link will be emailed.</span>{" "}
+                {form.email || "The user"} will sign in via their existing Google
+                or Microsoft account on the central auth page. No password is set
+                or stored on this app.
+              </div>
+            )}
           </FormSection>
         )}
 
         <FormSection title="Role & Scope">
           <Field
-            label="User Type"
+            label="Role"
             required
-            hint="Controls what the user can see and do. Super Admin is MoreYeahs-only."
+            hint="Controls what the user can see and do. Manage roles in Settings → Roles."
           >
             <SelectInput
               value={form.userType}
@@ -755,17 +1094,49 @@ export default function UsersPage() {
                 // exception — it implicitly owns every module, so we tick
                 // them all on the user record so the saved payload matches
                 // what the UI shows.
-                const d = getUserTypeDescriptor(v);
-                if (v === USER_TYPES.ADMIN) {
+                const d = getDescriptorByRoleName(v);
+                const isAdminRole = (v ?? "").toLowerCase() === "admin";
+                if (isAdminRole) {
                   set("modulesAssigned", allModuleKeys);
-                } else if (!d?.requiresModuleAssignment) {
+                } else if (!d.requiresModuleAssignment) {
                   set("modulesAssigned", []);
                 }
-                if (!d?.requiresSiteAssignment) set("projectsAssigned", []);
+                if (!d.requiresSiteAssignment) set("projectsAssigned", []);
+                // Clear the Settings-access opt-in whenever the role is
+                // anything other than ADMIN — only ADMIN can hold this
+                // override, so it should never be true for other roles.
+                if (!isAdminRole) {
+                  set("enableSettings", false);
+                }
               }}
               options={userTypeOptions}
             />
           </Field>
+
+          {/* "Grant Settings access" override — only shown for ADMIN role.
+              When checked, the user receives the 4 settings-related
+              CnUserPermissionExtra rows on top of their company_admin
+              role, letting them reach Settings → Users / Roles / Workflows.
+              When unchecked (default), they're a sub-admin who can use
+              the app fully but cannot invite users or change roles. */}
+          {(form.userType ?? "").toLowerCase() === "admin" && (
+            <Field
+              label="Settings Access"
+              hint="When ticked, this Admin can also invite users, edit roles, and reach Settings. Leave unticked to give app access only."
+            >
+              <label className="flex items-center gap-2 cursor-pointer select-none rounded-lg border border-gray-200 px-3 py-2 bg-white hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-orange-600"
+                  checked={form.enableSettings}
+                  onChange={(e) => set("enableSettings", e.target.checked)}
+                />
+                <span className="text-sm text-gray-700">
+                  Grant Settings access (invite users, manage roles)
+                </span>
+              </label>
+            </Field>
+          )}
 
           {descriptor && (
             <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed space-y-1">

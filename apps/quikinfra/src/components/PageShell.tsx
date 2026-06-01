@@ -427,18 +427,16 @@ export function TabBar({
         <button
           key={tab.key}
           onClick={() => onTabChange(tab.key)}
-          className={`px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+          className={`inline-flex items-start gap-0.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
             activeTab === tab.key
               ? "border-orange-600 text-orange-700"
               : "border-transparent text-slate-500 hover:text-orange-600"
           }`}
         >
           {tab.label}
-          {tab.count !== undefined && (
-            <span className={`ml-1.5 rounded-full text-[10px] font-semibold px-1.5 py-0.5 ${
-              activeTab === tab.key
-                ? "bg-orange-100 text-orange-700"
-                : "bg-slate-100 text-slate-600"
+          {tab.count !== undefined && tab.count > 0 && (
+            <span className={`-mt-0.5 text-[9px] font-bold leading-none ${
+              activeTab === tab.key ? "text-orange-500" : "text-slate-400"
             }`}>
               {tab.count}
             </span>

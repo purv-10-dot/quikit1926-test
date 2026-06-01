@@ -17,7 +17,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { logDate: "desc" },
   });
   return NextResponse.json({ success: true, data: list });
-});
+}, { permission: { resource: "construction.diesel", action: "view" } });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
@@ -38,4 +38,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     },
   });
   return NextResponse.json({ success: true, data: log }, { status: 201 });
-});
+}, { permission: { resource: "construction.diesel", action: "create" } });

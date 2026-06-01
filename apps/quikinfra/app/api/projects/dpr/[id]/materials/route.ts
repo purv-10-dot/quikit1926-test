@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -42,4 +43,4 @@ export const PUT = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
   });
 
   return NextResponse.json({ success: true, data: result });
-});
+}, { permission: { resource: "construction.dpr", action: "edit" } });

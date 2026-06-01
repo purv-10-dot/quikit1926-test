@@ -16,7 +16,6 @@ interface ProjectRow {
   id: string;
   code: string;
   name: string;
-  companyName?: string;
   clientName?: string;
   city?: string;
   state?: string;
@@ -37,7 +36,6 @@ const columns: MasterColumnDef<ProjectRow>[] = [
       </div>
     ),
   },
-  { key: "companyName", label: "Company" },
   { key: "clientName", label: "Client" },
   {
     key: "projectValue",
@@ -56,7 +54,6 @@ const columns: MasterColumnDef<ProjectRow>[] = [
 const IMPORT_FIELDS: ImportFieldDef[] = [
   { key: "code", label: "Code", required: true, hint: "Unique project code (e.g. RES-PALM)" },
   { key: "name", label: "Project Name", required: true },
-  { key: "companyName", label: "Company", required: true, hint: "Must match an existing company in Masters → Companies" },
   { key: "clientName", label: "Client", hint: "Optional — must match an existing customer if provided" },
   { key: "projectType", label: "Project Type" },
   { key: "address", label: "Address" },
@@ -77,7 +74,6 @@ export default function ProjectsPage() {
   const [editItem, setEditItem] = useState<ProjectRow | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const { data: result, isLoading } = useProjects();
-  const { data: companiesResp } = useCompanies();
   const { data: customersResp } = useCustomers();
   const updateMutation = useUpdateProject();
   const createMutation = useCreateProject();
@@ -122,16 +118,6 @@ export default function ProjectsPage() {
     if (!row.code?.trim()) return { ok: false as const, error: "Code is required" };
     if (!row.name?.trim()) return { ok: false as const, error: "Project Name is required" };
 
-    const companyId = findIdByName(companiesResp?.data, row.companyName);
-    if (!companyId) {
-      return {
-        ok: false as const,
-        error: row.companyName
-          ? `Company "${row.companyName}" not found — add it to Masters → Companies first.`
-          : "Company is required",
-      };
-    }
-
     const clientId = row.clientName?.trim()
       ? findIdByName(customersResp?.data, row.clientName)
       : null;
@@ -146,7 +132,6 @@ export default function ProjectsPage() {
       await createMutation.mutateAsync({
         code: row.code.trim(),
         name: row.name.trim(),
-        companyId,
         clientId,
         projectType: row.projectType || undefined,
         address: row.address || undefined,

@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -35,4 +36,4 @@ export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId }, req, { params
     })
   ));
   return NextResponse.json({ success: true, data: { updated: input.updates.length } });
-});
+}, { permission: { resource: "construction.boq", action: "edit" } });

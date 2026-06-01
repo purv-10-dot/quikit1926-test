@@ -1,5 +1,6 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextResponse } from "next/server";
-import { getTenantContext } from "@/lib/auth/context";
+
 import { findPOById } from "@/lib/purchase/po-repository";
 import { buildPoPreviewPdf } from "@/lib/purchase/po-email";
 
@@ -15,9 +16,9 @@ export async function GET(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requirePurchaseAction("construction.po", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const po = await findPOById(ctx.orgId, params.id);
   if (!po) return NextResponse.json({ error: "PO not found" }, { status: 404 });

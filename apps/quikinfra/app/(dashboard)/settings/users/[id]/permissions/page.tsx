@@ -20,8 +20,6 @@ import { useRouter, useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  ShieldCheck,
-  ShieldX,
   Loader2,
   Layers,
   Plus,
@@ -32,6 +30,7 @@ import {
   CheckCircle2,
   AlertCircle,
   UserCircle2,
+  Lock,
 } from "lucide-react";
 import {
   PageHeader,
@@ -39,12 +38,11 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from "@/components/PageShell";
-import { SelectInput } from "@/components/FormDrawer";
 import {
   MENU_CATALOG,
   MATRIX_ACTIONS,
   buildDefaultMatrix,
-  buildMatrixFromModules,
+  buildModuleScopedMatrix,
   mergeMatrix,
   groupByModule,
   type PermissionMatrix,
@@ -116,24 +114,39 @@ export default function UserPermissionMatrixPage() {
   const [matrix, setMatrix] = useState<PermissionMatrix>(() => buildDefaultMatrix(false));
   const [dirty, setDirty] = useState(false);
 
+  // Lock the matrix ONLY for the CENTRAL admin — the org's own owner,
+  // identified by quikit.OrgMember.role (org_admin / admin / super_admin).
+  // That account came in as org_admin and has unrestricted access by
+  // design, so its per-page permissions must never be editable. An admin
+  // INVITED through the app holds the same app-level "admin" role but has
+  // OrgMember.role = "member", so their matrix stays fully editable. This
+  // mirrors the `isCentralAdmin` definition in src/lib/auth/context.ts.
+  const CENTRAL_MEMBERSHIP_ROLES = [
+    "super_admin",
+    "platform_super_admin",
+    "org_admin",
+    "admin",
+  ];
+  const locked = CENTRAL_MEMBERSHIP_ROLES.includes(
+    String(
+      (user as { membershipRole?: string } | undefined)?.membershipRole ?? "",
+    ).toLowerCase(),
+  );
+
   useEffect(() => {
     if (!user) return;
-    // First load behaviour:
-    //  - If the user already has a saved matrix, use it verbatim (merged
-    //    onto the default scaffold so newly-added rows are present).
-    //  - Otherwise seed from modulesAssigned: grant everything for assigned
-    //    modules, deny the rest. Admins can then fine-tune and Save.
-    const hasSavedMatrix =
-      user.permissionMatrix &&
-      typeof user.permissionMatrix === "object" &&
-      Object.keys(user.permissionMatrix).length > 0;
-    const base = hasSavedMatrix
-      ? buildDefaultMatrix(false)
-      : buildMatrixFromModules(user.modulesAssigned);
-    const merged = hasSavedMatrix
-      ? mergeMatrix(base, user.permissionMatrix)
-      : base;
-    setMatrix(merged);
+    // Module-driven display: the matrix shows ONLY the user's assigned
+    // modules (view-ticked by default), with the admin's own within-module
+    // customizations preserved. Pages in unassigned modules stay off — this
+    // avoids the old "granted-unless-revoked" noise where unrelated pages
+    // (Assets, Quality delete, Approvals, …) appeared ticked just because a
+    // revoke wasn't written or they shared a v2 resource with an assigned
+    // module. Admins fine-tune within the assigned modules and Save.
+    const seeded = buildModuleScopedMatrix(
+      user.modulesAssigned,
+      user.permissionMatrix,
+    );
+    setMatrix(seeded);
     setDirty(false);
   }, [user]);
 
@@ -147,6 +160,7 @@ export default function UserPermissionMatrixPage() {
   });
 
   const toggleCell = (menuKey: string, action: MatrixAction) => {
+    if (locked) return; // central admin matrix is read-only
     const item = MENU_CATALOG.find((m) => m.key === menuKey);
     if (!item || !item.supports[action]) return; // unsupported cell stays off
     setMatrix((prev) => ({
@@ -160,6 +174,7 @@ export default function UserPermissionMatrixPage() {
   };
 
   const toggleRow = (menuKey: string, value: boolean) => {
+    if (locked) return; // central admin matrix is read-only
     const item = MENU_CATALOG.find((m) => m.key === menuKey);
     if (!item) return;
     setMatrix((prev) => ({
@@ -174,66 +189,7 @@ export default function UserPermissionMatrixPage() {
     setDirty(true);
   };
 
-  const grantAll = () => {
-    setMatrix(buildDefaultMatrix(true));
-    setDirty(true);
-  };
-
-  const revokeAll = () => {
-    setMatrix(buildDefaultMatrix(false));
-    setDirty(true);
-  };
-
-  // Re-apply module assignment → permission matrix. Overwrites whatever is
-  // on screen with "all actions on for assigned modules, everything else off".
-  // Useful after editing the user's Modules on the user form and wanting
-  // the matrix to reflect that without hand-ticking every row.
-  const syncFromModules = () => {
-    if (!user) return;
-    setMatrix(buildMatrixFromModules(user.modulesAssigned));
-    setDirty(true);
-  };
-
   const assignedModuleCount = user?.modulesAssigned?.length ?? 0;
-
-  // Copy-rights template dropdown — preset matrices that match common
-  // user types. Picking "ADMIN" grants everything; "USER" gives View
-  // only across the board.
-  const applyTemplate = (templateKey: string) => {
-    if (templateKey === "ADMIN") {
-      setMatrix(buildDefaultMatrix(true));
-      setDirty(true);
-      return;
-    }
-    if (templateKey === "USER") {
-      const viewOnly = buildDefaultMatrix(false);
-      for (const item of MENU_CATALOG) {
-        if (item.supports.view) viewOnly[item.key].view = true;
-      }
-      setMatrix(viewOnly);
-      setDirty(true);
-      return;
-    }
-    if (templateKey === "SITE_ADMIN") {
-      // Site Admin gets full rights on PROJECT MGMT / PURCHASE / STORE,
-      // read-only on ORGANIZATION / MASTERS (except Locations which they own).
-      const m = buildDefaultMatrix(true);
-      for (const item of MENU_CATALOG) {
-        if (
-          (item.module === "ORGANIZATION" || item.module === "MASTERS") &&
-          item.key !== "master.location"
-        ) {
-          m[item.key] = {
-            add: false, edit: false, delete: false,
-            view: item.supports.view,
-          };
-        }
-      }
-      setMatrix(m);
-      setDirty(true);
-      return;
-    }
-  };
 
   const grouped = useMemo(() => groupByModule(), []);
   const descriptor = user ? getUserTypeDescriptor(user.userType) : null;
@@ -246,10 +202,12 @@ export default function UserPermissionMatrixPage() {
     let total = 0;
     for (const item of MENU_CATALOG) {
       total += 1;
-      if (rowGranted(matrix[item.key])) granted += 1;
+      // Locked central admin = full access to every page by design, so the
+      // counter always reads N/N regardless of any stale saved matrix.
+      if (locked || rowGranted(matrix[item.key])) granted += 1;
     }
     return { granted, total };
-  }, [matrix]);
+  }, [matrix, locked]);
 
   if (isLoading) {
     return (
@@ -267,42 +225,17 @@ export default function UserPermissionMatrixPage() {
         <div className="px-6 max-w-[1600px] mx-auto pt-6 pb-24">
           {/* User summary card skeleton — same shape as the real card so
               the page doesn't reflow when data arrives. */}
-          <div className="relative bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5 mb-4 overflow-hidden">
-            <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-500 via-orange-400 to-amber-300 opacity-60" />
-            <div className="flex items-start gap-4 animate-pulse">
-              <div className="h-14 w-14 shrink-0 rounded-full bg-gradient-to-br from-orange-200 to-orange-300/70 ring-2 ring-white" />
-              <div className="flex-1 min-w-0 space-y-2.5">
-                <div className="flex items-center gap-3">
-                  <div className="h-5 w-40 rounded-md bg-gray-200" />
-                  <div className="h-3 w-20 rounded bg-gray-100" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-4 w-32 rounded-md bg-gray-100" />
-                  <div className="h-4 w-24 rounded-md bg-gray-100" />
-                  <div className="h-4 w-28 rounded-md bg-gray-100" />
-                </div>
-                <div className="h-3 w-3/4 max-w-2xl rounded bg-gray-100" />
+          <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 mb-3 animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 shrink-0 rounded-full bg-orange-200" />
+              <div className="h-4 w-32 rounded bg-gray-200" />
+              <div className="h-3 w-16 rounded bg-gray-100" />
+              <div className="h-4 w-24 rounded bg-gray-100" />
+              <div className="h-4 w-20 rounded bg-gray-100" />
+              <div className="ml-auto flex items-center gap-2">
+                <div className="h-3 w-20 rounded bg-gray-200" />
+                <div className="h-1 w-24 rounded-full bg-gray-100" />
               </div>
-              <div className="shrink-0 w-44 hidden md:flex flex-col items-end gap-1.5">
-                <div className="h-7 w-20 rounded-md bg-gray-200" />
-                <div className="h-2 w-24 rounded bg-gray-100" />
-                <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
-                  <div className="h-full w-1/3 bg-gradient-to-r from-amber-300 to-orange-300 animate-pulse" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Toolbar skeleton */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-3 mb-4 animate-pulse">
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-              <div className="h-3 w-20 rounded bg-gray-200" />
-              <div className="h-7 w-24 rounded-md bg-emerald-100/70" />
-              <div className="h-7 w-24 rounded-md bg-rose-100/70" />
-              <div className="h-7 w-32 rounded-md bg-orange-100/70" />
-              <div className="h-6 w-px bg-gray-200 hidden sm:block" />
-              <div className="h-3 w-28 rounded bg-gray-200" />
-              <div className="h-8 w-56 rounded-md bg-gray-100" />
             </div>
           </div>
 
@@ -403,75 +336,55 @@ export default function UserPermissionMatrixPage() {
             `shrink-0` keeps it at its natural height inside the flex
             column — without it, the table would push it to zero on
             short viewports. */}
-        <div className="relative bg-white rounded-xl border border-gray-200 shadow-sm px-6 py-5 mb-4 shrink-0 overflow-hidden">
-          <span aria-hidden className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-500 via-orange-400 to-amber-300" />
-          <span aria-hidden className="absolute -top-16 -right-16 w-48 h-48 rounded-full bg-gradient-to-br from-orange-100/60 to-transparent blur-2xl pointer-events-none" />
-          <div className="relative flex items-start gap-4">
-            <div className="relative h-14 w-14 shrink-0">
-              <span aria-hidden className="absolute inset-0 rounded-full bg-gradient-to-br from-orange-300/40 to-orange-500/20 blur-md" />
-              <div className="relative h-14 w-14 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 text-white font-semibold text-lg flex items-center justify-center shadow-md ring-2 ring-white">
-                {initials(user.fullName)}
-              </div>
+        {/* Compact identity strip — avatar + name + chips on the left,
+            grant counter + thin progress bar on the right. One line tall
+            on desktop, wraps gracefully on narrow viewports. */}
+        <div className="bg-white rounded-lg border border-gray-200 px-3 py-2 mb-3 shrink-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="h-8 w-8 shrink-0 rounded-full bg-orange-500 text-white text-[11px] font-semibold flex items-center justify-center">
+              {initials(user.fullName)}
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
-                <h2 className="text-lg font-bold text-gray-900 leading-tight tracking-tight">
-                  {user.fullName}
-                </h2>
-                <span className="font-mono text-xs text-gray-500">
-                  @{user.username}
+            <div className="min-w-0 flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-gray-900 truncate">
+                {user.fullName}
+              </span>
+              <span className="font-mono text-[11px] text-gray-400">
+                @{user.username}
+              </span>
+              {descriptor && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                  <UserCircle2 className="w-3 h-3" />
+                  {descriptor.label}
                 </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 mt-2">
-                {descriptor && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-100">
-                    <UserCircle2 className="w-3 h-3" />
-                    {descriptor.label}
-                  </span>
-                )}
-                {user.department && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-gray-50 text-gray-600 border border-gray-200">
-                    {user.department}
-                  </span>
-                )}
-                {assignedModuleCount > 0 && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-orange-50 text-orange-700 border border-orange-100">
-                    <Layers className="w-3 h-3" />
-                    {assignedModuleCount} module{assignedModuleCount === 1 ? "" : "s"} assigned
-                  </span>
-                )}
-              </div>
-              {descriptor?.shortDescription && (
-                <p className="text-[11px] text-gray-500 mt-2 max-w-2xl leading-relaxed">
-                  {descriptor.shortDescription}
-                </p>
+              )}
+              {user.department && (
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                  {user.department}
+                </span>
+              )}
+              {assignedModuleCount > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-50 text-orange-700">
+                  <Layers className="w-3 h-3" />
+                  {assignedModuleCount} module{assignedModuleCount === 1 ? "" : "s"}
+                </span>
               )}
             </div>
-            {/* Granted-pages meter — visual at-a-glance read of how much
-                access this user has. Bar colour shifts from gray (none) →
-                amber (some) → emerald (mostly granted) so the admin can
-                tell from across the page whether the user is locked down
-                or wide open. */}
-            <div className="shrink-0 w-44 hidden md:flex flex-col items-end gap-1.5">
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-bold text-gray-900 tabular-nums tracking-tight">
+            <div className="ml-auto flex items-center gap-2 shrink-0">
+              <span className="text-[11px] tabular-nums">
+                <span className="font-semibold text-gray-900">
                   {grantSummary.granted}
                 </span>
-                <span className="text-sm text-gray-400 tabular-nums">
-                  / {grantSummary.total}
-                </span>
-              </div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                Pages granted
+                <span className="text-gray-400"> / {grantSummary.total}</span>
+                <span className="text-gray-500 ml-1">granted</span>
               </span>
-              <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden ring-1 ring-inset ring-gray-200/60">
+              <div className="w-24 h-1 rounded-full bg-gray-200 overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-300 ${
+                  className={`h-full transition-all duration-300 ${
                     grantSummary.granted === 0
                       ? "bg-gray-300"
                       : grantSummary.granted / Math.max(grantSummary.total, 1) >= 0.7
-                      ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
-                      : "bg-gradient-to-r from-amber-400 to-orange-500"
+                        ? "bg-emerald-500"
+                        : "bg-amber-400"
                   }`}
                   style={{
                     width: `${Math.min(
@@ -487,71 +400,21 @@ export default function UserPermissionMatrixPage() {
           </div>
         </div>
 
-        {/* ── Toolbar ─────────────────────────────────────────────────
-            Quick Actions on the left, template copy on the right,
-            thin vertical divider between. Wraps on small viewports.
-            `shrink-0` keeps it at its natural height inside the flex
-            column. */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-3 mb-4 shrink-0">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                Quick Actions
-              </span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={grantAll}
-                  className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" /> Grant All
-                </button>
-                <button
-                  type="button"
-                  onClick={revokeAll}
-                  className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
-                >
-                  <ShieldX className="w-3.5 h-3.5" /> Revoke All
-                </button>
-                <button
-                  type="button"
-                  onClick={syncFromModules}
-                  disabled={assignedModuleCount === 0}
-                  title={
-                    assignedModuleCount === 0
-                      ? "Assign modules on the user form first"
-                      : `Grant full rights on the ${assignedModuleCount} assigned module(s), deny the rest`
-                  }
-                  className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-md bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Layers className="w-3.5 h-3.5" /> Sync from Modules
-                </button>
-              </div>
-            </div>
-
-            <div className="h-6 w-px bg-gray-200 hidden sm:block" />
-
-            <div className="flex items-center gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                Copy from Template
-              </label>
-              <div className="min-w-[220px]">
-                <SelectInput
-                  value=""
-                  onChange={(v) => {
-                    if (v) applyTemplate(v);
-                  }}
-                  placeholder="— Select a template —"
-                  options={[
-                    { value: "ADMIN", label: "Admin (all rights)" },
-                    { value: "SITE_ADMIN", label: "Site Admin (no admin masters)" },
-                    { value: "USER", label: "User (view-only)" },
-                  ]}
-                />
-              </div>
-            </div>
+        {/* Locked notice — the central org admin can't have per-page
+            permissions edited; the matrix below is shown read-only. */}
+        {locked && (
+          <div className="mb-3 shrink-0 flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-800 leading-snug">
+            <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-indigo-600" />
+            <span>
+              <strong className="font-semibold">
+                This is the central organisation admin
+              </strong>{" "}
+              — full access to every page by design. Permissions are locked
+              for this account and can&apos;t be edited. (Admins you invite
+              through the app remain editable here.)
+            </span>
           </div>
-        </div>
+        )}
 
         {/* ── Matrix table ────────────────────────────────────────────
             The ONLY scrollable region on this page. The card frame
@@ -598,6 +461,7 @@ export default function UserPermissionMatrixPage() {
                       module={module}
                       items={items}
                       matrix={matrix}
+                      locked={locked}
                       onToggleCell={toggleCell}
                       onToggleRow={toggleRow}
                     />
@@ -664,7 +528,7 @@ export default function UserPermissionMatrixPage() {
             </SecondaryButton>
             <PrimaryButton
               onClick={() => saveMutation.mutate()}
-              disabled={!dirty || saveMutation.isPending}
+              disabled={locked || !dirty || saveMutation.isPending}
             >
               {saveMutation.isPending ? (
                 <>
@@ -687,29 +551,36 @@ function ModuleGroup({
   module,
   items,
   matrix,
+  locked,
   onToggleCell,
   onToggleRow,
 }: {
   module: string;
   items: MenuItem[];
   matrix: PermissionMatrix;
+  /** Central admin → read-only: all cells forced checked + disabled. */
+  locked: boolean;
   onToggleCell: (menuKey: string, action: MatrixAction) => void;
   onToggleRow: (menuKey: string, value: boolean) => void;
 }) {
   // Count rows where ANY supported action is granted so the group header
   // can show "3 of 8 rows" at a glance — tells the admin where to focus
-  // without expanding every module.
-  const rowsGranted = items.filter((item) => rowGranted(matrix[item.key])).length;
+  // without expanding every module. Locked central admin = every row granted.
+  const rowsGranted = locked
+    ? items.length
+    : items.filter((item) => rowGranted(matrix[item.key])).length;
   const rowsTotal = items.length;
 
   // "Whole module" toggle tri-state:
   //   - allOn   → every supported action on every row is granted
   //   - none    → nothing in the module is granted
   //   - partial → somewhere in between (checkbox shown indeterminate)
-  const allOn = items.every((item) =>
-    MATRIX_ACTIONS.every((a) => !item.supports[a] || matrix[item.key]?.[a])
-  );
-  const none = rowsGranted === 0;
+  const allOn =
+    locked ||
+    items.every((item) =>
+      MATRIX_ACTIONS.every((a) => !item.supports[a] || matrix[item.key]?.[a])
+    );
+  const none = !locked && rowsGranted === 0;
   const partial = !allOn && !none;
 
   const toggleGroup = () => {
@@ -723,15 +594,16 @@ function ModuleGroup({
       <tr className="bg-gradient-to-r from-indigo-50 via-indigo-50/60 to-white border-t-2 border-indigo-200/60">
         <td className="px-4 py-2.5 relative" colSpan={2}>
           <span aria-hidden className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r-full bg-gradient-to-b from-indigo-400 to-indigo-600" />
-          <label className="flex items-center gap-2.5 cursor-pointer group pl-2">
+          <label className={`flex items-center gap-2.5 group pl-2 ${locked ? "cursor-not-allowed" : "cursor-pointer"}`}>
             <input
               type="checkbox"
               checked={allOn}
+              disabled={locked}
               ref={(el) => {
                 if (el) el.indeterminate = partial;
               }}
               onChange={toggleGroup}
-              className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              className={`w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-2 focus:ring-indigo-500 ${locked ? "cursor-not-allowed" : "cursor-pointer"}`}
             />
             <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-900 group-hover:text-indigo-700">
               {module}
@@ -771,7 +643,7 @@ function ModuleGroup({
       </tr>
       {items.map((item, idx) => {
         const row = matrix[item.key] ?? { add: false, edit: false, delete: false, view: false };
-        const anyGranted = rowGranted(row);
+        const anyGranted = locked || rowGranted(row);
         // Subtle zebra shading inside each module so long lists stay
         // scan-able. Hover raises the row contrast.
         const zebra = idx % 2 === 1 ? "bg-gray-50/40" : "bg-white";
@@ -805,20 +677,23 @@ function ModuleGroup({
             </td>
             {MATRIX_ACTIONS.map((a) => {
               const supported = item.supports[a];
-              const checked = !!row[a];
+              // Locked central admin → every supported cell shows granted + disabled.
+              const checked = locked ? supported : !!row[a];
               return (
                 <td key={a} className="px-2 py-1.5 text-center">
                   <label
                     className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-150 ${
                       !supported
                         ? "cursor-not-allowed opacity-25"
-                        : "hover:bg-gray-100 ring-1 ring-transparent hover:ring-gray-200 cursor-pointer"
+                        : locked
+                          ? "cursor-not-allowed"
+                          : "hover:bg-gray-100 ring-1 ring-transparent hover:ring-gray-200 cursor-pointer"
                     }`}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
-                      disabled={!supported}
+                      disabled={locked || !supported}
                       onChange={() => onToggleCell(item.key, a)}
                       className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-2 focus:ring-orange-500 disabled:cursor-not-allowed"
                     />

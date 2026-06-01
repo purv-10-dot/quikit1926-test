@@ -31,6 +31,7 @@
  */
 
 import { db } from "@/lib/db/prisma";
+import { findCnUsersByIds } from "@/lib/users/lookup";
 import type { TenantContext } from "@/lib/auth/context";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 
@@ -186,13 +187,10 @@ export async function actOnApproval(
           : [];
     let expected = "an authorized approver";
     if (effectivePool.length > 0) {
-      const pinned = await (db as any).cnUser.findMany({
-        where: { id: { in: effectivePool } },
-        select: { id: true, fullName: true },
-      });
+      const pinned = await findCnUsersByIds(effectivePool);
       const names = effectivePool
         .map((id: string) =>
-          pinned.find((p: any) => p.id === id)?.fullName ?? null,
+          pinned.find((p) => p.id === id)?.fullName ?? null,
         )
         .filter(Boolean);
       expected =

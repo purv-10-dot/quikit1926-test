@@ -8,7 +8,11 @@ import { signOut } from "next-auth/react";
  * sessionStorage, and any non-HttpOnly cookies set by the app so a fresh
  * login on the same browser starts from a clean slate.
  */
-export async function signOutAndClear(callbackUrl: string = "/login") {
+export async function signOutAndClear(
+  callbackUrl: string = process.env.NEXT_PUBLIC_AUTH_URL
+    ? `${process.env.NEXT_PUBLIC_AUTH_URL}/login`
+    : "/",
+) {
   if (typeof window !== "undefined") {
     try { window.localStorage.clear(); } catch {}
     try { window.sessionStorage.clear(); } catch {}

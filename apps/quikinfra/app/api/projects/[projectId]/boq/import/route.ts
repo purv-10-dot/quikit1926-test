@@ -8,9 +8,12 @@ import {
   type NormalizedBoqRow,
   type RawSheet,
 } from "@/lib/boq";
-import { requirePermission, badRequest } from "@/lib/auth/context";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { getTenantContext, badRequest } from "@/lib/auth/context";
 import { rateLimit, LIMITS } from "@/lib/workflow/rate-limit";
 import { logger } from "@/lib/observability/logger";
+
+const auth = withOrgAuthForResource("construction.boq");
 
 /**
  * BOQ Import API — Dual Import Engine version
@@ -37,15 +40,13 @@ import { logger } from "@/lib/observability/logger";
  *   - replaceExisting: boolean — wipes the project's BOQ before insert
  *   - fileName:        string  — recorded on the import batch for audit
  */
-export async function POST(
+export const POST = auth.importOrEdit<{ projectId: string }>(async (
+  _authCtx,
   req: NextRequest,
-  { params }: { params: { projectId: string } }
-) {
-  const ctxOrResponse = await requirePermission("boq.import", {
-    matrix: { menuKey: "pm.boq", action: "add" },
-  });
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+  { params },
+) => {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const limited = await rateLimit({ ...LIMITS.IMPORT_BOQ, req, identifier: ctx.userId });
   if (limited.blocked) {
@@ -262,4 +263,4 @@ export async function POST(
       { status: 500 }
     );
   }
-}
+});

@@ -1,56 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requirePermission } from "@/lib/auth/context";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { getTenantContext } from "@/lib/auth/context";
 import { deleteWbsTask, updateWbsTask, WbsError } from "@/lib/wbs/wbs-repository";
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { projectId: string; id: string } },
-) {
-  const ctxOrResponse = await requirePermission("wbs.write", {
-    matrix: { menuKey: "pm.wbs", action: "edit" },
-  });
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+const auth = withOrgAuthForResource("construction.wbs");
 
-  try {
-    const body = (await req.json().catch(() => ({}))) as any;
-    const updated = await updateWbsTask(ctx, params.projectId, params.id, {
-      parentId: body.parentId,
-      wbsCode: body.wbsCode,
-      name: body.name,
-      startDate: body.startDate,
-      endDate: body.endDate,
-      status: body.status,
-      progress: body.progress,
-      predecessors: body.predecessors,
-    });
-    return NextResponse.json(updated);
-  } catch (err: any) {
-    if (err instanceof WbsError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: err.httpStatus });
-    }
-    return NextResponse.json({ error: err?.message ?? "Internal error" }, { status: 500 });
+function toErrorResponse(err: unknown): NextResponse {
+  if (err instanceof WbsError) {
+    return NextResponse.json(
+      { error: err.message, code: err.code },
+      { status: err.httpStatus },
+    );
   }
+  const message = err instanceof Error ? err.message : "Internal error";
+  return NextResponse.json({ error: message }, { status: 500 });
 }
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { projectId: string; id: string } },
-) {
-  const ctxOrResponse = await requirePermission("wbs.write", {
-    matrix: { menuKey: "pm.wbs", action: "delete" },
-  });
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
-
-  try {
-    await deleteWbsTask(ctx, params.projectId, params.id);
-    return NextResponse.json({ success: true });
-  } catch (err: any) {
-    if (err instanceof WbsError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: err.httpStatus });
+export const PATCH = auth.edit<{ projectId: string; id: string }>(
+  async (_authCtx, req: NextRequest, { params }) => {
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    try {
+      const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+      const updated = await updateWbsTask(ctx, params.projectId, params.id, {
+        parentId: body.parentId as never,
+        wbsCode: body.wbsCode as never,
+        name: body.name as never,
+        startDate: body.startDate as never,
+        endDate: body.endDate as never,
+        status: body.status as never,
+        progress: body.progress as never,
+        predecessors: body.predecessors as never,
+      });
+      return NextResponse.json(updated);
+    } catch (err) {
+      return toErrorResponse(err);
     }
-    return NextResponse.json({ error: err?.message ?? "Internal error" }, { status: 500 });
-  }
-}
+  },
+);
 
+export const DELETE = auth.delete<{ projectId: string; id: string }>(
+  async (_authCtx, _req, { params }) => {
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    try {
+      await deleteWbsTask(ctx, params.projectId, params.id);
+      return NextResponse.json({ success: true });
+    } catch (err) {
+      return toErrorResponse(err);
+    }
+  },
+);

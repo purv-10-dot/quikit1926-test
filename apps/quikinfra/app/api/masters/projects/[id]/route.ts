@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { requireMastersAction } from "@/lib/auth/requireMastersAction";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   findProjectById,
@@ -16,8 +17,9 @@ function outOfScope(ctxProjectIds: string[] | undefined, id: string): boolean {
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (outOfScope(ctx.projectIds, params.id)) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
@@ -27,8 +29,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 async function handleUpdate(req: NextRequest, id: string) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("edit");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (outOfScope(ctx.projectIds, id)) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
@@ -39,7 +42,7 @@ async function handleUpdate(req: NextRequest, id: string) {
   const {
     id: _a, orgId: _c, createdAt: _d, createdBy: _e,
     updatedAt: _f, updatedBy: _g,
-    companyName: _h, clientName: _i,
+    clientName: _i,
     ...safe
   } = body ?? {};
   try {
@@ -66,8 +69,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("delete");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (outOfScope(ctx.projectIds, params.id)) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
