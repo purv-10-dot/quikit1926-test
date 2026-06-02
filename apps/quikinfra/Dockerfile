@@ -136,6 +136,6 @@ COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/node_modules/.pr
 RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
 
 USER nextjs
-EXPOSE 3007
+EXPOSE 3006
 
 CMD ["node", "apps/quikinfra/server.js"]
