@@ -86,22 +86,22 @@ export function RightPanel({
         aria-hidden="true"
       />
       <div
-        className={`relative ml-auto h-full bg-white shadow-2xl flex flex-col ${SIZE_WIDTH[size]} sm:max-w-[95vw]`}
+        className={`relative ml-auto h-full bg-white dark:bg-gray-900 shadow-2xl flex flex-col ${SIZE_WIDTH[size]} sm:max-w-[95vw]`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
         {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div className="flex-1 min-w-0 pr-4">
-            <h2 className="text-sm font-semibold text-gray-900 truncate">{title}</h2>
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{title}</h2>
             {subtitle && (
-              <p className="text-xs text-gray-400 mt-0.5 truncate">{subtitle}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">{subtitle}</p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex-shrink-0 transition-colors"
+            className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-200 flex-shrink-0 transition-colors"
             aria-label="Close panel"
           >
             <X className="h-4 w-4" />
@@ -110,20 +110,20 @@ export function RightPanel({
 
         {/* Tabs */}
         {tabs && tabs.length > 1 && (
-          <div className="flex gap-0 px-6 border-b border-gray-200 flex-shrink-0">
+          <div className="flex gap-0 px-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
             {tabs.map(t => (
               <button
                 key={t.key}
                 onClick={() => onTabChange?.(t.key)}
                 className={`relative px-4 py-2.5 text-xs font-medium transition-colors ${
                   activeTab === t.key
-                    ? "text-gray-900"
-                    : "text-gray-400 hover:text-gray-600"
+                    ? "text-gray-900 dark:text-gray-100"
+                    : "text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
                 }`}
               >
                 {t.label}
                 {activeTab === t.key && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900 rounded-t" />
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900 dark:bg-gray-100 rounded-t" />
                 )}
               </button>
             ))}
@@ -137,7 +137,7 @@ export function RightPanel({
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-gray-200 bg-white flex-shrink-0">
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex-shrink-0">
             {footer}
           </div>
         )}
@@ -164,17 +164,17 @@ export interface RightPanelCancelButtonProps {
 }
 
 export function RightPanelCancelButton({ onClick, label = "Cancel", disabled }: RightPanelCancelButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex items-center gap-1.5 px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
-    >
-      <X className="h-3.5 w-3.5" />
-      {label}
-    </button>
-  );
+  // return (
+  //   <button
+  //     type="button"
+  //     onClick={onClick}
+  //     disabled={disabled}
+  //     className="flex items-center gap-1.5 px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+  //   >
+  //     <X className="h-3.5 w-3.5" />
+  //     {label}
+  //   </button>
+  // );
 }
 
 export interface RightPanelSubmitButtonProps {

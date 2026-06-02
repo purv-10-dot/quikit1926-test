@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { HelpCircle, Settings, Plus, PanelLeft } from "lucide-react";
@@ -30,7 +30,14 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
   const { data: session } = useSession();
   const perms = useMyPermissions();
   const params = useParams();
+  const pathname = usePathname() ?? "";
   const currentProjectId = typeof params?.id === "string" ? params.id : undefined;
+  // Hide the global search + Create button on tenant-level admin pages where
+  // they aren't relevant (user management / migration / general settings).
+  const hideSearchAndCreate =
+    pathname.startsWith("/settings/user-management") ||
+    pathname.startsWith("/settings/migration") ||
+    pathname.startsWith("/settings/general");
   const [createOpen, setCreateOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -107,8 +114,8 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
         {/* Content row — search, create, and the right-hand action icons. */}
         <div className="flex-1 flex items-center gap-3 px-3">
           <div className="flex-1 max-w-2xl mx-auto flex items-center gap-2">
-            <GlobalSearchPopover ref={searchRef} />
-            {(perms.loading || perms.has("Issue", "create")) && (
+            {!hideSearchAndCreate && <GlobalSearchPopover ref={searchRef} />}
+            {!hideSearchAndCreate && (perms.loading || perms.has("Issue", "create")) && (
               <button
                 type="button"
                 data-tour="create"
