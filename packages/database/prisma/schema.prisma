@@ -26,6 +26,7 @@ model App {
   requiresOrgAdmin Boolean          @default(false)
   appRoles         AppRole[]
   AppRole          QtAppRole[]
+  cnAppRoles       CnAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
   oauthClient      OAuthClient?
@@ -184,6 +185,11 @@ model Org {
   cnVendorPayments        CnVendorPayment[]
   cnWorkCategories        CnWorkCategory[]
   cnWorkOrders            CnWorkOrder[]
+  cnAppRoles              CnAppRole[]
+  cnUserAppRoles          CnUserAppRole[]
+  cnUserPermissionExtras  CnUserPermissionExtra[]
+  cnUserProfiles          CnUserProfile[]
+  cnUserProjectAccess     CnUserProjectAccess[]
   accountabilityFunctions AccountabilityFunction[]
   appRoles                AppRole[]
   categoryMasters         CategoryMaster[]
@@ -327,6 +333,10 @@ model User {
   tablePreferences        UserTablePreference[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
+  cnUserAppRoles          CnUserAppRole[]
+  cnUserPermissionExtras  CnUserPermissionExtra[]
+  cnUserProfiles          CnUserProfile[]
+  cnUserProjectAccess     CnUserProjectAccess[]
   qtProjectUserRoles      QtProjectUserRole[]
   accounts                Account[]
   sessions                Session[]
@@ -1232,27 +1242,27 @@ model OPSPData {
 }
 
 model OPSPReviewEntry {
-  id            String   @id @default(cuid())
-  orgId         String
-  opspId        String
-  userId        String
-  horizon       String
-  rowIndex      Int
-  category      String
-  period        String
-  targetValue   Decimal? @db.Decimal(20, 4)
-  achievedValue Decimal? @db.Decimal(20, 4)
+  id                 String   @id @default(cuid())
+  orgId              String
+  opspId             String
+  userId             String
+  horizon            String
+  rowIndex           Int
+  category           String
+  period             String
+  targetValue        Decimal? @db.Decimal(20, 4)
+  achievedValue      Decimal? @db.Decimal(20, 4)
   // Manually-entered "Last Year Same Period" — only populated when the prior
   // year's OPSPReviewEntry doesn't supply an auto value (in which case the
   // drawer disables the field). See app/api/opsp/review/route.ts.
   lastYearSamePeriod Decimal? @db.Decimal(20, 4)
-  comment       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  updatedBy     String?
-  opsp          OPSPData @relation(fields: [opspId], references: [id], onDelete: Cascade)
-  org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment            String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  updatedBy          String?
+  opsp               OPSPData @relation(fields: [opspId], references: [id], onDelete: Cascade)
+  org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, opspId, horizon, rowIndex, period])
   @@index([orgId])
@@ -3997,6 +4007,156 @@ model CnNumberSequence {
   @@schema("app_quikinfra")
 }
 
+// ─────────────────────────── QuikInfra Dynamic RBAC v2 ───────────────────────────
+// Org × app-scoped roles with dynamic permission grants. Replaces the old
+// hardcoded CnRole / CnPermission / CnRolePermission trio (dropped 2026-05-29).
+//
+// Tables:
+//   CnAppRole              — roles per (orgId, appId). isSystem protects rename/delete.
+//   CnRolePermissionV2     — (resource, action) grants attached to a role.
+//   CnUserAppRole          — user → role assignment per org. userId → auth.User.
+//   CnUserPermissionExtra  — additive per-user grants applied on top of role grants.
+//
+// Permission catalog lives in src/lib/rbac/permissionsRegistry.ts (open strings,
+// no DB enum). Project-scoped roles are not implemented; add a QtProjectRole-style
+// model here if site-level scoping becomes a real requirement.
+
+model CnAppRole {
+  id              String               @id @default(cuid())
+  orgId           String
+  appId           String
+  name            String
+  description     String?
+  isSystem        Boolean              @default(false)
+  isDefault       Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  createdBy       String?
+  app             App                  @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org             Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  members         CnUserAppRole[]
+  rolePermissions CnRolePermissionV2[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quikinfra")
+}
+
+/// Permission grant for a CnAppRole. (resource, action) pairs are validated
+/// against src/lib/rbac/permissionsRegistry.ts at save time; the DB itself
+/// allows any string so the registry can grow without a migration.
+model CnRolePermissionV2 {
+  id       String    @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     CnAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quikinfra")
+}
+
+/// Per-(org, user) role assignment. userId points to auth.User.id, NOT to
+/// the local CnUser table — quikinfra is migrating toward central-user-only
+/// shape (matches quikscale/quiktrack).
+model CnUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role       CnAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quikinfra")
+}
+
+/// Per-user permission overrides applied ON TOP of the user's role grants.
+/// Two flavours, distinguished by the `revoke` flag:
+///   - revoke = false (default): ADDITIVE grant — extends a user's access
+///     without forking the role. Set via the "Grant Settings access"
+///     checkbox and any future "grant individual permission" UI.
+///   - revoke = true:            SUBTRACTIVE revoke — strips a permission
+///     that the user's role would otherwise grant. Used by the Add User
+///     form's module checkboxes: ticking only "Masters" + "Purchase"
+///     writes revoke rows for every permission in the other module trees.
+///
+/// Effective permission set = role_grants ∪ extras(revoke=false) − extras(revoke=true).
+model CnUserPermissionExtra {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  resource  String
+  action    String
+  /// True = subtract this (resource, action) from the user's effective set.
+  /// False (default) = additive grant on top of the role.
+  revoke    Boolean  @default(false)
+  grantedBy String?
+  createdAt DateTime @default(now())
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, resource, action])
+  @@index([userId, orgId])
+  @@map("UserPermissionExtra")
+  @@schema("app_quikinfra")
+}
+
+/// QuikInfra-specific user profile. Holds the per-app fields shown on the
+/// Add User drawer that don't fit central auth.User: department, mobile,
+/// mobile-app access flag. firstName/lastName are mirrored here so the
+/// QuikInfra UI doesn't need a join into auth.User on every list query.
+/// One row per (orgId, userId).
+model CnUserProfile {
+  id                  String   @id @default(cuid())
+  userId              String
+  orgId               String
+  firstName           String
+  lastName            String
+  department          String?
+  mobile              String?
+  mobileAccessEnabled Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  org                 Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([orgId])
+  @@map("User_profiles")
+  @@schema("app_quikinfra")
+}
+
+/// Project-level scope for a QuikInfra user. Replaces the legacy
+/// cn_users.projectsAssigned[] array column with a proper join table so
+/// "all users on project X" / "all projects for user Y" become indexed
+/// queries. One row per (userId, orgId, projectId).
+model CnUserProjectAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  orgId     String
+  projectId String
+  grantedBy String?
+  grantedAt DateTime @default(now())
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, projectId])
+  @@index([projectId])
+  @@index([orgId, projectId])
+  @@map("User_project_access")
+  @@schema("app_quikinfra")
+}
+
 /// Per-tenant VC OS configuration. 1:1 with Tenant when QuikVC is enabled.
 /// Holds VC-specific settings that don't apply to QuikScale tenants.
 model VCFundProfile {
@@ -4846,29 +5006,29 @@ model VCAuditLog {
 }
 
 model QtProject {
-  id          String            @id @default(cuid())
-  orgId       String
-  projectKey  String
-  name        String
-  description String?
-  projectType String            @default("software")
-  icon        String?
-  color       String?           @default("#2563eb")
-  status      String            @default("active")
-  startDate   DateTime?
-  endDate     DateTime?
-  leadUserId  String?
-  isDeleted   Boolean           @default(false)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  docs        QtDoc[]
-  issues      QtIssue[]
-  statuses    QtIssueStatus[]
-  issueTypes  QtIssueType[]
-  pages       QtPage[]
-  taskGroups  QtTaskGroup[]
+  id               String              @id @default(cuid())
+  orgId            String
+  projectKey       String
+  name             String
+  description      String?
+  projectType      String              @default("software")
+  icon             String?
+  color            String?             @default("#2563eb")
+  status           String              @default("active")
+  startDate        DateTime?
+  endDate          DateTime?
+  leadUserId       String?
+  isDeleted        Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  createdBy        String?
+  updatedBy        String?
+  docs             QtDoc[]
+  issues           QtIssue[]
+  statuses         QtIssueStatus[]
+  issueTypes       QtIssueType[]
+  pages            QtPage[]
+  taskGroups       QtTaskGroup[]
   org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   members          QtProjectMember[]
   teams            QtProjectTeam[]
@@ -4913,18 +5073,18 @@ model QtProjectMember {
 // QtProjectMember.projectRoleId assigns a ProjectRole to a project member.
 
 model QtAppRole {
-  id          String             @id @default(cuid())
-  orgId       String
-  appId       String
-  name        String
-  description String?
-  isSystem    Boolean            @default(false)
-  isDefault   Boolean            @default(false)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  createdBy   String?
-  app         App                @relation(fields: [appId], references: [id], onDelete: Cascade)
-  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id               String                  @id @default(cuid())
+  orgId            String
+  appId            String
+  name             String
+  description      String?
+  isSystem         Boolean                 @default(false)
+  isDefault        Boolean                 @default(false)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  createdBy        String?
+  app              App                     @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org              Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   navigations      QtRoleNavigation[]
   permissions      QtRolePermission[]
   fieldPermissions QtRoleFieldPermission[]
@@ -4997,7 +5157,7 @@ model QtRoleFieldPermission {
   roleId String
   entity String
   field  String
-  level  String    // "hidden" | "readonly" | "editable" | "required"
+  level  String // "hidden" | "readonly" | "editable" | "required"
   role   QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, entity, field])
@@ -5027,7 +5187,7 @@ model QtProjectRoleFieldPermission {
   projectRoleId String
   entity        String
   field         String
-  level         String        // "hidden" | "readonly" | "editable" | "required"
+  level         String // "hidden" | "readonly" | "editable" | "required"
   projectRole   QtProjectRole @relation(fields: [projectRoleId], references: [id], onDelete: Cascade)
 
   @@unique([projectRoleId, entity, field])
