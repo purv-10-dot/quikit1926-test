@@ -119,6 +119,13 @@ export interface IdTokenPayload {
   name: string;
   tenant_id: string;
   role: string;        // membership role
+  /**
+   * Redis-backed session id of the central NextAuth session that authorized
+   * this flow. Consumer apps copy it onto their own JWT so the shared session
+   * store can soft-invalidate them. Omitted when the authorize step had no
+   * session id (e.g. legacy codes minted before this rolled out).
+   */
+  sessionId?: string;
 }
 
 /**

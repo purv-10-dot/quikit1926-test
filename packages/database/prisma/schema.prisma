@@ -66,6 +66,10 @@ model OAuthCode {
   redirectUri         String
   expiresAt           DateTime
   used                Boolean  @default(false)
+  // Redis-backed session id from the central NextAuth session at authorize
+  // time. Carried into the id_token so consumer apps can soft-invalidate via
+  // the shared session store. Null on legacy / pre-migration codes.
+  sessionId           String?
   createdAt           DateTime @default(now())
 
   @@index([code])
@@ -83,6 +87,9 @@ model OAuthRefreshToken {
   scopes      String[]
   expiresAt   DateTime
   revoked     Boolean  @default(false)
+  // Carried forward from OAuthCode so refresh-issued id_tokens keep the same
+  // shared session id. Null on legacy / pre-migration tokens.
+  sessionId   String?
   createdAt   DateTime @default(now())
 
   @@index([token])
