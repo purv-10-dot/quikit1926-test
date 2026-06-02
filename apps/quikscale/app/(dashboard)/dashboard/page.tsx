@@ -23,8 +23,10 @@ import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/use
 import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors, getLatestWeeklyNote } from "@/lib/utils/kpiHelpers";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
+import { dashboardKpiHiddenColumns } from "@/lib/utils/dashboardColumns";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { KPITable } from "../kpi/components/KPITable";
+import { resolveProgressQtd } from "../kpi/components/kpiStats";
 import { PriorityTable } from "../priority/components/PriorityTable";
 import { WWWTable } from "../www/components/WWWTable";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -489,14 +491,19 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
 
 // ── KPI mini cards ────────────────────────────────────────────────────────────
 
-function KPICard({ kpi }: { kpi: KPIRow }) {
+function KPICard({ kpi, currentWeek }: { kpi: KPIRow; currentWeek: number | null }) {
   // Same denominator for ratio AND percentage so the math agrees with what
   // the user reads. `getProgressBadgeColors` runs the canonical
   // `getColorByPercentage` internally and returns READABLE-on-white text
   // colors (text-blue-700 etc.) instead of the text-on-color text-white
   // tones — so the percentage label is visible on the white card.
-  const achieved = kpi.qtdAchieved ?? 0;
-  const goal = kpi.qtdGoal ?? kpi.target ?? 0;
+  //
+  // Standalone KPIs: the server-stamped `kpi.qtdAchieved` is a cumulative SUM
+  // regardless of division type, so the card showed (e.g.) 365/80 = 456% on a
+  // Standalone KPI whose true QTD is the avg-per-week (52.14/80). resolveProgressQtd
+  // re-derives it for Standalone (matching the KPI table) and leaves Cumulative
+  // KPIs byte-identical.
+  const { achieved, goal } = resolveProgressQtd(kpi, currentWeek);
   const pct = goal > 0 ? (achieved / goal) * 100 : 0;
   const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
   const badge = kpi.qtdAchieved != null
@@ -1369,7 +1376,7 @@ export default function DashboardPage() {
                       <div className="h-1.5 bg-gray-100 rounded w-full" />
                     </div>
                   ))
-                : kpis.map(k => <KPICard key={k.id} kpi={k} />)
+                : kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={currentWeek} />)
               }
             </div>
           </KPIOverviewContainer>
@@ -1402,9 +1409,10 @@ export default function DashboardPage() {
                 onRefresh={() => {}}
                 fillWidth
                 hideColumns={[
-                  ...(activeTab === "team"
-                    ? ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "teamHead"]
-                    : ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "team", "teamHead", "kpiOwner"]),
+                  // On the Team tab the owner column shown follows the KPI Type
+                  // toggle: individual KPIs carry a single `owner`, team KPIs
+                  // carry multiple `ownerIds` (`kpiOwner`). See dashboardColumns.
+                  ...dashboardKpiHiddenColumns(activeTab, teamTabKpiType),
                   ...hiddenWeekCols,
                 ]}
               />
