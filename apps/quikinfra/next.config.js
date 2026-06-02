@@ -1,7 +1,16 @@
+const path = require("path");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // output: 'standalone', // Requires admin for symlinks on Windows
+  // Standalone output (self-contained Node server under .next/standalone) is
+  // only emitted when NEXT_BUILD_STANDALONE=1 — set in apps/quikinfra/Dockerfile.
+  // It stays off for local `next build` because standalone symlinks the
+  // monorepo's workspace deps, which requires admin privileges on Windows.
+  output: process.env.NEXT_BUILD_STANDALONE === "1" ? "standalone" : undefined,
   experimental: {
+    // Trace workspace deps (@quikit/*) into the standalone bundle by rooting
+    // file-tracing at the monorepo root rather than this app's directory.
+    outputFileTracingRoot: path.join(__dirname, "../.."),
     // Tree-shake lucide-react's barrel file (used in 90+ files) so each
     // route only ships the icons it actually imports. No source changes
     // required — Next rewrites the imports at build time.
