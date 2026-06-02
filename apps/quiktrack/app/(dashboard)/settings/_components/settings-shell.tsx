@@ -13,7 +13,7 @@ const NAV: {
   adminOnly?: boolean;
 }[] = [
   { key: "user-management", label: "User Management", href: "/settings/user-management", icon: Users, adminOnly: true },
-  { key: "migration", label: "Migration", href: "/settings/migration", icon: Database, adminOnly: true },
+  // { key: "migration", label: "Migration", href: "/settings/migration", icon: Database, adminOnly: true },
   // "General Settings" lives in the header ⚙ popover (see settings-popover.tsx)
   // — keeping it out of this sidebar prevents duplication.
 ];
