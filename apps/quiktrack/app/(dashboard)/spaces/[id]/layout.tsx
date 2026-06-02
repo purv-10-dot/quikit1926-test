@@ -78,7 +78,7 @@ export default function SpaceLayout({
       <div className="flex-shrink-0 bg-white">
         <ProjectHeader projectId={params.id} />
       </div>
-      <div className="flex-1 overflow-y-auto bg-white">{children}</div>
+      <div className="flex-1 overflow-y-auto bg-white min-w-0">{children}</div>
     </div>
   );
 }

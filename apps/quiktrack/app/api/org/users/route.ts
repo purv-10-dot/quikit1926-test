@@ -97,27 +97,52 @@ function buildUserResponse(
   };
 }
 
-// GET /api/org/users â€” membership list + each user's QuikTrack AppRole.
+// GET /api/org/users — list every OrgMember who is a member of at least one
+// QuikTrack project (QtProjectMember). Tightest signal for "real QuikTrack
+// user": UserAppAccess and QtUserAppRole are both auto-granted by side
+// flows (e.g. the Jira importer), which caused QuikScale-only / Jira-only
+// users to leak into this list.
 export const GET = withOrgAuth(async ({ orgId }) => {
-  const [memberships, appId] = await Promise.all([
-    db.orgMember.findMany({
-      where: { orgId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            avatar: true,
-            lastSignInAt: true,
-          },
+  const appId = await getQuikTrackAppId();
+
+  // Tenants that haven't registered QuikTrack yet → no users to show.
+  if (!appId) {
+    return NextResponse.json({ success: true, data: [] });
+  }
+
+  // Pre-resolve the userIds who actually belong to a QuikTrack project in
+  // this org. Scoped to non-deleted memberships on non-deleted projects in
+  // the current org.
+  const memberRows = await db.qtProjectMember.findMany({
+    where: {
+      isDeleted: false,
+      project: { orgId, isDeleted: false },
+    },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  const quiktrackUserIds = memberRows.map((r) => r.userId);
+
+  if (quiktrackUserIds.length === 0) {
+    return NextResponse.json({ success: true, data: [] });
+  }
+
+  const memberships = await db.orgMember.findMany({
+    where: { orgId, userId: { in: quiktrackUserIds } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+          lastSignInAt: true,
         },
       },
-      orderBy: { createdAt: "asc" },
-    }),
-    getQuikTrackAppId(),
-  ]);
+    },
+    orderBy: { createdAt: "asc" },
+  });
 
   const appRoleByUserId = new Map<string, { id: string; name: string } | null>();
   const teamsByUserId = new Map<string, Array<{ id: string; name: string }>>();

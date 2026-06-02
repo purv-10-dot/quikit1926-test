@@ -60,7 +60,7 @@ const STEPS: TourStep[] = [
     id: "done",
     title: "You're set!",
     body:
-      "That's the whirlwind tour. You can replay it any time from the help menu in the top bar. Happy tracking!",
+      "That's the whirlwind tour. Happy tracking!",
   },
 ];
 
@@ -205,8 +205,8 @@ export function KanTour() {
       {/* Kan + speech bubble — fixed in a corner, pointer-events on so the
           tour controls work even while the rest of the page is dimmed. */}
       <div className={`fixed ${bubblePos} pointer-events-auto qt-tour-slide-in`}>
-        <div className="flex items-end gap-3 max-w-[440px]">
-          {!flipLeft && <KanMascot size={120} mode="wave" />}
+        <div className="flex items-center gap-0">
+          {!flipLeft && <KanMascot size={340} mode="wave" className="-mr-14" />}
 
           <div className="relative bg-white rounded-2xl shadow-2xl border border-[#DEEBFF] p-5 w-[340px]">
             {/* Bubble tail */}
@@ -296,7 +296,7 @@ export function KanTour() {
             </div>
           </div>
 
-          {flipLeft && <KanMascot size={120} mode="wave" />}
+          {flipLeft && <KanMascot size={340} mode="wave" className="-ml-14" flip />}
         </div>
       </div>
     </div>

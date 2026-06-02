@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, ChevronRight, ChevronDown, Users } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
+import { BoardFilterSelect } from "@/app/(dashboard)/spaces/[id]/board/_components/board-filter-select";
 import { ProjectPreviewIllustration } from "@/components/illustrations/project-preview";
 import { randomProjectEmoji } from "@/lib/utils/projectEmoji";
 import {
@@ -181,20 +182,14 @@ export function CreateProjectForm() {
                   <label className="block text-xs font-medium text-gray-700 mb-1">
                     Project type
                   </label>
-                  <div className="relative">
-                    <select
-                      value={projectType}
-                      onChange={(e) =>
-                        setProjectType(e.target.value as typeof projectType)
-                      }
-                      className="w-full h-9 pl-9 pr-8 text-sm border border-gray-300 rounded-md appearance-none bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="team-managed">Team-managed</option>
-                      <option value="company-managed">Company-managed</option>
-                    </select>
-                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
-                  </div>
+                  <BoardFilterSelect
+                    value={projectType}
+                    onChange={(v) => setProjectType(v as typeof projectType)}
+                    options={[
+                      { value: "team-managed", label: "Team-managed" },
+                      { value: "company-managed", label: "Company-managed" },
+                    ]}
+                  />
                 </div>
 
                 <div>

@@ -5429,6 +5429,7 @@ model QtIssue {
   outgoingLinks    QtIssueLink[]      @relation("IssueLinkSource")
   incomingLinks    QtIssueLink[]      @relation("IssueLinkTarget")
   timesheetEntries QtTimesheetEntry[]
+  attachments      QtIssueAttachment[]
 
   @@unique([projectId, key])
   @@index([orgId])
@@ -5490,6 +5491,31 @@ model QtIssueComment {
   issue     QtIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+  @@index([issueId, createdAt])
+  @@schema("app_quiktrack")
+}
+
+model QtIssueAttachment {
+  id                String   @id @default(cuid())
+  orgId             String
+  projectId         String
+  issueId           String
+  fileName          String
+  mimeType          String
+  sizeBytes         Int
+  s3Key             String
+  /// Source attachment id when imported (e.g. Jira attachment.id).
+  /// Combined with issueId it gives a natural idempotency key so re-running
+  /// an import doesn't duplicate rows.
+  sourceSystem      String?
+  sourceAttachmentId String?
+  uploadedBy        String?
+  createdAt         DateTime @default(now())
+  issue             QtIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@unique([issueId, sourceSystem, sourceAttachmentId])
+  @@index([orgId])
+  @@index([projectId])
   @@index([issueId, createdAt])
   @@schema("app_quiktrack")
 }

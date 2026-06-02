@@ -38,8 +38,7 @@ export function AssigneeCell({ value, members, onCommit }: AssigneeCellProps) {
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 hover:bg-gray-100 rounded px-1 py-0.5"
-        title={current ? userLabel(current) : "Unassigned"}
+        className="inline-flex items-center gap-1.5 hover:bg-gray-100 px-1 py-0.5 focus:outline-none focus-visible:outline-none dark:hover:bg-slate-700/50"
       >
         {current ? (
           <span

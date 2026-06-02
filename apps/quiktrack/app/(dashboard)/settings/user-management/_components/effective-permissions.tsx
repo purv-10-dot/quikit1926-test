@@ -44,13 +44,13 @@ export function EffectivePermissions({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-semibold">Effective permissions</h3>
-        <span className="text-[10px] uppercase tracking-wider font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+        <h3 className="text-sm font-semibold dark:text-gray-100">Effective permissions</h3>
+        <span className="text-[10px] uppercase tracking-wider font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded dark:bg-gray-700/60 dark:text-gray-300">
           ROLE: {(roleName ?? "—").toUpperCase()}
         </span>
       </div>
 
-      <div className="bg-gray-900 text-white rounded-md px-4 py-2.5 flex items-start gap-2 text-xs">
+      <div className="bg-gray-900 text-white rounded-md px-4 py-2.5 flex items-start gap-2 text-xs dark:bg-gray-800/70 dark:ring-1 dark:ring-gray-700">
         <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
         <span>
           Gray-checked + <Lock className="inline h-3 w-3 mx-0.5" /> cells come from the role and can&apos;t be changed here.
@@ -59,7 +59,7 @@ export function EffectivePermissions({
       </div>
 
       {q.isLoading ? (
-        <p className="text-sm text-gray-500">Loading…</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
       ) : (
         <Grid roleSet={roleSet} />
       )}
@@ -69,10 +69,10 @@ export function EffectivePermissions({
 
 function Grid({ roleSet }: { roleSet: Set<string> }) {
   return (
-    <div className="border border-gray-200 rounded overflow-hidden">
+    <div className="border border-gray-200 rounded overflow-hidden dark:border-gray-700">
       <table className="w-full text-xs">
-        <thead className="bg-gray-50">
-          <tr className="text-left text-gray-500">
+        <thead className="bg-gray-50 dark:bg-gray-800/60">
+          <tr className="text-left text-gray-500 dark:text-gray-300">
             <th className="px-4 py-2 font-semibold uppercase tracking-wide">Entity</th>
             {ACTIONS.map((a) => (
               <th key={a} className="px-4 py-2 font-semibold uppercase tracking-wide text-center w-24">
@@ -102,11 +102,11 @@ function ModuleRows({ mod, roleSet }: { mod: PermissionModule; roleSet: Set<stri
   if (leaves.length === 1) {
     const only = leaves[0];
     return (
-      <tr className="border-t border-gray-100 bg-white">
-        <td className="px-4 py-2 font-semibold text-gray-900">
+      <tr className="border-t border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <td className="px-4 py-2 font-semibold text-gray-900 dark:text-gray-100">
           <span className="inline-flex items-center gap-2">
             {mod.label}
-            <span className="text-[10px] font-normal bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] font-normal bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded dark:bg-gray-700/60 dark:text-gray-300">
               {granted} role
             </span>
           </span>
@@ -122,11 +122,11 @@ function ModuleRows({ mod, roleSet }: { mod: PermissionModule; roleSet: Set<stri
 
   return (
     <>
-      <tr className="border-t border-gray-100 bg-white">
-        <td className="px-4 py-2 font-semibold text-gray-900">
+      <tr className="border-t border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <td className="px-4 py-2 font-semibold text-gray-900 dark:text-gray-100">
           <span className="inline-flex items-center gap-2">
             {mod.label}
-            <span className="text-[10px] font-normal bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] font-normal bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded dark:bg-gray-700/60 dark:text-gray-300">
               {granted} role
             </span>
           </span>
@@ -134,9 +134,9 @@ function ModuleRows({ mod, roleSet }: { mod: PermissionModule; roleSet: Set<stri
         <td colSpan={4} />
       </tr>
       {leaves.map((leaf) => (
-        <tr key={leaf.resource} className="border-t border-gray-50 bg-white">
-          <td className="px-4 py-1.5 pl-10 text-gray-700">
-            <span className="text-gray-400 mr-1">↳</span>{leaf.label}
+        <tr key={leaf.resource} className="border-t border-gray-50 bg-white dark:border-gray-800 dark:bg-gray-900">
+          <td className="px-4 py-1.5 pl-10 text-gray-700 dark:text-gray-200">
+            <span className="text-gray-400 mr-1 dark:text-gray-600">↳</span>{leaf.label}
           </td>
           {ACTIONS.map((a) => (
             <td key={a} className="px-4 py-1.5 text-center">
@@ -150,16 +150,16 @@ function ModuleRows({ mod, roleSet }: { mod: PermissionModule; roleSet: Set<stri
 }
 
 function Cell({ granted, valid }: { granted: boolean; valid: boolean }) {
-  if (!valid) return <span className="text-gray-300">—</span>;
+  if (!valid) return <span className="text-gray-300 dark:text-gray-600">—</span>;
   if (granted) {
     return (
       <span className="inline-flex items-center gap-0.5">
-        <input type="checkbox" checked readOnly className="h-3.5 w-3.5 text-gray-400" />
-        <Lock className="h-2.5 w-2.5 text-gray-400" />
+        <input type="checkbox" checked readOnly className="h-3.5 w-3.5 text-gray-400 dark:accent-blue-500" />
+        <Lock className="h-2.5 w-2.5 text-gray-400 dark:text-gray-500" />
       </span>
     );
   }
-  return <input type="checkbox" className="h-3.5 w-3.5 border-gray-300" />;
+  return <input type="checkbox" className="h-3.5 w-3.5 border-gray-300 dark:border-gray-600 dark:bg-gray-800" />;
 }
 
 function leavesFor(mod: PermissionModule): PermissionLeaf[] {
