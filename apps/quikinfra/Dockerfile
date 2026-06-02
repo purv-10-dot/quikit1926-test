@@ -48,6 +48,9 @@ ARG NEXT_PUBLIC_AUTH_URL="https://placeholder.com"
 ARG NEXT_PUBLIC_QUIKIT_URL="https://placeholder.com"
 ARG NEXT_PUBLIC_QUIKINFRA_URL="https://placeholder.com"
 ARG NEXT_PUBLIC_SENTRY_DSN
+ARG QUIKIT_URL="https://dummy-quikit.local"
+ARG QUIKIT_CLIENT_ID="dummy-client-id"
+ARG QUIKIT_CLIENT_SECRET="dummy-client-secret"
 
 ENV DATABASE_URL=$DATABASE_URL
 ENV DATABASE_URL_DIRECT=$DATABASE_URL_DIRECT
