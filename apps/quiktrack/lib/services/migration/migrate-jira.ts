@@ -208,6 +208,20 @@ export interface MigrationOptions {
   includeWorklog?: boolean;
   /** Skip every DB write but still hit Jira so the counts are real. */
   dryRun?: boolean;
+  /**
+   * Admin-supplied accountId → email overrides for users Atlassian refuses
+   * to release via API (privacy-mode + unverified org). Consulted as the
+   * final fallback in the user-resolution chain. Each row must carry an
+   * accountId and an email; firstName/lastName override the displayName
+   * split. See `docs/jira-migration-csv-users.md` for the CSV the admin
+   * pastes into the UI.
+   */
+  userMappings?: Array<{
+    accountId: string;
+    email: string;
+    firstName?: string;
+    lastName?: string;
+  }>;
 }
 
 /* ──────────────────────── The import driver ──────────────────────── */
@@ -223,7 +237,23 @@ export async function migrateFromJira(
     includeComments = true,
     includeWorklog = true,
     dryRun = false,
+    userMappings = [],
   } = opts;
+
+  // Pre-index admin-supplied overrides by accountId. Final fallback in the
+  // user-resolution chain — see `docs/jira-migration-csv-users.md`.
+  const userMappingByAccountId = new Map<
+    string,
+    { email: string; firstName?: string; lastName?: string }
+  >();
+  for (const m of userMappings) {
+    if (!m.accountId || !m.email) continue;
+    userMappingByAccountId.set(m.accountId.trim(), {
+      email: m.email.trim().toLowerCase(),
+      firstName: m.firstName?.trim() || undefined,
+      lastName: m.lastName?.trim() || undefined,
+    });
+  }
 
   const report: MigrationReport = {
     ok: false,
@@ -334,6 +364,32 @@ export async function migrateFromJira(
           h.emailAddress = recovered.emailAddress;
         }
       }
+    }
+  }
+  // Fallback 3 — admin-supplied CSV mapping. Last resort: covers users
+  // Atlassian's API permanently hides (unverified org + privacy mode).
+  if (userMappingByAccountId.size > 0) {
+    let appliedFromCsv = 0;
+    for (const h of humans) {
+      if (!h.emailAddress) {
+        const manual = userMappingByAccountId.get(h.accountId);
+        if (manual) {
+          h.emailAddress = manual.email;
+          if (manual.firstName || manual.lastName) {
+            const joined = [manual.firstName, manual.lastName]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+            if (joined) h.displayName = joined;
+          }
+          appliedFromCsv += 1;
+        }
+      }
+    }
+    if (appliedFromCsv > 0) {
+      console.log(
+        `[jira-import] CSV mapping resolved ${appliedFromCsv} privacy-mode user(s)`,
+      );
     }
   }
 
