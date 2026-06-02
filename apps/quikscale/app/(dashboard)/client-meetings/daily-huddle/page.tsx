@@ -406,6 +406,11 @@ export default function DailyHuddlePage() {
     const f = editing.form;
     if (!f.clientId) { setError("Pick a client"); return; }
     if (!f.meetingDate) { setError("Meeting date required"); return; }
+    // Held → the meeting happened, so its start/end times are mandatory. Mirrors
+    // the server-side refine in clientMeetingsSchema.
+    if (f.callStatus === "HELD" && (!f.actualStartTime || !f.actualEndTime)) {
+      setError("Actual Start Time and Actual End Time are required when the call status is Held"); return;
+    }
     if (f.actualStartTime && f.actualEndTime && f.actualEndTime <= f.actualStartTime) {
       setError("Actual end time must be after start time"); return;
     }
@@ -980,7 +985,7 @@ export default function DailyHuddlePage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual Start Time <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual Start Time {isHeld && <span className="text-red-500">*</span>}</label>
                   <input
                     type="time"
                     disabled={!isHeld}
@@ -1004,7 +1009,7 @@ export default function DailyHuddlePage() {
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual End Time <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual End Time {isHeld && <span className="text-red-500">*</span>}</label>
                   <input
                     type="time"
                     disabled={!isHeld || !editing.form.actualStartTime}

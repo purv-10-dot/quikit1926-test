@@ -26,6 +26,27 @@ export const CLIENT_MEETING_STATUSES = [
 export const flagSchema = z.enum(CLIENT_MEETING_FLAGS);
 export const statusSchema = z.enum(CLIENT_MEETING_STATUSES);
 
+/**
+ * Shared invariant for both Daily Huddle and Weekly Meeting: when the call was
+ * "HELD", the Actual Start/End times are mandatory (the meeting happened, so
+ * its timing must be recorded). For every other status they stay optional — the
+ * forms disable those inputs. `.partial()` drops refines, so each schema below
+ * re-applies these.
+ *
+ * On a partial update that omits `callStatus`, `d.callStatus` is undefined → the
+ * guard passes (only an explicit "HELD" is enforced). Both forms always submit
+ * the full object, so an edit that sets HELD carries its times along.
+ */
+const requireHeldStartTime = (
+  d: { callStatus?: string; actualStartTime?: string | null },
+) => d.callStatus !== "HELD" || !!d.actualStartTime;
+const requireHeldEndTime = (
+  d: { callStatus?: string; actualEndTime?: string | null },
+) => d.callStatus !== "HELD" || !!d.actualEndTime;
+
+const HELD_START_MSG = "Actual Start Time is required when the call status is Held";
+const HELD_END_MSG = "Actual End Time is required when the call status is Held";
+
 /* ─── Client (master) ───────────────────────────────────────────────────────── */
 
 export const createClientSchema = z.object({
@@ -78,7 +99,7 @@ export type CreateMembershipInput = z.infer<typeof createMembershipSchema>;
 
 /* ─── Daily Huddle ──────────────────────────────────────────────────────────── */
 
-export const createDailyHuddleSchema = z.object({
+const dailyHuddleBaseFields = {
   clientId: z.string().min(1),
   meetingDate: z.string().regex(DATE_ISO_OR_YMD),
   callStatus: statusSchema.default("HELD"),
@@ -99,12 +120,24 @@ export const createDailyHuddleSchema = z.object({
   absentUserIds: z.array(z.string()).default([]),
   /// New external-roster absences (ClientMember ids).
   absentClientMemberIds: z.array(z.string()).default([]),
-});
+};
+
+// Held → Actual Start/End times required. Extracted to base fields (instead of
+// `createDailyHuddleSchema.partial()`) because `.partial()` is unavailable once
+// a schema is refined — mirrors the Weekly Meeting structure below.
+export const createDailyHuddleSchema = z
+  .object(dailyHuddleBaseFields)
+  .refine(requireHeldStartTime, { message: HELD_START_MSG, path: ["actualStartTime"] })
+  .refine(requireHeldEndTime, { message: HELD_END_MSG, path: ["actualEndTime"] });
 
 // `partial()` omits defaults, but the fields are still present with
 // `undefined` — the route handler branches on that sentinel when deciding
 // whether to replace the absentees / notes fields.
-export const updateDailyHuddleSchema = createDailyHuddleSchema.partial();
+export const updateDailyHuddleSchema = z
+  .object(dailyHuddleBaseFields)
+  .partial()
+  .refine(requireHeldStartTime, { message: HELD_START_MSG, path: ["actualStartTime"] })
+  .refine(requireHeldEndTime, { message: HELD_END_MSG, path: ["actualEndTime"] });
 
 export type CreateDailyHuddleInput = z.infer<typeof createDailyHuddleSchema>;
 export type UpdateDailyHuddleInput = z.infer<typeof updateDailyHuddleSchema>;
@@ -164,7 +197,9 @@ export const createWeeklyMeetingSchema = z
   .refine(requireOtherLabel, {
     message: "Please specify the call status text",
     path: ["callStatusOther"],
-  });
+  })
+  .refine(requireHeldStartTime, { message: HELD_START_MSG, path: ["actualStartTime"] })
+  .refine(requireHeldEndTime, { message: HELD_END_MSG, path: ["actualEndTime"] });
 
 export const updateWeeklyMeetingSchema = z
   .object(weeklyMeetingBaseFields)
@@ -172,7 +207,9 @@ export const updateWeeklyMeetingSchema = z
   .refine(requireOtherLabel, {
     message: "Please specify the call status text",
     path: ["callStatusOther"],
-  });
+  })
+  .refine(requireHeldStartTime, { message: HELD_START_MSG, path: ["actualStartTime"] })
+  .refine(requireHeldEndTime, { message: HELD_END_MSG, path: ["actualEndTime"] });
 
 /// Per-member KPI scores (Update tab grid in image 1).
 export const weeklyMemberScoreSchema = z.object({

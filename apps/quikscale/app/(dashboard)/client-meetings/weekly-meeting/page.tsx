@@ -703,6 +703,33 @@ export default function WeeklyMeetingPage() {
       setError("Please specify the call status text");
       return;
     }
+
+    // ── Held → Actual Start/End times are mandatory ──────────────────────
+    // The meeting actually happened, so its timing must be recorded. Mirrors
+    // the YES→time UX (and the server-side refine in clientMeetingsSchema):
+    // red-border the empty field(s) and scroll to the first.
+    if (f.callStatus === "HELD") {
+      const missingActual: string[] = [];
+      if (!f.actualStartTime) missingActual.push("actualStartTime");
+      if (!f.actualEndTime) missingActual.push("actualEndTime");
+      if (missingActual.length > 0) {
+        setTimeFieldErrors(new Set(missingActual));
+        setError(
+          "Actual Start Time and Actual End Time are required when the call status is Held",
+        );
+        const first = missingActual[0];
+        requestAnimationFrame(() => {
+          const el = document.querySelector(
+            `[data-time-field="${first}"]`,
+          ) as HTMLElement | null;
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            setTimeout(() => el.focus({ preventScroll: true }), 350);
+          }
+        });
+        return;
+      }
+    }
     if (
       f.actualStartTime &&
       f.actualEndTime &&
@@ -1596,13 +1623,21 @@ export default function WeeklyMeetingPage() {
               </Field>
 
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Actual Start Time" required>
+                <Field label="Actual Start Time" required={editing.form.callStatus === "HELD"}>
                   <input
                     type="time"
+                    data-time-field="actualStartTime"
                     value={editing.form.actualStartTime}
                     onChange={(e) => {
                       const v = e.target.value;
                       updateField("actualStartTime", v);
+                      if (v && timeFieldErrors.has("actualStartTime")) {
+                        setTimeFieldErrors((prev) => {
+                          const next = new Set(prev);
+                          next.delete("actualStartTime");
+                          return next;
+                        });
+                      }
                       if (
                         editing.form.actualEndTime &&
                         v &&
@@ -1612,12 +1647,17 @@ export default function WeeklyMeetingPage() {
                       }
                     }}
                     disabled={editing.form.callStatus !== "HELD"}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
+                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 disabled:bg-gray-50 ${
+                      timeFieldErrors.has("actualStartTime")
+                        ? "border-red-400 focus:ring-red-300 bg-red-50"
+                        : "border-gray-200 focus:ring-accent-400"
+                    }`}
                   />
                 </Field>
-                <Field label="Actual End Time" required>
+                <Field label="Actual End Time" required={editing.form.callStatus === "HELD"}>
                   <input
                     type="time"
+                    data-time-field="actualEndTime"
                     value={editing.form.actualEndTime}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -1629,12 +1669,23 @@ export default function WeeklyMeetingPage() {
                         return;
                       }
                       updateField("actualEndTime", v);
+                      if (v && timeFieldErrors.has("actualEndTime")) {
+                        setTimeFieldErrors((prev) => {
+                          const next = new Set(prev);
+                          next.delete("actualEndTime");
+                          return next;
+                        });
+                      }
                     }}
                     disabled={
                       editing.form.callStatus !== "HELD" || !editing.form.actualStartTime
                     }
                     min={editing.form.actualStartTime || undefined}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
+                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 disabled:bg-gray-50 ${
+                      timeFieldErrors.has("actualEndTime")
+                        ? "border-red-400 focus:ring-red-300 bg-red-50"
+                        : "border-gray-200 focus:ring-accent-400"
+                    }`}
                   />
                 </Field>
               </div>
