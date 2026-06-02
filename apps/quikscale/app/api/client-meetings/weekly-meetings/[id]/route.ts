@@ -66,6 +66,12 @@ export const PUT = withOrgAuth<{ id: string }>(
 
     const existing = await db.clientWeeklyMeeting.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
+      include: {
+        absentMembers: { select: { userId: true } },
+        dashboardNAMembers: { select: { userId: true } },
+        absentTeamMembers: { select: { clientMemberId: true } },
+        dashboardNATeamMembers: { select: { clientMemberId: true } },
+      },
     });
     if (!existing)
       return NextResponse.json(
@@ -121,9 +127,20 @@ export const PUT = withOrgAuth<{ id: string }>(
       }
     }
 
+    const sortIds = <T extends string>(arr: T[]): T[] => [...arr].sort();
     const oldSnapshot = JSON.stringify({
       callStatus: existing.callStatus,
       meetingDate: existing.meetingDate.toISOString(),
+      actualStartTime: existing.actualStartTime,
+      actualEndTime: existing.actualEndTime,
+      segmentTime1: existing.segmentTime1,
+      segmentTime2: existing.segmentTime2,
+      segmentTime3: existing.segmentTime3,
+      segmentTime4: existing.segmentTime4,
+      segmentTime5: existing.segmentTime5,
+      segmentTime6: existing.segmentTime6,
+      segmentTime7: existing.segmentTime7,
+      punctualityOverride: existing.punctualityOverride,
       goodNewsSharing: existing.goodNewsSharing,
       kpDashboard: existing.kpDashboard,
       gaps: existing.gaps,
@@ -131,6 +148,12 @@ export const PUT = withOrgAuth<{ id: string }>(
       feedback: existing.feedback,
       collectiveIntelligence: existing.collectiveIntelligence,
       opspReview: existing.opspReview,
+      notesKPDashboard: existing.notesKPDashboard,
+      otherNotes: existing.otherNotes,
+      absentUserIds: sortIds(existing.absentMembers.map((m) => m.userId)),
+      dashboardNAUserIds: sortIds(existing.dashboardNAMembers.map((m) => m.userId)),
+      absentClientMemberIds: sortIds(existing.absentTeamMembers.map((m) => m.clientMemberId)),
+      dashboardNAClientMemberIds: sortIds(existing.dashboardNATeamMembers.map((m) => m.clientMemberId)),
     });
 
     await db.$transaction(async (tx) => {
@@ -148,6 +171,7 @@ export const PUT = withOrgAuth<{ id: string }>(
           segmentTime5: d.segmentTime5,
           segmentTime6: d.segmentTime6,
           segmentTime7: d.segmentTime7,
+          punctualityOverride: d.punctualityOverride,
           goodNewsSharing: d.goodNewsSharing,
           kpDashboard: d.kpDashboard,
           gaps: d.gaps,
@@ -219,6 +243,16 @@ export const PUT = withOrgAuth<{ id: string }>(
       select: {
         callStatus: true,
         meetingDate: true,
+        actualStartTime: true,
+        actualEndTime: true,
+        segmentTime1: true,
+        segmentTime2: true,
+        segmentTime3: true,
+        segmentTime4: true,
+        segmentTime5: true,
+        segmentTime6: true,
+        segmentTime7: true,
+        punctualityOverride: true,
         goodNewsSharing: true,
         kpDashboard: true,
         gaps: true,
@@ -226,6 +260,12 @@ export const PUT = withOrgAuth<{ id: string }>(
         feedback: true,
         collectiveIntelligence: true,
         opspReview: true,
+        notesKPDashboard: true,
+        otherNotes: true,
+        absentMembers: { select: { userId: true } },
+        dashboardNAMembers: { select: { userId: true } },
+        absentTeamMembers: { select: { clientMemberId: true } },
+        dashboardNATeamMembers: { select: { clientMemberId: true } },
       },
     });
     await db.clientWeeklyMeetingLog.create({
@@ -235,8 +275,31 @@ export const PUT = withOrgAuth<{ id: string }>(
         action: "UPDATE",
         oldValue: oldSnapshot,
         newValue: JSON.stringify({
-          ...updated,
+          callStatus: updated?.callStatus,
           meetingDate: updated?.meetingDate.toISOString() ?? null,
+          actualStartTime: updated?.actualStartTime,
+          actualEndTime: updated?.actualEndTime,
+          segmentTime1: updated?.segmentTime1,
+          segmentTime2: updated?.segmentTime2,
+          segmentTime3: updated?.segmentTime3,
+          segmentTime4: updated?.segmentTime4,
+          segmentTime5: updated?.segmentTime5,
+          segmentTime6: updated?.segmentTime6,
+          segmentTime7: updated?.segmentTime7,
+          punctualityOverride: updated?.punctualityOverride,
+          goodNewsSharing: updated?.goodNewsSharing,
+          kpDashboard: updated?.kpDashboard,
+          gaps: updated?.gaps,
+          www: updated?.www,
+          feedback: updated?.feedback,
+          collectiveIntelligence: updated?.collectiveIntelligence,
+          opspReview: updated?.opspReview,
+          notesKPDashboard: updated?.notesKPDashboard,
+          otherNotes: updated?.otherNotes,
+          absentUserIds: sortIds((updated?.absentMembers ?? []).map((m) => m.userId)),
+          dashboardNAUserIds: sortIds((updated?.dashboardNAMembers ?? []).map((m) => m.userId)),
+          absentClientMemberIds: sortIds((updated?.absentTeamMembers ?? []).map((m) => m.clientMemberId)),
+          dashboardNAClientMemberIds: sortIds((updated?.dashboardNATeamMembers ?? []).map((m) => m.clientMemberId)),
         }),
         changedBy: userId,
       },

@@ -29,7 +29,11 @@ interface MigrationReport {
     issues: number;
     comments: number;
     worklog: number;
-    attachmentsSkipped: number;
+    attachments: {
+      imported: number;
+      skippedTooLarge: number;
+      failed: number;
+    };
   };
   projectsImported: Array<{ key: string; name: string; issueCount: number; sprintCount: number }>;
   unresolvedUsers: string[];
@@ -77,6 +81,136 @@ function MigrationView() {
   const [dryRun, setDryRun] = useState(true);
   const [report, setReport] = useState<MigrationReport | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // CSV mapping for privacy-mode Jira users. See
+  // docs/jira-migration-csv-users.md. Parsed client-side, in-memory only,
+  // sent to the server only when the admin clicks Start import.
+  const [userMappings, setUserMappings] = useState<
+    Array<{ accountId: string; email: string; firstName?: string; lastName?: string }>
+  >([]);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
+
+  function parseCsv(text: string): {
+    rows: typeof userMappings;
+    error: string | null;
+  } {
+    // Strip BOM (Excel / Google Sheets prepend U+FEFF when saving as CSV).
+    // Without this, the first cell of the header row becomes "﻿accountid"
+    // and header detection fails — the header row gets treated as data.
+    const lines = text
+      .replace(/^﻿/, "")
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return { rows: [], error: "CSV is empty" };
+    // Detect header row (case-insensitive). Also strip stray BOM/quotes
+    // around individual cells in case the file is weird.
+    const cleanCell = (s: string) =>
+      s.replace(/^﻿/, "").replace(/^"|"$/g, "").trim();
+    const first = lines[0].split(",").map((s) => cleanCell(s).toLowerCase());
+
+    // Resolve a column index by trying any of the accepted alias names.
+    // Supports both our own header style (accountId, email, firstName,
+    // lastName) AND Atlassian's Organization users export (User id, email,
+    // User name).
+    const findCol = (aliases: string[]) => {
+      for (const a of aliases) {
+        const idx = first.indexOf(a);
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    };
+    const ai = findCol(["accountid", "user id", "userid", "account id"]);
+    const ei = findCol(["email", "email address"]);
+    const fi = findCol(["firstname", "first name"]);
+    const li = findCol(["lastname", "last name", "surname"]);
+    // `User name` (Atlassian export) is a single full-name field; we'll
+    // split it on the first space when first/last aren't given separately.
+    const ni = findCol(["user name", "username", "displayname", "display name", "name", "full name"]);
+
+    const hasHeader = ai >= 0 && ei >= 0;
+    const startIdx = hasHeader ? 1 : 0;
+
+    if (!hasHeader) {
+      return {
+        rows: [],
+        error:
+          "CSV header must include an account-id column (accountId or User id) and an email column. Optional: firstName / lastName, or a single User name column.",
+      };
+    }
+    const out: typeof userMappings = [];
+    // Match the Zod validator the API will run — a row that fails this
+    // would be rejected by the server with a less-informative error.
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const badRows: string[] = [];
+    for (let i = startIdx; i < lines.length; i++) {
+      const cells = lines[i].split(",").map(cleanCell);
+      const accountId = cells[ai];
+      const email = cells[ei];
+      if (!accountId || !email) {
+        badRows.push(`row ${i + 1}: missing accountId or email`);
+        continue;
+      }
+      if (!emailRe.test(email)) {
+        badRows.push(`row ${i + 1}: "${email}" is not a valid email`);
+        continue;
+      }
+      // Prefer explicit first/last columns; fall back to splitting the
+      // single "User name" / "Display name" column on the first space.
+      let firstName = fi >= 0 ? cells[fi] || undefined : undefined;
+      let lastName = li >= 0 ? cells[li] || undefined : undefined;
+      if (!firstName && !lastName && ni >= 0) {
+        const full = cells[ni] ?? "";
+        const space = full.indexOf(" ");
+        if (space > 0) {
+          firstName = full.slice(0, space);
+          lastName = full.slice(space + 1).trim() || undefined;
+        } else if (full) {
+          firstName = full;
+        }
+      }
+      out.push({ accountId, email, firstName, lastName });
+    }
+    if (out.length === 0) {
+      return {
+        rows: [],
+        error: badRows.length > 0
+          ? `No usable rows. ${badRows.join("; ")}`
+          : "CSV contained no usable rows.",
+      };
+    }
+    if (badRows.length > 0) {
+      return {
+        rows: out,
+        error: `${out.length} row(s) loaded, ${badRows.length} skipped — ${badRows.join("; ")}`,
+      };
+    }
+    return { rows: out, error: null };
+  }
+
+  function handleCsvUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    setCsvError(null);
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      const { rows, error } = parseCsv(text);
+      // Partial success — keep the good rows, surface the warning.
+      if (rows.length === 0) {
+        setCsvError(error ?? "CSV contained no usable rows.");
+        setUserMappings([]);
+        setCsvFileName(null);
+        return;
+      }
+      setUserMappings(rows);
+      setCsvFileName(f.name);
+      setCsvError(error); // may be null on full success, or a warning on partial
+    };
+    reader.onerror = () => setCsvError("Couldn't read the file.");
+    reader.readAsText(f);
+  }
 
   const run = useMutation({
     mutationFn: async () => {
@@ -104,6 +238,7 @@ function MigrationView() {
           includeComments,
           includeWorklog,
           dryRun,
+          userMappings: userMappings.length > 0 ? userMappings : undefined,
         }),
       });
       const j = await r.json();
@@ -203,19 +338,80 @@ function MigrationView() {
                   />
                 </label>
                 <p className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-                  Create one at{" "}
+                  Tokens are sent server-side only; we don&apos;t persist them.
+                </p>
+              </div>
+            </div>
+
+            {/* Help block — how to generate a Jira API token. Collapsed by
+                default so the form stays clean; one click to expand. */}
+            <details className="mt-5 group rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 text-[12px] text-gray-700 dark:border-gray-700/50 dark:bg-gray-900/30 dark:text-gray-200 open:bg-white dark:open:bg-gray-900/60">
+              <summary className="cursor-pointer font-semibold text-gray-900 dark:text-gray-100 select-none flex items-center justify-between">
+                <span>How to generate a Jira API token</span>
+                <span className="text-[11px] font-normal text-gray-500 group-open:hidden">
+                  click to expand
+                </span>
+              </summary>
+              <ol className="mt-3 space-y-2 list-decimal pl-5 leading-relaxed">
+                <li>
+                  Open{" "}
                   <a
                     href="https://id.atlassian.com/manage-profile/security/api-tokens"
                     target="_blank"
                     rel="noreferrer noopener"
                     className="text-accent-600 hover:underline dark:text-accent-400"
                   >
-                    id.atlassian.com → API tokens
-                  </a>
-                  . Tokens are sent server-side only; we don&apos;t persist them.
-                </p>
-              </div>
-            </div>
+                    id.atlassian.com/manage-profile/security/api-tokens
+                  </a>{" "}
+                  in a new tab. Sign in with the Atlassian account that has
+                  access to the Jira projects you want to migrate.
+                </li>
+                <li>
+                  Click <span className="font-semibold">Create API token</span>.
+                </li>
+                <li>
+                  Give it a label like <span className="font-mono">QuikTrack migration</span>{" "}
+                  so you can revoke it later. Pick <span className="font-semibold">no
+                  expiry</span> (or a short one — you only need it for the import).
+                </li>
+                <li>
+                  Click <span className="font-semibold">Create</span>. Atlassian
+                  shows the token <span className="font-semibold">once</span>.
+                  Copy it immediately.
+                </li>
+                <li>
+                  Paste it into the <span className="font-semibold">API token</span>{" "}
+                  field above. Paste the email you used to sign in into the{" "}
+                  <span className="font-semibold">Atlassian account email</span>{" "}
+                  field — the token is bound to that account.
+                </li>
+                <li>
+                  For the <span className="font-semibold">Jira site domain</span>{" "}
+                  field, use just the host:{" "}
+                  <span className="font-mono">acme.atlassian.net</span> — no{" "}
+                  <span className="font-mono">https://</span>, no{" "}
+                  <span className="font-mono">/jira</span>, no trailing slash.
+                </li>
+                <li>
+                  When you&apos;re done migrating, come back to the same Atlassian
+                  page and <span className="font-semibold">revoke</span> the
+                  token — it&apos;s a credential and shouldn&apos;t live longer than
+                  the import.
+                </li>
+              </ol>
+              <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
+                Need different access? See Atlassian&apos;s docs:{" "}
+                <a
+                  href="https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-accent-600 hover:underline dark:text-accent-400"
+                >
+                  Manage API tokens for your Atlassian account
+                </a>
+                .
+              </p>
+            </details>
           </StepCard>
         )}
 
@@ -265,14 +461,58 @@ function MigrationView() {
               />
             </div>
 
-            <div className="mt-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-200">
-              <strong className="font-semibold">
-                Attachments are not yet supported.
-              </strong>{" "}
-              The importer counts them but skips the upload. Adding attachment
-              support requires a new{" "}
-              <code className="font-mono">QtIssueAttachment</code> table + S3
-              wiring; tracked as a follow-up.
+            <div className="mt-5">
+              <label className="block text-sm">
+                <span className="text-gray-700 dark:text-gray-300 mb-1 block">
+                  User mapping CSV{" "}
+                  <span className="text-gray-400 dark:text-gray-500 font-normal">
+                    (optional)
+                  </span>
+                </span>
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleCsvUpload}
+                  className="block w-full text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-accent-50 file:text-accent-700 file:text-xs file:font-semibold hover:file:bg-accent-100 dark:text-gray-300 dark:file:bg-accent-900/30 dark:file:text-accent-300"
+                />
+              </label>
+              <p className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                For Jira users whose email Atlassian refuses to release (privacy
+                mode). Accepted headers:{" "}
+                <code className="font-mono">accountId,email,firstName,lastName</code>{" "}
+                OR Atlassian's Org export (
+                <code className="font-mono">User id, User name, email, ...</code>) —
+                extra columns are ignored. Run a dry-run first to get the
+                unresolved <code className="font-mono">accountId</code>s, then
+                upload either format. See{" "}
+                <a
+                  href="/apps/quiktrack/docs/jira-migration-csv-users.md"
+                  className="underline text-accent-600 dark:text-accent-400"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  docs/jira-migration-csv-users.md
+                </a>
+                .
+              </p>
+              {csvFileName && !csvError && (
+                <p className="mt-1.5 text-[12px] text-green-700 dark:text-green-300">
+                  ✓ {userMappings.length} mapping{userMappings.length === 1 ? "" : "s"} loaded from{" "}
+                  <span className="font-mono">{csvFileName}</span>
+                </p>
+              )}
+              {csvError && (
+                <p className="mt-1.5 text-[12px] text-red-700 dark:text-red-300">
+                  ⚠ {csvError}
+                </p>
+              )}
+            </div>
+
+            <div className="mt-5 rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 text-[12px] text-gray-700 dark:border-gray-700/50 dark:bg-gray-900/20 dark:text-gray-200">
+              <strong className="font-semibold">Attachments</strong> are
+              downloaded from Jira and uploaded to QuikTrack's S3 bucket. Files
+              larger than 25 MB are skipped (counted separately). Dry-run skips
+              the upload — uncheck dry-run to actually transfer files.
             </div>
           </StepCard>
         )}
@@ -307,6 +547,14 @@ function MigrationView() {
               <Field
                 label="Worklog → Timesheet"
                 value={includeWorklog ? "Included" : "Skipped"}
+              />
+              <Field
+                label="User mapping CSV"
+                value={
+                  userMappings.length > 0
+                    ? `${userMappings.length} mapping${userMappings.length === 1 ? "" : "s"}`
+                    : "Not provided"
+                }
               />
             </dl>
 
@@ -558,9 +806,21 @@ function ReportPanel({ report }: { report: MigrationReport }) {
         />
       </div>
 
-      {report.counts.attachmentsSkipped > 0 && (
-        <p className="text-[12px] text-amber-700 dark:text-amber-300">
-          ⚠ {report.counts.attachmentsSkipped} attachment{report.counts.attachmentsSkipped === 1 ? "" : "s"} skipped (attachment support not built yet).
+      {(report.counts.attachments.imported > 0 ||
+        report.counts.attachments.skippedTooLarge > 0 ||
+        report.counts.attachments.failed > 0) && (
+        <p className="text-[12px] text-gray-700 dark:text-gray-300">
+          Attachments: {report.counts.attachments.imported} imported
+          {report.counts.attachments.skippedTooLarge > 0 && (
+            <span className="text-amber-700 dark:text-amber-300">
+              {" "}· {report.counts.attachments.skippedTooLarge} skipped (&gt; 25 MB)
+            </span>
+          )}
+          {report.counts.attachments.failed > 0 && (
+            <span className="text-red-700 dark:text-red-300">
+              {" "}· {report.counts.attachments.failed} failed
+            </span>
+          )}
         </p>
       )}
 

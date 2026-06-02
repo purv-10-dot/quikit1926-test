@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createMiddleware } from "@quikit/auth/middleware";
+import { buildLoginUrl } from "@quikit/shared/login-url";
 
 /**
  * Launcher (3000) + OAuth IdP. When NEXT_PUBLIC_AUTH_URL points at `apps/auth` (3004),
@@ -30,6 +31,11 @@ const launcherPublicRoutes = [
   // single-use invitation token (FRD FR-SA-009 / FR-SA-010).
   "/invitations/accept",
   "/api/invitations",
+  // Cross-domain session handoff. The auth app's /api/post-login redirects
+  // here with a short-lived HS256 token; we exchange it for a NextAuth
+  // session cookie on this host (cookies cannot be shared across distinct
+  // *.vercel.app subdomains).
+  "/auth-handoff",
 ];
 
 // Only set centralLoginUrl when AUTH_URL points at a DIFFERENT host.
@@ -98,30 +104,59 @@ function safeNext(value: string | null | undefined): string {
     : "/apps";
 }
 
+/**
+ * Build the central auth-app login URL with the launcher path baked into a
+ * `callbackUrl` chain. The shared helper handles the cross-domain cookie
+ * bridge: it routes the final hop through the auth app's `/api/post-login`
+ * endpoint so the launcher gets a host-scoped session cookie after sign-in.
+ *
+ * Returns `null` when `NEXT_PUBLIC_AUTH_URL` isn't configured (dev),
+ * leaving the caller to handle the same-host fallback.
+ */
+function buildExternalLoginUrl(
+  request: NextRequest,
+  callbackPath: string,
+): string | null {
+  if (!AUTH_URL) return null;
+  const launcherUrl =
+    process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/$/, "") ??
+    request.nextUrl.origin;
+  const safeCallback = callbackPath.startsWith("/") ? callbackPath : "/apps";
+  return buildLoginUrl({
+    appUrl: launcherUrl,
+    postLoginPath: safeCallback,
+    authUrl: AUTH_URL,
+  });
+}
+
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname, search } = request.nextUrl;
 
   // Marketing zone — let the rewrite proxy it; never auth-gate it.
   if (isMarketingPath(pathname)) return NextResponse.next();
 
-  // The standalone /login page is retired — the login modal on the
-  // marketing landing replaces it. Anything pointed at /login (old links,
-  // factory fallbacks) goes to the marketing page with the modal opened,
-  // preserving the intended post-login destination.
+  // The standalone /login page is retired — every "Log in" CTA across the
+  // platform now redirects to the central auth app. Anything pointed at
+  // /login (old bookmarks, factory fallbacks) is bounced to
+  // `${AUTH_URL}/login?callbackUrl=…`, carrying the intended post-login
+  // destination so NextAuth returns the user there after sign-in.
   if (pathname === "/login" || pathname.startsWith("/login/")) {
-    const url = new URL("/", request.url);
-    url.searchParams.set(
-      "next",
-      safeNext(request.nextUrl.searchParams.get("callbackUrl")),
+    const callback = safeNext(
+      request.nextUrl.searchParams.get("callbackUrl"),
     );
+    const external = buildExternalLoginUrl(request, callback);
+    if (external) return NextResponse.redirect(external);
+    // Self-hosted dev fallback — keep the path on /apps (the launcher),
+    // letting the factory below handle the unauthenticated bounce.
+    const url = new URL(callback, request.url);
     return NextResponse.redirect(url);
   }
 
   const res = await factory(request);
 
   // The factory bounces unauthenticated users to the login route. Rewrite
-  // that to the marketing landing + modal, carrying the original path
-  // (incl. ?handoff=&to= for cross-app SSO) as ?next= so login resumes
+  // that to the external auth-app login + callbackUrl, carrying the
+  // original path (incl. ?handoff=&to= for cross-app SSO) so login resumes
   // exactly where the user was headed.
   if (res && (res.status === 307 || res.status === 308)) {
     const loc = res.headers.get("location") ?? "";
@@ -129,9 +164,11 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
       const locUrl = new URL(loc, request.url);
       const sameHost = locUrl.host === request.nextUrl.host;
       if (sameHost && locUrl.pathname.startsWith("/login")) {
-        const url = new URL("/", request.url);
-        url.searchParams.set("next", `${pathname}${search}`);
-        return NextResponse.redirect(url);
+        const external = buildExternalLoginUrl(
+          request,
+          `${pathname}${search}`,
+        );
+        if (external) return NextResponse.redirect(external);
       }
     } catch {
       /* non-URL location — leave the factory response as-is */
@@ -147,7 +184,9 @@ export const config = {
   //   _next/static     — Next.js compiled assets
   //   _next/image      — Next.js image-optimization endpoint
   //   app-icons/       — public/app-icons (logos shown on the launcher pre-auth)
+  //   auth/            — public/auth/* (shared SignInComponent assets used
+  //                       by the invitation flow rendered here)
   //   favicon.ico      — browser-requested
   // Add new public-asset paths here when they're served from /public.
-  matcher: ["/((?!api/|_next/static|_next/image|app-icons/|favicon.ico).*)"],
+  matcher: ["/((?!api/|_next/static|_next/image|app-icons/|auth/|favicon.ico).*)"],
 };

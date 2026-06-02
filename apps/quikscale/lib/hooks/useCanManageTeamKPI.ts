@@ -1,37 +1,23 @@
 "use client";
 
-import { useSession } from "next-auth/react";
-import { useTeams } from "./useTeams";
-import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
-
-const ADMIN_MIN_LEVEL = ROLE_HIERARCHY[ROLES.ADMIN];
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 /**
  * Client-side permission check for managing a team's KPIs.
  *
- * Returns true when:
- *   - The user's membershipRole has an admin-level rank (>= ADMIN in ROLE_HIERARCHY), OR
- *   - The user is the team.headId for the given team
+ * Delegates to the RBAC v2 dynamic permission set — granted when the user
+ * has BOTH `TeamKPI:create` (to add) AND `TeamKPI:update` (to edit/delete)
+ * grants. Authoritative server-side gating is handled by `auth.create` /
+ * `auth.update` on the team KPI route handlers.
  *
- * Matches the server-side `canManageTeamKPI` helper. The server is still the source
- * of truth and will return 403 if its check disagrees, but keeping the two in sync
- * means team heads and admins both see the correct UI affordances.
+ * The legacy "team head or admin tier" check was retired — team KPI access
+ * is now governed solely by the role-permission matrix.
+ *
+ * The `teamId` argument is kept for call-site compatibility but is unused.
  */
-export function useCanManageTeamKPI(teamId: string | undefined | null): boolean {
-  const { data: session } = useSession();
-  const { data: teams = [] } = useTeams();
-
-  if (!session?.user?.id || !teamId) return false;
-
-  // 1. Admin role check (covers admin, executive if configured, super_admin)
-  const role = (session.user as { membershipRole?: string }).membershipRole;
-  if (role) {
-    const level = ROLE_HIERARCHY[role] ?? 0;
-    if (level >= ADMIN_MIN_LEVEL) return true;
-  }
-  if ((session.user as { isSuperAdmin?: boolean }).isSuperAdmin) return true;
-
-  // 2. Team head check
-  const team = teams.find((t) => t.id === teamId);
-  return !!team && team.headId === session.user.id;
+export function useCanManageTeamKPI(_teamId?: string | null): boolean {
+  const { has, loading } = useMyPermissions();
+  if (loading) return false;
+  // "Manage" in the UI sense means the user can add/edit/delete team KPIs.
+  return has("TeamKPI", "create") || has("TeamKPI", "update");
 }

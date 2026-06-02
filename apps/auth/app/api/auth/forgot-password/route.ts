@@ -7,11 +7,11 @@ import { db } from "@/lib/db";
 import { sendPasswordResetInviteEmail } from "@/lib/email";
 import { rateLimitAsync, getClientIp } from "@quikit/shared/rateLimit";
 import {
-  DEFAULT_RESET_PASSWORD,
   INVITE_METHOD,
   renderInvitationEmail,
   requireProdEnv,
 } from "@quikit/shared";
+import { generateTempPassword } from "@quikit/shared/temp-password";
 import { getRedis } from "@quikit/redis";
 import { withCors, preflight } from "@/lib/cors";
 
@@ -21,7 +21,7 @@ import { withCors, preflight } from "@/lib/cors";
  * Self-service password reset. We do NOT email an OTP — instead we treat the
  * request as a forced re-invite:
  *
- *   1. Reset the user's `password` to bcrypt(DEFAULT_INVITE_PASSWORD) and
+ *   1. Reset the user's `password` to bcrypt(generateTempPassword()) and
  *      flip `mustChangePassword = true`.
  *   2. Mint a fresh single-use token on the user's primary OrgMember row
  *      (`invitationToken` + `invitedAt`). Status is left unchanged so an
@@ -141,7 +141,8 @@ async function postHandler(req: NextRequest) {
     }
 
     const token = crypto.randomBytes(24).toString("hex");
-    const hashedDefault = await bcrypt.hash(DEFAULT_RESET_PASSWORD, 10);
+    const tempPassword = generateTempPassword();
+    const hashedDefault = await bcrypt.hash(tempPassword, 10);
 
     // Single transaction so we never end up with a token pointing at an
     // OrgMember whose owning User still has the old password.
@@ -199,7 +200,7 @@ async function postHandler(req: NextRequest) {
       appBaseUrl: launcherBase(),
       inviteMethod: INVITE_METHOD.NATIVE,
       isReminder: true,
-      tempPassword: DEFAULT_RESET_PASSWORD,
+      tempPassword,
     });
 
     try {

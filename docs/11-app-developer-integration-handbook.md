@@ -48,7 +48,7 @@ You are building an app that:
 - Lives in its own directory under [apps/](apps/) of the QuikIT monorepo.
 - Authenticates users via the QuikIT launcher (single sign-on across every app on the platform).
 - Reads/writes data in the shared Postgres database, scoped to a single Org.
-- Renders UI using the shared `@quikit/ui` design system so it feels native alongside QuikScale, Admin, QuikVC, QuikConstruction.
+- Renders UI using the shared `@quikit/ui` design system so it feels native alongside QuikScale, Admin, QuikVC, QuikInfra.
 - Ships through the same `feature/* → dev → uat → main → Vercel` pipeline as every other app.
 
 If any of those bullets is wrong for your situation, stop and talk to the integration owner before you write a line of code.
@@ -137,7 +137,7 @@ Before `git push` on **any** branch, confirm with the integration owner what the
 📦 This push will redeploy (only if pushing to main):
    • <your-app>  (apps/<your-app>/**)
 ⏭️ Will skip (no apps/* changes):
-   • quikscale, admin, quikvc, quikconstruction
+   • quikscale, admin, quikvc, quikinfra
 ```
 
 A push to `main` for a `packages/*` change redeploys **every** app — that is why you do not edit `packages/*`.
@@ -400,7 +400,7 @@ Platform models (in [packages/database/prisma/schema.prisma](packages/database/p
 
 App-domain models (only relevant if you are extending an existing app's domain):
 - QuikScale: `KPI`, `Priority`, `WWWItem`, `Team`, `Client`, `PerformanceReview`, `Goal`, `OneOnOne`, `FeedbackEntry`, `OPSPData`.
-- QuikConstruction: `CnProject`, `CnPurchaseOrder`, etc.
+- QuikInfra: `CnProject`, `CnPurchaseOrder`, etc.
 - QuikVC: `VCDeal`, `VCInvestor`, etc.
 
 When you add a new model, it MUST have:
@@ -470,7 +470,7 @@ Returns 403 with `{ success: false, error: "Module disabled" }` if the org has t
 - **quikscale**: `dashboard`, `kpi`, `kpi.individual`, `kpi.teams`, `priority`, `www`, `clientMeetings.*`, `opsp.*`, `analytics.*`, `people.*`, `orgSetup.*`.
 - **admin**: `overview`, `members`, `teams`, `apps`, `roles`, `settings`.
 - **quikvc**: `home`, `sourcing`, `deals.*`, `investors.*`, `repayments`, `reports`, `underwriting.*`.
-- **quikconstruction**: `projects.*`, `procurement.*`, `materials.*`.
+- **quikinfra**: `projects.*`, `procurement.*`, `materials.*`.
 
 Pick a top-level prefix for your app and add it to `MODULE_REGISTRY` via the integration owner.
 
@@ -936,7 +936,7 @@ Pick an unused port, ask the integration owner before claiming one >= 3010.
 | `auth` (central credentials) | 3004 (dev), 3000 (start) | Optional shared login UI. |
 | `admin` (org admin portal) | 3002 (dev), 3005 (start) | |
 | `quikscale` (KPI/OKR) | 3003 (dev), 3002 (start) | |
-| `quikconstruction` (ERP) | 3004 (dev), 3007 (start) | |
+| `quikinfra` (ERP) | 3004 (dev), 3007 (start) | |
 | `quikvc` (VC OS) | 3005 (dev), 3008 (start) | |
 | `_template` | 3010 (example) | Customize when you fork. |
 | **`<your-app>`** | **3010+** | Pick the next free slot. |

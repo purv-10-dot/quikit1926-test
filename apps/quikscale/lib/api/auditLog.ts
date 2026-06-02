@@ -37,6 +37,7 @@ export type AuditEntityType =
   | "Quarter"
   | "Category"
   | "DailyHuddle"
+  | "WeeklyMeeting"
   | "ClientMember"
   | "Client"
   | "Review"

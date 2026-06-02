@@ -102,7 +102,7 @@ QtTimesheetEntry  ─── if includeWorklog
 | Issue (any type) | `QtIssue` | `(projectId, key)` | Type mapped to enum, description ADF→text. An issue can sit on multiple sprints historically — we link it to the **last** sprint in the Jira array (Jira's convention for "current membership"). |
 | Comment | `QtIssueComment` | _none — written as new rows_ | **Not idempotent** — re-running the import will duplicate comments. Author falls back to importing admin if Jira author can't be mapped. |
 | Worklog | `QtTimesheetEntry` | _none — written as new rows_ | **Not idempotent** — re-running duplicates entries. Hours = `timeSpentSeconds / 3600`. |
-| Attachment | _(skipped)_ | — | Counted in `report.counts.attachmentsSkipped`. Needs `QtIssueAttachment` model + S3 wiring. |
+| Attachment | `QtIssueAttachment` + S3 object | `(issueId, sourceSystem="jira", sourceAttachmentId)` | Downloaded from Jira with the same auth, uploaded to `tenants/{orgId}/quiktrack/issues/{projectId}/{issueId}/...`. Files > 25 MB are skipped. Failures counted, don't abort the issue. Idempotent: re-running won't duplicate. |
 | Issue history / changelog | _(skipped)_ | — | Not in v1 scope. |
 | Custom fields beyond Story Points | _(skipped)_ | — | Only Story Points and Sprint are auto-detected. |
 
@@ -188,7 +188,7 @@ Atlassian Document Format JSON tree → plain text. Walks `text` nodes; emits ne
 
 1. **No background job** — request times out at 300s on Vercel.
 2. **Comments + worklog duplicate on retry** (no natural key).
-3. **Attachments not migrated** — counted only.
+3. **Attachments > 25 MB are skipped** (counted in `attachments.skippedTooLarge`).
 4. **Issue changelog / history not migrated**.
 5. **Only Story Points + Sprint custom fields** are auto-detected — every other Jira custom field is dropped.
 6. **Rich text → plain text only** (ADF formatting lost; images dropped).
@@ -207,7 +207,7 @@ Atlassian Document Format JSON tree → plain text. Walks `text` nodes; emits ne
     users: { matched, created },
     projects, statuses, issueTypes, sprints,
     issues, comments, worklog,
-    attachmentsSkipped
+    attachments: { imported, skippedTooLarge, failed }
   },
   projectsImported: [{ key, name, issueCount, sprintCount }],
   unresolvedUsers: string[],                   // Jira accountIds we couldn't map
@@ -226,7 +226,7 @@ Atlassian Document Format JSON tree → plain text. Walks `text` nodes; emits ne
 3. **Step 1** — paste your Jira site domain (e.g. `acme.atlassian.net` — no protocol, no path), your Atlassian account email, and an API token from <https://id.atlassian.com/manage-profile/security/api-tokens>.
 4. **Step 2** — optionally restrict to specific Jira project keys, toggle comments / worklog inclusion, and choose Dry-run vs Live.
 5. **Step 3** — review the plan and click **Run dry-run** (or **Start import** for live).
-6. Review the report panel: per-project counts, unresolved Jira users, attachments skipped.
+6. Review the report panel: per-project counts, unresolved Jira users, attachment imported / skipped / failed.
 7. On success, the imported projects appear in QuikTrack's Spaces list.
 
 **Recommended sequence for a real site:** dry-run all → review counts → live-run specific projects in batches via `projectKeys`.

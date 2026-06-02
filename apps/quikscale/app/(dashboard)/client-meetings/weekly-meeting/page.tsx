@@ -25,10 +25,44 @@ import {
   History,
   Search,
   Filter as FilterIcon,
+  RotateCcw,
 } from "lucide-react";
+import { TrashBanner, ColMenu } from "@quikit/ui";
+import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useTableSort } from "@/lib/store";
+import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+
+const COL_WIDTHS_DEFAULT: Record<string, number> = {
+  meetingDate: 110,
+  client: 180,
+  callStatus: 110,
+  absentMembers: 180,
+  weeklyDashboardNA: 180,
+  actualStartTime: 110,
+  actualEndTime: 110,
+  goodNewsSharing: 130,
+  goodNewsSharingTime: 130,
+  kpDashboard: 130,
+  kpDashboardTime: 130,
+  gaps: 80,
+  gapsTime: 100,
+  www: 80,
+  wwwTime: 100,
+  feedback: 200,
+  feedbackTime: 130,
+  collectiveIntelligence: 160,
+  collectiveIntelligenceTime: 130,
+  opspReview: 110,
+  opspTime: 100,
+  createdBy: 160,
+  updatedBy: 160,
+  createdAt: 120,
+  updatedAt: 120,
+};
 import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
-import { runExport } from "@/lib/export/xlsx";
 import type { ExportSelection } from "@quikit/ui";
 import { Download } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -115,6 +149,7 @@ interface MeetingRow {
   segmentTime5: string | null;
   segmentTime6: string | null;
   segmentTime7: string | null;
+  punctualityOverride: Flag;
   goodNewsSharing: Flag;
   kpDashboard: Flag;
   gaps: Flag;
@@ -126,6 +161,15 @@ interface MeetingRow {
   absentClientMemberNames: string[];
   dashboardNAClientMemberIds: string[];
   dashboardNAClientMemberNames: string[];
+  // Audit columns appended by GET /api/client-meetings/weekly-meetings.
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  createdByName: string;
+  createdByInitials: string;
+  updatedBy: string | null;
+  updatedByName: string | null;
+  updatedByInitials: string | null;
 }
 interface LogEntry {
   id: string;
@@ -168,6 +212,11 @@ const emptyForm = {
   segmentTime5: "",
   segmentTime6: "",
   segmentTime7: "",
+  // "Planned Deviation In Time" — YES → mark this call punctual regardless of
+  // actualStartTime (an agreed deviation was honored). Default NO matches the
+  // UI radio in the form (only YES/NO are user-selectable; NA only appears on
+  // legacy rows that pre-date this field).
+  punctualityOverride: "NO" as Flag,
   goodNewsSharing: "NA" as Flag,
   kpDashboard: "NA" as Flag,
   gaps: "NA" as Flag,
@@ -249,6 +298,9 @@ export default function WeeklyMeetingPage() {
   // Search + selection (KPI-style chrome).
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Trash view — when true, the list endpoint returns only soft-deleted rows
+  // and per-row / bulk actions switch from Delete to Restore.
+  const [viewTrash, setViewTrash] = useState(false);
 
   // Log drawer.
   const [logsFor, setLogsFor] = useState<{ id: string; label: string } | null>(
@@ -276,10 +328,85 @@ export default function WeeklyMeetingPage() {
     {}
   );
 
+  // Server-persisted column preferences (frozen / hidden / sort) via the
+  // UserTablePreference table in app_quikscale. Same shape as KPI / Priority /
+  // WWW — see lib/hooks/useTablePreferences.ts.
+  const {
+    hiddenCols,
+    frozenCol,
+    setFrozenCol,
+    hideCol,
+  } = useTablePrefs("weeklyMeeting");
+  const { sortBy, sortOrder, setSort } = useTableSort("weeklyMeeting");
+  const { getColWidth, startResize } = useColumnResize("weeklyMeeting", COL_WIDTHS_DEFAULT);
+  const isHidden = (key: string) => hiddenCols.includes(key);
+
+  // Inline header-cell helper for the Weekly Meeting table. Returns null when
+  // the column is hidden; otherwise renders the same KPI-style <th> wrapper:
+  // - `group` class for hover-reveal of ColMenu's three-dot trigger
+  // - `relative` so the absolutely-positioned ResizeHandle anchors here
+  // - explicit `style.width` so table-layout: fixed locks the column
+  // - sticky-left when frozen, sort arrow when active
+  function HeaderCell(props: {
+    k: string;
+    label: string;
+    sortable?: boolean;
+    /** Backend whitelist key when it differs from the UI column key (e.g.
+     *  client → client; actualStartTime → actualStartTime). Defaults to `k`. */
+    sortKey?: string;
+  }) {
+    if (isHidden(props.k)) return null;
+    const sortKey = props.sortKey ?? props.k;
+    const isSorted = !!props.sortable && sortBy === sortKey;
+    const frozen = frozenCol === props.k;
+    return (
+      <th
+        data-col-key={props.k}
+        style={{ width: getColWidth(props.k) }}
+        className={`group relative overflow-hidden px-3 py-2 text-left whitespace-nowrap ${frozen ? "sticky left-0 z-[15] bg-accent-50" : ""}`}
+      >
+        <div className="flex items-center gap-1">
+          {/* `truncate min-w-0` lets the label shrink inside the fixed-width <th>
+              and ellipsize when too long. Without these, long headers (e.g.
+              "Customer/Employee Feedback") spill past the cell boundary and
+              visually overlap the next column. `title` shows the full text on
+              hover when truncated. */}
+          <span className="flex-1 truncate min-w-0" title={props.label}>
+            {props.label}{isSorted && (sortOrder === "asc" ? " ↑" : " ↓")}
+          </span>
+          <ColMenu
+            colKey={props.k}
+            onSort={props.sortable ? (d) => setSort({ sortBy: sortKey, sortOrder: d }) : undefined}
+            onFreeze={() => setFrozenCol(frozen ? null : props.k)}
+            onHide={() => hideCol(props.k)}
+            frozen={frozen}
+            showSort={!!props.sortable}
+          />
+        </div>
+        <ResizeHandle onStart={(e) => startResize(props.k, e.clientX)} />
+      </th>
+    );
+  }
+
+  // Helper for the matching <td> cells — combines the hide-via-Tailwind
+  // `hidden` class with the explicit column width so table-layout: fixed
+  // locks the data row to the same widths as the headers.
+  function tdHideClass(k: string): string {
+    return isHidden(k) ? "hidden" : "";
+  }
+  function tdWidthStyle(k: string): React.CSSProperties {
+    return { width: getColWidth(k) };
+  }
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = filterClientId ? `?clientId=${filterClientId}` : "";
+      const qsParts: string[] = [];
+      if (filterClientId) qsParts.push(`clientId=${filterClientId}`);
+      if (viewTrash) qsParts.push("includeDeleted=true");
+      if (sortBy) qsParts.push(`sortBy=${sortBy}`);
+      if (sortBy && sortOrder) qsParts.push(`sortOrder=${sortOrder}`);
+      const qs = qsParts.length ? `?${qsParts.join("&")}` : "";
       const [m, c] = await Promise.all([
         fetch(`/api/client-meetings/weekly-meetings${qs}`).then((r) =>
           r.json()
@@ -291,7 +418,7 @@ export default function WeeklyMeetingPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterClientId]);
+  }, [filterClientId, viewTrash, sortBy, sortOrder]);
 
   useEffect(() => {
     refresh();
@@ -352,6 +479,9 @@ export default function WeeklyMeetingPage() {
         segmentTime5: detail.segmentTime5 ?? "",
         segmentTime6: detail.segmentTime6 ?? "",
         segmentTime7: detail.segmentTime7 ?? "",
+        // Legacy rows pre-dating this column will have `NA`; coerce that to
+        // `NO` for the UI radio (which only exposes YES/NO).
+        punctualityOverride: (row.punctualityOverride === "YES" ? "YES" : "NO") as Flag,
         goodNewsSharing: row.goodNewsSharing,
         kpDashboard: row.kpDashboard,
         gaps: row.gaps,
@@ -418,6 +548,7 @@ export default function WeeklyMeetingPage() {
         segmentTime5: "",
         segmentTime6: "",
         segmentTime7: "",
+        punctualityOverride: "NO",
         goodNewsSharing: "NA",
         kpDashboard: "NA",
         gaps: "NA",
@@ -557,6 +688,7 @@ export default function WeeklyMeetingPage() {
         segmentTime5: f.segmentTime5 || null,
         segmentTime6: f.segmentTime6 || null,
         segmentTime7: f.segmentTime7 || null,
+        punctualityOverride: f.punctualityOverride,
         goodNewsSharing: f.goodNewsSharing,
         kpDashboard: f.kpDashboard,
         gaps: f.gaps,
@@ -716,6 +848,43 @@ export default function WeeklyMeetingPage() {
     if ((await res.json()).success) refresh();
   }
 
+  async function restoreOne(id: string) {
+    const res = await fetch(`/api/client-meetings/weekly-meetings/${id}/restore`, {
+      method: "POST",
+    });
+    const json = await res.json();
+    if (json.success) {
+      toast.success("Weekly meeting restored");
+      refresh();
+    } else {
+      toast.error(json.error ?? "Failed to restore");
+    }
+  }
+
+  async function bulkRestore() {
+    if (!selectedIds.size) return;
+    const res = await fetch(`/api/client-meetings/weekly-meetings/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selectedIds] }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      toast.success(`Restored ${json.data?.restored ?? 0} meeting${json.data?.restored === 1 ? "" : "s"}`);
+      setSelectedIds(new Set());
+      refresh();
+    } else {
+      toast.error(json.error ?? "Failed to restore");
+    }
+  }
+
+  // Drop any stale selection whenever the user enters/exits trash mode so
+  // a "Delete N selected" / "Restore N selected" button doesn't carry over
+  // ids that aren't visible.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [viewTrash]);
+
   const isEdit = !!editing?.id;
   // Update tab is exposed in both Add and Edit. The grid handles the "no
   // client selected yet" case with an inline hint, so we don't gate the
@@ -781,7 +950,7 @@ export default function WeeklyMeetingPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selectedIds.size > 0 && canDelete && (
+          {selectedIds.size > 0 && canDelete && !viewTrash && (
             <button
               onClick={bulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors"
@@ -790,6 +959,28 @@ export default function WeeklyMeetingPage() {
               Delete {selectedIds.size} selected
             </button>
           )}
+          {selectedIds.size > 0 && viewTrash && (
+            <button
+              onClick={bulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Restore {selectedIds.size} selected
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setViewTrash((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-md transition-colors ${
+              viewTrash
+                ? "bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100"
+                : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+            title={viewTrash ? "Exit Trash" : "View Trash"}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {viewTrash ? "Exit Trash" : "View Trash"}
+          </button>
 
           {/* Search */}
           <div className="relative">
@@ -833,18 +1024,25 @@ export default function WeeklyMeetingPage() {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden p-6 min-h-0">
+        {viewTrash && (
+          <div className="mb-3">
+            <TrashBanner count={rows.length} onExit={() => setViewTrash(false)} />
+          </div>
+        )}
         {loading ? (
           <p className="text-sm text-gray-500">Loading…</p>
         ) : rows.length === 0 ? (
           <EmptyState
             icon={CalendarDays}
-            title="No weekly meetings yet"
-            message="Click Add to record your first weekly meeting."
+            title={viewTrash ? "Trash is empty" : "No weekly meetings yet"}
+            message={viewTrash ? "Deleted weekly meetings will appear here." : "Click Add to record your first weekly meeting."}
           />
         ) : (
-          <div className="flex-1 flex flex-col min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="flex-1 overflow-auto min-h-0">
-            <table className="min-w-full text-xs">
+          <div className="flex-1 flex flex-col min-h-0">
+            <HorizontalScroller className="flex-1">
+            <table
+              className="text-xs bg-white border-separate border-spacing-0"
+              style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="bg-accent-50 text-gray-600 sticky top-0 z-10">
                 <tr>
                   <th className="px-2 py-2 w-8">
@@ -871,67 +1069,32 @@ export default function WeeklyMeetingPage() {
                   <th className="px-1 py-2 w-10 text-center font-semibold">
                     #
                   </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Meeting Date
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Client Name
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Status
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Absent Members
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Weekly Dashboard NA
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Actual Start Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Actual End Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Good News Sharing
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Good News Sharing Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    K&amp;P dashboard
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    K&amp;P dashboard Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    GAPS
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    GAPS Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">WWW</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    WWW Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Customer/Employee Feedback
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Customer/Employee Feedback Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Collective Intelligence
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Collective Intelligence Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    OPSP Review
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    OPSP Time
-                  </th>
+                  <HeaderCell k="meetingDate" label="Meeting Date" sortable />
+                  <HeaderCell k="client" label="Client Name" sortable sortKey="client" />
+                  <HeaderCell k="callStatus" label="Status" sortable />
+                  <HeaderCell k="absentMembers" label="Absent Members" />
+                  <HeaderCell k="weeklyDashboardNA" label="Weekly Dashboard NA" />
+                  <HeaderCell k="actualStartTime" label="Actual Start Time" sortable />
+                  <HeaderCell k="actualEndTime" label="Actual End Time" sortable />
+                  <HeaderCell k="goodNewsSharing" label="Good News Sharing" />
+                  <HeaderCell k="goodNewsSharingTime" label="Good News Sharing Time" />
+                  <HeaderCell k="kpDashboard" label="K&P dashboard" />
+                  <HeaderCell k="kpDashboardTime" label="K&P dashboard Time" />
+                  <HeaderCell k="gaps" label="GAPS" />
+                  <HeaderCell k="gapsTime" label="GAPS Time" />
+                  <HeaderCell k="www" label="WWW" />
+                  <HeaderCell k="wwwTime" label="WWW Time" />
+                  <HeaderCell k="feedback" label="Customer/Employee Feedback" />
+                  <HeaderCell k="feedbackTime" label="Customer/Employee Feedback Time" />
+                  <HeaderCell k="collectiveIntelligence" label="Collective Intelligence" />
+                  <HeaderCell k="collectiveIntelligenceTime" label="Collective Intelligence Time" />
+                  <HeaderCell k="opspReview" label="OPSP Review" />
+                  <HeaderCell k="opspTime" label="OPSP Time" />
+                  {/* Audit columns — populated by GET /api/client-meetings/weekly-meetings. */}
+                  <HeaderCell k="createdBy" label="Created By" />
+                  <HeaderCell k="updatedBy" label="Updated By" />
+                  <HeaderCell k="createdAt" label="Created Date" sortable />
+                  <HeaderCell k="updatedAt" label="Updated Date" sortable />
                   <th className="px-3 py-2 text-right" />
                 </tr>
               </thead>
@@ -978,96 +1141,125 @@ export default function WeeklyMeetingPage() {
                         {(page - 1) * pageSize + idx + 1}
                       </button>
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    {/* Body cells — each pairs tdHideClass + tdWidthStyle so the column
+                        collapses when hidden and locks to the resized width when shown.
+                        The sticky-left rule mirrors the matching <th> when frozen. */}
+                    <td style={tdWidthStyle("meetingDate")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("meetingDate")} ${frozenCol === "meetingDate" ? "sticky left-0 z-[10] bg-white" : ""}`}>
                       {fmtDate(r.meetingDate)}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td style={tdWidthStyle("client")} className={`px-3 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${tdHideClass("client")} ${frozenCol === "client" ? "sticky left-0 z-[10] bg-white" : ""}`}>
                       {r.clientName}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td style={tdWidthStyle("callStatus")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("callStatus")} ${frozenCol === "callStatus" ? "sticky left-0 z-[10] bg-white" : ""}`}>
                       <span
                         className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}
                       >
                         {statusLabel(r.callStatus)}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-gray-600">
+                    <td style={tdWidthStyle("absentMembers")} className={`px-3 py-2 text-gray-600 overflow-hidden text-ellipsis ${tdHideClass("absentMembers")}`}>
                       {r.absentClientMemberNames.length
                         ? r.absentClientMemberNames.join(", ")
                         : "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600">
+                    <td style={tdWidthStyle("weeklyDashboardNA")} className={`px-3 py-2 text-gray-600 overflow-hidden text-ellipsis ${tdHideClass("weeklyDashboardNA")}`}>
                       {r.dashboardNAClientMemberNames.length
                         ? r.dashboardNAClientMemberNames.join(", ")
                         : "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("actualStartTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualStartTime")}`}>
                       {r.actualStartTime || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("actualEndTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualEndTime")}`}>
                       {r.actualEndTime || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("goodNewsSharing")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("goodNewsSharing")}`}>
                       {r.goodNewsSharing}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("goodNewsSharingTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("goodNewsSharingTime")}`}>
                       {r.segmentTime1 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("kpDashboard")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("kpDashboard")}`}>
                       {r.kpDashboard}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("kpDashboardTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("kpDashboardTime")}`}>
                       {r.segmentTime2 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("gaps")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("gaps")}`}>
                       {r.gaps}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("gapsTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("gapsTime")}`}>
                       {r.segmentTime3 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("www")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("www")}`}>
                       {r.www}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("wwwTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("wwwTime")}`}>
                       {r.segmentTime4 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("feedback")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("feedback")}`}>
                       {r.feedback}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("feedbackTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("feedbackTime")}`}>
                       {r.segmentTime5 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("collectiveIntelligence")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("collectiveIntelligence")}`}>
                       {r.collectiveIntelligence}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("collectiveIntelligenceTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("collectiveIntelligenceTime")}`}>
                       {r.segmentTime6 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("opspReview")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("opspReview")}`}>
                       {r.opspReview}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("opspTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("opspTime")}`}>
                       {r.segmentTime7 || "—"}
                     </td>
+                    {/* Audit cells — Created By / Updated By / Created Date / Updated Date.
+                        Populated by GET /api/client-meetings/weekly-meetings. */}
+                    <td style={tdWidthStyle("createdBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("createdBy")}`}>
+                      <UserAuditCell name={r.createdByName} initials={r.createdByInitials} />
+                    </td>
+                    <td style={tdWidthStyle("updatedBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("updatedBy")}`}>
+                      <UserAuditCell name={r.updatedByName} initials={r.updatedByInitials} />
+                    </td>
+                    <td style={tdWidthStyle("createdAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("createdAt")}`}>
+                      <DateAuditCell iso={r.createdAt} />
+                    </td>
+                    <td style={tdWidthStyle("updatedAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("updatedAt")}`}>
+                      <DateAuditCell iso={r.updatedAt} />
+                    </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => openEdit(r)}
-                        className="text-gray-400 hover:text-blue-500 p-1"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => remove(r.id)}
-                        className="text-gray-400 hover:text-red-500 p-1"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {viewTrash ? (
+                        <button
+                          onClick={() => restoreOne(r.id)}
+                          className="text-gray-400 hover:text-green-600 p-1"
+                          title="Restore"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => openEdit(r)}
+                            className="text-gray-400 hover:text-blue-500 p-1"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => remove(r.id)}
+                            className="text-gray-400 hover:text-red-500 p-1"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            </div>
+            </HorizontalScroller>
             {visibleRows.length > 0 && (
               <Pagination
                 page={page}
@@ -1185,31 +1377,64 @@ export default function WeeklyMeetingPage() {
                     disabled={isEdit}
                   />
                 </Field>
-                <Field label="Absent Members">
-                  <UserMultiPicker
-                    values={editing.form.absentClientMemberIds}
-                    onChange={(v) => {
-                      updateField("absentClientMemberIds", v);
-                      // Newly-absent users can't also be Dashboard NA — drop
-                      // any stale NA entries that overlap with the new absent
-                      // list. Keeps the two pickers consistent.
-                      const absentSet = new Set(v);
-                      const cleanedNA = editing.form.dashboardNAClientMemberIds.filter(
-                        (id) => !absentSet.has(id),
-                      );
-                      if (cleanedNA.length !== editing.form.dashboardNAClientMemberIds.length) {
-                        updateField("dashboardNAClientMemberIds", cleanedNA);
-                      }
-                    }}
-                    users={pickerUsers}
-                    placeholder={pickerPlaceholder(
-                      editing.form.clientId,
-                      pickerUsers.length
-                    )}
-                    disabled={!editing.form.clientId}
-                  />
+                {/* Planned Deviation In Time — feeds the punctuality metric on
+                    the Dashboard. YES = treat this call as on-time regardless
+                    of actualStartTime (an agreed schedule deviation was
+                    honored); NO = use the normal time-grace check. Underlying
+                    enum is ClientMeetingFlag (YES/NO/NA) — NA only appears on
+                    legacy rows pre-dating this field. */}
+                <Field label="Planned Deviation In Time">
+                  <div className="flex items-center gap-6 px-3 py-2 text-xs">
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="punctualityOverride"
+                        value="YES"
+                        checked={editing.form.punctualityOverride === "YES"}
+                        onChange={() => updateField("punctualityOverride", "YES")}
+                        className="text-accent-600 focus:ring-accent-400"
+                      />
+                      <span className="text-gray-700">YES</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="punctualityOverride"
+                        value="NO"
+                        checked={editing.form.punctualityOverride !== "YES"}
+                        onChange={() => updateField("punctualityOverride", "NO")}
+                        className="text-accent-600 focus:ring-accent-400"
+                      />
+                      <span className="text-gray-700">NO</span>
+                    </label>
+                  </div>
                 </Field>
               </div>
+
+              <Field label="Absent Members">
+                <UserMultiPicker
+                  values={editing.form.absentClientMemberIds}
+                  onChange={(v) => {
+                    updateField("absentClientMemberIds", v);
+                    // Newly-absent users can't also be Dashboard NA — drop
+                    // any stale NA entries that overlap with the new absent
+                    // list. Keeps the two pickers consistent.
+                    const absentSet = new Set(v);
+                    const cleanedNA = editing.form.dashboardNAClientMemberIds.filter(
+                      (id) => !absentSet.has(id),
+                    );
+                    if (cleanedNA.length !== editing.form.dashboardNAClientMemberIds.length) {
+                      updateField("dashboardNAClientMemberIds", cleanedNA);
+                    }
+                  }}
+                  users={pickerUsers}
+                  placeholder={pickerPlaceholder(
+                    editing.form.clientId,
+                    pickerUsers.length
+                  )}
+                  disabled={!editing.form.clientId}
+                />
+              </Field>
 
               <Field label="Weekly Dashboard NA">
                 <UserMultiPicker
@@ -1469,47 +1694,35 @@ export default function WeeklyMeetingPage() {
           clients={clients}
           defaultClientId={filterClientId || null}
           onSubmit={async ({ from, to, clientId }: ExportRange) => {
-            // Fetch weekly meetings in the chosen client + date window.
-            const qs = new URLSearchParams();
-            if (clientId) qs.set("clientId", clientId);
-            qs.set("from", from);
-            qs.set("to", to);
-            const res = await fetch(`/api/client-meetings/weekly-meetings?${qs.toString()}`);
-            const json = await res.json();
-            const data: MeetingRow[] = json.success ? (json.data as MeetingRow[]) : [];
-
-            const columns = [
-              { key: "meetingDate",            label: "Meeting Date",      value: (r: MeetingRow) => r.meetingDate.slice(0, 10) },
-              { key: "clientName",             label: "Client Name",       value: (r: MeetingRow) => r.clientName },
-              { key: "callStatus",             label: "Call Status",       value: (r: MeetingRow) => r.callStatus },
-              { key: "absentMembers",          label: "Absent Members",    value: (r: MeetingRow) => r.absentClientMemberNames.join(", ") },
-              { key: "dashboardNAMembers",     label: "Weekly Dashboard NA", value: (r: MeetingRow) => r.dashboardNAClientMemberNames.join(", ") },
-              { key: "actualStartTime",        label: "Actual Start Time", value: (r: MeetingRow) => r.actualStartTime ?? "" },
-              { key: "actualEndTime",          label: "Actual End Time",   value: (r: MeetingRow) => r.actualEndTime ?? "" },
-              { key: "goodNewsSharing",        label: "Good News Sharing", value: (r: MeetingRow) => r.goodNewsSharing },
-              { key: "goodNewsSharingTime",    label: "Good News Sharing Time", value: (r: MeetingRow) => r.segmentTime1 ?? "" },
-              { key: "kpDashboard",            label: "K&P dashboard",     value: (r: MeetingRow) => r.kpDashboard },
-              { key: "kpDashboardTime",        label: "K&P dashboard Time", value: (r: MeetingRow) => r.segmentTime2 ?? "" },
-              { key: "gaps",                   label: "GAPS",              value: (r: MeetingRow) => r.gaps },
-              { key: "gapsTime",               label: "GAPS Time",         value: (r: MeetingRow) => r.segmentTime3 ?? "" },
-              { key: "www",                    label: "WWW",               value: (r: MeetingRow) => r.www },
-              { key: "wwwTime",                label: "WWW Time",          value: (r: MeetingRow) => r.segmentTime4 ?? "" },
-              { key: "feedback",               label: "Customer/Employee Feedback", value: (r: MeetingRow) => r.feedback },
-              { key: "feedbackTime",           label: "Customer/Employee Feedback Time", value: (r: MeetingRow) => r.segmentTime5 ?? "" },
-              { key: "collectiveIntelligence", label: "Collective Intelligence", value: (r: MeetingRow) => r.collectiveIntelligence },
-              { key: "ciTime",                 label: "Collective Intelligence Time", value: (r: MeetingRow) => r.segmentTime6 ?? "" },
-              { key: "opspReview",             label: "OPSP Review",       value: (r: MeetingRow) => r.opspReview },
-              { key: "opspReviewTime",         label: "OPSP Review Time",  value: (r: MeetingRow) => r.segmentTime7 ?? "" },
-            ];
-
-            await runExport<MeetingRow>({
-              selection: { rowScope: "all", columnKeys: columns.map((c) => c.key) },
-              columns,
-              pageRows: data,
-              fetchFiltered: async () => data,
-              fetchAll: async () => data,
-              filename: `WeeklyMeeting_${from}_${to}${clientId ? "" : "_all-clients"}`,
+            if (!clientId) {
+              toast.error("Please select a client to export.");
+              return;
+            }
+            // Backend builds the XLSX (with header block, member counts,
+            // and Notes columns). We just stream the blob and trigger a
+            // browser download.
+            const res = await fetch("/api/client-meetings/export/weekly-detail", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ clientId, from, to }),
             });
+            if (!res.ok) {
+              const errJson = await res.json().catch(() => null);
+              toast.error(errJson?.error ?? "Failed to export weekly meetings");
+              return;
+            }
+            const blob = await res.blob();
+            const disposition = res.headers.get("Content-Disposition") ?? "";
+            const match = /filename="([^"]+)"/.exec(disposition);
+            const filename = match?.[1] ?? `WeeklyMeetingExport_${from}_to_${to}.xlsx`;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
           }}
         />
       </div>

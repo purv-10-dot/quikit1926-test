@@ -27,6 +27,8 @@ import { cn } from "@/lib/utils";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { CriticalTable, type CriticalTableEntry } from "./CriticalTable";
 import { CriticalReviewDrawer } from "./CriticalReviewDrawer";
+import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
+import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
 
 type Module = "actions" | "year" | "people";
 type CardType = "critical" | "balancing";
@@ -75,6 +77,12 @@ export function CriticalReviewSection({
     cardType: CardType;
   }>({ open: false, cardType: "critical" });
   const [saving, setSaving] = useState(false);
+
+  // Audit-log drawer state — which critical card's history is open.
+  const [logsCard, setLogsCard] = useState<{
+    cardType: CardType;
+    title: string;
+  } | null>(null);
 
   /* ── Load ── */
   const loadData = useCallback(async () => {
@@ -231,6 +239,15 @@ export function CriticalReviewSection({
           card={moduleCards.critical}
           entry={entryFor("critical")}
           onOpenEdit={() => setDrawer({ open: true, cardType: "critical" })}
+          onOpenLogs={
+            data?.opspId
+              ? () =>
+                  setLogsCard({
+                    cardType: "critical",
+                    title: moduleCards.critical.title,
+                  })
+              : undefined
+          }
         />
         <CriticalTable
           label="Balancing Critical #"
@@ -238,6 +255,15 @@ export function CriticalReviewSection({
           card={moduleCards.balancing}
           entry={entryFor("balancing")}
           onOpenEdit={() => setDrawer({ open: true, cardType: "balancing" })}
+          onOpenLogs={
+            data?.opspId
+              ? () =>
+                  setLogsCard({
+                    cardType: "balancing",
+                    title: moduleCards.balancing.title,
+                  })
+              : undefined
+          }
         />
       </div>
 
@@ -254,6 +280,20 @@ export function CriticalReviewSection({
           handleDrawerSave(activeModule, drawer.cardType, activeCard.title, patch)
         }
       />
+
+      {/* ── Audit-log drawer for Critical # Review cards ── */}
+      {data?.opspId && logsCard && (
+        <AuditLogDrawer
+          open
+          onClose={() => setLogsCard(null)}
+          title={`Audit History — ${logsCard.cardType === "critical" ? "Critical #" : "Balancing Critical #"}`}
+          subtitle={`${logsCard.title || "—"} · ${MODULE_TABS.find((t) => t.key === activeModule)?.label}`}
+          entityType="Review"
+          entityId={data.opspId}
+          extraQuery={`OPSP Critical (${activeModule}:${logsCard.cardType})`}
+          fieldLabels={OPSP_FIELD_LABELS}
+        />
+      )}
     </div>
   );
 }

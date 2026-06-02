@@ -43,6 +43,28 @@ export function CritBlock({
   });
   const hasDuplicate = dupFlags.some(Boolean);
 
+  // Monotonic-order check — the 4 tier thresholds must read top-to-bottom in
+  // a consistent direction (ascending or descending). Equal values are
+  // already caught by `dupFlags` above, so weak comparisons (≤ / ≥) are
+  // fine here. With 0-1 filled bullets the sequence is trivially ordered;
+  // with 2 filled bullets either direction is always satisfiable, so the
+  // warning only fires once 3+ are filled and the order is broken.
+  let isAscending = true;
+  let isDescending = true;
+  let prev: number | null = null;
+  let filledCount = 0;
+  for (const n of bulletNums) {
+    if (n === null) continue;
+    filledCount++;
+    if (prev !== null) {
+      if (n < prev) isAscending = false;
+      if (n > prev) isDescending = false;
+    }
+    prev = n;
+  }
+  const orderError = filledCount >= 3 && !isAscending && !isDescending;
+  const orderFlags = bulletNums.map((n) => orderError && n !== null);
+
   return (
     <Card>
       <div className="flex items-center gap-2 mb-3">
@@ -77,9 +99,15 @@ export function CritBlock({
                 onChange({ ...value, bullets });
               }}
               placeholder="0"
-              title={dupFlags[i] ? "This value duplicates another tier — each tier must be unique." : undefined}
-              className={
+              title={
                 dupFlags[i]
+                  ? "This value duplicates another tier — each tier must be unique."
+                  : orderFlags[i]
+                    ? "Values must read top-to-bottom in ascending or descending order."
+                    : undefined
+              }
+              className={
+                dupFlags[i] || orderFlags[i]
                   ? "flex-1 min-w-0 border border-red-400 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-red-400 bg-white"
                   : "flex-1 min-w-0 border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white"
               }
@@ -90,6 +118,11 @@ export function CritBlock({
       {hasDuplicate && (
         <p className="text-[11px] text-red-500 font-medium mt-2">
           Each tier value must be unique
+        </p>
+      )}
+      {orderError && !hasDuplicate && (
+        <p className="text-[11px] text-red-500 font-medium mt-2">
+          Values must be in ascending or descending order
         </p>
       )}
     </Card>

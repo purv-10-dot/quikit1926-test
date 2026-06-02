@@ -9,10 +9,10 @@ import {
   validateIndividualKPICreate,
   validateParentKPI,
 } from "@/lib/api/kpiCreateValidation";
-import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
 import { isOrgAdmin, getMyTeamIds } from "@/lib/api/visibility";
+import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
@@ -194,6 +194,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       createdAt: true,
       updatedAt: true,
       createdBy: true,
+      updatedBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
       team: { select: { id: true, name: true, color: true, headId: true } },
       weeklyValues: { select: { userId: true, weekNumber: true, value: true, notes: true }, orderBy: [{ weekNumber: "asc" }, { userId: "asc" }] },
@@ -231,6 +232,10 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
         })).map((p) => [p.id, p])
       )
     : new Map();
+
+  // Resolve every unique createdBy/updatedBy id → { name, initials } so the
+  // KPI table can paint the audit columns without an extra round-trip.
+  const auditMap = await fetchAuditUserMap(kpis);
 
   const enriched = kpis.map((k) => {
     const ownerIds = (k.ownerIds as string[] | null) ?? [];
@@ -274,7 +279,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       weeklyOwnerValues = byOwner;
     }
 
-    return {
+    return decorateAudit({
       ...k,
       weeklyValues,
       weeklyOwnerValues,
@@ -283,7 +288,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
         : null,
       owners: ownerIds.map((id) => usersMap.get(id)).filter(Boolean),
       parentKPI: k.parentKPIId ? (parentMap.get(k.parentKPIId) ?? null) : null,
-    };
+    }, auditMap);
   });
 
   const response: ApiResponse<any> = {
@@ -311,26 +316,26 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   }
 
   const body = await req.json();
-  const validated = createKPISchema.parse(body);
-
-  // ── Past-week add enforcement ──
-  // When add_past_week_data is disabled, reject non-zero targets for weeks before current week
-  const { canAddPastWeek } = await getPastWeekFlags(orgId);
-  if (!canAddPastWeek && validated.weeklyTargets && validated.quarter && validated.year) {
-    const currentWeek = await getCurrentFiscalWeekFromDB(orgId, validated.year, validated.quarter);
-    for (const [weekStr, val] of Object.entries(validated.weeklyTargets)) {
-      const week = parseInt(weekStr, 10);
-      if (week < currentWeek && val && val !== 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Adding past week data is disabled. Week ${week} is before the current week (${currentWeek}). Enable it in Settings > Configurations.`,
-          },
-          { status: 403 }
-        );
-      }
-    }
+  // Use `safeParse` so validation failures return a clean 400 with the
+  // first field-level message (e.g. "String must contain at most 200
+  // character(s)" when the user enters an overly long KPI name).
+  // `.parse()` would throw, get caught by withOrgAuth's outer try/catch,
+  // and surface as an opaque 500 — see /api/priority/[id]/weekly/route.ts
+  // for the established convention.
+  const parsed = createKPISchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 },
+    );
   }
+  const validated = parsed.data;
+
+  // Past-week ADD enforcement removed per product spec — KPI creation is now
+  // always allowed regardless of the `add_past_week_data` org flag, so users
+  // mid-quarter can create KPIs that auto-distribute targets across past
+  // weeks via Cumulative/Standalone division. Editing past-week ACTUAL values
+  // is still gated by `canEditPastWeek` on the weekly update routes.
 
   const isTeamLevel = validated.kpiLevel === "team";
 
@@ -434,6 +439,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       createdAt: true,
       updatedAt: true,
       createdBy: true,
+      updatedBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
     },
   });

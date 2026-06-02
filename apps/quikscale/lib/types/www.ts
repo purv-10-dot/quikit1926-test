@@ -14,6 +14,12 @@ export type WWWItem = {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  // Audit columns — populated by GET /api/www via decorateAudit.
+  updatedBy?: string | null;
+  createdByName?: string;
+  createdByInitials?: string;
+  updatedByName?: string | null;
+  updatedByInitials?: string | null;
   who_user?: { id: string; firstName: string; lastName: string } | null;
   /** Hydrated assignees in `whoIds` order. */
   who_users?: Array<{ id: string; firstName: string; lastName: string; email?: string }>;

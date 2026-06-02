@@ -10,6 +10,7 @@ import {
   RightPanelFooter,
   RightPanelCancelButton,
   RightPanelSubmitButton,
+  Button,
 } from "@quikit/ui";
 import { ProjectsPicker } from "./projects-picker";
 
@@ -46,6 +47,15 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
   /** Map projectId → projectRoleId. Missing key = use that project's default role. */
   const [projectRoles, setProjectRoles] = useState<Record<string, string>>({});
   const [linkExistingUserId, setLinkExistingUserId] = useState<string | null>(null);
+  // After a successful create, the server may return a freshly-generated
+  // plaintext temp password (Native + no admin-supplied pw). We hold it in
+  // local state ONLY while the success view is visible — closing the drawer
+  // discards it. Never persisted to localStorage / sessionStorage / DB.
+  const [createdTempPassword, setCreatedTempPassword] = useState<{
+    email: string;
+    tempPassword: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
   /**
    * "native" → admin sets password, user signs in with email+password.
    * "sso"    → no password collected; user authenticates via Google/Microsoft.
@@ -123,7 +133,7 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
         //   • SSO   → send `invitationMethod: "sso"`, no password.
         //   • Native + admin typed a password → send both.
         //   • Native + admin left it blank → send only `invitationMethod:
-        //     "native"` and let the server seed DEFAULT_INVITE_PASSWORD.
+        //     "native"` and let the server generate a fresh temp password.
         //     Sending an empty string would trip Zod's min(8) check.
         ...(linkExistingUserId
           ? { linkExistingUserId }
@@ -153,13 +163,73 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "Failed");
+      return j.data as { email: string; tempPassword?: string };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["quiktrack", "org-users"] });
-      onClose();
+      // If the server returned a plaintext temp password, switch the drawer
+      // to the success view that reveals it once. Otherwise close.
+      if (data?.tempPassword) {
+        setCreatedTempPassword({
+          email: data.email,
+          tempPassword: data.tempPassword,
+        });
+      } else {
+        onClose();
+      }
     },
     onError: (e: Error) => setError(e.message),
   });
+
+  async function copyPassword() {
+    if (!createdTempPassword) return;
+    try {
+      await navigator.clipboard.writeText(createdTempPassword.tempPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API can be blocked; user can still select+copy manually.
+    }
+  }
+
+  // ── Success view — one-time plaintext temp-password reveal ──
+  if (createdTempPassword) {
+    return (
+      <RightPanel
+        open
+        onClose={onClose}
+        title="User invited"
+        subtitle="Share the temporary password — shown only once"
+        size="sm"
+        footer={
+          <RightPanelFooter>
+            <Button onClick={onClose}>Done</Button>
+          </RightPanelFooter>
+        }
+      >
+        <p className="text-sm text-gray-600">
+          A temporary password has been emailed to{" "}
+          <span className="font-medium text-gray-900">
+            {createdTempPassword.email}
+          </span>
+          . You can also share it manually below.
+        </p>
+        <div className="mt-4 rounded-md bg-gray-50 px-3 py-2 ring-1 ring-gray-200">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            Temporary password
+          </div>
+          <div className="mt-1 break-all font-mono text-sm text-gray-900">
+            {createdTempPassword.tempPassword}
+          </div>
+        </div>
+        <div className="mt-3">
+          <Button onClick={copyPassword}>
+            {copied ? "Copied!" : "Copy password"}
+          </Button>
+        </div>
+      </RightPanel>
+    );
+  }
 
   const isLinking = !!linkExistingUserId;
   const canSubmit =
@@ -343,7 +413,7 @@ function AddUserDrawer({ onClose }: { onClose: () => void }) {
       )}
 
       {/* Native callout — admin doesn't type a password on create. The
-          server seeds DEFAULT_INVITE_PASSWORD and the email embeds it.
+          server generates a unique temp password and the email embeds it.
           Per the reference UI, the password input is only available in
           edit mode (separate EditUserModal). Keeping this drawer
           purely about invite-and-go. */}

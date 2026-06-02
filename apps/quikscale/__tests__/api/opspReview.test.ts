@@ -36,6 +36,12 @@ function asAdmin() {
   // so individual tests only override when shape matters.
   mockDb.categoryMaster.findMany.mockResolvedValue([] as any);
   mockDb.user.findMany.mockResolvedValue([] as any);
+  // The POST handler reads prior review entries for the audit snapshot
+  // before upserting. Without this default the second-round merge's new
+  // pre-upsert read throws on .map(undefined) and the handler 500s.
+  mockDb.oPSPReviewEntry.findMany.mockResolvedValue([] as any);
+  mockDb.org.findUnique.mockResolvedValue({ name: "Test Org" } as any);
+  mockDb.auditLog.create.mockResolvedValue({} as any);
 }
 
 function mockOPSP(overrides: Record<string, unknown> = {}) {

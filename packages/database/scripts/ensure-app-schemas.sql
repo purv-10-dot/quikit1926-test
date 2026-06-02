@@ -1,3 +1,3 @@
 CREATE SCHEMA IF NOT EXISTS app_quikscale;
-CREATE SCHEMA IF NOT EXISTS app_quikconstruction;
+CREATE SCHEMA IF NOT EXISTS app_quikinfra;
 CREATE SCHEMA IF NOT EXISTS app_quikvc;

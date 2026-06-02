@@ -27,6 +27,9 @@ export async function middleware(req: NextRequest) {
     "/api/invitations",
     "/api/auth",
     "/api/verify-token",
+    // Liveness probe — must be reachable without a session so Cloud Run /
+    // GKE health checks succeed before any user logs in.
+    "/api/health",
   ];
   const isPublic = PUBLIC.some((p) => pathname.startsWith(p));
 
@@ -65,20 +68,33 @@ export async function middleware(req: NextRequest) {
     const callback = req.nextUrl.searchParams.get("callbackUrl");
     if (callback) {
       try {
-        return NextResponse.redirect(new URL(callback, req.url));
+        const callbackUrl = new URL(callback, req.url);
+        // Cross-origin callback → route through /api/post-login so the
+        // target sub-app gets a host-scoped session cookie via the
+        // /auth-handoff bridge. Same-origin callbacks (the auth app
+        // itself, or a relative /path) can short-circuit.
+        if (callbackUrl.origin !== req.nextUrl.origin) {
+          const bridge = new URL("/api/post-login", req.url);
+          bridge.searchParams.set("callbackUrl", callbackUrl.toString());
+          return NextResponse.redirect(bridge);
+        }
+        return NextResponse.redirect(callbackUrl);
       } catch {
         // fall through
       }
     }
-    if (token.isSuperAdmin) {
-      const adminUrl = process.env.NEXT_PUBLIC_ADMIN_URL;
-      if (adminUrl) return NextResponse.redirect(adminUrl);
-    }
+    // Super admins land on the launcher /apps like everyone else; they
+    // reach the org-admin portal via the Super Admin capsule rendered on
+    // the launcher header. Auto-redirecting them away from /apps surprised
+    // users who explicitly wanted the launcher view (e.g. OAuth login,
+    // which has no callbackUrl and previously fell through to admin).
     const launcherUrl =
       process.env.NEXT_PUBLIC_LAUNCHER_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL;
     if (launcherUrl) {
       const apps = `${launcherUrl.replace(/\/+$/, "").replace(/\/apps$/, "")}/apps`;
-      return NextResponse.redirect(apps);
+      const bridge = new URL("/api/post-login", req.url);
+      bridge.searchParams.set("callbackUrl", apps);
+      return NextResponse.redirect(bridge);
     }
     // No launcher URL configured (shouldn't happen in any real deploy) —
     // let the authenticated user stay rather than bounce to a removed page.
@@ -93,5 +109,13 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Excludes:
+  //   _next/static  — Next.js compiled assets
+  //   _next/image   — Next.js image optimisation
+  //   favicon.ico   — browser-requested
+  //   auth/         — public/auth/* (login-bg.webp, quikit-logo-*.png served
+  //                   by the new login UI). Without this exclusion the
+  //                   middleware redirects asset requests to /login and the
+  //                   page renders with broken image icons.
+  matcher: ["/((?!_next/static|_next/image|auth/|favicon.ico).*)"],
 };

@@ -40,7 +40,16 @@ export const POST = withOrgAuth<RouteParams>(async ({ orgId, userId }, req, { pa
   if (kpi.orgId !== orgId)
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
-  const validated = kpiNoteSchema.parse(await req.json());
+  // safeParse → 400 with friendly message instead of an opaque 500 when
+  // the user pastes a >5000-char note.
+  const parsed = kpiNoteSchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 },
+    );
+  }
+  const validated = parsed.data;
 
   const note = await db.kPINote.create({
     data: { kpiId: params.id, orgId, content: validated.content, authorId: userId },

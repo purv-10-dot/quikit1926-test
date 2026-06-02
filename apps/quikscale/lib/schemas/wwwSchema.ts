@@ -9,10 +9,11 @@ export const createWWWSchema = z
     // instead. When both are present, `whoIds[0]` wins.
     who:             z.string().min(1).optional(),
     whoIds:          z.array(z.string().min(1)).optional(),
-    what:            z.string().min(1, "What is required").max(500),
+    // No length cap on user-content fields — Prisma columns are `text`.
+    what:            z.string().min(1, "What is required"),
     when:            z.string().min(1, "Due date is required"),
     status:          z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","in-progress","blocked"]).default("not-yet-started"),
-    notes:           z.string().max(2000).optional().nullable(),
+    notes:           z.string().optional().nullable(),
     category:        z.enum(["eNPS", "cNPS", "Others"]).optional().nullable(),
     originalDueDate: z.string().optional().nullable(),
   })
@@ -26,10 +27,10 @@ export const createWWWSchema = z
 export const updateWWWSchema = z.object({
   who:             z.string().min(1).optional(),
   whoIds:          z.array(z.string().min(1)).optional(),
-  what:            z.string().min(1).max(500).optional(),
+  what:            z.string().min(1).optional(),
   when:            z.string().min(1).optional(),
   status:          z.enum(["not-applicable","not-yet-started","behind-schedule","on-track","completed","in-progress","blocked"]).optional(),
-  notes:           z.string().max(2000).optional().nullable(),
+  notes:           z.string().optional().nullable(),
   category:        z.enum(["eNPS", "cNPS", "Others"]).optional().nullable(),
   originalDueDate: z.string().optional().nullable(),
   revisedDates:    z.array(z.string()).optional(),

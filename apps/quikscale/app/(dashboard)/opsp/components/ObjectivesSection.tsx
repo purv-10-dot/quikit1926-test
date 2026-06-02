@@ -73,22 +73,28 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
             ))}
           </div>
         </div>
-        <div className="border-t border-gray-100 pt-3">
-          <p className="text-xs font-semibold text-gray-700 mb-2">Profit per X</p>
-          <WithTooltip content={form.profitPerX} className="relative block w-full">
-            <FInput value={form.profitPerX} onChange={(v) => set("profitPerX", v)} maxLength={280} />
-          </WithTooltip>
-        </div>
-        {/* BHAG — fills remaining space */}
-        <div className="border-t border-gray-100 pt-3 flex-1 flex flex-col">
-          <p className="text-xs font-semibold text-gray-700 mb-2">BHAG&reg;</p>
-          <FTextarea
-            value={form.bhag}
-            onChange={(v) => set("bhag", v)}
-            rows={3}
-            className="flex-1 min-h-[60px]"
-            maxLength={280}
-          />
+        {/* Profit per X + BHAG — split remaining card space equally */}
+        <div className="border-t border-gray-100 pt-3 flex-1 flex flex-col gap-3 min-h-0">
+          <div className="flex-1 flex flex-col min-h-0">
+            <p className="text-xs font-semibold text-gray-700 mb-2">Profit per X</p>
+            <FTextarea
+              value={form.profitPerX}
+              onChange={(v) => set("profitPerX", v)}
+              rows={5}
+              className="flex-1 min-h-[140px]"
+              maxLength={280}
+            />
+          </div>
+          <div className="flex-1 flex flex-col min-h-0">
+            <p className="text-xs font-semibold text-gray-700 mb-2">BHAG&reg;</p>
+            <FTextarea
+              value={form.bhag}
+              onChange={(v) => set("bhag", v)}
+              rows={5}
+              className="flex-1 min-h-[140px]"
+              maxLength={280}
+            />
+          </div>
         </div>
       </Card>
     </>

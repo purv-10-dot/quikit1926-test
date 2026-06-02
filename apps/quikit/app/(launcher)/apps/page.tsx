@@ -88,7 +88,19 @@ export default function AppLauncherPage() {
   const userEmail = session?.user?.email || "";
 
   async function handleSignOut() {
-    await globalSignOut({ localSignOut: () => signOut({ redirect: false }) });
+    // Chain through the auth host + launcher's signout-global so all
+    // three host-only cookies (launcher local, auth IdP, launcher SLO
+    // extras like csrf/pkce) are cleared. Land the user on the launcher's
+    // public marketing page — clean state, "Log in" CTA available.
+    const launcherUrl =
+      process.env.NEXT_PUBLIC_QUIKIT_URL?.replace(/\/+$/, "") ??
+      (typeof window !== "undefined" ? window.location.origin : "");
+    await globalSignOut({
+      authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
+      quikitUrl: launcherUrl,
+      localSignOut: () => signOut({ redirect: false }),
+      postLogoutRedirect: `${launcherUrl}/`,
+    });
   }
 
   async function handleExitImpersonation() {

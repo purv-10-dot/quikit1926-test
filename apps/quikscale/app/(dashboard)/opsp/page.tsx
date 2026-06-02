@@ -316,7 +316,7 @@ export default function OPSPPage() {
             <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-red-800">Cannot finalize — fix {validationErrors.length} issue{validationErrors.length === 1 ? "" : "s"}</p>
-              <p className="text-xs text-red-600 mt-0.5">Projection vs breakdown sums and missing owners must be resolved.</p>
+              <p className="text-xs text-red-600 mt-0.5">Review the items below and update each row, or remove rows you don&apos;t need.</p>
             </div>
             <button
               onClick={() => setValidationErrors([])}
@@ -383,21 +383,24 @@ export default function OPSPPage() {
         </div>
       )}
 
-      {/* ── Modals ── */}
+      {/* ── Modals ──
+         readOnly is gated on `isLocked` (not `isFinalized`) so an admin with
+         `OPSP.History.EditFinalize:update` can edit modal rows even after the
+         OPSP has been finalized/reviewed. */}
       <ActionsModal open={actionsOpen} onClose={() => setActionsOpen(false)}
         rows={form.actionsQtr} onChange={r => set("actionsQtr", r)}
         fiscalYear={form.year} fiscalQuarter={form.quarter}
-        goalRows={form.goalRows} readOnly={isFinalized} />
+        goalRows={form.goalRows} readOnly={isLocked} />
       <RocksModal open={rocksOpen} onClose={() => setRocksOpen(false)}
-        rows={form.rocks} onChange={r => set("rocks", r)} readOnly={isFinalized} />
+        rows={form.rocks} onChange={r => set("rocks", r)} readOnly={isLocked} />
       <KeyThrustsModal open={keyThrustsOpen} onClose={() => setKeyThrustsOpen(false)}
-        rows={form.keyThrusts} onChange={r => set("keyThrusts", r)} readOnly={isFinalized} />
+        rows={form.keyThrusts} onChange={r => set("keyThrusts", r)} readOnly={isLocked} />
       <KeyInitiativesModal open={keyInitiativesOpen} onClose={() => setKeyInitiativesOpen(false)}
-        rows={form.keyInitiatives} onChange={r => set("keyInitiatives", r)} readOnly={isFinalized} />
+        rows={form.keyInitiatives} onChange={r => set("keyInitiatives", r)} readOnly={isLocked} />
       <AccountabilityModal open={kpiAcctOpen} onClose={() => setKpiAcctOpen(false)}
-        rows={form.kpiAccountability} onChange={r => set("kpiAccountability", r)} readOnly={isFinalized} />
+        rows={form.kpiAccountability} onChange={r => set("kpiAccountability", r)} readOnly={isLocked} />
       <QuarterlyPrioritiesModal open={qPrioritiesOpen} onClose={() => setQPrioritiesOpen(false)}
-        rows={form.quarterlyPriorities} onChange={r => set("quarterlyPriorities", r)} readOnly={isFinalized} />
+        rows={form.quarterlyPriorities} onChange={r => set("quarterlyPriorities", r)} readOnly={isLocked} />
 
       {/* ── OPSP Preview (PDF / Word export) ── */}
       <OPSPPreview
@@ -409,8 +412,15 @@ export default function OPSPPage() {
         currentUserName={currentUserName}
       />
 
-      {/* ── Finalized read-only banner ── */}
-      {isFinalized && (
+      {/* ── Finalized banner ──
+         Two variants:
+         - When the OPSP is finalized AND the current user cannot edit it
+           (`isLocked`): show the read-only lock copy.
+         - When the OPSP is finalized but the current user has
+           `OPSP.History.EditFinalize:update` (`isFinalized && !isLocked`):
+           show an amber "you have permission to edit" banner so the editor
+           still knows they are mutating a finalized document. */}
+      {isFinalized && isLocked && (
         <div className="mx-6 mt-6 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
           <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
             <Check className="h-4 w-4 text-green-600" />
@@ -421,8 +431,19 @@ export default function OPSPPage() {
           </div>
         </div>
       )}
+      {isFinalized && !isLocked && (
+        <div className="mx-6 mt-6 flex items-center gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+            <Check className="h-4 w-4 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">OPSP Finalized — Editing enabled</p>
+            <p className="text-xs text-amber-600">You have permission to edit this finalized OPSP. Changes will be autosaved.</p>
+          </div>
+        </div>
+      )}
 
-      <div className={cn("px-6 py-6 space-y-8", isFinalized && "opsp-finalized")}>
+      <div className={cn("px-6 py-6 space-y-8", isLocked && "opsp-finalized")}>
 
         {/* ══════════════════════════ PEOPLE ══════════════════════════ */}
         <div>

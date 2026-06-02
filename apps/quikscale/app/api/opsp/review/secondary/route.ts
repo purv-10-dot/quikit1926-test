@@ -43,7 +43,47 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Upsert the secondary entry (period="secondary", status stored in comment as JSON prefix)
+    // 2a. Snapshot pre-update state. comment field stores JSON {status, text}.
+    const prev = await db.oPSPReviewEntry.findUnique({
+      where: {
+        orgId_opspId_horizon_rowIndex_period: {
+          orgId,
+          opspId: opsp.id,
+          horizon,
+          rowIndex,
+          period: "secondary",
+        },
+      },
+      select: { comment: true, category: true },
+    });
+    let prevStatus: string | null = null;
+    let prevText = "";
+    if (prev?.comment) {
+      try {
+        const parsed = JSON.parse(prev.comment) as { status?: string | null; text?: string };
+        prevStatus = parsed.status ?? null;
+        prevText = parsed.text ?? "";
+      } catch {
+        // Pre-JSON entries — surface raw string as the text.
+        prevText = prev.comment;
+      }
+    }
+    const oldSnapshot = {
+      horizon,
+      rowIndex,
+      category: prev?.category ?? null,
+      status: prevStatus,
+      comment: prevText,
+    };
+    const newSnapshot = {
+      horizon,
+      rowIndex,
+      category,
+      status: status ?? null,
+      comment: comment ?? "",
+    };
+
+    // 2b. Upsert the secondary entry (period="secondary", status stored in comment as JSON prefix)
     const savedEntry = await db.oPSPReviewEntry.upsert({
       where: {
         orgId_opspId_horizon_rowIndex_period: {
@@ -79,8 +119,10 @@ export async function POST(req: NextRequest) {
       action: "UPDATE",
       entityType: "Review",
       entityId: opsp.id,
+      oldValues: oldSnapshot,
+      newValues: newSnapshot,
       changes: [`${horizon}:secondary:${category}:row${rowIndex}`],
-      reason: `OPSP Review: ${horizon} secondary row ${rowIndex}`,
+      reason: `OPSP Secondary (${horizon}|rowIndex=${rowIndex}): ${category}`,
     });
 
     return NextResponse.json({

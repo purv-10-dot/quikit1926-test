@@ -165,33 +165,14 @@ describe("POST /api/kpi — individual happy path", () => {
   });
 });
 
-describe("POST /api/kpi — team KPI permission", () => {
+describe("POST /api/kpi — team KPI data integrity", () => {
+  // Authorization for team KPI creation is now governed solely by RBAC v2
+  // `TeamKPI:create` (enforced by `auth.create`). The legacy "must be team
+  // head or admin tier" instance-level gate was removed — see
+  // [[reference-claude-md]] (dynamic perms direction).
   beforeEach(() => {
-    // Non-admin membership (so canManageTeamKPI must check team head)
-    setSession({ id: USER, orgId: TENANT, role: "member" });
-    mockDb.orgMember.findFirst.mockResolvedValue({
-      id: "m1",
-      userId: USER,
-      orgId: TENANT,
-      role: "employee",
-      status: "active",
-    } as any);
+    asAdmin();
     mockDb.featureFlag.findMany.mockResolvedValue([]);
-    // Team exists in tenant
-    mockDb.team.findUnique.mockResolvedValue({
-      id: TEAM,
-      orgId: TENANT,
-      headId: "someone-else",
-    } as any);
-  });
-
-  it("returns 403 when user is not team head and not admin", async () => {
-    // canManageTeamKPI reads team.findFirst (not findUnique); simulate "not head"
-    mockDb.team.findFirst.mockResolvedValue({ headId: "someone-else" } as any);
-    const res = await POST(buildRequest(baseTeam), { params: {} } as any);
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error).toMatch(/team head or admin/i);
   });
 
   it("returns 404 when team does not exist in tenant", async () => {

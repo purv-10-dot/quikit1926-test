@@ -5,6 +5,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { resolveFiscalYearStart } from "@/lib/api/fiscalYearStart";
+import { userCan, forbidden } from "@/lib/api/permissions";
 const auth = withOrgAuthForResource("opsp.create", "OPSP.Create");
 
 /**
@@ -202,20 +203,44 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
   const { year, quarter, ...fields } = parsed.data;
   const yearNum = typeof year === "number" ? year : parseInt(year);
 
-  // Status is a state machine: draft → finalized → reviewed (later states
-  // are stronger locks). Autosave must never DOWNGRADE the server-side
-  // status. The client's editable form can transiently hold a weaker value
-  // (e.g. the very first autosave of a freshly-opened reviewed OPSP), so we
-  // re-fetch the current status and drop the incoming `status` field
-  // whenever it would move the record backwards.
+  // Read the current record once and use it for two checks below:
+  //   (a) edit-after-finalize gate — block mutations to a finalized/reviewed
+  //       record unless the caller holds `OPSP.History.EditFinalize:update`.
+  //   (b) status downgrade guard — see comment below.
+  const current = await db.oPSPData.findUnique({
+    where: { orgId_userId_year_quarter: { orgId, userId, year: yearNum, quarter } },
+    select: { status: true },
+  });
+  const currentStatus = current?.status ?? "draft";
+
+  // (a) Server-side mirror of the client `isLocked` predicate. Without this
+  // a malicious client could call PUT directly and overwrite a finalized
+  // OPSP. The History page Edit button and the OPSP editor lock are gated
+  // on the same permission, so this just closes the loop on the server.
+  if (currentStatus === "finalized" || currentStatus === "reviewed") {
+    const canEditFinalized = await userCan(
+      userId,
+      orgId,
+      "OPSP.History.EditFinalize",
+      "update",
+    );
+    if (!canEditFinalized) {
+      return forbidden(
+        "This OPSP is finalized. Editing requires the 'Edit after Finalize' permission.",
+      );
+    }
+  }
+
+  // (b) Status is a state machine: draft → finalized → reviewed (later
+  // states are stronger locks). Autosave must never DOWNGRADE the
+  // server-side status. The client's editable form can transiently hold a
+  // weaker value (e.g. the very first autosave of a freshly-opened reviewed
+  // OPSP), so we drop the incoming `status` field whenever it would move
+  // the record backwards.
   const STATUS_RANK: Record<string, number> = { draft: 0, finalized: 1, reviewed: 2 };
   if (typeof (fields as { status?: unknown }).status === "string") {
-    const current = await db.oPSPData.findUnique({
-      where: { orgId_userId_year_quarter: { orgId, userId, year: yearNum, quarter } },
-      select: { status: true },
-    });
     const incoming = (fields as { status: string }).status;
-    const currentRank = STATUS_RANK[current?.status ?? "draft"] ?? 0;
+    const currentRank = STATUS_RANK[currentStatus] ?? 0;
     const incomingRank = STATUS_RANK[incoming] ?? 0;
     if (incomingRank < currentRank) {
       delete (fields as { status?: string }).status;

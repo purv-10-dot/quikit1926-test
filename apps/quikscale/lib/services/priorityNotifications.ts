@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { sendEmail, buildPriorityAssignmentEmail } from "./email";
+import { getAppBaseUrl } from "./appUrl";
 
 export interface NotifyPriorityAssignmentParams {
   orgId: string;
@@ -45,10 +46,8 @@ export async function notifyPriorityAssignment(params: NotifyPriorityAssignmentP
     ? `${creator.firstName ?? ""} ${creator.lastName ?? ""}`.trim() || (creator.email ?? "A teammate")
     : "A teammate";
 
-  const baseUrl = process.env.APP_URL || process.env.NEXTAUTH_URL || "";
-  const priorityUrl = baseUrl
-    ? `${baseUrl.replace(/\/$/, "")}/priority?highlight=${priorityId}`
-    : undefined;
+  const baseUrl = getAppBaseUrl();
+  const priorityUrl = baseUrl ? `${baseUrl}/priority?highlight=${priorityId}` : undefined;
 
   const title = "A Priority has been assigned to you";
   const message = `${creatorName} assigned you "${priorityName}" for ${quarter} ${year}.`;

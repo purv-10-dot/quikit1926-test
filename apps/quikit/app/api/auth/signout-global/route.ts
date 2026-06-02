@@ -38,15 +38,44 @@ const NEXT_AUTH_COOKIES = [
   "__Secure-next-auth.state",
 ];
 
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://quik-it-auth.vercel.app",
+  "https://quikscale.vercel.app",
+  "https://quik-it-admin.vercel.app",
+  "https://quiktrack.vercel.app",
+  "https://quikvc.vercel.app",
+  "https://quiksocial.vercel.app",
+  "https://quikinfra.vercel.app",
+  "https://apps.quikit.ai",
+  "https://scale.quikit.ai",
+  "https://orgadmin.quikit.ai",
+  "https://track.quikit.ai",
+  "https://quikcrm.quikit.ai",
+  "https://social.quikit.ai",
+  "https://quikinfra.quikit.ai",
+];
+
+function allowedOrigins(): Set<string> {
+  const extra = (process.env.AUTH_ALLOWED_RETURN_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+  return new Set([...DEFAULT_ALLOWED_ORIGINS, ...extra]);
+}
+
 function resolveRedirect(req: NextRequest): URL {
   const raw = req.nextUrl.searchParams.get("callbackUrl");
-  const fallback = new URL("/login", req.nextUrl.origin);
+  const fallback = new URL("/", req.nextUrl.origin);
   if (!raw) return fallback;
 
   try {
     const parsed = new URL(raw, req.nextUrl.origin);
-    // Restrict to same-origin to prevent open-redirect abuse.
+    // Same-origin always allowed. Cross-origin allowed only when the
+    // destination is in the cross-app allow-list — keeps this endpoint
+    // from becoming an open redirector while still letting `globalSignOut`
+    // land the user on the originating sub-app's landing page.
     if (parsed.origin === req.nextUrl.origin) return parsed;
+    if (allowedOrigins().has(parsed.origin)) return parsed;
   } catch {
     // Malformed URL — fall through to fallback.
   }

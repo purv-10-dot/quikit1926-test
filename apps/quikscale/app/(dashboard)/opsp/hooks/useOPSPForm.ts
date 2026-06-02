@@ -311,23 +311,48 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     });
   }, [form.targetRows]);
 
+  // Goals (1 YR) → Actions (QTR): row count is owned by Goals (length sync
+  // below) and the cascade seeds each Action row's category from the
+  // matching Goal. The category field stays editable in the UI so the user
+  // can override per row — but a subsequent edit to the Goal at the same
+  // index will re-propagate (mirrors the Targets → Goals cascade above).
+  // Action-specific values (`projected`, `m1`, `m2`, `m3`) reset whenever
+  // the bound Goal category changes so they don't get stranded against an
+  // out-of-date category.
   useEffect(() => {
-    // Goals (1 YR) → Actions (QTR): same live category-only binding as the
-    // Targets → Goals cascade. Action's `projected` + m-cells reset when the
-    // bound Goal category changes.
     if (skipNextGoalsCascade.current) {
       skipNextGoalsCascade.current = false;
       return;
     }
     setForm(prev => {
-      const next = [...prev.actionsQtr];
+      const goalLen = prev.goalRows.length;
+      const actLen  = prev.actionsQtr.length;
+      let next: ActionRow[] = prev.actionsQtr;
       let changed = false;
-      for (let i = 0; i < Math.min(prev.goalRows.length, next.length); i++) {
-        const g = prev.goalRows[i];
-        if (g.category.trim() && next[i].category !== g.category) {
+
+      // 1) Length sync — grow or shrink Actions to match Goals. Spread/slice
+      //    creates a fresh array, so step 2 below can mutate `next` freely.
+      if (goalLen !== actLen) {
+        next = goalLen > actLen
+          ? [
+              ...prev.actionsQtr,
+              ...Array.from({ length: goalLen - actLen }, (): ActionRow => ({
+                category: "", projected: "", m1: "", m2: "", m3: "",
+              })),
+            ]
+          : prev.actionsQtr.slice(0, goalLen);
+        changed = true;
+      }
+
+      // 2) Category sync — copy Goal category into the matching Action row,
+      //    resetting projected + m-cells when the bound category changes so
+      //    they don't get stranded against an out-of-date category.
+      for (let i = 0; i < goalLen; i++) {
+        if (prev.goalRows[i].category !== next[i].category) {
+          if (next === prev.actionsQtr) next = [...next]; // clone-on-first-write
           next[i] = {
             ...next[i],
-            category: g.category,
+            category: prev.goalRows[i].category,
             projected: "",
             m1: "",
             m2: "",
@@ -336,6 +361,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
           changed = true;
         }
       }
+
       return changed ? { ...prev, actionsQtr: next } : prev;
     });
   }, [form.goalRows]);

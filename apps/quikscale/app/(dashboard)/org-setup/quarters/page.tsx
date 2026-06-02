@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Search, ChevronDown, Calendar,
   Plus, X, Pencil, Trash2, MoreVertical, Filter,
-  CalendarDays, Lock,
+  CalendarDays, Lock, Info,
 } from "lucide-react";
 import { invalidateFiscalYearsCache } from "@/lib/hooks/useFiscalYears";
 import {
@@ -925,6 +925,33 @@ export default function QuarterSettingsPage() {
           )}
         </div>
       </div>
+
+      {/* ── Lock-state banner ──
+          Only show when an FY with quarter rows is selected. The wording is
+          the contract that backs the server-side lock enforcement in
+          PUT/DELETE /api/org/quarters/[id] + DELETE /api/org/quarters?year=. */}
+      {selectedYear !== null && filtered.length > 0 && !loading && (
+        fyHasData ? (
+          <div className=" m-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 flex items-center gap-2.5">
+            <Lock className="h-4 w-4 text-amber-600 flex-shrink-0" />
+            <p className="text-xs leading-relaxed text-amber-800 font-medium">
+              Once you start entering the data into Goals, you won&apos;t be able to edit your quarters.
+            </p>
+          </div>
+        ) : (
+          <div className="mx-6 mt-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-2.5">
+            <Info className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-xs leading-relaxed">
+              <p className="font-semibold text-amber-800 mb-0.5">Quarter dates are editable — for now</p>
+              <p className="text-amber-700">
+                Once you create a KPI, Priority, or OPSP goal for <span className="font-semibold">{fyLabel}</span>,
+                the Q1 start date and all quarter dates will be permanently locked and cannot be deleted.
+                Set your dates correctly before adding any data.
+              </p>
+            </div>
+          </div>
+        )
+      )}
 
       {/* ── Content ── */}
       <TableView />

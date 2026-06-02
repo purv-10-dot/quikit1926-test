@@ -5,6 +5,7 @@ import { useCreateKPI, useUpdateKPI } from "@/lib/hooks/useKPI";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
+import { humanizeApiError } from "@/lib/utils/humanizeError";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
@@ -508,25 +509,41 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
 
   function validate() {
     const errs: Record<string, string> = {};
-    if (!form.name.trim()) errs.name = "KPI name is required";
+
+    // Required-field gates (apply to both Individual and Team KPI). Surfaced
+    // inline as red asterisks + per-field error text so users never round-trip
+    // to the server for missing-field errors.
+    if (!form.name.trim()) errs.name = "Please enter a KPI name.";
+    if (!form.quarter) errs.quarter = "Please select a quarter.";
+    if (!form.frequency) errs.frequency = "Please choose a frequency.";
+
+    const targetNum = parseFloat(form.target);
+    if (form.target === "" || isNaN(targetNum) || targetNum <= 0) {
+      errs.target = "Please enter a target value greater than 0.";
+    }
+    if (!form.divisionType) errs.divisionType = "Please choose a division type.";
+    if (form.reverseColor === undefined || form.reverseColor === null) {
+      errs.reverseColor = "Please choose a color-coding direction.";
+    }
+
     if (isTeamScope) {
-      if (!form.teamId) errs.teamId = "Team is required";
-      if (form.ownerIds.length === 0) errs.ownerIds = "At least one owner is required";
+      if (!form.teamId) errs.teamId = "Please select a team.";
+      if (form.ownerIds.length === 0) errs.ownerIds = "Please pick at least one owner for this Team KPI.";
       if (form.ownerIds.length > 0) {
         const sum = Object.values(form.ownerContributions).reduce((s, v) => s + (parseFloat(v) || 0), 0);
         if (Math.abs(sum - 100) > 0.5) {
-          errs.ownerContributions = `Contributions must sum to 100% (currently ${sum.toFixed(1)}%)`;
+          errs.ownerContributions = `Contributions must sum to 100% (currently ${sum.toFixed(1)}%).`;
         }
         for (const id of form.ownerIds) {
           const v = parseFloat(form.ownerContributions[id]);
           if (isNaN(v) || v < 0) {
-            errs.ownerContributions = "Each owner must have a valid contribution %";
+            errs.ownerContributions = "Each owner must have a valid contribution %.";
             break;
           }
         }
       }
     } else {
-      if (!form.owner) errs.owner = "Owner is required";
+      if (!form.owner) errs.owner = "Please select an owner for this KPI.";
     }
     return errs;
   }
@@ -614,8 +631,8 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         await updateKPI.mutateAsync(editPayload);
       }
       onSuccess();
-    } catch (err: any) {
-      setErrors({ _: err.message || "Failed to save KPI" });
+    } catch (err: unknown) {
+      setErrors({ _: humanizeApiError(err, { context: "KPI", fallback: "Couldn't save the KPI. Please try again." }) });
     } finally {
       setSaving(false);
     }
@@ -817,13 +834,18 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
           {/* Quarter (read-only) + Frequency */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Quarter</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Quarter <span className="text-red-500">*</span>
+              </label>
               <div className="px-3 py-2 text-xs border border-gray-100 rounded-lg bg-gray-50 text-gray-600">
                 {fiscalYearLabel(parseInt(form.year))} · {form.quarter}
               </div>
+              {errors.quarter && <p className="text-[10px] text-red-500 mt-0.5">{errors.quarter}</p>}
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Frequency</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Frequency <span className="text-red-500">*</span>
+              </label>
               <DropdownPicker
                 value={form.frequency}
                 onChange={(v) => set("frequency", v)}
@@ -834,6 +856,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                   { value: "yearly",  label: "Yearly"  },
                 ]}
               />
+              {errors.frequency && <p className="text-[10px] text-red-500 mt-0.5">{errors.frequency}</p>}
             </div>
           </div>
 
@@ -869,8 +892,10 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
 
           {/* Target Value */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Target Value</label>
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden focus-within:ring-1 focus-within:ring-accent-400 focus-within:border-accent-400">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Target Value <span className="text-red-500">*</span>
+            </label>
+            <div className={`flex rounded-lg border overflow-hidden focus-within:ring-1 focus-within:ring-accent-400 focus-within:border-accent-400 ${errors.target ? "border-red-300" : "border-gray-200"}`}>
               {isCurrency && (
                 <span className="flex items-center px-2.5 bg-gray-50 border-r border-gray-200 text-xs text-gray-500 select-none whitespace-nowrap flex-shrink-0">
                   {currencyObj.symbol}
@@ -888,6 +913,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                 </select>
               )}
             </div>
+            {errors.target && <p className="text-[10px] text-red-500 mt-0.5">{errors.target}</p>}
             {isCurrency && form.targetScale && scaledTarget > 0 && (
               <p className="text-[10px] text-gray-400 mt-1">
                 = {formatActual(scaledTarget, currencyObj.symbol, form.currency)}
@@ -977,41 +1003,35 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
             </div>
           )}
 
-          {/* Division Type + Status */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Division Type</label>
-              <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
-                {(["Cumulative", "Standalone"] as const).map(dt => (
-                  <button key={dt} type="button" onClick={() => setDivisionType(dt)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                      form.divisionType === dt ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-                    }`}>
-                    {dt}
-                  </button>
-                ))}
-              </div>
-              <p className="text-[10px] text-gray-400 mt-1">
-                {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
-              </p>
+          {/* Division Type — Status field removed per product spec; the form
+              still preserves the existing KPI status on edit (and defaults to
+              "active" on create) via the form state, but the UI no longer
+              exposes it. */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Division Type <span className="text-red-500">*</span>
+            </label>
+            <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
+              {(["Cumulative", "Standalone"] as const).map(dt => (
+                <button key={dt} type="button" onClick={() => setDivisionType(dt)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    form.divisionType === dt ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  }`}>
+                  {dt}
+                </button>
+              ))}
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-              <div className="flex gap-3 mt-1">
-                {(["active", "paused", "completed"] as const).map(s => (
-                  <label key={s} className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" name="status" value={s} checked={form.status === s}
-                      onChange={() => set("status", s)} className="text-accent-600" />
-                    <span className="text-xs text-gray-600 capitalize">{s}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            {errors.divisionType && <p className="text-[10px] text-red-500 mt-0.5">{errors.divisionType}</p>}
+            <p className="text-[10px] text-gray-400 mt-1">
+              {form.divisionType === "Cumulative" ? "Target split equally across 13 weeks" : "Each week carries the full target value"}
+            </p>
           </div>
 
           {/* Color Coding Mode */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Color Coding</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Color Coding <span className="text-red-500">*</span>
+            </label>
             <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg w-fit">
               <button type="button" onClick={() => setForm(f => ({ ...f, reverseColor: false }))}
                 className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
@@ -1026,6 +1046,7 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                 Lower is Better
               </button>
             </div>
+            {errors.reverseColor && <p className="text-[10px] text-red-500 mt-0.5">{errors.reverseColor}</p>}
             <p className="text-[10px] text-gray-400 mt-1">
               {form.reverseColor
                 ? "Reverse mode — use for defects, delays, errors (lower values = better performance)"
