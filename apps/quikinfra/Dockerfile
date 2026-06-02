@@ -1,66 +1,90 @@
-# QuikInfra — production Docker image
-# Monorepo-aware multi-stage build. Run from repo root:
-#   docker build -f apps/quikinfra/Dockerfile -t quikinfra:latest .
+# syntax=docker/dockerfile:1.6
+#
+# Multi-stage Docker build for the `quikinfra` Next.js app
+# Pattern:
+#   turbo prune --docker
+#   → install deps (ignore scripts)
+#   → prisma generate (explicit)
+#   → turbo build
+#   → minimal runtime image
+#
+# Build from repo root:
+# docker build -f apps/quikinfra/Dockerfile -t quikinfra:latest .
 
-# ──────────────────────────────────────────────────────────────────────
-# Stage 1: deps — install production dependencies + generate prisma client
-# ──────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat openssl
-WORKDIR /repo
+FROM node:20-alpine AS base
 
-# Copy manifests + prisma schema BEFORE install — the database package has a
-# postinstall hook that runs `prisma generate` which needs the schema present.
-COPY package.json package-lock.json turbo.json ./
-COPY packages/database ./packages/database
-COPY packages/auth/package.json ./packages/auth/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/ui/package.json ./packages/ui/
-COPY apps/quikinfra/package.json ./apps/quikinfra/
+# ─────────────────────────────────────────────────────────────
+# Stage 1 — builder: prune monorepo to quikinfra + deps
+# ─────────────────────────────────────────────────────────────
+FROM base AS builder
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
 
-# Install deps; prisma client generates via postinstall inside packages/database
-RUN DATABASE_URL="postgresql://build:build@build/build" DATABASE_URL_DIRECT="postgresql://build:build@build/build" \
-    npm ci --prefer-offline --no-audit
-
-# ──────────────────────────────────────────────────────────────────────
-# Stage 2: build — Next.js production build
-# ──────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
-RUN apk add --no-cache libc6-compat openssl
-WORKDIR /repo
-
-COPY --from=deps /repo/node_modules ./node_modules
-COPY --from=deps /repo/packages/database ./packages/database
+RUN npm install -g turbo
 COPY . .
+RUN turbo prune quikinfra --docker
 
-ENV NEXT_TELEMETRY_DISABLED=1
+# ─────────────────────────────────────────────────────────────
+# Stage 2 — installer: install deps, prisma generate, build
+# ─────────────────────────────────────────────────────────────
+FROM base AS installer
+RUN apk add --no-cache libc6-compat openssl
+WORKDIR /app
+
+# Install pruned dependencies (skip postinstall!)
+COPY --from=builder /app/out/json/ .
+COPY --from=builder /app/out/package-lock.json ./package-lock.json
+RUN npm install --ignore-scripts
+
+# Copy full pruned source
+COPY --from=builder /app/out/full/ .
+COPY turbo.json turbo.json
+COPY tsconfig.base.json tsconfig.base.json
+
+# ── Build-time placeholders (NOT real secrets)
+# Required for Prisma + Next.js build only
+ARG DATABASE_URL="postgresql://x:x@localhost:5432/x"
+ARG DATABASE_URL_DIRECT="postgresql://x:x@localhost:5432/x"
+
+ENV DATABASE_URL=$DATABASE_URL
+ENV DATABASE_URL_DIRECT=$DATABASE_URL_DIRECT
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
+# Explicit Prisma client generation (multiSchema-safe)
+RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
+
+# Ensure Next.js expected dirs exist
+RUN mkdir -p apps/quikinfra/public
+RUN mkdir -p apps/quikinfra/.next/static
+
+# Build only quikinfra
 RUN npx turbo build --filter=quikinfra
 
-# ──────────────────────────────────────────────────────────────────────
-# Stage 3: runner — minimal image
-# ──────────────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+# ─────────────────────────────────────────────────────────────
+# Stage 3 — runner: minimal production image
+# ─────────────────────────────────────────────────────────────
+FROM base AS runner
 RUN apk add --no-cache openssl
 WORKDIR /app
+
+# Non-root user
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 nextjs
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3007
-ENV QC_DOCS_ROOT=/app/uploads
+ENV HOSTNAME="0.0.0.0"
 
-# Non-root user
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+# Standalone Next.js output
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/.next/standalone ./
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/.next/static ./apps/quikinfra/.next/static
+COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/public ./apps/quikinfra/public
 
-# Copy the built app (Next.js standalone output)
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/quikinfra/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/quikinfra/.next/static ./apps/quikinfra/.next/static
-COPY --from=builder --chown=nextjs:nodejs /repo/apps/quikinfra/public ./apps/quikinfra/public
-COPY --from=builder --chown=nextjs:nodejs /repo/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder --chown=nextjs:nodejs /repo/node_modules/.prisma ./node_modules/.prisma
-
-RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
+# Prisma engines (standalone does not always trace these)
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 
 USER nextjs
 EXPOSE 3007
