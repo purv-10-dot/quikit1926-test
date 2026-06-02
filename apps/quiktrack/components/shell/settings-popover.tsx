@@ -176,7 +176,7 @@ export function SettingsPopover({
       role="menu"
     >
       {/* Search row */}
-      <div className="px-4 pt-4 pb-3 border-b border-gray-100 flex items-center justify-end">
+      {/* <div className="px-4 pt-4 pb-3 border-b border-gray-100 flex items-center justify-end">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
           <input
@@ -186,7 +186,7 @@ export function SettingsPopover({
             disabled
           />
         </div>
-      </div>
+      </div> */}
 
       {/* Hide disabled (coming-soon) items so only implemented destinations show. */}
       {SECTIONS.map((section) => {

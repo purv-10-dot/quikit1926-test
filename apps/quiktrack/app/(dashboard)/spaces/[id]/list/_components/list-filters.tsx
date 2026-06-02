@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Filter, X } from "lucide-react";
 import { TYPE_META, PRIORITY_META, type ListFilters, type IssueType, type Priority, type IssueStatus, type UserLite, userLabel } from "./list-types";
+import { BoardFilterSelect } from "../../board/_components/board-filter-select";
 
 interface Props {
   filters: ListFilters;
@@ -48,38 +49,50 @@ export function ListFilterButton({ filters, onChange, statuses, members }: Props
       </button>
 
       {open && (
-        <div className="absolute right-0 z-20 mt-1 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
-          <FilterRow
+        <div className="absolute right-0 z-20 mt-1 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+          <BoardFilterSelect
             label="Type"
             value={filters.type}
             onChange={(v) => onChange({ ...filters, type: v })}
-            options={ALL_TYPES.map((t) => ({ value: t, label: TYPE_META[t].label }))}
+            options={[
+              { value: "", label: "Any" },
+              ...ALL_TYPES.map((t) => ({ value: t, label: TYPE_META[t].label })),
+            ]}
           />
-          <FilterRow
+          <BoardFilterSelect
             label="Status"
             value={filters.statusId}
             onChange={(v) => onChange({ ...filters, statusId: v })}
-            options={statuses.map((s) => ({ value: s.id, label: s.name }))}
+            options={[
+              { value: "", label: "Any" },
+              ...statuses.map((s) => ({ value: s.id, label: s.name })),
+            ]}
           />
-          <FilterRow
+          <BoardFilterSelect
             label="Priority"
             value={filters.priority}
             onChange={(v) => onChange({ ...filters, priority: v })}
-            options={ALL_PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label }))}
+            options={[
+              { value: "", label: "Any" },
+              ...ALL_PRIORITIES.map((p) => ({ value: p, label: PRIORITY_META[p].label })),
+            ]}
           />
-          <FilterRow
+          <BoardFilterSelect
             label="Assignee"
             value={filters.assigneeId}
             onChange={(v) => onChange({ ...filters, assigneeId: v })}
-            options={members
-              .filter((m): m is typeof m & { user: UserLite } => Boolean(m.user))
-              .map((m) => ({ value: m.user.id, label: userLabel(m.user) }))}
+            options={[
+              { value: "", label: "Any" },
+              ...members
+                .filter((m): m is typeof m & { user: UserLite } => Boolean(m.user))
+                .map((m) => ({ value: m.user.id, label: userLabel(m.user) })),
+            ]}
           />
           {count > 0 && (
             <button
               type="button"
               onClick={() => onChange({ ...filters, statusId: "", type: "", priority: "", assigneeId: "" })}
-              className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+              className="mt-2 flex w-full items-center justify-center gap-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
             >
               <X className="h-3 w-3" /> Clear all
             </button>
@@ -90,30 +103,3 @@ export function ListFilterButton({ filters, onChange, statuses, members }: Props
   );
 }
 
-function FilterRow({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <label className="mb-2 block text-xs">
-      <span className="mb-1 block font-medium text-gray-600">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-accent-400"
-      >
-        <option value="">Any</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-    </label>
-  );
-}

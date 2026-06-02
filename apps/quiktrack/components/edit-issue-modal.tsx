@@ -27,8 +27,10 @@ import {
   CornerDownLeft,
   LayoutGrid,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { DeleteTaskModal } from "@/components/delete-task-modal";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
 import { IssueAttachments } from "@/components/issue-attachments";
@@ -239,6 +241,8 @@ export function EditIssueModal({
   const perms = useMyProjectPermissions(projectId);
   const canUpdateIssue = perms.loading || perms.has("Issue", "update");
   const canCreateIssue = perms.loading || perms.has("Issue", "create");
+  const canDeleteIssue = perms.loading || perms.has("Issue", "delete");
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const [issue, setIssue] = useState<IssueFull | null>(null);
   const [statuses, setStatuses] = useState<Status[]>([]);
@@ -532,6 +536,24 @@ export function EditIssueModal({
 
   return (
     <>
+      {issue && (
+        <DeleteTaskModal
+          open={deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          issueId={issue.id}
+          issueKey={issue.key}
+          issueTitle={issue.title}
+          subtaskCount={subtasks.length}
+          subtasks={subtasks.map((s) => ({ id: s.id, key: s.key, title: s.title }))}
+          onDeleted={() => {
+            setDeleteOpen(false);
+            window.dispatchEvent(
+              new CustomEvent("quiktrack:issue-deleted", { detail: { id: issue.id } }),
+            );
+            onClose();
+          }}
+        />
+      )}
       {/* Right-side drawer — no backdrop so the page behind stays interactive. */}
       <aside
         className="fixed top-12 right-0 bottom-0 z-40 bg-white border-l border-gray-200 shadow-xl flex flex-col"
@@ -567,9 +589,20 @@ export function EditIssueModal({
             )}
           </div>
           <div className="flex items-center gap-1 text-gray-500">
-            <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="Open in new tab">
+            {/* <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="Open in new tab">
               <ExternalLink className="h-4 w-4" />
-            </button>
+            </button> */}
+            {issue && canDeleteIssue && (
+              <button
+                type="button"
+                onClick={() => setDeleteOpen(true)}
+                className="p-1.5 hover:bg-red-50 dark:hover:bg-red-500/10 rounded text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                aria-label="Delete task"
+                title="Delete task"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
             <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded" aria-label="Close">
               <X className="h-4 w-4" />
             </button>
@@ -619,7 +652,7 @@ export function EditIssueModal({
                       })()}
                       {issue.parent.key}
                     </button>
-                  ) : linkedEpic ? (
+                  ) : issue.type === "EPIC" ? null : linkedEpic ? (
                     <button
                       type="button"
                       onClick={() => attachEpic("")}
@@ -677,7 +710,7 @@ export function EditIssueModal({
                       )}
                     </div>
                   )}
-                  <span className="text-gray-400 mx-1">/</span>
+                  {issue.type !== "EPIC" && <span className="text-gray-400 mx-1">/</span>}
                   <span className="inline-flex items-center gap-1">
                     {(() => {
                       const T = typeMeta(issue.type);
@@ -686,7 +719,7 @@ export function EditIssueModal({
                     {issue.key}
                   </span>
                 </div>
-                <div className="inline-flex items-center gap-1 text-gray-500">
+                {/* <div className="inline-flex items-center gap-1 text-gray-500">
                   <button className="p-1 hover:bg-gray-100 rounded" aria-label="Lock">
                     <Lock className="h-3.5 w-3.5" />
                   </button>
@@ -699,7 +732,7 @@ export function EditIssueModal({
                   <button className="p-1 hover:bg-gray-100 rounded" aria-label="More">
                     <MoreHorizontal className="h-3.5 w-3.5" />
                   </button>
-                </div>
+                </div> */}
               </div>
 
               {/* Time-exceeded banner — shows when total logged hours
@@ -761,12 +794,12 @@ export function EditIssueModal({
 
               {/* Action toolbar: Add, More, Status, lightning */}
               <div className="flex items-center gap-2 mb-5">
-                <button className="inline-flex items-center justify-center h-7 w-7 rounded border border-gray-300 hover:bg-gray-50 text-gray-600" aria-label="Add">
+                {/* <button className="inline-flex items-center justify-center h-7 w-7 rounded border border-gray-300 hover:bg-gray-50 text-gray-600" aria-label="Add">
                   <Plus className="h-3.5 w-3.5" />
                 </button>
                 <button className="inline-flex items-center justify-center h-7 w-7 rounded border border-gray-300 hover:bg-gray-50 text-gray-600" aria-label="More">
                   <MoreHorizontal className="h-3.5 w-3.5" />
-                </button>
+                </button> */}
 
                 <div className="relative" ref={statusRef}>
                   <button
@@ -805,9 +838,9 @@ export function EditIssueModal({
                   )}
                 </div>
 
-                <button className="inline-flex items-center justify-center h-7 w-7 rounded text-amber-500 hover:bg-amber-50" aria-label="Automation">
+                {/* <button className="inline-flex items-center justify-center h-7 w-7 rounded text-amber-500 hover:bg-amber-50" aria-label="Automation">
                   <ZapIcon className="h-3.5 w-3.5" />
-                </button>
+                </button> */}
               </div>
 
               {/* Description */}
@@ -881,7 +914,7 @@ export function EditIssueModal({
                         Subtasks
                       </button>
                       <div className="flex items-center gap-1 text-gray-500">
-                        {hasAny && (
+                        {/* {hasAny && (
                           <>
                             <button
                               className="p-1 hover:bg-gray-100 rounded"
@@ -896,7 +929,7 @@ export function EditIssueModal({
                               <LayoutGrid className="h-3.5 w-3.5" />
                             </button>
                           </>
-                        )}
+                        )} */}
                         {canCreateIssue && (
                         <button
                           type="button"
@@ -941,7 +974,7 @@ export function EditIssueModal({
 
                             {/* Subtask grid (paginated by scroll) */}
                             <div className="border border-gray-200 rounded-md overflow-x-auto">
-                              <div className="grid grid-cols-[minmax(180px,1.6fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(100px,0.9fr)_minmax(90px,0.8fr)_minmax(80px,0.7fr)] bg-gray-50 border-b border-gray-200 text-[11px] font-medium text-gray-600 uppercase tracking-wide">
+                              <div className="grid grid-cols-[minmax(180px,1.6fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(120px,1fr)_minmax(90px,0.8fr)_minmax(80px,0.7fr)] bg-gray-50 border-b border-gray-200 text-[11px] font-medium text-gray-600 uppercase tracking-wide">
                                 <div className="px-3 py-2">Work</div>
                                 <div className="px-3 py-2">Priority</div>
                                 <div className="px-3 py-2">Assignee</div>
@@ -1074,7 +1107,7 @@ export function EditIssueModal({
                     )}
                     Details
                   </span>
-                  <SlidersHorizontal className="h-3.5 w-3.5 text-gray-500" />
+                  {/* <SlidersHorizontal className="h-3.5 w-3.5 text-gray-500" /> */}
                 </button>
                 {detailsOpen && (
                   <div className="px-4 py-3 space-y-3 border-t border-gray-100">
@@ -1441,6 +1474,7 @@ function SubtaskGridRow({
   const [pPos, setPPos] = useState<{ top: number; left: number } | null>(null);
   const [aPos, setAPos] = useState<{ top: number; left: number } | null>(null);
   const [sPos, setSPos] = useState<{ top: number; left: number } | null>(null);
+  const [assigneeQuery, setAssigneeQuery] = useState("");
 
   // Close any picker on outside click / scroll.
   useEffect(() => {
@@ -1496,7 +1530,7 @@ function SubtaskGridRow({
   }
 
   return (
-    <div className="grid grid-cols-[minmax(180px,1.6fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(100px,0.9fr)_minmax(90px,0.8fr)_minmax(80px,0.7fr)] items-center border-b border-gray-100 last:border-b-0 text-sm hover:bg-gray-50">
+    <div className="grid grid-cols-[minmax(180px,1.6fr)_minmax(110px,1fr)_minmax(140px,1.2fr)_minmax(120px,1fr)_minmax(90px,0.8fr)_minmax(80px,0.7fr)] items-center border-b border-gray-100 last:border-b-0 text-sm hover:bg-gray-50">
       {/* Work — key opens drawer; title is click-to-edit */}
       <div className="px-3 py-2 inline-flex items-center gap-1.5 min-w-0">
         <Link2 className="h-3 w-3 text-blue-500 shrink-0" />
@@ -1606,43 +1640,79 @@ function SubtaskGridRow({
           <div
             data-fixed-popover
             style={{ position: "fixed", top: aPos.top, left: aPos.left }}
-            className="w-[220px] bg-white border border-gray-200 rounded shadow-lg z-[80] py-1 max-h-60 overflow-y-auto"
+            className="w-[220px] bg-white border border-gray-200 rounded shadow-lg z-[80] flex flex-col max-h-60 dark:bg-gray-900 dark:border-gray-700"
           >
-            <button
-              type="button"
-              onClick={() => {
-                setAPos(null);
-                void patch({ assigneeId: null });
-              }}
-              className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left ${
-                !subtask.assigneeId ? "bg-blue-50 border-l-2 border-blue-600" : "hover:bg-gray-50"
-              }`}
-            >
-              <span className="h-5 w-5 rounded-full bg-gray-200 text-gray-500 text-[10px] inline-flex items-center justify-center">
-                ?
-              </span>
-              Unassigned
-            </button>
-            {members.map((m) => (
-              <button
-                key={m.userId}
-                type="button"
-                onClick={() => {
-                  setAPos(null);
-                  void patch({ assigneeId: m.userId });
-                }}
-                className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left ${
-                  m.userId === subtask.assigneeId
-                    ? "bg-blue-50 border-l-2 border-blue-600"
-                    : "hover:bg-gray-50"
-                }`}
-              >
-                <span className="h-5 w-5 rounded-full bg-blue-600 text-white text-[10px] font-semibold flex items-center justify-center">
-                  {memberInitials(m)}
-                </span>
-                <span className="truncate">{memberLabel(m)}</span>
-              </button>
-            ))}
+            <div className="relative border-b border-gray-100 px-2 py-1.5 dark:border-gray-700">
+              <Search className="absolute left-3.5 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
+              <input
+                type="text"
+                autoFocus
+                value={assigneeQuery}
+                onChange={(e) => setAssigneeQuery(e.target.value)}
+                placeholder="Search..."
+                className="w-full h-6 pl-6 pr-2 text-xs bg-transparent border-none outline-none text-gray-800 placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-gray-500"
+              />
+            </div>
+            <div className="overflow-y-auto py-1">
+              {(() => {
+                const q = assigneeQuery.trim().toLowerCase();
+                const filteredMembers = members.filter((m) => {
+                  if (!q) return true;
+                  return memberLabel(m).toLowerCase().includes(q);
+                });
+                const showUnassigned = !q || "unassigned".includes(q);
+                return (
+                  <>
+                    {showUnassigned && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAPos(null);
+                          setAssigneeQuery("");
+                          void patch({ assigneeId: null });
+                        }}
+                        className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left ${
+                          !subtask.assigneeId
+                            ? "bg-blue-50 border-l-2 border-blue-600 dark:bg-blue-500/15"
+                            : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                        } dark:text-gray-200`}
+                      >
+                        <span className="h-5 w-5 rounded-full bg-gray-200 text-gray-500 text-[10px] inline-flex items-center justify-center dark:bg-gray-700 dark:text-gray-300">
+                          ?
+                        </span>
+                        Unassigned
+                      </button>
+                    )}
+                    {filteredMembers.map((m) => (
+                      <button
+                        key={m.userId}
+                        type="button"
+                        onClick={() => {
+                          setAPos(null);
+                          setAssigneeQuery("");
+                          void patch({ assigneeId: m.userId });
+                        }}
+                        className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left ${
+                          m.userId === subtask.assigneeId
+                            ? "bg-blue-50 border-l-2 border-blue-600 dark:bg-blue-500/15"
+                            : "hover:bg-gray-50 dark:hover:bg-gray-800"
+                        } dark:text-gray-200`}
+                      >
+                        <span className="h-5 w-5 rounded-full bg-blue-600 text-white text-[10px] font-semibold flex items-center justify-center">
+                          {memberInitials(m)}
+                        </span>
+                        <span className="truncate">{memberLabel(m)}</span>
+                      </button>
+                    ))}
+                    {!showUnassigned && filteredMembers.length === 0 && (
+                      <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">
+                        No matches.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         )}
       </div>
@@ -1652,7 +1722,7 @@ function SubtaskGridRow({
         <button
           type="button"
           onClick={(e) => setSPos(sPos ? null : anchor(e))}
-          className={`inline-flex items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded ${statusPillCls(
+          className={`inline-flex items-center gap-1 h-5 px-2 text-[10px] font-semibold uppercase tracking-wide rounded whitespace-nowrap max-w-full ${statusPillCls(
             st?.category,
           )}`}
         >
