@@ -20,6 +20,7 @@ import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { Flag } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
+import { notify } from "@/lib/utils/notify";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -114,16 +115,28 @@ export default function PriorityPage() {
 
   async function handleBulkDelete() {
     if (!selectedIds.size) return;
-    await Promise.all([...selectedIds].map(id => deletePriority.mutateAsync(id)));
-    setSelectedIds(new Set());
-    refetch();
+    const count = selectedIds.size;
+    try {
+      await Promise.all([...selectedIds].map(id => deletePriority.mutateAsync(id)));
+      notify.success(`Deleted ${count} priorit${count === 1 ? "y" : "ies"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "Priority", fallback: "Couldn't delete the selected priorities. Please try again." });
+    }
   }
 
   async function handleBulkRestore() {
     if (!selectedIds.size) return;
-    await bulkRestorePriority.mutateAsync([...selectedIds]);
-    setSelectedIds(new Set());
-    refetch();
+    const count = selectedIds.size;
+    try {
+      await bulkRestorePriority.mutateAsync([...selectedIds]);
+      notify.success(`Restored ${count} priorit${count === 1 ? "y" : "ies"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "Priority", fallback: "Couldn't restore the selected priorities. Please try again." });
+    }
   }
 
   // Filter priorities client-side

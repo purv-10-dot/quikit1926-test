@@ -12,6 +12,7 @@ import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
+import { notify } from "@/lib/utils/notify";
 
 interface Props {
   defaultYear?: number;
@@ -229,9 +230,11 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
         endWeek: parseInt(form.endWeek),
         overallStatus: "not-started",
       } as any);
+      notify.saved("Priority", "created");
       onSuccess();
     } catch (err: unknown) {
       setErrors({ _: humanizeApiError(err, { context: "Priority", fallback: "Couldn't save the Priority. Please try again." }) });
+      notify.error(err, { context: "Priority", fallback: "Couldn't save the Priority. Please try again." });
     } finally {
       setSaving(false);
     }

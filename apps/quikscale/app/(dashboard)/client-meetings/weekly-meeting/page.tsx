@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RightPanel,
   RightPanelFooter,
@@ -27,13 +27,15 @@ import {
   Filter as FilterIcon,
   RotateCcw,
 } from "lucide-react";
-import { TrashBanner, ColMenu } from "@quikit/ui";
+import { TrashBanner } from "@quikit/ui";
 import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort } from "@/lib/store";
-import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { HeaderCell } from "@/components/table/HeaderCell";
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
   meetingDate: 110,
@@ -67,7 +69,7 @@ import { ExportDataModal, type ExportRange } from "@/components/client-meetings/
 import type { ExportSelection } from "@quikit/ui";
 import { Download } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 
 type Flag = "YES" | "NO" | "NA";
 type Status =
@@ -343,60 +345,102 @@ export default function WeeklyMeetingPage() {
   // WWW — see lib/hooks/useTablePreferences.ts.
   const {
     hiddenCols,
-    frozenCol,
+    frozenCol: frozenUpTo,
     setFrozenCol,
     hideCol,
   } = useTablePrefs("weeklyMeeting");
   const { sortBy, sortOrder, setSort } = useTableSort("weeklyMeeting");
-  const { getColWidth, startResize } = useColumnResize("weeklyMeeting", COL_WIDTHS_DEFAULT);
+  const { getColWidth, startResize, colWidths } = useColumnResize("weeklyMeeting", COL_WIDTHS_DEFAULT);
   const isHidden = (key: string) => hiddenCols.includes(key);
 
-  // Inline header-cell helper for the Weekly Meeting table. Returns null when
-  // the column is hidden; otherwise renders the same KPI-style <th> wrapper:
-  // - `group` class for hover-reveal of ColMenu's three-dot trigger
-  // - `relative` so the absolutely-positioned ResizeHandle anchors here
-  // - explicit `style.width` so table-layout: fixed locks the column
-  // - sticky-left when frozen, sort arrow when active
-  function HeaderCell(props: {
+  // Cascade-freeze: freezing column C makes every column FROM the always-frozen
+  // left rail UP TO (and including) C sticky as a group. Mirrors KPI's
+  // `useTableColumns` so the user-experience is identical across tables.
+  //
+  // The rail keys `_checkbox`, `_log`, `_id` are part of the order so the
+  // sticky-offset hook measures them too — without them the user-frozen
+  // columns would compute `left` starting at 0 and overlap the rail.
+  // Every user column appears in render order so cascade-freeze covers the
+  // full table, mirroring KPI. Adding a new column means appending it here
+  // (and rendering its <Header />) — that's the only registration step.
+  const COL_ORDER = useMemo(
+    () => [
+      "_checkbox", "_log", "_id",
+      "meetingDate", "client", "callStatus",
+      "absentMembers", "weeklyDashboardNA",
+      "actualStartTime", "actualEndTime",
+      "goodNewsSharing", "goodNewsSharingTime",
+      "kpDashboard", "kpDashboardTime",
+      "gaps", "gapsTime",
+      "www", "wwwTime",
+      "feedback", "feedbackTime",
+      "collectiveIntelligence", "collectiveIntelligenceTime",
+      "opspReview", "opspTime",
+      "createdBy", "updatedBy", "createdAt", "updatedAt",
+    ],
+    [],
+  );
+  const hiddenSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
+  const headerRowRef = useRef<HTMLTableRowElement>(null);
+  // Rail widths are inline-styled on the rail `<th>`s and aren't part of
+  // `colWidths`. The hook needs them to seed offsets BEFORE the first
+  // layout — otherwise frozen body cells flash at `left: 0` and get
+  // covered by the always-frozen rail (z-[15]).
+  const stickyFallback = useMemo(
+    () => ({
+      colOrder: COL_ORDER,
+      railWidths: { _checkbox: 32, _log: 32, _id: 40 } as const,
+      getColWidth,
+    }),
+    [COL_ORDER, getColWidth],
+  );
+  const { getStickyLeft } = useStickyOffsets(
+    headerRowRef,
+    frozenUpTo,
+    hiddenSet,
+    colWidths,
+    stickyFallback,
+  );
+  const isFrozen = useCallback(
+    (col: string): boolean => {
+      if (!frozenUpTo) return false;
+      const i = COL_ORDER.indexOf(col);
+      const j = COL_ORDER.indexOf(frozenUpTo);
+      // Unknown columns never freeze; the freeze stops at columns in COL_ORDER.
+      return i !== -1 && j !== -1 && i <= j;
+    },
+    [frozenUpTo, COL_ORDER],
+  );
+  const handleFreeze = useCallback(
+    (col: string) => setFrozenCol(frozenUpTo === col ? null : col),
+    [frozenUpTo, setFrozenCol],
+  );
+
+  // Local alias that binds the table-scoped state (hide/freeze/sort/width) to
+  // the extracted <HeaderCell> component. Each `<Header k="…" label="…" />`
+  // call below renders one column header with sort arrow + ColMenu + resize
+  // handle, returning null when the column is hidden.
+  const Header = (props: {
     k: string;
     label: string;
     sortable?: boolean;
-    /** Backend whitelist key when it differs from the UI column key (e.g.
-     *  client → client; actualStartTime → actualStartTime). Defaults to `k`. */
     sortKey?: string;
-  }) {
-    if (isHidden(props.k)) return null;
-    const sortKey = props.sortKey ?? props.k;
-    const isSorted = !!props.sortable && sortBy === sortKey;
-    const frozen = frozenCol === props.k;
-    return (
-      <th
-        data-col-key={props.k}
-        style={{ width: getColWidth(props.k) }}
-        className={`group relative overflow-hidden px-3 py-2 text-left whitespace-nowrap ${frozen ? "sticky left-[104px] z-[15] bg-accent-50" : ""}`}
-      >
-        <div className="flex items-center gap-1">
-          {/* `truncate min-w-0` lets the label shrink inside the fixed-width <th>
-              and ellipsize when too long. Without these, long headers (e.g.
-              "Customer/Employee Feedback") spill past the cell boundary and
-              visually overlap the next column. `title` shows the full text on
-              hover when truncated. */}
-          <span className="flex-1 truncate min-w-0" title={props.label}>
-            {props.label}{isSorted && (sortOrder === "asc" ? " ↑" : " ↓")}
-          </span>
-          <ColMenu
-            colKey={props.k}
-            onSort={props.sortable ? (d) => setSort({ sortBy: sortKey, sortOrder: d }) : undefined}
-            onFreeze={() => setFrozenCol(frozen ? null : props.k)}
-            onHide={() => hideCol(props.k)}
-            frozen={frozen}
-            showSort={!!props.sortable}
-          />
-        </div>
-        <ResizeHandle onStart={(e) => startResize(props.k, e.clientX)} />
-      </th>
-    );
-  }
+  }) => (
+    <HeaderCell
+      {...props}
+      isHidden={isHidden}
+      getColWidth={getColWidth}
+      startResize={startResize}
+      hideCol={hideCol}
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      setSort={setSort}
+      isFrozen={isFrozen}
+      getStickyLeft={getStickyLeft}
+      frozenUpTo={frozenUpTo}
+      onFreeze={handleFreeze}
+    />
+  );
 
   // Helper for the matching <td> cells — combines the hide-via-Tailwind
   // `hidden` class with the explicit column width so table-layout: fixed
@@ -404,8 +448,20 @@ export default function WeeklyMeetingPage() {
   function tdHideClass(k: string): string {
     return isHidden(k) ? "hidden" : "";
   }
+  /** Style for body `<td>` cells. When the column is part of the frozen
+   *  cascade range, also returns the measured `left` offset so the cell
+   *  sits flush with the matching `<th>`. */
   function tdWidthStyle(k: string): React.CSSProperties {
-    return { width: getColWidth(k) };
+    const w = getColWidth(k);
+    if (isFrozen(k)) {
+      return { width: w, minWidth: w, left: getStickyLeft(k) };
+    }
+    return { width: w };
+  }
+  /** Classes for body `<td>` cells when the column is in the frozen range.
+   *  Returns empty string for non-frozen columns so callers can concat freely. */
+  function tdStickyClass(k: string): string {
+    return isFrozen(k) ? "sticky z-[10] bg-white" : "";
   }
 
   const refresh = useCallback(async () => {
@@ -647,6 +703,33 @@ export default function WeeklyMeetingPage() {
       setError("Please specify the call status text");
       return;
     }
+
+    // ── Held → Actual Start/End times are mandatory ──────────────────────
+    // The meeting actually happened, so its timing must be recorded. Mirrors
+    // the YES→time UX (and the server-side refine in clientMeetingsSchema):
+    // red-border the empty field(s) and scroll to the first.
+    if (f.callStatus === "HELD") {
+      const missingActual: string[] = [];
+      if (!f.actualStartTime) missingActual.push("actualStartTime");
+      if (!f.actualEndTime) missingActual.push("actualEndTime");
+      if (missingActual.length > 0) {
+        setTimeFieldErrors(new Set(missingActual));
+        setError(
+          "Actual Start Time and Actual End Time are required when the call status is Held",
+        );
+        const first = missingActual[0];
+        requestAnimationFrame(() => {
+          const el = document.querySelector(
+            `[data-time-field="${first}"]`,
+          ) as HTMLElement | null;
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            setTimeout(() => el.focus({ preventScroll: true }), 350);
+          }
+        });
+        return;
+      }
+    }
     if (
       f.actualStartTime &&
       f.actualEndTime &&
@@ -798,15 +881,22 @@ export default function WeeklyMeetingPage() {
           if (failed > 0) {
             // Meeting was created; surface a non-blocking warning. User can
             // re-open the meeting and re-save the affected rows.
-            setError(
-              `Meeting saved, but ${failed} member score row${failed === 1 ? "" : "s"} failed to save. Open the meeting to retry.`
-            );
+            const warn = `Meeting saved, but ${failed} member score row${failed === 1 ? "" : "s"} failed to save. Open the meeting to retry.`;
+            setError(warn);
+            notify.warning(warn);
+            setEditing(null);
+            await refresh();
+            return;
           }
         }
       }
 
+      notify.saved("Weekly meeting", editing.id ? "updated" : "created");
       setEditing(null);
       await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Save failed");
+      notify.error(err, { context: "weekly meeting", fallback: "Couldn't save. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -858,6 +948,7 @@ export default function WeeklyMeetingPage() {
         })
       )
     );
+    notify.saved("Weekly meeting", "deleted");
     setSelectedIds(new Set());
     refresh();
   }
@@ -867,7 +958,10 @@ export default function WeeklyMeetingPage() {
     const res = await fetch(`/api/client-meetings/weekly-meetings/${id}`, {
       method: "DELETE",
     });
-    if ((await res.json()).success) refresh();
+    if ((await res.json()).success) {
+      notify.saved("Weekly meeting", "deleted");
+      refresh();
+    }
   }
 
   async function restoreOne(id: string) {
@@ -876,10 +970,10 @@ export default function WeeklyMeetingPage() {
     });
     const json = await res.json();
     if (json.success) {
-      toast.success("Weekly meeting restored");
+      notify.success("Weekly meeting restored");
       refresh();
     } else {
-      toast.error(json.error ?? "Failed to restore");
+      notify.error(json.error ?? "Couldn't restore. Please try again.");
     }
   }
 
@@ -892,11 +986,11 @@ export default function WeeklyMeetingPage() {
     });
     const json = await res.json();
     if (json.success) {
-      toast.success(`Restored ${json.data?.restored ?? 0} meeting${json.data?.restored === 1 ? "" : "s"}`);
+      notify.success(`Restored ${json.data?.restored ?? 0} meeting${json.data?.restored === 1 ? "" : "s"}`);
       setSelectedIds(new Set());
       refresh();
     } else {
-      toast.error(json.error ?? "Failed to restore");
+      notify.error(json.error ?? "Couldn't restore. Please try again.");
     }
   }
 
@@ -1066,15 +1160,19 @@ export default function WeeklyMeetingPage() {
               className="text-xs bg-white border-separate border-spacing-0"
               style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="bg-accent-50 text-gray-600 sticky top-0 z-10">
-                <tr>
-                  <th className="sticky z-[35] px-2 py-2 bg-accent-50 border-r border-gray-200"
+                {/* `ref` + `data-col-key` on every `<th>` (rail + user cols)
+                    feed useStickyOffsets so each frozen column gets a `left`
+                    measured from the actual DOM — no hardcoded pixel offsets. */}
+                <tr ref={headerRowRef}>
+                  <th data-col-key="_checkbox"
+                      className="sticky z-[35] px-2 py-2 bg-accent-50 border-r border-gray-200"
                       style={{ left: 0, width: 32, minWidth: 32, maxWidth: 32 }}>
                     <label
                       onClickCapture={(e) => {
                         if (!canDelete) {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.error("You don't have permission to delete");
+                          notify.error("You don't have permission to delete");
                         }
                       }}
                     >
@@ -1086,40 +1184,42 @@ export default function WeeklyMeetingPage() {
                       />
                     </label>
                   </th>
-                  <th className="sticky z-[35] px-1 py-2 text-center font-semibold bg-accent-50 border-r border-gray-200"
+                  <th data-col-key="_log"
+                      className="sticky z-[35] px-1 py-2 text-center font-semibold bg-accent-50 border-r border-gray-200"
                       style={{ left: 32, width: 32, minWidth: 32, maxWidth: 32 }}>
                     Log
                   </th>
-                  <th className="sticky z-[35] px-1 py-2 text-center font-semibold bg-accent-50 border-r border-gray-200"
+                  <th data-col-key="_id"
+                      className="sticky z-[35] px-1 py-2 text-center font-semibold bg-accent-50 border-r border-gray-200"
                       style={{ left: 64, width: 40, minWidth: 40, maxWidth: 40 }}>
                     #
                   </th>
-                  <HeaderCell k="meetingDate" label="Meeting Date" sortable />
-                  <HeaderCell k="client" label="Client Name" sortable sortKey="client" />
-                  <HeaderCell k="callStatus" label="Status" sortable />
-                  <HeaderCell k="absentMembers" label="Absent Members" />
-                  <HeaderCell k="weeklyDashboardNA" label="Weekly Dashboard NA" />
-                  <HeaderCell k="actualStartTime" label="Actual Start Time" sortable />
-                  <HeaderCell k="actualEndTime" label="Actual End Time" sortable />
-                  <HeaderCell k="goodNewsSharing" label="Good News Sharing" />
-                  <HeaderCell k="goodNewsSharingTime" label="Good News Sharing Time" />
-                  <HeaderCell k="kpDashboard" label="K&P dashboard" />
-                  <HeaderCell k="kpDashboardTime" label="K&P dashboard Time" />
-                  <HeaderCell k="gaps" label="GAPS" />
-                  <HeaderCell k="gapsTime" label="GAPS Time" />
-                  <HeaderCell k="www" label="WWW" />
-                  <HeaderCell k="wwwTime" label="WWW Time" />
-                  <HeaderCell k="feedback" label="Customer/Employee Feedback" />
-                  <HeaderCell k="feedbackTime" label="Customer/Employee Feedback Time" />
-                  <HeaderCell k="collectiveIntelligence" label="Collective Intelligence" />
-                  <HeaderCell k="collectiveIntelligenceTime" label="Collective Intelligence Time" />
-                  <HeaderCell k="opspReview" label="OPSP Review" />
-                  <HeaderCell k="opspTime" label="OPSP Time" />
+                  <Header k="meetingDate" label="Meeting Date" sortable />
+                  <Header k="client" label="Client Name" sortable sortKey="client" />
+                  <Header k="callStatus" label="Status" sortable />
+                  <Header k="absentMembers" label="Absent Members" />
+                  <Header k="weeklyDashboardNA" label="Weekly Dashboard NA" />
+                  <Header k="actualStartTime" label="Actual Start Time" sortable />
+                  <Header k="actualEndTime" label="Actual End Time" sortable />
+                  <Header k="goodNewsSharing" label="Good News Sharing" />
+                  <Header k="goodNewsSharingTime" label="Good News Sharing Time" />
+                  <Header k="kpDashboard" label="K&P dashboard" />
+                  <Header k="kpDashboardTime" label="K&P dashboard Time" />
+                  <Header k="gaps" label="GAPS" />
+                  <Header k="gapsTime" label="GAPS Time" />
+                  <Header k="www" label="WWW" />
+                  <Header k="wwwTime" label="WWW Time" />
+                  <Header k="feedback" label="Customer/Employee Feedback" />
+                  <Header k="feedbackTime" label="Customer/Employee Feedback Time" />
+                  <Header k="collectiveIntelligence" label="Collective Intelligence" />
+                  <Header k="collectiveIntelligenceTime" label="Collective Intelligence Time" />
+                  <Header k="opspReview" label="OPSP Review" />
+                  <Header k="opspTime" label="OPSP Time" />
                   {/* Audit columns — populated by GET /api/client-meetings/weekly-meetings. */}
-                  <HeaderCell k="createdBy" label="Created By" />
-                  <HeaderCell k="updatedBy" label="Updated By" />
-                  <HeaderCell k="createdAt" label="Created Date" sortable />
-                  <HeaderCell k="updatedAt" label="Updated Date" sortable />
+                  <Header k="createdBy" label="Created By" />
+                  <Header k="updatedBy" label="Updated By" />
+                  <Header k="createdAt" label="Created Date" sortable />
+                  <Header k="updatedAt" label="Updated Date" sortable />
                   <th className="px-3 py-2 text-right" />
                 </tr>
               </thead>
@@ -1136,7 +1236,7 @@ export default function WeeklyMeetingPage() {
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -1172,13 +1272,13 @@ export default function WeeklyMeetingPage() {
                     {/* Body cells — each pairs tdHideClass + tdWidthStyle so the column
                         collapses when hidden and locks to the resized width when shown.
                         The sticky-left rule mirrors the matching <th> when frozen. */}
-                    <td style={tdWidthStyle("meetingDate")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("meetingDate")} ${frozenCol === "meetingDate" ? "sticky left-[104px] z-[10] bg-white" : ""}`}>
+                    <td style={tdWidthStyle("meetingDate")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("meetingDate")} ${tdStickyClass("meetingDate")}`}>
                       {fmtDate(r.meetingDate)}
                     </td>
-                    <td style={tdWidthStyle("client")} className={`px-3 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${tdHideClass("client")} ${frozenCol === "client" ? "sticky left-[104px] z-[10] bg-white" : ""}`}>
+                    <td style={tdWidthStyle("client")} className={`px-3 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${tdHideClass("client")} ${tdStickyClass("client")}`}>
                       {r.clientName}
                     </td>
-                    <td style={tdWidthStyle("callStatus")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("callStatus")} ${frozenCol === "callStatus" ? "sticky left-[104px] z-[10] bg-white" : ""}`}>
+                    <td style={tdWidthStyle("callStatus")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("callStatus")} ${tdStickyClass("callStatus")}`}>
                       <span
                         className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}
                         title={r.callStatus === "OTHER" ? r.callStatusOther ?? undefined : undefined}
@@ -1186,76 +1286,96 @@ export default function WeeklyMeetingPage() {
                         {statusLabel(r.callStatus, r.callStatusOther)}
                       </span>
                     </td>
-                    <td style={tdWidthStyle("absentMembers")} className={`px-3 py-2 text-gray-600 overflow-hidden text-ellipsis ${tdHideClass("absentMembers")}`}>
-                      {r.absentClientMemberNames.length
-                        ? r.absentClientMemberNames.join(", ")
-                        : "—"}
+                    <td style={tdWidthStyle("absentMembers")} className={`px-3 py-2 ${tdHideClass("absentMembers")} ${tdStickyClass("absentMembers")}`}>
+                      {r.absentClientMemberNames.length ? (
+                        // Cap at ~3 lines (`max-h-[3.25rem]` ≈ 3 × `text-xs leading-snug`).
+                        // Longer lists scroll inside the cell so the row height stays
+                        // consistent across the table; the `title` tooltip surfaces the
+                        // full text for users who don't want to scroll.
+                        <div
+                          className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-600 cursor-default pr-1"
+                          style={{ scrollbarWidth: "thin" }}
+                          title={r.absentClientMemberNames.join(", ")}
+                        >
+                          {r.absentClientMemberNames.join(", ")}
+                        </div>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
-                    <td style={tdWidthStyle("weeklyDashboardNA")} className={`px-3 py-2 text-gray-600 overflow-hidden text-ellipsis ${tdHideClass("weeklyDashboardNA")}`}>
-                      {r.dashboardNAClientMemberNames.length
-                        ? r.dashboardNAClientMemberNames.join(", ")
-                        : "—"}
+                    <td style={tdWidthStyle("weeklyDashboardNA")} className={`px-3 py-2 ${tdHideClass("weeklyDashboardNA")} ${tdStickyClass("weeklyDashboardNA")}`}>
+                      {r.dashboardNAClientMemberNames.length ? (
+                        <div
+                          className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-600 cursor-default pr-1"
+                          style={{ scrollbarWidth: "thin" }}
+                          title={r.dashboardNAClientMemberNames.join(", ")}
+                        >
+                          {r.dashboardNAClientMemberNames.join(", ")}
+                        </div>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
-                    <td style={tdWidthStyle("actualStartTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualStartTime")}`}>
+                    <td style={tdWidthStyle("actualStartTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualStartTime")} ${tdStickyClass("actualStartTime")}`}>
                       {r.actualStartTime || "—"}
                     </td>
-                    <td style={tdWidthStyle("actualEndTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualEndTime")}`}>
+                    <td style={tdWidthStyle("actualEndTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualEndTime")} ${tdStickyClass("actualEndTime")}`}>
                       {r.actualEndTime || "—"}
                     </td>
-                    <td style={tdWidthStyle("goodNewsSharing")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("goodNewsSharing")}`}>
+                    <td style={tdWidthStyle("goodNewsSharing")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("goodNewsSharing")} ${tdStickyClass("goodNewsSharing")}`}>
                       {r.goodNewsSharing}
                     </td>
-                    <td style={tdWidthStyle("goodNewsSharingTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("goodNewsSharingTime")}`}>
+                    <td style={tdWidthStyle("goodNewsSharingTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("goodNewsSharingTime")} ${tdStickyClass("goodNewsSharingTime")}`}>
                       {r.segmentTime1 || "—"}
                     </td>
-                    <td style={tdWidthStyle("kpDashboard")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("kpDashboard")}`}>
+                    <td style={tdWidthStyle("kpDashboard")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("kpDashboard")} ${tdStickyClass("kpDashboard")}`}>
                       {r.kpDashboard}
                     </td>
-                    <td style={tdWidthStyle("kpDashboardTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("kpDashboardTime")}`}>
+                    <td style={tdWidthStyle("kpDashboardTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("kpDashboardTime")} ${tdStickyClass("kpDashboardTime")}`}>
                       {r.segmentTime2 || "—"}
                     </td>
-                    <td style={tdWidthStyle("gaps")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("gaps")}`}>
+                    <td style={tdWidthStyle("gaps")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("gaps")} ${tdStickyClass("gaps")}`}>
                       {r.gaps}
                     </td>
-                    <td style={tdWidthStyle("gapsTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("gapsTime")}`}>
+                    <td style={tdWidthStyle("gapsTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("gapsTime")} ${tdStickyClass("gapsTime")}`}>
                       {r.segmentTime3 || "—"}
                     </td>
-                    <td style={tdWidthStyle("www")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("www")}`}>
+                    <td style={tdWidthStyle("www")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("www")} ${tdStickyClass("www")}`}>
                       {r.www}
                     </td>
-                    <td style={tdWidthStyle("wwwTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("wwwTime")}`}>
+                    <td style={tdWidthStyle("wwwTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("wwwTime")} ${tdStickyClass("wwwTime")}`}>
                       {r.segmentTime4 || "—"}
                     </td>
-                    <td style={tdWidthStyle("feedback")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("feedback")}`}>
+                    <td style={tdWidthStyle("feedback")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("feedback")} ${tdStickyClass("feedback")}`}>
                       {r.feedback}
                     </td>
-                    <td style={tdWidthStyle("feedbackTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("feedbackTime")}`}>
+                    <td style={tdWidthStyle("feedbackTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("feedbackTime")} ${tdStickyClass("feedbackTime")}`}>
                       {r.segmentTime5 || "—"}
                     </td>
-                    <td style={tdWidthStyle("collectiveIntelligence")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("collectiveIntelligence")}`}>
+                    <td style={tdWidthStyle("collectiveIntelligence")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("collectiveIntelligence")} ${tdStickyClass("collectiveIntelligence")}`}>
                       {r.collectiveIntelligence}
                     </td>
-                    <td style={tdWidthStyle("collectiveIntelligenceTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("collectiveIntelligenceTime")}`}>
+                    <td style={tdWidthStyle("collectiveIntelligenceTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("collectiveIntelligenceTime")} ${tdStickyClass("collectiveIntelligenceTime")}`}>
                       {r.segmentTime6 || "—"}
                     </td>
-                    <td style={tdWidthStyle("opspReview")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("opspReview")}`}>
+                    <td style={tdWidthStyle("opspReview")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("opspReview")} ${tdStickyClass("opspReview")}`}>
                       {r.opspReview}
                     </td>
-                    <td style={tdWidthStyle("opspTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("opspTime")}`}>
+                    <td style={tdWidthStyle("opspTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("opspTime")} ${tdStickyClass("opspTime")}`}>
                       {r.segmentTime7 || "—"}
                     </td>
                     {/* Audit cells — Created By / Updated By / Created Date / Updated Date.
                         Populated by GET /api/client-meetings/weekly-meetings. */}
-                    <td style={tdWidthStyle("createdBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("createdBy")}`}>
+                    <td style={tdWidthStyle("createdBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("createdBy")} ${tdStickyClass("createdBy")}`}>
                       <UserAuditCell name={r.createdByName} initials={r.createdByInitials} />
                     </td>
-                    <td style={tdWidthStyle("updatedBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("updatedBy")}`}>
+                    <td style={tdWidthStyle("updatedBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("updatedBy")} ${tdStickyClass("updatedBy")}`}>
                       <UserAuditCell name={r.updatedByName} initials={r.updatedByInitials} />
                     </td>
-                    <td style={tdWidthStyle("createdAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("createdAt")}`}>
+                    <td style={tdWidthStyle("createdAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("createdAt")} ${tdStickyClass("createdAt")}`}>
                       <DateAuditCell iso={r.createdAt} />
                     </td>
-                    <td style={tdWidthStyle("updatedAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("updatedAt")}`}>
+                    <td style={tdWidthStyle("updatedAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("updatedAt")} ${tdStickyClass("updatedAt")}`}>
                       <DateAuditCell iso={r.updatedAt} />
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -1503,13 +1623,21 @@ export default function WeeklyMeetingPage() {
               </Field>
 
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Actual Start Time" required>
+                <Field label="Actual Start Time" required={editing.form.callStatus === "HELD"}>
                   <input
                     type="time"
+                    data-time-field="actualStartTime"
                     value={editing.form.actualStartTime}
                     onChange={(e) => {
                       const v = e.target.value;
                       updateField("actualStartTime", v);
+                      if (v && timeFieldErrors.has("actualStartTime")) {
+                        setTimeFieldErrors((prev) => {
+                          const next = new Set(prev);
+                          next.delete("actualStartTime");
+                          return next;
+                        });
+                      }
                       if (
                         editing.form.actualEndTime &&
                         v &&
@@ -1519,12 +1647,17 @@ export default function WeeklyMeetingPage() {
                       }
                     }}
                     disabled={editing.form.callStatus !== "HELD"}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
+                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 disabled:bg-gray-50 ${
+                      timeFieldErrors.has("actualStartTime")
+                        ? "border-red-400 focus:ring-red-300 bg-red-50"
+                        : "border-gray-200 focus:ring-accent-400"
+                    }`}
                   />
                 </Field>
-                <Field label="Actual End Time" required>
+                <Field label="Actual End Time" required={editing.form.callStatus === "HELD"}>
                   <input
                     type="time"
+                    data-time-field="actualEndTime"
                     value={editing.form.actualEndTime}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -1536,12 +1669,23 @@ export default function WeeklyMeetingPage() {
                         return;
                       }
                       updateField("actualEndTime", v);
+                      if (v && timeFieldErrors.has("actualEndTime")) {
+                        setTimeFieldErrors((prev) => {
+                          const next = new Set(prev);
+                          next.delete("actualEndTime");
+                          return next;
+                        });
+                      }
                     }}
                     disabled={
                       editing.form.callStatus !== "HELD" || !editing.form.actualStartTime
                     }
                     min={editing.form.actualStartTime || undefined}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
+                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 disabled:bg-gray-50 ${
+                      timeFieldErrors.has("actualEndTime")
+                        ? "border-red-400 focus:ring-red-300 bg-red-50"
+                        : "border-gray-200 focus:ring-accent-400"
+                    }`}
                   />
                 </Field>
               </div>
@@ -1742,7 +1886,7 @@ export default function WeeklyMeetingPage() {
           defaultClientId={filterClientId || null}
           onSubmit={async ({ from, to, clientId }: ExportRange) => {
             if (!clientId) {
-              toast.error("Please select a client to export.");
+              notify.error("Please select a client to export.");
               return;
             }
             // Backend builds the XLSX (with header block, member counts,
@@ -1755,7 +1899,7 @@ export default function WeeklyMeetingPage() {
             });
             if (!res.ok) {
               const errJson = await res.json().catch(() => null);
-              toast.error(errJson?.error ?? "Failed to export weekly meetings");
+              notify.error(errJson?.error, { context: "weekly meeting", fallback: "Couldn't export. Please try again." });
               return;
             }
             const blob = await res.blob();

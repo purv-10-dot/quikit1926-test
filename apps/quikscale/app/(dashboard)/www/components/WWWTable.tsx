@@ -17,7 +17,7 @@ import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
 import { Pagination } from "@quikit/ui";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 
 import {
   STATUS_PICKER_OPTIONS,
@@ -391,7 +391,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -470,7 +470,7 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >

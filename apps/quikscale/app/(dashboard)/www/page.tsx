@@ -16,6 +16,7 @@ import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { Trophy } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
+import { notify } from "@/lib/utils/notify";
 
 export default function WWWPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("WWW");
@@ -90,16 +91,28 @@ export default function WWWPage() {
 
   async function handleBulkDelete() {
     if (!selectedIds.size) return;
-    await Promise.all([...selectedIds].map(id => deleteWWW.mutateAsync(id)));
-    setSelectedIds(new Set());
-    refetch();
+    const count = selectedIds.size;
+    try {
+      await Promise.all([...selectedIds].map(id => deleteWWW.mutateAsync(id)));
+      notify.success(`Deleted ${count} action item${count === 1 ? "" : "s"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "action item", fallback: "Couldn't delete the selected action items. Please try again." });
+    }
   }
 
   async function handleBulkRestore() {
     if (!selectedIds.size) return;
-    await bulkRestoreWWW.mutateAsync([...selectedIds]);
-    setSelectedIds(new Set());
-    refetch();
+    const count = selectedIds.size;
+    try {
+      await bulkRestoreWWW.mutateAsync([...selectedIds]);
+      notify.success(`Restored ${count} action item${count === 1 ? "" : "s"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "action item", fallback: "Couldn't restore the selected action items. Please try again." });
+    }
   }
 
   // Client-side filters

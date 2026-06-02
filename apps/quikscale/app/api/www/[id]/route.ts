@@ -4,7 +4,7 @@ import { updateWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
-import { canEditWWW } from "@/lib/api/wwwPermissions";
+import { canEditWWW, canEditWWWAssignment } from "@/lib/api/wwwPermissions";
 import { notifyWWWReassignment } from "@/lib/services/wwwNotifications";
 const auth = withOrgAuthForResource("www", "WWW");
 
@@ -162,7 +162,7 @@ export const PUT = auth.update<{ id: string }>(
     // server-side.
     const existing = await db.wWWItem.findFirst({
       where: { id: params.id, orgId },
-      select: { id: true, createdBy: true, who: true, what: true },
+      select: { id: true, createdBy: true, who: true, what: true, when: true },
     });
     if (!existing) {
       return NextResponse.json(
@@ -208,6 +208,29 @@ export const PUT = auth.update<{ id: string }>(
     } else if (who) {
       nextWhoIds = [who];
       nextWho = who;
+    }
+
+    // "Who" (assignee) and "When" (due date) are creator-gated: only the
+    // creator or an admin/super-admin may change them. Other allowed editors
+    // (e.g. the assignee) keep edit rights on the remaining fields. We compare
+    // against the stored values — the client always sends who/when in the
+    // payload, so we only enforce the stricter gate when they ACTUALLY change.
+    // Dates are compared at day granularity (UTC) since the form round-trips a
+    // date-only value.
+    const whoChanged = nextWho !== undefined && nextWho !== existing.who;
+    const toDayUTC = (d: Date) => d.toISOString().slice(0, 10);
+    const whenChanged =
+      when !== undefined && toDayUTC(new Date(when)) !== toDayUTC(existing.when);
+    if (whoChanged || whenChanged) {
+      const canChangeAssignment = await canEditWWWAssignment(userId, orgId, {
+        createdBy: existing.createdBy,
+      });
+      if (!canChangeAssignment) {
+        return NextResponse.json(
+          { success: false, error: "Only the creator or an admin can change Who and When" },
+          { status: 403 },
+        );
+      }
     }
 
     const updated = await db.wWWItem.update({

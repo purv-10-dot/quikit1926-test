@@ -18,7 +18,7 @@ import { useFilterContext } from "@/lib/context/FilterContext";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
-  AddButton, EmptyState, Segmented, FilterPicker, UserMultiPicker, Pagination, ColMenu, type ExportSelection,
+  AddButton, EmptyState, Segmented, FilterPicker, UserMultiPicker, Pagination, type ExportSelection,
 } from "@quikit/ui";
 import { Calendar, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
@@ -26,7 +26,9 @@ import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort } from "@/lib/store";
-import { useColumnResize, ResizeHandle } from "@/lib/hooks/useColumnResize";
+import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
+import { HeaderCell } from "@/components/table/HeaderCell";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 
 const COL_WIDTHS_DEFAULT: Record<string, number> = {
@@ -44,19 +46,41 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   createdAt: 120,
   updatedAt: 120,
 };
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
-import { fmtAuditPayload, fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
+import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
 
-type Status = "HELD" | "NOT_HELD" | "CALL_CANCELLED_BY_CLIENT";
+// All statuses that can appear in the data — mirrors the `ClientMeetingStatus`
+// Prisma enum. NOT_HELD stays in the union so legacy records still type-check
+// and display, even though it's no longer offered in the picker.
+type Status =
+  | "HELD"
+  | "NOT_HELD"
+  | "CALL_CANCELLED_BY_CLIENT"
+  | "HOLIDAY_FOR_CLIENT"
+  | "HOLIDAY_FOR_SUCCESS_ALCHEMIST";
+
+// Display labels for every status (used by the table cell + badge), so legacy
+// NOT_HELD rows still read nicely even though it isn't selectable.
+const STATUS_LABELS: Record<Status, string> = {
+  HELD: "Held",
+  NOT_HELD: "Not Held",
+  CALL_CANCELLED_BY_CLIENT: "Call cancelled by client",
+  HOLIDAY_FOR_CLIENT: "Holiday for client",
+  HOLIDAY_FOR_SUCCESS_ALCHEMIST: "Holiday for Success Alchemist",
+};
+
+// Options offered in the Create/Edit dropdown. NOT_HELD intentionally omitted
+// per product decision — existing NOT_HELD records still display via STATUS_LABELS.
 const STATUS_OPTS: Array<{ value: Status; label: string }> = [
-  { value: "HELD", label: "Held" },
-  { value: "NOT_HELD", label: "Not Held" },
-  { value: "CALL_CANCELLED_BY_CLIENT", label: "Cancelled by Client" },
+  { value: "HELD", label: STATUS_LABELS.HELD },
+  { value: "CALL_CANCELLED_BY_CLIENT", label: STATUS_LABELS.CALL_CANCELLED_BY_CLIENT },
+  { value: "HOLIDAY_FOR_CLIENT", label: STATUS_LABELS.HOLIDAY_FOR_CLIENT },
+  { value: "HOLIDAY_FOR_SUCCESS_ALCHEMIST", label: STATUS_LABELS.HOLIDAY_FOR_SUCCESS_ALCHEMIST },
 ];
 
-interface ClientOpt { id: string; name: string }
+interface ClientOpt { id: string; name: string; teamMembers: { id: string; name: string; email: string }[] }
 interface MemberOpt { id: string; name: string; email: string }
 
 interface HuddleRow {
@@ -104,9 +128,10 @@ function fmtDateTime(iso: string) {
 function statusBadge(s: Status) {
   return s === "HELD" ? "bg-green-100 text-green-700"
        : s === "NOT_HELD" ? "bg-red-100 text-red-700"
-       : "bg-amber-100 text-amber-700";
+       : s === "CALL_CANCELLED_BY_CLIENT" ? "bg-amber-100 text-amber-700"
+       : "bg-blue-100 text-blue-700"; // holidays — neutral/info
 }
-function statusLabel(s: Status) { return STATUS_OPTS.find(o => o.value === s)?.label ?? s; }
+function statusLabel(s: Status) { return STATUS_LABELS[s] ?? s; }
 
 export default function DailyHuddlePage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("DailyHuddle");
@@ -135,12 +160,104 @@ export default function DailyHuddlePage() {
   const {
     hiddenCols,
     setHiddenCols,
-    frozenCol,
+    frozenCol: frozenUpTo,
     setFrozenCol,
     hideCol,
   } = useTablePrefs("dailyHuddle");
   const { sortBy, sortOrder, setSort } = useTableSort("dailyHuddle");
-  const { getColWidth, startResize } = useColumnResize("dailyHuddle", COL_WIDTHS_DEFAULT);
+  const { getColWidth, startResize, colWidths } = useColumnResize("dailyHuddle", COL_WIDTHS_DEFAULT);
+
+  // Cascade-freeze infrastructure — mirrors KPITable + Weekly Meeting so the
+  // user-experience is identical across tables: freezing column C pins every
+  // column from the always-frozen rail (`_checkbox`/`_log`/`_id`, total
+  // 152px) up to and including C. `useStickyOffsets` measures the real
+  // header widths so each frozen cell receives the correct `left` value.
+  const COL_ORDER = useMemo(
+    () => [
+      "_checkbox", "_log", "_id",
+      "meetingDate", "client", "callStatus", "absentMembers",
+      "actualStartTime", "actualEndTime",
+      "yesterdaysAchievements", "todaysPriority", "stuckIssues",
+      "createdBy", "updatedBy", "createdAt", "updatedAt",
+    ],
+    [],
+  );
+  const hiddenSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
+  const headerRowRef = useRef<HTMLTableRowElement>(null);
+  // See Weekly Meeting for why the fallback is needed — same first-paint
+  // flash, same fix. Rail here is 40+56+56 = 152px (Daily Huddle / Clients
+  // / Members share the same dimensions; Weekly Meeting uses the smaller
+  // 32+32+40 = 104px rail).
+  const stickyFallback = useMemo(
+    () => ({
+      colOrder: COL_ORDER,
+      railWidths: { _checkbox: 40, _log: 56, _id: 56 } as const,
+      getColWidth,
+    }),
+    [COL_ORDER, getColWidth],
+  );
+  const { getStickyLeft } = useStickyOffsets(
+    headerRowRef,
+    frozenUpTo,
+    hiddenSet,
+    colWidths,
+    stickyFallback,
+  );
+  const isFrozen = useCallback(
+    (col: string): boolean => {
+      if (!frozenUpTo) return false;
+      const i = COL_ORDER.indexOf(col);
+      const j = COL_ORDER.indexOf(frozenUpTo);
+      return i !== -1 && j !== -1 && i <= j;
+    },
+    [frozenUpTo, COL_ORDER],
+  );
+  const handleFreeze = useCallback(
+    (col: string) => setFrozenCol(frozenUpTo === col ? null : col),
+    [frozenUpTo, setFrozenCol],
+  );
+
+  /** `<td>` className addition for cascade-frozen columns. Body cells sit on
+   *  z-[10] so the matching header (z-[35]) is always above them — keeps
+   *  the ColMenu dropdown visible over any frozen body cell beneath it. */
+  function tdFreezeClass(k: string): string {
+    return isFrozen(k) ? "sticky z-[10] bg-white" : "";
+  }
+  /** Inline style for any cell in the frozen cascade — adds the measured
+   *  `left` so the cell sits flush with its sibling rail/columns. Returns
+   *  width-only when the column isn't frozen. */
+  function freezeStyle(k: string): React.CSSProperties {
+    const w = getColWidth(k);
+    if (isFrozen(k)) return { width: w, minWidth: w, left: getStickyLeft(k) };
+    return { width: w };
+  }
+
+  // Adapter that binds local table state to the shared <HeaderCell>. Each
+  // `<Header k="…" label="…" sortable sortKey="…" />` renders one column
+  // header (sort arrow + ColMenu + resize handle + freeze icon when
+  // boundary), returning null when the column is hidden.
+  const Header = (props: {
+    k: string;
+    label: string;
+    sortable?: boolean;
+    sortKey?: string;
+  }) => (
+    <HeaderCell
+      {...props}
+      isHidden={isHidden}
+      getColWidth={getColWidth}
+      startResize={startResize}
+      hideCol={hideCol}
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      setSort={setSort}
+      isFrozen={isFrozen}
+      getStickyLeft={getStickyLeft}
+      frozenUpTo={frozenUpTo}
+      onFreeze={handleFreeze}
+      thClassName="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200"
+    />
+  );
 
   const [editing, setEditing] = useState<{ id: string | null; tab: "log" | "edit"; form: typeof emptyForm } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -202,11 +319,28 @@ export default function DailyHuddlePage() {
   const pagedHuddles = filtered.slice((page - 1) * pageSize, page * pageSize);
   const totalHuddlePages = Math.max(1, Math.ceil(filtered.length / pageSize));
 
-  // Adapt ClientMember → PickerUser for UserMultiPicker (splits "name" on first space).
-  const memberPickerOptions = useMemo(() => members.map(m => {
-    const parts = m.name.trim().split(/\s+/);
-    return { id: m.id, firstName: parts[0] ?? m.name, lastName: parts.slice(1).join(" "), email: m.email };
-  }), [members]);
+  // Members eligible to be marked absent — scoped to the SELECTED client's
+  // roster (the ClientTeamMember join returned by the clients API), NOT the
+  // org-wide member list: a huddle's absentees must belong to that client.
+  // Any already-selected id no longer on the roster (member removed after the
+  // huddle was saved) is unioned back in so editing an old record never
+  // silently drops a saved absentee. Adapted to PickerUser (name split on first space).
+  const clientMemberOptions = useMemo(() => {
+    const clientId = editing?.form.clientId;
+    if (!clientId) return [];
+    const roster = clients.find(c => c.id === clientId)?.teamMembers ?? [];
+    const byId = new Map(roster.map(m => [m.id, { id: m.id, name: m.name, email: m.email }]));
+    for (const id of editing?.form.absentClientMemberIds ?? []) {
+      if (!byId.has(id)) {
+        const m = members.find(mm => mm.id === id);
+        if (m) byId.set(id, { id: m.id, name: m.name, email: m.email });
+      }
+    }
+    return [...byId.values()].map(m => {
+      const parts = m.name.trim().split(/\s+/);
+      return { id: m.id, firstName: parts[0] ?? m.name, lastName: parts.slice(1).join(" "), email: m.email };
+    });
+  }, [editing?.form.clientId, editing?.form.absentClientMemberIds, clients, members]);
 
   function toggleAll() {
     if (selected.size === filtered.length && filtered.length > 0) setSelected(new Set());
@@ -272,6 +406,11 @@ export default function DailyHuddlePage() {
     const f = editing.form;
     if (!f.clientId) { setError("Pick a client"); return; }
     if (!f.meetingDate) { setError("Meeting date required"); return; }
+    // Held → the meeting happened, so its start/end times are mandatory. Mirrors
+    // the server-side refine in clientMeetingsSchema.
+    if (f.callStatus === "HELD" && (!f.actualStartTime || !f.actualEndTime)) {
+      setError("Actual Start Time and Actual End Time are required when the call status is Held"); return;
+    }
     if (f.actualStartTime && f.actualEndTime && f.actualEndTime <= f.actualStartTime) {
       setError("Actual end time must be after start time"); return;
     }
@@ -295,8 +434,12 @@ export default function DailyHuddlePage() {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Failed"); return; }
+      notify.saved("Daily huddle", editing.id ? "updated" : "created");
       setEditing(null);
       await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed");
+      notify.error(err, { context: "daily huddle", fallback: "Couldn't save. Please try again." });
     } finally { setSaving(false); }
   }
 
@@ -304,6 +447,7 @@ export default function DailyHuddlePage() {
     if (!selected.size) return;
     if (!confirm(`Delete ${selected.size} huddle${selected.size === 1 ? "" : "s"}?`)) return;
     await Promise.all([...selected].map(id => fetch(`/api/client-meetings/daily-huddles/${id}`, { method: "DELETE" })));
+    notify.saved("Daily huddle", "deleted");
     setSelected(new Set());
     refresh();
   }
@@ -311,10 +455,12 @@ export default function DailyHuddlePage() {
   async function handleDeleteOne(id: string) {
     if (!confirm("Delete this huddle?")) return;
     await fetch(`/api/client-meetings/daily-huddles/${id}`, { method: "DELETE" });
+    notify.saved("Daily huddle", "deleted");
     refresh();
   }
   async function handleRestore(id: string) {
     await fetch(`/api/client-meetings/daily-huddles/${id}/restore`, { method: "POST" });
+    notify.saved("Daily huddle", "restored");
     refresh();
   }
 
@@ -325,6 +471,7 @@ export default function DailyHuddlePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: [...selected] }),
     });
+    notify.saved("Daily huddle", "restored");
     setSelected(new Set());
     refresh();
   }
@@ -500,15 +647,19 @@ export default function DailyHuddlePage() {
               className="text-xs bg-white border-separate border-spacing-0"
               style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="sticky top-0 bg-accent-50 z-10">
-                <tr>
-                  <th className="sticky z-[35] px-3 py-3 bg-accent-50 border-b border-r border-gray-200"
+                {/* `ref` + `data-col-key` on every `<th>` (rail + user cols)
+                    feed useStickyOffsets so each frozen column gets a `left`
+                    measured from the actual DOM — no hardcoded pixel offsets. */}
+                <tr ref={headerRowRef}>
+                  <th data-col-key="_checkbox"
+                      className="sticky z-[35] px-3 py-3 bg-accent-50 border-b border-r border-gray-200"
                       style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                     <label
                       onClickCapture={(e) => {
                         if (!canDelete) {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.error("You don't have permission to delete");
+                          notify.error("You don't have permission to delete");
                         }
                       }}
                     >
@@ -516,173 +667,25 @@ export default function DailyHuddlePage() {
                         className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                     </label>
                   </th>
-                  <th className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                  <th data-col-key="_log"
+                      className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
                       style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>Log</th>
-                  <th className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                  <th data-col-key="_id"
+                      className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
                       style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>ID</th>
-                  {!isHidden("meetingDate") && (
-                    <th data-col-key="meetingDate" style={{ width: getColWidth("meetingDate") }} className={`group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200 ${frozenCol === "meetingDate" ? "sticky left-[152px] z-[15] bg-accent-50" : ""}`}>
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Meeting Date{sortBy === "meetingDate" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="meetingDate"
-                          onSort={(d) => setSort({ sortBy: "meetingDate", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "meetingDate" ? null : "meetingDate")}
-                          onHide={() => hideCol("meetingDate")}
-                          frozen={frozenCol === "meetingDate"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("meetingDate", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("client") && (
-                    <th data-col-key="client" style={{ width: getColWidth("client") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Client{sortBy === "client" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="client"
-                          onSort={(d) => setSort({ sortBy: "client", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "client" ? null : "client")}
-                          onHide={() => hideCol("client")}
-                          frozen={frozenCol === "client"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("client", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("callStatus") && (
-                    <th data-col-key="callStatus" style={{ width: getColWidth("callStatus") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Call Status{sortBy === "callStatus" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="callStatus"
-                          onSort={(d) => setSort({ sortBy: "callStatus", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "callStatus" ? null : "callStatus")}
-                          onHide={() => hideCol("callStatus")}
-                          frozen={frozenCol === "callStatus"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("callStatus", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("absentMembers") && (
-                    <th data-col-key="absentMembers" style={{ width: getColWidth("absentMembers") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Absent Members</span>
-                        <ColMenu colKey="absentMembers"
-                          onFreeze={() => setFrozenCol(frozenCol === "absentMembers" ? null : "absentMembers")}
-                          onHide={() => hideCol("absentMembers")}
-                          frozen={frozenCol === "absentMembers"} showSort={false} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("absentMembers", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("actualStartTime") && (
-                    <th data-col-key="actualStartTime" style={{ width: getColWidth("actualStartTime") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Start{sortBy === "actualStartTime" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="actualStartTime"
-                          onSort={(d) => setSort({ sortBy: "actualStartTime", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "actualStartTime" ? null : "actualStartTime")}
-                          onHide={() => hideCol("actualStartTime")}
-                          frozen={frozenCol === "actualStartTime"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("actualStartTime", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("actualEndTime") && (
-                    <th data-col-key="actualEndTime" style={{ width: getColWidth("actualEndTime") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">End{sortBy === "actualEndTime" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="actualEndTime"
-                          onSort={(d) => setSort({ sortBy: "actualEndTime", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "actualEndTime" ? null : "actualEndTime")}
-                          onHide={() => hideCol("actualEndTime")}
-                          frozen={frozenCol === "actualEndTime"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("actualEndTime", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("yesterdaysAchievements") && (
-                    <th data-col-key="yesterdaysAchievements" style={{ width: getColWidth("yesterdaysAchievements") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Yesterday</span>
-                        <ColMenu colKey="yesterdaysAchievements"
-                          onFreeze={() => setFrozenCol(frozenCol === "yesterdaysAchievements" ? null : "yesterdaysAchievements")}
-                          onHide={() => hideCol("yesterdaysAchievements")}
-                          frozen={frozenCol === "yesterdaysAchievements"} showSort={false} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("yesterdaysAchievements", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("todaysPriority") && (
-                    <th data-col-key="todaysPriority" style={{ width: getColWidth("todaysPriority") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Today</span>
-                        <ColMenu colKey="todaysPriority"
-                          onFreeze={() => setFrozenCol(frozenCol === "todaysPriority" ? null : "todaysPriority")}
-                          onHide={() => hideCol("todaysPriority")}
-                          frozen={frozenCol === "todaysPriority"} showSort={false} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("todaysPriority", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("stuckIssues") && (
-                    <th data-col-key="stuckIssues" style={{ width: getColWidth("stuckIssues") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Stuck</span>
-                        <ColMenu colKey="stuckIssues"
-                          onFreeze={() => setFrozenCol(frozenCol === "stuckIssues" ? null : "stuckIssues")}
-                          onHide={() => hideCol("stuckIssues")}
-                          frozen={frozenCol === "stuckIssues"} showSort={false} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("stuckIssues", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("createdBy") && (
-                    <th data-col-key="createdBy" style={{ width: getColWidth("createdBy") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Created By</span>
-                        <ColMenu colKey="createdBy"
-                          onFreeze={() => setFrozenCol(frozenCol === "createdBy" ? null : "createdBy")}
-                          onHide={() => hideCol("createdBy")}
-                          frozen={frozenCol === "createdBy"} showSort={false} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("createdBy", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("updatedBy") && (
-                    <th data-col-key="updatedBy" style={{ width: getColWidth("updatedBy") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Updated By</span>
-                        <ColMenu colKey="updatedBy"
-                          onFreeze={() => setFrozenCol(frozenCol === "updatedBy" ? null : "updatedBy")}
-                          onHide={() => hideCol("updatedBy")}
-                          frozen={frozenCol === "updatedBy"} showSort={false} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("updatedBy", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("createdAt") && (
-                    <th data-col-key="createdAt" style={{ width: getColWidth("createdAt") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Created Date{sortBy === "createdAt" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="createdAt"
-                          onSort={(d) => setSort({ sortBy: "createdAt", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "createdAt" ? null : "createdAt")}
-                          onHide={() => hideCol("createdAt")}
-                          frozen={frozenCol === "createdAt"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("createdAt", e.clientX)} />
-                    </th>
-                  )}
-                  {!isHidden("updatedAt") && (
-                    <th data-col-key="updatedAt" style={{ width: getColWidth("updatedAt") }} className="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">
-                      <div className="flex items-center gap-1">
-                        <span className="flex-1">Updated Date{sortBy === "updatedAt" && (sortOrder === "asc" ? " ↑" : " ↓")}</span>
-                        <ColMenu colKey="updatedAt"
-                          onSort={(d) => setSort({ sortBy: "updatedAt", sortOrder: d })}
-                          onFreeze={() => setFrozenCol(frozenCol === "updatedAt" ? null : "updatedAt")}
-                          onHide={() => hideCol("updatedAt")}
-                          frozen={frozenCol === "updatedAt"} />
-                      </div>
-                      <ResizeHandle onStart={(e) => startResize("updatedAt", e.clientX)} />
-                    </th>
-                  )}
+                  <Header k="meetingDate" label="Meeting Date" sortable />
+                  <Header k="client" label="Client" sortable sortKey="client" />
+                  <Header k="callStatus" label="Call Status" sortable />
+                  <Header k="absentMembers" label="Absent Members" />
+                  <Header k="actualStartTime" label="Start" sortable />
+                  <Header k="actualEndTime" label="End" sortable />
+                  <Header k="yesterdaysAchievements" label="Yesterday" />
+                  <Header k="todaysPriority" label="Today" />
+                  <Header k="stuckIssues" label="Stuck" />
+                  <Header k="createdBy" label="Created By" />
+                  <Header k="updatedBy" label="Updated By" />
+                  <Header k="createdAt" label="Created Date" sortable />
+                  <Header k="updatedAt" label="Updated Date" sortable />
                   <th className="w-10 px-3 py-3 border-b border-gray-200" />
                 </tr>
               </thead>
@@ -696,7 +699,7 @@ export default function DailyHuddlePage() {
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -717,24 +720,24 @@ export default function DailyHuddlePage() {
                     {/* Each <td> mirrors its <th>'s explicit width so table-layout: fixed
                         locks columns. overflow-hidden keeps long content from spilling. */}
                     {!isHidden("meetingDate") && (
-                      <td style={{ width: getColWidth("meetingDate") }} className="px-3 py-3 text-gray-700 whitespace-nowrap overflow-hidden">
+                      <td style={freezeStyle("meetingDate")} className={`px-3 py-3 text-gray-700 whitespace-nowrap overflow-hidden ${tdFreezeClass("meetingDate")}`}>
                         {fmtDate(r.meetingDate)}
                       </td>
                     )}
                     {!isHidden("client") && (
-                      <td style={{ width: getColWidth("client") }} className="px-3 py-3 text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap">
+                      <td style={freezeStyle("client")} className={`px-3 py-3 text-gray-700 overflow-hidden text-ellipsis whitespace-nowrap ${tdFreezeClass("client")}`}>
                         {r.clientName}
                       </td>
                     )}
                     {!isHidden("callStatus") && (
-                      <td style={{ width: getColWidth("callStatus") }} className="px-3 py-3 overflow-hidden">
+                      <td style={freezeStyle("callStatus")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("callStatus")}`}>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}>
                           {statusLabel(r.callStatus)}
                         </span>
                       </td>
                     )}
                     {!isHidden("absentMembers") && (
-                      <td style={{ width: getColWidth("absentMembers") }} className="px-3 py-3 text-gray-600 overflow-hidden">
+                      <td style={freezeStyle("absentMembers")} className={`px-3 py-3 text-gray-600 overflow-hidden ${tdFreezeClass("absentMembers")}`}>
                         {r.absentTeamMemberNames.length === 0 ? <span className="text-gray-300">—</span> : (
                           <span title={r.absentTeamMemberNames.join(", ")} className="whitespace-nowrap text-ellipsis overflow-hidden block">
                             {r.absentTeamMemberNames.slice(0, 2).join(", ")}
@@ -744,32 +747,32 @@ export default function DailyHuddlePage() {
                       </td>
                     )}
                     {!isHidden("actualStartTime") && (
-                      <td style={{ width: getColWidth("actualStartTime") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
+                      <td style={freezeStyle("actualStartTime")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("actualStartTime")}`}>
                         {r.actualStartTime ?? <span className="text-gray-300">—</span>}
                       </td>
                     )}
                     {!isHidden("actualEndTime") && (
-                      <td style={{ width: getColWidth("actualEndTime") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
+                      <td style={freezeStyle("actualEndTime")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("actualEndTime")}`}>
                         {r.actualEndTime ?? <span className="text-gray-300">—</span>}
                       </td>
                     )}
                     {!isHidden("yesterdaysAchievements") && (
-                      <td style={{ width: getColWidth("yesterdaysAchievements") }} className="px-3 py-3 text-gray-600 overflow-hidden">
+                      <td style={freezeStyle("yesterdaysAchievements")} className={`px-3 py-3 text-gray-600 overflow-hidden ${tdFreezeClass("yesterdaysAchievements")}`}>
                         {r.yesterdaysAchievements ? "✓" : "✗"}
                       </td>
                     )}
                     {!isHidden("todaysPriority") && (
-                      <td style={{ width: getColWidth("todaysPriority") }} className="px-3 py-3 text-gray-600 overflow-hidden">
+                      <td style={freezeStyle("todaysPriority")} className={`px-3 py-3 text-gray-600 overflow-hidden ${tdFreezeClass("todaysPriority")}`}>
                         {r.todaysPriority ? "✓" : "✗"}
                       </td>
                     )}
                     {!isHidden("stuckIssues") && (
-                      <td style={{ width: getColWidth("stuckIssues") }} className="px-3 py-3 text-gray-600 overflow-hidden">
+                      <td style={freezeStyle("stuckIssues")} className={`px-3 py-3 text-gray-600 overflow-hidden ${tdFreezeClass("stuckIssues")}`}>
                         {r.stuckIssues ? "✓" : "✗"}
                       </td>
                     )}
                     {!isHidden("createdBy") && (
-                      <td style={{ width: getColWidth("createdBy") }} className="px-3 py-3 overflow-hidden">
+                      <td style={freezeStyle("createdBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("createdBy")}`}>
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">{r.createdByInitials}</span>
                           <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.createdByName}</span>
@@ -777,7 +780,7 @@ export default function DailyHuddlePage() {
                       </td>
                     )}
                     {!isHidden("updatedBy") && (
-                      <td style={{ width: getColWidth("updatedBy") }} className="px-3 py-3 overflow-hidden">
+                      <td style={freezeStyle("updatedBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("updatedBy")}`}>
                         {r.updatedByName ? (
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">{r.updatedByInitials}</span>
@@ -787,12 +790,12 @@ export default function DailyHuddlePage() {
                       </td>
                     )}
                     {!isHidden("createdAt") && (
-                      <td style={{ width: getColWidth("createdAt") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
+                      <td style={freezeStyle("createdAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("createdAt")}`}>
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.createdAt)}</span>
                       </td>
                     )}
                     {!isHidden("updatedAt") && (
-                      <td style={{ width: getColWidth("updatedAt") }} className="px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden">
+                      <td style={freezeStyle("updatedAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("updatedAt")}`}>
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.updatedAt)}</span>
                       </td>
                     )}
@@ -957,7 +960,7 @@ export default function DailyHuddlePage() {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Client Name <span className="text-red-500">*</span></label>
                   <select value={editing.form.clientId} disabled={!!editing.id}
-                    onChange={e => setEditing({ ...editing, form: { ...editing.form, clientId: e.target.value } })}
+                    onChange={e => setEditing({ ...editing, form: { ...editing.form, clientId: e.target.value, absentClientMemberIds: [] } })}
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 bg-white disabled:bg-gray-50">
                     <option value="">Select…</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -965,13 +968,15 @@ export default function DailyHuddlePage() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Absent Members</label>
-                  {memberPickerOptions.length === 0 ? (
-                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No members — add in Client Members.</p>
+                  {!editing.form.clientId ? (
+                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Select a client first.</p>
+                  ) : clientMemberOptions.length === 0 ? (
+                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">This client has no members — add them in Client Master.</p>
                   ) : (
                     <UserMultiPicker
                       values={editing.form.absentClientMemberIds}
                       onChange={(ids) => setEditing({ ...editing, form: { ...editing.form, absentClientMemberIds: ids } })}
-                      users={memberPickerOptions}
+                      users={clientMemberOptions}
                       placeholder="Select members…"
                     />
                   )}
@@ -980,7 +985,7 @@ export default function DailyHuddlePage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual Start Time <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual Start Time {isHeld && <span className="text-red-500">*</span>}</label>
                   <input
                     type="time"
                     disabled={!isHeld}
@@ -1004,7 +1009,7 @@ export default function DailyHuddlePage() {
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual End Time <span className="text-red-500">*</span></label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual End Time {isHeld && <span className="text-red-500">*</span>}</label>
                   <input
                     type="time"
                     disabled={!isHeld || !editing.form.actualStartTime}
@@ -1091,7 +1096,7 @@ export default function DailyHuddlePage() {
         defaultClientId={filterClientId || null}
         onSubmit={async ({ from, to, clientId }: ExportRange) => {
           if (!clientId) {
-            toast.error("Please select a client to export.");
+            notify.error("Please select a client to export.");
             return;
           }
           // Backend builds the XLSX (with header block, member counts,
@@ -1104,7 +1109,7 @@ export default function DailyHuddlePage() {
           });
           if (!res.ok) {
             const errJson = await res.json().catch(() => null);
-            toast.error(errJson?.error ?? "Failed to export daily huddles");
+            notify.error(errJson?.error, { context: "daily huddle", fallback: "Couldn't export. Please try again." });
             return;
           }
           const blob = await res.blob();

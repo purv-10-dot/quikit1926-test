@@ -26,6 +26,7 @@ import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -543,6 +544,15 @@ function UserPanel({
         }
       }
 
+      // Success toast — match the actual action (edit / link-existing / invite).
+      if (editUser) {
+        notify.saved("User", "updated");
+      } else if (form.linkExistingUserId) {
+        notify.success("QuikScale access granted");
+      } else {
+        notify.success("User invited");
+      }
+
       onSaved(savedUser);
       // If a temp password came back, keep the panel open so the parent's
       // modal can render the plaintext once. Otherwise close immediately.
@@ -551,6 +561,9 @@ function UserPanel({
       } else {
         onClose();
       }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      notify.error(err, { context: "user" });
     } finally {
       setSaving(false);
     }
@@ -1106,6 +1119,9 @@ export default function OrgUsersPage() {
   }, [crud.items, crud.search, roleFilter, statusFilter]);
 
   function handleSaved(user: OrgUser & { tempPassword?: string }) {
+    // Optimistic write keeps the list responsive while the temp-password
+    // modal opens — no ~150ms gap between "User invited" toast and the new
+    // row appearing.
     crud.setItems((prev) => {
       const idx = prev.findIndex((u) => u.userId === user.userId);
       if (idx >= 0) {
@@ -1115,6 +1131,13 @@ export default function OrgUsersPage() {
       }
       return [...prev, user];
     });
+    // Reconcile with server. The POST response doesn't always carry every
+    // field the canonical GET returns — auto-assigned UserAppRole, joined
+    // team names, lastSignInAt, etc. land via downstream hooks (the
+    // optional PATCH /role, default-role seeder, audit-log writer). Without
+    // this refetch the optimistically-written row could stay partially
+    // stale until the admin hard-reloaded the page.
+    crud.refetch();
     // Bust shared caches — user team assignment / role / status changes ripple
     // into every consumer that reads users or teams.
     queryClient.invalidateQueries({ queryKey: ["teams"] });
@@ -1135,14 +1158,26 @@ export default function OrgUsersPage() {
     user: OrgUser,
     newStatus: "inactive" | "active"
   ) {
-    const res = await fetch(`/api/org/users/${user.userId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    const json = await res.json();
-    if (json.success) handleSaved(json.data);
-    setConfirmUser(null);
+    try {
+      const res = await fetch(`/api/org/users/${user.userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        notify.error(json.error, { context: "user" });
+        return;
+      }
+      handleSaved(json.data);
+      notify.success(
+        newStatus === "active" ? "User reactivated" : "User deactivated",
+      );
+    } catch (err: unknown) {
+      notify.error(err, { context: "user" });
+    } finally {
+      setConfirmUser(null);
+    }
   }
 
   const activeCount = crud.items.filter((u) => u.status === "active").length;
@@ -1547,7 +1582,11 @@ function TempPasswordModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      // `z-[200]` so the modal sits above the `z-[100]` dashboard header in
+      // `components/dashboard/header.tsx`. Matches the convention used by the
+      // confirm-delete modal at line 987 in this file. Lower z-indexes left
+      // the header + sidebar bright and clickable on top of the backdrop.
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
       <div
