@@ -131,6 +131,72 @@ export function NoActivityIllustration({ className }: Props) {
   );
 }
 
+export function ReportsBannerIllustration({ className }: Props) {
+  return (
+    <svg
+      width="170"
+      height="92"
+      viewBox="0 0 170 92"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      {/* Left dashboard card with bar chart */}
+      <rect x="6" y="30" width="46" height="44" rx="6" fill="#FFFFFF" stroke="#DBE4F0" />
+      <rect x="13" y="52" width="6" height="16" rx="1.5" fill="#FB923C" />
+      <rect x="23" y="44" width="6" height="24" rx="1.5" fill="#8B5CF6" />
+      <rect x="33" y="48" width="6" height="20" rx="1.5" fill="#FB923C" />
+      <rect x="13" y="36" width="20" height="3" rx="1.5" fill="#E2E8F0" />
+
+      {/* Plus separator */}
+      <path
+        d="M64 52 h10 M69 47 v10"
+        stroke="#94A3B8"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+
+      {/* Right dashboard card with bar chart */}
+      <rect x="86" y="34" width="46" height="44" rx="6" fill="#FFFFFF" stroke="#DBE4F0" />
+      <rect x="93" y="56" width="6" height="16" rx="1.5" fill="#22C55E" />
+      <rect x="103" y="48" width="6" height="24" rx="1.5" fill="#8B5CF6" />
+      <rect x="113" y="52" width="6" height="20" rx="1.5" fill="#FB923C" />
+      <rect x="93" y="40" width="20" height="3" rx="1.5" fill="#E2E8F0" />
+
+      {/* Curved arrow pointing toward the pie */}
+      <path
+        d="M70 30 C 90 16, 108 16, 124 26"
+        stroke="#1E3155"
+        strokeWidth="1.5"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <path
+        d="M124 26 l -6 -1 M124 26 l -2 -6"
+        stroke="#1E3155"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+
+      {/* Pie chart (tilted card) top-right */}
+      <g transform="rotate(8 140 24)">
+        <rect x="120" y="4" width="40" height="40" rx="8" fill="#FFFFFF" stroke="#DBE4F0" />
+        {/* pie segments centered at (140,24) r=12 */}
+        <path d="M140 24 L140 12 A12 12 0 0 1 152 24 Z" fill="#2563EB" />
+        <path d="M140 24 L152 24 A12 12 0 0 1 140 36 Z" fill="#22C55E" />
+        <path d="M140 24 L140 36 A12 12 0 0 1 128 24 Z" fill="#FBBF24" />
+        <path d="M140 24 L128 24 A12 12 0 0 1 140 12 Z" fill="#BFDBFE" />
+      </g>
+
+      {/* Sparkles */}
+      <path d="M150 56 l2 0 M151 55 l0 2" stroke="#1E3155" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M160 64 l3 0 M161.5 62.5 l0 3" stroke="#1E3155" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M154 72 l2 0 M155 71 l0 2" stroke="#1E3155" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function EpicProgressIllustration({ className }: Props) {
   return (
     <svg

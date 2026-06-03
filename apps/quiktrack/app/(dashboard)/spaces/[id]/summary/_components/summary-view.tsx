@@ -22,7 +22,10 @@ import {
   DueSoonIcon,
   NoActivityIllustration,
   EpicProgressIllustration,
+  ReportsBannerIllustration,
 } from "@/components/illustrations/summary-icons";
+import { StatusDonut } from "./status-donut";
+import { ChartTip } from "./chart-tip";
 
 interface Summary {
   totalIssues: number;
@@ -37,6 +40,15 @@ interface Summary {
     name: string | null;
     email: string | null;
     avatar: string | null;
+  }>;
+  epicProgress: Array<{
+    id: string;
+    key: string;
+    title: string;
+    done: number;
+    inProgress: number;
+    todo: number;
+    total: number;
   }>;
   recent: { completed: number; updated: number; created: number; dueSoon: number };
 }
@@ -183,6 +195,7 @@ export function SummaryView({ projectId }: { projectId: string }) {
               </button>
             </div>
           </div>
+          <ReportsBannerIllustration className="hidden sm:block h-[72px] w-auto shrink-0 self-center" />
           <button
             onClick={() => setBannerDismissed(true)}
             className="p-1 rounded hover:bg-blue-100 text-gray-500"
@@ -231,31 +244,43 @@ export function SummaryView({ projectId }: { projectId: string }) {
         <div className="border border-gray-200 rounded-lg p-5 bg-white flex flex-col">
           <h3 className="text-sm font-semibold text-gray-900">Status overview</h3>
           <p className="mt-1 text-xs text-gray-600">
-            The status overview for this space will display here after you{" "}
-            <Link
-              href={`/spaces/${projectId}/board`}
-              className="text-blue-600 hover:underline"
-            >
-              create some work items
-            </Link>
-            .
+            {total > 0 ? (
+              "A breakdown of work items by status across this space."
+            ) : (
+              <>
+                The status overview for this space will display here after you{" "}
+                <Link
+                  href={`/spaces/${projectId}/board`}
+                  className="text-blue-600 hover:underline"
+                >
+                  create some work items
+                </Link>
+                .
+              </>
+            )}
           </p>
-          <div className="mt-4 flex-1 grid grid-cols-2 items-center gap-4">
-            <div className="text-center">
-              <div className="text-4xl font-semibold text-gray-900 leading-none">
-                {total}
+          {total > 0 ? (
+            <div className="mt-4 flex-1 flex items-center">
+              <StatusDonut segments={data?.byStatus ?? []} total={total} />
+            </div>
+          ) : (
+            <div className="mt-4 flex-1 grid grid-cols-2 items-center gap-4">
+              <div className="text-center">
+                <div className="text-4xl font-semibold text-gray-900 leading-none">
+                  {total}
+                </div>
+                <div className="mt-2 text-xs text-gray-500">Total work items</div>
               </div>
-              <div className="mt-2 text-xs text-gray-500">Total work items</div>
+              <div className="flex flex-col items-center text-center">
+                <NoActivityIllustration className="h-20 w-auto" />
+                <h4 className="mt-3 text-sm font-semibold text-gray-900">No activity yet</h4>
+                <p className="mt-1 text-xs text-gray-600 max-w-[240px] leading-snug">
+                  Create a few work items and invite some teammates to your space to see
+                  your space activity.
+                </p>
+              </div>
             </div>
-            <div className="flex flex-col items-center text-center">
-              <NoActivityIllustration className="h-20 w-auto" />
-              <h4 className="mt-3 text-sm font-semibold text-gray-900">No activity yet</h4>
-              <p className="mt-1 text-xs text-gray-600 max-w-[240px] leading-snug">
-                Create a few work items and invite some teammates to your space to see
-                your space activity.
-              </p>
-            </div>
-          </div>
+          )}
         </div>
 
         <div className="border border-gray-200 rounded-lg p-5 bg-white flex flex-col">
@@ -270,17 +295,22 @@ export function SummaryView({ projectId }: { projectId: string }) {
             <div className="flex-1 flex items-end gap-4 px-2 min-h-[140px]">
               {priorityRows.map((r) => {
                 const h = Math.round((r.count / maxPriority) * 100);
+                const pct = total > 0 ? Math.round((r.count / total) * 100) : 0;
+                const label = r.priority.charAt(0) + r.priority.slice(1).toLowerCase();
                 return (
                   <div
                     key={r.priority}
                     className="flex-1 flex flex-col items-center justify-end h-full"
                   >
                     <div
-                      className="w-full max-w-[42px] bg-blue-500 rounded-t-sm"
-                      style={{
-                        height: `${r.count > 0 ? Math.max(h, 10) : 0}%`,
-                      }}
-                    />
+                      className="group relative w-full max-w-[42px] bg-blue-500 rounded-t-sm hover:bg-blue-600 cursor-pointer"
+                      style={{ height: `${r.count > 0 ? Math.max(h, 10) : 0}%` }}
+                    >
+                      <span className="pointer-events-none invisible absolute bottom-full left-1/2 z-30 mb-2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs opacity-0 shadow-lg transition-opacity duration-150 group-hover:visible group-hover:opacity-100">
+                        <span className="font-medium text-gray-900">{label}</span>
+                        <span className="tabular-nums text-gray-500">{r.count} · {pct}%</span>
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -322,18 +352,21 @@ export function SummaryView({ projectId }: { projectId: string }) {
                 const meta = TYPE_META[row.type];
                 if (!meta) return null;
                 const w = (row.count / maxType) * 100;
+                const pct = total > 0 ? Math.round((row.count / total) * 100) : 0;
                 return (
                   <div key={row.type} className="grid grid-cols-[120px_1fr] items-center gap-3">
                     <div className="flex items-center gap-2 text-sm text-gray-700">
                       <meta.Icon className={`h-3.5 w-3.5 ${meta.color}`} />
                       {meta.label}
                     </div>
-                    <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500"
-                        style={{ width: `${row.count > 0 ? Math.max(w, 3) : 0}%` }}
-                      />
-                    </div>
+                    <ChartTip label={meta.label} value={`${row.count} · ${pct}%`}>
+                      <div className="h-2 rounded-full bg-gray-200 overflow-hidden cursor-pointer">
+                        <div
+                          className="h-full bg-blue-500"
+                          style={{ width: `${row.count > 0 ? Math.max(w, 3) : 0}%` }}
+                        />
+                      </div>
+                    </ChartTip>
                   </div>
                 );
               })}
@@ -400,12 +433,17 @@ export function SummaryView({ projectId }: { projectId: string }) {
                         )}
                         <span className="truncate" title={a.email ?? displayName}>{displayName}</span>
                       </div>
-                      <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
-                        <div
-                          className="h-full bg-blue-500"
-                          style={{ width: `${(a.count / Math.max(1, total)) * 100}%` }}
-                        />
-                      </div>
+                      <ChartTip
+                        label={displayName}
+                        value={`${a.count} · ${Math.round((a.count / Math.max(1, total)) * 100)}%`}
+                      >
+                        <div className="h-2 rounded-full bg-gray-200 overflow-hidden cursor-pointer">
+                          <div
+                            className="h-full bg-blue-500"
+                            style={{ width: `${(a.count / Math.max(1, total)) * 100}%` }}
+                          />
+                        </div>
+                      </ChartTip>
                     </div>
                   );
                 })
@@ -417,15 +455,101 @@ export function SummaryView({ projectId }: { projectId: string }) {
 
       <div className="border border-gray-200 rounded-lg p-5 bg-white">
         <h3 className="text-sm font-semibold text-gray-900">Epic progress</h3>
-        <div className="mt-6 flex flex-col items-center text-center">
-          <EpicProgressIllustration />
-          <p className="mt-3 text-xs text-gray-600 max-w-[360px]">
-            Use epics to track larger initiatives in your space.{" "}
-            <a className="text-blue-600 hover:underline" href="#">
-              What is an epic?
-            </a>
-          </p>
-        </div>
+        {(data?.epicProgress ?? []).length > 0 ? (
+          <>
+            <p className="mt-1 text-xs text-gray-600">
+              See how your epics are progressing at a glance.
+            </p>
+            <div className="mt-3 flex items-center gap-4 text-[11px] text-gray-600">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-green-500" /> Done
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-blue-500" /> In progress
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-gray-300" /> To do
+              </span>
+            </div>
+            <div className="mt-4 space-y-4">
+              {(data?.epicProgress ?? []).map((e) => {
+                const t = Math.max(1, e.total);
+                const donePct = (e.done / t) * 100;
+                const inProgPct = (e.inProgress / t) * 100;
+                const todoPct = (e.todo / t) * 100;
+                const completePct = Math.round((e.done / t) * 100);
+                return (
+                  <div key={e.id}>
+                    <div className="flex items-center gap-2 text-sm text-gray-800 mb-1.5">
+                      <Zap className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+                      <span className="font-medium">{e.key}</span>
+                      <span className="text-gray-600 truncate" title={e.title}>
+                        {e.title}
+                      </span>
+                      <span className="ml-auto text-xs text-gray-500 tabular-nums shrink-0">
+                        {e.total === 0 ? "No items" : `${completePct}%`}
+                      </span>
+                    </div>
+                    {e.total > 0 ? (
+                      <ChartTip
+                        content={
+                          <>
+                            <span className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-sm bg-green-500" />
+                              <span className="font-medium text-gray-900">Done</span>
+                              <span className="ml-auto tabular-nums text-gray-500">{e.done} · {Math.round(donePct)}%</span>
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-sm bg-blue-500" />
+                              <span className="font-medium text-gray-900">In progress</span>
+                              <span className="ml-auto tabular-nums text-gray-500">{e.inProgress} · {Math.round(inProgPct)}%</span>
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-sm bg-gray-300" />
+                              <span className="font-medium text-gray-900">To do</span>
+                              <span className="ml-auto tabular-nums text-gray-500">{e.todo} · {Math.round(todoPct)}%</span>
+                            </span>
+                          </>
+                        }
+                      >
+                        <div className="h-5 w-full rounded bg-gray-100 overflow-hidden flex cursor-pointer">
+                          <div
+                            className="h-full bg-green-500 flex items-center justify-center text-[10px] font-semibold text-white"
+                            style={{ width: `${donePct}%` }}
+                          >
+                            {donePct >= 12 ? `${Math.round(donePct)}%` : ""}
+                          </div>
+                          <div
+                            className="h-full bg-blue-500 flex items-center justify-center text-[10px] font-semibold text-white"
+                            style={{ width: `${inProgPct}%` }}
+                          >
+                            {inProgPct >= 12 ? `${Math.round(inProgPct)}%` : ""}
+                          </div>
+                          <div
+                            className="h-full bg-gray-300"
+                            style={{ width: `${todoPct}%` }}
+                          />
+                        </div>
+                      </ChartTip>
+                    ) : (
+                      <div className="h-5 w-full rounded bg-gray-100" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="mt-6 flex flex-col items-center text-center">
+            <EpicProgressIllustration />
+            <p className="mt-3 text-xs text-gray-600 max-w-[360px]">
+              Use epics to track larger initiatives in your space.{" "}
+              <a className="text-blue-600 hover:underline" href="#">
+                What is an epic?
+              </a>
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="text-center text-xs text-gray-500 pt-6 pb-2">

@@ -148,8 +148,8 @@ export function UsersTab() {
       {/* Table */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="text-left bg-gradient-to-b from-gray-50 to-gray-50/60 border-b border-gray-200">
-            <tr className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+          <thead className="text-left bg-gradient-to-b from-gray-50 to-gray-50/60 border-b border-gray-200 dark:from-gray-800 dark:to-gray-800/60 dark:border-gray-700">
+            <tr className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-gray-500 dark:text-gray-300">
               <th className="px-5 py-3.5">User</th>
               <th className="px-4 py-3.5">Email</th>
               <th className="px-4 py-3.5">Role</th>
@@ -317,23 +317,23 @@ function UserRow({
   const isInvited = user.status === "invited";
   const statusLabel = active ? "Active" : isInvited ? "Invited" : "Inactive";
   const statusPill = active
-    ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
+    ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/30"
     : isInvited
-      ? "bg-amber-50 text-amber-700 ring-1 ring-amber-100"
-      : "bg-gray-100 text-gray-600 ring-1 ring-gray-200";
+      ? "bg-amber-50 text-amber-700 ring-1 ring-amber-100 dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/30"
+      : "bg-gray-100 text-gray-600 ring-1 ring-gray-200 dark:bg-gray-700/60 dark:text-gray-300 dark:ring-gray-600";
   const dotColor = active
-    ? "bg-emerald-500"
+    ? "bg-emerald-500 dark:bg-emerald-400"
     : isInvited
-      ? "bg-amber-500"
-      : "bg-gray-400";
+      ? "bg-amber-500 dark:bg-amber-400"
+      : "bg-gray-400 dark:bg-gray-500";
 
   // Deterministic colored chip for each team (cycle through 5 palettes).
   const teamPalette = [
-    "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100",
-    "bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100",
-    "bg-pink-50 text-pink-700 ring-1 ring-pink-100",
-    "bg-violet-50 text-violet-700 ring-1 ring-violet-100",
-    "bg-teal-50 text-teal-700 ring-1 ring-teal-100",
+    "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100 dark:bg-indigo-500/15 dark:text-indigo-300 dark:ring-indigo-400/30",
+    "bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100 dark:bg-cyan-500/15 dark:text-cyan-300 dark:ring-cyan-400/30",
+    "bg-pink-50 text-pink-700 ring-1 ring-pink-100 dark:bg-pink-500/15 dark:text-pink-300 dark:ring-pink-400/30",
+    "bg-violet-50 text-violet-700 ring-1 ring-violet-100 dark:bg-violet-500/15 dark:text-violet-300 dark:ring-violet-400/30",
+    "bg-teal-50 text-teal-700 ring-1 ring-teal-100 dark:bg-teal-500/15 dark:text-teal-300 dark:ring-teal-400/30",
   ];
 
   return (
@@ -394,7 +394,7 @@ function UserRow({
                 </span>
               ))}
               {user.teams.length > 2 && (
-                <span className="inline-flex items-center px-2 py-1 text-[11.5px] font-medium text-gray-500 bg-gray-50 ring-1 ring-gray-200 rounded-md">
+                <span className="inline-flex items-center px-2 py-1 text-[11.5px] font-medium text-gray-500 bg-gray-50 ring-1 ring-gray-200 rounded-md dark:bg-gray-700/60 dark:text-gray-300 dark:ring-gray-600">
                   +{user.teams.length - 2}
                 </span>
               )}
@@ -442,13 +442,13 @@ function UserRow({
       </tr>
 
       {isOpen && (
-        <tr className="bg-blue-50/30 border-b border-gray-100">
+        <tr className="bg-blue-50/30 border-b border-gray-100 dark:bg-blue-500/5 dark:border-gray-800">
           <td colSpan={7} className="px-6 py-4">
-            <div className="bg-white border border-gray-200 rounded-lg p-4 relative">
+            <div className="bg-white border border-gray-200 rounded-lg p-4 relative dark:bg-gray-900 dark:border-gray-700">
               <button
                 type="button"
                 onClick={onCollapse}
-                className="absolute top-3 right-3 text-gray-400 hover:text-gray-700"
+                className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
               >
                 <X className="h-4 w-4" />
               </button>

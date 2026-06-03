@@ -97,27 +97,43 @@ function buildUserResponse(
   };
 }
 
-// GET /api/org/users â€” membership list + each user's QuikTrack AppRole.
+// GET /api/org/users — list every OrgMember who has UserAppAccess to
+// QuikTrack in this org (whether or not they're members of any project).
 export const GET = withOrgAuth(async ({ orgId }) => {
-  const [memberships, appId] = await Promise.all([
-    db.orgMember.findMany({
-      where: { orgId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            avatar: true,
-            lastSignInAt: true,
-          },
+  const appId = await getQuikTrackAppId();
+
+  // Tenants that haven't registered QuikTrack yet → no users to show.
+  if (!appId) {
+    return NextResponse.json({ success: true, data: [] });
+  }
+
+  // Pre-resolve userIds with QuikTrack app access in this org.
+  const accessRows = await db.userAppAccess.findMany({
+    where: { orgId, appId },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  const quiktrackUserIds = accessRows.map((r) => r.userId);
+  if (quiktrackUserIds.length === 0) {
+    return NextResponse.json({ success: true, data: [] });
+  }
+
+  const memberships = await db.orgMember.findMany({
+    where: { orgId, userId: { in: quiktrackUserIds } },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          avatar: true,
+          lastSignInAt: true,
         },
       },
-      orderBy: { createdAt: "asc" },
-    }),
-    getQuikTrackAppId(),
-  ]);
+    },
+    orderBy: { createdAt: "asc" },
+  });
 
   const appRoleByUserId = new Map<string, { id: string; name: string } | null>();
   const teamsByUserId = new Map<string, Array<{ id: string; name: string }>>();

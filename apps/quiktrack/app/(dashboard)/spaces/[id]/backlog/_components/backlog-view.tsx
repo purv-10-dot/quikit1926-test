@@ -1,8 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import {
+  FilterSelect,
+  type FilterSelectOption,
+} from "../../grouped-kanban/_components/toolbar/filter-select";
 import {
   Search,
   Filter,
@@ -1590,24 +1595,25 @@ function FilterRow({
   label,
   value,
   onChange,
-  children,
+  options,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  children: React.ReactNode;
+  options: FilterSelectOption[];
 }) {
   return (
-    <label className="mb-2 block text-xs">
+    <div className="mb-2 block text-xs">
       <span className="mb-1 block font-medium text-gray-600">{label}</span>
-      <select
+      <FilterSelect
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-      >
-        {children}
-      </select>
-    </label>
+        onChange={onChange}
+        options={options}
+        placeholder="Any"
+        expand
+        width={248}
+      />
+    </div>
   );
 }
 
@@ -1944,12 +1950,14 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const [filterType, setFilterType] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   // Filtered total per section, keyed identically to `sectionStates`. Only
   // populated when at least one filter is active; otherwise the header falls
   // back to the unfiltered sprint counts from /api/sprints.
   const [filteredCounts, setFilteredCounts] = useState<Record<string, number>>({});
   const filterBtnRef = useRef<HTMLDivElement>(null);
   const moveBtnRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
   const sprintSentinelRef = useRef<HTMLDivElement>(null);
 
   const onDragStart = useCallback((e: React.DragEvent, issueId: string) => {
@@ -2039,6 +2047,20 @@ export function BacklogView({ projectId }: { projectId: string }) {
     });
     return () => { cancelled = true; };
   }, [projectId, sprints, appliedSearch, filterStatusId, filterAssigneeId, filterType, filterPriority]);
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) setMoreMenuOpen(false);
+    }
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setMoreMenuOpen(false); }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreMenuOpen]);
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -2521,35 +2543,60 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 </button>
                 {filterOpen && (
                   <div className="absolute right-0 top-full z-30 mt-1 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
-                    <FilterRow label="Status" value={filterStatusId} onChange={setFilterStatusId}>
-                      <option value="">Any</option>
-                      {statuses.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </FilterRow>
-                    <FilterRow label="Assignee" value={filterAssigneeId} onChange={setFilterAssigneeId}>
-                      <option value="">Any</option>
-                      {members
-                        .filter((m): m is Member & { user: NonNullable<Member["user"]> } => Boolean(m.user))
-                        .map((m) => {
-                          const name = [m.user.firstName, m.user.lastName].filter(Boolean).join(" ").trim() || m.user.email;
-                          return <option key={m.user.id} value={m.user.id}>{name}</option>;
-                        })}
-                    </FilterRow>
-                    <FilterRow label="Type" value={filterType} onChange={setFilterType}>
-                      <option value="">Any</option>
-                      <option value="TASK">Task</option>
-                      <option value="BUG">Bug</option>
-                      <option value="STORY">Story</option>
-                    </FilterRow>
-                    <FilterRow label="Priority" value={filterPriority} onChange={setFilterPriority}>
-                      <option value="">Any</option>
-                      <option value="HIGHEST">Highest</option>
-                      <option value="HIGH">High</option>
-                      <option value="MEDIUM">Medium</option>
-                      <option value="LOW">Low</option>
-                      <option value="LOWEST">Lowest</option>
-                    </FilterRow>
+                    <FilterRow
+                      label="Status"
+                      value={filterStatusId}
+                      onChange={setFilterStatusId}
+                      options={[
+                        { value: "", label: "Any", muted: true },
+                        ...statuses.map((s) => ({ value: s.id, label: s.name })),
+                      ]}
+                    />
+                    <FilterRow
+                      label="Assignee"
+                      value={filterAssigneeId}
+                      onChange={setFilterAssigneeId}
+                      options={[
+                        { value: "", label: "Any", muted: true },
+                        ...members
+                          .filter(
+                            (m): m is Member & { user: NonNullable<Member["user"]> } =>
+                              Boolean(m.user),
+                          )
+                          .map((m) => ({
+                            value: m.user.id,
+                            label:
+                              [m.user.firstName, m.user.lastName]
+                                .filter(Boolean)
+                                .join(" ")
+                                .trim() || m.user.email,
+                          })),
+                      ]}
+                    />
+                    <FilterRow
+                      label="Type"
+                      value={filterType}
+                      onChange={setFilterType}
+                      options={[
+                        { value: "", label: "Any", muted: true },
+                        { value: "TASK", label: "Task" },
+                        { value: "BUG", label: "Bug" },
+                        { value: "STORY", label: "Story" },
+                      ]}
+                    />
+                    <FilterRow
+                      label="Priority"
+                      value={filterPriority}
+                      onChange={setFilterPriority}
+                      options={[
+                        { value: "", label: "Any", muted: true },
+                        { value: "HIGHEST", label: "Highest" },
+                        { value: "HIGH", label: "High" },
+                        { value: "MEDIUM", label: "Medium" },
+                        { value: "LOW", label: "Low" },
+                        { value: "LOWEST", label: "Lowest" },
+                      ]}
+                    />
                     {activeCount > 0 && (
                       <button
                         type="button"
@@ -2586,15 +2633,74 @@ export function BacklogView({ projectId }: { projectId: string }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button className="p-1.5 rounded hover:bg-gray-100 text-gray-600" aria-label="Insights">
+          <Link
+            href={`/spaces/${projectId}/summary`}
+            className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
+            aria-label="Insights"
+            title="Insights"
+          >
             <BarChart3 className="h-4 w-4" />
-          </button>
-          <button className="p-1.5 rounded hover:bg-gray-100 text-gray-600" aria-label="Settings">
+          </Link>
+          <Link
+            href={`/spaces/${projectId}/settings`}
+            className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
+            aria-label="Settings"
+            title="Settings"
+          >
             <SettingsIcon className="h-4 w-4" />
-          </button>
-          <button className="p-1.5 rounded hover:bg-gray-100 text-gray-600" aria-label="More">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+          </Link>
+          {/* <div className="relative" ref={moreMenuRef}>
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen((v) => !v)}
+              className={`p-1.5 rounded text-gray-600 ${moreMenuOpen ? "bg-gray-100" : "hover:bg-gray-100"}`}
+              aria-label="More"
+              aria-haspopup="menu"
+              aria-expanded={moreMenuOpen}
+              title="More"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {moreMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1"
+              >
+                <Link
+                  role="menuitem"
+                  href={`/spaces/${projectId}/settings/fields`}
+                  onClick={() => setMoreMenuOpen(false)}
+                  className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  Configure fields
+                </Link>
+                <Link
+                  role="menuitem"
+                  href={`/spaces/${projectId}/settings/types`}
+                  onClick={() => setMoreMenuOpen(false)}
+                  className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  Configure issue types
+                </Link>
+                <Link
+                  role="menuitem"
+                  href={`/spaces/${projectId}/settings/automation`}
+                  onClick={() => setMoreMenuOpen(false)}
+                  className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  Automation
+                </Link>
+                <Link
+                  role="menuitem"
+                  href={`/spaces/${projectId}/settings/notifications`}
+                  onClick={() => setMoreMenuOpen(false)}
+                  className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  Notifications
+                </Link>
+              </div>
+            )}
+          </div> */}
         </div>
       </div>
 

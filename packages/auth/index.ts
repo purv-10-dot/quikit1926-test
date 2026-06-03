@@ -26,6 +26,8 @@ interface AuthUser {
   isSuperAdmin?: boolean;
   orgId?: string;
   membershipRole?: string;
+  /** Redis-backed session id carried from the central IdP id_token claim. */
+  sessionId?: string;
   /** Stashed by Google/Azure profile() callbacks for post-OAuth pre-fill. */
   oauthFirstName?: string;
   oauthLastName?: string;
@@ -623,6 +625,9 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
             name: profile.name,
             orgId: profile.tenant_id,
             membershipRole: profile.role,
+            // Shared Redis session id minted by the central IdP. Lets this app
+            // be soft-invalidated from the same session store (see verifyJWT).
+            sessionId: profile.sessionId,
           };
         },
       },
@@ -699,6 +704,10 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
           token.orgId = (user as AuthUser).orgId;
           token.membershipRole = (user as AuthUser).membershipRole;
           token.isSuperAdmin = false; // Apps don't inherit super admin status
+          // Carry the shared session id so verifyJWT (and the central
+          // /api/verify-token) can soft-invalidate this app's session when the
+          // central session is revoked.
+          token.sessionId = (user as AuthUser).sessionId;
         }
         // Store the access_token + refresh_token from the OAuth exchange
         if (account) {
@@ -751,6 +760,17 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
           impersonationExpiresAt: token.impersonationExpiresAt,
         };
         return session;
+      },
+    },
+    events: {
+      // Global-session logout: revoke the shared Redis session id so signing
+      // out of this app invalidates the session across every sibling app
+      // (one shared session id, one shared Redis — see createAuthSession).
+      async signOut({ token }) {
+        const sessionId = token?.sessionId as string | undefined;
+        if (sessionId) {
+          await revokeAuthSession(sessionId);
+        }
       },
     },
   };

@@ -3,9 +3,11 @@
 import { useState, useEffect } from "react";
 import { useCreateWWW, useUpdateWWW } from "@/lib/hooks/useWWW";
 import { useUsers } from "@/lib/hooks/useUsers";
-import { useCanEditWWW } from "@/lib/hooks/useCanEditWWW";
+import { useCanEditWWW, useCanEditWWWAssignment } from "@/lib/hooks/useCanEditWWW";
 import type { WWWItem } from "@/lib/types/www";
 import { toDateInputValue } from "@/lib/utils/dateUtils";
+import { notify } from "@/lib/utils/notify";
+import { humanizeApiError } from "@/lib/utils/humanizeError";
 
 import {
   STATUS_SELECT_OPTIONS,
@@ -20,6 +22,7 @@ import {
   RightPanelSubmitButton,
   UserSelect,
 } from "@quikit/ui";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 
 
 function formatDate(iso?: string | null): string {
@@ -174,6 +177,7 @@ function EditTab({
   users,
   mode,
   readOnly,
+  whoWhenReadOnly,
   itemId,
 }: {
   form: { whoIds: string[]; what: string; when: string; status: string; revisedDate: string; notes: string; category: string; originalDueDate: string };
@@ -183,19 +187,23 @@ function EditTab({
   users: Array<{ id: string; firstName: string; lastName: string; email: string }>;
   mode: "create" | "edit";
   readOnly: boolean;
+  /** Stricter gate for the Who + When fields — creator/admin only (see WWWPanel). */
+  whoWhenReadOnly: boolean;
   itemId?: string;
 }) {
   return (
     <div className="space-y-4">
-      {errors._ && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
-          {errors._}
-        </div>
-      )}
-
       {readOnly && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
           Read-only — only the creator, assignee, or an admin can edit this item.
+        </div>
+      )}
+
+      {/* Editor (e.g. assignee) who isn't the creator: the item is editable but
+          the assignment fields are locked. */}
+      {!readOnly && whoWhenReadOnly && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+          Only the creator or an admin can change <strong>Who</strong> and <strong>When</strong>.
         </div>
       )}
 
@@ -212,7 +220,7 @@ function EditTab({
             users={users}
             placeholder="Select person…"
             error={!!errors.whoIds}
-            disabled={readOnly}
+            disabled={whoWhenReadOnly}
           />
           {errors.whoIds && <p className="text-[10px] text-red-500 mt-0.5">{errors.whoIds}</p>}
         </div>
@@ -224,7 +232,7 @@ function EditTab({
             type="date"
             value={form.when}
             onChange={e => set("when", e.target.value)}
-            disabled={readOnly}
+            disabled={whoWhenReadOnly}
             className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50 disabled:text-gray-500 ${errors.when ? "border-red-400" : "border-gray-200"}`}
           />
           {errors.when && <p className="text-[10px] text-red-500 mt-0.5">{errors.when}</p>}
@@ -424,6 +432,13 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
   // in edit mode regardless of instance-level rules. Create mode is gated at
   // the page level (Add button hidden when !canCreate).
   const readOnly = mode === "edit" && (!canEditItem || !canUpdate);
+  // Assignment fields ("Who" + "When") are creator-gated: only the creator (or
+  // an admin/super-admin) may reassign or move the due date. Assignees — who
+  // can otherwise edit the item — see these two fields disabled. Create mode is
+  // never gated (the author is the current user). Layered on top of `readOnly`
+  // so a fully read-only drawer keeps Who/When locked too.
+  const canEditWhoWhen = useCanEditWWWAssignment(item);
+  const whoWhenReadOnly = readOnly || (mode === "edit" && !canEditWhoWhen);
 
   const initialWhoIds = (item?.whoIds && item.whoIds.length > 0)
     ? item.whoIds
@@ -521,10 +536,11 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       } else {
         await updateWWW.mutateAsync(payload);
       }
+      notify.saved("Action item", mode === "create" ? "created" : "updated");
       onSuccess();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save";
-      setErrors({ _: msg });
+      setErrors({ _: humanizeApiError(err, { context: "action item" }) });
+      notify.error(err, { context: "action item", fallback: "Couldn't save the action item. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -564,25 +580,30 @@ export function WWWPanel({ mode, item, initialTab, onClose, onSuccess, logsOnly 
       onTabChange={(k) => setTab(k as Tab)}
       footer={
         tab === "edit" ? (
-          <RightPanelFooter>
-            <RightPanelCancelButton onClick={onClose} />
-            {/* RBAC v2: hide Save entirely when the role doesn't grant update. */}
-            {(mode === "create" || canUpdate) && (
-              <RightPanelSubmitButton
-                onClick={handleSubmit}
-                saving={saving}
-                disabled={readOnly}
-                icon={mode === "create" ? "plus" : "check"}
-                label={mode === "create" ? "Create Item" : "Save Changes"}
-                title={readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
-              />
-            )}
-          </RightPanelFooter>
+          // Column wrapper keeps the server-error banner pinned just above
+          // the Cancel/Submit row regardless of how far the user scrolled.
+          <div className="flex flex-col gap-2 w-full">
+            <FormErrorBanner message={errors._} />
+            <RightPanelFooter>
+              <RightPanelCancelButton onClick={onClose} />
+              {/* RBAC v2: hide Save entirely when the role doesn't grant update. */}
+              {(mode === "create" || canUpdate) && (
+                <RightPanelSubmitButton
+                  onClick={handleSubmit}
+                  saving={saving}
+                  disabled={readOnly}
+                  icon={mode === "create" ? "plus" : "check"}
+                  label={mode === "create" ? "Create Item" : "Save Changes"}
+                  title={readOnly ? "Only the creator, assignee, or an admin can edit this item" : undefined}
+                />
+              )}
+            </RightPanelFooter>
+          </div>
         ) : null
       }
     >
       {tab === "edit" && (
-        <EditTab form={form} set={set} setMulti={setMulti} errors={errors} users={users} mode={mode} readOnly={readOnly} itemId={item?.id} />
+        <EditTab form={form} set={set} setMulti={setMulti} errors={errors} users={users} mode={mode} readOnly={readOnly} whoWhenReadOnly={whoWhenReadOnly} itemId={item?.id} />
       )}
       {tab === "log" && item && (
         <LogTab item={item} users={users} />

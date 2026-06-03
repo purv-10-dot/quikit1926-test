@@ -182,7 +182,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
             id: true,
             name: true,
             isSystem: true,
-            rolePermissions: { select: { resource: true, action: true } },
+            permissions: { select: { resource: true, action: true } },
           },
         });
 

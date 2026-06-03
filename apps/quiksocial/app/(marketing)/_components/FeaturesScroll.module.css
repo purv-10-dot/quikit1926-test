@@ -1,0 +1,304 @@
+.wrap {
+  position: relative;
+  z-index: 4;            /* paints above the fixed BG overlay (z 1) */
+  width: 100%;
+  background: transparent;
+  /* Height is set inline from HORIZ_VH so the JS and CSS agree. */
+}
+
+.sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 48px;
+}
+
+.head {
+  padding: 0 10vw;
+  max-width: 1280px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.75);
+  margin-bottom: 18px;
+  background: rgba(10, 11, 13, 0.5);
+}
+.dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.9);
+}
+
+.title {
+  font-family: var(--font-serif), 'Times New Roman', serif;
+  font-weight: 400;
+  font-size: clamp(36px, 4.4vw, 64px);
+  line-height: 1.05;
+  letter-spacing: -0.022em;
+  color: #fff;
+  margin: 0;
+  max-width: 22ch;
+}
+.title em {
+  font-style: italic;
+  background: linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.55) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Horizontal track — translated via JS based on vertical scroll. */
+.track {
+  display: flex;
+  gap: 32px;
+  padding: 0 0 0 10vw;
+  will-change: transform;
+}
+
+.endSpacer {
+  flex: 0 0 auto;
+  width: 10vw;
+}
+
+.card {
+  flex: 0 0 auto;
+  width: clamp(280px, 28vw, 440px);
+  aspect-ratio: 5 / 6;
+  padding: 36px;
+  /* Reserve bottom space for the absolutely-positioned .reveal block. */
+  padding-bottom: 36px;
+  border-radius: 0;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: none;
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Compose hover border transition with the global [data-reveal] entrance
+     so the cascading fade-up isn't clobbered by the card's own transition. */
+  transition:
+    border-color 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) var(--delay, 0s),
+    transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) var(--delay, 0s);
+  cursor: default;
+}
+.card:hover {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* Card children flow naturally now: num → title → graphic. The body
+   reveal still sits absolute at the bottom so its hover-expansion
+   doesn't push siblings around. */
+.card .num {
+  display: block;
+}
+
+/* Glassmorphic UI graphic tile.
+   Wider 5:3 aspect to fit a miniature UI mockup (window chrome + body).
+   Sits in normal flow below the title, above the body reveal.
+   `margin-top: 5%` nudges it further from the title (percentage margins
+   resolve against the container's inline size, so ~5% of card width).
+
+   Mask on the wrapper fades the WHOLE tile (glass bg + svg + blur layer)
+   into transparency at the bottom edge — the graphic dissolves into the
+   moss background like a piece of melting glass. */
+.glyph {
+  position: relative;
+  width: 100%;
+  margin-top: 5%;
+  aspect-ratio: 160 / 96;
+  -webkit-mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.35) 10%,
+    rgba(0, 0, 0, 0.85) 24%,
+    rgba(0, 0, 0, 1) 36%
+  );
+  mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.35) 10%,
+    rgba(0, 0, 0, 0.85) 24%,
+    rgba(0, 0, 0, 1) 36%
+  );
+  display: grid;
+  place-items: stretch;
+  color: rgba(255, 255, 255, 0.92);
+  border-radius: 14px;
+  overflow: hidden;
+  /* Translucent fill + softer diagonal sheen (white opacity cut by half) */
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.015) 45%, rgba(255, 255, 255, 0.04) 100%),
+    rgba(10, 12, 16, 0.42);
+  /* The glass refraction effect */
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  /* Hairline outer border + inner highlight */
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 36px -12px rgba(0, 0, 0, 0.55);
+  transition:
+    transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.5s ease,
+    box-shadow 0.5s ease;
+}
+.glyph svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Progressive blur — a layer that sits on top of the SVG and blurs
+   whatever's behind it (the SVG inside the same containing block) via
+   `backdrop-filter`. A linear-gradient mask makes the blur fully opaque
+   across the bottom half and fades to clear in the top third, giving a
+   thick "fog rising from the floor" effect on the UI mockup.
+   Stacked with a softer 4px blur layer (.glyph::before) so the
+   transition between sharp and blurred reads as truly gradient — not a
+   step. */
+.glyph::before,
+.glyph::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.glyph::before {
+  /* Soft blur layer — covers more of the tile, falls off later */
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  -webkit-mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 35%,
+    rgba(0, 0, 0, 0.55) 60%,
+    rgba(0, 0, 0, 0) 90%
+  );
+  mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 35%,
+    rgba(0, 0, 0, 0.55) 60%,
+    rgba(0, 0, 0, 0) 90%
+  );
+}
+.glyph::after {
+  /* Heavy blur — concentrated near the bottom for the deep fog */
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  -webkit-mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.9) 22%,
+    rgba(0, 0, 0, 0.4) 50%,
+    rgba(0, 0, 0, 0) 75%
+  );
+  mask-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.9) 22%,
+    rgba(0, 0, 0, 0.4) 50%,
+    rgba(0, 0, 0, 0) 75%
+  );
+}
+/* On card hover, the glass lifts and brightens a touch */
+.card:hover .glyph {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 48px -12px rgba(0, 0, 0, 0.72);
+}
+
+/* Foot is anchored to the bottom of the card. The .reveal wrapper
+   clips the paragraph to ~2 lines by default and grows on hover —
+   because it's bottom-anchored, the title slides up as the body
+   reveals more lines. */
+/* Title sits between the number and the graphic, in normal flow. */
+.card .cardTitle {
+  margin: 6px 0 0;
+}
+
+/* Reveal is anchored to the BOTTOM of the card. Its content (body) is
+   bottom-aligned via flex so the visible 2 lines are the start of the
+   paragraph at the bottom edge; as max-height grows on hover, new lines
+   appear ABOVE them — the title above stays put. */
+.reveal {
+  position: absolute;
+  left: 36px;
+  right: 36px;
+  bottom: 36px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+}
+
+.reveal .body {
+  margin: 0;
+  width: 100%;
+  /* Hard 2-line cap. Bodies are normalized to similar length in the
+     FEATURES data so each card lands at exactly 2 lines. line-clamp
+     truncates with an ellipsis if a future edit overshoots. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.num {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.cardTitle {
+  font-family: var(--font-serif), 'Times New Roman', serif;
+  font-weight: 400;
+  font-size: clamp(28px, 2.6vw, 40px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 24px 0 14px;
+}
+
+.body {
+  font-size: clamp(13px, 0.95vw, 15px);
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+@media (max-width: 720px) {
+  .sticky { gap: 28px; }
+  .head, .track { padding: 0 22px; }
+  .head .title { font-size: 34px; }
+  .card {
+    width: 82vw;
+    aspect-ratio: 4 / 5;
+    padding: 24px;
+    gap: 12px;
+  }
+  .glyph { border-radius: 12px; }
+  .card .cardTitle { font-size: 22px; }
+  .reveal { left: 24px; right: 24px; bottom: 24px; }
+  .endSpacer { width: 22px; }
+}

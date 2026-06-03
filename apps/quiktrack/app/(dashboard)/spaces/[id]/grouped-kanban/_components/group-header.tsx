@@ -115,7 +115,7 @@ export function GroupHeader({
           }}
           maxLength={64}
           style={{ color: validColor, borderColor: validColor }}
-          className="h-7 px-1 text-sm font-semibold bg-white border-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
+          className="h-8 px-1 text-lg font-bold bg-white border-2 rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
         />
       ) : (
         <button
@@ -125,7 +125,7 @@ export function GroupHeader({
             setEditingName(true);
           }}
           style={{ color: validColor }}
-          className="text-[15px] font-bold tracking-tight hover:underline"
+          className="text-lg font-bold tracking-tight hover:underline"
         >
           {group.name}
         </button>

@@ -22,8 +22,7 @@ export function SprintCell({ value, sprints, onCommit }: SprintCellProps) {
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 hover:bg-gray-100 rounded px-1 py-0.5 text-xs text-gray-700"
-        title={current?.name ?? "No sprint"}
+        className="inline-flex items-center gap-1 hover:bg-gray-100 px-1 py-0.5 text-xs text-gray-700 focus:outline-none focus-visible:outline-none dark:hover:bg-slate-700/50 dark:text-slate-200"
       >
         <CalendarRange className="h-3 w-3 text-gray-400" />
         <span className="truncate max-w-[140px]">{current?.name ?? "Backlog"}</span>
@@ -36,22 +35,35 @@ export function SprintCell({ value, sprints, onCommit }: SprintCellProps) {
         align="right"
         width={200}
       >
-        {sprints.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              if (s.id !== value) onCommit(s.id);
-            }}
-            className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-50 ${
-              s.id === value ? "bg-gray-50" : ""
-            }`}
-          >
-            <span className="truncate">{s.name}</span>
-            <span className="ml-1 text-[10px] text-gray-400">{s.status}</span>
-          </button>
-        ))}
+        {sprints.map((s) => {
+          const status = (s.status ?? "").toUpperCase();
+          const statusTone =
+            status === "ACTIVE"
+              ? "text-emerald-600 dark:text-emerald-400"
+              : status === "FUTURE"
+                ? "text-blue-600 dark:text-blue-300"
+                : status === "CLOSED"
+                  ? "text-gray-400 dark:text-slate-500"
+                  : "text-gray-400 dark:text-slate-400";
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                if (s.id !== value) onCommit(s.id);
+              }}
+              className={`w-full text-left px-2 py-1 text-xs hover:bg-gray-50 ${
+                s.id === value ? "bg-gray-50" : ""
+              }`}
+            >
+              <span className="truncate">{s.name}</span>
+              <span className={`ml-1 text-[10px] font-semibold uppercase tracking-wider ${statusTone}`}>
+                {s.status}
+              </span>
+            </button>
+          );
+        })}
       </PopoverPanel>
     </>
   );

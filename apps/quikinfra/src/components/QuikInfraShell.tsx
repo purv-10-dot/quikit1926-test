@@ -607,9 +607,11 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
           className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl py-1 pl-0.5 pr-2 text-left transition-colors hover:bg-slate-50"
           aria-label="Collapse sidebar"
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b from-[#FFAF55] to-[#ea580c] text-lg text-white shadow-[0_4px_14px_rgba(249,115,22,0.35)]">
-            🏗️
-          </div>
+          <img
+            src="/app-icons/quikinfra.svg"
+            alt="QuikInfra"
+            className="h-10 w-10 shrink-0 rounded-xl shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
+          />
           <div className="min-w-0">
             <h1 className="truncate text-sm font-bold tracking-tight text-slate-900">Quik Infra</h1>
             <p className="truncate text-xs text-gray-500">Construction ERP</p>
@@ -686,11 +688,11 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
       <button
         type="button"
         onClick={() => setSidebarOpen(true)}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b from-[#FFAF55] to-[#ea580c] text-lg text-white shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
         aria-label="Expand sidebar"
         title="Expand sidebar"
       >
-        🏗️
+        <img src="/app-icons/quikinfra.svg" alt="QuikInfra" className="h-11 w-11 rounded-xl" />
       </button>
       <button
         type="button"

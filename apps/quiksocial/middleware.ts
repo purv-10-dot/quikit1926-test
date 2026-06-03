@@ -24,6 +24,17 @@ const factoryMiddleware = createMiddleware({
 });
 
 export async function middleware(request: NextRequest) {
+  // The public marketing landing lives at the exact root path. Let it
+  // through unauthenticated. We special-case `pathname === "/"` instead of
+  // adding "/" to publicRoutes because the factory matches public routes with
+  // `pathname.startsWith(r)` — a "/" entry would make EVERY route public and
+  // disable auth for the whole app. Authenticated users who hit "/" are sent
+  // to /dashboard by the marketing page's own server-side session check. All
+  // other routes keep their existing middleware-enforced auth gating.
+  if (request.nextUrl.pathname === "/") {
+    return NextResponse.next();
+  }
+
   const res = await factoryMiddleware(request);
   if (QUIKIT_URL && (res.status === 307 || res.status === 308)) {
     const dest = res.headers.get("location") ?? "";
@@ -42,5 +53,14 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico).*)"],
+  // Exclude framework + static asset routes from auth so they load for
+  // anonymous visitors on the public landing. The trailing `.*\..*` skips
+  // any path containing a file extension (the landing's logo PNGs, the
+  // scrubbing MP4, the favicon /icon.svg, platform icons, etc.) — without it
+  // the strict middleware redirects those static requests to login and they
+  // 404 / show as broken images. Dashboard and other app routes are dotless,
+  // so they still pass through the middleware and keep their auth gating.
+  matcher: [
+    "/((?!api/|_next/static|_next/image|favicon.ico|.*\\..*).*)",
+  ],
 };

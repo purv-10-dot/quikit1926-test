@@ -22,6 +22,7 @@ import {
   Check,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { BoardFilterSelect } from "@/app/(dashboard)/spaces/[id]/board/_components/board-filter-select";
 
 type IssueType = "TASK" | "BUG" | "STORY" | "EPIC";
 type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
@@ -278,7 +279,7 @@ export function CreateIssueModal({
             Create {TYPE_META[type].label}
           </h2>
           <div className="flex items-center gap-1 text-gray-500">
-            <button onClick={() => setMinimized(true)} className="p-1.5 hover:bg-gray-100 rounded" aria-label="Minimize">
+            {/* <button onClick={() => setMinimized(true)} className="p-1.5 hover:bg-gray-100 rounded" aria-label="Minimize">
               <Minus className="h-4 w-4" />
             </button>
             <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="Maximize">
@@ -286,7 +287,7 @@ export function CreateIssueModal({
             </button>
             <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="More">
               <MoreHorizontal className="h-4 w-4" />
-            </button>
+            </button> */}
             <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded" aria-label="Close">
               <X className="h-4 w-4" />
             </button>
@@ -384,20 +385,16 @@ export function CreateIssueModal({
               </button>
             }
           >
-            <SelectShell>
-              <select
-                value={assigneeId}
-                onChange={(e) => setAssigneeId(e.target.value)}
-                className="w-full h-9 pl-3 pr-8 text-sm bg-transparent appearance-none focus:outline-none"
-              >
-                <option value="">Automatic</option>
-                {members.map((m) => (
-                  <option key={m.userId} value={m.userId}>
-                    {memberLabel(m)}
-                  </option>
-                ))}
-              </select>
-            </SelectShell>
+            <BoardFilterSelect
+              value={assigneeId}
+              onChange={setAssigneeId}
+              placeholder="Automatic"
+              searchable
+              options={[
+                { value: "", label: "Automatic" },
+                ...members.map((m) => ({ value: m.userId, label: memberLabel(m) })),
+              ]}
+            />
           </Field>
 
           {/* Priority — not applicable to Epics */}
@@ -433,20 +430,16 @@ export function CreateIssueModal({
           {/* Sprint — Epics are not sprint-scoped, so hide for EPIC */}
           {type !== "EPIC" && (
             <Field label="Sprint" hint="QuikTrack sprint field">
-              <SelectShell>
-                <select
-                  value={sprintId}
-                  onChange={(e) => setSprintId(e.target.value)}
-                  className="w-full h-9 pl-3 pr-8 text-sm bg-transparent appearance-none focus:outline-none"
-                >
-                  <option value="">Select sprint</option>
-                  {sprints.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </SelectShell>
+              <BoardFilterSelect
+                value={sprintId}
+                onChange={setSprintId}
+                placeholder="Select sprint"
+                searchable
+                options={[
+                  { value: "", label: "Select sprint" },
+                  ...sprints.map((s) => ({ value: s.id, label: s.name })),
+                ]}
+              />
             </Field>
           )}
 
@@ -955,9 +948,9 @@ function StatusPicker({
   }, [open]);
 
   function pillCls(cat: Status["category"]) {
-    if (cat === "DONE") return "bg-green-100 text-green-800";
-    if (cat === "IN_PROGRESS") return "bg-blue-100 text-blue-800";
-    return "bg-gray-200 text-gray-700"; // TODO + BACKLOG
+    if (cat === "DONE") return "qt-issue-status-pill qt-issue-status-pill--done bg-green-100 text-green-800";
+    if (cat === "IN_PROGRESS") return "qt-issue-status-pill qt-issue-status-pill--progress bg-blue-100 text-blue-800";
+    return "qt-issue-status-pill qt-issue-status-pill--todo bg-gray-200 text-gray-700"; // TODO + BACKLOG
   }
 
   const selected = statuses.find((s) => s.id === value) ?? null;
@@ -968,7 +961,7 @@ function StatusPicker({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex items-center gap-1 h-7 px-2 text-xs font-semibold uppercase tracking-wide rounded ${
-          selected ? pillCls(selected.category) : "bg-gray-200 text-gray-700"
+          selected ? pillCls(selected.category) : "qt-issue-status-pill qt-issue-status-pill--todo bg-gray-200 text-gray-700"
         }`}
       >
         <span>{selected?.name ?? "Status"}</span>

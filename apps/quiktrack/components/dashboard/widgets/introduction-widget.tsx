@@ -32,11 +32,11 @@ export function IntroductionWidget() {
           </h4>
           <p className="text-sm text-gray-700 leading-snug">
             Not sure where to start? Check out the{" "}
-            <Link href="/" className="text-blue-600 hover:underline">
+            <Link href="/dashboard" className="text-blue-600 hover:underline">
               QuikTrack 101 guide
             </Link>{" "}
             and{" "}
-            <Link href="/" className="text-blue-600 hover:underline">
+            <Link href="/dashboard" className="text-blue-600 hover:underline">
               training course
             </Link>
             .

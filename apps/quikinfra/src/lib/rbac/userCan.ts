@@ -151,7 +151,9 @@ export async function loadMyPermissions(
   })) as Array<{ resource: string; action: string; revoke: boolean }>;
 
   const role = assignment?.role ?? null;
-  const rolePairs = role ? role.rolePermissions.map((p) => `${p.resource}:${p.action}`) : [];
+  const rolePairs = role
+    ? role.rolePermissions.map((p: { resource: string; action: string }) => `${p.resource}:${p.action}`)
+    : [];
   const grantPairs = extras
     .filter((p) => !p.revoke)
     .map((p) => `${p.resource}:${p.action}`);

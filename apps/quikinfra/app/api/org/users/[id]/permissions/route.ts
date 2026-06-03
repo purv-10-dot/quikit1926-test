@@ -47,7 +47,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       data: {
         roleId: assignment?.role.id ?? null,
         roleName: assignment?.role.name ?? null,
-        rolePermissions: assignment?.role.rolePermissions ?? [],
+        permissions: assignment?.role.rolePermissions ?? [],
         extras,
       },
     });

@@ -21,6 +21,7 @@ const ROUTE_GATES: Record<string, { resource: string; action: string }> = {
   list: { resource: "ProjectList", action: "view" },
   "task-table": { resource: "ProjectTaskTable", action: "view" },
   board: { resource: "Board", action: "view" },
+  "grouped-kanban": { resource: "Board", action: "view" },
   timesheet: { resource: "Timesheet", action: "view" },
   docs: { resource: "Doc", action: "view" },
 };
@@ -77,7 +78,7 @@ export default function SpaceLayout({
       <div className="flex-shrink-0 bg-white">
         <ProjectHeader projectId={params.id} />
       </div>
-      <div className="flex-1 overflow-y-auto bg-white">{children}</div>
+      <div className="flex-1 overflow-y-auto bg-white min-w-0">{children}</div>
     </div>
   );
 }

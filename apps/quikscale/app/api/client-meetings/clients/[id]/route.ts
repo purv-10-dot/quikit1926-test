@@ -1,15 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { updateClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 
-const withOrgAuth = withOrgAuthForModule("clientMeetings.clients");
+// RBAC v2: same per-action gate as the list endpoint. View/update/delete are
+// gated by the corresponding ClientMaster permission grants on the caller's
+// role (replaces the legacy `requireAdmin()` gate on PUT/DELETE).
+const auth = withOrgAuthForResource("clientMeetings.clients", "ClientMaster");
 
 /** GET /api/client-meetings/clients/[id] — detail including team-member list. */
-export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
+export const GET = auth.view<{ id: string }>(async ({ orgId }, _req, { params }) => {
   const row = await db.client.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: {
@@ -44,13 +46,9 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params 
   });
 });
 
-/** PUT /api/client-meetings/clients/[id] — admin-only. */
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+/** PUT /api/client-meetings/clients/[id] — gated by `ClientMaster.update`. */
+export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request, { params }) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId } = auth as { orgId: string; userId: string };
-
     const parsed = updateClientSchema.safeParse(await request.json());
     if (!parsed.success)
       return NextResponse.json({ success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" }, { status: 400 });
@@ -135,15 +133,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update client") }, { status: 500 });
   }
-}
+});
 
-/** DELETE /api/client-meetings/clients/[id] — admin-only, soft delete. */
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+/** DELETE /api/client-meetings/clients/[id] — gated by `ClientMaster.delete`. Soft delete. */
+export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId } = auth as { orgId: string; userId: string };
-
     const existing = await db.client.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
     if (!existing) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
 
@@ -157,4 +151,4 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to delete client") }, { status: 500 });
   }
-}
+});

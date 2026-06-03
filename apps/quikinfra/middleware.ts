@@ -54,6 +54,16 @@ export async function middleware(request: NextRequest) {
     return res;
   }
 
+  // ── Public marketing landing at "/" — render without auth. Exact-match
+  //    only (not a prefix via publicRoutes, which would make every route
+  //    public under the shared middleware's startsWith check). The page
+  //    server-redirects authed users to /dashboard.
+  if (request.nextUrl.pathname === "/") {
+    const res = NextResponse.next({ request: { headers: forwarded } });
+    res.headers.set("x-request-id", requestId);
+    return res;
+  }
+
   // ── Settings role gate (runs before delegating to the shared mw) ─
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
   const { pathname } = request.nextUrl;
@@ -111,5 +121,5 @@ export async function middleware(request: NextRequest) {
 // Matcher covers API routes too (for the request-id header) but skips
 // static assets and Next internals.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|marketing/).*)"],
 };

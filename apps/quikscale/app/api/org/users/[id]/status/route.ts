@@ -1,7 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+
+// RBAC v2: toggling active/inactive is a mutation on the membership record,
+// gated by `User.update`. Admin role bypass is handled inside `userCan()`.
+const auth = withOrgAuthForResource("orgSetup.users", "User");
 
 const bodySchema = z.object({
   status: z.enum(["active", "inactive"]),
@@ -10,12 +14,8 @@ const bodySchema = z.object({
 // PATCH /api/org/users/[id]/status
 // Toggle a user's membership status (active / inactive). Inactive users
 // keep their data but lose the ability to sign in to this tenant.
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export const PATCH = auth.update<{ id: string }>(async ({ orgId }, req, { params }) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId } = auth as { orgId: string };
-
     const parsed = bodySchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -43,4 +43,4 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const message = error instanceof Error ? error.message : "Failed to update status";
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
-}
+});
