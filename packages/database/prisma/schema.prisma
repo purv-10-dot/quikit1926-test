@@ -27,6 +27,7 @@ model App {
   appRoles         AppRole[]
   AppRole          QtAppRole[]
   cnAppRoles       CnAppRole[]
+  qsAppRoles       QsAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
   oauthClient      OAuthClient?
@@ -235,6 +236,8 @@ model Org {
   QtUserViewPref          QtUserViewPref[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
+  qsAppRoles              QsAppRole[]
+  qsUserAppRoles          QsUserAppRole[]
   vcApplications          VCApplication[]
   vcAuditLogs             VCAuditLog[]
   vcCapitalCalls          VCCapitalCall[]
@@ -343,6 +346,7 @@ model User {
   qtProjectUserRoles      QtProjectUserRole[]
   cnUserAppRoles          CnUserAppRole[]
   cnPermissionExtras      CnUserPermissionExtra[]
+  qsUserAppRoles          QsUserAppRole[]
   cnProfiles              CnUserProfile[]
   cnProjectAccess         CnUserProjectAccess[]
   accounts                Account[]
@@ -6276,6 +6280,78 @@ model AutoReplyCursor {
 
   @@unique([orgId, socialAccountId, postId])
   @@index([orgId, socialAccountId])
+  @@schema("app_quiksocial")
+}
+
+/// QuikIT RBAC v2 — org-scoped role definition for QuikSocial. Sits on top
+/// of the per-brand BrandMembership (which keeps owning brand-level
+/// admin/approver/member); this AppRole gates org-wide "QuikSocial admin"
+/// capabilities. DB table is `AppRole` in `app_quiksocial` (via @@map);
+/// Prisma model name is prefixed `Qs` so it can coexist with QuikScale's
+/// AppRole + QuikTrack's QtAppRole etc. in a single schema.prisma.
+model QsAppRole {
+  id          String             @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean            @default(false)
+  isDefault   Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  createdBy   String?
+  app         App                @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  navigations QsRoleNavigation[]
+  permissions QsRolePermission[]
+  members     QsUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quiksocial")
+}
+
+model QsUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role       QsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quiksocial")
+}
+
+model QsRolePermission {
+  id       String    @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     QsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quiksocial")
+}
+
+model QsRoleNavigation {
+  id     String    @id @default(cuid())
+  roleId String
+  navKey String
+  role   QsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@map("RoleNavigation")
   @@schema("app_quiksocial")
 }
 
