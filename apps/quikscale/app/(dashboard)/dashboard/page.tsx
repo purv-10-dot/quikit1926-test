@@ -1057,15 +1057,28 @@ export default function DashboardPage() {
   // by firstName asc, 25 per page). When a team is selected, the API filters to
   // actual OrgMember.teamId membership, which fixes the previous KPI-ownership-
   // derived heuristic that hid team members without KPIs and showed strangers.
+  // Team-scope member set — driven by the *unsearched* user list for the
+  // selected team, so owner-search in the picker below can never shrink which
+  // rows the dashboard tables show. When the owner search is empty this query
+  // shares its cache key with the picker query, so it's a single request.
+  const { users: scopeUsers } = useInfiniteUsers(selectedTeamId);
+  // Set of user IDs belonging to the selected team (all org members when no team selected)
+  const teamUserIds = useMemo(() => new Set(scopeUsers.map(u => u.id)), [scopeUsers]);
+
+  // Owner picker source — server-side searchable so ANY member is findable, not
+  // just the already-loaded page. The picker reports its (debounced) query via
+  // onSearchChange → `ownerSearch` → the hook's `search` arg → /api/users?search.
+  const [ownerSearch, setOwnerSearch] = useState<string>("");
   const {
-    users,
+    users: ownerUsers,
     hasNextPage: usersHasMore,
     isFetchingNextPage: usersLoadingMore,
+    isLoading: usersSearching,
     fetchNextPage: usersLoadMore,
-  } = useInfiniteUsers(selectedTeamId);
-
-  // Set of user IDs belonging to the selected team (all org members when no team selected)
-  const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
+  } = useInfiniteUsers(selectedTeamId, ownerSearch);
+  // Reset the owner search when the team scope changes so a stale query string
+  // can't filter the new team's member list.
+  useEffect(() => { setOwnerSearch(""); }, [selectedTeamId]);
 
   // Multi-select WWW status filter. Defaults to every status EXCEPT
   // "completed" — keeps the dashboard focused on actionable work; users can
@@ -1305,11 +1318,13 @@ export default function DashboardPage() {
                         setTeamTabOwnerId(v);
                         setShowFilter(false);
                       }}
-                      options={users.map(userToFilterOption)}
+                      options={ownerUsers.map(userToFilterOption)}
                       allLabel="All Users"
                       hasMore={usersHasMore}
                       loadingMore={usersLoadingMore}
                       onLoadMore={() => { void usersLoadMore(); }}
+                      onSearchChange={setOwnerSearch}
+                      loading={usersSearching}
                     />
                   </div>
                   {(teamTabTeamId || teamTabOwnerId || teamTabKpiType !== "individual") && (

@@ -91,4 +91,43 @@ describe("GET /api/users — happy path", () => {
     const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
     expect(call.where.teamId).toBe("team-123");
   });
+
+  // Regression: the owner picker used to search only the already-loaded page,
+  // so members past page 1 returned "No results". Search is now server-side.
+  it("applies a case-insensitive name/email search across the joined user", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("search=Himanshu"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.user.AND).toHaveLength(1);
+    expect(call.where.user.AND[0].OR).toEqual([
+      { firstName: { contains: "Himanshu", mode: "insensitive" } },
+      { lastName: { contains: "Himanshu", mode: "insensitive" } },
+      { email: { contains: "Himanshu", mode: "insensitive" } },
+    ]);
+  });
+
+  it("splits a multi-word search into AND-ed tokens (firstName + lastName)", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("search=Himanshu%20Pandey"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.user.AND).toHaveLength(2);
+    expect(call.where.user.AND[0].OR[0]).toEqual({ firstName: { contains: "Himanshu", mode: "insensitive" } });
+    expect(call.where.user.AND[1].OR[1]).toEqual({ lastName: { contains: "Pandey", mode: "insensitive" } });
+  });
+
+  it("omits the user search filter when search is empty/whitespace", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("search=%20%20"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.user).toBeUndefined();
+  });
 });

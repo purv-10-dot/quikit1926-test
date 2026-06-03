@@ -53,6 +53,18 @@ interface FilterPickerProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
+  /**
+   * Optional server-side search. When provided, the picker stops filtering
+   * `options` locally and instead reports the (debounced) query string here —
+   * the caller is expected to feed back the matching `options`. Use this when
+   * `options` is a paginated/searched server slice so that members beyond the
+   * first page are still findable (otherwise typing only matches the loaded
+   * page and everyone else shows "No results"). Omit it to keep the default
+   * behavior: client-side filtering over the full `options` list.
+   */
+  onSearchChange?: (query: string) => void;
+  /** True while a server-side search / page fetch is in flight (server mode). */
+  loading?: boolean;
 }
 
 export function FilterPicker({
@@ -64,10 +76,17 @@ export function FilterPicker({
   onLoadMore,
   hasMore = false,
   loadingMore = false,
+  onSearchChange,
+  loading = false,
 }: FilterPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // Remembers the option the user last picked so the trigger button can keep
+  // showing its label even after `options` changes (e.g. a server-side search
+  // narrows the list, or it resets to page 1) and no longer contains it.
+  const [lastSelected, setLastSelected] = useState<FilterOption | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const isServerSearch = !!onSearchChange;
 
   // Close on outside click
   useEffect(() => {
@@ -81,15 +100,33 @@ export function FilterPicker({
     return () => document.removeEventListener("mousedown", handle);
   }, []);
 
-  const selected = options.find(o => o.value === value);
-  const filtered = search.trim()
-    ? options.filter(o =>
-        o.label.toLowerCase().includes(search.toLowerCase()) ||
-        (o.sublabel?.toLowerCase().includes(search.toLowerCase()))
-      )
-    : options;
+  // Server-search mode: report the query to the caller, debounced so we don't
+  // refetch on every keystroke. Kept in a ref so an inline `onSearchChange`
+  // callback identity change can't reset the debounce timer each render.
+  const onSearchChangeRef = useRef(onSearchChange);
+  useEffect(() => { onSearchChangeRef.current = onSearchChange; });
+  useEffect(() => {
+    if (!onSearchChangeRef.current) return;
+    const handle = setTimeout(() => onSearchChangeRef.current?.(search.trim()), 250);
+    return () => clearTimeout(handle);
+  }, [search]);
+
+  // In server-search mode the caller supplies already-matched options, so render
+  // them as-is. In client mode, filter the full options list locally.
+  const selected =
+    options.find(o => o.value === value) ??
+    (lastSelected && lastSelected.value === value ? lastSelected : undefined);
+  const filtered = isServerSearch
+    ? options
+    : search.trim()
+      ? options.filter(o =>
+          o.label.toLowerCase().includes(search.toLowerCase()) ||
+          (o.sublabel?.toLowerCase().includes(search.toLowerCase()))
+        )
+      : options;
 
   function select(val: string) {
+    setLastSelected(val ? (options.find(o => o.value === val) ?? null) : null);
     onChange(val);
     setOpen(false);
     setSearch("");
@@ -98,11 +135,12 @@ export function FilterPicker({
   // Infinite-scroll trigger: when the dropdown list is within ~40px of the
   // bottom and there's a next page available, fire `onLoadMore`. Guarded on
   // `loadingMore` so we don't queue duplicate fetches while one is in flight.
-  // While the user is typing in the search box we suppress fetches — search
-  // filters only the already-loaded slice (server-side search would be a
-  // future addition).
+  // In client mode a search only filters the already-loaded slice, so paging in
+  // unrelated rows would be pointless — we suppress fetches while typing. In
+  // server-search mode the next page contains more *matches*, so we keep paging.
   function handleScroll(e: UIEvent<HTMLDivElement>) {
-    if (!onLoadMore || !hasMore || loadingMore || search.trim()) return;
+    if (!onLoadMore || !hasMore || loadingMore) return;
+    if (!isServerSearch && search.trim()) return;
     const el = e.currentTarget;
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) {
       onLoadMore();
@@ -215,7 +253,9 @@ export function FilterPicker({
             })}
 
             {filtered.length === 0 && (
-              <div className="px-3 py-4 text-xs text-gray-400 text-center">No results</div>
+              <div className="px-3 py-4 text-xs text-gray-400 text-center">
+                {isServerSearch && loading ? "Searching…" : "No results"}
+              </div>
             )}
 
             {/* Infinite-scroll loading footer. Only renders when the caller
