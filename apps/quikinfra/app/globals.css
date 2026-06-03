@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* ─── QuikInfra brand tokens ─────────────────────────────── */
+  --quikit-color-primary:            #ea580c; /* orange-600  — buttons, focus */
+  --quikit-color-primary-hover:      #c2410c; /* orange-700  */
+  --quikit-color-primary-soft:       #fff7ed; /* orange-50   — tinted surfaces */
+  --quikit-color-primary-soft-2:     #ffedd5; /* orange-100  */
+  --quikit-color-primary-foreground: #ffffff;
+
+  /* Neutral surfaces */
+  --quikit-color-bg:           #f8fafc;       /* slate-50    — app background */
+  --quikit-color-surface:      #ffffff;
+  --quikit-color-surface-muted:#f1f5f9;       /* slate-100   — striped rows  */
+  --quikit-color-border:       #e2e8f0;       /* slate-200 */
+  --quikit-color-border-hover: #cbd5e1;       /* slate-300 */
+
+  /* Text */
+  --quikit-color-text:         #0f172a;       /* slate-900 */
+  --quikit-color-text-muted:   #64748b;       /* slate-500 */
+  --quikit-color-text-faint:   #94a3b8;       /* slate-400 */
+}
+
+html, body {
+  font-family: var(--font-plus-jakarta-sans), system-ui, sans-serif;
+  background-color: var(--quikit-color-bg);
+  color: var(--quikit-color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Selection in brand color */
+::selection {
+  background-color: rgba(249, 115, 22, 0.22);
+  color: #431407;
+}
+
+/* Thin scrollbars everywhere — Firefox uses scrollbar-width / -color,
+   WebKit/Blink (Chromium, Edge, Safari) needs ::-webkit-scrollbar rules. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent; /* slate-400 */
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.55); /* slate-400 @ ~55% */
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.75); /* slate-500 */
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastProgress {
+  from { width: 100%; }
+  to   { width: 0%; }
+}
+

@@ -77,6 +77,17 @@ export function buildDocImageKey(orgId: string, projectId: string, mime: string)
   return `tenants/${orgId}/quiktrack/docs/${projectId}/${randomUUID()}.${ext}`;
 }
 
+/** Per-issue attachment key. Preserves the original filename for download UX. */
+export function buildIssueAttachmentKey(
+  orgId: string,
+  projectId: string,
+  issueId: string,
+  fileName: string,
+): string {
+  const safe = fileName.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 180) || "file";
+  return `tenants/${orgId}/quiktrack/issues/${projectId}/${issueId}/${randomUUID()}-${safe}`;
+}
+
 export async function putObject(
   key: string,
   body: Buffer | Uint8Array,
@@ -94,12 +105,28 @@ export async function putObject(
   );
 }
 
-/** 15-minute presigned GET URL — long enough for a page render + caching. */
-export async function getPresignedGetUrl(key: string, expiresIn = 900): Promise<string> {
+/**
+ * 15-minute presigned GET URL — long enough for a page render + caching.
+ * When `downloadFileName` is set, the URL forces the browser to download
+ * (S3 returns `Content-Disposition: attachment; filename="..."`).
+ */
+export async function getPresignedGetUrl(
+  key: string,
+  expiresIn = 900,
+  downloadFileName?: string,
+): Promise<string> {
   const s3 = getClient();
   return getSignedUrl(
     s3,
-    new GetObjectCommand({ Bucket: getBucket(), Key: key }),
+    new GetObjectCommand({
+      Bucket: getBucket(),
+      Key: key,
+      ...(downloadFileName
+        ? {
+            ResponseContentDisposition: `attachment; filename="${downloadFileName.replace(/"/g, "")}"`,
+          }
+        : {}),
+    }),
     { expiresIn },
   );
 }

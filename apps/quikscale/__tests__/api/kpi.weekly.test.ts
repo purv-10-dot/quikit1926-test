@@ -105,7 +105,8 @@ describe("POST /api/kpi/[id]/weekly — individual KPI happy path", () => {
   beforeEach(() => {
     asAdmin();
     mockDb.kPI.findUnique.mockResolvedValue(fakeKPI as any);
-    // canEditKPIOwnerWeekly: admin always allowed
+    // Authorization is enforced by the route wrapper (RBAC v2 `KPI:update`).
+    // Tests run with a default-allow mock for `userCan`.
     mockDb.team.findFirst.mockResolvedValue(null);
     // Feature flags: past-week edit ALLOWED
     mockDb.featureFlag.findMany.mockResolvedValue([]);
@@ -197,7 +198,8 @@ describe("POST /api/kpi/[id]/weekly — team KPI", () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toMatch(/not an owner/i);
+    // Friendly wording: "The selected user is not a contributor on this Team KPI."
+    expect(body.error).toMatch(/not a contributor/i);
   });
 
   it("200 when userId is a valid owner", async () => {

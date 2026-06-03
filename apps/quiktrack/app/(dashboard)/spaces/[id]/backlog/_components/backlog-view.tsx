@@ -2065,7 +2065,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!filterOpen) return;
     function onDown(e: MouseEvent) {
-      if (filterBtnRef.current && !filterBtnRef.current.contains(e.target as Node)) setFilterOpen(false);
+      const t = e.target as HTMLElement;
+      // FilterSelect (via PopoverPanel) portals its option menu to document.body.
+      // That click is outside `filterBtnRef` but must not close this popover, or
+      // the option unmounts before its onChange runs and the filter never applies.
+      if (t.closest?.("[data-portal-popover]")) return;
+      if (filterBtnRef.current && !filterBtnRef.current.contains(t)) setFilterOpen(false);
     }
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") setFilterOpen(false); }
     document.addEventListener("mousedown", onDown);

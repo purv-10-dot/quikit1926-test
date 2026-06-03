@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import { useKPIs, useDeleteKPI } from "@/lib/hooks/useKPI";
+import { useKPIs, useDeleteKPI, useBulkRestoreKPI } from "@/lib/hooks/useKPI";
+import { notify } from "@/lib/utils/notify";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -15,7 +16,7 @@ import { KPITable } from "./components/KPITable";
 import { KPIModal } from "./components/KPIModal";
 import { ALL_STATIC_COLS, COL_LABELS } from "./hooks/useTableColumns";
 import { ALL_WEEKS } from "@/lib/utils/fiscal";
-import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, DropdownPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
+import { FilterPicker, userToFilterOption, EmptyState, FiscalPeriodPicker, type FiscalQuarter, type ExportSelection } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { AddButton } from "@quikit/ui";
@@ -88,7 +89,6 @@ export default function IndividualKPIPage() {
 
   // Filter panel state
   const [showFilter, setShowFilter] = useState(false);
-  const [filterStatus, setFilterStatus] = useState("");
   const filterRef = useRef<HTMLDivElement>(null);
 
   // Teams list
@@ -116,12 +116,12 @@ export default function IndividualKPIPage() {
   useEffect(() => {
     setFilters(f => ({
       ...f,
-      status: (filterStatus as any) || undefined,
+      status: undefined,
       owner: filterOwner || undefined,
       teamId: filterTeam && !filterOwner ? filterTeam : undefined,
       page: 1,
     }));
-  }, [filterStatus, filterOwner, filterTeam]);
+  }, [filterOwner, filterTeam]);
 
   // Close filter dropdown on outside click (year picker owns its own outside-click handling)
   useEffect(() => {
@@ -138,6 +138,7 @@ export default function IndividualKPIPage() {
 
   // Bulk delete
   const deleteKPI = useDeleteKPI();
+  const bulkRestoreKPI = useBulkRestoreKPI();
   const [selectedKPIIds, setSelectedKPIIds] = useState<Set<string>>(new Set());
   const [clearSelectionTrigger, setClearSelectionTrigger] = useState(0);
 
@@ -145,9 +146,28 @@ export default function IndividualKPIPage() {
 
   async function handleBulkDelete() {
     if (!selectedKPIIds.size) return;
-    await Promise.all([...selectedKPIIds].map(id => deleteKPI.mutateAsync(id)));
-    setClearSelectionTrigger(n => n + 1);
-    refetch();
+    const count = selectedKPIIds.size;
+    try {
+      await Promise.all([...selectedKPIIds].map(id => deleteKPI.mutateAsync(id)));
+      notify.success(`Deleted ${count} KPI${count === 1 ? "" : "s"}`);
+      setClearSelectionTrigger(n => n + 1);
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "KPI", fallback: "Couldn't delete the selected KPIs. Please try again." });
+    }
+  }
+
+  async function handleBulkRestore() {
+    if (!selectedKPIIds.size) return;
+    const count = selectedKPIIds.size;
+    try {
+      await bulkRestoreKPI.mutateAsync([...selectedKPIIds]);
+      notify.success(`Restored ${count} KPI${count === 1 ? "" : "s"}`);
+      setClearSelectionTrigger(n => n + 1);
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "KPI", fallback: "Couldn't restore the selected KPIs. Please try again." });
+    }
   }
 
   // Hidden columns — now driven through Manage Columns modal via TablePrefs
@@ -165,8 +185,15 @@ export default function IndividualKPIPage() {
   const currentYear = filters.year ?? FISCAL_YEAR;
   const currentQuarter = filters.quarter ?? FISCAL_QUARTER;
 
-  // Columns metadata for Manage + Export modals — static cols only (weeks handled separately)
-  const moduleColumns = ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key }));
+  // Columns metadata for Manage + Export modals.
+  // Includes the 13 week columns so "Hide all" actually hides every data
+  // column. Framework row controls (`_checkbox`, `_log`, `_id`) are
+  // deliberately excluded — they're UI affordances rendered unconditionally
+  // by KPITable, not user-togglable data.
+  const moduleColumns = [
+    ...ALL_STATIC_COLS.map((key) => ({ key, label: COL_LABELS[key] ?? key })),
+    ...ALL_WEEKS.map((w) => ({ key: `week${w}`, label: `Week ${w}` })),
+  ];
   const visibleColKeys = moduleColumns.filter((c) => !hiddenCols.has(c.key)).map((c) => c.key);
 
   // Export handler — pulls rows per scope, formats via runExport
@@ -216,7 +243,7 @@ export default function IndividualKPIPage() {
   // Both return null while loading → pill hides until ready.
   const fiscalWeek = useCurrentWeek(currentYear, currentQuarter);
   const fiscalWeekRange = useWeekDateRange(currentYear, currentQuarter, fiscalWeek);
-  const activeFilterCount = (filterTeam ? 1 : 0) + (filterStatus ? 1 : 0) + (filterOwner ? 1 : 0);
+  const activeFilterCount = (filterTeam ? 1 : 0) + (filterOwner ? 1 : 0);
 
   return (
     <div className="flex flex-col h-full">
@@ -235,8 +262,8 @@ export default function IndividualKPIPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Bulk delete */}
-          {canDelete && selectedKPIIds.size > 0 && (
+          {/* Bulk delete — active list only */}
+          {canDelete && selectedKPIIds.size > 0 && !viewTrash && (
             <button
               onClick={handleBulkDelete}
               disabled={deleteKPI.isPending}
@@ -253,6 +280,27 @@ export default function IndividualKPIPage() {
                 </svg>
               )}
               Delete {selectedKPIIds.size} selected
+            </button>
+          )}
+
+          {/* Bulk restore — trash view only */}
+          {canDelete && selectedKPIIds.size > 0 && viewTrash && (
+            <button
+              onClick={handleBulkRestore}
+              disabled={bulkRestoreKPI.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 disabled:opacity-50 transition-colors"
+            >
+              {bulkRestoreKPI.isPending ? (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+                </svg>
+              )}
+              Restore {selectedKPIIds.size} selected
             </button>
           )}
 
@@ -320,22 +368,9 @@ export default function IndividualKPIPage() {
                     allLabel="All owners"
                   />
                 </div>
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Status</p>
-                  <DropdownPicker
-                    value={filterStatus}
-                    onChange={setFilterStatus}
-                    options={[
-                      { value: "", label: "All statuses" },
-                      { value: "active", label: "Active" },
-                      { value: "paused", label: "Paused" },
-                      { value: "completed", label: "Completed" },
-                    ]}
-                  />
-                </div>
-                {(filterTeam || filterStatus || filterOwner) && (
+                {(filterTeam || filterOwner) && (
                   <button
-                    onClick={() => { setFilterTeam(""); setFilterStatus(""); setFilterOwner(""); }}
+                    onClick={() => { setFilterTeam(""); setFilterOwner(""); }}
                     className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Clear filters

@@ -97,19 +97,6 @@ export const INVITE_METHOD = {
 } as const;
 export type InviteMethod = (typeof INVITE_METHOD)[keyof typeof INVITE_METHOD];
 
-// FRD §1.4 — system-defined default password for all native email invitations
-// (Super Admin creating a new org, Org Admin inviting users, in-app invites).
-// Stored as a constant so email templates and the Set-Password screen agree.
-export const DEFAULT_INVITE_PASSWORD = "Quikit123";
-
-// Distinct default password used ONLY by the self-service "Forgot password"
-// flow. The two values are deliberately different so the password policy can
-// reject both (a freshly invited user can't keep the invite default, and
-// someone going through reset can't keep the reset default either) and so
-// support can tell — at a glance — whether a credential came from an invite
-// (Quikit123) or a self-service reset (MoreYeahs@123).
-export const DEFAULT_RESET_PASSWORD = "MoreYeahs@123";
-
 // FRD §3.3 — SSO providers we recognise. Email-domain classification maps an
 // invited address to one of these so the invitation email can render the right
 // CTA ("Sign in with Google" vs "Sign in with Microsoft").

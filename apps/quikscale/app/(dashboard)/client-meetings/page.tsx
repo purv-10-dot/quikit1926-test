@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { LayoutDashboard } from "lucide-react";
 import { EmptyState, UserPicker, DropdownPicker, type PickerUser } from "@quikit/ui";
 import type { PerformanceColor } from "@/lib/services/clientMeetingsMath";
+import { DAILY_METRICS, WEEKLY_METRICS } from "@/lib/constants/clientMeetingsMetrics";
 
 interface ClientOpt { id: string; name: string }
 interface MonthInfo { year: number; month: number; monthName: string }
@@ -44,27 +45,6 @@ interface DashboardPayload {
   };
   punchInOverallAverage: number | null;
 }
-
-const DAILY_METRICS = [
-  { key: "avgHeld",             label: "Avg. % of Calls happened",                                    totalKey: "TotalavgHeld" },
-  { key: "avgPunctual",         label: "Avg. % of Calls where call punctuality was followed",         totalKey: "TotalavgPunctual" },
-  { key: "avgDurationFollowed", label: "Avg. % of Calls where call duration + time per member was followed", totalKey: "TotalavgDurationFollowed" },
-  { key: "avgFormat",           label: "Avg. % of format being followed",                             totalKey: "TotalavgFormat" },
-  { key: "avgAttendance",       label: "Avg. % of people attending the calls",                        totalKey: "TotalavgAttendance" },
-  { key: "avgStuckCalls",       label: "Avg. % of Stucks called out",                                 totalKey: "TotalavgStuckCalls" },
-] as const;
-
-const WEEKLY_METRICS = [
-  { key: "avgHeld",             label: "Avg. % of Calls happened",                              totalKey: "TotalavgHeld" },
-  { key: "avgPunctual",         label: "Avg. % of Calls where call punctuality was followed",   totalKey: "TotalavgPunctual" },
-  { key: "avgDurationFollowed", label: "Average % of call end-time adherence.",                 totalKey: "TotalavgDurationFollowed" },
-  { key: "avgAuality",          label: "Quality of the dashboards",                             totalKey: "TotalavgAuality" },
-  { key: "avgKP",               label: "Active discussion on K&P achivement gaps & action plan",totalKey: "TotalavgKP" },
-  { key: "avgWWW",              label: "WWW review and follow up",                              totalKey: "TotalavgWWW" },
-  { key: "avgEF",               label: "Customer and employee feedback segment done",           totalKey: "TotalavgEF" },
-  { key: "avgCI",               label: "Collective intelligence discussion done",               totalKey: "TotalavgCI" },
-  { key: "avgAttendance",       label: "Avg. % of people attending the calls",                  totalKey: "TotalavgAttendance" },
-] as const;
 
 function cellClass(pct: number, isUpdate: boolean): string {
   const color: PerformanceColor = !isUpdate ? "gray" : pct >= 98 ? "blue" : pct >= 90 ? "green" : pct >= 80 ? "yellow" : "red";

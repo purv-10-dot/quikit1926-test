@@ -215,7 +215,7 @@ export function RecentPopover({ anchorRef, open, onClose }: Props) {
 
       <div className="border-t border-gray-200">
         <Link
-          href="/"
+          href="/dashboard"
           onClick={onClose}
           className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
         >

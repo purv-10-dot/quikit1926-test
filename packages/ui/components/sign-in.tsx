@@ -1,21 +1,14 @@
 "use client";
 
-import { cn } from "../lib/utils";
 import React, {
   useState, useRef, useEffect, forwardRef,
-  useImperativeHandle, useMemo, useCallback, Children,
+  useImperativeHandle, useMemo, useCallback,
 } from "react";
-import {
-  ArrowRight, Mail, Lock, Eye, EyeOff,
-  ArrowLeft, X, AlertCircle, PartyPopper, Loader,
-  TrendingUp, Target, BarChart3, Zap, User as UserIcon,
-} from "lucide-react";
-import { AnimatePresence, motion, useInView, Variants, Transition } from "framer-motion";
+import { Eye, EyeOff, ArrowLeft, X, AlertCircle, PartyPopper, Loader } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { signIn as nextAuthSignIn } from "next-auth/react";
 import type { GlobalOptions as ConfettiGlobalOptions, CreateTypes as ConfettiInstance, Options as ConfettiOptions } from "canvas-confetti";
 import confetti from "canvas-confetti";
-import ParticlesBg from "./particles-bg";
 
 /* ─── Confetti ─── */
 type Api = { fire: (options?: ConfettiOptions) => void };
@@ -48,82 +41,18 @@ const Confetti = forwardRef<
 });
 Confetti.displayName = "Confetti";
 
-/* ─── TextLoop ─── */
-type TextLoopProps = {
-  children: React.ReactNode[];
-  className?: string;
-  interval?: number;
-  transition?: Transition;
-  variants?: Variants;
-  onIndexChange?: (index: number) => void;
-  stopOnEnd?: boolean;
-};
-function TextLoop({ children, className, interval = 2, transition = { duration: 0.3 }, variants, onIndexChange, stopOnEnd = false }: TextLoopProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const items = Children.toArray(children);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentIndex((current) => {
-        if (stopOnEnd && current === items.length - 1) { clearInterval(timer); return current; }
-        const next = (current + 1) % items.length;
-        onIndexChange?.(next);
-        return next;
-      });
-    }, interval * 1000);
-    return () => clearInterval(timer);
-  }, [items.length, interval, onIndexChange, stopOnEnd]);
-  const motionVariants: Variants = {
-    initial: { y: 20, opacity: 0 },
-    animate: { y: 0, opacity: 1 },
-    exit: { y: -20, opacity: 0 },
-  };
-  return (
-    <div className={cn("relative inline-block whitespace-nowrap", className)}>
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.div key={currentIndex} initial="initial" animate="animate" exit="exit" transition={transition} variants={variants || motionVariants}>
-          {items[currentIndex]}
-        </motion.div>
-      </AnimatePresence>
-    </div>
-  );
-}
-
-/* ─── BlurFade ─── */
-interface BlurFadeProps {
-  children: React.ReactNode; className?: string;
-  duration?: number; delay?: number; yOffset?: number;
-  inView?: boolean; inViewMargin?: string; blur?: string;
-}
-function BlurFade({ children, className, duration = 0.4, delay = 0, yOffset = 6, inView = true, inViewMargin = "-50px", blur = "6px" }: BlurFadeProps) {
-  const ref = useRef(null);
-  const inViewResult = useInView(ref, { once: true, margin: inViewMargin });
-  const isInView = !inView || inViewResult;
-  const defaultVariants: Variants = {
-    hidden: { y: yOffset, opacity: 0, filter: `blur(${blur})` },
-    visible: { y: -yOffset, opacity: 1, filter: "blur(0px)" },
-  };
-  return (
-    <motion.div ref={ref} initial="hidden" animate={isInView ? "visible" : "hidden"} exit="hidden"
-      variants={defaultVariants} transition={{ delay: 0.04 + delay, duration, ease: "easeOut" }} className={className}>
-      {children}
-    </motion.div>
-  );
-}
-
 /* ─── Icons ─── */
 const GoogleIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" className="w-5 h-5 flex-shrink-0">
-    <g fillRule="evenodd" fill="none"><g fillRule="nonzero" transform="translate(3,2)">
-      <path fill="#4285F4" d="M57.8 30.15c0-2.43-.2-4.19-.62-6.03H29.5v10.95h16.25c-.33 2.72-2.1 6.82-6.03 9.57l-.05.37 8.76 6.78.6.06C54.6 46.7 57.8 39.13 57.8 30.15"/>
-      <path fill="#34A853" d="M29.5 59c7.96 0 14.65-2.62 19.53-7.14l-9.3-7.21c-2.49 1.74-5.83 2.95-10.23 2.95-7.8 0-14.42-5.14-16.78-12.26l-.35.03-9.1 7.05-.12.33C7.997 52.37 17.96 59 29.5 59"/>
-      <path fill="#FBBC05" d="M12.72 35.33A18.27 18.27 0 0 1 11.73 29.5c0-2.03.37-4-.68-5.84l-.35-.38-9.22-7.16-.3.14A29.5 29.5 0 0 0 0 29.5c0 4.75 1.15 9.24 3.15 13.24l9.57-7.41"/>
-      <path fill="#EB4335" d="M29.5 11.4c5.53 0 9.27 2.39 11.4 4.39l8.32-8.12C44.11 2.92 37.46 0 29.5 0 17.96 0 7.997 6.62 3.15 16.26l9.57 7.4C15.08 16.55 21.7 11.4 29.5 11.4"/>
-    </g></g>
+  <svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="18" height="18">
+    <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.49h4.84a4.14 4.14 0 0 1-1.79 2.71v2.26h2.9c1.7-1.56 2.69-3.86 2.69-6.62z"/>
+    <path fill="#34A853" d="M9 18c2.43 0 4.47-.81 5.96-2.18l-2.9-2.26c-.81.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z"/>
+    <path fill="#FBBC05" d="M3.95 10.7a5.41 5.41 0 0 1 0-3.4V4.97H.96a9 9 0 0 0 0 8.06l3-2.33z"/>
+    <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.46 3.44 1.35l2.58-2.58A9 9 0 0 0 9 0 9 9 0 0 0 .96 4.97l3 2.33C4.66 5.17 6.65 3.58 9 3.58z"/>
   </svg>
 );
 
 const MicrosoftIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5 flex-shrink-0">
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="18" height="18">
     <rect x="2" y="2" width="9" height="9" fill="#F25022"/>
     <rect x="13" y="2" width="9" height="9" fill="#7FBA00"/>
     <rect x="2" y="13" width="9" height="9" fill="#00A4EF"/>
@@ -132,44 +61,22 @@ const MicrosoftIcon = () => (
 );
 
 /* ─── Main Component ─── */
+type AuthStep = "email" | "password" | "login" | "profile" | "forgot-email" | "forgot-sent" | "forgot-otp" | "new-password" | "invitation";
+
 interface SignInComponentProps {
   logo?: React.ReactNode;
   brandName?: string;
-  /** Path/URL to redirect after successful sign-in (default: "/apps").
-   *  Apps without a local /apps (e.g. the auth IdP host) MUST pass an
-   *  absolute launcher URL here. */
   redirectPath?: string;
-  /** Optional absolute/relative URL that overrides redirectPath (usually from ?callbackUrl=) */
   callbackUrl?: string | null;
-  /** Inline banner message shown above the form (e.g. session_expired reason) */
   initialError?: string | null;
-  /** When true, use window.location.assign for navigation (hard nav). Default true to avoid session flicker. */
   hardNavigate?: boolean;
-  /**
-   * Open the component on a step other than "email". Used after an OAuth
-   * round-trip to land directly on the profile-confirmation step
-   * (`/login?step=profile`), or for the native-invite landing page which
-   * opens straight on the "Set your password" step (`initialStep="invitation"`).
-   */
-  initialStep?: "email" | "password" | "profile" | "forgot-otp" | "new-password" | "invitation";
-  /**
-   * Single-use invitation token (from `?token=…`). Required when
-   * `initialStep="invitation"`. The component fetches the invitation on
-   * mount, renders the Set-Password form, and on submit POSTs to
-   * `/api/invitations/accept` to activate the membership before signing
-   * the user in. Ignored for any other step.
-   */
+  initialStep?: AuthStep;
   invitationToken?: string | null;
-  /**
-   * Where to send the user after a successful invitation accept (Save &
-   * Continue). Defaults to `redirectPath`. Skip-for-now always sends the
-   * user to `/login` so they sign in manually with the default password.
-   */
   invitationLauncherUrl?: string;
 }
 
 export const SignInComponent = ({
-  logo,
+  logo: _logo,
   brandName = "QuikIT",
   redirectPath = "/apps",
   callbackUrl,
@@ -180,10 +87,17 @@ export const SignInComponent = ({
   invitationLauncherUrl,
 }: SignInComponentProps) => {
   const router = useRouter();
+
+  // Normalize legacy "email" / "password" / "login" → unified "login" step.
+  const normalizeStep = (s: AuthStep | undefined): AuthStep => {
+    if (s === "email" || s === "password" || s === "login") return "login";
+    return s ?? "login";
+  };
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [authStep, setAuthStep] = useState<"email" | "password" | "profile" | "forgot-otp" | "new-password" | "invitation">(initialStep ?? "email");
+  const [authStep, setAuthStep] = useState<AuthStep>(normalizeStep(initialStep));
   const [modalStatus, setModalStatus] = useState<"closed" | "loading" | "error" | "success">("closed");
   const [modalErrorMessage, setModalErrorMessage] = useState("");
   const [banner, setBanner] = useState<string | null>(initialError ?? null);
@@ -192,6 +106,14 @@ export const SignInComponent = ({
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   // Forgot-password flow state
+  // The backend `/api/auth/forgot-password` + `/api/auth/verify-otp` pair
+  // still issues a 6-digit code. We keep the OTP plumbing in the state +
+  // handlers (so the email + countdown + resend continue to work) but the
+  // UI surface combines temp-password entry + new-password + confirm onto
+  // a single screen. `tempPassword` is the user-typed value passed to
+  // `verify-otp` as the `otp` param.
+  const [tempPassword, setTempPassword] = useState("");
+  const [showTempPassword, setShowTempPassword] = useState(false);
   const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [otpSecondsLeft, setOtpSecondsLeft] = useState(0);
@@ -204,7 +126,7 @@ export const SignInComponent = ({
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [resetSubmitting, setResetSubmitting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
-  // Invitation (native invite "Set your password" step) state
+  // Invitation state
   const [invitationLoading, setInvitationLoading] = useState<boolean>(initialStep === "invitation");
   const [invitationError, setInvitationError] = useState<string | null>(null);
   const [invitationData, setInvitationData] = useState<{
@@ -219,6 +141,7 @@ export const SignInComponent = ({
   const [inviteShowPassword, setInviteShowPassword] = useState(false);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [inviteFormError, setInviteFormError] = useState<string | null>(null);
+
   const confettiRef = useRef<ConfettiRef>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
   const firstNameInputRef = useRef<HTMLInputElement>(null);
@@ -243,23 +166,33 @@ export const SignInComponent = ({
 
   const navigateToTarget = () => {
     const target = callbackUrl || redirectPath;
+    // Cross-origin targets need to route through the auth host's
+    // /api/post-login bridge so a handoff JWT is minted and the target's
+    // /auth-handoff can plant a host-scoped session cookie. Direct
+    // window.location.assign across origins would land the user on the
+    // target with no cookie (cookies are host-only) — anonymous UI, empty
+    // /apps, "User" placeholder name. Same-origin targets bypass the
+    // bridge since the cookie already exists on this origin.
+    let finalUrl = target;
+    if (typeof window !== "undefined") {
+      try {
+        const targetUrl = new URL(target, window.location.origin);
+        if (targetUrl.origin !== window.location.origin) {
+          const bridge = new URL("/api/post-login", window.location.origin);
+          bridge.searchParams.set("callbackUrl", targetUrl.toString());
+          finalUrl = bridge.toString();
+        }
+      } catch {
+        // Malformed target — fall through to verbatim navigation.
+      }
+    }
     if (hardNavigate) {
-      window.location.assign(target);
+      window.location.assign(finalUrl);
     } else {
-      router.push(target);
+      router.push(finalUrl);
     }
   };
 
-  /**
-   * After a successful credentials sign-in, ask the auth service whether the
-   * user has a first/last name on file. If yes, redirect to the launcher as
-   * before. If no (super-admin-added accounts start with empty names), close
-   * the loading modal and advance to the inline profile step. This is the
-   * authoritative profile gate (the old /select-org interstitial that used
-   * to re-check is gone). On a transient fetch error we fall through to the
-   * redirect — the user is still authenticated and can set their name from
-   * settings; the login flow itself is never blocked.
-   */
   const advancePostSignIn = async () => {
     try {
       const res = await fetch("/api/auth/me/profile", {
@@ -283,11 +216,10 @@ export const SignInComponent = ({
     setTimeout(navigateToTarget, 1400);
   };
 
-  const runSignIn = async (email?: string, password?: string) => {
+  const runSignIn = async (signInEmailArg?: string, signInPasswordArg?: string) => {
     setModalStatus("loading");
-    // Use demo credentials for social sign-in (mock flow)
-    const signInEmail = email || "ceo@demo.com";
-    const signInPassword = password || "password123";
+    const signInEmail = signInEmailArg || "ceo@demo.com";
+    const signInPassword = signInPasswordArg || "password123";
     try {
       const result = await nextAuthSignIn("credentials", {
         email: signInEmail,
@@ -348,14 +280,18 @@ export const SignInComponent = ({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // 429 throttle is the only non-200 we surface to the user.
         setOtpError(data?.error || "Could not send code. Try again shortly.");
         return false;
       }
-      const ttl: number = typeof data?.expiresInSeconds === "number" ? data.expiresInSeconds : 180;
+      // Client-side resend cooldown — 5 minutes. The backend already
+      // rate-limits per IP + per email, but this stops the user from
+      // mashing "Resend temporary password" before the previous one
+      // could realistically arrive. Server-side expiry of the temp
+      // password itself is NOT surfaced — only the resend lockout is.
+      const RESEND_COOLDOWN_SECONDS = 5 * 60;
       setOtpDigits(["", "", "", "", "", ""]);
-      setOtpExpiresAt(Date.now() + ttl * 1000);
-      setOtpSecondsLeft(ttl);
+      setOtpExpiresAt(Date.now() + RESEND_COOLDOWN_SECONDS * 1000);
+      setOtpSecondsLeft(RESEND_COOLDOWN_SECONDS);
       return true;
     } catch {
       setOtpError("Network error. Try again.");
@@ -366,6 +302,18 @@ export const SignInComponent = ({
   };
 
   const startForgotPassword = async () => {
+    // The backend `/api/auth/forgot-password` resets the user's password
+    // to a freshly-generated temporary password (emailed to them) and
+    // flips `mustChangePassword = true`. We don't need to verify the
+    // temp password against an OTP store — it's just their current
+    // password now. So the UI flow becomes:
+    //
+    //   1. forgot-email — user types email, we hit forgot-password endpoint
+    //   2. forgot-otp   — 3-field form: temp password + new + confirm
+    //                     → calls signIn(credentials) with the temp password
+    //                     → calls /api/auth/me/set-password to commit the new one
+    //
+    // No OTP store involved — the verify-otp endpoint isn't used by this flow.
     const ok = await sendOtp();
     if (ok) setAuthStep("forgot-otp");
   };
@@ -383,7 +331,6 @@ export const SignInComponent = ({
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.success) {
         setOtpError(data?.error || "Invalid or expired code.");
-        // Clear digits so the user can retype without backspacing.
         setOtpDigits(["", "", "", "", "", ""]);
         setTimeout(() => otpInputRefs.current[0]?.focus(), 50);
         return;
@@ -412,18 +359,14 @@ export const SignInComponent = ({
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Could not update password.");
       }
-      // Auto sign-in with the new password so the user lands on /apps without
-      // typing it a third time.
       const signInResult = await nextAuthSignIn("credentials", {
         email,
         password: newPassword,
         redirect: false,
       });
       if (!signInResult?.ok) {
-        // Edge case: password updated but sign-in failed (e.g. bad rate limit
-        // bucket). Send the user to the password step with a helpful message.
         setBanner("Password updated. Please sign in with your new password.");
-        setAuthStep("password");
+        setAuthStep("login");
         setPassword("");
         setResetSubmitting(false);
         return;
@@ -437,14 +380,129 @@ export const SignInComponent = ({
     }
   };
 
-  /* ─── Native-invite acceptance flow (initialStep="invitation") ─────── */
-
   /**
-   * On mount, fetch the invitation by token so we can show org/user
-   * context (and surface invalid/expired tokens before the user types a
-   * password). Re-runs only if the token prop ever changes — in practice
-   * the page hosting this component reads the token from the URL once.
+   * Temporary-password reset flow.
+   *
+   * After `/api/auth/forgot-password` runs the user's password IS the
+   * freshly-generated temporary password (emailed to them). We:
+   *   1. Validate the 3 fields client-side (incl. password policy: 8+ chars,
+   *      one uppercase, one number, one special).
+   *   2. NextAuth credentials sign-in with the temp password — authenticates
+   *      and plants the session cookie on the auth host.
+   *   3. POST `/api/auth/me/set-password` with `{currentPassword: tempPw,
+   *      newPassword, confirmPassword}`. The endpoint already validates
+   *      bcrypt(currentPassword) + policy + sets new + clears
+   *      mustChangePassword.
+   *   4. Re-sign-in with the new credentials so the post-login navigation
+   *      uses a fresh session.
+   *
+   * No OTP store, no reset token, no separate verify endpoint — the
+   * existing forgot-password + set-password endpoints are everything we
+   * need.
    */
+  const submitResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError(null);
+
+    // Client-side validation — match the server's password policy so the
+    // UI errors don't drift from the actual rejection reason.
+    if (tempPassword.trim().length === 0) {
+      setResetError("Enter the temporary password from your email.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setResetError("New password must be at least 8 characters.");
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      setResetError("New password must contain at least one uppercase letter.");
+      return;
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      setResetError("New password must contain at least one number.");
+      return;
+    }
+    if (!/[^A-Za-z0-9]/.test(newPassword)) {
+      setResetError("New password must contain at least one special character.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setResetError("Passwords don't match.");
+      return;
+    }
+    if (resetSubmitting) return;
+
+    setResetSubmitting(true);
+    try {
+      // 1. Sign in with the temp password — plants the session cookie on
+      //    the auth host so the `/api/auth/me/set-password` call below
+      //    passes the JWT guard.
+      const tempSignIn = await nextAuthSignIn("credentials", {
+        email,
+        password: tempPassword.trim(),
+        redirect: false,
+      });
+      if (!tempSignIn?.ok) {
+        // NextAuth surfaces the credentials provider's thrown message in
+        // `tempSignIn.error` (e.g. rate-limit messages, custom validation).
+        // Fall back to the generic "incorrect password" copy only when no
+        // structured error was returned.
+        setResetError(
+          tempSignIn?.error ||
+            "Temporary password is incorrect. Check the email we sent or request a new one.",
+        );
+        setResetSubmitting(false);
+        return;
+      }
+
+      // 2. Set the new password.
+      const setPwRes = await fetch("/api/auth/me/set-password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: tempPassword.trim(),
+          newPassword,
+          confirmPassword,
+        }),
+      });
+      const setPwData = await setPwRes.json().catch(() => ({}));
+      if (!setPwRes.ok || !setPwData?.success) {
+        throw new Error(setPwData?.error || "Could not update password.");
+      }
+
+      // 3. Re-sign-in with the NEW password so the navigated-to-target
+      //    request carries a session bound to the new credentials. (The
+      //    earlier sign-in is also valid, but re-signing avoids any
+      //    `mustChangePassword`-related re-prompts downstream.)
+      const finalSignIn = await nextAuthSignIn("credentials", {
+        email,
+        password: newPassword,
+        redirect: false,
+      });
+      if (!finalSignIn?.ok) {
+        setBanner("Password updated. Please sign in with your new password.");
+        setAuthStep("login");
+        setPassword("");
+        setTempPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setResetSubmitting(false);
+        return;
+      }
+
+      fireConfetti();
+      setModalStatus("success");
+      setTimeout(navigateToTarget, 1200);
+    } catch (err) {
+      setResetError(
+        err instanceof Error ? err.message : "Could not update password.",
+      );
+      setResetSubmitting(false);
+    }
+  };
+
+  /* ─── Native-invite acceptance flow ─────── */
+
   useEffect(() => {
     if (initialStep !== "invitation") return;
     if (!invitationToken) {
@@ -524,9 +582,6 @@ export const SignInComponent = ({
         return;
       }
 
-      // Auto sign-in with the new credentials so the user lands on the
-      // launcher without re-typing them. The success modal mirrors the
-      // normal post-login UX.
       setModalStatus("loading");
       const signInResult = await nextAuthSignIn("credentials", {
         email: json.data?.email ?? invitationData?.email ?? "",
@@ -536,7 +591,7 @@ export const SignInComponent = ({
       if (!signInResult?.ok) {
         setModalStatus("closed");
         setBanner("Password set. Please sign in with your new password.");
-        setAuthStep("email");
+        setAuthStep("login");
         setEmail(json.data?.email ?? invitationData?.email ?? "");
         setInviteSubmitting(false);
         return;
@@ -570,11 +625,9 @@ export const SignInComponent = ({
         setInviteSubmitting(false);
         return;
       }
-      // Skip path: send the user to /login with their email pre-filled so
-      // they can sign in manually with the default password (FR-SA-010).
       setBanner("Invitation accepted. Sign in to continue.");
       setEmail(json.data?.email ?? invitationData?.email ?? "");
-      setAuthStep("email");
+      setAuthStep("login");
       setInviteSubmitting(false);
     } catch {
       setInviteFormError("Network error. Please try again.");
@@ -582,25 +635,22 @@ export const SignInComponent = ({
     }
   };
 
-  /**
-   * Kick off a real OAuth round-trip with NextAuth. The browser navigates
-   * away to Google/Microsoft, comes back through `/api/auth/callback/<p>`,
-   * and lands DIRECTLY on `/login?step=profile`.
-   *
-   * OAuth goes straight to the profile-confirmation form (unconditional,
-   * impossible to bypass — historically intermediate redirects lost the
-   * `fromOAuth` flag depending on browser cache / NextAuth URL handling).
-   * After the form is submitted the post-save navigation falls back to
-   * `redirectPath` (the launcher `/apps`), which ships the user to the
-   * launcher with now-populated DB names.
-   *
-   * The "microsoft" prop name is the public-facing label; the NextAuth
-   * provider id is `azure-ad`.
-   */
   const handleSocialSignIn = (provider: "google" | "microsoft") => {
     const id = provider === "microsoft" ? "azure-ad" : "google";
     setModalStatus("loading");
-    nextAuthSignIn(id, { callbackUrl: "/login?step=profile" });
+    // Preserve the inbound deep-link callbackUrl (e.g. when the user came
+    // from scale.quikit.ai/login?callbackUrl=https://scale.quikit.ai/dashboard).
+    // Without this, OAuth users always land on /login?step=profile on the
+    // auth host, which then falls through to the launcher /apps (or, for
+    // super admins on the un-patched middleware, to the admin portal).
+    //
+    // Trade-off: OAuth users whose profile is still incomplete skip the
+    // profile-confirmation step when a callbackUrl is present. The profile
+    // gate currently lives in client-side advancePostSignIn (credentials-only
+    // path); a server-side profile gate in middleware would be the proper
+    // long-term fix. Filed as follow-up.
+    const target = callbackUrl || "/login?step=profile";
+    nextAuthSignIn(id, { callbackUrl: target });
   };
 
   const handleNativeSignIn = (e: React.FormEvent) => {
@@ -610,30 +660,13 @@ export const SignInComponent = ({
     runSignIn(email, password);
   };
 
-  const handleProgressStep = () => {
-    if (authStep === "email" && isEmailValid) setAuthStep("password");
-    else if (authStep === "password" && isPasswordValid) runSignIn();
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") { e.preventDefault(); handleProgressStep(); }
-  };
-
   useEffect(() => {
-    if (authStep === "password") setTimeout(() => passwordInputRef.current?.focus(), 400);
-    if (authStep === "profile") setTimeout(() => firstNameInputRef.current?.focus(), 400);
-    if (authStep === "forgot-otp") setTimeout(() => otpInputRefs.current[0]?.focus(), 400);
-    if (authStep === "new-password") setTimeout(() => newPasswordInputRef.current?.focus(), 400);
+    if (authStep === "login") setTimeout(() => passwordInputRef.current?.focus(), 200);
+    if (authStep === "profile") setTimeout(() => firstNameInputRef.current?.focus(), 200);
+    if (authStep === "forgot-otp") setTimeout(() => otpInputRefs.current[0]?.focus(), 200);
+    if (authStep === "new-password") setTimeout(() => newPasswordInputRef.current?.focus(), 200);
   }, [authStep]);
 
-  // When the profile step opens with empty inputs, ask the auth service
-  // for pre-fill data. Priority:
-  //   1. `suggested*` (Google / Microsoft) — freshest source for OAuth
-  //      logins, set by the signIn callback into the OAuth pre-fill store.
-  //   2. DB `firstName` / `lastName` — fallback for credentials users or
-  //      when the suggestion store has nothing.
-  // Either way, `firstName`/`lastName` state become editable defaults the
-  // user can keep or edit.
   useEffect(() => {
     if (authStep !== "profile") return;
     if (firstName !== "" || lastName !== "") return;
@@ -664,8 +697,6 @@ export const SignInComponent = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authStep]);
 
-  // Countdown ticker for the OTP step. Re-arms on every send (`otpExpiresAt`
-  // bumps), stops when zero or when we leave the step.
   useEffect(() => {
     if (authStep !== "forgot-otp" || !otpExpiresAt) return;
     const tick = () => {
@@ -677,8 +708,6 @@ export const SignInComponent = ({
     return () => clearInterval(id);
   }, [authStep, otpExpiresAt]);
 
-  // Auto-submit the OTP the moment all 6 digits are filled — the user never
-  // needs to click anything in the happy path.
   useEffect(() => {
     if (authStep === "forgot-otp" && isOtpComplete && !otpVerifying && otpSecondsLeft > 0) {
       verifyOtpDigits();
@@ -689,7 +718,6 @@ export const SignInComponent = ({
   /* ─── OTP digit input handlers ─────────────────────────────────────── */
 
   const handleOtpChange = (index: number, raw: string) => {
-    // Strip non-digits in case of paste / IME quirks
     const digits = raw.replace(/\D/g, "");
     if (digits.length === 0) {
       const next = [...otpDigits];
@@ -698,7 +726,6 @@ export const SignInComponent = ({
       return;
     }
     if (digits.length > 1) {
-      // Multi-character input (paste) — distribute across boxes from `index`.
       const next = [...otpDigits];
       for (let i = 0; i < digits.length && index + i < 6; i++) {
         next[index + i] = digits[i]!;
@@ -749,736 +776,598 @@ export const SignInComponent = ({
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  const modalSteps = [
-    { message: "Verifying your identity…" },
-    { message: "Setting things up…" },
-  ];
-  const TEXT_LOOP_INTERVAL = 0.9;
+  const goBackToLogin = () => {
+    setAuthStep("login");
+    setPassword("");
+    setOtpDigits(["", "", "", "", "", ""]);
+    setOtpError(null);
+    setOtpExpiresAt(null);
+    setResetError(null);
+    setNewPassword("");
+    setConfirmPassword("");
+  };
 
-  /* ─── Features shown on left panel ─── */
-  const features = [
-    { icon: Target, label: "QuikScale", desc: "KPI tracking, OKRs & goal alignment for scaling teams" },
-    { icon: BarChart3, label: "Performance Management", desc: "Reviews, talent mapping & team performance insights" },
-    { icon: TrendingUp, label: "Payroll & HR", desc: "Streamlined payroll, attendance & employee management" },
-    { icon: Zap, label: "And More", desc: "New apps added regularly — one subscription, full access" },
-  ];
+  /* ─── Step progress (forgot-password flow only) ─── */
+  const fpStepIndex =
+    authStep === "forgot-email" ? 1 :
+    authStep === "forgot-sent" ? 2 :
+    authStep === "forgot-otp" ? 2 :
+    authStep === "new-password" ? 3 : 0;
+  const isForgotFlow = fpStepIndex > 0;
 
   return (
-    <div className="min-h-screen w-screen flex bg-[#0a0a0f] overflow-hidden">
-      {/* ── CSS ── */}
-      {/*
-        Use dangerouslySetInnerHTML so the CSS string is emitted byte-identical
-        on server and client. With <style>{cssString}</style>, React escapes
-        ', ", &, <, > in the text node on the server (e.g. ' → &#x27;) but
-        renders them raw on the client — producing a hydration mismatch and
-        breaking @import url('...') because the browser parses the escaped
-        server output literally.
-      */}
+    <div className="quikit-auth-wrap">
       <style dangerouslySetInnerHTML={{ __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap');
-
-        input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus{-webkit-box-shadow:0 0 0 30px transparent inset!important;-webkit-text-fill-color:#fff!important;transition:background-color 5000s ease-in-out 0s!important;}
-        input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:none!important;}
-
-        @property --angle-1{syntax:"<angle>";inherits:false;initial-value:-75deg;}
-        @property --angle-2{syntax:"<angle>";inherits:false;initial-value:-45deg;}
-
-        .gi-wrap{--t:400ms cubic-bezier(0.25,1,0.5,1);--bw:1px;position:relative;border-radius:9999px;z-index:2;}
-        .gi{display:flex;align-items:center;gap:.5rem;border-radius:9999px;padding:.3rem;backdrop-filter:blur(4px);transition:all 400ms cubic-bezier(0.25,1,0.5,1);background:linear-gradient(-75deg,rgba(255,255,255,.03),rgba(255,255,255,.08),rgba(255,255,255,.03));box-shadow:inset 0 1px 1px rgba(255,255,255,.06),0 1px 6px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.06) inset;}
-        .gi-wrap:focus-within .gi{box-shadow:inset 0 1px 1px rgba(255,255,255,.08),0 1px 6px rgba(0,0,0,.3),0 0 0 1px rgba(139,92,246,.5) inset,0 0 20px rgba(139,92,246,.08);}
-        .gi::after{content:"";position:absolute;inset:0;border-radius:9999px;width:calc(100% + 1px);height:calc(100% + 1px);top:-.5px;left:-.5px;padding:1px;box-sizing:border-box;background:conic-gradient(from var(--angle-1) at 50% 50%,rgba(255,255,255,.3) 0%,transparent 5% 40%,rgba(255,255,255,.3) 50%,transparent 60% 95%,rgba(255,255,255,.3) 100%),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.08));mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;pointer-events:none;transition:all 400ms cubic-bezier(0.25,1,0.5,1),--angle-1 500ms ease;}
-        .gi-wrap:focus-within .gi::after{--angle-1:-125deg;}
-
-        .gb-wrap{--t:350ms cubic-bezier(0.25,1,0.5,1);--bw:1px;position:relative;border-radius:9999px;z-index:2;transform-style:preserve-3d;transition:transform var(--t);}
-        .gb-wrap:has(.gb:active){transform:rotateX(20deg);}
-        .gb{position:relative;border-radius:9999px;cursor:pointer;backdrop-filter:blur(4px);transition:all var(--t);background:linear-gradient(-75deg,rgba(255,255,255,.03),rgba(255,255,255,.09),rgba(255,255,255,.03));box-shadow:inset 0 1px 1px rgba(255,255,255,.07),0 1px 8px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.07) inset;}
-        .gb:hover{transform:scale(0.97);box-shadow:inset 0 1px 1px rgba(255,255,255,.1),0 2px 12px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.12) inset;}
-        .gb::after{content:"";position:absolute;inset:0;border-radius:9999px;width:calc(100% + 1px);height:calc(100% + 1px);top:-.5px;left:-.5px;padding:1px;box-sizing:border-box;background:conic-gradient(from var(--angle-1) at 50% 50%,rgba(255,255,255,.25) 0%,transparent 5% 40%,rgba(255,255,255,.25) 50%,transparent 60% 95%,rgba(255,255,255,.25) 100%),linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.06));mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;pointer-events:none;transition:all var(--t),--angle-1 500ms ease;}
-        .gb:hover::after{--angle-1:-125deg;}
-        .gb-shadow{--cut:2em;position:absolute;width:calc(100% + var(--cut));height:calc(100% + var(--cut));top:calc(-1 * var(--cut)/2);left:calc(-1 * var(--cut)/2);filter:blur(8px);pointer-events:none;}
-        .gb-shadow::after{content:"";position:absolute;inset:0;border-radius:9999px;background:linear-gradient(180deg,rgba(255,255,255,.15),rgba(255,255,255,.05));width:calc(100% - var(--cut) - .25em);height:calc(100% - var(--cut) - .25em);top:calc(var(--cut) - .5em);left:calc(var(--cut) - .875em);padding:.125em;box-sizing:border-box;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;}
+        .quikit-auth-wrap, .quikit-auth-wrap *, .quikit-auth-wrap *::before, .quikit-auth-wrap *::after { box-sizing:border-box; }
+        .quikit-auth-wrap { font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#fff; color:#111; -webkit-font-smoothing:antialiased; height:100vh; padding:24px; display:flex; overflow:hidden; }
+        .quikit-auth-wrap a { text-decoration:none; color:inherit; }
+        .quikit-auth-wrap img { display:block; max-width:100%; }
+        @keyframes qkFadeInUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:translateY(0); } }
+        .quikit-auth-wrap .fade-in-up { animation:qkFadeInUp 0.7s cubic-bezier(.22,1,.36,1) both; }
+        .quikit-auth-wrap .fade-in-up.d1 { animation-delay:0.15s; }
+        .quikit-auth-wrap .fade-in-up.d2 { animation-delay:0.30s; }
+        .quikit-auth-wrap .fade-in-up.d3 { animation-delay:0.45s; }
+        .quikit-auth-wrap .fade-in-up.d4 { animation-delay:0.60s; }
+        .quikit-auth-wrap .auth-layout { flex:1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,calc(40% - 12px)); gap:24px; height:100%; background:transparent; }
+        .quikit-auth-wrap .auth-side { position:relative; background:url('/auth/login-bg.webp') center/cover no-repeat; color:#fff; padding:48px; display:flex; flex-direction:column; overflow:hidden; border-radius:24px; }
+        .quikit-auth-wrap .auth-back { position:absolute; top:24px; left:24px; z-index:2; width:40px; height:40px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(255,255,255,0.18); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); color:#fff; border:1px solid rgba(255,255,255,0.22); transition:background .15s, transform .1s; cursor:pointer; }
+        .quikit-auth-wrap .auth-back:hover { background:rgba(255,255,255,0.28); }
+        .quikit-auth-wrap .auth-back:active { transform:scale(0.94); }
+        .quikit-auth-wrap .auth-back svg { width:18px; height:18px; }
+        .quikit-auth-wrap .auth-main { display:flex; flex-direction:column; padding:24px 48px; height:100%; background:#fff; overflow:auto; border-radius:24px; }
+        .quikit-auth-wrap .auth-main-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-shrink:0; }
+        .quikit-auth-wrap .auth-logo img { height:32px; width:auto; }
+        .quikit-auth-wrap .auth-card { width:100%; max-width:420px; margin:auto; }
+        .quikit-auth-wrap .auth-card h1 { font-size:24px; font-weight:800; letter-spacing:-0.02em; text-align:center; margin-bottom:8px; color:#0D1117; }
+        .quikit-auth-wrap .auth-card .auth-sub { font-size:14px; color:#6B7280; text-align:center; margin-bottom:28px; line-height:1.6; }
+        .quikit-auth-wrap .auth-oauth { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:12px 16px; margin-bottom:12px; background:#fff; border:1px solid rgba(0,0,0,0.12); border-radius:10px; font-family:inherit; font-size:14px; font-weight:600; color:#0D1117; cursor:pointer; transition:background .15s, border-color .15s, transform .1s; }
+        .quikit-auth-wrap .auth-oauth:hover { background:#F7F7F4; border-color:rgba(0,0,0,0.2); }
+        .quikit-auth-wrap .auth-oauth:active { transform:scale(0.98); }
+        .quikit-auth-wrap .auth-oauth svg { width:18px; height:18px; flex-shrink:0; }
+        .quikit-auth-wrap .auth-divider { position:relative; text-align:center; margin:22px 0 18px; color:#9CA3AF; font-size:12px; }
+        .quikit-auth-wrap .auth-divider::before { content:""; position:absolute; left:0; right:0; top:50%; height:1px; background:rgba(0,0,0,0.08); }
+        .quikit-auth-wrap .auth-divider span { position:relative; background:#fff; padding:0 12px; }
+        .quikit-auth-wrap .auth-field { margin-bottom:14px; }
+        .quikit-auth-wrap .auth-field label { display:block; font-size:13px; font-weight:600; color:#0D1117; margin-bottom:6px; }
+        .quikit-auth-wrap .auth-field input { width:100%; padding:12px 14px; font-family:inherit; font-size:14px; color:#0D1117; background:#fff; border:1px solid rgba(0,0,0,0.12); border-radius:10px; transition:border-color .15s, box-shadow .15s; outline:none; }
+        .quikit-auth-wrap .auth-field input::placeholder { color:#9CA3AF; }
+        .quikit-auth-wrap .auth-field input:focus { border-color:#CDB18B; box-shadow:0 0 0 3px rgba(205,177,139,0.18); }
+        .quikit-auth-wrap .auth-password { position:relative; }
+        .quikit-auth-wrap .auth-password input { padding-right:42px; }
+        .quikit-auth-wrap .auth-eye { position:absolute; right:6px; top:50%; transform:translateY(-50%); width:34px; height:34px; background:transparent; border:none; cursor:pointer; color:#9CA3AF; display:flex; align-items:center; justify-content:center; border-radius:8px; transition:color .15s, background .15s; }
+        .quikit-auth-wrap .auth-eye:hover { color:#0D1117; background:rgba(0,0,0,0.04); }
+        .quikit-auth-wrap .auth-eye svg { width:18px; height:18px; }
+        .quikit-auth-wrap .auth-submit { width:100%; padding:14px 18px; margin-top:18px; background:#CDB18B; border:none; border-radius:10px; font-family:inherit; font-size:14px; font-weight:700; color:#0D1117; cursor:pointer; transition:background .15s, transform .1s; }
+        .quikit-auth-wrap .auth-submit:hover:not(:disabled) { background:#bd9f76; }
+        .quikit-auth-wrap .auth-submit:active:not(:disabled) { transform:scale(0.99); }
+        .quikit-auth-wrap .auth-submit:disabled { opacity:.6; cursor:not-allowed; }
+        .quikit-auth-wrap .auth-secondary { width:100%; padding:12px 18px; margin-top:10px; background:#fff; border:1px solid rgba(0,0,0,0.12); border-radius:10px; font-family:inherit; font-size:14px; font-weight:600; color:#0D1117; cursor:pointer; transition:background .15s; }
+        .quikit-auth-wrap .auth-secondary:hover:not(:disabled) { background:#F7F7F4; }
+        .quikit-auth-wrap .auth-secondary:disabled { opacity:.6; cursor:not-allowed; }
+        .quikit-auth-wrap .auth-forgot { display:block; text-align:center; margin-top:18px; font-size:13px; font-weight:600; color:#0D1117; text-decoration:underline; text-underline-offset:3px; background:none; border:none; cursor:pointer; width:100%; font-family:inherit; }
+        .quikit-auth-wrap .auth-forgot:hover { color:#CDB18B; }
+        .quikit-auth-wrap .auth-foot { display:flex; justify-content:space-between; align-items:center; margin-top:auto; padding-top:24px; font-size:12px; color:#9CA3AF; border-top:1px solid rgba(0,0,0,0.05); flex-shrink:0; }
+        .quikit-auth-wrap .auth-foot-links { display:flex; gap:24px; }
+        .quikit-auth-wrap .auth-foot-links a { color:#6B7280; transition:color .15s; }
+        .quikit-auth-wrap .auth-foot-links a:hover { color:#0D1117; }
+        .quikit-auth-wrap .auth-signup-link { font-size:13px; color:#6B7280; }
+        .quikit-auth-wrap .auth-signup-link a { color:#0D1117; font-weight:600; text-decoration:underline; text-underline-offset:3px; }
+        .quikit-auth-wrap .auth-signup-link a:hover { color:#CDB18B; }
+        .quikit-auth-wrap .auth-banner { display:flex; align-items:flex-start; gap:8px; padding:10px 12px; border-radius:10px; background:#FEF2F2; border:1px solid #FECACA; color:#991B1B; font-size:13px; margin-bottom:16px; }
+        .quikit-auth-wrap .auth-banner button { background:none; border:none; color:#991B1B; cursor:pointer; padding:0; display:flex; align-items:center; }
+        .quikit-auth-wrap .auth-error { color:#B91C1C; font-size:12.5px; margin-top:8px; }
+        .quikit-auth-wrap .fp-progress { display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:24px; }
+        .quikit-auth-wrap .fp-progress-step { width:24px; height:4px; border-radius:99px; background:rgba(0,0,0,0.08); transition:background .25s; }
+        .quikit-auth-wrap .fp-progress-step.active { background:#CDB18B; }
+        .quikit-auth-wrap .fp-progress-step.done { background:#0D1117; }
+        .quikit-auth-wrap .fp-otp { display:grid; grid-template-columns:repeat(6, 1fr); gap:10px; margin-bottom:8px; }
+        .quikit-auth-wrap .fp-otp-input { width:100%; aspect-ratio:1 / 1.15; text-align:center; font-family:inherit; font-size:22px; font-weight:700; color:#0D1117; background:#fff; border:1px solid rgba(0,0,0,0.12); border-radius:10px; transition:border-color .15s, box-shadow .15s; outline:none; }
+        .quikit-auth-wrap .fp-otp-input:focus { border-color:#CDB18B; box-shadow:0 0 0 3px rgba(205,177,139,0.18); }
+        .quikit-auth-wrap .fp-otp-input.filled { border-color:#0D1117; background:#F7F7F4; }
+        .quikit-auth-wrap .fp-resend { text-align:center; font-size:13px; color:#6B7280; margin-top:14px; }
+        .quikit-auth-wrap .fp-resend-btn { background:none; border:none; padding:0; font:inherit; color:#0D1117; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+        .quikit-auth-wrap .fp-resend-btn:disabled { color:#9CA3AF; cursor:not-allowed; text-decoration:none; }
+        .quikit-auth-wrap .fp-resend-btn:not(:disabled):hover { color:#CDB18B; }
+        .quikit-auth-wrap .fp-back-step { display:block; margin:14px auto 0; background:none; border:none; padding:0; font:inherit; font-size:13px; color:#6B7280; cursor:pointer; }
+        .quikit-auth-wrap .fp-back-step:hover { color:#0D1117; }
+        .quikit-auth-wrap .qk-modal-overlay { position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px); display:flex; align-items:center; justify-content:center; padding:16px; animation:qkFadeInUp 0.2s ease-out both; }
+        .quikit-auth-wrap .qk-modal { background:#fff; border-radius:20px; padding:36px 32px; max-width:380px; width:100%; display:flex; flex-direction:column; align-items:center; gap:16px; position:relative; box-shadow:0 24px 60px rgba(0,0,0,0.3); }
+        .quikit-auth-wrap .qk-modal-close { position:absolute; top:12px; right:12px; background:none; border:none; cursor:pointer; padding:6px; color:#9CA3AF; border-radius:8px; display:flex; align-items:center; justify-content:center; }
+        .quikit-auth-wrap .qk-modal-close:hover { background:rgba(0,0,0,0.05); color:#0D1117; }
+        .quikit-auth-wrap .qk-modal-icon { width:56px; height:56px; border-radius:16px; display:flex; align-items:center; justify-content:center; }
+        .quikit-auth-wrap .qk-modal-icon.loading { background:#F3F0E8; color:#CDB18B; }
+        .quikit-auth-wrap .qk-modal-icon.error { background:#FEF2F2; color:#DC2626; }
+        .quikit-auth-wrap .qk-modal-icon.success { background:#F3F0E8; color:#CDB18B; }
+        .quikit-auth-wrap .qk-modal-title { font-size:16px; font-weight:700; color:#0D1117; text-align:center; }
+        .quikit-auth-wrap .qk-modal-msg { font-size:13px; color:#6B7280; text-align:center; }
+        .quikit-auth-wrap .qk-spin { animation:qk-spin 1s linear infinite; }
+        @keyframes qk-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+        @media (max-width:900px) {
+          .quikit-auth-wrap { height:auto; min-height:100vh; padding:16px; overflow:visible; }
+          .quikit-auth-wrap .auth-layout { grid-template-columns:1fr; height:auto; min-height:calc(100vh - 32px); }
+          .quikit-auth-wrap .auth-side { padding:28px 24px 40px; min-height:200px; }
+          .quikit-auth-wrap .auth-main { padding:24px 20px 32px; height:auto; overflow:visible; }
+          .quikit-auth-wrap .auth-main-top { margin-bottom:32px; }
+          .quikit-auth-wrap .auth-foot { flex-direction:column; gap:12px; align-items:flex-start; margin-top:32px; }
+          .quikit-auth-wrap .fp-otp { gap:8px; }
+          .quikit-auth-wrap .fp-otp-input { font-size:18px; }
+        }
+        @media (max-width:480px) {
+          .quikit-auth-wrap { padding:12px; }
+          .quikit-auth-wrap .auth-layout { min-height:calc(100vh - 24px); gap:12px; }
+          .quikit-auth-wrap .auth-side, .quikit-auth-wrap .auth-main { border-radius:18px; }
+          .quikit-auth-wrap .auth-card h1 { font-size:22px; }
+          .quikit-auth-wrap .auth-main { padding:20px 16px 28px; }
+        }
       ` }} />
 
-      <Confetti ref={confettiRef} manualstart className="fixed inset-0 pointer-events-none z-[999]" />
+      <Confetti ref={confettiRef} manualstart className="fixed inset-0 pointer-events-none" style={{ zIndex: 9998 }} />
 
-      {/* ── Loading / Error / Success Modal ── */}
-      <AnimatePresence>
-        {modalStatus !== "closed" && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md">
-            <motion.div initial={{ scale: 0.88, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.88, opacity: 0 }} transition={{ type: "spring", stiffness: 300, damping: 24 }}
-              className="relative bg-white/5 border border-white/10 backdrop-blur-2xl rounded-3xl p-10 w-full max-w-sm flex flex-col items-center gap-5 mx-4 shadow-2xl">
-              {(modalStatus === "error" || modalStatus === "success") && (
-                <button onClick={() => { setModalStatus("closed"); setModalErrorMessage(""); }}
-                  className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-white/10 transition-colors text-white/50 hover:text-white">
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-              {modalStatus === "loading" && (
-                <>
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
-                    <Loader className="w-8 h-8 text-white animate-spin" />
-                  </div>
-                  <div className="text-center">
-                    <TextLoop interval={TEXT_LOOP_INTERVAL} stopOnEnd={false}>
-                      {modalSteps.map((s, i) => <p key={i} className="text-white font-semibold text-lg">{s.message}</p>)}
-                    </TextLoop>
-                    <p className="text-white/40 text-sm mt-1">Please wait a moment</p>
-                  </div>
-                  <div className="w-full bg-white/10 rounded-full h-1 overflow-hidden">
-                    <motion.div className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full"
-                      initial={{ width: "0%" }} animate={{ width: "100%" }} transition={{ duration: 1.8, ease: "easeInOut" }} />
-                  </div>
-                </>
-              )}
-              {modalStatus === "error" && (
-                <>
-                  <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/30 flex items-center justify-center">
-                    <AlertCircle className="w-8 h-8 text-red-400" />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-white font-semibold text-lg">Something went wrong</p>
-                    <p className="text-white/50 text-sm mt-1">{modalErrorMessage}</p>
-                  </div>
-                  <button onClick={() => { setModalStatus("closed"); setModalErrorMessage(""); }}
-                    className="px-6 py-2.5 bg-white/10 hover:bg-white/15 border border-white/10 text-white rounded-xl text-sm font-medium transition-colors">
-                    Try again
-                  </button>
-                </>
-              )}
-              {modalStatus === "success" && (
-                <>
-                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-                    <PartyPopper className="w-8 h-8 text-emerald-400" />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-white font-semibold text-lg">Welcome back!</p>
-                    <p className="text-white/50 text-sm mt-1">Redirecting to your dashboard…</p>
-                  </div>
-                </>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ══════════════ LEFT PANEL ══════════════ */}
-      <div className="hidden lg:flex flex-col justify-between w-[52%] relative overflow-hidden p-12">
-        {/* Animated particle network background */}
-        <ParticlesBg
-          particleColor="#a78bfa"
-          lineColor="#7c3aed"
-          accentColor="#6d28d9"
-          className="absolute inset-0 z-0 pointer-events-auto"
-        />
-        {/* Background blobs */}
-        <div className="absolute inset-0 z-[1] pointer-events-none">
-          <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-violet-600/25 blur-[120px]" />
-          <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full bg-indigo-600/20 blur-[100px]" />
-          <div className="absolute top-[40%] left-[30%] w-[350px] h-[350px] rounded-full bg-fuchsia-600/15 blur-[90px]" />
-        </div>
-        {/* Subtle grid overlay */}
-        <div className="absolute inset-0 z-[1] opacity-[0.03] pointer-events-none"
-          style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.5) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.5) 1px,transparent 1px)", backgroundSize: "60px 60px" }} />
-
-        {/* Logo */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
-            <span className="text-white font-bold text-base">Q</span>
-          </div>
-          <span className="text-white font-bold text-lg tracking-tight">{brandName}</span>
-        </div>
-
-        {/* Hero text */}
-        <div className="relative z-10 space-y-8">
-          <div className="space-y-4">
-            <BlurFade delay={0.1}>
-              <p className="text-white/50 text-sm font-medium tracking-widest uppercase">Multiple Solutions, One Platform</p>
-            </BlurFade>
-            <BlurFade delay={0.2}>
-              <h1 className="text-5xl xl:text-6xl font-light text-white leading-[1.1] tracking-tight"
-                style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-                All your apps,<br />
-                <span className="italic text-transparent bg-clip-text bg-gradient-to-r from-violet-300 to-indigo-300">
-                  one place.
-                </span>
-              </h1>
-            </BlurFade>
-            <BlurFade delay={0.3}>
-              <p className="text-white/45 text-lg leading-relaxed max-w-md">
-                Your one-stop platform to access QuikScale, PMS, Payroll, and every business app your team needs — all under one subscription.
-              </p>
-            </BlurFade>
-          </div>
-
-          {/* Feature pills */}
-          <BlurFade delay={0.4}>
-            <div className="grid grid-cols-2 gap-3">
-              {features.map((f, i) => (
-                <motion.div key={f.label}
-                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 + i * 0.08, duration: 0.4 }}
-                  className="flex items-start gap-3 p-4 rounded-2xl bg-white/[0.04] border border-white/[0.07] backdrop-blur-sm hover:bg-white/[0.06] transition-colors">
-                  <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <f.icon className="w-4 h-4 text-violet-300" />
-                  </div>
-                  <div>
-                    <p className="text-white text-sm font-semibold">{f.label}</p>
-                    <p className="text-white/40 text-xs mt-0.5 leading-snug">{f.desc}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </BlurFade>
-        </div>
-
-        {/* Bottom testimonial */}
-        <BlurFade delay={0.6} className="relative z-10">
-          <div className="flex items-center gap-4 p-5 rounded-2xl bg-white/[0.04] border border-white/[0.07]">
-            <div className="flex -space-x-2">
-              {["#7C3AED","#4F46E5","#0EA5E9"].map((c, i) => (
-                <div key={i} className="w-8 h-8 rounded-full border-2 border-[#0a0a0f] flex items-center justify-center text-white text-xs font-bold"
-                  style={{ background: c }}>
-                  {["A","B","C"][i]}
-                </div>
-              ))}
-            </div>
-            <div>
-              <p className="text-white/80 text-sm font-medium">&ldquo;One login, every tool we need&rdquo;</p>
-              <p className="text-white/35 text-xs mt-0.5">Trusted by growing teams worldwide</p>
-            </div>
-          </div>
-        </BlurFade>
-      </div>
-
-      {/* ══════════════ RIGHT PANEL ══════════════ */}
-      <div className="flex-1 flex flex-col items-center justify-center relative px-6 py-12">
-        {/* Subtle right-panel background */}
-        <div className="absolute inset-0 bg-white/[0.02]" />
-        <div className="absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent" />
-
-        {/* Mobile logo */}
-        <div className="lg:hidden flex items-center gap-3 mb-10 relative z-10">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
-            <span className="text-white font-bold text-base">Q</span>
-          </div>
-          <span className="text-white font-bold text-lg tracking-tight">{brandName}</span>
-        </div>
-
-        <div className="relative z-10 w-full max-w-[360px]">
-          {banner && (
-            <div className="mb-6 flex items-start gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-300" />
-              <span className="flex-1">{banner}</span>
-              <button
-                type="button"
-                onClick={() => setBanner(null)}
-                className="text-red-300/70 hover:text-red-200 transition-colors flex-shrink-0"
-                aria-label="Dismiss"
-              >
-                <X className="w-4 h-4" />
+      {/* Status modal */}
+      {modalStatus !== "closed" && (
+        <div className="qk-modal-overlay">
+          <div className="qk-modal">
+            {(modalStatus === "error" || modalStatus === "success") && (
+              <button type="button" className="qk-modal-close"
+                onClick={() => { setModalStatus("closed"); setModalErrorMessage(""); }}
+                aria-label="Close">
+                <X size={18} />
               </button>
-            </div>
-          )}
-          <AnimatePresence mode="wait">
-            {authStep === "email" && (
-              <motion.div key="email-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
-
-                {/* Heading */}
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-semibold text-white tracking-tight"
-                    style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-                    Welcome back
-                  </h2>
-                  <p className="text-white/45 text-sm">Sign in to continue to {brandName}</p>
-                </div>
-
-                {/* Social buttons */}
-                <div className="space-y-3">
-                  <button onClick={() => handleSocialSignIn("google")}
-                    className="gb w-full flex items-center gap-3 px-5 py-3.5 text-white/85 text-sm font-medium hover:text-white transition-colors">
-                    <GoogleIcon />
-                    <span className="flex-1 text-left">Continue with Google</span>
-                    <ArrowRight className="w-4 h-4 opacity-40" />
-                  </button>
-                  <button onClick={() => handleSocialSignIn("microsoft")}
-                    className="gb w-full flex items-center gap-3 px-5 py-3.5 text-white/85 text-sm font-medium hover:text-white transition-colors">
-                    <MicrosoftIcon />
-                    <span className="flex-1 text-left">Continue with Microsoft</span>
-                    <ArrowRight className="w-4 h-4 opacity-40" />
-                  </button>
-                </div>
-
-                {/* Divider */}
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 h-px bg-white/10" />
-                  <span className="text-white/25 text-xs font-semibold tracking-wider uppercase">or</span>
-                  <div className="flex-1 h-px bg-white/10" />
-                </div>
-
-                {/* Email input */}
-                <div className="space-y-3">
-                  <div className="gi-wrap w-full">
-                    <div className="gi">
-                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
-                        <Mail className="w-4 h-4 text-white/40" />
-                      </div>
-                      <input
-                        type="email"
-                        placeholder="Enter your email"
-                        value={email}
-                        onChange={e => setEmail(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
-                        autoFocus
-                      />
-                      <AnimatePresence>
-                        {isEmailValid && (
-                          <motion.button initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-                            type="button" onClick={handleProgressStep}
-                            className="w-8 h-8 mr-1 rounded-full bg-violet-600 hover:bg-violet-500 transition-colors flex items-center justify-center flex-shrink-0">
-                            <ArrowRight className="w-4 h-4 text-white" />
-                          </motion.button>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleProgressStep}
-                    disabled={!isEmailValid}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:-translate-y-0.5 active:translate-y-0">
-                    Continue with Email
-                  </button>
-                </div>
-
-                {/* Footer */}
-                <p className="text-center text-white/25 text-xs">
-                  By continuing, you agree to our{" "}
-                  <span className="text-white/45 hover:text-white/70 cursor-pointer transition-colors">Terms</span>{" "}
-                  and{" "}
-                  <span className="text-white/45 hover:text-white/70 cursor-pointer transition-colors">Privacy Policy</span>
-                </p>
-              </motion.div>
             )}
-            {authStep === "password" && (
-              <motion.div key="password-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
+            {modalStatus === "loading" && (
+              <>
+                <div className="qk-modal-icon loading"><Loader size={24} className="qk-spin" /></div>
+                <div className="qk-modal-title">Signing you in…</div>
+                <div className="qk-modal-msg">Verifying your credentials</div>
+              </>
+            )}
+            {modalStatus === "error" && (
+              <>
+                <div className="qk-modal-icon error"><AlertCircle size={24} /></div>
+                <div className="qk-modal-title">Something went wrong</div>
+                <div className="qk-modal-msg">{modalErrorMessage}</div>
+                <button type="button" className="auth-submit" style={{ marginTop: 8 }}
+                  onClick={() => { setModalStatus("closed"); setModalErrorMessage(""); }}>
+                  Try again
+                </button>
+              </>
+            )}
+            {modalStatus === "success" && (
+              <>
+                <div className="qk-modal-icon success"><PartyPopper size={24} /></div>
+                <div className="qk-modal-title">Welcome back!</div>
+                <div className="qk-modal-msg">Redirecting to your dashboard…</div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
-                {/* Heading */}
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-semibold text-white tracking-tight"
-                    style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-                    Enter password
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-violet-400" />
-                    <p className="text-white/45 text-sm truncate max-w-[280px]">{email}</p>
-                    <button onClick={() => { setAuthStep("email"); setPassword(""); }}
-                      className="text-violet-400 hover:text-violet-300 transition-colors ml-auto text-xs font-medium flex-shrink-0">
-                      Change
-                    </button>
+      <div className="auth-layout">
+        {/* ─── Left brand panel ─── */}
+        <aside className="auth-side">
+          <button type="button" className="auth-back" aria-label="Back to home"
+            onClick={() => { if (hardNavigate) window.location.assign("/"); else router.push("/"); }}>
+            <ArrowLeft size={18} />
+          </button>
+        </aside>
+
+        {/* ─── Right auth panel ─── */}
+        <section className="auth-main">
+          <header className="auth-main-top fade-in-up d1">
+            <a href="/" className="auth-logo" aria-label={brandName}>
+              <img src="/auth/quikit-logo-dark.png" alt={brandName} width={120} height={32} />
+            </a>
+          </header>
+
+          <div className="auth-card fade-in-up d2">
+            {banner && (
+              <div className="auth-banner">
+                <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span style={{ flex: 1 }}>{banner}</span>
+                <button type="button" onClick={() => setBanner(null)} aria-label="Dismiss"><X size={14} /></button>
+              </div>
+            )}
+
+            {/* ── Forgot-password progress dots ── */}
+            {isForgotFlow && (
+              <div className="fp-progress" aria-hidden="true">
+                <div className={"fp-progress-step " + (fpStepIndex > 1 ? "done" : "active")} />
+                <div className={"fp-progress-step " + (fpStepIndex === 2 ? "active" : fpStepIndex > 2 ? "done" : "")} />
+                <div className={"fp-progress-step " + (fpStepIndex === 3 ? "active" : "")} />
+              </div>
+            )}
+
+            {/* ════════════ LOGIN STEP ════════════ */}
+            {authStep === "login" && (
+              <>
+                <h1>Welcome back to {brandName}!</h1>
+                <p className="auth-sub">Please enter your details to sign in to your account</p>
+
+                <button type="button" className="auth-oauth" onClick={() => handleSocialSignIn("google")}>
+                  <GoogleIcon /> Continue with Google
+                </button>
+                <button type="button" className="auth-oauth" onClick={() => handleSocialSignIn("microsoft")}>
+                  <MicrosoftIcon /> Continue with Microsoft
+                </button>
+
+                <div className="auth-divider"><span>Or sign in with</span></div>
+
+                <form onSubmit={handleNativeSignIn} noValidate>
+                  <div className="auth-field">
+                    <label htmlFor="login-email">Email</label>
+                    <input id="login-email" type="email" placeholder="you@company.com"
+                      autoComplete="email" value={email}
+                      onChange={(e) => setEmail(e.target.value)} />
                   </div>
-                </div>
 
-                {/* Password input */}
-                <form onSubmit={handleNativeSignIn} className="space-y-3">
-                  <div className="gi-wrap w-full">
-                    <div className="gi">
-                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
-                        {isPasswordValid
-                          ? <button type="button" onClick={() => setShowPassword(v => !v)} className="text-white/40 hover:text-white/70 transition-colors p-1">
-                              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                          : <Lock className="w-4 h-4 text-white/40" />
-                        }
-                      </div>
-                      <input
-                        ref={passwordInputRef}
+                  <div className="auth-field">
+                    <label htmlFor="login-password">Password</label>
+                    <div className="auth-password">
+                      <input id="login-password" ref={passwordInputRef}
                         type={showPassword ? "text" : "password"}
-                        placeholder="Enter your password"
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
-                      />
-                      <AnimatePresence>
-                        {isPasswordValid && (
-                          <motion.button initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-                            type="submit"
-                            className="w-8 h-8 mr-1 rounded-full bg-violet-600 hover:bg-violet-500 transition-colors flex items-center justify-center flex-shrink-0">
-                            <ArrowRight className="w-4 h-4 text-white" />
-                          </motion.button>
-                        )}
-                      </AnimatePresence>
+                        placeholder="minimum 8 characters"
+                        autoComplete="current-password" value={password}
+                        onChange={(e) => setPassword(e.target.value)} />
+                      <button type="button" className="auth-eye"
+                        onClick={() => setShowPassword((v) => !v)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}>
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                     </div>
                   </div>
 
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={startForgotPassword}
-                      disabled={!isEmailValid || otpSending}
-                      className="text-violet-400 hover:text-violet-300 disabled:text-white/25 disabled:cursor-not-allowed transition-colors text-xs font-medium"
-                    >
-                      {otpSending ? "Sending code…" : "Forgot password?"}
-                    </button>
-                  </div>
-
-                  <button type="submit" disabled={!isPasswordValid}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:-translate-y-0.5 active:translate-y-0">
-                    Sign In
+                  <button type="submit" className="auth-submit"
+                    disabled={modalStatus === "loading"}>
+                    Sign In →
                   </button>
                 </form>
 
-                {/* Back */}
-                <button type="button" onClick={() => { setAuthStep("email"); setPassword(""); }}
-                  className="flex items-center gap-2 text-white/35 hover:text-white/70 transition-colors text-sm">
-                  <ArrowLeft className="w-4 h-4" />
-                  Back to sign in options
+                <button type="button" className="auth-forgot"
+                  onClick={() => setAuthStep("forgot-email")}>
+                  Forgot password?
                 </button>
-              </motion.div>
+              </>
             )}
+
+            {/* ════════════ PROFILE STEP ════════════ */}
             {authStep === "profile" && (
-              <motion.div key="profile-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
+              <>
+                <h1>Confirm your name</h1>
+                <p className="auth-sub">We&apos;ll show this on your account and to teammates.</p>
 
-                {/* Heading */}
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-semibold text-white tracking-tight"
-                    style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-                    Tell us your name
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-violet-400" />
-                    <p className="text-white/45 text-sm truncate max-w-[280px]">{email}</p>
+                <form onSubmit={submitProfile} noValidate>
+                  <div className="auth-field">
+                    <label htmlFor="first-name">First name</label>
+                    <input id="first-name" ref={firstNameInputRef} type="text"
+                      autoComplete="given-name" value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="Jane" />
                   </div>
-                </div>
-
-                {/* Name inputs */}
-                <form onSubmit={submitProfile} className="space-y-3">
-                  <div className="gi-wrap w-full">
-                    <div className="gi">
-                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
-                        <UserIcon className="w-4 h-4 text-white/40" />
-                      </div>
-                      <input
-                        ref={firstNameInputRef}
-                        type="text"
-                        placeholder="First name"
-                        value={firstName}
-                        onChange={e => setFirstName(e.target.value)}
-                        maxLength={100}
-                        autoComplete="given-name"
-                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
-                      />
-                    </div>
+                  <div className="auth-field">
+                    <label htmlFor="last-name">Last name</label>
+                    <input id="last-name" type="text" autoComplete="family-name"
+                      value={lastName} onChange={(e) => setLastName(e.target.value)}
+                      placeholder="Doe" />
                   </div>
-
-                  <div className="gi-wrap w-full">
-                    <div className="gi">
-                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
-                        <UserIcon className="w-4 h-4 text-white/40" />
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Last name"
-                        value={lastName}
-                        onChange={e => setLastName(e.target.value)}
-                        maxLength={100}
-                        autoComplete="family-name"
-                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
-                      />
-                    </div>
-                  </div>
-
-                  {profileError && (
-                    <p className="text-xs text-red-300/90 px-1">{profileError}</p>
-                  )}
-
-                  <button type="submit" disabled={!isProfileValid || savingProfile}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:-translate-y-0.5 active:translate-y-0">
-                    {savingProfile ? "Saving…" : "Continue"}
+                  {profileError && <p className="auth-error">{profileError}</p>}
+                  <button type="submit" className="auth-submit"
+                    disabled={!isProfileValid || savingProfile}>
+                    {savingProfile ? "Saving…" : "Save & Continue →"}
                   </button>
                 </form>
-              </motion.div>
+              </>
             )}
-            {authStep === "forgot-otp" && (
-              <motion.div key="forgot-otp-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
 
-                {/* Heading */}
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-semibold text-white tracking-tight"
-                    style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-                    Check your email
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-violet-400" />
-                    <p className="text-white/45 text-sm truncate max-w-[260px]">{email}</p>
-                    <button onClick={() => { setAuthStep("password"); setOtpDigits(["","","","","",""]); setOtpError(null); setOtpExpiresAt(null); }}
-                      className="text-violet-400 hover:text-violet-300 transition-colors ml-auto text-xs font-medium flex-shrink-0">
-                      Change
-                    </button>
+            {/* ════════════ FORGOT-EMAIL STEP ════════════ */}
+            {authStep === "forgot-email" && (
+              <>
+                <h1>Forgot your password?</h1>
+                <p className="auth-sub">Enter the email you used to sign up. We&apos;ll send a 6-digit code to reset your password.</p>
+
+                <form onSubmit={async (e) => { e.preventDefault(); await startForgotPassword(); }} noValidate>
+                  <div className="auth-field">
+                    <label htmlFor="fp-email">Email</label>
+                    <input id="fp-email" type="email" placeholder="you@company.com"
+                      autoComplete="email" value={email}
+                      onChange={(e) => setEmail(e.target.value)} />
                   </div>
-                  <p className="text-white/45 text-sm">Enter the 6-digit code we just sent.</p>
-                </div>
+                  {otpError && <p className="auth-error">{otpError}</p>}
+                  <button type="submit" className="auth-submit"
+                    disabled={!isEmailValid || otpSending}>
+                    {otpSending ? "Sending…" : "Send code →"}
+                  </button>
+                </form>
 
-                {/* OTP boxes */}
-                <div className="space-y-3">
-                  <div className="flex justify-between gap-2">
-                    {otpDigits.map((digit, i) => (
-                      <input
-                        key={i}
-                        ref={(el) => { otpInputRefs.current[i] = el; }}
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        autoComplete={i === 0 ? "one-time-code" : "off"}
-                        maxLength={1}
-                        value={digit}
-                        onChange={(e) => handleOtpChange(i, e.target.value)}
-                        onKeyDown={(e) => handleOtpKeyDown(i, e)}
-                        onPaste={i === 0 ? handleOtpPaste : undefined}
-                        disabled={otpVerifying || otpSecondsLeft === 0}
-                        className="w-11 h-12 text-center text-xl font-semibold rounded-xl bg-white/[0.04] border border-white/15 text-white placeholder:text-white/20 focus:outline-none focus:border-violet-400 focus:bg-white/[0.07] transition-colors disabled:opacity-50"
-                      />
-                    ))}
-                  </div>
-
-                  {/* Countdown / resend */}
-                  <div className="flex items-center justify-between text-xs">
-                    {otpSecondsLeft > 0 ? (
-                      <span className="text-white/45">
-                        Code expires in <span className="text-violet-300 font-mono">{formatCountdown(otpSecondsLeft)}</span>
-                      </span>
-                    ) : (
-                      <span className="text-white/45">Code expired.</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={sendOtp}
-                      disabled={otpSending || otpSecondsLeft > 0}
-                      className="text-violet-400 hover:text-violet-300 disabled:text-white/25 disabled:cursor-not-allowed transition-colors font-medium"
-                    >
-                      {otpSending ? "Sending…" : otpSecondsLeft > 0 ? "Resend code" : "Send new code"}
-                    </button>
-                  </div>
-
-                  {otpError && (
-                    <p className="text-xs text-red-300/90 px-1">{otpError}</p>
-                  )}
-
-                  {otpVerifying && (
-                    <p className="text-xs text-white/45 px-1">Verifying…</p>
-                  )}
-                </div>
-
-                {/* Back */}
-                <button type="button" onClick={() => { setAuthStep("password"); setOtpDigits(["","","","","",""]); setOtpError(null); setOtpExpiresAt(null); }}
-                  className="flex items-center gap-2 text-white/35 hover:text-white/70 transition-colors text-sm">
-                  <ArrowLeft className="w-4 h-4" />
-                  Back to password
+                <button type="button" className="fp-back-step" onClick={goBackToLogin}>
+                  ← Back to sign in
                 </button>
-              </motion.div>
+              </>
             )}
-            {authStep === "new-password" && (
-              <motion.div key="new-password-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
 
-                {/* Heading */}
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-semibold text-white tracking-tight"
-                    style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-                    Create a new password
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-violet-400" />
-                    <p className="text-white/45 text-sm truncate max-w-[280px]">{email}</p>
-                  </div>
-                </div>
+            {/* ════════════ RESET PASSWORD STEP (3-field) ════════════ */}
+            {/*
+              Reached after the user submits their email on the
+              `forgot-email` step. Backend has just reset the password to a
+              freshly-generated temporary password and emailed it. User types:
+                - that temporary password
+                - their chosen new password
+                - confirmation
+              Submit chains: signIn(temp) → /api/auth/me/set-password →
+              re-signIn(new) → navigate. See `submitResetPassword`.
+            */}
+            {authStep === "forgot-otp" && (
+              <>
+                <h1>Reset your password</h1>
+                <p className="auth-sub">
+                  We sent a temporary password to <strong>{email}</strong>.
+                </p>
 
-                <form onSubmit={submitNewPassword} className="space-y-3">
-                  <div className="gi-wrap w-full">
-                    <div className="gi">
-                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
-                        <button type="button" onClick={() => setShowNewPassword(v => !v)} className="text-white/40 hover:text-white/70 transition-colors p-1">
-                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
+                <form onSubmit={submitResetPassword} noValidate>
+                  <div className="auth-field">
+                    <label htmlFor="reset-temp">Temporary password</label>
+                    <div className="auth-password">
                       <input
+                        id="reset-temp"
+                        type={showTempPassword ? "text" : "password"}
+                        placeholder="From your email"
+                        autoComplete="one-time-code"
+                        value={tempPassword}
+                        onChange={(e) => setTempPassword(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="auth-eye"
+                        onClick={() => setShowTempPassword((v) => !v)}
+                        aria-label={
+                          showTempPassword ? "Hide temporary password" : "Show temporary password"
+                        }
+                      >
+                        {showTempPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="auth-field">
+                    <label htmlFor="reset-new">New password</label>
+                    <div className="auth-password">
+                      <input
+                        id="reset-new"
                         ref={newPasswordInputRef}
                         type={showNewPassword ? "text" : "password"}
-                        placeholder="New password (min 8 characters)"
-                        value={newPassword}
-                        onChange={e => setNewPassword(e.target.value)}
+                        placeholder="minimum 8 characters"
                         autoComplete="new-password"
                         minLength={8}
-                        maxLength={200}
-                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
                       />
+                      <button
+                        type="button"
+                        className="auth-eye"
+                        onClick={() => setShowNewPassword((v) => !v)}
+                        aria-label={showNewPassword ? "Hide password" : "Show password"}
+                      >
+                        {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                    {newPassword.length > 0 && newPassword.length < 8 && (
+                      <p className="auth-error">Must be at least 8 characters.</p>
+                    )}
+                  </div>
+
+                  <div className="auth-field">
+                    <label htmlFor="reset-confirm">Confirm new password</label>
+                    <div className="auth-password">
+                      <input
+                        id="reset-confirm"
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="re-enter password"
+                        autoComplete="new-password"
+                        minLength={8}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                      />
+                    </div>
+                    {confirmPassword.length > 0 && newPassword !== confirmPassword && (
+                      <p className="auth-error">Passwords don&apos;t match.</p>
+                    )}
+                  </div>
+
+                  {resetError && <p className="auth-error">{resetError}</p>}
+
+                  <button
+                    type="submit"
+                    className="auth-submit"
+                    disabled={
+                      resetSubmitting ||
+                      tempPassword.trim().length === 0 ||
+                      newPassword.length < 8 ||
+                      newPassword !== confirmPassword
+                    }
+                  >
+                    {resetSubmitting ? "Updating…" : "Reset password →"}
+                  </button>
+                </form>
+
+                <div className="fp-resend" style={{ marginTop: 16 }}>
+                  Didn&apos;t receive it?{" "}
+                  <button
+                    type="button"
+                    className="fp-resend-btn"
+                    disabled={otpSending || otpSecondsLeft > 0}
+                    onClick={sendOtp}
+                  >
+                    {otpSending
+                      ? "Sending…"
+                      : otpSecondsLeft > 0
+                      ? `Resend in ${formatCountdown(otpSecondsLeft)}`
+                      : "Resend temporary password"}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  className="fp-back-step"
+                  onClick={() => {
+                    setAuthStep("forgot-email");
+                    setTempPassword("");
+                    setNewPassword("");
+                    setConfirmPassword("");
+                    setOtpDigits(["", "", "", "", "", ""]);
+                    setOtpError(null);
+                    setOtpExpiresAt(null);
+                    setResetError(null);
+                  }}
+                >
+                  ← Use a different email
+                </button>
+              </>
+            )}
+
+            {/* ════════════ NEW PASSWORD STEP ════════════ */}
+            {authStep === "new-password" && (
+              <>
+                <h1>Set a new password</h1>
+                <p className="auth-sub">Choose a strong password with at least 8 characters.</p>
+
+                <form onSubmit={submitNewPassword} noValidate>
+                  <div className="auth-field">
+                    <label htmlFor="np-password">New password</label>
+                    <div className="auth-password">
+                      <input id="np-password" ref={newPasswordInputRef}
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="minimum 8 characters"
+                        autoComplete="new-password" minLength={8}
+                        value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                      <button type="button" className="auth-eye"
+                        onClick={() => setShowNewPassword((v) => !v)}
+                        aria-label={showNewPassword ? "Hide password" : "Show password"}>
+                        {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                     </div>
                   </div>
 
-                  <div className="gi-wrap w-full">
-                    <div className="gi">
-                      <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
-                        <Lock className="w-4 h-4 text-white/40" />
-                      </div>
-                      <input
+                  <div className="auth-field">
+                    <label htmlFor="np-confirm">Confirm password</label>
+                    <div className="auth-password">
+                      <input id="np-confirm"
                         type={showNewPassword ? "text" : "password"}
-                        placeholder="Confirm new password"
-                        value={confirmPassword}
-                        onChange={e => setConfirmPassword(e.target.value)}
-                        autoComplete="new-password"
-                        minLength={8}
-                        maxLength={200}
-                        className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
-                      />
+                        placeholder="re-enter password"
+                        autoComplete="new-password" minLength={8}
+                        value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
                     </div>
                   </div>
 
                   {confirmPassword.length > 0 && newPassword !== confirmPassword && (
-                    <p className="text-xs text-red-300/90 px-1">Passwords don&apos;t match.</p>
+                    <p className="auth-error">Passwords don&apos;t match.</p>
                   )}
-                  {resetError && (
-                    <p className="text-xs text-red-300/90 px-1">{resetError}</p>
-                  )}
+                  {resetError && <p className="auth-error">{resetError}</p>}
 
-                  <button type="submit" disabled={!isNewPasswordValid || resetSubmitting}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:-translate-y-0.5 active:translate-y-0">
-                    {resetSubmitting ? "Updating…" : "Update password"}
+                  <button type="submit" className="auth-submit"
+                    disabled={!isNewPasswordValid || resetSubmitting}>
+                    {resetSubmitting ? "Updating…" : "Update password →"}
                   </button>
                 </form>
-              </motion.div>
-            )}
-            {authStep === "invitation" && (
-              <motion.div key="invitation-step" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.35, ease: "easeOut" }} className="space-y-8">
 
+                <button type="button" className="fp-back-step" onClick={goBackToLogin}>
+                  ← Cancel
+                </button>
+              </>
+            )}
+
+            {/* ════════════ INVITATION STEP ════════════ */}
+            {authStep === "invitation" && (
+              <>
                 {invitationLoading ? (
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-semibold text-white tracking-tight"
-                      style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-                      Loading…
-                    </h2>
-                    <p className="text-white/45 text-sm">Validating your invitation.</p>
-                  </div>
+                  <>
+                    <h1>Loading invitation…</h1>
+                    <p className="auth-sub">Please wait while we verify your invite.</p>
+                  </>
                 ) : invitationError ? (
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <h2 className="text-3xl font-semibold text-white tracking-tight"
-                        style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-                        Invitation unavailable
-                      </h2>
-                      <p className="text-white/55 text-sm">{invitationError}</p>
-                    </div>
-                    <button type="button" onClick={() => { setAuthStep("email"); }}
-                      className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20">
+                  <>
+                    <h1>Invitation problem</h1>
+                    <p className="auth-sub">{invitationError}</p>
+                    <button type="button" className="auth-submit"
+                      onClick={() => { if (hardNavigate) window.location.assign("/login"); else router.push("/login"); }}>
                       Go to sign in
                     </button>
-                  </div>
+                  </>
                 ) : (
                   <>
-                    {/* Heading */}
-                    <div className="space-y-2">
-                      <h2 className="text-3xl font-semibold text-white tracking-tight"
-                        style={{ fontFamily: "'Instrument Serif', Georgia, serif" }}>
-                        Set your password
-                      </h2>
-                      <p className="text-white/45 text-sm">
-                        You&apos;re using a temporary password. Set a new one now, or skip and keep the default for now.
-                      </p>
-                      {invitationData?.email && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <div className="w-2 h-2 rounded-full bg-violet-400" />
-                          <p className="text-white/45 text-sm truncate max-w-[280px]">{invitationData.email}</p>
-                        </div>
-                      )}
-                    </div>
+                    <h1>Welcome to {invitationData?.orgName ?? brandName}</h1>
+                    <p className="auth-sub">
+                      Hi {invitationData?.firstName || "there"}, set your password to activate your account at <strong>{invitationData?.email}</strong>.
+                    </p>
 
-                    <form onSubmit={submitInvitation} className="space-y-3">
-                      {/* Current password */}
-                      <div className="gi-wrap w-full">
-                        <div className="gi">
-                          <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
-                            <Lock className="w-4 h-4 text-white/40" />
-                          </div>
-                          <input
+                    <form onSubmit={submitInvitation} noValidate>
+                      <div className="auth-field">
+                        <label htmlFor="inv-current">Current (temporary) password</label>
+                        <div className="auth-password">
+                          <input id="inv-current"
                             type={inviteShowPassword ? "text" : "password"}
-                            placeholder="Enter your default password"
-                            value={inviteCurrentPassword}
-                            onChange={(e) => setInviteCurrentPassword(e.target.value)}
+                            placeholder="default password from your invite email"
                             autoComplete="current-password"
-                            className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
-                          />
+                            value={inviteCurrentPassword}
+                            onChange={(e) => setInviteCurrentPassword(e.target.value)} />
                         </div>
                       </div>
 
-                      {/* New password */}
-                      <div className="gi-wrap w-full">
-                        <div className="gi">
-                          <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
-                            <button type="button" onClick={() => setInviteShowPassword((v) => !v)} className="text-white/40 hover:text-white/70 transition-colors p-1">
-                              {inviteShowPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                          </div>
-                          <input
+                      <div className="auth-field">
+                        <label htmlFor="inv-new">New password</label>
+                        <div className="auth-password">
+                          <input id="inv-new"
                             type={inviteShowPassword ? "text" : "password"}
-                            placeholder="Min 8 chars, 1 uppercase, 1 number, 1 special"
+                            placeholder="min 8 chars, 1 uppercase, 1 number, 1 special"
+                            autoComplete="new-password" minLength={8} maxLength={200}
                             value={inviteNewPassword}
-                            onChange={(e) => setInviteNewPassword(e.target.value)}
-                            autoComplete="new-password"
-                            minLength={8}
-                            maxLength={200}
-                            className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
-                          />
+                            onChange={(e) => setInviteNewPassword(e.target.value)} />
+                          <button type="button" className="auth-eye"
+                            onClick={() => setInviteShowPassword((v) => !v)}
+                            aria-label={inviteShowPassword ? "Hide password" : "Show password"}>
+                            {inviteShowPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
                         </div>
                       </div>
 
-                      {/* Confirm new password */}
-                      <div className="gi-wrap w-full">
-                        <div className="gi">
-                          <div className="w-10 pl-3 flex-shrink-0 flex items-center justify-center">
-                            <Lock className="w-4 h-4 text-white/40" />
-                          </div>
-                          <input
+                      <div className="auth-field">
+                        <label htmlFor="inv-confirm">Confirm new password</label>
+                        <div className="auth-password">
+                          <input id="inv-confirm"
                             type={inviteShowPassword ? "text" : "password"}
-                            placeholder="Re-enter password"
+                            placeholder="re-enter password"
+                            autoComplete="new-password" minLength={8} maxLength={200}
                             value={inviteConfirmPassword}
-                            onChange={(e) => setInviteConfirmPassword(e.target.value)}
-                            autoComplete="new-password"
-                            minLength={8}
-                            maxLength={200}
-                            className="flex-1 bg-transparent text-white text-sm placeholder:text-white/25 focus:outline-none py-3 pr-2"
-                          />
+                            onChange={(e) => setInviteConfirmPassword(e.target.value)} />
                         </div>
                       </div>
 
                       {inviteConfirmPassword.length > 0 && inviteNewPassword !== inviteConfirmPassword && (
-                        <p className="text-xs text-red-300/90 px-1">Passwords don&apos;t match.</p>
+                        <p className="auth-error">Passwords don&apos;t match.</p>
                       )}
-                      {inviteFormError && (
-                        <p className="text-xs text-red-300/90 px-1">{inviteFormError}</p>
-                      )}
+                      {inviteFormError && <p className="auth-error">{inviteFormError}</p>}
 
-                      <button type="submit" disabled={inviteSubmitting}
-                        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all shadow-lg shadow-violet-500/20 hover:shadow-violet-500/30 hover:-translate-y-0.5 active:translate-y-0">
-                        {inviteSubmitting ? "Saving…" : "Save & Continue"}
+                      <button type="submit" className="auth-submit" disabled={inviteSubmitting}>
+                        {inviteSubmitting ? "Saving…" : "Save & Continue →"}
                       </button>
-                      <button type="button" onClick={skipInvitation} disabled={inviteSubmitting}
-                        className="w-full py-3.5 rounded-2xl bg-white/[0.04] border border-white/15 text-white/85 hover:text-white hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed text-sm font-semibold transition-colors">
+                      <button type="button" className="auth-secondary"
+                        onClick={skipInvitation} disabled={inviteSubmitting}>
                         Skip for now
                       </button>
                     </form>
                   </>
                 )}
-              </motion.div>
+              </>
             )}
-          </AnimatePresence>
-        </div>
+          </div>
+
+          <footer className="auth-foot">
+            <span>© {new Date().getFullYear()} {brandName}</span>
+            <span className="auth-foot-links">
+              <a href="/privacy">Privacy Policy</a>
+              <a href="/support">Support</a>
+            </span>
+          </footer>
+        </section>
       </div>
     </div>
   );

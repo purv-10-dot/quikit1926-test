@@ -7,8 +7,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { fiscalYearLabel, ALL_QUARTERS, getFiscalYear, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useTeams, type Team } from "@/lib/hooks/useTeams";
 import { UserPicker, RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton, DropdownPicker } from "@quikit/ui";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useClickOutside } from "@/lib/hooks/useClickOutside";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
+import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
+import { humanizeApiError } from "@/lib/utils/humanizeError";
+import { notify } from "@/lib/utils/notify";
 
 interface Props {
   defaultYear?: number;
@@ -62,8 +66,8 @@ function TeamSelect({ value, onChange, teams }: { value: string; onChange: (id: 
       setOpen(false);
       setAdding(false);
       setNewName("");
-    } catch (e: any) {
-      setErr(e.message || "Failed to create team");
+    } catch (e: unknown) {
+      setErr(humanizeApiError(e, { context: "team", fallback: "Couldn't create the team. Please try again." }));
     } finally {
       setSaving(false);
     }
@@ -156,6 +160,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
   // DB-scoped fiscal years via shared hook
   const { years: fyYears } = useFiscalYears();
   const yearOptions = fyYears.length ? fyYears : [CURRENT_YEAR];
+  const { getStartDate: getQuarterStartDate } = useQuarterStartDates();
 
   // Owner dropdown filtering:
   //   - Team selected → fetch members of that team (API filters server-side).
@@ -225,10 +230,11 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
         endWeek: parseInt(form.endWeek),
         overallStatus: "not-started",
       } as any);
+      notify.saved("Priority", "created");
       onSuccess();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save priority";
-      setErrors({ _: msg });
+      setErrors({ _: humanizeApiError(err, { context: "Priority", fallback: "Couldn't save the Priority. Please try again." }) });
+      notify.error(err, { context: "Priority", fallback: "Couldn't save the Priority. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -242,24 +248,23 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
       title="Add New Priority"
       subtitle={`${fiscalYearLabel(parseInt(form.year))} · ${form.quarter}`}
       footer={
-        <RightPanelFooter>
-          <RightPanelCancelButton onClick={onClose} />
-          <RightPanelSubmitButton
-            onClick={handleSubmit}
-            saving={saving}
-            icon="plus"
-            label="Create Priority"
-          />
-        </RightPanelFooter>
+        // Column wrapper pins the server-error banner directly above the
+        // Cancel/Create row. Matches the pattern used by every form drawer.
+        <div className="flex flex-col gap-2 w-full">
+          <FormErrorBanner message={errors._} />
+          <RightPanelFooter>
+            <RightPanelCancelButton onClick={onClose} />
+            <RightPanelSubmitButton
+              onClick={handleSubmit}
+              saving={saving}
+              icon="plus"
+              label="Create Priority"
+            />
+          </RightPanelFooter>
+        </div>
       }
     >
       <>
-        {errors._ && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
-              {errors._}
-            </div>
-          )}
-
           {/* Row 1: Team | Priority Name */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -289,7 +294,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
                 options={WEEK_OPTIONS.map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
-                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w),
+                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter)),
                 }))}
                 searchable
               />
@@ -334,7 +339,7 @@ export function PriorityModal({ defaultYear, defaultQuarter, onClose, onSuccess 
                 options={WEEK_OPTIONS.filter(w => w >= (parseInt(form.startWeek) || 1)).map(w => ({
                   value: String(w),
                   label: `Week ${w}`,
-                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w),
+                  hint: getWeekDateRange(parseInt(form.year), form.quarter, w, getQuarterStartDate(parseInt(form.year), form.quarter)),
                 }))}
                 searchable
               />

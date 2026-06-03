@@ -19,7 +19,7 @@
         "QUIKIT_CLIENT_SECRET",
         "QUIKSCALE_URL",
         "QUIKVC_URL",
-        "QUIKCONSTRUCTION_URL",
+        "QUIKINFRA_URL",
         "ADMIN_URL",
         "NEXT_PUBLIC_AUTH_URL",
         "NEXT_PUBLIC_LAUNCHER_URL",

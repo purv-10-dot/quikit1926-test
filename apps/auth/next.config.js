@@ -67,6 +67,17 @@ if (process.env.DATABASE_URL && !process.env.DATABASE_URL_DIRECT) {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Container build: emit a self-contained Node server under .next/standalone.
+  // outputFileTracingRoot points at the monorepo root so workspace deps
+  // (@quikit/*) are traced into the standalone bundle.
+  output: "standalone",
+  // Skip type/lint checks inside the Docker build — the pruned monorepo
+  // tree may not include every devDep; these checks already run in CI.
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
+  experimental: {
+    outputFileTracingRoot: path.join(__dirname, "../.."),
+  },
   reactStrictMode: true,
   swcMinify: true,
   transpilePackages: [

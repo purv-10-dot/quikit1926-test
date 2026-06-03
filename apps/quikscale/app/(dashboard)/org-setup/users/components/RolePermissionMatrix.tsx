@@ -24,15 +24,20 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, Save, Undo2, Shield, Info, Pencil, Check, X } from "lucide-react";
 import {
   PERMISSION_TREE,
   ACTIONS,
+  filterTreeByEnabledModules,
   type Action,
   type PermissionLeaf,
   type PermissionModule,
   type PermissionSubModule,
 } from "@/lib/api/permissionsRegistry";
+import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
+import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 
 interface RoleDetail {
   id: string;
@@ -128,11 +133,27 @@ export function RolePermissionMatrix({
   /** Notify parent (RolesTab) so the left rail refetches with the new name. */
   onRenamed?: () => void;
 }) {
+  const queryClient = useQueryClient();
+  // RBAC v2 — User:update unlocks rename pencil + Save/Discard buttons.
+  // Without it the matrix is render-only: checkboxes still react to clicks
+  // but the dirty bar's Save button is hidden so changes can never persist.
+  // The viewer can still EXPLORE permissions to understand them.
+  const { canUpdate } = useResourcePermissions("User");
+  // RBAC v2: the matrix only shows modules the tenant has enabled in the
+  // Super Admin feature-flag panel. Disabling `kpi.teams` for "Success
+  // Alchemists" hides the "Team KPI" row everywhere — sidebar, matrix,
+  // effective-permissions panel. Existing grants on hidden rows are kept
+  // in `RolePermission` so re-enabling the module restores the same state.
+  const disabledModules = useDisabledModules();
+  const visibleTree = useMemo(
+    () => filterTreeByEnabledModules(PERMISSION_TREE, disabledModules, isModuleEnabled),
+    [disabledModules],
+  );
   const [role, setRole] = useState<RoleDetail | null>(null);
   const [grants, setGrants] = useState<Set<string>>(new Set());
   const [savedGrants, setSavedGrants] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(PERMISSION_TREE.map((m) => m.key)),
+    () => new Set(visibleTree.map((m) => m.key)),
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -294,6 +315,9 @@ export function RolePermissionMatrix({
         return;
       }
       setSavedGrants(new Set(grants));
+      // Invalidate the client-side permission cache so consumers (OPSP History,
+      // sidebar visibility, etc.) reflect the new grants without a full reload.
+      await queryClient.invalidateQueries({ queryKey: ["me-permissions"] });
     } catch {
       setError("Network error saving");
     } finally {
@@ -354,7 +378,7 @@ export function RolePermissionMatrix({
               <>
                 <span className="truncate">{role?.name}</span>
                 {role?.isSystem && <Shield className="h-4 w-4 text-amber-500 flex-shrink-0" />}
-                {role && !role.isSystem && (
+                {role && !role.isSystem && canUpdate && (
                   <button
                     onClick={startRename}
                     className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex-shrink-0"
@@ -394,6 +418,7 @@ export function RolePermissionMatrix({
           </p>
         )}
         <EntitiesTable
+          tree={visibleTree}
           grants={grants}
           expanded={expanded}
           onToggleExpanded={toggleExpanded}
@@ -403,8 +428,10 @@ export function RolePermissionMatrix({
         />
       </div>
 
-      {/* Sticky bottom bar */}
-      {dirty && (
+      {/* Sticky bottom bar — only when the user can actually save. Read-only
+          viewers don't see this bar; their checkbox clicks have no persistent
+          effect. */}
+      {dirty && canUpdate && (
         <div className="bg-white border-t border-gray-200 shadow-md px-6 py-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2 text-xs">
             <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-accent-100 text-accent-700 font-bold">
@@ -447,7 +474,7 @@ interface RowHandlers {
   onBulkSetAction: (node: NodeWithChildren, action: Action, makeOn: boolean) => void;
 }
 
-function EntitiesTable(props: RowHandlers) {
+function EntitiesTable({ tree, ...props }: { tree: readonly PermissionModule[] } & RowHandlers) {
   return (
     <table className="w-full border-collapse table-fixed">
       <colgroup>
@@ -472,7 +499,7 @@ function EntitiesTable(props: RowHandlers) {
         </tr>
       </thead>
       <tbody>
-        {PERMISSION_TREE.map((mod) => (
+        {tree.map((mod) => (
           <ModuleRows key={mod.key} mod={mod} {...props} />
         ))}
       </tbody>

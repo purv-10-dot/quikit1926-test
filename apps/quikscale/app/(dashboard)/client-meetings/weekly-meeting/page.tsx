@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RightPanel,
   RightPanelFooter,
@@ -25,21 +25,59 @@ import {
   History,
   Search,
   Filter as FilterIcon,
+  RotateCcw,
 } from "lucide-react";
+import { TrashBanner } from "@quikit/ui";
+import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useTableSort } from "@/lib/store";
+import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+import { HeaderCell } from "@/components/table/HeaderCell";
+
+const COL_WIDTHS_DEFAULT: Record<string, number> = {
+  meetingDate: 110,
+  client: 180,
+  callStatus: 110,
+  absentMembers: 180,
+  weeklyDashboardNA: 180,
+  actualStartTime: 110,
+  actualEndTime: 110,
+  goodNewsSharing: 130,
+  goodNewsSharingTime: 130,
+  kpDashboard: 130,
+  kpDashboardTime: 130,
+  gaps: 80,
+  gapsTime: 100,
+  www: 80,
+  wwwTime: 100,
+  feedback: 200,
+  feedbackTime: 130,
+  collectiveIntelligence: 160,
+  collectiveIntelligenceTime: 130,
+  opspReview: 110,
+  opspTime: 100,
+  createdBy: 160,
+  updatedBy: 160,
+  createdAt: 120,
+  updatedAt: 120,
+};
 import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
-import { runExport } from "@/lib/export/xlsx";
 import type { ExportSelection } from "@quikit/ui";
 import { Download } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 
 type Flag = "YES" | "NO" | "NA";
 type Status =
   | "HELD"
   | "CALL_CANCELLED_BY_CLIENT"
   | "HOLIDAY_FOR_CLIENT"
-  | "HOLIDAY_FOR_SUCCESS_ALCHEMIST";
+  | "HOLIDAY_FOR_SUCCESS_ALCHEMIST"
+  | "OTHER";
 
 const FLAG_OPTS: Array<{ value: Flag; label: string }> = [
   { value: "YES", label: "YES" },
@@ -55,6 +93,7 @@ const STATUS_OPTS: Array<{ value: Status; label: string }> = [
     value: "HOLIDAY_FOR_SUCCESS_ALCHEMIST",
     label: "Holiday for Success Alchemist",
   },
+  { value: "OTHER", label: "Other" },
 ];
 
 const RADIO_FIELDS = [
@@ -106,6 +145,7 @@ interface MeetingRow {
   clientName: string;
   meetingDate: string;
   callStatus: Status;
+  callStatusOther: string | null;
   actualStartTime: string | null;
   actualEndTime: string | null;
   segmentTime1: string | null;
@@ -115,6 +155,7 @@ interface MeetingRow {
   segmentTime5: string | null;
   segmentTime6: string | null;
   segmentTime7: string | null;
+  punctualityOverride: Flag;
   goodNewsSharing: Flag;
   kpDashboard: Flag;
   gaps: Flag;
@@ -126,6 +167,15 @@ interface MeetingRow {
   absentClientMemberNames: string[];
   dashboardNAClientMemberIds: string[];
   dashboardNAClientMemberNames: string[];
+  // Audit columns appended by GET /api/client-meetings/weekly-meetings.
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  createdByName: string;
+  createdByInitials: string;
+  updatedBy: string | null;
+  updatedByName: string | null;
+  updatedByInitials: string | null;
 }
 interface LogEntry {
   id: string;
@@ -159,6 +209,7 @@ const emptyForm = {
   clientId: "",
   meetingDate: new Date().toISOString().slice(0, 10),
   callStatus: "HELD" as Status,
+  callStatusOther: "",
   actualStartTime: "",
   actualEndTime: "",
   segmentTime1: "",
@@ -168,6 +219,11 @@ const emptyForm = {
   segmentTime5: "",
   segmentTime6: "",
   segmentTime7: "",
+  // "Planned Deviation In Time" — YES → mark this call punctual regardless of
+  // actualStartTime (an agreed deviation was honored). Default NO matches the
+  // UI radio in the form (only YES/NO are user-selectable; NA only appears on
+  // legacy rows that pre-date this field).
+  punctualityOverride: "NO" as Flag,
   goodNewsSharing: "NA" as Flag,
   kpDashboard: "NA" as Flag,
   gaps: "NA" as Flag,
@@ -189,13 +245,18 @@ function fmtDate(iso: string) {
   });
 }
 function statusBadge(s: Status) {
-  return s === "HELD"
-    ? "bg-green-100 text-green-700"
-    : s === "CALL_CANCELLED_BY_CLIENT"
-      ? "bg-red-100 text-red-700"
-      : "bg-amber-100 text-amber-700";
+  if (s === "HELD") return "bg-green-100 text-green-700";
+  if (s === "CALL_CANCELLED_BY_CLIENT") return "bg-red-100 text-red-700";
+  // OTHER uses a neutral gray badge so it visually reads as "uncategorized"
+  // rather than blending into the holiday-style amber.
+  if (s === "OTHER") return "bg-gray-100 text-gray-700";
+  return "bg-amber-100 text-amber-700";
 }
-function statusLabel(s: Status) {
+function statusLabel(s: Status, custom?: string | null) {
+  // For OTHER rows, surface the user-entered text so the cell isn't a
+  // useless "Other" — falls back to the bare label if the column is blank
+  // (legacy rows or in-flight migration).
+  if (s === "OTHER") return custom?.trim() || "Other";
   return STATUS_OPTS.find((o) => o.value === s)?.label ?? s;
 }
 
@@ -249,6 +310,9 @@ export default function WeeklyMeetingPage() {
   // Search + selection (KPI-style chrome).
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Trash view — when true, the list endpoint returns only soft-deleted rows
+  // and per-row / bulk actions switch from Delete to Restore.
+  const [viewTrash, setViewTrash] = useState(false);
 
   // Log drawer.
   const [logsFor, setLogsFor] = useState<{ id: string; label: string } | null>(
@@ -276,10 +340,139 @@ export default function WeeklyMeetingPage() {
     {}
   );
 
+  // Server-persisted column preferences (frozen / hidden / sort) via the
+  // UserTablePreference table in app_quikscale. Same shape as KPI / Priority /
+  // WWW — see lib/hooks/useTablePreferences.ts.
+  const {
+    hiddenCols,
+    frozenCol: frozenUpTo,
+    setFrozenCol,
+    hideCol,
+  } = useTablePrefs("weeklyMeeting");
+  const { sortBy, sortOrder, setSort } = useTableSort("weeklyMeeting");
+  const { getColWidth, startResize, colWidths } = useColumnResize("weeklyMeeting", COL_WIDTHS_DEFAULT);
+  const isHidden = (key: string) => hiddenCols.includes(key);
+
+  // Cascade-freeze: freezing column C makes every column FROM the always-frozen
+  // left rail UP TO (and including) C sticky as a group. Mirrors KPI's
+  // `useTableColumns` so the user-experience is identical across tables.
+  //
+  // The rail keys `_checkbox`, `_log`, `_id` are part of the order so the
+  // sticky-offset hook measures them too — without them the user-frozen
+  // columns would compute `left` starting at 0 and overlap the rail.
+  // Every user column appears in render order so cascade-freeze covers the
+  // full table, mirroring KPI. Adding a new column means appending it here
+  // (and rendering its <Header />) — that's the only registration step.
+  const COL_ORDER = useMemo(
+    () => [
+      "_checkbox", "_log", "_id",
+      "meetingDate", "client", "callStatus",
+      "absentMembers", "weeklyDashboardNA",
+      "actualStartTime", "actualEndTime",
+      "goodNewsSharing", "goodNewsSharingTime",
+      "kpDashboard", "kpDashboardTime",
+      "gaps", "gapsTime",
+      "www", "wwwTime",
+      "feedback", "feedbackTime",
+      "collectiveIntelligence", "collectiveIntelligenceTime",
+      "opspReview", "opspTime",
+      "createdBy", "updatedBy", "createdAt", "updatedAt",
+    ],
+    [],
+  );
+  const hiddenSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
+  const headerRowRef = useRef<HTMLTableRowElement>(null);
+  // Rail widths are inline-styled on the rail `<th>`s and aren't part of
+  // `colWidths`. The hook needs them to seed offsets BEFORE the first
+  // layout — otherwise frozen body cells flash at `left: 0` and get
+  // covered by the always-frozen rail (z-[15]).
+  const stickyFallback = useMemo(
+    () => ({
+      colOrder: COL_ORDER,
+      railWidths: { _checkbox: 32, _log: 32, _id: 40 } as const,
+      getColWidth,
+    }),
+    [COL_ORDER, getColWidth],
+  );
+  const { getStickyLeft } = useStickyOffsets(
+    headerRowRef,
+    frozenUpTo,
+    hiddenSet,
+    colWidths,
+    stickyFallback,
+  );
+  const isFrozen = useCallback(
+    (col: string): boolean => {
+      if (!frozenUpTo) return false;
+      const i = COL_ORDER.indexOf(col);
+      const j = COL_ORDER.indexOf(frozenUpTo);
+      // Unknown columns never freeze; the freeze stops at columns in COL_ORDER.
+      return i !== -1 && j !== -1 && i <= j;
+    },
+    [frozenUpTo, COL_ORDER],
+  );
+  const handleFreeze = useCallback(
+    (col: string) => setFrozenCol(frozenUpTo === col ? null : col),
+    [frozenUpTo, setFrozenCol],
+  );
+
+  // Local alias that binds the table-scoped state (hide/freeze/sort/width) to
+  // the extracted <HeaderCell> component. Each `<Header k="…" label="…" />`
+  // call below renders one column header with sort arrow + ColMenu + resize
+  // handle, returning null when the column is hidden.
+  const Header = (props: {
+    k: string;
+    label: string;
+    sortable?: boolean;
+    sortKey?: string;
+  }) => (
+    <HeaderCell
+      {...props}
+      isHidden={isHidden}
+      getColWidth={getColWidth}
+      startResize={startResize}
+      hideCol={hideCol}
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      setSort={setSort}
+      isFrozen={isFrozen}
+      getStickyLeft={getStickyLeft}
+      frozenUpTo={frozenUpTo}
+      onFreeze={handleFreeze}
+    />
+  );
+
+  // Helper for the matching <td> cells — combines the hide-via-Tailwind
+  // `hidden` class with the explicit column width so table-layout: fixed
+  // locks the data row to the same widths as the headers.
+  function tdHideClass(k: string): string {
+    return isHidden(k) ? "hidden" : "";
+  }
+  /** Style for body `<td>` cells. When the column is part of the frozen
+   *  cascade range, also returns the measured `left` offset so the cell
+   *  sits flush with the matching `<th>`. */
+  function tdWidthStyle(k: string): React.CSSProperties {
+    const w = getColWidth(k);
+    if (isFrozen(k)) {
+      return { width: w, minWidth: w, left: getStickyLeft(k) };
+    }
+    return { width: w };
+  }
+  /** Classes for body `<td>` cells when the column is in the frozen range.
+   *  Returns empty string for non-frozen columns so callers can concat freely. */
+  function tdStickyClass(k: string): string {
+    return isFrozen(k) ? "sticky z-[10] bg-white" : "";
+  }
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = filterClientId ? `?clientId=${filterClientId}` : "";
+      const qsParts: string[] = [];
+      if (filterClientId) qsParts.push(`clientId=${filterClientId}`);
+      if (viewTrash) qsParts.push("includeDeleted=true");
+      if (sortBy) qsParts.push(`sortBy=${sortBy}`);
+      if (sortBy && sortOrder) qsParts.push(`sortOrder=${sortOrder}`);
+      const qs = qsParts.length ? `?${qsParts.join("&")}` : "";
       const [m, c] = await Promise.all([
         fetch(`/api/client-meetings/weekly-meetings${qs}`).then((r) =>
           r.json()
@@ -291,7 +484,7 @@ export default function WeeklyMeetingPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterClientId]);
+  }, [filterClientId, viewTrash, sortBy, sortOrder]);
 
   useEffect(() => {
     refresh();
@@ -343,6 +536,7 @@ export default function WeeklyMeetingPage() {
         clientId: row.clientId,
         meetingDate: row.meetingDate.slice(0, 10),
         callStatus: row.callStatus,
+        callStatusOther: row.callStatusOther ?? "",
         actualStartTime: row.actualStartTime ?? "",
         actualEndTime: row.actualEndTime ?? "",
         segmentTime1: detail.segmentTime1 ?? "",
@@ -352,6 +546,9 @@ export default function WeeklyMeetingPage() {
         segmentTime5: detail.segmentTime5 ?? "",
         segmentTime6: detail.segmentTime6 ?? "",
         segmentTime7: detail.segmentTime7 ?? "",
+        // Legacy rows pre-dating this column will have `NA`; coerce that to
+        // `NO` for the UI radio (which only exposes YES/NO).
+        punctualityOverride: (row.punctualityOverride === "YES" ? "YES" : "NO") as Flag,
         goodNewsSharing: row.goodNewsSharing,
         kpDashboard: row.kpDashboard,
         gaps: row.gaps,
@@ -405,10 +602,16 @@ export default function WeeklyMeetingPage() {
   function setCallStatus(s: Status) {
     setEditing((e) => {
       if (!e) return null;
-      if (s === "HELD") return { ...e, form: { ...e.form, callStatus: s } };
+      if (s === "HELD") {
+        // Switching back to HELD clears any stale OTHER label.
+        return { ...e, form: { ...e.form, callStatus: s, callStatusOther: "" } };
+      }
       const cleared: typeof emptyForm = {
         ...e.form,
         callStatus: s,
+        // Preserve whatever the user already typed when staying on / entering
+        // OTHER; clear it for every other non-HELD status.
+        callStatusOther: s === "OTHER" ? e.form.callStatusOther : "",
         actualStartTime: "",
         actualEndTime: "",
         segmentTime1: "",
@@ -418,6 +621,7 @@ export default function WeeklyMeetingPage() {
         segmentTime5: "",
         segmentTime6: "",
         segmentTime7: "",
+        punctualityOverride: "NO",
         goodNewsSharing: "NA",
         kpDashboard: "NA",
         gaps: "NA",
@@ -495,6 +699,37 @@ export default function WeeklyMeetingPage() {
       setError("Pick a client");
       return;
     }
+    if (f.callStatus === "OTHER" && !f.callStatusOther.trim()) {
+      setError("Please specify the call status text");
+      return;
+    }
+
+    // ── Held → Actual Start/End times are mandatory ──────────────────────
+    // The meeting actually happened, so its timing must be recorded. Mirrors
+    // the YES→time UX (and the server-side refine in clientMeetingsSchema):
+    // red-border the empty field(s) and scroll to the first.
+    if (f.callStatus === "HELD") {
+      const missingActual: string[] = [];
+      if (!f.actualStartTime) missingActual.push("actualStartTime");
+      if (!f.actualEndTime) missingActual.push("actualEndTime");
+      if (missingActual.length > 0) {
+        setTimeFieldErrors(new Set(missingActual));
+        setError(
+          "Actual Start Time and Actual End Time are required when the call status is Held",
+        );
+        const first = missingActual[0];
+        requestAnimationFrame(() => {
+          const el = document.querySelector(
+            `[data-time-field="${first}"]`,
+          ) as HTMLElement | null;
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            setTimeout(() => el.focus({ preventScroll: true }), 350);
+          }
+        });
+        return;
+      }
+    }
     if (
       f.actualStartTime &&
       f.actualEndTime &&
@@ -548,6 +783,7 @@ export default function WeeklyMeetingPage() {
         clientId: f.clientId,
         meetingDate: f.meetingDate,
         callStatus: f.callStatus,
+        callStatusOther: f.callStatus === "OTHER" ? f.callStatusOther.trim() : null,
         actualStartTime: f.actualStartTime || null,
         actualEndTime: f.actualEndTime || null,
         segmentTime1: f.segmentTime1 || null,
@@ -557,6 +793,7 @@ export default function WeeklyMeetingPage() {
         segmentTime5: f.segmentTime5 || null,
         segmentTime6: f.segmentTime6 || null,
         segmentTime7: f.segmentTime7 || null,
+        punctualityOverride: f.punctualityOverride,
         goodNewsSharing: f.goodNewsSharing,
         kpDashboard: f.kpDashboard,
         gaps: f.gaps,
@@ -644,15 +881,22 @@ export default function WeeklyMeetingPage() {
           if (failed > 0) {
             // Meeting was created; surface a non-blocking warning. User can
             // re-open the meeting and re-save the affected rows.
-            setError(
-              `Meeting saved, but ${failed} member score row${failed === 1 ? "" : "s"} failed to save. Open the meeting to retry.`
-            );
+            const warn = `Meeting saved, but ${failed} member score row${failed === 1 ? "" : "s"} failed to save. Open the meeting to retry.`;
+            setError(warn);
+            notify.warning(warn);
+            setEditing(null);
+            await refresh();
+            return;
           }
         }
       }
 
+      notify.saved("Weekly meeting", editing.id ? "updated" : "created");
       setEditing(null);
       await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Save failed");
+      notify.error(err, { context: "weekly meeting", fallback: "Couldn't save. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -704,6 +948,7 @@ export default function WeeklyMeetingPage() {
         })
       )
     );
+    notify.saved("Weekly meeting", "deleted");
     setSelectedIds(new Set());
     refresh();
   }
@@ -713,8 +958,48 @@ export default function WeeklyMeetingPage() {
     const res = await fetch(`/api/client-meetings/weekly-meetings/${id}`, {
       method: "DELETE",
     });
-    if ((await res.json()).success) refresh();
+    if ((await res.json()).success) {
+      notify.saved("Weekly meeting", "deleted");
+      refresh();
+    }
   }
+
+  async function restoreOne(id: string) {
+    const res = await fetch(`/api/client-meetings/weekly-meetings/${id}/restore`, {
+      method: "POST",
+    });
+    const json = await res.json();
+    if (json.success) {
+      notify.success("Weekly meeting restored");
+      refresh();
+    } else {
+      notify.error(json.error ?? "Couldn't restore. Please try again.");
+    }
+  }
+
+  async function bulkRestore() {
+    if (!selectedIds.size) return;
+    const res = await fetch(`/api/client-meetings/weekly-meetings/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selectedIds] }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      notify.success(`Restored ${json.data?.restored ?? 0} meeting${json.data?.restored === 1 ? "" : "s"}`);
+      setSelectedIds(new Set());
+      refresh();
+    } else {
+      notify.error(json.error ?? "Couldn't restore. Please try again.");
+    }
+  }
+
+  // Drop any stale selection whenever the user enters/exits trash mode so
+  // a "Delete N selected" / "Restore N selected" button doesn't carry over
+  // ids that aren't visible.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [viewTrash]);
 
   const isEdit = !!editing?.id;
   // Update tab is exposed in both Add and Edit. The grid handles the "no
@@ -753,7 +1038,7 @@ export default function WeeklyMeetingPage() {
     const q = searchQuery.toLowerCase();
     return (
       r.clientName.toLowerCase().includes(q) ||
-      statusLabel(r.callStatus).toLowerCase().includes(q)
+      statusLabel(r.callStatus, r.callStatusOther).toLowerCase().includes(q)
     );
   });
   const visibleIds = visibleRows.map((r) => r.id);
@@ -781,7 +1066,7 @@ export default function WeeklyMeetingPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selectedIds.size > 0 && canDelete && (
+          {selectedIds.size > 0 && canDelete && !viewTrash && (
             <button
               onClick={bulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors"
@@ -790,6 +1075,28 @@ export default function WeeklyMeetingPage() {
               Delete {selectedIds.size} selected
             </button>
           )}
+          {selectedIds.size > 0 && viewTrash && (
+            <button
+              onClick={bulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Restore {selectedIds.size} selected
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setViewTrash((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-md transition-colors ${
+              viewTrash
+                ? "bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100"
+                : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+            title={viewTrash ? "Exit Trash" : "View Trash"}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {viewTrash ? "Exit Trash" : "View Trash"}
+          </button>
 
           {/* Search */}
           <div className="relative">
@@ -832,28 +1139,40 @@ export default function WeeklyMeetingPage() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col overflow-hidden p-6 min-h-0">
+      <div className="flex-1 flex flex-col overflow-hidden p-1 min-h-0">
+        {viewTrash && (
+          <div className="mb-3">
+            <TrashBanner count={rows.length} onExit={() => setViewTrash(false)} />
+          </div>
+        )}
         {loading ? (
           <p className="text-sm text-gray-500">Loading…</p>
         ) : rows.length === 0 ? (
           <EmptyState
             icon={CalendarDays}
-            title="No weekly meetings yet"
-            message="Click Add to record your first weekly meeting."
+            title={viewTrash ? "Trash is empty" : "No weekly meetings yet"}
+            message={viewTrash ? "Deleted weekly meetings will appear here." : "Click Add to record your first weekly meeting."}
           />
         ) : (
-          <div className="flex-1 flex flex-col min-h-0 bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="flex-1 overflow-auto min-h-0">
-            <table className="min-w-full text-xs">
+          <div className="flex-1 flex flex-col min-h-0">
+            <HorizontalScroller className="flex-1">
+            <table
+              className="text-xs bg-white border-separate border-spacing-0"
+              style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="bg-accent-50 text-gray-600 sticky top-0 z-10">
-                <tr>
-                  <th className="px-2 py-2 w-8">
+                {/* `ref` + `data-col-key` on every `<th>` (rail + user cols)
+                    feed useStickyOffsets so each frozen column gets a `left`
+                    measured from the actual DOM — no hardcoded pixel offsets. */}
+                <tr ref={headerRowRef}>
+                  <th data-col-key="_checkbox"
+                      className="sticky z-[35] px-2 py-2 bg-accent-50 border-r border-gray-200"
+                      style={{ left: 0, width: 32, minWidth: 32, maxWidth: 32 }}>
                     <label
                       onClickCapture={(e) => {
                         if (!canDelete) {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.error("You don't have permission to delete");
+                          notify.error("You don't have permission to delete");
                         }
                       }}
                     >
@@ -865,73 +1184,42 @@ export default function WeeklyMeetingPage() {
                       />
                     </label>
                   </th>
-                  <th className="px-1 py-2 w-8 text-center font-semibold">
+                  <th data-col-key="_log"
+                      className="sticky z-[35] px-1 py-2 text-center font-semibold bg-accent-50 border-r border-gray-200"
+                      style={{ left: 32, width: 32, minWidth: 32, maxWidth: 32 }}>
                     Log
                   </th>
-                  <th className="px-1 py-2 w-10 text-center font-semibold">
+                  <th data-col-key="_id"
+                      className="sticky z-[35] px-1 py-2 text-center font-semibold bg-accent-50 border-r border-gray-200"
+                      style={{ left: 64, width: 40, minWidth: 40, maxWidth: 40 }}>
                     #
                   </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Meeting Date
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Client Name
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Status
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Absent Members
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Weekly Dashboard NA
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Actual Start Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Actual End Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Good News Sharing
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Good News Sharing Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    K&amp;P dashboard
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    K&amp;P dashboard Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    GAPS
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    GAPS Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">WWW</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    WWW Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Customer/Employee Feedback
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Customer/Employee Feedback Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Collective Intelligence
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Collective Intelligence Time
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    OPSP Review
-                  </th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    OPSP Time
-                  </th>
+                  <Header k="meetingDate" label="Meeting Date" sortable />
+                  <Header k="client" label="Client Name" sortable sortKey="client" />
+                  <Header k="callStatus" label="Status" sortable />
+                  <Header k="absentMembers" label="Absent Members" />
+                  <Header k="weeklyDashboardNA" label="Weekly Dashboard NA" />
+                  <Header k="actualStartTime" label="Actual Start Time" sortable />
+                  <Header k="actualEndTime" label="Actual End Time" sortable />
+                  <Header k="goodNewsSharing" label="Good News Sharing" />
+                  <Header k="goodNewsSharingTime" label="Good News Sharing Time" />
+                  <Header k="kpDashboard" label="K&P dashboard" />
+                  <Header k="kpDashboardTime" label="K&P dashboard Time" />
+                  <Header k="gaps" label="GAPS" />
+                  <Header k="gapsTime" label="GAPS Time" />
+                  <Header k="www" label="WWW" />
+                  <Header k="wwwTime" label="WWW Time" />
+                  <Header k="feedback" label="Customer/Employee Feedback" />
+                  <Header k="feedbackTime" label="Customer/Employee Feedback Time" />
+                  <Header k="collectiveIntelligence" label="Collective Intelligence" />
+                  <Header k="collectiveIntelligenceTime" label="Collective Intelligence Time" />
+                  <Header k="opspReview" label="OPSP Review" />
+                  <Header k="opspTime" label="OPSP Time" />
+                  {/* Audit columns — populated by GET /api/client-meetings/weekly-meetings. */}
+                  <Header k="createdBy" label="Created By" />
+                  <Header k="updatedBy" label="Updated By" />
+                  <Header k="createdAt" label="Created Date" sortable />
+                  <Header k="updatedAt" label="Updated Date" sortable />
                   <th className="px-3 py-2 text-right" />
                 </tr>
               </thead>
@@ -941,13 +1229,14 @@ export default function WeeklyMeetingPage() {
                     key={r.id}
                     className="border-t border-gray-100 hover:bg-blue-50/30"
                   >
-                    <td className="px-2 py-2">
+                    <td className="sticky z-[15] bg-white px-2 py-2 border-r border-gray-100"
+                        style={{ left: 0, width: 32, minWidth: 32, maxWidth: 32 }}>
                       <label
                         onClickCapture={(e) => {
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -959,7 +1248,8 @@ export default function WeeklyMeetingPage() {
                         />
                       </label>
                     </td>
-                    <td className="px-1 py-2 text-center">
+                    <td className="sticky z-[15] bg-white px-1 py-2 text-center border-r border-gray-100"
+                        style={{ left: 32, width: 32, minWidth: 32, maxWidth: 32 }}>
                       <button
                         type="button"
                         onClick={() => openLogs(r)}
@@ -969,7 +1259,8 @@ export default function WeeklyMeetingPage() {
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
-                    <td className="px-1 py-2 text-center">
+                    <td className="sticky z-[15] bg-white px-1 py-2 text-center border-r border-gray-100"
+                        style={{ left: 64, width: 40, minWidth: 40, maxWidth: 40 }}>
                       <button
                         type="button"
                         onClick={() => openEdit(r)}
@@ -978,96 +1269,146 @@ export default function WeeklyMeetingPage() {
                         {(page - 1) * pageSize + idx + 1}
                       </button>
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    {/* Body cells — each pairs tdHideClass + tdWidthStyle so the column
+                        collapses when hidden and locks to the resized width when shown.
+                        The sticky-left rule mirrors the matching <th> when frozen. */}
+                    <td style={tdWidthStyle("meetingDate")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("meetingDate")} ${tdStickyClass("meetingDate")}`}>
                       {fmtDate(r.meetingDate)}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td style={tdWidthStyle("client")} className={`px-3 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${tdHideClass("client")} ${tdStickyClass("client")}`}>
                       {r.clientName}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td style={tdWidthStyle("callStatus")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("callStatus")} ${tdStickyClass("callStatus")}`}>
                       <span
                         className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(r.callStatus)}`}
+                        title={r.callStatus === "OTHER" ? r.callStatusOther ?? undefined : undefined}
                       >
-                        {statusLabel(r.callStatus)}
+                        {statusLabel(r.callStatus, r.callStatusOther)}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-gray-600">
-                      {r.absentClientMemberNames.length
-                        ? r.absentClientMemberNames.join(", ")
-                        : "—"}
+                    <td style={tdWidthStyle("absentMembers")} className={`px-3 py-2 ${tdHideClass("absentMembers")} ${tdStickyClass("absentMembers")}`}>
+                      {r.absentClientMemberNames.length ? (
+                        // Cap at ~3 lines (`max-h-[3.25rem]` ≈ 3 × `text-xs leading-snug`).
+                        // Longer lists scroll inside the cell so the row height stays
+                        // consistent across the table; the `title` tooltip surfaces the
+                        // full text for users who don't want to scroll.
+                        <div
+                          className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-600 cursor-default pr-1"
+                          style={{ scrollbarWidth: "thin" }}
+                          title={r.absentClientMemberNames.join(", ")}
+                        >
+                          {r.absentClientMemberNames.join(", ")}
+                        </div>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
-                    <td className="px-3 py-2 text-gray-600">
-                      {r.dashboardNAClientMemberNames.length
-                        ? r.dashboardNAClientMemberNames.join(", ")
-                        : "—"}
+                    <td style={tdWidthStyle("weeklyDashboardNA")} className={`px-3 py-2 ${tdHideClass("weeklyDashboardNA")} ${tdStickyClass("weeklyDashboardNA")}`}>
+                      {r.dashboardNAClientMemberNames.length ? (
+                        <div
+                          className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-600 cursor-default pr-1"
+                          style={{ scrollbarWidth: "thin" }}
+                          title={r.dashboardNAClientMemberNames.join(", ")}
+                        >
+                          {r.dashboardNAClientMemberNames.join(", ")}
+                        </div>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("actualStartTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualStartTime")} ${tdStickyClass("actualStartTime")}`}>
                       {r.actualStartTime || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("actualEndTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("actualEndTime")} ${tdStickyClass("actualEndTime")}`}>
                       {r.actualEndTime || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("goodNewsSharing")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("goodNewsSharing")} ${tdStickyClass("goodNewsSharing")}`}>
                       {r.goodNewsSharing}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("goodNewsSharingTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("goodNewsSharingTime")} ${tdStickyClass("goodNewsSharingTime")}`}>
                       {r.segmentTime1 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("kpDashboard")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("kpDashboard")} ${tdStickyClass("kpDashboard")}`}>
                       {r.kpDashboard}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("kpDashboardTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("kpDashboardTime")} ${tdStickyClass("kpDashboardTime")}`}>
                       {r.segmentTime2 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("gaps")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("gaps")} ${tdStickyClass("gaps")}`}>
                       {r.gaps}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("gapsTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("gapsTime")} ${tdStickyClass("gapsTime")}`}>
                       {r.segmentTime3 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("www")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("www")} ${tdStickyClass("www")}`}>
                       {r.www}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("wwwTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("wwwTime")} ${tdStickyClass("wwwTime")}`}>
                       {r.segmentTime4 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("feedback")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("feedback")} ${tdStickyClass("feedback")}`}>
                       {r.feedback}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("feedbackTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("feedbackTime")} ${tdStickyClass("feedbackTime")}`}>
                       {r.segmentTime5 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("collectiveIntelligence")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("collectiveIntelligence")} ${tdStickyClass("collectiveIntelligence")}`}>
                       {r.collectiveIntelligence}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("collectiveIntelligenceTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("collectiveIntelligenceTime")} ${tdStickyClass("collectiveIntelligenceTime")}`}>
                       {r.segmentTime6 || "—"}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 text-center">
+                    <td style={tdWidthStyle("opspReview")} className={`px-3 py-2 text-gray-600 text-center overflow-hidden ${tdHideClass("opspReview")} ${tdStickyClass("opspReview")}`}>
                       {r.opspReview}
                     </td>
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                    <td style={tdWidthStyle("opspTime")} className={`px-3 py-2 text-gray-600 whitespace-nowrap overflow-hidden ${tdHideClass("opspTime")} ${tdStickyClass("opspTime")}`}>
                       {r.segmentTime7 || "—"}
                     </td>
+                    {/* Audit cells — Created By / Updated By / Created Date / Updated Date.
+                        Populated by GET /api/client-meetings/weekly-meetings. */}
+                    <td style={tdWidthStyle("createdBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("createdBy")} ${tdStickyClass("createdBy")}`}>
+                      <UserAuditCell name={r.createdByName} initials={r.createdByInitials} />
+                    </td>
+                    <td style={tdWidthStyle("updatedBy")} className={`px-3 py-2 overflow-hidden ${tdHideClass("updatedBy")} ${tdStickyClass("updatedBy")}`}>
+                      <UserAuditCell name={r.updatedByName} initials={r.updatedByInitials} />
+                    </td>
+                    <td style={tdWidthStyle("createdAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("createdAt")} ${tdStickyClass("createdAt")}`}>
+                      <DateAuditCell iso={r.createdAt} />
+                    </td>
+                    <td style={tdWidthStyle("updatedAt")} className={`px-3 py-2 whitespace-nowrap overflow-hidden ${tdHideClass("updatedAt")} ${tdStickyClass("updatedAt")}`}>
+                      <DateAuditCell iso={r.updatedAt} />
+                    </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => openEdit(r)}
-                        className="text-gray-400 hover:text-blue-500 p-1"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => remove(r.id)}
-                        className="text-gray-400 hover:text-red-500 p-1"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {viewTrash ? (
+                        <button
+                          onClick={() => restoreOne(r.id)}
+                          className="text-gray-400 hover:text-green-600 p-1"
+                          title="Restore"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => openEdit(r)}
+                            className="text-gray-400 hover:text-blue-500 p-1"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => remove(r.id)}
+                            className="text-gray-400 hover:text-red-500 p-1"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            </div>
+            </HorizontalScroller>
             {visibleRows.length > 0 && (
               <Pagination
                 page={page}
@@ -1097,17 +1438,23 @@ export default function WeeklyMeetingPage() {
             // and then batch-PATCHes any staged/typed score rows.
             // RBAC v2: hide Save when the role doesn't grant the relevant action.
             isEdit && activeTab === "update" ? undefined : (
-              <RightPanelFooter>
-                <RightPanelCancelButton onClick={() => setEditing(null)} />
-                {(isEdit ? canUpdate : canCreate) && (
-                  <RightPanelSubmitButton
-                    onClick={save}
-                    saving={saving}
-                    icon={isEdit ? "check" : "plus"}
-                    label={isEdit ? "Update" : "Submit"}
-                  />
-                )}
-              </RightPanelFooter>
+              // Column wrapper pins the server-error banner directly above
+              // the Cancel/Submit row, visible without scrolling. The Update
+              // tab has no submit, so the banner is also hidden there.
+              <div className="flex flex-col gap-2 w-full">
+                <FormErrorBanner message={error} />
+                <RightPanelFooter>
+                  <RightPanelCancelButton onClick={() => setEditing(null)} />
+                  {(isEdit ? canUpdate : canCreate) && (
+                    <RightPanelSubmitButton
+                      onClick={save}
+                      saving={saving}
+                      icon={isEdit ? "check" : "plus"}
+                      label={isEdit ? "Update" : "Submit"}
+                    />
+                  )}
+                </RightPanelFooter>
+              </div>
             )
           }
         >
@@ -1136,11 +1483,6 @@ export default function WeeklyMeetingPage() {
             </fieldset>
           ) : (
             <>
-              {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                  {error}
-                </div>
-              )}
               {drawerLocked && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                   Read-only — your role doesn&apos;t grant {isEdit ? "update" : "create"} access on Weekly Meeting.
@@ -1164,6 +1506,23 @@ export default function WeeklyMeetingPage() {
                 </Field>
               </div>
 
+              {editing.form.callStatus === "OTHER" && (
+                // Free-text label shown only for the "Other" status. The save
+                // handler trims this and the Zod refine on the server rejects
+                // empty / whitespace-only values so a bare "Other" can't be
+                // persisted.
+                <Field label="Specify Other" required>
+                  <input
+                    type="text"
+                    value={editing.form.callStatusOther}
+                    onChange={(e) => updateField("callStatusOther", e.target.value)}
+                    maxLength={200}
+                    placeholder="Enter call status…"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-accent-400 focus:ring-1 focus:ring-accent-400 focus:outline-none"
+                  />
+                </Field>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Client Name" required>
                   <UserPicker
@@ -1185,31 +1544,64 @@ export default function WeeklyMeetingPage() {
                     disabled={isEdit}
                   />
                 </Field>
-                <Field label="Absent Members">
-                  <UserMultiPicker
-                    values={editing.form.absentClientMemberIds}
-                    onChange={(v) => {
-                      updateField("absentClientMemberIds", v);
-                      // Newly-absent users can't also be Dashboard NA — drop
-                      // any stale NA entries that overlap with the new absent
-                      // list. Keeps the two pickers consistent.
-                      const absentSet = new Set(v);
-                      const cleanedNA = editing.form.dashboardNAClientMemberIds.filter(
-                        (id) => !absentSet.has(id),
-                      );
-                      if (cleanedNA.length !== editing.form.dashboardNAClientMemberIds.length) {
-                        updateField("dashboardNAClientMemberIds", cleanedNA);
-                      }
-                    }}
-                    users={pickerUsers}
-                    placeholder={pickerPlaceholder(
-                      editing.form.clientId,
-                      pickerUsers.length
-                    )}
-                    disabled={!editing.form.clientId}
-                  />
+                {/* Planned Deviation In Time — feeds the punctuality metric on
+                    the Dashboard. YES = treat this call as on-time regardless
+                    of actualStartTime (an agreed schedule deviation was
+                    honored); NO = use the normal time-grace check. Underlying
+                    enum is ClientMeetingFlag (YES/NO/NA) — NA only appears on
+                    legacy rows pre-dating this field. */}
+                <Field label="Planned Deviation In Time">
+                  <div className="flex items-center gap-6 px-3 py-2 text-xs">
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="punctualityOverride"
+                        value="YES"
+                        checked={editing.form.punctualityOverride === "YES"}
+                        onChange={() => updateField("punctualityOverride", "YES")}
+                        className="text-accent-600 focus:ring-accent-400"
+                      />
+                      <span className="text-gray-700">YES</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="punctualityOverride"
+                        value="NO"
+                        checked={editing.form.punctualityOverride !== "YES"}
+                        onChange={() => updateField("punctualityOverride", "NO")}
+                        className="text-accent-600 focus:ring-accent-400"
+                      />
+                      <span className="text-gray-700">NO</span>
+                    </label>
+                  </div>
                 </Field>
               </div>
+
+              <Field label="Absent Members">
+                <UserMultiPicker
+                  values={editing.form.absentClientMemberIds}
+                  onChange={(v) => {
+                    updateField("absentClientMemberIds", v);
+                    // Newly-absent users can't also be Dashboard NA — drop
+                    // any stale NA entries that overlap with the new absent
+                    // list. Keeps the two pickers consistent.
+                    const absentSet = new Set(v);
+                    const cleanedNA = editing.form.dashboardNAClientMemberIds.filter(
+                      (id) => !absentSet.has(id),
+                    );
+                    if (cleanedNA.length !== editing.form.dashboardNAClientMemberIds.length) {
+                      updateField("dashboardNAClientMemberIds", cleanedNA);
+                    }
+                  }}
+                  users={pickerUsers}
+                  placeholder={pickerPlaceholder(
+                    editing.form.clientId,
+                    pickerUsers.length
+                  )}
+                  disabled={!editing.form.clientId}
+                />
+              </Field>
 
               <Field label="Weekly Dashboard NA">
                 <UserMultiPicker
@@ -1231,13 +1623,21 @@ export default function WeeklyMeetingPage() {
               </Field>
 
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Actual Start Time" required>
+                <Field label="Actual Start Time" required={editing.form.callStatus === "HELD"}>
                   <input
                     type="time"
+                    data-time-field="actualStartTime"
                     value={editing.form.actualStartTime}
                     onChange={(e) => {
                       const v = e.target.value;
                       updateField("actualStartTime", v);
+                      if (v && timeFieldErrors.has("actualStartTime")) {
+                        setTimeFieldErrors((prev) => {
+                          const next = new Set(prev);
+                          next.delete("actualStartTime");
+                          return next;
+                        });
+                      }
                       if (
                         editing.form.actualEndTime &&
                         v &&
@@ -1247,12 +1647,17 @@ export default function WeeklyMeetingPage() {
                       }
                     }}
                     disabled={editing.form.callStatus !== "HELD"}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
+                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 disabled:bg-gray-50 ${
+                      timeFieldErrors.has("actualStartTime")
+                        ? "border-red-400 focus:ring-red-300 bg-red-50"
+                        : "border-gray-200 focus:ring-accent-400"
+                    }`}
                   />
                 </Field>
-                <Field label="Actual End Time" required>
+                <Field label="Actual End Time" required={editing.form.callStatus === "HELD"}>
                   <input
                     type="time"
+                    data-time-field="actualEndTime"
                     value={editing.form.actualEndTime}
                     onChange={(e) => {
                       const v = e.target.value;
@@ -1264,12 +1669,23 @@ export default function WeeklyMeetingPage() {
                         return;
                       }
                       updateField("actualEndTime", v);
+                      if (v && timeFieldErrors.has("actualEndTime")) {
+                        setTimeFieldErrors((prev) => {
+                          const next = new Set(prev);
+                          next.delete("actualEndTime");
+                          return next;
+                        });
+                      }
                     }}
                     disabled={
                       editing.form.callStatus !== "HELD" || !editing.form.actualStartTime
                     }
                     min={editing.form.actualStartTime || undefined}
-                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-accent-400 disabled:bg-gray-50"
+                    className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 disabled:bg-gray-50 ${
+                      timeFieldErrors.has("actualEndTime")
+                        ? "border-red-400 focus:ring-red-300 bg-red-50"
+                        : "border-gray-200 focus:ring-accent-400"
+                    }`}
                   />
                 </Field>
               </div>
@@ -1469,47 +1885,35 @@ export default function WeeklyMeetingPage() {
           clients={clients}
           defaultClientId={filterClientId || null}
           onSubmit={async ({ from, to, clientId }: ExportRange) => {
-            // Fetch weekly meetings in the chosen client + date window.
-            const qs = new URLSearchParams();
-            if (clientId) qs.set("clientId", clientId);
-            qs.set("from", from);
-            qs.set("to", to);
-            const res = await fetch(`/api/client-meetings/weekly-meetings?${qs.toString()}`);
-            const json = await res.json();
-            const data: MeetingRow[] = json.success ? (json.data as MeetingRow[]) : [];
-
-            const columns = [
-              { key: "meetingDate",            label: "Meeting Date",      value: (r: MeetingRow) => r.meetingDate.slice(0, 10) },
-              { key: "clientName",             label: "Client Name",       value: (r: MeetingRow) => r.clientName },
-              { key: "callStatus",             label: "Call Status",       value: (r: MeetingRow) => r.callStatus },
-              { key: "absentMembers",          label: "Absent Members",    value: (r: MeetingRow) => r.absentClientMemberNames.join(", ") },
-              { key: "dashboardNAMembers",     label: "Weekly Dashboard NA", value: (r: MeetingRow) => r.dashboardNAClientMemberNames.join(", ") },
-              { key: "actualStartTime",        label: "Actual Start Time", value: (r: MeetingRow) => r.actualStartTime ?? "" },
-              { key: "actualEndTime",          label: "Actual End Time",   value: (r: MeetingRow) => r.actualEndTime ?? "" },
-              { key: "goodNewsSharing",        label: "Good News Sharing", value: (r: MeetingRow) => r.goodNewsSharing },
-              { key: "goodNewsSharingTime",    label: "Good News Sharing Time", value: (r: MeetingRow) => r.segmentTime1 ?? "" },
-              { key: "kpDashboard",            label: "K&P dashboard",     value: (r: MeetingRow) => r.kpDashboard },
-              { key: "kpDashboardTime",        label: "K&P dashboard Time", value: (r: MeetingRow) => r.segmentTime2 ?? "" },
-              { key: "gaps",                   label: "GAPS",              value: (r: MeetingRow) => r.gaps },
-              { key: "gapsTime",               label: "GAPS Time",         value: (r: MeetingRow) => r.segmentTime3 ?? "" },
-              { key: "www",                    label: "WWW",               value: (r: MeetingRow) => r.www },
-              { key: "wwwTime",                label: "WWW Time",          value: (r: MeetingRow) => r.segmentTime4 ?? "" },
-              { key: "feedback",               label: "Customer/Employee Feedback", value: (r: MeetingRow) => r.feedback },
-              { key: "feedbackTime",           label: "Customer/Employee Feedback Time", value: (r: MeetingRow) => r.segmentTime5 ?? "" },
-              { key: "collectiveIntelligence", label: "Collective Intelligence", value: (r: MeetingRow) => r.collectiveIntelligence },
-              { key: "ciTime",                 label: "Collective Intelligence Time", value: (r: MeetingRow) => r.segmentTime6 ?? "" },
-              { key: "opspReview",             label: "OPSP Review",       value: (r: MeetingRow) => r.opspReview },
-              { key: "opspReviewTime",         label: "OPSP Review Time",  value: (r: MeetingRow) => r.segmentTime7 ?? "" },
-            ];
-
-            await runExport<MeetingRow>({
-              selection: { rowScope: "all", columnKeys: columns.map((c) => c.key) },
-              columns,
-              pageRows: data,
-              fetchFiltered: async () => data,
-              fetchAll: async () => data,
-              filename: `WeeklyMeeting_${from}_${to}${clientId ? "" : "_all-clients"}`,
+            if (!clientId) {
+              notify.error("Please select a client to export.");
+              return;
+            }
+            // Backend builds the XLSX (with header block, member counts,
+            // and Notes columns). We just stream the blob and trigger a
+            // browser download.
+            const res = await fetch("/api/client-meetings/export/weekly-detail", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ clientId, from, to }),
             });
+            if (!res.ok) {
+              const errJson = await res.json().catch(() => null);
+              notify.error(errJson?.error, { context: "weekly meeting", fallback: "Couldn't export. Please try again." });
+              return;
+            }
+            const blob = await res.blob();
+            const disposition = res.headers.get("Content-Disposition") ?? "";
+            const match = /filename="([^"]+)"/.exec(disposition);
+            const filename = match?.[1] ?? `WeeklyMeetingExport_${from}_to_${to}.xlsx`;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
           }}
         />
       </div>

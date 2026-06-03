@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { weeklyValueBatchSchema } from "@/lib/schemas/kpiSchema";
-import { canEditKPIOwnerWeekly } from "@/lib/api/kpiWeeklyPermissions";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
@@ -28,7 +27,11 @@ async function upsertRow(opts: {
   notes: string | null | undefined;
   changedBy: string;
 }): Promise<void> {
-  const value = opts.value ?? 0;
+  // Preserve null so "cleared input" stays distinct from "entered 0".
+  // Display + color logic (e.g. `weekCellColors`, dashboard QTD cell) gate
+  // RED on `value != null`, so coercing null → 0 here paints unentered
+  // weeks red. The KPIWeeklyValue.value column is Float? — nullable.
+  const value = opts.value ?? null;
   const existing = await db.kPIWeeklyValue.findFirst({
     where: { kpiId: opts.kpiId, userId: opts.userId, weekNumber: opts.weekNumber },
     select: { id: true },
@@ -120,7 +123,17 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
   if (kpi.orgId !== orgId) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
 
   const body = await req.json();
-  const validated = weeklyValueBatchSchema.parse(body);
+  // safeParse → 400 with friendly message. The Save Changes button on the
+  // KPI Updates tab hits this route — long notes on any week previously
+  // surfaced as opaque 500s.
+  const parsed = weeklyValueBatchSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" },
+      { status: 400 },
+    );
+  }
+  const validated = parsed.data;
 
   const { canEditPastWeek } = await getPastWeekFlags(orgId);
   const currentWeek = kpi.quarter && kpi.year
@@ -139,22 +152,18 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       continue;
     }
     if (kpi.kpiLevel === "team" && !ownerIds.includes(targetUserId)) {
-      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: "targetUserId is not an owner of this team KPI" });
+      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: "The selected user is not a contributor on this Team KPI." });
       continue;
     }
 
-    // Past-week gate
+    // Past-week gate — org-level config, not a role check.
     if (!canEditPastWeek && input.weekNumber < currentWeek) {
-      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: `Editing past weeks is disabled. Week ${input.weekNumber} is before current (${currentWeek}).` });
+      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: `Editing past weeks is disabled. Week ${input.weekNumber} is before the current week (${currentWeek}). Enable it in Settings > Configurations.` });
       continue;
     }
 
-    // Permission check
-    const allowed = await canEditKPIOwnerWeekly(userId, orgId, params.id, targetUserId);
-    if (!allowed) {
-      results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: false, error: "Permission denied" });
-      continue;
-    }
+    // No instance-level role check here — RBAC v2 `KPI:update` / `TeamKPI:update`
+    // (enforced by the route wrapper) is the sole authorization gate.
 
     // Primary upsert
     try {

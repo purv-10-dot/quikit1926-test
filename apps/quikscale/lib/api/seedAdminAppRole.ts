@@ -32,6 +32,21 @@ const MEMBER_DEFAULT_GRANTS: Array<{ resource: string; action: string }> = [
     (["view", "create", "update", "delete"] as const).map((action) => ({ resource, action })),
   ),
 ];
+
+/**
+ * (resource, action) pairs that exist in the registry but are intentionally
+ * NOT granted to admin by default. Admins can still tick these cells in the
+ * Role Permission Matrix UI to enable them — they're just opt-in instead of
+ * opt-out.
+ *
+ * `OPSP.History.EditFinalize:update` is the only entry today: editing a
+ * finalized/reviewed OPSP is a destructive action (it bypasses the lock
+ * that the Finalize step puts on the document), so admins should make a
+ * deliberate choice to enable it rather than getting it for free.
+ */
+const ADMIN_DEFAULT_EXCLUSIONS = new Set<string>([
+  "OPSP.History.EditFinalize:update",
+]);
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 
 /* ───────────────────────── admin role ───────────────────────── */
@@ -74,7 +89,9 @@ export async function seedAdminAppRole(orgId: string): Promise<string> {
   // an admin has deliberately unchecked.
   const grantCount = await db.rolePermission.count({ where: { roleId: role.id } });
   if (grantCount === 0) {
-    const pairs = allPermissionPairs();
+    const pairs = allPermissionPairs().filter(
+      (p) => !ADMIN_DEFAULT_EXCLUSIONS.has(`${p.resource}:${p.action}`),
+    );
     await db.rolePermission.createMany({
       data: pairs.map((p) => ({ roleId: role.id, resource: p.resource, action: p.action })),
       skipDuplicates: true,
@@ -104,9 +121,10 @@ export async function backfillAdminPermissions(orgId: string): Promise<void> {
   if (!admin) return;
 
   const have = new Set(admin.permissions.map((p) => `${p.resource}:${p.action}`));
-  const missing = allPermissionPairs().filter(
-    (p) => !have.has(`${p.resource}:${p.action}`),
-  );
+  const missing = allPermissionPairs().filter((p) => {
+    const key = `${p.resource}:${p.action}`;
+    return !have.has(key) && !ADMIN_DEFAULT_EXCLUSIONS.has(key);
+  });
   if (missing.length === 0) return;
 
   await db.rolePermission.createMany({

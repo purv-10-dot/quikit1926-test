@@ -1,10 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Header } from "@/components/shell/header";
-import { RouteProgress } from "@/components/shell/route-progress";
 import { KanTour } from "@/components/tour/kan-tour";
 import { SessionGuard } from "@/components/session-guard";
 import { IssueCreatedToast } from "@/components/issue-created-toast";
@@ -59,12 +58,9 @@ export default function DashboardLayout({
             <main className="flex-1 overflow-y-auto bg-white">{children}</main>
           </div>
           <IssueCreatedToast />
+          <KanTour />
         </div>
       </NoAccessGate>
-      <Suspense fallback={null}>
-        <RouteProgress />
-      </Suspense>
-      <KanTour />
     </SessionGuard>
   );
 }

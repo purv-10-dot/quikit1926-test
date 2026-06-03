@@ -55,7 +55,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     const actors = actorIds.length
       ? await db.user.findMany({
           where: { id: { in: actorIds } },
-          select: { id: true, firstName: true, lastName: true, email: true, avatarUrl: true },
+          select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
         })
       : [];
     const actorMap = new Map(actors.map((a) => [a.id, a]));

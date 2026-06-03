@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { calculateDailyMonthlyStats, previousMonths } from "@/lib/services/clientMeetingsMath";
 import { applyPctFill, applyHeader, workbookToBuffer } from "@/lib/exports/clientMeetingsExcel";
+import { DAILY_METRICS } from "@/lib/constants/clientMeetingsMetrics";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
 
@@ -18,8 +19,15 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
   const monthsBack: number = body.monthsBack ?? 6;
   if (!clientId) return NextResponse.json({ success: false, error: "clientId required" }, { status: 400 });
 
-  const client = await db.client.findFirst({ where: { id: clientId, orgId, deletedAt: null } });
+  const client = await db.client.findFirst({
+    where: { id: clientId, orgId, deletedAt: null },
+    include: { teamMembers: { include: { member: { select: { deletedAt: true } } } } },
+  });
   if (!client) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+
+  // Canonical denominator / fallback for huddles saved before `totalMembers`
+  // was snapshotted — matches the dashboard route exactly.
+  const rosterSize = client.teamMembers.filter(tm => !tm.member.deletedAt).length;
 
   const months = previousMonths(new Date(), monthsBack);
   const from = new Date(Date.UTC(months[0].year, months[0].month, 1));
@@ -27,7 +35,11 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
 
   const huddles = await db.clientDailyHuddle.findMany({
     where: { orgId, clientId, deletedAt: null, meetingDate: { gte: from, lte: toEnd } },
-    include: { absentMembers: true },
+    // Both rosters: legacy User-based (`absentMembers`) and external Client
+    // Member (`absentTeamMembers`). The Daily Huddle form writes absences to
+    // `absentTeamMembers`, so omitting it (the old bug) under-counted absences
+    // and inflated Attendance vs the dashboard.
+    include: { absentMembers: true, absentTeamMembers: true },
   });
 
   // No-data guard — return a 404 instead of a blank workbook so the user
@@ -45,19 +57,17 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
       actualStartTime: h.actualStartTime, actualEndTime: h.actualEndTime,
       format1Status: h.format1Status, format2Status: h.format2Status, stuckCallStatus: h.stuckCallStatus,
       punctualityOverride: h.punctualityOverride,
-      totalMembers: h.totalMembers, absentCount: h.absentMembers.length,
+      // Match the dashboard route's mapping exactly so the exported numbers
+      // equal the on-screen ones: roster-size fallback + union of both absence
+      // rosters.
+      totalMembers: h.totalMembers > 0 ? h.totalMembers : rosterSize,
+      absentCount: h.absentMembers.length + h.absentTeamMembers.length,
     })),
     months, client.dailyStartTime, client.dailyEndTime,
   );
 
-  const metrics = [
-    { key: "avgHeld", label: "Meeting Held" },
-    { key: "avgPunctual", label: "Punctuality" },
-    { key: "avgDurationFollowed", label: "Duration Followed" },
-    { key: "avgFormat", label: "Format Followed" },
-    { key: "avgAttendance", label: "Attendance" },
-    { key: "avgStuckCalls", label: "Stuck Issue Called Out" },
-  ] as const;
+  // Full metric descriptions — shared with the dashboard so labels never drift.
+  const metrics = DAILY_METRICS;
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet(`${client.name} – Daily`);
@@ -85,7 +95,10 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
   totalRow.getCell(2).font = { bold: true };
   stats.forEach((s, idx) => applyPctFill(totalRow.getCell(3 + idx), s.Total, s.isUpdate));
 
-  ws.columns = [{ width: 8 }, { width: 30 }, ...months.map(() => ({ width: 12 })), { width: 14 }];
+  // Metric Description (col B) holds full labels up to ~64 chars — widen so the
+  // longest ("Avg. % of Calls where call duration + time per member was
+  // followed") shows in full instead of being clipped.
+  ws.columns = [{ width: 8 }, { width: 66 }, ...months.map(() => ({ width: 12 })), { width: 14 }];
 
   const buf = await workbookToBuffer(wb);
   const filename = `${client.name}_${from.toISOString().slice(0, 7)}_to_${toEnd.toISOString().slice(0, 7)}_Daily.xlsx`;

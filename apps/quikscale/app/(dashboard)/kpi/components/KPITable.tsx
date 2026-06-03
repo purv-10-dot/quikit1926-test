@@ -3,10 +3,13 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { KPIRow, WeeklyValue } from "@/lib/types/kpi";
 import { ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
-import { progressColor, weekCellColors, fmt, fmtCompact } from "@/lib/utils/kpiHelpers";
+import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors, getLatestWeeklyNote } from "@/lib/utils/kpiHelpers";
+import { getColorByPercentage } from "@/lib/utils/colorLogic";
+import { UserAuditCell, DateAuditCell } from "@/components/table/AuditCells";
 import { computeQtd, weeklyGoalFor } from "./kpiStats";
 import { useTableColumns, ALL_STATIC_COLS, COL_LABELS, SORT_KEYS } from "../hooks/useTableColumns";
-import { useStickyOffsets } from "../hooks/useStickyOffsets";
+import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
+import { FreezeIcon } from "@/components/ui/FreezeIcon";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { ResizeHandle as SharedResizeHandle } from "@/lib/hooks/useColumnResize";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
@@ -20,18 +23,8 @@ import { ColMenu } from "@/components/table/ColMenu";
 import { SortIndicator } from "@/components/table/SortIndicator";
 import { X } from "lucide-react";
 import { Pagination } from "@quikit/ui";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 export { HiddenColsMenu } from "./HiddenColsMenu";
-
-// ── Lock icon for freeze boundary ────────────────────────────────────────────
-
-function FreezeIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg className={`h-3 w-3 text-blue-400 flex-shrink-0 ${className}`} fill="currentColor" viewBox="0 0 20 20">
-      <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-    </svg>
-  );
-}
 
 // ── Resize handle ────────────────────────────────────────────────────────────
 
@@ -186,7 +179,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       if (!canDelete) {
                         e.preventDefault();
                         e.stopPropagation();
-                        toast.error("You don't have permission to delete");
+                        notify.error("You don't have permission to delete");
                       }
                     }}
                   >
@@ -214,7 +207,15 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   <th key={col} data-col-key={col} className={thClass(col)} style={stickyStyle(col, w)}>
                     <div className="flex items-center gap-1 px-3 py-2 pr-2">
                       {frozenUpTo === col && <FreezeIcon />}
-                      <span className={`flex-1 truncate min-w-0 ${isSorted ? "text-accent-700" : ""}`}>{COL_LABELS[col]}</span>
+                      {/* `title` surfaces the full label as a native tooltip when
+                          the column is narrow enough to ellipsize (common on
+                          Dashboard previews where cells are constrained). */}
+                      <span
+                        title={COL_LABELS[col]}
+                        className={`flex-1 truncate min-w-0 ${isSorted ? "text-accent-700" : ""}`}
+                      >
+                        {COL_LABELS[col]}
+                      </span>
                       <SortIndicator active={isSorted} direction={sortOrder} />
                       <ColMenu colKey={col}
                         onSort={sortable ? (d => onSort(SORT_KEYS[col], d)) : undefined}
@@ -264,10 +265,44 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                 </td>
               </tr>
             ) : kpis.map((kpi, idx) => {
-              const colors = progressColor(kpi.progressPercent ?? 0);
+              // Progress column uses `getProgressBadgeColors` (NOT
+              // `getColorByPercentage` directly) because the percentage
+              // text sits on a white row — the underlying helper's
+              // `text-white` tone is for cells with a colored bg and
+              // would render the label invisible here. The badge helper
+              // returns the same color thresholds with readable-on-white
+              // text tones (text-blue-700 etc.).
+              //
+              // Standalone KPIs: server-stamped `kpi.qtdAchieved` is a
+              // cumulative SUM regardless of divisionType, so it shows
+              // (e.g.) 341% on a Standalone KPI whose true progress is
+              // ~113%. Re-derive via `computeQtd(...,"Standalone")` —
+              // that returns avg / kpi.target per the spec. Cumulative
+              // path stays byte-identical to before.
+              const progressDivisionType: "Cumulative" | "Standalone" =
+                kpi.divisionType === "Standalone" ? "Standalone" : "Cumulative";
+              const stdProgress =
+                progressDivisionType === "Standalone"
+                  ? computeQtd(kpi, currentWeek, "Standalone")
+                  : null;
+              const progressAchieved =
+                stdProgress != null
+                  ? (stdProgress.qtdAchieved ?? 0)
+                  : (kpi.qtdAchieved ?? 0);
+              const progressGoal =
+                stdProgress != null
+                  ? (stdProgress.qtdGoal ?? kpi.target ?? 0)
+                  : (kpi.qtdGoal ?? kpi.target ?? 0);
+              const progressPct = progressGoal > 0 ? (progressAchieved / progressGoal) * 100 : 0;
               const ownerName = kpi.owner_user ? `${kpi.owner_user.firstName} ${kpi.owner_user.lastName}` : kpi.owner;
               const weekMap: Record<number, WeeklyValue> = {};
               (kpi.weeklyValues ?? []).forEach(wv => { weekMap[wv.weekNumber] = wv; });
+              const hasAnyWeeklyValue = Object.values(weekMap).some((wv) => wv?.value != null);
+              const progressBadge = kpi.qtdAchieved != null
+                ? getProgressBadgeColors(progressAchieved, progressGoal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+                : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
+              const progressBarBg = progressBadge.bar;
+              const progressTextColor = progressBadge.text;
 
               return (
                 <tr key={kpi.id} className="hover:bg-blue-50/30 transition-colors">
@@ -280,7 +315,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                           if (!canDelete && !readOnly) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -314,13 +349,16 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     </td>
                   )}
 
-                  {/* Progress */}
+                  {/* Progress — percentage + text + bar all consistent now.
+                      Computed from qtdAchieved/qtdGoal (same denominator as
+                      the cards), colored via `getColorByPercentage` so the
+                      thresholds documented in `colorLogic.ts` are honored. */}
                   {!localHideSet.has("progress") && (
                     <td className={tdClass("progress")} style={stickyStyle("progress", getColWidth("progress"))}>
                       <div className="flex items-center gap-2">
-                        <span className={`font-medium w-10 flex-shrink-0 ${colors.text}`}>{(kpi.progressPercent ?? 0).toFixed(0)}%</span>
+                        <span className={`font-medium w-10 flex-shrink-0 ${progressTextColor}`}>{progressPct.toFixed(0)}%</span>
                         <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden min-w-[40px]">
-                          <div className={`h-2 rounded-full transition-all ${colors.bar}`} style={{ width: `${Math.min(kpi.progressPercent ?? 0, 100)}%` }} />
+                          <div className={`h-2 rounded-full transition-all ${progressBarBg}`} style={{ width: `${Math.min(progressPct, 100)}%` }} />
                         </div>
                       </div>
                     </td>
@@ -415,24 +453,71 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {/* QTD Goal — Σ weeklyTargets[1..currentWeek-1].
                       Falls back to kpi.qtdGoal when currentWeek is unresolvable. */}
                   {!localHideSet.has("qtdGoal") && (() => {
-                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek);
+                    const { qtdGoal, qtdAchieved } = computeQtd(kpi, currentWeek, progressDivisionType);
                     return (
                       <>
                         <td className={tdClass("qtdGoal")} style={stickyStyle("qtdGoal", getColWidth("qtdGoal"))}>
                           {qtdGoal != null ? fmtCompact(qtdGoal) : "—"}
                         </td>
-                        {!localHideSet.has("qtdAchieved") && (
-                          <td className={tdClass("qtdAchieved")} style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}>
-                            {qtdAchieved != null ? fmtCompact(qtdAchieved) : "—"}
-                          </td>
-                        )}
+                        {!localHideSet.has("qtdAchieved") && (() => {
+                          // QTD Achieved uses the same semantic traffic-light
+                          // palette as the weekly cells (≥120 blue, ≥100 green,
+                          // ≥80 yellow, <80+updated red, else neutral). RED is
+                          // gated on at least one weekly value being entered —
+                          // mirrors `weekCellColors` semantics so brand-new
+                          // KPIs at 0% don't paint red on first render.
+                          const hasAnyWeeklyValue = Object.values(weekMap).some(
+                            wv => wv?.value != null,
+                          );
+                          const color = qtdAchieved != null
+                            ? getColorByPercentage(qtdAchieved, qtdGoal ?? kpi.target ?? 0, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+                            : null;
+                          const sticky = isFrozen("qtdAchieved");
+                          const boundary = "qtdAchieved" === frozenUpTo;
+                          return (
+                            <td
+                              className={[
+                                "px-3 py-2 text-xs border-b border-r border-gray-100 overflow-hidden align-top text-center font-semibold",
+                                color?.bg || (sticky ? "bg-white" : ""),
+                                color?.text ?? "text-gray-700",
+                                sticky ? `sticky z-[15]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.04)]" : ""}` : "",
+                              ].filter(Boolean).join(" ")}
+                              style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
+                            >
+                              {qtdAchieved != null ? fmtCompact(qtdAchieved) : "—"}
+                            </td>
+                          );
+                        })()}
                       </>
                     );
                   })()}
-                  {/* If qtdGoal column is hidden but qtdAchieved is shown, render it standalone. */}
-                  {localHideSet.has("qtdGoal") && !localHideSet.has("qtdAchieved") && (
-                    <td className={tdClass("qtdAchieved")} style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}>{fmtCompact(kpi.qtdAchieved ?? null)}</td>
-                  )}
+                  {/* If qtdGoal column is hidden but qtdAchieved is shown, render it standalone.
+                      Use computeQtd so Standalone KPIs render the avg (not the server-stamped SUM). */}
+                  {localHideSet.has("qtdGoal") && !localHideSet.has("qtdAchieved") && (() => {
+                    const { qtdGoal: dQtdGoal, qtdAchieved: dQtdAchieved } =
+                      computeQtd(kpi, currentWeek, progressDivisionType);
+                    const hasAnyWeeklyValue = Object.values(weekMap).some(
+                      wv => wv?.value != null,
+                    );
+                    const color = dQtdAchieved != null
+                      ? getColorByPercentage(dQtdAchieved, dQtdGoal ?? kpi.target ?? 0, hasAnyWeeklyValue, kpi.reverseColor ?? false)
+                      : null;
+                    const sticky = isFrozen("qtdAchieved");
+                    const boundary = "qtdAchieved" === frozenUpTo;
+                    return (
+                      <td
+                        className={[
+                          "px-3 py-2 text-xs border-b border-r border-gray-100 overflow-hidden align-top text-center font-semibold",
+                          color?.bg || (sticky ? "bg-white" : ""),
+                          color?.text ?? "text-gray-700",
+                          sticky ? `sticky z-[15]${boundary ? " shadow-[2px_0_4px_rgba(0,0,0,0.04)]" : ""}` : "",
+                        ].filter(Boolean).join(" ")}
+                        style={stickyStyle("qtdAchieved", getColWidth("qtdAchieved"))}
+                      >
+                        {dQtdAchieved != null ? fmtCompact(dQtdAchieved) : "—"}
+                      </td>
+                    );
+                  })()}
                   {/* Weekly Goal — current week's target (from weeklyTargets), falling
                       back to flat target/13 when no per-week breakdown is set. */}
                   {!localHideSet.has("weeklyGoal") && (
@@ -453,16 +538,51 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                       </DescTooltip>
                     </td>
                   )}
-                  {/* Last Notes */}
-                  {!localHideSet.has("lastNotes") && (
-                    <td className={tdClass("lastNotes")} style={stickyStyle("lastNotes", getColWidth("lastNotes"))}>
-                      {kpi.lastNotes ? (
-                        <span className="line-clamp-2 text-gray-500 leading-snug cursor-default" title={kpi.lastNotes}>
-                          {kpi.lastNotes}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
+                  {/* Last Notes — prefers the most recent weekly note from
+                      `KPIWeeklyValue.notes`, falls back to `kpi.lastNotes`
+                      (general note). See `getLatestWeeklyNote` for why both
+                      sources are consulted. */}
+                  {!localHideSet.has("lastNotes") && (() => {
+                    const latest = getLatestWeeklyNote(kpi);
+                    return (
+                      <td className={tdClass("lastNotes")} style={stickyStyle("lastNotes", getColWidth("lastNotes"))}>
+                        {latest ? (
+                          <div
+                            className="max-h-[3.25rem] overflow-y-auto leading-snug break-all text-gray-500 cursor-default pr-1"
+                            style={{ scrollbarWidth: "thin" }}
+                            title={latest.note}
+                          >
+                            {latest.weekNumber != null && (
+                              <span className="text-gray-400 mr-1">W{latest.weekNumber}:</span>
+                            )}
+                            {latest.note}
+                          </div>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    );
+                  })()}
+                  {/* Audit columns — Created By / Updated By / Created Date / Updated Date.
+                      Populated by GET /api/kpi (see lib/api/auditUsers.ts). */}
+                  {!localHideSet.has("createdBy") && (
+                    <td className={tdClass("createdBy")} style={stickyStyle("createdBy", getColWidth("createdBy"))}>
+                      <UserAuditCell name={kpi.createdByName} initials={kpi.createdByInitials} />
+                    </td>
+                  )}
+                  {!localHideSet.has("updatedBy") && (
+                    <td className={tdClass("updatedBy")} style={stickyStyle("updatedBy", getColWidth("updatedBy"))}>
+                      <UserAuditCell name={kpi.updatedByName} initials={kpi.updatedByInitials} />
+                    </td>
+                  )}
+                  {!localHideSet.has("createdAt") && (
+                    <td className={tdClass("createdAt")} style={stickyStyle("createdAt", getColWidth("createdAt"))}>
+                      <DateAuditCell iso={kpi.createdAt} />
+                    </td>
+                  )}
+                  {!localHideSet.has("updatedAt") && (
+                    <td className={tdClass("updatedAt")} style={stickyStyle("updatedAt", getColWidth("updatedAt"))}>
+                      <DateAuditCell iso={kpi.updatedAt} />
                     </td>
                   )}
 
@@ -472,7 +592,20 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                     const wv = weekMap[w];
                     const val = wv?.value;
                     const note = wv?.notes;
-                    const { bg, text, label: cellLabel } = weekCellColors(val, kpi.qtdGoal, kpi.target, kpi.reverseColor ?? false);
+                    // Per-week target wins over `qtdGoal/13` averaging.
+                    // `weekCellColors` divides by 13 internally, so the
+                    // explicit per-week target is multiplied back to keep
+                    // the helper signature unchanged. Mirrors the
+                    // Dashboard's pattern at dashboard/page.tsx:648.
+                    // Without this, KPIs whose per-week target differs
+                    // from `qtdGoal/13` (or whose qtdGoal isn't the
+                    // quarterly sum) paint the wrong color band.
+                    const kpiWeeklyTargets = kpi.weeklyTargets as Record<string, number> | null | undefined;
+                    const explicitWeekTarget = kpiWeeklyTargets?.[String(w)];
+                    const targetForHelper = explicitWeekTarget != null
+                      ? explicitWeekTarget * 13
+                      : (kpi.qtdGoal ?? kpi.target ?? 0);
+                    const { bg, text, label: cellLabel } = weekCellColors(val, targetForHelper, null, kpi.reverseColor ?? false);
                     const colW = getColWidth(col);
                     const boundary = col === frozenUpTo;
 

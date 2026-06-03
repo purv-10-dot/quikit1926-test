@@ -12,15 +12,36 @@ import { useFilterContext } from "@/lib/context/FilterContext";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
-  AddButton, EmptyState, Modal, ModalContent, ModalHeader, ModalTitle, ModalBody,
+  AddButton, EmptyState,
   FilterPicker, Pagination, type ExportSelection,
 } from "@quikit/ui";
 import { Users, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
-import { toast } from "sonner";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useTableSort } from "@/lib/store";
+import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
+import { HeaderCell } from "@/components/table/HeaderCell";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+
+// Defaults for the drag-to-resize widths. Users can drag any column to any
+// width ≥ 48px (the global MIN_COL_WIDTH in useColumnResize) and the value
+// persists to UserTablePreference.colWidths.
+const COL_WIDTHS_DEFAULT: Record<string, number> = {
+  log: 56,
+  id: 56,
+  name: 200,
+  email: 280,
+  createdBy: 160,
+  updatedBy: 160,
+  createdAt: 120,
+  updatedAt: 120,
+};
+import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
-import { fmtAuditPayload, diffAuditPayload } from "@/lib/utils/auditLog";
+import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
 
 interface MemberRow {
   id: string;
@@ -35,12 +56,6 @@ interface MemberRow {
   updatedByName: string | null; updatedByInitials: string | null;
 }
 
-interface AuditLogEntry {
-  id: string; action: string;
-  oldValue: unknown; newValue: unknown;
-  changedByName: string; reason: string | null; createdAt: string;
-}
-
 const emptyForm = { name: "", email: "" };
 
 function fmtDateShort(iso: string) {
@@ -48,9 +63,11 @@ function fmtDateShort(iso: string) {
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
-function fmtDateTime(iso: string) {
-  return new Date(iso).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
+/** Friendly field labels for the Client Member audit log (passed to AuditLogDrawer). */
+const MEMBER_FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  email: "Email",
+};
 
 export default function ClientMembersPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("ClientMember");
@@ -70,27 +87,118 @@ export default function ClientMembersPage() {
   const filterRef = useRef<HTMLDivElement>(null);
   const [filterMemberId, setFilterMemberId] = useState<string>("");
 
-  // Hidden columns (local; not persisted in tablePrefs because the prefs
-  // schema only accepts kpi/priority/www today).
-  const [hiddenCols, setHiddenCols] = useState<string[]>([]);
+  // Server-persisted column preferences (frozen / hidden / sort) via
+  // UserTablePreference table (app_quikscale schema). Replaces the previous
+  // local-state approach so users get the same prefs across devices.
+  const {
+    hiddenCols,
+    setHiddenCols,
+    frozenCol: frozenUpTo,
+    setFrozenCol,
+    hideCol,
+  } = useTablePrefs("clientMembers");
+  const { sortBy, sortOrder, setSort } = useTableSort("clientMembers");
+  const { getColWidth, startResize, colWidths } = useColumnResize("clientMembers", COL_WIDTHS_DEFAULT);
+
+  // Cascade-freeze infrastructure — mirrors KPI / Weekly Meeting / Daily
+  // Huddle / Client Master. Freezing column C pins every column from the
+  // always-frozen rail up to and including C as a sticky group.
+  const COL_ORDER = useMemo(
+    () => [
+      "_checkbox", "_log", "_id",
+      "name", "email",
+      "createdBy", "updatedBy", "createdAt", "updatedAt",
+    ],
+    [],
+  );
+  const hiddenSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
+  const headerRowRef = useRef<HTMLTableRowElement>(null);
+  // Seed sticky offsets from colWidths so the first paint already positions
+  // frozen cells correctly. DOM measurement still takes over after layout.
+  const stickyFallback = useMemo(
+    () => ({
+      colOrder: COL_ORDER,
+      railWidths: { _checkbox: 40, _log: 56, _id: 56 } as const,
+      getColWidth,
+    }),
+    [COL_ORDER, getColWidth],
+  );
+  const { getStickyLeft } = useStickyOffsets(
+    headerRowRef,
+    frozenUpTo,
+    hiddenSet,
+    colWidths,
+    stickyFallback,
+  );
+  const isFrozen = useCallback(
+    (col: string): boolean => {
+      if (!frozenUpTo) return false;
+      const i = COL_ORDER.indexOf(col);
+      const j = COL_ORDER.indexOf(frozenUpTo);
+      return i !== -1 && j !== -1 && i <= j;
+    },
+    [frozenUpTo, COL_ORDER],
+  );
+  const handleFreeze = useCallback(
+    (col: string) => setFrozenCol(frozenUpTo === col ? null : col),
+    [frozenUpTo, setFrozenCol],
+  );
+  function tdFreezeClass(k: string): string {
+    return isFrozen(k) ? "sticky z-[10] bg-white" : "";
+  }
+  function freezeStyle(k: string): React.CSSProperties {
+    const w = getColWidth(k);
+    if (isFrozen(k)) return { width: w, minWidth: w, left: getStickyLeft(k) };
+    return { width: w };
+  }
+  const isHidden = (k: string) => hiddenCols.includes(k);
+
+  // Adapter that binds local table state to the shared <HeaderCell>.
+  const Header = (props: {
+    k: string;
+    label: string;
+    sortable?: boolean;
+    sortKey?: string;
+  }) => (
+    <HeaderCell
+      {...props}
+      isHidden={isHidden}
+      getColWidth={getColWidth}
+      startResize={startResize}
+      hideCol={hideCol}
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      setSort={setSort}
+      isFrozen={isFrozen}
+      getStickyLeft={getStickyLeft}
+      frozenUpTo={frozenUpTo}
+      onFreeze={handleFreeze}
+      thClassName="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200"
+    />
+  );
 
   const [editing, setEditing] = useState<{ id: string | null; form: typeof emptyForm } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const [logOpen, setLogOpen] = useState<{ id: string; name: string } | null>(null);
-  const [logRows, setLogRows] = useState<AuditLogEntry[]>([]);
-  const [logLoading, setLogLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = viewTrash ? "?includeDeleted=true" : "";
-      const res = await fetch(`/api/client-meetings/members${qs}`);
+      // Forward sort to the server — the route's whitelist defaults to
+      // `createdAt asc` when sortBy is empty so users still see the legacy
+      // ordering before they pick a column.
+      const params = new URLSearchParams();
+      if (viewTrash) params.set("includeDeleted", "true");
+      if (sortBy) params.set("sortBy", sortBy);
+      if (sortBy && sortOrder) params.set("sortOrder", sortOrder);
+      const qs = params.toString();
+      const res = await fetch(`/api/client-meetings/members${qs ? "?" + qs : ""}`);
       const json = await res.json();
       if (json.success) setRows(json.data);
     } finally { setLoading(false); }
-  }, [viewTrash]);
+  }, [viewTrash, sortBy, sortOrder]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -139,7 +247,6 @@ export default function ClientMembersPage() {
     { key: "updatedAt",   label: "Updated Date" },
   ];
   const visibleColKeys = moduleColumns.filter(c => !hiddenCols.includes(c.key)).map(c => c.key);
-  const isHidden = (key: string) => hiddenCols.includes(key);
 
   // Export handler — pulls rows per scope, formats via runExport (xlsx).
   async function handleExport(sel: ExportSelection) {
@@ -174,6 +281,7 @@ export default function ClientMembersPage() {
 
   async function handleRestore(id: string) {
     await fetch(`/api/client-meetings/members/${id}/restore`, { method: "POST" });
+    notify.saved("Member", "restored");
     refresh();
   }
 
@@ -193,15 +301,6 @@ export default function ClientMembersPage() {
   function openCreate() { setError(""); setEditing({ id: null, form: { ...emptyForm } }); }
   function openEdit(row: MemberRow) { setError(""); setEditing({ id: row.id, form: { name: row.name, email: row.email } }); }
 
-  async function openLog(row: MemberRow) {
-    setLogOpen({ id: row.id, name: row.name });
-    setLogLoading(true); setLogRows([]);
-    try {
-      const res = await fetch(`/api/client-meetings/members/${row.id}/logs`);
-      const json = await res.json();
-      if (json.success) setLogRows(json.data);
-    } finally { setLogLoading(false); }
-  }
 
   async function handleSubmit() {
     if (!editing) return;
@@ -217,8 +316,12 @@ export default function ClientMembersPage() {
         body: JSON.stringify({ name: f.name.trim(), email: f.email.trim() }) });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Failed to save"); return; }
+      notify.saved("Member", editing.id ? "updated" : "created");
       setEditing(null);
       await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      notify.error(err, { context: "member", fallback: "Couldn't save. Please try again." });
     } finally { setSaving(false); }
   }
 
@@ -226,6 +329,19 @@ export default function ClientMembersPage() {
     if (!selected.size) return;
     if (!confirm(`Delete ${selected.size} member${selected.size === 1 ? "" : "s"}?`)) return;
     await Promise.all([...selected].map(id => fetch(`/api/client-meetings/members/${id}`, { method: "DELETE" })));
+    notify.saved("Member", "deleted");
+    setSelected(new Set());
+    refresh();
+  }
+
+  async function handleBulkRestore() {
+    if (!selected.size) return;
+    await fetch(`/api/client-meetings/members/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected] }),
+    });
+    notify.saved("Member", "restored");
     setSelected(new Set());
     refresh();
   }
@@ -233,6 +349,7 @@ export default function ClientMembersPage() {
   async function handleDeleteOne(id: string) {
     if (!confirm("Delete this member?")) return;
     await fetch(`/api/client-meetings/members/${id}`, { method: "DELETE" });
+    notify.saved("Member", "deleted");
     refresh();
   }
 
@@ -253,10 +370,19 @@ export default function ClientMembersPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selected.size > 0 && canDelete && (
+          {selected.size > 0 && canDelete && !viewTrash && (
             <button onClick={handleBulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
+            </button>
+          )}
+          {selected.size > 0 && canDelete && viewTrash && (
+            <button onClick={handleBulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+              </svg>
+              Restore {selected.size} selected
             </button>
           )}
 
@@ -335,17 +461,24 @@ export default function ClientMembersPage() {
           </div>
         ) : (
           <div className="h-full flex flex-col min-h-0">
-            <div className="flex-1 overflow-auto min-h-0">
-            <table className="min-w-full text-xs bg-white">
+            <HorizontalScroller className="flex-1">
+            <table
+              className="text-xs bg-white border-separate border-spacing-0"
+              style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="sticky top-0 bg-accent-50 z-10">
-                <tr>
-                  <th className="w-10 px-3 py-3 border-b border-gray-200">
+                {/* `ref` + `data-col-key` on every `<th>` (rail + user cols)
+                    feed useStickyOffsets so each frozen column gets a `left`
+                    measured from the actual DOM — no hardcoded pixel offsets. */}
+                <tr ref={headerRowRef}>
+                  <th data-col-key="_checkbox"
+                      className="sticky z-[35] px-3 py-3 bg-accent-50 border-b border-r border-gray-200"
+                      style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                     <label
                       onClickCapture={(e) => {
                         if (!canDelete) {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.error("You don't have permission to delete");
+                          notify.error("You don't have permission to delete");
                         }
                       }}
                     >
@@ -355,27 +488,32 @@ export default function ClientMembersPage() {
                         className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                     </label>
                   </th>
-                  <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Log</th>
-                  <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">ID</th>
-                  {!isHidden("name")      && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Name</th>}
-                  {!isHidden("email")     && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Email</th>}
-                  {!isHidden("createdBy") && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Created By</th>}
-                  {!isHidden("updatedBy") && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Updated By</th>}
-                  {!isHidden("createdAt") && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Created Date</th>}
-                  {!isHidden("updatedAt") && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Updated Date</th>}
+                  <th data-col-key="_log"
+                      className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                      style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>Log</th>
+                  <th data-col-key="_id"
+                      className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                      style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>ID</th>
+                  <Header k="name" label="Name" sortable />
+                  <Header k="email" label="Email" sortable />
+                  <Header k="createdBy" label="Created By" />
+                  <Header k="updatedBy" label="Updated By" />
+                  <Header k="createdAt" label="Created Date" sortable />
+                  <Header k="updatedAt" label="Updated Date" sortable />
                   <th className="w-10 px-3 py-3 border-b border-gray-200" />
                 </tr>
               </thead>
               <tbody>
                 {pagedMembers.map(r => (
                   <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
-                    <td className="px-3 py-3 text-center">
+                    <td className="sticky z-[15] bg-white px-3 py-3 text-center border-b border-r border-gray-100"
+                        style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                       <label
                         onClickCapture={(e) => {
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -383,51 +521,60 @@ export default function ClientMembersPage() {
                           className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                       </label>
                     </td>
-                    <td className="px-3 py-3">
-                      <button onClick={() => openLog(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
+                    <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
+                        style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>
+                      <button onClick={() => setLogOpen({ id: r.id, name: r.name })} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
+                        style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>
                       <button onClick={() => openEdit(r)} className="text-blue-600 hover:underline font-medium">{r.displayId}</button>
                     </td>
-                    {!isHidden("name")  && <td className="px-3 py-3 text-gray-800">{r.name}</td>}
+                    {/* Data cells — explicit width matches the <th> so column-resize sticks.
+                        `overflow-hidden` prevents wide content from blowing past the fixed
+                        column width set by table-layout: fixed. */}
+                    {!isHidden("name") && (
+                      <td style={freezeStyle("name")} className={`px-3 py-3 text-gray-800 overflow-hidden text-ellipsis whitespace-nowrap ${tdFreezeClass("name")}`}>
+                        {r.name}
+                      </td>
+                    )}
                     {!isHidden("email") && (
-                      <td className="px-3 py-3">
-                        <a href={`mailto:${r.email}`} className="text-xs text-gray-700 hover:text-blue-500 hover:underline">
+                      <td style={freezeStyle("email")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("email")}`}>
+                        <a href={`mailto:${r.email}`} className="text-xs text-gray-700 hover:text-blue-500 hover:underline whitespace-nowrap text-ellipsis overflow-hidden block">
                           {r.email}
                         </a>
                       </td>
                     )}
                     {!isHidden("createdBy") && (
-                      <td className="px-3 py-3">
+                      <td style={freezeStyle("createdBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("createdBy")}`}>
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
                             {r.createdByInitials}
                           </span>
-                          <span className="text-xs text-gray-700 whitespace-nowrap">{r.createdByName}</span>
+                          <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.createdByName}</span>
                         </div>
                       </td>
                     )}
                     {!isHidden("updatedBy") && (
-                      <td className="px-3 py-3">
+                      <td style={freezeStyle("updatedBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("updatedBy")}`}>
                         {r.updatedByName ? (
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
                               {r.updatedByInitials}
                             </span>
-                            <span className="text-xs text-gray-700 whitespace-nowrap">{r.updatedByName}</span>
+                            <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.updatedByName}</span>
                           </div>
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     )}
                     {!isHidden("createdAt") && (
-                      <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
+                      <td style={freezeStyle("createdAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("createdAt")}`}>
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.createdAt)}</span>
                       </td>
                     )}
                     {!isHidden("updatedAt") && (
-                      <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
+                      <td style={freezeStyle("updatedAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("updatedAt")}`}>
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.updatedAt)}</span>
                       </td>
                     )}
@@ -446,7 +593,7 @@ export default function ClientMembersPage() {
                 ))}
               </tbody>
             </table>
-            </div>
+            </HorizontalScroller>
             {filtered.length > 0 && (
               <Pagination
                 page={page}
@@ -472,19 +619,23 @@ export default function ClientMembersPage() {
           title="Client Members"
           subtitle={editing.id ? "Edit record" : "Create new record"}
           footer={
-            <RightPanelFooter>
-              <RightPanelCancelButton onClick={() => setEditing(null)} />
-              {!drawerLocked && (
-                <RightPanelSubmitButton
-                  onClick={handleSubmit} saving={saving}
-                  icon={editing.id ? "check" : "plus"}
-                  label={editing.id ? "Submit" : "Submit"}
-                />
-              )}
-            </RightPanelFooter>
+            // Column wrapper pins the server-error banner above the Cancel/
+            // Submit row so it stays visible on long forms without scrolling.
+            <div className="flex flex-col gap-2 w-full">
+              <FormErrorBanner message={error} />
+              <RightPanelFooter>
+                <RightPanelCancelButton onClick={() => setEditing(null)} />
+                {!drawerLocked && (
+                  <RightPanelSubmitButton
+                    onClick={handleSubmit} saving={saving}
+                    icon={editing.id ? "check" : "plus"}
+                    label={editing.id ? "Submit" : "Submit"}
+                  />
+                )}
+              </RightPanelFooter>
+            </div>
           }
         >
-          {error && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">{error}</div>}
           {drawerLocked && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
               Read-only — your role doesn&apos;t grant {editing.id ? "update" : "create"} access on Client Members.
@@ -508,69 +659,15 @@ export default function ClientMembersPage() {
         );
       })()}
 
-      {/* Audit log modal — matches Individual KPI pattern. */}
-      {logOpen && (
-        <Modal open onOpenChange={(o) => { if (!o) setLogOpen(null); }}>
-          <ModalContent className="max-w-2xl">
-            <ModalHeader>
-              <ModalTitle>Audit Log — {logOpen.name}</ModalTitle>
-            </ModalHeader>
-            <ModalBody>
-              {logLoading ? (
-                <p className="text-xs text-gray-400">Loading…</p>
-              ) : logRows.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">No changes recorded yet.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {logRows.map(entry => (
-                    <li key={entry.id} className="border border-gray-100 rounded-lg px-4 py-3 bg-gray-50">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                          entry.action === "CREATE" ? "bg-green-100 text-green-700"
-                          : entry.action === "UPDATE" ? "bg-blue-100 text-blue-700"
-                          : entry.action === "DELETE" ? "bg-red-100 text-red-700"
-                          : "bg-gray-100 text-gray-700"
-                        }`}>{entry.action}</span>
-                        <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                          <span className="font-medium">{entry.changedByName}</span>
-                          <span>·</span>
-                          <span>{fmtDateTime(entry.createdAt)}</span>
-                        </div>
-                      </div>
-                      {entry.action === "UPDATE" && !!entry.oldValue && !!entry.newValue && (() => {
-                        const diffs = diffAuditPayload(entry.oldValue, entry.newValue);
-                        return diffs.length ? (
-                          <div className="text-[11px] space-y-0.5 mt-1">
-                            {diffs.map(({ key, oldValue, newValue }) => (
-                              <p key={key} className="text-gray-600">
-                                <span className="font-medium">{key}:</span>{" "}
-                                <span className="line-through text-gray-400">{String(oldValue ?? "")}</span>
-                                <span className="mx-1 text-gray-400">→</span>
-                                <span className="text-gray-800">{String(newValue ?? "")}</span>
-                              </p>
-                            ))}
-                          </div>
-                        ) : null;
-                      })()}
-                      {entry.action === "CREATE" && !!entry.newValue && (() => {
-                        const text = fmtAuditPayload(entry.newValue);
-                        return text ? (
-                          <div className="text-[11px] text-gray-600 mt-1 break-words">
-                            Created with: {text}
-                          </div>
-                        ) : null;
-                      })()}
-                      {entry.action === "DELETE" && (
-                        <div className="text-[11px] text-gray-600 mt-1 italic">Member deleted.</div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </ModalBody>
-          </ModalContent>
-        </Modal>
-      )}
+      {/* Audit log — shared RightPanel drawer (same styling as Daily Huddle / Weekly Meeting) */}
+      <AuditLogDrawer
+        open={!!logOpen}
+        onClose={() => setLogOpen(null)}
+        entityType="ClientMember"
+        entityId={logOpen?.id ?? ""}
+        title={logOpen ? `Audit Log — ${logOpen.name}` : "Audit Log"}
+        fieldLabels={MEMBER_FIELD_LABELS}
+      />
     </div>
   );
 }

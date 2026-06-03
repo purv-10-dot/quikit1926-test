@@ -20,22 +20,48 @@ export const CLIENT_MEETING_STATUSES = [
   "CALL_CANCELLED_BY_CLIENT",
   "HOLIDAY_FOR_CLIENT",
   "HOLIDAY_FOR_SUCCESS_ALCHEMIST",
+  "OTHER",
 ] as const;
 
 export const flagSchema = z.enum(CLIENT_MEETING_FLAGS);
 export const statusSchema = z.enum(CLIENT_MEETING_STATUSES);
 
+/**
+ * Shared invariant for both Daily Huddle and Weekly Meeting: when the call was
+ * "HELD", the Actual Start/End times are mandatory (the meeting happened, so
+ * its timing must be recorded). For every other status they stay optional — the
+ * forms disable those inputs. `.partial()` drops refines, so each schema below
+ * re-applies these.
+ *
+ * On a partial update that omits `callStatus`, `d.callStatus` is undefined → the
+ * guard passes (only an explicit "HELD" is enforced). Both forms always submit
+ * the full object, so an edit that sets HELD carries its times along.
+ */
+const requireHeldStartTime = (
+  d: { callStatus?: string; actualStartTime?: string | null },
+) => d.callStatus !== "HELD" || !!d.actualStartTime;
+const requireHeldEndTime = (
+  d: { callStatus?: string; actualEndTime?: string | null },
+) => d.callStatus !== "HELD" || !!d.actualEndTime;
+
+const HELD_START_MSG = "Actual Start Time is required when the call status is Held";
+const HELD_END_MSG = "Actual End Time is required when the call status is Held";
+
 /* ─── Client (master) ───────────────────────────────────────────────────────── */
 
 export const createClientSchema = z.object({
-  name: z.string().trim().min(1, "Client name is required").max(200),
-  description: z.string().max(5000).optional().nullable(),
+  // No length cap on user-content fields — Prisma columns are `text`.
+  name: z.string().trim().min(1, "Client name is required"),
+  description: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
   startDate: z.string().regex(DATE_ISO_OR_YMD).optional().nullable(),
-  weeklyStartTime: z.string().regex(TIME_24H).optional().nullable(),
-  weeklyEndTime: z.string().regex(TIME_24H).optional().nullable(),
-  dailyStartTime: z.string().regex(TIME_24H).optional().nullable(),
-  dailyEndTime: z.string().regex(TIME_24H).optional().nullable(),
+  // Planned meeting times are required so the export header block and the
+  // duration-followed stat always have a denominator. Legacy NULLs are not
+  // a concern in production data; new records cannot omit these.
+  weeklyStartTime: z.string().regex(TIME_24H, "Weekly start time is required (HH:mm)"),
+  weeklyEndTime: z.string().regex(TIME_24H, "Weekly end time is required (HH:mm)"),
+  dailyStartTime: z.string().regex(TIME_24H, "Daily start time is required (HH:mm)"),
+  dailyEndTime: z.string().regex(TIME_24H, "Daily end time is required (HH:mm)"),
   /// IDs of ClientMember rows that should be on this client's roster.
   teamMemberIds: z.array(z.string()).default([]),
 });
@@ -48,8 +74,9 @@ export type UpdateClientInput = z.infer<typeof updateClientSchema>;
 /* ─── Client Member (flat entity) ───────────────────────────────────────────── */
 
 export const createClientMemberSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(200),
-  email: z.string().trim().toLowerCase().email("Invalid email").max(200),
+  name: z.string().trim().min(1, "Name is required"),
+  // Email cap retained — RFC 5321 puts the practical email max at 254 chars.
+  email: z.string().trim().toLowerCase().email("Invalid email").max(254),
 });
 
 export const updateClientMemberSchema = createClientMemberSchema.partial();
@@ -72,7 +99,7 @@ export type CreateMembershipInput = z.infer<typeof createMembershipSchema>;
 
 /* ─── Daily Huddle ──────────────────────────────────────────────────────────── */
 
-export const createDailyHuddleSchema = z.object({
+const dailyHuddleBaseFields = {
   clientId: z.string().min(1),
   meetingDate: z.string().regex(DATE_ISO_OR_YMD),
   callStatus: statusSchema.default("HELD"),
@@ -86,29 +113,45 @@ export const createDailyHuddleSchema = z.object({
   stuckCallStatus: flagSchema.default("NA"), // Stuck Issues
   punctualityOverride: flagSchema.default("NA"),
   totalMembers: z.number().int().min(0).default(0),
-  notes: z.string().max(5000).optional().nullable(),
-  notesKPDashboard: z.string().max(10000).optional().nullable(),
-  otherNotes: z.string().max(10000).optional().nullable(),
+  notes: z.string().optional().nullable(),
+  notesKPDashboard: z.string().optional().nullable(),
+  otherNotes: z.string().optional().nullable(),
   /// Legacy tenant-user absences (dashboard math still reads these).
   absentUserIds: z.array(z.string()).default([]),
   /// New external-roster absences (ClientMember ids).
   absentClientMemberIds: z.array(z.string()).default([]),
-});
+};
+
+// Held → Actual Start/End times required. Extracted to base fields (instead of
+// `createDailyHuddleSchema.partial()`) because `.partial()` is unavailable once
+// a schema is refined — mirrors the Weekly Meeting structure below.
+export const createDailyHuddleSchema = z
+  .object(dailyHuddleBaseFields)
+  .refine(requireHeldStartTime, { message: HELD_START_MSG, path: ["actualStartTime"] })
+  .refine(requireHeldEndTime, { message: HELD_END_MSG, path: ["actualEndTime"] });
 
 // `partial()` omits defaults, but the fields are still present with
 // `undefined` — the route handler branches on that sentinel when deciding
 // whether to replace the absentees / notes fields.
-export const updateDailyHuddleSchema = createDailyHuddleSchema.partial();
+export const updateDailyHuddleSchema = z
+  .object(dailyHuddleBaseFields)
+  .partial()
+  .refine(requireHeldStartTime, { message: HELD_START_MSG, path: ["actualStartTime"] })
+  .refine(requireHeldEndTime, { message: HELD_END_MSG, path: ["actualEndTime"] });
 
 export type CreateDailyHuddleInput = z.infer<typeof createDailyHuddleSchema>;
 export type UpdateDailyHuddleInput = z.infer<typeof updateDailyHuddleSchema>;
 
 /* ─── Weekly Meeting ────────────────────────────────────────────────────────── */
 
-export const createWeeklyMeetingSchema = z.object({
+const weeklyMeetingBaseFields = {
   clientId: z.string().min(1),
   meetingDate: z.string().regex(DATE_ISO_OR_YMD),
   callStatus: statusSchema.default("HELD"),
+  /// Free-text label, only meaningful when callStatus === "OTHER". The
+  /// refine below requires it then; route handlers null it out for other
+  /// statuses so a stale value can't survive a status change.
+  callStatusOther: z.string().trim().max(200).optional().nullable(),
   actualStartTime: z.string().regex(TIME_24H).optional().nullable(),
   actualEndTime: z.string().regex(TIME_24H).optional().nullable(),
   segmentTime1: z.string().regex(TIME_24H).optional().nullable(),
@@ -118,6 +161,11 @@ export const createWeeklyMeetingSchema = z.object({
   segmentTime5: z.string().regex(TIME_24H).optional().nullable(),
   segmentTime6: z.string().regex(TIME_24H).optional().nullable(),
   segmentTime7: z.string().regex(TIME_24H).optional().nullable(),
+  /// "Planned Deviation In Time" override (UI label). YES → punctuality
+  /// counted as honored regardless of actualStartTime; NO/NA → fall through
+  /// to the time-grace check in clientMeetingsMath.isPunctual. UI exposes
+  /// only YES/NO with NO as default; NA exists as a sentinel for old rows.
+  punctualityOverride: flagSchema.default("NA"),
   goodNewsSharing: flagSchema.default("NA"),
   kpDashboard: flagSchema.default("NA"),
   gaps: flagSchema.default("NA"),
@@ -125,8 +173,8 @@ export const createWeeklyMeetingSchema = z.object({
   feedback: flagSchema.default("NA"),
   collectiveIntelligence: flagSchema.default("NA"),
   opspReview: flagSchema.default("NA"),
-  notesKPDashboard: z.string().max(20000).optional().nullable(),
-  otherNotes: z.string().max(20000).optional().nullable(),
+  notesKPDashboard: z.string().optional().nullable(),
+  otherNotes: z.string().optional().nullable(),
   /// Tenant-user absences (legacy). Empty in most modern tenants.
   absentUserIds: z.array(z.string()).default([]),
   dashboardNAUserIds: z.array(z.string()).default([]),
@@ -134,9 +182,34 @@ export const createWeeklyMeetingSchema = z.object({
   /// Absent Members + Weekly Dashboard NA pickers send.
   absentClientMemberIds: z.array(z.string()).default([]),
   dashboardNAClientMemberIds: z.array(z.string()).default([]),
-});
+};
 
-export const updateWeeklyMeetingSchema = createWeeklyMeetingSchema.partial();
+// Shared invariant — "OTHER" requires a non-empty custom label. `.partial()`
+// drops refines, so we re-apply it on the update schema below.
+const requireOtherLabel = (
+  d: { callStatus?: string; callStatusOther?: string | null },
+) =>
+  d.callStatus !== "OTHER" ||
+  (typeof d.callStatusOther === "string" && d.callStatusOther.trim().length > 0);
+
+export const createWeeklyMeetingSchema = z
+  .object(weeklyMeetingBaseFields)
+  .refine(requireOtherLabel, {
+    message: "Please specify the call status text",
+    path: ["callStatusOther"],
+  })
+  .refine(requireHeldStartTime, { message: HELD_START_MSG, path: ["actualStartTime"] })
+  .refine(requireHeldEndTime, { message: HELD_END_MSG, path: ["actualEndTime"] });
+
+export const updateWeeklyMeetingSchema = z
+  .object(weeklyMeetingBaseFields)
+  .partial()
+  .refine(requireOtherLabel, {
+    message: "Please specify the call status text",
+    path: ["callStatusOther"],
+  })
+  .refine(requireHeldStartTime, { message: HELD_START_MSG, path: ["actualStartTime"] })
+  .refine(requireHeldEndTime, { message: HELD_END_MSG, path: ["actualEndTime"] });
 
 /// Per-member KPI scores (Update tab grid in image 1).
 export const weeklyMemberScoreSchema = z.object({

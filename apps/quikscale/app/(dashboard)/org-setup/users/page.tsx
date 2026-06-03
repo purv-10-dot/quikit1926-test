@@ -21,9 +21,12 @@ import {
   RightPanelSubmitButton,
   Pagination,
 } from "@quikit/ui";
+import { useQueryClient } from "@tanstack/react-query";
 import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -475,7 +478,7 @@ function UserPanel({
       return;
     }
     // Native invites no longer require a typed password — when left blank,
-    // the server seeds the system default (Quikit2026) and emails it to the
+    // the server generates a fresh temporary password and emails it to the
     // invitee, matching the QuikIT super-admin onboarding flow.
 
     setSaving(true);
@@ -492,7 +495,7 @@ function UserPanel({
       };
       // Only attach password when the admin actually typed one. An empty
       // string would fail Zod's min(8) on the server. For new Native users
-      // who leave it blank, the server seeds the Quikit2026 default.
+      // who leave it blank, the server generates a fresh temp password.
       if (form.password.trim()) payload.password = form.password.trim();
       if (editUser) payload.status = form.status;
       if (!editUser && form.linkExistingUserId) payload.linkExistingUserId = form.linkExistingUserId;
@@ -515,7 +518,7 @@ function UserPanel({
         return;
       }
 
-      const savedUser = json.data as OrgUser;
+      const savedUser = json.data as OrgUser & { tempPassword?: string };
 
       // Apply the chosen AppRole via PATCH /role. The POST endpoint already
       // auto-assigns the default User role (or admin if org has zero admins),
@@ -541,8 +544,26 @@ function UserPanel({
         }
       }
 
+      // Success toast — match the actual action (edit / link-existing / invite).
+      if (editUser) {
+        notify.saved("User", "updated");
+      } else if (form.linkExistingUserId) {
+        notify.success("QuikScale access granted");
+      } else {
+        notify.success("User invited");
+      }
+
       onSaved(savedUser);
-      onClose();
+      // If a temp password came back, keep the panel open so the parent's
+      // modal can render the plaintext once. Otherwise close immediately.
+      if (!savedUser.tempPassword) {
+        onClose();
+      } else {
+        onClose();
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      notify.error(err, { context: "user" });
     } finally {
       setSaving(false);
     }
@@ -775,9 +796,10 @@ function UserPanel({
       )}
 
       {/* Password — only shown in Edit mode (admin can change an existing user's
-          password). For new users, Native invitees receive the system default
-          Quikit2026 via email and reset it on first sign-in; SSO invitees never
-          have a password. Mirrors the super-admin first-Org-Admin flow. */}
+          password). For new users, Native invitees receive a freshly-generated
+          temporary password via email and reset it on first sign-in; SSO
+          invitees never have a password. Mirrors the super-admin
+          first-Org-Admin flow. */}
       {editUser && !form.linkExistingUserId && (
       <div>
         <label className="text-xs font-medium text-gray-600 block mb-1.5">
@@ -800,9 +822,9 @@ function UserPanel({
       {!editUser && !form.linkExistingUserId && form.invitationMethod === "native" && (
         <div className="bg-accent-50 border border-accent-200 rounded-lg px-3 py-2 text-[11px] text-accent-800 leading-snug">
           <strong className="font-semibold">Temporary password will be emailed.</strong>{" "}
-          The user will receive <span className="font-mono font-semibold">Quikit2026</span> at{" "}
-          <span className="font-medium">{form.email || "their email"}</span> and be prompted
-          to set a new password on first sign-in.
+          A unique temporary password will be generated and sent to{" "}
+          <span className="font-medium">{form.email || "their email"}</span>. They&apos;ll
+          be prompted to set a new password on first sign-in.
         </div>
       )}
 
@@ -1000,9 +1022,27 @@ function ConfirmDialog({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgUsersPage() {
+  // `canCreate` (server-side User.create) still controls whether the edit
+  // drawer can submit a create. The Add User BUTTON visibility is gated
+  // separately below by the UI-only `User.AddUser.create` sub-permission.
   const { canCreate, canUpdate } = useResourcePermissions("User");
+  // RBAC v2 — Add User button + User Management tab are gated by the nested
+  // UI-only sub-permissions under OrgSetup → Users (mirrors OPSP.History →
+  // EditFinalize). Admin role bypass is handled inside `useMyPermissions()`.
+  // Strict gating: a Member who has `User.create` on the API but no
+  // `User.AddUser.create` will NOT see the button — the sub-permission is
+  // the single source of truth for button visibility.
+  const myPerms = useMyPermissions();
+  const canShowAddUser = myPerms.isAdmin || myPerms.has("User.AddUser", "create");
+  const canViewUserMgmt = myPerms.isAdmin || myPerms.has("User.Management", "view");
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  // Shared cache invalidator — every user mutation (create/edit/status-change/
+  // delete) updates membership-driven views elsewhere (Dashboard Owner filter,
+  // KPI/Priority pickers, team member counts on Org Setup → Teams). Without
+  // these invalidations consumers hold stale data until the 5-minute staleTime
+  // elapses or the user hard-refreshes.
+  const queryClient = useQueryClient();
 
   const crud = useTableCRUD<OrgUser>({
     apiEndpoint: "/api/org/users",
@@ -1019,6 +1059,13 @@ export default function OrgUsersPage() {
   const [confirmAction, setConfirmAction] = useState<"remove" | "reactivate">(
     "remove"
   );
+  // Holds the one-time plaintext temp password to show the inviting admin
+  // after a successful Native user-create. Plaintext lives only here, in
+  // React state — never localStorage / sessionStorage / DB.
+  const [tempPasswordInfo, setTempPasswordInfo] = useState<{
+    email: string;
+    tempPassword: string;
+  } | null>(null);
   const filterRef = useRef<HTMLDivElement>(null);
 
   // Fetch the AppRoles list — drives the Role dropdown in the Add/Edit panel.
@@ -1071,7 +1118,10 @@ export default function OrgUsersPage() {
     return list;
   }, [crud.items, crud.search, roleFilter, statusFilter]);
 
-  function handleSaved(user: OrgUser) {
+  function handleSaved(user: OrgUser & { tempPassword?: string }) {
+    // Optimistic write keeps the list responsive while the temp-password
+    // modal opens — no ~150ms gap between "User invited" toast and the new
+    // row appearing.
     crud.setItems((prev) => {
       const idx = prev.findIndex((u) => u.userId === user.userId);
       if (idx >= 0) {
@@ -1081,20 +1131,53 @@ export default function OrgUsersPage() {
       }
       return [...prev, user];
     });
+    // Reconcile with server. The POST response doesn't always carry every
+    // field the canonical GET returns — auto-assigned UserAppRole, joined
+    // team names, lastSignInAt, etc. land via downstream hooks (the
+    // optional PATCH /role, default-role seeder, audit-log writer). Without
+    // this refetch the optimistically-written row could stay partially
+    // stale until the admin hard-reloaded the page.
+    crud.refetch();
+    // Bust shared caches — user team assignment / role / status changes ripple
+    // into every consumer that reads users or teams.
+    queryClient.invalidateQueries({ queryKey: ["teams"] });
+    queryClient.invalidateQueries({ queryKey: ["users"] });
+    queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    // Surface the plaintext temp password ONCE for the inviting admin.
+    // Lives only in React state until the modal closes — never persisted.
+    if (user.tempPassword) {
+      setTempPasswordInfo({
+        email: user.email,
+        tempPassword: user.tempPassword,
+      });
+    }
   }
 
   async function handleStatusChange(
     user: OrgUser,
     newStatus: "inactive" | "active"
   ) {
-    const res = await fetch(`/api/org/users/${user.userId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    const json = await res.json();
-    if (json.success) handleSaved(json.data);
-    setConfirmUser(null);
+    try {
+      const res = await fetch(`/api/org/users/${user.userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        notify.error(json.error, { context: "user" });
+        return;
+      }
+      handleSaved(json.data);
+      notify.success(
+        newStatus === "active" ? "User reactivated" : "User deactivated",
+      );
+    } catch (err: unknown) {
+      notify.error(err, { context: "user" });
+    } finally {
+      setConfirmUser(null);
+    }
   }
 
   const activeCount = crud.items.filter((u) => u.status === "active").length;
@@ -1115,7 +1198,7 @@ export default function OrgUsersPage() {
         {(
           [
             { key: "users", label: "Users" },
-            { key: "roles", label: "User Management" },
+            ...(canViewUserMgmt ? [{ key: "roles" as const, label: "User Management" }] : []),
           ] as const
         ).map((t) => (
           <button
@@ -1132,7 +1215,7 @@ export default function OrgUsersPage() {
         ))}
       </div>
 
-      {tab === "roles" && <RolesTab />}
+      {tab === "roles" && canViewUserMgmt && <RolesTab />}
 
       {tab === "users" && (
       <>
@@ -1227,8 +1310,8 @@ export default function OrgUsersPage() {
             )}
           </div>
 
-          {/* Add User — RBAC v2 gated */}
-          {canCreate && (
+          {/* Add User — gated by the dedicated `User.AddUser.create` sub-permission. */}
+          {canShowAddUser && (
             <button
               onClick={() => crud.openCreate()}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg"
@@ -1457,6 +1540,90 @@ export default function OrgUsersPage() {
           )
         }
       />
+
+      {/* ── Temp-password reveal modal (shown ONCE after Native invite) ── */}
+      {tempPasswordInfo && (
+        <TempPasswordModal
+          email={tempPasswordInfo.email}
+          tempPassword={tempPasswordInfo.tempPassword}
+          onClose={() => setTempPasswordInfo(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * One-time success modal that reveals the plaintext temporary password the
+ * server generated for a freshly invited Native user. The plaintext is held
+ * only in React state for the lifetime of this modal — closing it discards
+ * the value. We never persist it (no localStorage / sessionStorage / DB).
+ */
+function TempPasswordModal({
+  email,
+  tempPassword,
+  onClose,
+}: {
+  email: string;
+  tempPassword: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(tempPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard API can be blocked; user can still select+copy manually.
+    }
+  }
+
+  return (
+    <div
+      // `z-[200]` so the modal sits above the `z-[100]` dashboard header in
+      // `components/dashboard/header.tsx`. Matches the convention used by the
+      // confirm-delete modal at line 987 in this file. Lower z-indexes left
+      // the header + sidebar bright and clickable on top of the backdrop.
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl ring-1 ring-gray-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold text-gray-900">User invited</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          A temporary password has been emailed to{" "}
+          <span className="font-medium text-gray-900">{email}</span>. You can
+          also share it manually below — this is shown only once.
+        </p>
+        <div className="mt-4 rounded-md bg-gray-50 px-3 py-2 ring-1 ring-gray-200">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            Temporary password
+          </div>
+          <div className="mt-1 break-all font-mono text-sm text-gray-900">
+            {tempPassword}
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={copy}
+            className="rounded-md bg-accent-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-700"
+          >
+            {copied ? "Copied!" : "Copy password"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50"
+          >
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

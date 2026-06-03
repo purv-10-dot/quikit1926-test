@@ -179,7 +179,16 @@ function esc(s: string): string {
 }
 
 function appUrl(): string {
-  return envOrNull("APP_URL") ?? envOrNull("NEXT_PUBLIC_APP_URL") ?? "http://localhost:3004";
+  // QUIKTRACK_URL / NEXT_PUBLIC_QUIKTRACK_URL is the canonical per-app env
+  // (see CHANGES_2026-05-19.md and provisionAppRoles.ts). APP_URL kept as a
+  // legacy fallback so existing deployments don't break.
+  const url =
+    envOrNull("QUIKTRACK_URL") ??
+    envOrNull("NEXT_PUBLIC_QUIKTRACK_URL") ??
+    envOrNull("APP_URL") ??
+    envOrNull("NEXT_PUBLIC_APP_URL") ??
+    "http://localhost:3004";
+  return url.replace(/\/+$/, "");
 }
 
 function issueLink(projectId: string, issueId: string): string {

@@ -280,7 +280,10 @@ async function notifyOnUpdate(args: {
 }
 
 export const DELETE = withOrgAuth<{ id: string }>(
-  async ({ orgId, userId }, _req, { params }) => {
+  async ({ orgId, userId }, req, { params }) => {
+    const subtaskMode = new URL(req.url).searchParams.get("subtaskMode") === "detach"
+      ? "detach"
+      : "cascade";
     const issue = await db.qtIssue.findFirst({
       where: { id: params.id, orgId: orgId, isDeleted: false },
       select: { id: true, projectId: true, type: true, parentId: true },
@@ -307,23 +310,31 @@ export const DELETE = withOrgAuth<{ id: string }>(
     }
     const result = await db.$transaction(async (tx) => {
       if (issue.type === "EPIC") {
-        // Detach (don't delete) anything linked to this epic.
         await tx.qtIssue.updateMany({
           where: { epicId: params.id, isDeleted: false },
           data: { epicId: null },
         });
       }
-      // Cascade-delete the parent → child hierarchy. A task's subtasks (and any
-      // deeper descendants) cannot survive without their parent.
-      const cascade = await tx.qtIssue.updateMany({
-        where: { parentId: params.id, isDeleted: false },
-        data: { isDeleted: true, updatedBy: userId },
-      });
+      let deletedChildCount = 0;
+      let detachedChildCount = 0;
+      if (subtaskMode === "detach") {
+        const detach = await tx.qtIssue.updateMany({
+          where: { parentId: params.id, isDeleted: false },
+          data: { parentId: null, updatedBy: userId },
+        });
+        detachedChildCount = detach.count;
+      } else {
+        const cascade = await tx.qtIssue.updateMany({
+          where: { parentId: params.id, isDeleted: false },
+          data: { isDeleted: true, updatedBy: userId },
+        });
+        deletedChildCount = cascade.count;
+      }
       await tx.qtIssue.update({
         where: { id: params.id },
         data: { isDeleted: true, updatedBy: userId },
       });
-      return { childCount: cascade.count };
+      return { deletedChildCount, detachedChildCount };
     });
     // If we soft-deleted a subtask, refresh its parent's roll-up so the
     // remaining subtasks' aggregate is reflected.
@@ -332,7 +343,11 @@ export const DELETE = withOrgAuth<{ id: string }>(
     }
     return NextResponse.json({
       success: true,
-      data: { id: params.id, deletedChildCount: result.childCount },
+      data: {
+        id: params.id,
+        deletedChildCount: result.deletedChildCount,
+        detachedChildCount: result.detachedChildCount,
+      },
     });
   },
 );

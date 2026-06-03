@@ -149,7 +149,14 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
   const showNoSprintBanner = !hasActiveSprint;
 
   return (
-    <div className="px-3 sm:px-6 py-4">
+    // Content-sized block that scrolls inside the parent layout's single
+    // scroll container (SpaceLayout's `flex-1 overflow-y-auto`), exactly like
+    // the summary view. We intentionally do NOT add our own `overflow-y-auto`
+    // here — a nested scroll container stacked on the parent's let you scroll
+    // the inner region into its own empty fill area, which is the dead space
+    // that showed up only on this view. `min-w-0` keeps each group's
+    // horizontal scroll self-contained (same guard the board view uses).
+    <div className="px-3 sm:px-6 py-4 min-w-0">
       <GroupedKanbanToolbar
         filters={{ ...filters, search: searchInput }}
         onFilterChange={(next) => {
@@ -181,7 +188,7 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
       )}
 
       <DndProvider>
-        <div className="space-y-3 pb-12">
+        <div className="space-y-3">
           {groups.map((g) => (
             <GroupSection
               key={g.id}

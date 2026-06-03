@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { sendEmail, buildWWWAssignmentEmail, buildWWWUpdateEmail } from "./email";
+import { getAppBaseUrl } from "./appUrl";
 
 export interface NotifyWWWAssignmentParams {
   orgId: string;
@@ -50,8 +51,8 @@ export async function notifyWWWAssignment(params: NotifyWWWAssignmentParams): Pr
     ? `${creator.firstName ?? ""} ${creator.lastName ?? ""}`.trim() || (creator.email ?? "A teammate")
     : "A teammate";
 
-  const baseUrl = process.env.APP_URL || process.env.NEXTAUTH_URL || "";
-  const itemUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/www?highlight=${itemId}` : undefined;
+  const baseUrl = getAppBaseUrl();
+  const itemUrl = baseUrl ? `${baseUrl}/www?highlight=${itemId}` : undefined;
 
   const whenDate = formatWhen(when);
   const title = "A new action item has been assigned to you";
@@ -162,8 +163,8 @@ export async function notifyWWWReassignment(params: NotifyWWWReassignmentParams)
   const oldAssigneeNames = [...oldSet].map(nameOf);
   const newAssigneeNames = [...newSet].map(nameOf);
 
-  const baseUrl = process.env.APP_URL || process.env.NEXTAUTH_URL || "";
-  const itemUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}/www?highlight=${itemId}` : undefined;
+  const baseUrl = getAppBaseUrl();
+  const itemUrl = baseUrl ? `${baseUrl}/www?highlight=${itemId}` : undefined;
 
   const title = "Your action item has been updated";
   const message = `${updaterName} reassigned "${what}". Previous: ${oldAssigneeNames.join(", ") || "—"}. New: ${newAssigneeNames.join(", ") || "—"}.`;

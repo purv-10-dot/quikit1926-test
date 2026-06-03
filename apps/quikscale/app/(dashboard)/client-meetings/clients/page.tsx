@@ -12,20 +12,39 @@
  * Client Name, D/H window, Weekly window, Is Client Active, Description.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { useCurrentWeek } from "@/lib/hooks/useCurrentWeek";
 import {
   RightPanel, RightPanelFooter, RightPanelCancelButton, RightPanelSubmitButton,
-  AddButton, EmptyState, Modal, ModalContent, ModalHeader, ModalTitle, ModalBody,
+  AddButton, EmptyState,
   Segmented, FilterPicker, UserMultiPicker, Pagination, type ExportSelection,
 } from "@quikit/ui";
 import { Users, History, Clock, Search, Filter, Trash2, RotateCcw } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
-import { toast } from "sonner";
+import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useTableSort } from "@/lib/store";
+import { useColumnResize } from "@/lib/hooks/useColumnResize";
+import { useStickyOffsets } from "@/lib/hooks/useStickyOffsets";
+import { HeaderCell } from "@/components/table/HeaderCell";
+import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
+
+const COL_WIDTHS_DEFAULT: Record<string, number> = {
+  name: 220,
+  teamMembers: 280,
+  dailyWindow: 130,
+  weeklyWindow: 130,
+  isActive: 90,
+  description: 240,
+  createdBy: 160,
+  updatedBy: 160,
+  createdAt: 120,
+  updatedAt: 120,
+};
+import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
-import { fmtAuditPayload, diffAuditPayload } from "@/lib/utils/auditLog";
+import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
 
 interface ClientRow {
   id: string;
@@ -44,12 +63,6 @@ interface ClientRow {
 
 interface MemberOption { id: string; name: string; email: string }
 
-interface AuditLogEntry {
-  id: string; action: string;
-  oldValue: unknown; newValue: unknown;
-  changedByName: string; reason: string | null; createdAt: string;
-}
-
 const emptyForm = {
   name: "", description: "", isActive: true as boolean,
   weeklyStartTime: "", weeklyEndTime: "",
@@ -61,20 +74,26 @@ function fmtDateShort(iso: string) {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
-function fmtDateTime(iso: string) {
-  return new Date(iso).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
 function fmtWindow(s: string | null, e: string | null) {
   if (s && e) return `${s} – ${e}`;
   return "—";
 }
 
+/** Friendly field labels for the Client audit log (passed to AuditLogDrawer). */
+const CLIENT_FIELD_LABELS: Record<string, string> = {
+  name: "Client name",
+  description: "Description",
+  isActive: "Active",
+  startDate: "Start date",
+  weeklyStartTime: "Weekly window start",
+  weeklyEndTime: "Weekly window end",
+  dailyStartTime: "Daily window start",
+  dailyEndTime: "Daily window end",
+  teamMemberIds: "Team members",
+};
+
 export default function ClientsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("ClientMaster");
-  const { data: session } = useSession();
-  const role = (session?.user as { membershipRole?: string } | undefined)?.membershipRole;
-  const isAdmin = role === "owner" || role === "admin" || role === "super_admin" ||
-    (session?.user as { isSuperAdmin?: boolean } | undefined)?.isSuperAdmin === true;
 
   const { quarter } = useFilterContext();
   const { year } = useFilterContext();
@@ -93,29 +112,130 @@ export default function ClientsPage() {
   const [filterClientId, setFilterClientId] = useState("");
   const [filterStatus, setFilterStatus] = useState<"" | "active" | "inactive">("");
 
-  // Hidden columns (local — tablePreferences enum doesn't include clients yet).
-  const [hiddenCols, setHiddenCols] = useState<string[]>([]);
+  // Server-persisted column preferences (frozen / hidden / sort) via the
+  // UserTablePreference table in app_quikscale. Same shape as KPI / Priority /
+  // WWW — see lib/hooks/useTablePreferences.ts.
+  const {
+    hiddenCols,
+    setHiddenCols,
+    frozenCol: frozenUpTo,
+    setFrozenCol,
+    hideCol,
+  } = useTablePrefs("clientMaster");
+  const { sortBy, sortOrder, setSort } = useTableSort("clientMaster");
+  const { getColWidth, startResize, colWidths } = useColumnResize("clientMaster", COL_WIDTHS_DEFAULT);
+
+  // Cascade-freeze infrastructure — mirrors KPI/Weekly Meeting/Daily Huddle.
+  // Freezing column C pins every column from the always-frozen left rail
+  // (`_checkbox`/`_log`/`_id`, total 152px) up to and including C as a
+  // sticky group. Offsets are measured from the live DOM by
+  // `useStickyOffsets` so they always match the actual layout.
+  const COL_ORDER = useMemo(
+    () => [
+      "_checkbox", "_log", "_id",
+      "name", "teamMembers", "dailyWindow", "weeklyWindow",
+      "isActive", "description",
+      "createdBy", "updatedBy", "createdAt", "updatedAt",
+    ],
+    [],
+  );
+  const hiddenSet = useMemo(() => new Set(hiddenCols), [hiddenCols]);
+  const headerRowRef = useRef<HTMLTableRowElement>(null);
+  // Seed sticky offsets from colWidths so the first paint already positions
+  // frozen cells correctly. DOM measurement still takes over after layout.
+  const stickyFallback = useMemo(
+    () => ({
+      colOrder: COL_ORDER,
+      railWidths: { _checkbox: 40, _log: 56, _id: 56 } as const,
+      getColWidth,
+    }),
+    [COL_ORDER, getColWidth],
+  );
+  const { getStickyLeft } = useStickyOffsets(
+    headerRowRef,
+    frozenUpTo,
+    hiddenSet,
+    colWidths,
+    stickyFallback,
+  );
+  const isFrozen = useCallback(
+    (col: string): boolean => {
+      if (!frozenUpTo) return false;
+      const i = COL_ORDER.indexOf(col);
+      const j = COL_ORDER.indexOf(frozenUpTo);
+      return i !== -1 && j !== -1 && i <= j;
+    },
+    [frozenUpTo, COL_ORDER],
+  );
+  const handleFreeze = useCallback(
+    (col: string) => setFrozenCol(frozenUpTo === col ? null : col),
+    [frozenUpTo, setFrozenCol],
+  );
+  function tdFreezeClass(k: string): string {
+    return isFrozen(k) ? "sticky z-[10] bg-white" : "";
+  }
+  function freezeStyle(k: string): React.CSSProperties {
+    const w = getColWidth(k);
+    if (isFrozen(k)) return { width: w, minWidth: w, left: getStickyLeft(k) };
+    return { width: w };
+  }
+  const isHidden = (k: string) => hiddenCols.includes(k);
+
+  // Adapter that binds local table state to the shared <HeaderCell>. Each
+  // `<Header k="…" label="…" sortable sortKey="…" />` renders one column
+  // header (sort arrow + ColMenu + resize handle + freeze icon when boundary).
+  const Header = (props: {
+    k: string;
+    label: string;
+    sortable?: boolean;
+    sortKey?: string;
+  }) => (
+    <HeaderCell
+      {...props}
+      isHidden={isHidden}
+      getColWidth={getColWidth}
+      startResize={startResize}
+      hideCol={hideCol}
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      setSort={setSort}
+      isFrozen={isFrozen}
+      getStickyLeft={getStickyLeft}
+      frozenUpTo={frozenUpTo}
+      onFreeze={handleFreeze}
+      thClassName="group relative text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200"
+    />
+  );
 
   const [editing, setEditing] = useState<{ id: string | null; form: typeof emptyForm } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const [logOpen, setLogOpen] = useState<{ id: string; name: string } | null>(null);
-  const [logRows, setLogRows] = useState<AuditLogEntry[]>([]);
-  const [logLoading, setLogLoading] = useState(false);
+  // Resolve team-member ids → names for the audit log (teamMemberIds stores ids).
+  const memberNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const mem of members) m.set(mem.id, mem.name);
+    for (const c of rows) for (const tm of c.teamMembers) m.set(tm.id, tm.name);
+    return m;
+  }, [members, rows]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = viewTrash ? "?includeDeleted=true" : "";
+      const params = new URLSearchParams();
+      if (viewTrash) params.set("includeDeleted", "true");
+      if (sortBy) params.set("sortBy", sortBy);
+      if (sortBy && sortOrder) params.set("sortOrder", sortOrder);
+      const qs = params.toString();
       const [c, m] = await Promise.all([
-        fetch(`/api/client-meetings/clients${qs}`).then(r => r.json()),
+        fetch(`/api/client-meetings/clients${qs ? "?" + qs : ""}`).then(r => r.json()),
         fetch("/api/client-meetings/members").then(r => r.json()),
       ]);
       if (c.success) setRows(c.data);
       if (m.success) setMembers(m.data);
     } finally { setLoading(false); }
-  }, [viewTrash]);
+  }, [viewTrash, sortBy, sortOrder]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -171,7 +291,7 @@ export default function ClientsPage() {
   }
 
   function openCreate() {
-    if (!isAdmin) return;
+    if (!canCreate) return;
     setError("");
     setEditing({ id: null, form: { ...emptyForm } });
   }
@@ -192,22 +312,19 @@ export default function ClientsPage() {
     });
   }
 
-  async function openLog(row: ClientRow) {
-    setLogOpen({ id: row.id, name: row.name });
-    setLogLoading(true); setLogRows([]);
-    try {
-      const res = await fetch(`/api/client-meetings/clients/${row.id}/logs`);
-      const json = await res.json();
-      if (json.success) setLogRows(json.data);
-    } finally { setLogLoading(false); }
-  }
-
   async function handleSubmit() {
     if (!editing) return;
     const f = editing.form;
     if (!f.name.trim()) { setError("Client name is required"); return; }
-    if (f.dailyStartTime && f.dailyEndTime && f.dailyEndTime <= f.dailyStartTime) { setError("D/H end must be after start"); return; }
-    if (f.weeklyStartTime && f.weeklyEndTime && f.weeklyEndTime <= f.weeklyStartTime) { setError("Weekly end must be after start"); return; }
+    // All 4 planned meeting times are required — the export header block
+    // and the duration-followed stat depend on them. Server enforces the
+    // same rule via createClientSchema.
+    if (!f.dailyStartTime) { setError("Daily start time is required"); return; }
+    if (!f.dailyEndTime)   { setError("Daily end time is required"); return; }
+    if (!f.weeklyStartTime){ setError("Weekly start time is required"); return; }
+    if (!f.weeklyEndTime)  { setError("Weekly end time is required"); return; }
+    if (f.dailyEndTime <= f.dailyStartTime) { setError("D/H end must be after start"); return; }
+    if (f.weeklyEndTime <= f.weeklyStartTime) { setError("Weekly end must be after start"); return; }
 
     setSaving(true); setError("");
     try {
@@ -215,10 +332,10 @@ export default function ClientsPage() {
         name: f.name.trim(),
         description: f.description.trim() || null,
         isActive: f.isActive,
-        weeklyStartTime: f.weeklyStartTime || null,
-        weeklyEndTime:   f.weeklyEndTime || null,
-        dailyStartTime:  f.dailyStartTime || null,
-        dailyEndTime:    f.dailyEndTime || null,
+        weeklyStartTime: f.weeklyStartTime,
+        weeklyEndTime:   f.weeklyEndTime,
+        dailyStartTime:  f.dailyStartTime,
+        dailyEndTime:    f.dailyEndTime,
         teamMemberIds:   f.teamMemberIds,
       };
       const url = editing.id ? `/api/client-meetings/clients/${editing.id}` : "/api/client-meetings/clients";
@@ -226,27 +343,53 @@ export default function ClientsPage() {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Failed to save"); return; }
+      notify.saved("Client", editing.id ? "updated" : "created");
       setEditing(null);
       await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      notify.error(err, { context: "client", fallback: "Couldn't save. Please try again." });
     } finally { setSaving(false); }
   }
 
   async function handleBulkDelete() {
-    if (!selected.size || !isAdmin) return;
+    if (!selected.size || !canDelete) return;
     if (!confirm(`Delete ${selected.size} client${selected.size === 1 ? "" : "s"}?`)) return;
     await Promise.all([...selected].map(id => fetch(`/api/client-meetings/clients/${id}`, { method: "DELETE" })));
+    notify.saved("Client", "deleted");
     setSelected(new Set());
     refresh();
   }
 
   async function handleDeleteOne(id: string) {
-    if (!isAdmin) return;
+    if (!canDelete) return;
     if (!confirm("Delete this client?")) return;
     await fetch(`/api/client-meetings/clients/${id}`, { method: "DELETE" });
+    notify.saved("Client", "deleted");
     refresh();
   }
   async function handleRestore(id: string) {
     await fetch(`/api/client-meetings/clients/${id}/restore`, { method: "POST" });
+    notify.saved("Client", "restored");
+    refresh();
+  }
+
+  async function handleBulkRestore() {
+    if (!selected.size) return;
+    const res = await fetch(`/api/client-meetings/clients/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected] }),
+    });
+    const json = await res.json().catch(() => ({ success: false }));
+    if (!json.success) {
+      // Fall back to per-row restore if bulk endpoint isn't available
+      // (handleRestore toasts per row).
+      await Promise.all([...selected].map(id => handleRestore(id)));
+    } else {
+      notify.saved("Client", "restored");
+    }
+    setSelected(new Set());
     refresh();
   }
 
@@ -264,7 +407,6 @@ export default function ClientsPage() {
     { key: "updatedAt",       label: "Updated Date" },
   ];
   const visibleColKeys = moduleColumns.filter(c => !hiddenCols.includes(c.key)).map(c => c.key);
-  const isHidden = (key: string) => hiddenCols.includes(key);
 
   async function handleExport(sel: ExportSelection) {
     const columns = moduleColumns
@@ -315,10 +457,19 @@ export default function ClientsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {selected.size > 0 && canDelete && (
+          {selected.size > 0 && canDelete && !viewTrash && (
             <button onClick={handleBulkDelete}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-red-50 border border-red-200 text-red-600 rounded-md hover:bg-red-100 transition-colors">
               <Trash2 className="h-3.5 w-3.5" /> Delete {selected.size} selected
+            </button>
+          )}
+          {selected.size > 0 && canDelete && viewTrash && (
+            <button onClick={handleBulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+              </svg>
+              Restore {selected.size} selected
             </button>
           )}
 
@@ -371,7 +522,7 @@ export default function ClientsPage() {
             defaultExportColumnKeys={visibleColKeys}
           />
 
-          {canCreate && isAdmin && <AddButton onClick={openCreate}>Add New</AddButton>}
+          {canCreate && <AddButton onClick={openCreate}>Add New</AddButton>}
         </div>
       </div>
 
@@ -390,22 +541,29 @@ export default function ClientsPage() {
               icon={Users}
               title={search ? "No matches" : viewTrash ? "Trash is empty" : "Add your first client"}
               message={search ? "Try a different search term." : "Clients are the external organisations you run meeting rhythm for. Planned meeting windows power the Dashboard's punctuality and duration-followed metrics."}
-              action={!search && !viewTrash && canCreate && isAdmin ? { label: "Add your first client", onClick: openCreate } : undefined}
+              action={!search && !viewTrash && canCreate ? { label: "Add your first client", onClick: openCreate } : undefined}
             />
           </div>
         ) : (
           <div className="h-full flex flex-col min-h-0">
-            <div className="flex-1 overflow-auto min-h-0">
-            <table className="min-w-full text-xs bg-white">
+            <HorizontalScroller className="flex-1">
+            <table
+              className="text-xs bg-white border-separate border-spacing-0"
+              style={{ width: "100%", minWidth: "max-content", tableLayout: "fixed" }}>
               <thead className="sticky top-0 bg-accent-50 z-10">
-                <tr>
-                  <th className="w-10 px-3 py-3 border-b border-gray-200">
+                {/* `ref` + `data-col-key` on every `<th>` (rail + user cols)
+                    feed useStickyOffsets so each frozen column gets a `left`
+                    measured from the actual DOM — no hardcoded pixel offsets. */}
+                <tr ref={headerRowRef}>
+                  <th data-col-key="_checkbox"
+                      className="sticky z-[35] px-3 py-3 bg-accent-50 border-b border-r border-gray-200"
+                      style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                     <label
                       onClickCapture={(e) => {
                         if (!canDelete) {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.error("You don't have permission to delete");
+                          notify.error("You don't have permission to delete");
                         }
                       }}
                     >
@@ -413,31 +571,36 @@ export default function ClientsPage() {
                         className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                     </label>
                   </th>
-                  <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Log</th>
-                  <th className="w-14 text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">ID</th>
-                  {!isHidden("name")         && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Client Name</th>}
-                  {!isHidden("teamMembers")  && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Team Members</th>}
-                  {!isHidden("dailyWindow")  && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">D/H Window</th>}
-                  {!isHidden("weeklyWindow") && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Weekly Window</th>}
-                  {!isHidden("isActive")     && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Status</th>}
-                  {!isHidden("description")  && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Description</th>}
-                  {!isHidden("createdBy")    && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Created By</th>}
-                  {!isHidden("updatedBy")    && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Updated By</th>}
-                  {!isHidden("createdAt")    && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Created Date</th>}
-                  {!isHidden("updatedAt")    && <th className="text-left px-3 py-3 font-semibold text-gray-600 border-b border-gray-200">Updated Date</th>}
+                  <th data-col-key="_log"
+                      className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                      style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>Log</th>
+                  <th data-col-key="_id"
+                      className="sticky z-[35] text-left px-3 py-3 font-semibold text-gray-600 bg-accent-50 border-b border-r border-gray-200"
+                      style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>ID</th>
+                  <Header k="name" label="Client Name" sortable />
+                  <Header k="teamMembers" label="Team Members" />
+                  <Header k="dailyWindow" label="D/H Window" sortable sortKey="dailyStartTime" />
+                  <Header k="weeklyWindow" label="Weekly Window" sortable sortKey="weeklyStartTime" />
+                  <Header k="isActive" label="Status" sortable />
+                  <Header k="description" label="Description" />
+                  <Header k="createdBy" label="Created By" />
+                  <Header k="updatedBy" label="Updated By" />
+                  <Header k="createdAt" label="Created Date" sortable />
+                  <Header k="updatedAt" label="Updated Date" sortable />
                   <th className="w-10 px-3 py-3 border-b border-gray-200" />
                 </tr>
               </thead>
               <tbody>
                 {pagedClients.map(r => (
                   <tr key={r.id} className={`border-b border-gray-100 hover:bg-blue-50/30 ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}>
-                    <td className="px-3 py-3 text-center">
+                    <td className="sticky z-[15] bg-white px-3 py-3 text-center border-b border-r border-gray-100"
+                        style={{ left: 0, width: 40, minWidth: 40, maxWidth: 40 }}>
                       <label
                         onClickCapture={(e) => {
                           if (!canDelete) {
                             e.preventDefault();
                             e.stopPropagation();
-                            toast.error("You don't have permission to delete");
+                            notify.error("You don't have permission to delete");
                           }
                         }}
                       >
@@ -445,77 +608,94 @@ export default function ClientsPage() {
                           className={`rounded border-gray-300 text-blue-600 ${canDelete ? "cursor-pointer" : "opacity-40 cursor-not-allowed"}`} />
                       </label>
                     </td>
-                    <td className="px-3 py-3">
-                      <button onClick={() => openLog(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
+                    <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
+                        style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>
+                      <button onClick={() => setLogOpen({ id: r.id, name: r.name })} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
+                        style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>
                       <button onClick={() => openEdit(r)} className="text-blue-600 hover:underline font-medium">{r.displayId}</button>
                     </td>
-                    {!isHidden("name") && <td className="px-3 py-3 font-medium text-gray-800">{r.name}</td>}
+                    {/* Data cells — explicit width matches each <th>. `overflow-hidden`
+                        keeps long content from blowing past the column width set by
+                        table-layout: fixed; users can drag the column wider if needed. */}
+                    {!isHidden("name") && (
+                      <td style={freezeStyle("name")} className={`px-3 py-3 font-medium text-gray-800 overflow-hidden text-ellipsis whitespace-nowrap ${tdFreezeClass("name")}`}>
+                        {r.name}
+                      </td>
+                    )}
                     {!isHidden("teamMembers") && (
-                      <td className="px-3 py-3 text-gray-600">
+                      <td style={freezeStyle("teamMembers")} className={`px-3 py-3 text-gray-600 overflow-hidden ${tdFreezeClass("teamMembers")}`}>
                         {r.teamMembers.length === 0 ? <span className="text-gray-300">—</span> : (
-                          <span title={r.teamMembers.map(m => m.name).join(", ")}>
+                          <span title={r.teamMembers.map(m => m.name).join(", ")} className="whitespace-nowrap text-ellipsis overflow-hidden block">
                             {r.teamMembers.slice(0, 3).map(m => m.name).join(", ")}
                             {r.teamMembers.length > 3 && ` +${r.teamMembers.length - 3}`}
                           </span>
                         )}
                       </td>
                     )}
-                    {!isHidden("dailyWindow") && <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{fmtWindow(r.dailyStartTime, r.dailyEndTime)}</td>}
-                    {!isHidden("weeklyWindow") && <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{fmtWindow(r.weeklyStartTime, r.weeklyEndTime)}</td>}
+                    {!isHidden("dailyWindow") && (
+                      <td style={freezeStyle("dailyWindow")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("dailyWindow")}`}>
+                        {fmtWindow(r.dailyStartTime, r.dailyEndTime)}
+                      </td>
+                    )}
+                    {!isHidden("weeklyWindow") && (
+                      <td style={freezeStyle("weeklyWindow")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("weeklyWindow")}`}>
+                        {fmtWindow(r.weeklyStartTime, r.weeklyEndTime)}
+                      </td>
+                    )}
                     {!isHidden("isActive") && (
-                      <td className="px-3 py-3">
+                      <td style={freezeStyle("isActive")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("isActive")}`}>
                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${r.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                           {r.isActive ? "Active" : "Inactive"}
                         </span>
                       </td>
                     )}
                     {!isHidden("description") && (
-                      <td className="px-3 py-3 text-gray-600 max-w-xs truncate" title={r.description ?? ""}>
+                      <td style={freezeStyle("description")} className={`px-3 py-3 text-gray-600 truncate ${tdFreezeClass("description")}`} title={r.description ?? ""}>
                         {r.description ?? <span className="text-gray-300">—</span>}
                       </td>
                     )}
                     {!isHidden("createdBy") && (
-                      <td className="px-3 py-3">
+                      <td style={freezeStyle("createdBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("createdBy")}`}>
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
                             {r.createdByInitials}
                           </span>
-                          <span className="text-xs text-gray-700 whitespace-nowrap">{r.createdByName}</span>
+                          <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.createdByName}</span>
                         </div>
                       </td>
                     )}
                     {!isHidden("updatedBy") && (
-                      <td className="px-3 py-3">
+                      <td style={freezeStyle("updatedBy")} className={`px-3 py-3 overflow-hidden ${tdFreezeClass("updatedBy")}`}>
                         {r.updatedByName ? (
                           <div className="flex items-center gap-2">
                             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-900 text-white text-[10px] font-semibold flex-shrink-0">
                               {r.updatedByInitials}
                             </span>
-                            <span className="text-xs text-gray-700 whitespace-nowrap">{r.updatedByName}</span>
+                            <span className="text-xs text-gray-700 whitespace-nowrap text-ellipsis overflow-hidden">{r.updatedByName}</span>
                           </div>
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     )}
                     {!isHidden("createdAt") && (
-                      <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
+                      <td style={freezeStyle("createdAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("createdAt")}`}>
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.createdAt)}</span>
                       </td>
                     )}
                     {!isHidden("updatedAt") && (
-                      <td className="px-3 py-3 text-gray-600 whitespace-nowrap">
+                      <td style={freezeStyle("updatedAt")} className={`px-3 py-3 text-gray-600 whitespace-nowrap overflow-hidden ${tdFreezeClass("updatedAt")}`}>
                         <span className="inline-flex items-center gap-1.5"><Clock className="h-3 w-3 text-gray-400" /> {fmtDateShort(r.updatedAt)}</span>
                       </td>
                     )}
                     <td className="px-3 py-3">
-                      {viewTrash && isAdmin ? (
+                      {viewTrash && canDelete ? (
                         <button onClick={() => handleRestore(r.id)} className="p-1 rounded hover:bg-green-50 text-gray-300 hover:text-green-600" title="Restore">
                           <RotateCcw className="h-3.5 w-3.5" />
                         </button>
-                      ) : isAdmin ? (
+                      ) : canDelete ? (
                         <button onClick={() => handleDeleteOne(r.id)} className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-500" title="Delete">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -525,7 +705,7 @@ export default function ClientsPage() {
                 ))}
               </tbody>
             </table>
-            </div>
+            </HorizontalScroller>
             {filtered.length > 0 && (
               <Pagination
                 page={page}
@@ -555,19 +735,23 @@ export default function ClientsPage() {
           title="Client Master"
           subtitle={editing.id ? "Edit record" : "Create new record"}
           footer={
-            <RightPanelFooter>
-              <RightPanelCancelButton onClick={() => setEditing(null)} />
-              {!drawerLocked && (
-                <RightPanelSubmitButton
-                  onClick={handleSubmit} saving={saving}
-                  icon={editing.id ? "check" : "plus"}
-                  label="Submit"
-                />
-              )}
-            </RightPanelFooter>
+            // Column wrapper pins the server-error banner directly above the
+            // Cancel/Submit row so users don't have to scroll up to see it.
+            <div className="flex flex-col gap-2 w-full">
+              <FormErrorBanner message={error} />
+              <RightPanelFooter>
+                <RightPanelCancelButton onClick={() => setEditing(null)} />
+                {!drawerLocked && (
+                  <RightPanelSubmitButton
+                    onClick={handleSubmit} saving={saving}
+                    icon={editing.id ? "check" : "plus"}
+                    label="Submit"
+                  />
+                )}
+              </RightPanelFooter>
+            </div>
           }
         >
-          {error && <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">{error}</div>}
           {drawerLocked && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
               Read-only — your role doesn&apos;t grant {editing.id ? "update" : "create"} access on Client Master.
@@ -649,73 +833,16 @@ export default function ClientsPage() {
         );
       })()}
 
-      {/* Audit log modal */}
-      {logOpen && (
-        <Modal open onOpenChange={(o) => { if (!o) setLogOpen(null); }}>
-          <ModalContent className="max-w-2xl">
-            <ModalHeader>
-              <ModalTitle>Audit Log — {logOpen.name}</ModalTitle>
-            </ModalHeader>
-            <ModalBody>
-              {logLoading ? (
-                <p className="text-xs text-gray-400">Loading…</p>
-              ) : logRows.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">No changes recorded yet.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {logRows.map(entry => (
-                    <li key={entry.id} className="border border-gray-100 rounded-lg px-4 py-3 bg-gray-50">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                          entry.action === "CREATE" ? "bg-green-100 text-green-700"
-                          : entry.action === "UPDATE" ? "bg-blue-100 text-blue-700"
-                          : entry.action === "DELETE" ? "bg-red-100 text-red-700"
-                          : entry.action === "RESTORE" ? "bg-amber-100 text-amber-700"
-                          : "bg-gray-100 text-gray-700"
-                        }`}>{entry.action}</span>
-                        <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                          <span className="font-medium">{entry.changedByName}</span>
-                          <span>·</span>
-                          <span>{fmtDateTime(entry.createdAt)}</span>
-                        </div>
-                      </div>
-                      {entry.action === "UPDATE" && !!entry.oldValue && !!entry.newValue && (() => {
-                        const diffs = diffAuditPayload(entry.oldValue, entry.newValue);
-                        return diffs.length ? (
-                          <div className="text-[11px] space-y-0.5 mt-1">
-                            {diffs.map(({ key, oldValue, newValue }) => (
-                              <p key={key} className="text-gray-600">
-                                <span className="font-medium">{key}:</span>{" "}
-                                <span className="line-through text-gray-400">{JSON.stringify(oldValue ?? "")}</span>
-                                <span className="mx-1 text-gray-400">→</span>
-                                <span className="text-gray-800">{JSON.stringify(newValue ?? "")}</span>
-                              </p>
-                            ))}
-                          </div>
-                        ) : null;
-                      })()}
-                      {entry.action === "CREATE" && !!entry.newValue && (() => {
-                        const text = fmtAuditPayload(entry.newValue);
-                        return text ? (
-                          <div className="text-[11px] text-gray-600 mt-1 break-words">
-                            Created with: {text}
-                          </div>
-                        ) : null;
-                      })()}
-                      {entry.action === "DELETE" && (
-                        <div className="text-[11px] text-gray-600 mt-1 italic">Client deleted.</div>
-                      )}
-                      {entry.action === "RESTORE" && (
-                        <div className="text-[11px] text-gray-600 mt-1 italic">Client restored from trash.</div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </ModalBody>
-          </ModalContent>
-        </Modal>
-      )}
+      {/* Audit log — shared RightPanel drawer (same styling as Daily Huddle / Weekly Meeting) */}
+      <AuditLogDrawer
+        open={!!logOpen}
+        onClose={() => setLogOpen(null)}
+        entityType="Client"
+        entityId={logOpen?.id ?? ""}
+        title={logOpen ? `Audit Log — ${logOpen.name}` : "Audit Log"}
+        fieldLabels={CLIENT_FIELD_LABELS}
+        nameById={(id) => memberNameById.get(id)}
+      />
     </div>
   );
 }

@@ -1,12 +1,15 @@
 import { WatercolorIntro } from "./_components/watercolor-intro";
-import { LoginModal } from "./_components/login-modal";
 
 /**
  * Marketing zone layout. The app root layout owns <html>/<body>/Providers;
  * this nested layout only adds the marketing font stack + the watercolor
- * intro + the global login modal. Marketing pages bring their own design
- * via injected <style> (StaticPage), so they override the launcher's body
- * defaults within their own markup.
+ * intro. Marketing pages bring their own design via injected <style>
+ * (StaticPage), so they override the launcher's body defaults within
+ * their own markup.
+ *
+ * The previous in-page LoginModal was retired — "Log in" CTAs now redirect
+ * to the central auth app (auth.quikit.ai/login) carrying `callbackUrl`
+ * so the same flow is used by every sub-app (quikit, quikscale, …).
  *
  * <link> tags in a nested App-Router layout are hoisted into <head>.
  */
@@ -33,7 +36,6 @@ export default function MarketingLayout({
       />
       <WatercolorIntro />
       {children}
-      <LoginModal />
     </>
   );
 }

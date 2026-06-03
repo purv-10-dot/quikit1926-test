@@ -20,16 +20,18 @@ export type GoalStatus = (typeof GOAL_STATUSES)[number];
 
 export const GOAL_CATEGORIES = ["business", "personal", "team", "other"] as const;
 
+// String length caps on user-content fields (title/description/category/unit)
+// lifted — Prisma columns are `text`.
 export const createGoalSchema = z.object({
-  title: z.string().trim().min(1, "Title is required").max(200),
-  description: z.string().trim().max(2000).optional().nullable(),
-  category: z.string().trim().max(50).optional().nullable(),
+  title: z.string().trim().min(1, "Title is required"),
+  description: z.string().trim().optional().nullable(),
+  category: z.string().trim().optional().nullable(),
   ownerId: z.string().cuid("ownerId must be a cuid"),
   parentGoalId: z.string().cuid().optional().nullable(),
 
   targetValue: z.number().optional().nullable(),
   currentValue: z.number().optional().nullable(),
-  unit: z.string().trim().max(20).optional().nullable(),
+  unit: z.string().trim().optional().nullable(),
 
   quarter: z.enum(["Q1", "Q2", "Q3", "Q4"]).optional().nullable(),
   year: z.number().int().min(2000).max(2100),

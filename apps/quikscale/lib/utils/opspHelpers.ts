@@ -203,35 +203,35 @@ export function toNum(v: unknown): number | null {
 /**
  * Resolve which Critical-Number tier an `achieved` value lands in, given
  * the four projected thresholds entered during OPSP creation. Bullets are
- * indexed as `[superGreen, lightGreen, yellow, red]`.
+ * indexed as `[superGreen, lightGreen, yellow, red]` — but their NUMERIC
+ * values can be in any order (descending / ascending / random).
  *
- * Two valid bullet conventions are supported — direction is auto-detected
- * from the SG vs R bullet pair:
+ * **Unified algorithm** (replaces the old direction-detection branching):
+ *   1. Pair each tier with its numeric threshold and drop missing values.
+ *   2. Sort the pairs ascending by threshold.
+ *   3. Find the band the achieved value lives in:
+ *        - below the lowest threshold → use the LOWEST pair's tier
+ *        - in [v_i, v_{i+1})          → use pair i's tier
+ *        - ≥ the highest threshold    → use the HIGHEST pair's tier
+ *   Lower bound is inclusive; upper bound is exclusive — so a value exactly
+ *   at a threshold belongs to the band that *starts* at that threshold.
  *
- * **Descending mode** — `SG > R` ("higher achieved is better", e.g. revenue):
- *   Returns the highest tier whose projected threshold ≤ achieved.
- *   Below every threshold → "red".
+ * Worked examples (matches `docs/OPSP_CRITICAL_COLOR_LOGIC.md`):
  *
- *   Examples (bullets = [120, 80, 60, 40]):
- *     25  → red          (< 40)
- *     45  → red          (≥ 40 but < 60 — "red" is still the highest match)
- *     65  → yellow       (≥ 60 but < 80)
- *     85  → lightGreen   (≥ 80 but < 120)
- *     130 → superGreen   (≥ 120)
+ *   Descending — bullets = [SG 90, LG 60, Y 40, R 20]
+ *     10 → red,  25 → red,  45 → yellow,  75 → lightGreen,  100 → superGreen
  *
- * **Ascending mode** — `SG < R` ("lower achieved is better", e.g. defects):
- *   Returns the first tier whose projected threshold > achieved (i.e. the
- *   one achieved hasn't crossed yet). Above every threshold → "red".
+ *   Ascending — bullets = [SG 20, LG 40, Y 60, R 90]
+ *     10 → superGreen,  25 → superGreen,  45 → lightGreen,  80 → yellow,  120 → red
  *
- *   Examples (bullets = [20, 30, 50, 90]):
- *     10  → superGreen   (< 20)
- *     25  → lightGreen   (≥ 20 but < 30)
- *     40  → yellow       (≥ 30 but < 50)
- *     110 → red          (≥ 50 — past the yellow band, all worse → red)
+ *   Random — bullets = [SG 60, LG 20, Y 40, R 90]
+ *     30 → lightGreen,  50 → yellow,  80 → superGreen,  105 → red
  *
- * **Fallback:** when SG/R is missing or `SG === R`, mode defaults to
- * descending — preserves behavior for existing OPSP cards. If achieved
- * itself is null/NaN, returns null (no tier).
+ * Edge cases:
+ *   - `achieved` is null / "" / non-numeric  → returns `null` (no tier).
+ *   - Every threshold missing                → returns `"red"` (legacy fallback).
+ *   - Ties between two thresholds            → the one earlier in the source
+ *     `[SG, LG, Y, R]` order wins (stable sort).
  */
 export function resolveCritTier(
   achieved: number | string | null | undefined,
@@ -240,32 +240,33 @@ export function resolveCritTier(
   const ach = toNum(achieved);
   if (ach === null) return null;
 
-  // Direction detection — compare the Super Green and Red thresholds. SG < R
-  // means "lower is better" (e.g. defects); SG > R means "higher is better"
-  // (e.g. revenue). Missing-bullet / equal cases fall back to descending so
-  // existing OPSP cards keep their tier mapping.
-  const sgT = toNum(bullets[0]);
-  const rT = toNum(bullets[3]);
-  const ascending = sgT !== null && rT !== null && sgT < rT;
+  // Pair each tier (in canonical [SG, LG, Y, R] order) with its numeric
+  // threshold, drop missing values, then sort ascending by value. Ties are
+  // broken by `srcIdx` DESCENDING so the earlier-source tier (closer to SG)
+  // claims the [v, next_v) band when two thresholds share a value — i.e.
+  // hitting a tied threshold "promotes" you to the better tier.
+  const pairs = CRIT_BULLET_TIERS.map((tier, srcIdx) => ({
+    tier,
+    srcIdx,
+    value: toNum(bullets[srcIdx]),
+  })).filter((p): p is { tier: CritTier; srcIdx: number; value: number } => p.value !== null);
 
-  if (ascending) {
-    // Walk best → worst; the tier is the FIRST one whose threshold the
-    // achieved value hasn't crossed yet. Past every threshold → red.
-    for (let i = 0; i < 4; i++) {
-      const threshold = toNum(bullets[i]);
-      if (threshold !== null && ach < threshold) return CRIT_BULLET_TIERS[i];
+  if (pairs.length === 0) return "red";
+
+  pairs.sort((a, b) => a.value - b.value || b.srcIdx - a.srcIdx);
+
+  // Below the lowest threshold → lowest pair's tier.
+  if (ach < pairs[0].value) return pairs[0].tier;
+
+  // Walk adjacent bands [v_i, v_{i+1}). Lower bound inclusive.
+  for (let i = 0; i < pairs.length - 1; i++) {
+    if (ach >= pairs[i].value && ach < pairs[i + 1].value) {
+      return pairs[i].tier;
     }
-    return "red";
   }
 
-  // Descending mode (default / existing behavior).
-  // bullets[0..3] map to superGreen/lightGreen/yellow/red. Walk highest →
-  // lowest and return the first tier whose threshold is satisfied.
-  for (let i = 0; i < 4; i++) {
-    const threshold = toNum(bullets[i]);
-    if (threshold !== null && ach >= threshold) return CRIT_BULLET_TIERS[i];
-  }
-  return "red";
+  // At or above the highest threshold → highest pair's tier.
+  return pairs[pairs.length - 1].tier;
 }
 
 /**

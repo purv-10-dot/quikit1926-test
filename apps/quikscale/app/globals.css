@@ -136,3 +136,27 @@ html.dark .glass {
   opacity: 1;
   cursor: pointer;
 }
+
+/* ============================================================================
+   TOASTS (sonner) — theme-aware chrome
+   Success/error/warning keep sonner's semantic richColors palette. Only the
+   neutral default/info toasts and the optional per-team tint are branded with
+   the company accent (--accent-* set live by ThemeApplier). See lib/utils/notify.ts.
+   ============================================================================ */
+
+/* Neutral default + info toasts pick up the company accent as a left bar. */
+.qs-toast[data-type="info"],
+.qs-toast[data-type="default"],
+.qs-toast[data-type="loading"] {
+  border-left: 3px solid var(--accent-500, #0066cc);
+}
+
+.qs-toast-close:hover {
+  color: var(--accent-700, #1d4ed8);
+}
+
+/* Optional per-team / per-action tint — overrides the bar with an inline color
+   (set via the inline custom property --toast-tint in notify.ts). */
+.qs-toast.qs-toast-tinted {
+  border-left: 3px solid var(--toast-tint, var(--accent-500, #0066cc));
+}

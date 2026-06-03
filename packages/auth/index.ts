@@ -6,7 +6,6 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import AzureADProvider from "next-auth/providers/azure-ad";
 import { db } from "@quikit/database";
-import { rateLimitAsync } from "@quikit/shared/rateLimit";
 import bcrypt from "bcryptjs";
 import {
   createAuthSession,
@@ -27,6 +26,8 @@ interface AuthUser {
   isSuperAdmin?: boolean;
   orgId?: string;
   membershipRole?: string;
+  /** Redis-backed session id carried from the central IdP id_token claim. */
+  sessionId?: string;
   /** Stashed by Google/Azure profile() callbacks for post-OAuth pre-fill. */
   oauthFirstName?: string;
   oauthLastName?: string;
@@ -40,35 +41,6 @@ function splitName(name: string | undefined | null): { first: string; last: stri
   if (idx < 0) return { first: trimmed, last: "" };
   return { first: trimmed.slice(0, idx), last: trimmed.slice(idx + 1).trim() };
 }
-
-/**
- * NextAuth's `authorize(credentials, req)` hands us a plain Node request
- * whose `headers` shape is `IncomingHttpHeaders` — a record of string |
- * string[] | undefined. Extract the first plausible client IP so the
- * rate limiter can bucket attackers.
- *
- * In production behind Caddy / Vercel edge, `x-forwarded-for` is trusted;
- * the first IP in the list is the original client. Locally, both headers
- * are absent → "anonymous" (still useful because it groups the unknown-IP
- * population together).
- */
-function nextAuthIp(
-  req: { headers?: Record<string, string | string[] | undefined> } | undefined,
-): string {
-  const h = req?.headers ?? {};
-  const xff = h["x-forwarded-for"];
-  const ipStr = Array.isArray(xff) ? xff[0] : xff;
-  if (ipStr) return String(ipStr).split(",")[0]!.trim();
-  const real = h["x-real-ip"];
-  if (real) return Array.isArray(real) ? real[0]! : String(real);
-  return "anonymous";
-}
-
-/**
- * Fail-closed (return {ok: false}) only in production. In dev / tests,
- * the in-memory fallback works fine for a single process.
- */
-const FAIL_CLOSED = process.env.NODE_ENV === "production";
 
 export function createAuthOptions(config: AuthConfig): NextAuthOptions {
   return {
@@ -84,37 +56,22 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
             throw new Error("Invalid credentials");
           }
 
-          // Two-axis rate limit, both distributed via Redis when REDIS_URL is
-          // set. See docs/plans/P0-3-distributed-rate-limiter.md.
+          // Rate-limits removed (per user request).
           //
-          // Per-email: stops a targeted guessing attack on one account.
-          // Per-IP:    stops credential-stuffing spreading across many emails.
-          const emailKey = String(credentials.email).toLowerCase();
-          const emailRL = await rateLimitAsync({
-            routeKey: "auth:login:email",
-            clientKey: emailKey,
-            limit: 5,
-            windowMs: 15 * 60 * 1000,
-            failClosed: FAIL_CLOSED,
-          });
-          if (!emailRL.ok) {
-            throw new Error(
-              "Too many login attempts. Please try again in 15 minutes.",
-            );
-          }
-
-          const ipRL = await rateLimitAsync({
-            routeKey: "auth:login:ip",
-            clientKey: nextAuthIp(req),
-            limit: 20,
-            windowMs: 15 * 60 * 1000,
-            failClosed: FAIL_CLOSED,
-          });
-          if (!ipRL.ok) {
-            throw new Error(
-              "Too many login attempts from this IP. Try again later.",
-            );
-          }
+          // The forgot-password / set-password / re-signin chain triggers 2
+          // credential signIns per attempt; the old per-email limit of 5 in
+          // 15 minutes locked legitimate users out of the reset flow after
+          // only 2-3 retries — surfaced to the UI as a misleading
+          // "Temporary password is incorrect" error.
+          //
+          // Brute-force / credential-stuffing protection now lives ONLY in
+          // the auth host's middleware + the underlying `/api/auth/...`
+          // route handlers (e.g. `/api/auth/forgot-password` keeps its
+          // per-IP + per-email throttles). The credentials provider itself
+          // no longer throttles login attempts.
+          // _req parameter kept to preserve the helper import; suppresses
+          // unused-import lint.
+          void req;
 
           // Case-insensitive lookup so existing rows whose `email` was stored
           // with the casing the admin originally typed (e.g. "Foo@Bar.com")
@@ -482,6 +439,86 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
         };
         return session;
       },
+      /**
+       * Cross-domain post-login routing.
+       *
+       * NextAuth credentials sign-in sets a host-only cookie on this app's
+       * origin. Sub-apps (`quikscale.vercel.app`, `quik-it-auth.vercel.app`,
+       * …) live on different hosts and need their own per-host cookies —
+       * the auth-app session is invisible to them otherwise.
+       *
+       * Strategy: instead of redirecting straight to the user-supplied
+       * `callbackUrl`, route through `${baseUrl}/api/post-login?callbackUrl=…`.
+       * That endpoint reads the (freshly created) session, mints a 120-second
+       * HS256 handoff token signed with `INTERNAL_SECRET`, and bounces the
+       * browser to `${targetOrigin}/auth-handoff?token=…`, where the target
+       * sub-app exchanges the token for its own session cookie.
+       *
+       * Same-origin callbacks (e.g. the auth app's own /post-login flows) are
+       * returned verbatim — no handoff needed when nothing crosses a domain.
+       *
+       * Allow-list: only `callbackUrl` values matching one of the documented
+       * Vercel UAT / GKE prod origins (extensible via
+       * `AUTH_ALLOWED_RETURN_ORIGINS`) reach the post-login bridge. Anything
+       * else falls back to the launcher's `/apps` page — preserving the
+       * historical safe destination.
+       */
+      async redirect({ url, baseUrl }) {
+        const launcherUrl =
+          (process.env.NEXT_PUBLIC_QUIKIT_URL ?? process.env.QUIKIT_URL ?? baseUrl).replace(/\/$/, "");
+        const launcherApps = `${launcherUrl}/apps`;
+
+        // Relative URLs always resolve against this auth app's origin.
+        if (url.startsWith("/")) {
+          return `${baseUrl}${url}`;
+        }
+
+        let target: URL;
+        try {
+          target = new URL(url);
+        } catch {
+          // Malformed URL → route the user through the post-login bridge
+          // to the launcher (gets them a session cookie on the launcher
+          // host instead of stranding them here).
+          const bridge = new URL("/api/post-login", baseUrl);
+          bridge.searchParams.set("callbackUrl", launcherApps);
+          return bridge.toString();
+        }
+
+        // Same-origin callback → no cross-domain cookie needed.
+        if (target.origin === baseUrl) {
+          return url;
+        }
+
+        // Cross-origin allow-list. Defaults cover Vercel UAT + GKE prod;
+        // extend via env without redeploying this package.
+        const defaults = [
+          "https://quik-it-auth.vercel.app",
+          "https://quikscale.vercel.app",
+          "https://quik-it-admin.vercel.app",
+          "https://quiktrack.vercel.app",
+          "https://quikvc.vercel.app",
+          "https://quiksocial.vercel.app",
+          "https://quikinfra.vercel.app",
+          "https://apps.quikit.ai",
+          "https://scale.quikit.ai",
+          "https://orgadmin.quikit.ai",
+          "https://track.quikit.ai",
+          "https://quikcrm.quikit.ai",
+          "https://social.quikit.ai",
+          "https://quikinfra.quikit.ai",
+        ];
+        const fromEnv = (process.env.AUTH_ALLOWED_RETURN_ORIGINS ?? "")
+          .split(",")
+          .map((s) => s.trim().replace(/\/$/, ""))
+          .filter(Boolean);
+        const allowed = new Set([...defaults, ...fromEnv]);
+
+        const finalCallback = allowed.has(target.origin) ? url : launcherApps;
+        const bridge = new URL("/api/post-login", baseUrl);
+        bridge.searchParams.set("callbackUrl", finalCallback);
+        return bridge.toString();
+      },
     },
     events: {
       async signIn({ user }) {
@@ -588,6 +625,9 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
             name: profile.name,
             orgId: profile.tenant_id,
             membershipRole: profile.role,
+            // Shared Redis session id minted by the central IdP. Lets this app
+            // be soft-invalidated from the same session store (see verifyJWT).
+            sessionId: profile.sessionId,
           };
         },
       },
@@ -664,6 +704,10 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
           token.orgId = (user as AuthUser).orgId;
           token.membershipRole = (user as AuthUser).membershipRole;
           token.isSuperAdmin = false; // Apps don't inherit super admin status
+          // Carry the shared session id so verifyJWT (and the central
+          // /api/verify-token) can soft-invalidate this app's session when the
+          // central session is revoked.
+          token.sessionId = (user as AuthUser).sessionId;
         }
         // Store the access_token + refresh_token from the OAuth exchange
         if (account) {
@@ -716,6 +760,17 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
           impersonationExpiresAt: token.impersonationExpiresAt,
         };
         return session;
+      },
+    },
+    events: {
+      // Global-session logout: revoke the shared Redis session id so signing
+      // out of this app invalidates the session across every sibling app
+      // (one shared session id, one shared Redis — see createAuthSession).
+      async signOut({ token }) {
+        const sessionId = token?.sessionId as string | undefined;
+        if (sessionId) {
+          await revokeAuthSession(sessionId);
+        }
       },
     },
   };

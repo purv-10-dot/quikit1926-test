@@ -15,6 +15,7 @@ import { EditIssueModal } from "@/components/edit-issue-modal";
 import type { BoardStatus, EpicLite } from "./board-meta";
 import { BoardColumn } from "./board-column";
 import { AddColumnTile } from "./add-column-tile";
+import { BoardFilterSelect, type BoardFilterOption } from "./board-filter-select";
 
 interface BoardMember {
   userId: string;
@@ -348,7 +349,13 @@ function Toolbar({
   useEffect(() => {
     if (!filterOpen) return;
     function onDown(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
+      const t = e.target as HTMLElement;
+      // Inner selects portal their option menu to document.body. A click there
+      // is visually inside the filter popover but lives outside `filterRef` —
+      // don't let it close (and unmount) the popover before the option's click
+      // handler runs, or the filter value never applies.
+      if (t.closest?.("[data-portal-popover]")) return;
+      if (filterRef.current && !filterRef.current.contains(t)) setFilterOpen(false);
     }
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") setFilterOpen(false); }
     document.addEventListener("mousedown", onDown);
@@ -452,30 +459,49 @@ function Toolbar({
           </button>
           {filterOpen && (
             <div className="absolute left-0 top-full z-30 mt-1 w-72 rounded border border-gray-200 bg-white p-3 shadow-lg">
-              <BoardFilterRow label="Assignee" value={filterAssigneeId} onChange={setFilterAssigneeId}>
-                <option value="">Any</option>
-                <option value="null">Unassigned</option>
-                {members
-                  .filter((m): m is BoardMember & { user: NonNullable<BoardMember["user"]> } => Boolean(m.user))
-                  .map((m) => {
-                    const name = [m.user.firstName, m.user.lastName].filter(Boolean).join(" ").trim() || m.user.email;
-                    return <option key={m.user.id} value={m.user.id}>{name}</option>;
-                  })}
-              </BoardFilterRow>
-              <BoardFilterRow label="Type" value={filterType} onChange={setFilterType}>
-                <option value="">Any</option>
-                <option value="TASK">Task</option>
-                <option value="BUG">Bug</option>
-                <option value="STORY">Story</option>
-              </BoardFilterRow>
-              <BoardFilterRow label="Priority" value={filterPriority} onChange={setFilterPriority}>
-                <option value="">Any</option>
-                <option value="HIGHEST">Highest</option>
-                <option value="HIGH">High</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="LOW">Low</option>
-                <option value="LOWEST">Lowest</option>
-              </BoardFilterRow>
+              <BoardFilterSelect
+                label="Assignee"
+                value={filterAssigneeId}
+                onChange={setFilterAssigneeId}
+                options={(() => {
+                  const opts: BoardFilterOption[] = [
+                    { value: "", label: "Any" },
+                    { value: "null", label: "Unassigned" },
+                  ];
+                  members
+                    .filter((m): m is BoardMember & { user: NonNullable<BoardMember["user"]> } => Boolean(m.user))
+                    .forEach((m) => {
+                      const name =
+                        [m.user.firstName, m.user.lastName].filter(Boolean).join(" ").trim() || m.user.email;
+                      opts.push({ value: m.user.id, label: name });
+                    });
+                  return opts;
+                })()}
+              />
+              <BoardFilterSelect
+                label="Type"
+                value={filterType}
+                onChange={setFilterType}
+                options={[
+                  { value: "", label: "Any" },
+                  { value: "TASK", label: "Task" },
+                  { value: "BUG", label: "Bug" },
+                  { value: "STORY", label: "Story" },
+                ]}
+              />
+              <BoardFilterSelect
+                label="Priority"
+                value={filterPriority}
+                onChange={setFilterPriority}
+                options={[
+                  { value: "", label: "Any" },
+                  { value: "HIGHEST", label: "Highest" },
+                  { value: "HIGH", label: "High" },
+                  { value: "MEDIUM", label: "Medium" },
+                  { value: "LOW", label: "Low" },
+                  { value: "LOWEST", label: "Lowest" },
+                ]}
+              />
               {activeCount > 0 && (
                 <button
                   type="button"
@@ -516,28 +542,6 @@ function Toolbar({
         </button>
       </div> */}
     </div>
-  );
-}
-
-function BoardFilterRow({
-  label, value, onChange, children,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="mb-2 block text-xs">
-      <span className="mb-1 block font-medium text-gray-600">{label}</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-      >
-        {children}
-      </select>
-    </label>
   );
 }
 

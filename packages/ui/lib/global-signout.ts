@@ -1,38 +1,57 @@
 /**
  * Single-Logout (SLO) helper.
  *
- * Standard NextAuth `signOut()` only clears the current app's cookie — the
- * user remains signed in to QuikIT (the IdP) and any other app they're
- * still authenticated to. Clicking sign-in right after would auto-re-auth.
+ * Logging out of one app must clear cookies on THREE hosts:
+ *   1. The originating app (e.g. quikscale.vercel.app)        — local cookie
+ *   2. The auth host        (auth-quikit.vercel.app)          — IdP cookie
+ *   3. The launcher         (quik-it-auth.vercel.app)         — launcher cookie
  *
- * `globalSignOut` fixes that:
- *   1. Clears this app's cookie via the provided `localSignOut` callback
- *      (typically NextAuth's `signOut({ redirect: false })`).
- *   2. Redirects the browser to QuikIT's `/api/auth/signout-global`
- *      endpoint, which clears the IdP cookie + redirects to login.
+ * Without clearing all three, the next "Login" click would silently
+ * re-authenticate the user via leftover session cookies on the auth host.
  *
- * Net effect: one click, fully logged out everywhere. After login they
- * land back at the app they started from (if configured).
+ * Flow:
+ *   1. `localSignOut()` clears the originating app's cookie.
+ *   2. Browser navigates to `<authUrl>/api/auth/signout-global?callbackUrl=
+ *      <launcherUrl>/api/auth/signout-global?callbackUrl=<postLogoutRedirect>`.
+ *      The auth-host endpoint clears its cookies and forwards.
+ *   3. The launcher endpoint clears its cookies and forwards to
+ *      `postLogoutRedirect` — typically the originating app's landing page.
  *
- * Usage (from a relying-party app like quikscale or admin):
+ * Net effect: one click, fully logged out, user lands back on the marketing
+ * surface they came from.
+ *
+ * Usage (from quikscale):
  *
  *   import { signOut } from "next-auth/react";
  *   import { globalSignOut } from "@quikit/ui";
  *
  *   await globalSignOut({
+ *     authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
  *     quikitUrl: process.env.NEXT_PUBLIC_QUIKIT_URL,
  *     localSignOut: () => signOut({ redirect: false }),
- *     postLogoutRedirect: "/login",
+ *     postLogoutRedirect: window.location.origin + "/", // back to landing
  *   });
  *
- * On QuikIT itself (where there's no remote IdP), pass `quikitUrl = window.location.origin`
- * (or omit and let the helper default to it).
+ * On the launcher itself, `authUrl` may be omitted only if you've also
+ * arranged for the auth cookie to be cleared some other way; otherwise
+ * the user stays signed in to the auth host.
  */
 
 export interface GlobalSignOutOptions {
   /**
-   * Origin of the QuikIT IdP (e.g. "https://quik-it-auth.vercel.app").
-   * Omit on QuikIT itself — will default to `window.location.origin`.
+   * Origin of the central auth host (e.g.
+   * `https://auth-quikit.vercel.app`). When supplied, the sign-out chain
+   * passes through `<authUrl>/api/auth/signout-global` to clear the
+   * auth-host cookie before the launcher cookie. Omit only when you've
+   * already cleared the auth cookie via another path.
+   */
+  authUrl?: string;
+  /**
+   * Origin of the QuikIT launcher (e.g.
+   * `https://quik-it-auth.vercel.app`). The launcher's signout-global
+   * endpoint clears its host cookie and forwards the user to the final
+   * `postLogoutRedirect`. Defaults to `window.location.origin` (only
+   * sensible on the launcher itself).
    */
   quikitUrl?: string;
   /**
@@ -41,14 +60,15 @@ export interface GlobalSignOutOptions {
    */
   localSignOut: () => Promise<unknown> | unknown;
   /**
-   * Where to land after the global sign-out completes.
-   * Defaults to `<quikitUrl>/login`.
+   * Where to land after the global sign-out completes. Should be an
+   * absolute URL (e.g. `https://quikscale.vercel.app/`) so the chain can
+   * traverse origins. Defaults to `<quikitUrl>/`.
    */
   postLogoutRedirect?: string;
 }
 
 export async function globalSignOut(options: GlobalSignOutOptions): Promise<void> {
-  const { quikitUrl, localSignOut, postLogoutRedirect } = options;
+  const { authUrl, quikitUrl, localSignOut, postLogoutRedirect } = options;
 
   // 1) Clear local app cookie first so there's no race if navigation is slow.
   try {
@@ -59,9 +79,45 @@ export async function globalSignOut(options: GlobalSignOutOptions): Promise<void
 
   if (typeof window === "undefined") return;
 
+  // 1.5) Clear known user-scoped browser storage keys. Prevents user data
+  // bleeding between accounts on shared devices. The full page load below
+  // clears in-memory React state + module caches, but localStorage and
+  // sessionStorage persist across navigations and survive sign-out unless
+  // explicitly removed here.
+  try {
+    const USER_SCOPED_PREFIXES = ["qt:", "qs:", "quikit:"];
+    for (const storage of [window.localStorage, window.sessionStorage]) {
+      if (!storage) continue;
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        if (key && USER_SCOPED_PREFIXES.some((p) => key.startsWith(p))) {
+          keysToRemove.push(key);
+        }
+      }
+      for (const key of keysToRemove) storage.removeItem(key);
+    }
+  } catch {
+    // Storage access can throw under strict cookie/storage policies
+    // (e.g. third-party-cookie blockers). Never block sign-out on this.
+  }
+
   const idp = (quikitUrl && quikitUrl.trim()) || window.location.origin;
-  const redirect = postLogoutRedirect || `${idp.replace(/\/+$/, "")}/login`;
-  const target = `${idp.replace(/\/+$/, "")}/api/auth/signout-global?callbackUrl=${encodeURIComponent(redirect)}`;
+  const idpClean = idp.replace(/\/+$/, "");
+  const finalRedirect =
+    (postLogoutRedirect && postLogoutRedirect.trim()) || `${idpClean}/`;
+
+  // Launcher SLO hop — clears launcher cookie, then forwards to final.
+  const launcherSlo = `${idpClean}/api/auth/signout-global?callbackUrl=${encodeURIComponent(finalRedirect)}`;
+
+  // Optional auth-host SLO hop. When configured, we hit the auth host
+  // FIRST so its cookie is cleared before the user reaches the launcher
+  // chain (or final destination).
+  let target = launcherSlo;
+  if (authUrl && authUrl.trim()) {
+    const authClean = authUrl.trim().replace(/\/+$/, "");
+    target = `${authClean}/api/auth/signout-global?callbackUrl=${encodeURIComponent(launcherSlo)}`;
+  }
 
   // 2) Navigate. Use location.href (full page load) so all in-memory app
   // state + React Query cache + module caches are cleared too.

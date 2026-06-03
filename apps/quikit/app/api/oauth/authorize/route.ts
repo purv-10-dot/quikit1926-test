@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateAuthCode } from "@/lib/oauth";
@@ -70,6 +71,13 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // The session callback doesn't surface the Redis session id, so read it off
+  // the raw JWT. Carrying it onto the auth code lets the token endpoint stamp
+  // it into the id_token, so the consumer app shares the central session id
+  // and can be soft-invalidated from the shared session store.
+  const jwt = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const sessionId = (jwt?.sessionId as string | undefined) ?? null;
+
   const userId = session.user.id;
   let orgId = session.user.orgId;
 
@@ -123,6 +131,7 @@ export async function GET(request: NextRequest) {
       codeChallenge: codeChallenge ?? null,
       codeChallengeMethod: codeChallenge ? codeChallengeMethod : null,
       redirectUri,
+      sessionId,
       expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 min
     },
   });

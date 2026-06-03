@@ -30,8 +30,32 @@ export function fiscalYearLabel(year: number): string {
   return `${year}–${year + 1}`;
 }
 
-/** Returns the start date of a fiscal quarter. */
-export function getQuarterStart(year: number, quarter: string): Date {
+/**
+ * Returns the start date of a fiscal quarter.
+ *
+ * If `actualStartDate` is provided (e.g. fetched from `QuarterSetting.startDate`),
+ * that takes precedence — it lets us honour the tenant's real week-aligned
+ * quarter start (typically the Monday on/before the 1st of the quarter's
+ * first month) rather than the hardcoded calendar-month boundaries.
+ *
+ * Callers that don't have the actual start date can omit the third argument
+ * and get the legacy calendar-month behavior (Q1=Apr 1, …, Q4=Jan 1).
+ */
+export function getQuarterStart(
+  year: number,
+  quarter: string,
+  actualStartDate?: string | Date | null,
+): Date {
+  if (actualStartDate) {
+    if (typeof actualStartDate === "string") {
+      // Parse "YYYY-MM-DD" (or ISO) without timezone surprises: pull the
+      // date parts directly so we get local-midnight on that calendar day.
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(actualStartDate);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      return new Date(actualStartDate);
+    }
+    return new Date(actualStartDate.getFullYear(), actualStartDate.getMonth(), actualStartDate.getDate());
+  }
   const [mo, dy] = QUARTER_STARTS[quarter] ?? [3, 1];
   return new Date(quarter === "Q4" ? year + 1 : year, mo, dy);
 }
@@ -56,30 +80,54 @@ export function getCurrentFiscalWeekFromStart(startDate: string | Date): number 
   return Math.min(13, Math.max(1, elapsed));
 }
 
-/** Full-format date range: "1 Apr – 7 Apr" */
-export function getWeekDateRange(year: number, quarter: string, weekNumber: number): string {
-  const [mo, dy] = QUARTER_STARTS[quarter] ?? [3, 1];
-  const yr = quarter === "Q4" ? year + 1 : year;
-  const start = new Date(yr, mo, dy + (weekNumber - 1) * 7);
-  const end = new Date(yr, mo, dy + weekNumber * 7 - 1);
+/**
+ * Full-format date range: "1 Apr – 7 Apr".
+ *
+ * Pass `actualStartDate` (from `QuarterSetting.startDate`) to anchor weeks
+ * on the tenant's real quarter start (typically the Monday on/before the
+ * 1st of the quarter's first month). Without it, falls back to the legacy
+ * calendar-month start.
+ */
+export function getWeekDateRange(
+  year: number,
+  quarter: string,
+  weekNumber: number,
+  actualStartDate?: string | Date | null,
+): string {
+  const qs = getQuarterStart(year, quarter, actualStartDate);
+  const start = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + (weekNumber - 1) * 7);
+  const end = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + weekNumber * 7 - 1);
   const fmt = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
 /**
- * Past-only rolling window for the dashboard.
+ * Rolling window of week numbers for the dashboard preview.
  *
- * Returns up to `size` consecutive past week numbers ending at
- * `currentWeek - 1` (the current week itself is excluded). Examples:
- *   - currentWeek=4  → [1, 2, 3]                  (only 3 past weeks exist)
- *   - currentWeek=6  → [1, 2, 3, 4, 5]            (5-week window cap)
- *   - currentWeek=10 → [5, 6, 7, 8, 9]            (last 5 past weeks)
- *   - currentWeek=13 → [8, 9, 10, 11, 12]
- *   - currentWeek=1  → []                          (nothing past yet)
+ * The window:
+ *   - Includes the current week (it's NOT skipped — the dashboard cares
+ *     about in-progress data too)
+ *   - Falls back to `size` weeks starting at week 1 when the user is on a
+ *     future quarter or early in a current quarter (so the grid is never
+ *     just a single column).
  *
- * When the user is on a past quarter, `useCurrentWeek` returns 13 and the
- * window collapses to [8..12]. When the user is on a future quarter, it
- * returns 1 and the window is empty (nothing has happened yet).
+ * Examples (default size=5, total=13):
+ *   - currentWeek=1  (future quarter)         → [1, 2, 3, 4, 5]
+ *   - currentWeek=3  (early in current qtr)   → [1, 2, 3, 4, 5]
+ *   - currentWeek=7  (mid current qtr)        → [3, 4, 5, 6, 7]
+ *   - currentWeek=13 (past / completed qtr)   → [9, 10, 11, 12, 13]
+ *
+ * The previous implementation excluded the current week (`currentWeek - 1`),
+ * which on past quarters hid week 13 — where all the data lives once a
+ * quarter is finished. Dropping the `- 1` and using `Math.max(currentWeek,
+ * size)` covers past, current, and future quarters with one formula.
+ *
+ * ⚠️ INTENTIONALLY includes the current week. Do NOT re-add a `- 1` here.
+ * If a future caller needs to exclude the in-progress week for a specific
+ * surface, slice the result IN THAT CALLER where the context is known —
+ * don't bake the rule back into this helper (it has multiple callers with
+ * different needs). See `__tests__/unit/fiscal.test.ts` — the
+ * `rollingVisibleWeeks` block locks this contract in.
  *
  * Returns [] when `currentWeek` is null/undefined (still loading).
  */
@@ -88,18 +136,31 @@ export function rollingVisibleWeeks(
   size = 5,
   total = 13,
 ): number[] {
-  if (currentWeek == null || currentWeek <= 1) return [];
-  const end = Math.min(total, currentWeek - 1);
+  if (currentWeek == null) return [];
+  // `Math.max(currentWeek, size)` keeps the window at full width on early
+  // weeks / future quarters; `Math.min(total, …)` caps at week `total`
+  // so a past quarter (currentWeek=13) doesn't try to read beyond 13.
+  const end = Math.min(total, Math.max(currentWeek, size));
   const start = Math.max(1, end - size + 1);
   return Array.from({ length: end - start + 1 }, (_, i) => start + i);
 }
 
-/** Compact date range for table headers: "1–7 Apr" or "29 Apr–5 May" */
-export function weekDateLabel(year: number, quarter: string, weekNumber: number): string {
-  const [mo, dy] = QUARTER_STARTS[quarter] ?? [3, 1];
-  const yr = quarter === "Q4" ? year + 1 : year;
-  const start = new Date(yr, mo, dy + (weekNumber - 1) * 7);
-  const end = new Date(yr, mo, dy + weekNumber * 7 - 1);
+/**
+ * Compact date range for table headers: "1–7 Apr" or "29 Apr–5 May".
+ *
+ * Pass `actualStartDate` (from `QuarterSetting.startDate`) to anchor weeks
+ * on the tenant's real quarter start. Without it, falls back to the legacy
+ * calendar-month start.
+ */
+export function weekDateLabel(
+  year: number,
+  quarter: string,
+  weekNumber: number,
+  actualStartDate?: string | Date | null,
+): string {
+  const qs = getQuarterStart(year, quarter, actualStartDate);
+  const start = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + (weekNumber - 1) * 7);
+  const end = new Date(qs.getFullYear(), qs.getMonth(), qs.getDate() + weekNumber * 7 - 1);
   const startMonth = start.toLocaleDateString("en-GB", { month: "short" });
   const endMonth = end.toLocaleDateString("en-GB", { month: "short" });
   if (startMonth === endMonth) {

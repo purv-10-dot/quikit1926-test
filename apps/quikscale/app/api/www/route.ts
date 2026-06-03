@@ -9,6 +9,7 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
+import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
 
 // GET /api/www — list all WWWItems for tenant
 export const GET = auth.view(async ({ orgId, userId }, req) => {
@@ -79,9 +80,13 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
     : [];
   const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
+  // Resolve createdBy/updatedBy → name + initials so the WWW table can
+  // paint the audit columns without a second round-trip.
+  const auditMap = await fetchAuditUserMap(items);
+
   const result = items.map(item => {
     const ids = item.who ? [item.who] : [];
-    return {
+    return decorateAudit({
       ...item,
       whoIds: ids,
       when: item.when.toISOString(),
@@ -90,7 +95,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
       updatedAt: item.updatedAt.toISOString(),
       who_user: userMap[item.who] ?? null,
       who_users: ids.map(id => userMap[id]).filter(Boolean),
-    };
+    }, auditMap);
   });
 
   return NextResponse.json(paginatedResponse(result, total, page, limit));
@@ -116,32 +121,37 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   if (!parsed.success) return validationError(parsed);
   const { who, whoIds, what, when, status, notes, category, originalDueDate } = parsed.data;
 
-  // Resolve assignee list. The Zod refine guarantees at least one of
-  // `who` / `whoIds` is set. `who` is mirrored as the primary assignee for
-  // legacy indexes / sort columns and equals whoIds[0].
-  const resolvedIds = (whoIds && whoIds.length > 0)
-    ? whoIds
-    : who ? [who] : [];
+  // Resolve assignee list. Zod refine guarantees at least one of `who`/`whoIds`
+  // is set. Dedupe so an accidental duplicate selection doesn't create dupes.
+  const resolvedIds = Array.from(
+    new Set(
+      (whoIds && whoIds.length > 0) ? whoIds : (who ? [who] : []),
+    ),
+  );
   const primaryWho = resolvedIds[0]!;
 
-  // NOTE: WWWItem currently only stores a single `who`. The multi-assignee
-  // `whoIds[]` is preserved at the API boundary (request + response) but
-  // collapsed to `primaryWho` for persistence. If multi-assignee storage is
-  // ever needed, add `whoIds String[] @default([])` to the WWWItem model.
-  const item = await db.wWWItem.create({
-    data: {
-      orgId,
-      who: primaryWho,
-      what,
-      when: new Date(when),
-      status: status ?? "not-yet-started",
-      notes: notes ?? null,
-      category: category ?? null,
-      originalDueDate: originalDueDate ? new Date(originalDueDate) : null,
-      revisedDates: [],
-      createdBy: userId,
-    },
-  });
+  // Fan out: one WWWItem record per selected assignee, atomically. Each row
+  // owns a single `who`, mirroring the list view's "one row = one assignee"
+  // shape so each assignee can independently update their own status / notes.
+  const commonData = {
+    orgId,
+    what,
+    when: new Date(when),
+    status: status ?? "not-yet-started",
+    notes: notes ?? null,
+    category: category ?? null,
+    originalDueDate: originalDueDate ? new Date(originalDueDate) : null,
+    revisedDates: [] as string[],
+    createdBy: userId,
+  };
+  const createdItems = await db.$transaction(
+    resolvedIds.map((whoId) =>
+      db.wWWItem.create({
+        data: { ...commonData, who: whoId },
+      }),
+    ),
+  );
+  const primaryItem = createdItems[0]!;
 
   // Hydrate full assignee list for the response.
   const assignees = await db.user.findMany({
@@ -150,38 +160,53 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   });
   const whoUser = assignees.find(u => u.id === primaryWho) ?? null;
 
+  // Return the first record in the existing single-item envelope shape so the
+  // useCreate hook continues to work; the list refetch surfaces the rest.
   const result = {
-    ...item,
+    ...primaryItem,
     whoIds: resolvedIds,
-    when: item.when.toISOString(),
-    originalDueDate: item.originalDueDate?.toISOString() ?? null,
-    createdAt: item.createdAt.toISOString(),
-    updatedAt: item.updatedAt.toISOString(),
+    when: primaryItem.when.toISOString(),
+    originalDueDate: primaryItem.originalDueDate?.toISOString() ?? null,
+    createdAt: primaryItem.createdAt.toISOString(),
+    updatedAt: primaryItem.updatedAt.toISOString(),
     who_user: whoUser,
     who_users: resolvedIds.map(id => assignees.find(u => u.id === id)).filter(Boolean),
   };
 
-  await writeAuditLog({
-    orgId,
-    actorId: userId,
-    action: "CREATE",
-    entityType: "WWWItem",
-    entityId: item.id,
-    newValues: item,
-  });
+  // One audit log per created row.
+  for (const item of createdItems) {
+    await writeAuditLog({
+      orgId,
+      actorId: userId,
+      action: "CREATE",
+      entityType: "WWWItem",
+      entityId: item.id,
+      newValues: item,
+    });
+  }
 
-  if (resolvedIds.length > 0) {
+  // One notification per assignee, scoped to their own row.
+  for (const item of createdItems) {
     notifyWWWAssignment({
       orgId,
       itemId: item.id,
       what: item.what,
       when: item.when,
       creatorUserId: userId,
-      ownerUserIds: resolvedIds,
+      ownerUserIds: [item.who],
     }).catch((err) => {
       console.error("[POST /api/www] notifyWWWAssignment failed:", err);
     });
   }
 
-  return NextResponse.json({ success: true, data: result }, { status: 201 });
+  return NextResponse.json(
+    {
+      success: true,
+      data: result,
+      message: createdItems.length > 1
+        ? `Created ${createdItems.length} WWW items`
+        : "WWW item created",
+    },
+    { status: 201 },
+  );
 });

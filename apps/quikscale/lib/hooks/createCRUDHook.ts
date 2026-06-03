@@ -106,6 +106,23 @@ export function createCRUDHook<Item, Filters>(
     if (!json.success) throw new Error(json.error || `Failed to delete ${resource}`);
   }
 
+  async function restoreItem(id: string): Promise<void> {
+    const res = await fetch(`/api/${resource}/${id}/restore`, { method: "POST" });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || `Failed to restore ${resource}`);
+  }
+
+  async function bulkRestoreItems(ids: string[]): Promise<{ restored: number }> {
+    const res = await fetch(`/api/${resource}/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    const json = await res.json();
+    if (!json.success) throw new Error(json.error || `Failed to restore ${resource}s`);
+    return (json.data ?? { restored: 0 }) as { restored: number };
+  }
+
   // ── React Query hooks ──────────────────────────────────────────────────
   function useList(
     filters: Filters,
@@ -153,6 +170,24 @@ export function createCRUDHook<Item, Filters>(
     const queryClient = useQueryClient();
     return useMutation({
       mutationFn: (id: string) => deleteItem(id),
+      onSuccess: (_data, id) => {
+        // Bust the detail cache too — a tab open on the just-deleted row
+        // would otherwise keep rendering stale data from before the delete.
+        queryClient.invalidateQueries({ queryKey: keys.detail(id) });
+        queryClient.invalidateQueries({ queryKey: keys.lists() });
+        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+      },
+    });
+  }
+
+  // ── Restore (undo soft-delete) ─────────────────────────────────────────
+  // POST `/api/${resource}/${id}/restore` (single) and POST
+  // `/api/${resource}/bulk-restore` (many). Both invalidate the list cache
+  // AND the dashboard cache so trash-mode and active-mode lists refresh.
+  function useRestore() {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: (id: string) => restoreItem(id),
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: keys.lists() });
         queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
@@ -160,5 +195,16 @@ export function createCRUDHook<Item, Filters>(
     });
   }
 
-  return { keys, useList, useCreate, useUpdate, useDelete };
+  function useBulkRestore() {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: (ids: string[]) => bulkRestoreItems(ids),
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: keys.lists() });
+        queryClient.invalidateQueries({ queryKey: DASHBOARD_KEY });
+      },
+    });
+  }
+
+  return { keys, useList, useCreate, useUpdate, useDelete, useRestore, useBulkRestore };
 }

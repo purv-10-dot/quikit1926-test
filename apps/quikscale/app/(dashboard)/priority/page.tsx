@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { usePriorities, useDeletePriority } from "@/lib/hooks/usePriority";
+import { usePriorities, useDeletePriority, useBulkRestorePriority } from "@/lib/hooks/usePriority";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import {
@@ -20,6 +20,7 @@ import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { Flag } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
+import { notify } from "@/lib/utils/notify";
 
 const FISCAL_YEAR = getFiscalYear();
 const FISCAL_QUARTER = getFiscalQuarter();
@@ -81,8 +82,25 @@ export default function PriorityPage() {
 
   const { data: priorities = [], isLoading, error, refetch } = usePriorities(year, quarter, prioritySort, viewTrash);
   const deletePriority = useDeletePriority();
+  const bulkRestorePriority = useBulkRestorePriority();
 
-  const PRIORITY_COL_LABELS: Record<string, string> = { team: "Team", priorityName: "Priority Name", owner: "Owner" };
+  // Toggleable columns surfaced in the Manage Columns modal. Mirrors the
+  // togglable subset of PriorityTable's COL_ORDER_FULL (excludes the
+  // always-visible row controls `_cb`/`_log`/`_id`). Without listing every
+  // togglable column here, "Hide all" couldn't reach them.
+  const PRIORITY_COL_LABELS: Record<string, string> = {
+    team: "Team",
+    priorityName: "Priority Name",
+    owner: "Owner",
+    startWeek: "Start Week",
+    endWeek: "End Week",
+    lastNote: "Last Note",
+    // Audit columns — populated by GET /api/priority via decorateAudit.
+    createdBy: "Created By",
+    updatedBy: "Updated By",
+    createdAt: "Created Date",
+    updatedAt: "Updated Date",
+  };
   const priorityColumns = Object.entries(PRIORITY_COL_LABELS).map(([key, label]) => ({ key, label }));
   const visiblePriorityCols = priorityColumns.filter((c) => !priorityHidden.includes(c.key)).map((c) => c.key);
 
@@ -97,9 +115,28 @@ export default function PriorityPage() {
 
   async function handleBulkDelete() {
     if (!selectedIds.size) return;
-    await Promise.all([...selectedIds].map(id => deletePriority.mutateAsync(id)));
-    setSelectedIds(new Set());
-    refetch();
+    const count = selectedIds.size;
+    try {
+      await Promise.all([...selectedIds].map(id => deletePriority.mutateAsync(id)));
+      notify.success(`Deleted ${count} priorit${count === 1 ? "y" : "ies"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "Priority", fallback: "Couldn't delete the selected priorities. Please try again." });
+    }
+  }
+
+  async function handleBulkRestore() {
+    if (!selectedIds.size) return;
+    const count = selectedIds.size;
+    try {
+      await bulkRestorePriority.mutateAsync([...selectedIds]);
+      notify.success(`Restored ${count} priorit${count === 1 ? "y" : "ies"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "Priority", fallback: "Couldn't restore the selected priorities. Please try again." });
+    }
   }
 
   // Filter priorities client-side
@@ -164,8 +201,8 @@ export default function PriorityPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Bulk delete */}
-          {canDelete && selectedIds.size > 0 && (
+          {/* Bulk delete — active list only */}
+          {canDelete && selectedIds.size > 0 && !viewTrash && (
             <button
               onClick={handleBulkDelete}
               disabled={deletePriority.isPending}
@@ -182,6 +219,27 @@ export default function PriorityPage() {
                 </svg>
               )}
               Delete {selectedIds.size} selected
+            </button>
+          )}
+
+          {/* Bulk restore — trash view only */}
+          {canDelete && selectedIds.size > 0 && viewTrash && (
+            <button
+              onClick={handleBulkRestore}
+              disabled={bulkRestorePriority.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 disabled:opacity-50 transition-colors"
+            >
+              {bulkRestorePriority.isPending ? (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+                </svg>
+              )}
+              Restore {selectedIds.size} selected
             </button>
           )}
 
@@ -328,7 +386,6 @@ export default function PriorityPage() {
             defaultYear={year}
             defaultQuarter={quarter}
             onSelectionChange={handleSelectionChange}
-            hideColumns={["startWeek", "endWeek", "lastNote"]}
             page={page}
             pageSize={pageSize}
             total={filtered.length}

@@ -12,6 +12,7 @@ import {
   UsersRound,
   UserPlus,
   Check,
+  RotateCcw,
 } from "lucide-react";
 import {
   AddButton,
@@ -19,9 +20,12 @@ import {
   RightPanelFooter,
   RightPanelCancelButton,
   RightPanelSubmitButton,
+  TrashBanner,
 } from "@quikit/ui";
 import { useTableCRUD } from "@/lib/hooks/useTableCRUD";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useQueryClient } from "@tanstack/react-query";
+import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface TeamMember {
@@ -309,15 +313,22 @@ function TeamPanel({
             setError(
               `Team created, but failed to add members: ${memJson.error ?? "unknown error"}. Use the Add Members panel to retry.`
             );
+            notify.warning(
+              `Team created, but failed to add members: ${memJson.error ?? "unknown error"}. Use the Add Members panel to retry.`
+            );
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           setError(
             `Team created, but failed to add members: ${msg}. Use the Add Members panel to retry.`
           );
+          notify.warning(
+            `Team created, but failed to add members: ${msg}. Use the Add Members panel to retry.`
+          );
         }
       }
 
+      notify.saved("Team", editTeam ? "updated" : "created", { tint: savedTeam?.color });
       onSaved(savedTeam);
       onClose();
     } finally {
@@ -918,10 +929,71 @@ function MemberPickerPanel({
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgTeamsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("Team");
+  const queryClient = useQueryClient();
+  // Trash view — when ON, the list endpoint returns only soft-deleted teams.
+  // Memoise the fetchParams so refetch only fires on actual toggle (object
+  // identity matters because it's a dep of refetch in useTableCRUD).
+  const [viewTrash, setViewTrash] = useState(false);
+  const fetchParams = useMemo(
+    () => (viewTrash ? { includeDeleted: "true" } : undefined),
+    [viewTrash],
+  );
   const crud = useTableCRUD<OrgTeam>({
     apiEndpoint: "/api/org/teams",
     searchFields: ["name"],
+    fetchParams,
   });
+
+  async function restoreOne(team: OrgTeam) {
+    const res = await fetch(`/api/org/teams/${team.id}/restore`, { method: "POST" });
+    const json = await res.json();
+    if (json.success) {
+      notify.success(`Restored team "${team.name}"`);
+      crud.refetch();
+      // A restored team becomes pickable again everywhere — invalidate shared caches.
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    } else {
+      notify.error(json.error ?? "Failed to restore team", { context: "team" });
+    }
+  }
+
+  async function bulkRestore() {
+    if (crud.selected.size === 0) return;
+    const res = await fetch(`/api/org/teams/bulk-restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...crud.selected] }),
+    });
+    const json = await res.json();
+    if (json.success) {
+      const restored = json.data?.restored ?? 0;
+      const skipped = json.data?.skipped as Array<{ name: string }> | undefined;
+      notify.success(`Restored ${restored} team${restored === 1 ? "" : "s"}`);
+      if (skipped && skipped.length > 0) {
+        notify.warning(
+          `Skipped ${skipped.length} (name conflict): ${skipped.map((s) => s.name).join(", ")}`,
+        );
+      }
+      crud.clearSelection();
+      crud.refetch();
+      queryClient.invalidateQueries({ queryKey: ["teams"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    } else {
+      notify.error(json.error ?? "Failed to restore teams", { context: "team" });
+    }
+  }
+
+  // Drop any stale selection whenever the trash toggle flips so the bulk
+  // action bar doesn't carry ids that aren't visible anymore.
+  useEffect(() => {
+    crud.clearSelection();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewTrash]);
 
   const [users, setUsers] = useState<OrgUser[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -965,6 +1037,16 @@ export default function OrgTeamsPage() {
       }
       return [...prev, team];
     });
+    // After ANY team mutation (create / rename / add-member / etc.) bust the
+    // shared user-list caches. Without this the Dashboard's Owner filter and
+    // every modal that calls `useUsers()` keep serving stale data — a team
+    // member added in Org Setup wouldn't appear in the dashboard's Owner
+    // dropdown until a hard refresh. `["dashboard"]` is also busted so the
+    // aggregated summary refetches with the new membership.
+    queryClient.invalidateQueries({ queryKey: ["teams"] });
+    queryClient.invalidateQueries({ queryKey: ["users"] });
+    queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   }
 
   async function handleRemoveMember(team: OrgTeam, userId: string) {
@@ -984,6 +1066,11 @@ export default function OrgTeamsPage() {
           : t
       )
     );
+    // Membership change → refresh consumers that filter by team membership.
+    queryClient.invalidateQueries({ queryKey: ["teams"] });
+    queryClient.invalidateQueries({ queryKey: ["users"] });
+    queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   }
 
   function toggleExpand(id: string) {
@@ -1012,6 +1099,15 @@ export default function OrgTeamsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {crud.selected.size > 0 && viewTrash && canDelete && (
+            <button
+              onClick={bulkRestore}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 transition-colors"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Restore {crud.selected.size} selected
+            </button>
+          )}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
             <input
@@ -1021,12 +1117,30 @@ export default function OrgTeamsPage() {
               className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-accent-400 w-44"
             />
           </div>
-          {canCreate && <AddButton onClick={() => crud.openCreate()}>New Team</AddButton>}
+          <button
+            type="button"
+            onClick={() => setViewTrash((v) => !v)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-md transition-colors ${
+              viewTrash
+                ? "bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100"
+                : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+            title={viewTrash ? "Exit Trash" : "View Trash"}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {viewTrash ? "Exit Trash" : "View Trash"}
+          </button>
+          {canCreate && !viewTrash && <AddButton onClick={() => crud.openCreate()}>New Team</AddButton>}
         </div>
       </div>
 
       {/* ── Content ── */}
       <div className="flex-1 overflow-auto p-6 min-h-0">
+        {viewTrash && (
+          <div className="mb-3">
+            <TrashBanner count={crud.items.length} onExit={() => setViewTrash(false)} />
+          </div>
+        )}
         {crud.loading ? (
           <div className="flex items-center justify-center py-20 text-sm text-gray-400">
             Loading…
@@ -1036,10 +1150,18 @@ export default function OrgTeamsPage() {
             <div className="h-14 w-14 rounded-full bg-gray-100 flex items-center justify-center">
               <Users className="h-6 w-6 text-gray-300" />
             </div>
-            <p className="text-sm font-medium text-gray-400">No teams yet</p>
+            <p className="text-sm font-medium text-gray-400">
+              {viewTrash ? "Trash is empty" : "No teams yet"}
+            </p>
             <p className="text-xs text-gray-400">
-              Click <span className="font-semibold">New Team</span> to create
-              your first team.
+              {viewTrash ? (
+                "Deleted teams will appear here."
+              ) : (
+                <>
+                  Click <span className="font-semibold">New Team</span> to create
+                  your first team.
+                </>
+              )}
             </p>
           </div>
         ) : (
@@ -1127,27 +1249,39 @@ export default function OrgTeamsPage() {
                           />
                         </button>
                       )}
-                      <button
-                        onClick={() => setPickerTeam(team)}
-                        title="Add member"
-                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
-                      >
-                        <UserPlus className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => crud.openEdit(team)}
-                        title="Edit"
-                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50 transition-colors"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => crud.setDeleteTarget(team)}
-                        title="Delete"
-                        className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {viewTrash ? (
+                        <button
+                          onClick={() => restoreOne(team)}
+                          title="Restore"
+                          className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setPickerTeam(team)}
+                            title="Add member"
+                            className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                          >
+                            <UserPlus className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => crud.openEdit(team)}
+                            title="Edit"
+                            className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-accent-600 hover:bg-accent-50 transition-colors"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => crud.setDeleteTarget(team)}
+                            title="Delete"
+                            className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1236,7 +1370,19 @@ export default function OrgTeamsPage() {
       <ConfirmDialog
         open={!!crud.deleteTarget}
         teamName={crud.deleteTarget?.name ?? ""}
-        onConfirm={() => crud.confirmDelete()}
+        onConfirm={async () => {
+          const ok = await crud.confirmDelete();
+          // Team delete affects every team-aware consumer (dashboard filter,
+          // KPI/Priority team pickers, Owner dropdown filtered by team).
+          // useTableCRUD only updates its local state, so we bust the shared
+          // TanStack caches here.
+          if (ok) {
+            queryClient.invalidateQueries({ queryKey: ["teams"] });
+            queryClient.invalidateQueries({ queryKey: ["users"] });
+            queryClient.invalidateQueries({ queryKey: ["users-infinite"] });
+            queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+          }
+        }}
         onCancel={() => crud.setDeleteTarget(null)}
       />
     </div>

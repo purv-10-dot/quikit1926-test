@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useWWWItems, useDeleteWWW } from "@/lib/hooks/useWWW";
+import { useWWWItems, useDeleteWWW, useBulkRestoreWWW } from "@/lib/hooks/useWWW";
 import { useUsers } from "@/lib/hooks/useUsers";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { WWWTable } from "./components/WWWTable";
@@ -16,6 +16,7 @@ import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { Trophy } from "lucide-react";
 import { ModuleMoreActions, TrashBanner } from "@/components/table/ModuleMoreActions";
 import { runExport } from "@/lib/export/xlsx";
+import { notify } from "@/lib/utils/notify";
 
 export default function WWWPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("WWW");
@@ -59,6 +60,9 @@ export default function WWWPage() {
 
   const WWW_COL_LABELS: Record<string, string> = {
     who: "Who", when: "When", what: "What", revisedDate: "Revised Date", status: "Status", notes: "Notes",
+    // Audit columns — populated by GET /api/www via decorateAudit.
+    createdBy: "Created By", updatedBy: "Updated By",
+    createdAt: "Created Date", updatedAt: "Updated Date",
   };
   const wwwColumns = Object.entries(WWW_COL_LABELS).map(([key, label]) => ({ key, label }));
   const visibleWwwCols = wwwColumns.filter((c) => !wwwHidden.includes(c.key)).map((c) => c.key);
@@ -74,6 +78,7 @@ export default function WWWPage() {
   });
 
   const deleteWWW = useDeleteWWW();
+  const bulkRestoreWWW = useBulkRestoreWWW();
 
   // Close filter dropdown on outside click
   useEffect(() => {
@@ -86,9 +91,28 @@ export default function WWWPage() {
 
   async function handleBulkDelete() {
     if (!selectedIds.size) return;
-    await Promise.all([...selectedIds].map(id => deleteWWW.mutateAsync(id)));
-    setSelectedIds(new Set());
-    refetch();
+    const count = selectedIds.size;
+    try {
+      await Promise.all([...selectedIds].map(id => deleteWWW.mutateAsync(id)));
+      notify.success(`Deleted ${count} action item${count === 1 ? "" : "s"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "action item", fallback: "Couldn't delete the selected action items. Please try again." });
+    }
+  }
+
+  async function handleBulkRestore() {
+    if (!selectedIds.size) return;
+    const count = selectedIds.size;
+    try {
+      await bulkRestoreWWW.mutateAsync([...selectedIds]);
+      notify.success(`Restored ${count} action item${count === 1 ? "" : "s"}`);
+      setSelectedIds(new Set());
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "action item", fallback: "Couldn't restore the selected action items. Please try again." });
+    }
   }
 
   // Client-side filters
@@ -155,8 +179,8 @@ export default function WWWPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Bulk delete */}
-          {canDelete && selectedIds.size > 0 && (
+          {/* Bulk delete — active list only */}
+          {canDelete && selectedIds.size > 0 && !viewTrash && (
             <button
               onClick={handleBulkDelete}
               disabled={deleteWWW.isPending}
@@ -173,6 +197,27 @@ export default function WWWPage() {
                 </svg>
               )}
               Delete {selectedIds.size} selected
+            </button>
+          )}
+
+          {/* Bulk restore — trash view only */}
+          {canDelete && selectedIds.size > 0 && viewTrash && (
+            <button
+              onClick={handleBulkRestore}
+              disabled={bulkRestoreWWW.isPending}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-green-50 border border-green-200 text-green-700 rounded-md hover:bg-green-100 disabled:opacity-50 transition-colors"
+            >
+              {bulkRestoreWWW.isPending ? (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m-6 6l6 6" />
+                </svg>
+              )}
+              Restore {selectedIds.size} selected
             </button>
           )}
 
