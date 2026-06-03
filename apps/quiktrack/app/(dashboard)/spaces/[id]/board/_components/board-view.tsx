@@ -349,7 +349,13 @@ function Toolbar({
   useEffect(() => {
     if (!filterOpen) return;
     function onDown(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
+      const t = e.target as HTMLElement;
+      // Inner selects portal their option menu to document.body. A click there
+      // is visually inside the filter popover but lives outside `filterRef` —
+      // don't let it close (and unmount) the popover before the option's click
+      // handler runs, or the filter value never applies.
+      if (t.closest?.("[data-portal-popover]")) return;
+      if (filterRef.current && !filterRef.current.contains(t)) setFilterOpen(false);
     }
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") setFilterOpen(false); }
     document.addEventListener("mousedown", onDown);

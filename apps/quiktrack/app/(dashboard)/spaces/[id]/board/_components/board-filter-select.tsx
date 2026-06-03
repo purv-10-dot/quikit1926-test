@@ -91,6 +91,7 @@ export function BoardFilterSelect({
           <div
             ref={menuRef}
             role="listbox"
+            data-portal-popover
             style={{
               position: "fixed",
               top: coords.openUp ? undefined : coords.top,

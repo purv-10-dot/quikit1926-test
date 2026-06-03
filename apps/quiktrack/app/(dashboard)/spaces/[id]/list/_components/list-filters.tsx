@@ -26,7 +26,12 @@ export function ListFilterButton({ filters, onChange, statuses, members }: Props
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (!open) return;
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as HTMLElement;
+      // BoardFilterSelect portals its option menu to document.body — a click
+      // there is outside `ref` but should not close this popover, otherwise the
+      // option unmounts before its onChange fires and the filter never applies.
+      if (t.closest?.("[data-portal-popover]")) return;
+      if (ref.current && !ref.current.contains(t)) setOpen(false);
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
