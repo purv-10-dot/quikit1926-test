@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -15,7 +16,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params 
   });
   if (!rab) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: rab });
-});
+}, { permission: { resource: "construction.rab", action: "view" } });
 
 export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const rab = await db.cnRAB.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, status: true } });
@@ -25,4 +26,4 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req
   }
   await db.cnRAB.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
   return NextResponse.json({ success: true });
-});
+}, { permission: { resource: "construction.rab", action: "delete" } });

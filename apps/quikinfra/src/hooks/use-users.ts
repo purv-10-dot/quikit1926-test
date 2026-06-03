@@ -29,6 +29,35 @@ export function useUsers(params?: { search?: string }) {
   });
 }
 
+export interface OrgRole {
+  id: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  isDefault: boolean;
+  memberCount: number;
+  permissionCount: number;
+  createdAt: string;
+}
+
+export function useRoles() {
+  return useQuery({
+    queryKey: ["org-roles"],
+    queryFn: () =>
+      fetchApi<{ success: boolean; data: OrgRole[] }>("/api/org/roles"),
+    // The role catalog is org-level and changes only when an admin
+    // adds/edits/deletes a role in Settings → Roles. Cache it for the whole
+    // session so it's fetched ONCE and reused across navigations instead of
+    // re-hitting /api/org/roles on every page mount + window focus. The
+    // Settings → Roles page invalidates ["org-roles"] after a mutation, so
+    // the dropdown still refreshes when the catalog actually changes.
+    staleTime: Infinity,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+}
+
 export function useCreateUser() {
   const qc = useQueryClient();
   return useMutation({

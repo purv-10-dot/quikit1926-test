@@ -180,12 +180,12 @@ function liveSecret(key: string): string | undefined {
 
 function getMailFrom(): string {
   // Precedence: explicit MAIL_FROM → SMTP_USER (so mail appears from the
-  // authenticated account) → local dev default.
+  // authenticated account, with no display name — matches QuikScale's
+  // "support@quikit.ai" style) → local dev default.
   return (
     liveEnv("MAIL_FROM") ??
-    (liveEnv("SMTP_USER")
-      ? `QuikInfra <${liveEnv("SMTP_USER")}>`
-      : "QuikInfra <no-reply@quikinfra.local>")
+    liveEnv("SMTP_USER") ??
+    "no-reply@quikinfra.local"
   );
 }
 

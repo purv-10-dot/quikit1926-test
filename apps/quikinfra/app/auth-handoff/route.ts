@@ -17,15 +17,20 @@ import { encode } from "next-auth/jwt";
  * consumer app's own domain.
  *
  * Failure modes:
- *   - missing/invalid/expired token → redirect to /login
+ *   - missing/invalid/expired token → redirect to central auth /login
  *   - server misconfigured (no secrets) → 500
  *   - clock skew → tolerated up to 10s by jose
  */
+function centralLoginUrl(reason: string): string {
+  const base = process.env.NEXT_PUBLIC_AUTH_URL ?? process.env.QUIKIT_URL ?? "";
+  return `${base}/login?reason=${reason}`;
+}
+
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
   const origin = process.env.NEXTAUTH_URL ?? request.url;
   if (!token) {
-    return NextResponse.redirect(new URL("/login?reason=missing_handoff", origin));
+    return NextResponse.redirect(centralLoginUrl("missing_handoff"));
   }
 
   const internalSecret = process.env.INTERNAL_SECRET;
@@ -50,6 +55,7 @@ export async function GET(request: NextRequest) {
     firstName?: string | null;
     lastName?: string | null;
     name?: string | null;
+    sessionId?: string | null;
   };
   try {
     const result = await jwtVerify(
@@ -60,11 +66,11 @@ export async function GET(request: NextRequest) {
     payload = result.payload as typeof payload;
   } catch (err) {
     const reason = err instanceof Error && /exp/i.test(err.message) ? "expired" : "invalid";
-    return NextResponse.redirect(new URL(`/login?reason=${reason}_handoff`, origin));
+    return NextResponse.redirect(centralLoginUrl(`${reason}_handoff`));
   }
 
   if (!payload.sub) {
-    return NextResponse.redirect(new URL("/login?reason=invalid_handoff", origin));
+    return NextResponse.redirect(centralLoginUrl("invalid_handoff"));
   }
 
   // Mint a NextAuth-compatible session JWE for this app's domain.
@@ -83,6 +89,9 @@ export async function GET(request: NextRequest) {
       firstName: payload.firstName ?? undefined,
       lastName: payload.lastName ?? undefined,
       name: payload.name ?? undefined,
+      // Shared Redis session id — lets the central /api/verify-token (called
+      // by this app's middleware) soft-invalidate the handoff session.
+      sessionId: payload.sessionId ?? undefined,
     },
     secret: nextAuthSecret,
     maxAge: 7 * 24 * 60 * 60,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { requireMastersAction } from "@/lib/auth/requireMastersAction";
+import { hasMatrixAction, getTenantContext } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   listItemGroups,
@@ -9,8 +10,14 @@ import {
 import { parsePagination, paginateDb } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
+  // Item groups are lookup/reference data picked across modules, so the LIST
+  // is readable by ANY authenticated user in the org — no Masters permission
+  // required. Still scoped to ctx.orgId below. Create/edit/delete still
+  // require the full Masters permission.
   const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  if (!ctx) {
+    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  }
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
   const baseOpts = {
@@ -27,8 +34,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.item_group", "add")) {
     return envelopeErr("FORBIDDEN", `Action "add" not allowed for master.item_group`, 403);
   }

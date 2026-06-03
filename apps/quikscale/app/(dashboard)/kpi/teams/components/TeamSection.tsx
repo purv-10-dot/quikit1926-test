@@ -135,6 +135,7 @@ export function TeamSection({ team, kpis, year, quarter, onRefresh, defaultExpan
           mode="edit"
           scope="team"
           kpi={editKPI}
+          tint={accent}
           onClose={() => setEditKPI(null)}
           onSuccess={() => {
             setEditKPI(null);

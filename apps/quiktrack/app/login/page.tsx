@@ -16,10 +16,10 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      void signIn("quikit", { callbackUrl: "/" });
+      void signIn("quikit", { callbackUrl: "/dashboard" });
     }
     if (status === "authenticated") {
-      router.replace("/");
+      router.replace("/dashboard");
     }
   }, [status, router]);
 

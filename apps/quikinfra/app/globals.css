@@ -29,6 +29,8 @@ html, body {
   color: var(--quikit-color-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Selection in brand color */

@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -122,4 +123,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   });
 
   return NextResponse.json({ success: true, data: boq }, { status: 201 });
-});
+}, { permission: { resource: "construction.boq", action: "import" } });

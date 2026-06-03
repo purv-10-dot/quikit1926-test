@@ -35,9 +35,12 @@ export default function Sidebar() {
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-primary)]">
       <div className="flex h-14 items-center gap-2.5 border-b border-[var(--color-border)] px-5">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-secondary)]">
-          <span className="text-xs font-bold text-white">Q</span>
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/admin.svg"
+          alt="Admin Portal"
+          className="h-7 w-7 rounded-lg object-contain"
+        />
         <div>
           <p className="text-sm font-semibold text-[var(--color-text-primary)] leading-tight">Admin Portal</p>
         </div>

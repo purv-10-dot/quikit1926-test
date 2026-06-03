@@ -108,7 +108,7 @@ async function fetchDashboard() {
 export default function DashboardPage() {
   const router = useRouter();
   const { data: session } = useSession();
-  const { hasModule, canMenuAction, isLoading: permsLoading } = usePermissions();
+  const { hasModule, canMenuAction, can, isLoading: permsLoading } = usePermissions();
 
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard"],
@@ -136,6 +136,30 @@ export default function DashboardPage() {
   const showMasters = hasModule("masters");
   const showApprovals = showPurchase || showStore || showProjects;
 
+  // Approvals click-gate — the count is informational and we keep the
+  // tile visible whenever any module is on, but the navigation only
+  // fires when the user actually holds at least one `*.approve` permission.
+  // Otherwise the user lands on /approvals and sees "All caught up" with
+  // no actionable rows — clicking is a dead-end. Mirrors the exact set the
+  // server-side inbox handler gates each block on.
+  const canAnyApprove = can([
+    "purchase.mr.approve",
+    "purchase.indent.approve_l1",
+    "purchase.indent.approve_l2",
+    "purchase.indent.approve_l3",
+    "purchase.po.approve_l1",
+    "purchase.po.approve_l2",
+    "purchase.grn.approve",
+    "store.issue.approve",
+    "store.gatepass.approve",
+    "store.transfer.approve",
+    "store.return.approve",
+    "project.estimation.approve",
+    "project.dpr.approve",
+    "project.rab.approve",
+    "project.wo.approve",
+  ]);
+
   type Tile = { id: string; node: ReactNode; show: boolean };
 
   /** Six summary tiles — matches ops overview layout (no Material Issues / DPRs row). */
@@ -153,7 +177,12 @@ export default function DashboardPage() {
           icon={<FolderKanban className="w-5 h-5" />}
           color="blue"
           onClick={
-            showMasters || showProjects
+            // /masters/projects lives under the Masters module, so we
+            // only enable navigation when the user actually holds that
+            // permission. project_mgmt alone is not enough — those
+            // users get a non-clickable view-only tile (handled by
+            // KPICard when onClick is undefined).
+            showMasters
               ? () => router.push("/masters/projects")
               : undefined
           }
@@ -172,7 +201,15 @@ export default function DashboardPage() {
           subtitle="PRs, POs, DPRs, WOs"
           icon={<CheckCircle2 className="w-5 h-5" />}
           color="amber"
-          onClick={() => router.push("/approvals")}
+          // Tile stays visible (the count is useful peripheral info) but
+          // clicking only navigates to /approvals when the user actually
+          // holds at least one *.approve permission. Without any approve
+          // grant the inbox would just show "All caught up" — a dead-end
+          // click. KPICard renders as a non-interactive div when onClick
+          // is undefined (no hover/cursor change).
+          onClick={
+            canAnyApprove ? () => router.push("/approvals") : undefined
+          }
         />
       ),
     },
@@ -369,23 +406,51 @@ export default function DashboardPage() {
           <p className="mt-2 text-sm text-slate-500">Physical completion vs budget utilisation</p>
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {projectProgress.map((proj) => (
-            <button
-              type="button"
-              key={proj.id}
-              onClick={() => router.push("/masters/projects")}
-              className="rounded-2xl border border-[#ede8e3] bg-[#f9f8f7] p-5 text-left shadow-sm hover:border-slate-300/80 hover:shadow-md transition-all"
-            >
-              <div className="flex items-start justify-between gap-2 mb-4">
-                <p className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">{proj.name}</p>
-                <ProjectBandPill band={proj.band} />
+          {projectProgress.map((proj) => {
+            // Only route to /masters/projects when the user actually has
+            // the Masters module — that's where the page lives. Users
+            // who can see the dashboard tile via project_mgmt but lack
+            // Masters get a view-only card (no click, no hover affordance,
+            // default cursor) so they don't bounce off a permission gate.
+            const canOpen = showMasters;
+            const baseClass =
+              "rounded-2xl border border-[#ede8e3] bg-[#f9f8f7] p-5 text-left shadow-sm transition-all";
+            if (canOpen) {
+              return (
+                <button
+                  type="button"
+                  key={proj.id}
+                  onClick={() => router.push("/masters/projects")}
+                  className={`${baseClass} hover:border-slate-300/80 hover:shadow-md`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-4">
+                    <p className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">{proj.name}</p>
+                    <ProjectBandPill band={proj.band} />
+                  </div>
+                  <div className="space-y-4">
+                    <ProgressBarRow label="Physical" pct={proj.physicalPct} barClass={physicalBarClass(proj.band)} />
+                    <ProgressBarRow label="Budget Used" pct={proj.budgetPct} barClass="bg-slate-500" />
+                  </div>
+                </button>
+              );
+            }
+            return (
+              <div
+                key={proj.id}
+                className={`${baseClass} cursor-default select-text`}
+                title="View-only — ask an admin for Masters access to open this project"
+              >
+                <div className="flex items-start justify-between gap-2 mb-4">
+                  <p className="text-sm font-bold text-slate-900 leading-snug line-clamp-2">{proj.name}</p>
+                  <ProjectBandPill band={proj.band} />
+                </div>
+                <div className="space-y-4">
+                  <ProgressBarRow label="Physical" pct={proj.physicalPct} barClass={physicalBarClass(proj.band)} />
+                  <ProgressBarRow label="Budget Used" pct={proj.budgetPct} barClass="bg-slate-500" />
+                </div>
               </div>
-              <div className="space-y-4">
-                <ProgressBarRow label="Physical" pct={proj.physicalPct} barClass={physicalBarClass(proj.band)} />
-                <ProgressBarRow label="Budget Used" pct={proj.budgetPct} barClass="bg-slate-500" />
-              </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
       </div>
     ) : showProjects && projectProgress.length === 0 ? (

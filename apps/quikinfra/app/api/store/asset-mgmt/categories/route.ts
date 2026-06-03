@@ -1,6 +1,7 @@
+import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { getCategories, nextId } from "@/lib/store/asset-mgmt-store";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 
 export async function GET() {
@@ -14,8 +15,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireStoreAction("construction.stock", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "store.asset_mgmt", "add")) {
     return envelopeErr("FORBIDDEN", `Action "add" not allowed for store.asset_mgmt`, 403);
   }

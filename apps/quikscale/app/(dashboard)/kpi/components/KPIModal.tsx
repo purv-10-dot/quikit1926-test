@@ -6,11 +6,13 @@ import { useUsers } from "@/lib/hooks/useUsers";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useCanEditKPI } from "@/lib/hooks/useCanEditKPI";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
+import { notify } from "@/lib/utils/notify";
 import type { KPIRow as KPI } from "@/lib/types/kpi";
 import type { User } from "@/lib/types/kpi";
 import { fiscalYearLabel, MEASUREMENT_UNITS, ALL_QUARTERS, ALL_WEEKS, weekDateLabel } from "@/lib/utils/fiscal";
 import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/currency";
 import { UserPicker, UserMultiPicker, RightPanel, RightPanelFooter, DropdownPicker } from "@quikit/ui";
+import { FormErrorBanner } from "@/components/forms/FormErrorBanner";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { Lock, ChevronDown } from "lucide-react";
@@ -32,6 +34,8 @@ interface Props {
   teamId?: string;
   defaultYear?: number;
   defaultQuarter?: string;
+  /** Optional hex tint for success/error toasts (e.g. the team's color in Teams KPI). */
+  tint?: string | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -40,7 +44,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 
 /* ── Component ─────────────────────────────────────────────────────────── */
 
-export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter, onClose, onSuccess }: Props) {
+export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter, tint, onClose, onSuccess }: Props) {
   // Determine whether this modal instance operates in team-level scope.
   // Priority: explicit `scope` prop > existing kpi.kpiLevel (in edit mode) > default "individual"
   const isTeamScope = scope === "team" || kpi?.kpiLevel === "team";
@@ -114,6 +118,13 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
   const currentTeam = teams.find(t => t.id === form.teamId);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  // While a breakdown cell is focused we show the user's raw keystrokes instead
+  // of the reformatted/derived value. Reformatting to toFixed(2) on every
+  // keystroke made multi-digit entry impossible (e.g. "22" snapped back to
+  // "2.00" because the caret landed after the ".00"). The change handlers still
+  // run live (clamp + redistribution + final formatting) — this is display-only.
+  const [editingCell, setEditingCell] = useState<{ key: string; raw: string } | null>(null);
 
   // Team picker dropdown state (create mode, team scope)
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
@@ -630,9 +641,12 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
         const { quarter: _q, measurementUnit: _mu, currency: _c, owner: _o, ...editPayload } = payload;
         await updateKPI.mutateAsync(editPayload);
       }
+      notify.saved(isTeamScope ? "Team KPI" : "Individual KPI", mode === "create" ? "created" : "updated", { tint });
       onSuccess();
     } catch (err: unknown) {
-      setErrors({ _: humanizeApiError(err, { context: "KPI", fallback: "Couldn't save the KPI. Please try again." }) });
+      const message = humanizeApiError(err, { context: "KPI", fallback: "Couldn't save the KPI. Please try again." });
+      setErrors({ _: message });
+      notify.error(err, { context: "KPI", fallback: "Couldn't save the KPI. Please try again.", tint });
     } finally {
       setSaving(false);
     }
@@ -670,36 +684,36 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
       title={panelTitle}
       subtitle={panelSubtitle}
       footer={
-        <RightPanelFooter>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving || readOnly}
-            title={readOnly ? "Only the creator, assignee, team head, or an admin can edit this KPI" : undefined}
-            className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {saving && (
-              <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            )}
-            {submitLabel}
-          </button>
-        </RightPanelFooter>
+        // Column wrapper pins the server-error banner directly above the
+        // Cancel/Create buttons so it's visible without scrolling — long forms
+        // had users missing the old top-of-body banner.
+        <div className="flex flex-col gap-2 w-full">
+          <FormErrorBanner message={errors._} />
+          <RightPanelFooter>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={saving || readOnly}
+              title={readOnly ? "Only the creator, assignee, team head, or an admin can edit this KPI" : undefined}
+              className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {saving && (
+                <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
+              {submitLabel}
+            </button>
+          </RightPanelFooter>
+        </div>
       }
     >
-          {errors._ && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
-              {errors._}
-            </div>
-          )}
-
           {readOnly && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
               Read-only — only the creator, assignee, team head, or an admin can edit this KPI.
@@ -1120,8 +1134,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                               <input
                                 type="number"
                                 min="0"
-                                value={displaySum}
-                                onChange={e => setTeamTotalWeekCell(w, e.target.value)}
+                                value={editingCell?.key === `tot-${w}` ? editingCell.raw : displaySum}
+                                onChange={e => { setEditingCell({ key: `tot-${w}`, raw: e.target.value }); setTeamTotalWeekCell(w, e.target.value); }}
+                                onBlur={() => setEditingCell(null)}
                                 readOnly={isLocked}
                                 title={isPast
                                   ? "Past week data entry is disabled. Enable in Settings > Configurations."
@@ -1178,8 +1193,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                             <input
                               type="number"
                               min="0"
-                              value={form.weeklyBreakdown[w] ?? ""}
-                              onChange={e => setWeekBreakdown(w, e.target.value)}
+                              value={editingCell?.key === `ind-${w}` ? editingCell.raw : (form.weeklyBreakdown[w] ?? "")}
+                              onChange={e => { setEditingCell({ key: `ind-${w}`, raw: e.target.value }); setWeekBreakdown(w, e.target.value); }}
+                              onBlur={() => setEditingCell(null)}
                               readOnly={isLocked}
                               title={isPast ? "Past week data entry is disabled. Enable in Settings > Configurations." : undefined}
                               className={`w-full px-1 py-1 text-center text-xs border rounded focus:outline-none min-w-[72px] ${
@@ -1249,8 +1265,9 @@ export function KPIModal({ mode, kpi, scope, teamId, defaultYear, defaultQuarter
                                 <input
                                   type="number"
                                   min="0"
-                                  value={ownerRow[w] ?? ""}
-                                  onChange={e => setOwnerWeekCell(id, w, e.target.value)}
+                                  value={editingCell?.key === `own-${id}-${w}` ? editingCell.raw : (ownerRow[w] ?? "")}
+                                  onChange={e => { setEditingCell({ key: `own-${id}-${w}`, raw: e.target.value }); setOwnerWeekCell(id, w, e.target.value); }}
+                                  onBlur={() => setEditingCell(null)}
                                   readOnly={isLocked}
                                   title={isPast ? "Past week data entry is disabled." : undefined}
                                   className={`w-full px-1 py-1 text-center text-[11px] border rounded focus:outline-none min-w-[72px] ${

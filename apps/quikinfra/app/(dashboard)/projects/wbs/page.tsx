@@ -9,6 +9,7 @@ import { PageHeader, PageContainer, EmptyState } from "@/components/PageShell";
 import { Field, TextInput, NumberInput, SelectInput } from "@/components/FormDrawer";
 import { useProjects } from "@/hooks/use-masters";
 import { useCreateWbsTask, useDeleteWbsTask, useWbsTasks } from "@/hooks/use-wbs";
+import { WbsEditTaskModal } from "@/components/WbsEditTaskModal";
 
 type WbsStatus = "not_started" | "in_progress" | "completed" | "on_hold";
 
@@ -96,6 +97,7 @@ export default function WbsPlanningPage() {
   const [view, setView] = useState<"grid" | "gantt">("gantt");
   const [scale, setScale] = useState<"day" | "week" | "month">("day");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   const { data: wbsRes, isLoading: isWbsLoading } = useWbsTasks(selectedProject);
   const tasks = wbsRes?.data ?? [];
@@ -405,6 +407,7 @@ export default function WbsPlanningPage() {
                 collapsed={collapsed}
                 onToggleCollapsed={toggleCollapsed}
                 onDelete={handleDelete}
+                onEdit={setEditingTaskId}
               />
             ) : (
               <GanttView
@@ -414,11 +417,20 @@ export default function WbsPlanningPage() {
                 collapsed={collapsed}
                 onToggleCollapsed={toggleCollapsed}
                 scale={scale}
+                onEdit={setEditingTaskId}
               />
             )}
           </div>
         </div>
       </PageContainer>
+
+      <WbsEditTaskModal
+        open={!!editingTaskId}
+        projectId={selectedProject}
+        task={orderedTasks.find((t) => t.id === editingTaskId) ?? null}
+        allTasks={orderedTasks}
+        onClose={() => setEditingTaskId(null)}
+      />
     </>
   );
 }
@@ -432,6 +444,7 @@ function GridView({
   collapsed,
   onToggleCollapsed,
   onDelete,
+  onEdit,
 }: {
   tasks: WbsTask[];
   allTasks: WbsTask[];
@@ -439,6 +452,7 @@ function GridView({
   collapsed: Set<string>;
   onToggleCollapsed: (id: string) => void;
   onDelete: (id: string) => void;
+  onEdit: (id: string) => void;
 }) {
   const wbsById = useMemo(() => new Map(allTasks.map((t) => [t.id, t.wbsCode])), [allTasks]);
 
@@ -462,12 +476,19 @@ function GridView({
             const hasKids = (childCount.get(t.id) ?? 0) > 0;
             const isCollapsed = collapsed.has(t.id);
             return (
-              <tr key={t.id} className="hover:bg-slate-50/60">
+              <tr
+                key={t.id}
+                className="hover:bg-orange-50/40 cursor-pointer"
+                onClick={() => onEdit(t.id)}
+              >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1" style={{ paddingLeft: depth * 14 }}>
                     {hasKids ? (
                       <button
-                        onClick={() => onToggleCollapsed(t.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleCollapsed(t.id);
+                        }}
                         className="p-0.5 rounded hover:bg-slate-100 text-orange-600"
                       >
                         {isCollapsed ? (
@@ -485,7 +506,9 @@ function GridView({
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <p className="text-sm font-semibold text-slate-900">{t.name}</p>
+                  <p className="text-sm font-semibold text-slate-900 hover:text-orange-700 hover:underline">
+                    {t.name}
+                  </p>
                   <p className="text-[11px] text-slate-500 mt-0.5 inline-flex items-center gap-1">
                     <Calendar className="w-3 h-3 text-slate-400" />
                     {fmtShort(t.startDate)} - {fmtShort(t.endDate)}
@@ -532,7 +555,10 @@ function GridView({
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={() => onDelete(t.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(t.id);
+                    }}
                     className="p-1.5 rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
                     title="Delete task"
                   >
@@ -560,6 +586,7 @@ function GanttView({
   collapsed,
   onToggleCollapsed,
   scale,
+  onEdit,
 }: {
   tasks: WbsTask[];
   allTasks: WbsTask[];
@@ -567,6 +594,7 @@ function GanttView({
   collapsed: Set<string>;
   onToggleCollapsed: (id: string) => void;
   scale: "day" | "week" | "month";
+  onEdit: (id: string) => void;
 }) {
   // Compute timeline domain across the *full* task set so collapsing
   // doesn't shift the calendar, then pad it to a clean range.
@@ -750,13 +778,16 @@ function GanttView({
                       {t.wbsCode}
                     </span>
                     <span className="text-sm text-slate-500 shrink-0">-</span>
-                    <span
-                      className={`text-sm truncate ${
+                    <button
+                      type="button"
+                      onClick={() => onEdit(t.id)}
+                      className={`text-sm truncate text-left hover:text-orange-700 hover:underline ${
                         isParent ? "font-bold text-slate-900" : "font-medium text-slate-700"
                       }`}
+                      title="Edit task"
                     >
                       {t.name}
-                    </span>
+                    </button>
                   </div>
                 </div>
                 <div
@@ -791,8 +822,10 @@ function GanttView({
                   })}
 
                   {/* Bar */}
-                  <div
-                    className={`absolute rounded-lg shadow-sm ${
+                  <button
+                    type="button"
+                    onClick={() => onEdit(t.id)}
+                    className={`absolute rounded-lg shadow-sm cursor-pointer hover:ring-2 hover:ring-orange-400 transition-shadow ${
                       isParent
                         ? "bg-gradient-to-b from-orange-400 to-orange-500 ring-1 ring-orange-300/60"
                         : "bg-gradient-to-b from-slate-200 to-slate-300 ring-1 ring-slate-300/60"
@@ -803,29 +836,32 @@ function GanttView({
                       top: (GANTT_ROW_H - GANTT_BAR_H) / 2,
                       height: GANTT_BAR_H,
                     }}
-                    title={`${t.name} — ${t.progress}%`}
+                    title={`${t.name} — ${t.progress}% (click to edit)`}
                   >
                     {isParent && (
                       <span className="absolute inset-0 flex items-center px-2 text-[10px] font-bold text-white truncate">
                         {t.wbsCode} - {t.name}
                       </span>
                     )}
-                  </div>
+                  </button>
 
                   {/* Child label rendered to the right of its bar, in orange */}
                   {!isParent && (
-                    <span
-                      className="absolute text-[11px] whitespace-nowrap"
+                    <button
+                      type="button"
+                      onClick={() => onEdit(t.id)}
+                      className="absolute text-[11px] whitespace-nowrap hover:underline text-left"
                       style={{
                         left: geom.right + 8,
                         top: (GANTT_ROW_H - GANTT_BAR_H) / 2 + 1,
                         lineHeight: `${GANTT_BAR_H}px`,
                       }}
+                      title="Edit task"
                     >
                       <span className="font-mono font-semibold text-orange-600">{t.wbsCode}</span>
                       <span className="text-slate-400 mx-1">-</span>
                       <span className="font-medium text-slate-700">{t.name}</span>
-                    </span>
+                    </button>
                   )}
                 </div>
               </div>

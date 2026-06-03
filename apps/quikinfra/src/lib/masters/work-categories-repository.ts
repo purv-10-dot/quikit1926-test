@@ -9,7 +9,6 @@ export interface WorkCategoryRecord {
   orgId: string;
   name: string;
   description: string | null;
-  sacCode: string | null;
   sortOrder: number | null;
   status: string;
   createdAt: string;
@@ -24,7 +23,6 @@ function toRecord(row: any): WorkCategoryRecord {
     orgId: row.orgId,
     name: row.name,
     description: row.description ?? null,
-    sacCode: row.sacCode ?? null,
     sortOrder: row.sortOrder ?? null,
     status: row.status,
     createdAt: row.createdAt?.toISOString?.() ?? "",
@@ -54,7 +52,6 @@ function buildWorkCategoriesWhere(
           OR: [
             { name: { contains: q, mode: "insensitive" } },
             { description: { contains: q, mode: "insensitive" } },
-            { sacCode: { contains: q, mode: "insensitive" } },
           ],
         }
       : {}),
@@ -94,7 +91,6 @@ export interface CreateWorkCategoryInput {
   createdBy: string;
   name: string;
   description?: string | null;
-  sacCode?: string | null;
   sortOrder?: number | string | null;
   status?: string;
 }
@@ -118,7 +114,6 @@ export async function createWorkCategory(
       orgId: input.orgId,
       name: String(input.name).trim(),
       description: sOrNull(input.description),
-      sacCode: sOrNull(input.sacCode),
       sortOrder: toIntOrNull(input.sortOrder),
       status: input.status ?? "active",
       createdBy: input.createdBy,
@@ -147,7 +142,6 @@ export async function updateWorkCategory(
   const data: Record<string, unknown> = { updatedBy: patch.updatedBy };
   if (patch.name !== undefined) data.name = String(patch.name).trim();
   if (patch.description !== undefined) data.description = sOrNull(patch.description);
-  if (patch.sacCode !== undefined) data.sacCode = sOrNull(patch.sacCode);
   if (patch.sortOrder !== undefined) data.sortOrder = toIntOrNull(patch.sortOrder);
   if (patch.status !== undefined) data.status = patch.status;
 

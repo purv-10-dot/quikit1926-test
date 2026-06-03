@@ -58,9 +58,9 @@ export default function DashboardLayout({
             <main className="flex-1 overflow-y-auto bg-white">{children}</main>
           </div>
           <IssueCreatedToast />
+          <KanTour />
         </div>
       </NoAccessGate>
-      <KanTour />
     </SessionGuard>
   );
 }

@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -18,7 +19,7 @@ export const GET = withOrgAuth(async ({ orgId }, _req, ctx: { params: { id: stri
   });
   if (!inv) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: inv });
-});
+}, { permission: { resource: "construction.finance", action: "view" } });
 
 export const DELETE = withOrgAuth(async ({ orgId, userId }, _req, ctx: { params: { id: string } }) => {
   const inv = await db.cnClientInvoice.findFirst({ where: { id: ctx.params.id, orgId }, select: { id: true, paidAmount: true } });
@@ -26,4 +27,4 @@ export const DELETE = withOrgAuth(async ({ orgId, userId }, _req, ctx: { params:
   if (Number(inv.paidAmount) > 0) return NextResponse.json({ success: false, error: "Cannot delete invoice with receipts; reverse allocations first" }, { status: 400 });
   await db.cnClientInvoice.update({ where: { id: ctx.params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
   return NextResponse.json({ success: true });
-});
+}, { permission: { resource: "construction.finance", action: "delete" } });

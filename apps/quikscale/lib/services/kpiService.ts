@@ -3,6 +3,20 @@ import { CreateKPIInput, UpdateKPIInput, WeeklyValueInput, KPINoteInput, KPIList
 
 const API_BASE = "/api/kpi";
 
+// Axios throws on non-2xx with a generic "Request failed with status code N"
+// message, which buries the real server error from `response.data.error`.
+// Re-throw the server message so callers (and humanizeApiError) can surface it.
+function unwrapApiError(err: unknown): never {
+  if (axios.isAxiosError(err)) {
+    const serverMessage =
+      (err.response?.data as { error?: unknown } | undefined)?.error;
+    if (typeof serverMessage === "string" && serverMessage.length > 0) {
+      throw new Error(serverMessage);
+    }
+  }
+  throw err;
+}
+
 export interface KPIResponse {
   id: string;
   orgId: string;
@@ -67,11 +81,15 @@ export interface ApiResponse<T> {
 
 // Create KPI
 export async function createKPI(input: CreateKPIInput): Promise<KPIResponse> {
-  const response = await axios.post<ApiResponse<KPIResponse>>(`${API_BASE}`, input);
-  if (!response.data.success) {
-    throw new Error(response.data.error || "Failed to create KPI");
+  try {
+    const response = await axios.post<ApiResponse<KPIResponse>>(`${API_BASE}`, input);
+    if (!response.data.success) {
+      throw new Error(response.data.error || "Failed to create KPI");
+    }
+    return response.data.data!;
+  } catch (err) {
+    unwrapApiError(err);
   }
-  return response.data.data!;
 }
 
 // Get KPIs list with filters
@@ -99,11 +117,15 @@ export async function getKPI(id: string): Promise<KPIResponse> {
 
 // Update KPI
 export async function updateKPI(id: string, input: Partial<UpdateKPIInput>): Promise<KPIResponse> {
-  const response = await axios.put<ApiResponse<KPIResponse>>(`${API_BASE}/${id}`, input);
-  if (!response.data.success) {
-    throw new Error(response.data.error || "Failed to update KPI");
+  try {
+    const response = await axios.put<ApiResponse<KPIResponse>>(`${API_BASE}/${id}`, input);
+    if (!response.data.success) {
+      throw new Error(response.data.error || "Failed to update KPI");
+    }
+    return response.data.data!;
+  } catch (err) {
+    unwrapApiError(err);
   }
-  return response.data.data!;
 }
 
 // Delete KPI

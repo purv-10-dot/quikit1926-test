@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { boqService, BOQError } from "@/lib/boq";
-import { requirePermission } from "@/lib/auth/context";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { getTenantContext } from "@/lib/auth/context";
 import { idempotencyGuard } from "@/lib/workflow/idempotency";
 import { assertTransition, TransitionError } from "@/lib/workflow/transitions";
 import { recordAudit } from "@/lib/workflow/audit";
 import { rateLimit, LIMITS } from "@/lib/workflow/rate-limit";
 import { logger } from "@/lib/observability/logger";
 import { db } from "@/lib/db/prisma";
+
+const auth = withOrgAuthForResource("construction.rab");
 
 /**
  * RAB Approval — flips status to `approved` and applies billed qty to
@@ -28,15 +31,13 @@ import { db } from "@/lib/db/prisma";
  * resolve each `boqItemId` against `cn_boq_items_v2.boqNo` inside the
  * transaction.
  */
-export async function POST(
+export const POST = auth.approve<{ id: string }>(async (
+  _authCtx,
   req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const ctxOrResponse = await requirePermission("rab.approve", {
-    matrix: { menuKey: "pm.dpr", action: "edit" },
-  });
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+  { params },
+) => {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const limited = await rateLimit({ ...LIMITS.APPROVAL, req, identifier: ctx.userId });
   if (limited.blocked) {
@@ -167,4 +168,4 @@ export async function POST(
       { status: 500 },
     );
   }
-}
+});

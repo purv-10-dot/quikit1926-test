@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -56,4 +57,4 @@ export const GET = withOrgAuth(async ({ orgId }) => {
       ap: { total: apTotal, overdue: apOverdue, billCount, paymentCount },
     },
   });
-});
+}, { permission: { resource: "construction.finance", action: "view" } });

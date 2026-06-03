@@ -23,7 +23,6 @@ import {
   Package,
   Briefcase,
   FolderOpen,
-  Sparkles,
   Mail,
   Mailbox,
   Users,
@@ -1169,7 +1168,12 @@ export default function DashboardLayout({
                   letterSpacing: 0.4,
                 }}
               >
-                <Sparkles size={11} style={{ color: "rgba(255,255,255,0.45)" }} />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/brand/quiksocial.svg"
+                  alt="QuikSocial"
+                  style={{ width: 16, height: 16, borderRadius: 4, objectFit: "contain" }}
+                />
                 <span>QuikSocial</span>
               </div>
             )}

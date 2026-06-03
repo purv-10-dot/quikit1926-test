@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -12,4 +13,4 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req
   await db.cnCreditNote.update({ where: { id: note.id }, data: { deletedAt: new Date(), updatedBy: userId } });
   await logAudit({ orgId, userId, actionType: "delete", entityType: "cnCreditNote", entityId: note.id, entityRef: note.noteNumber });
   return NextResponse.json({ success: true });
-});
+}, { permission: { resource: "construction.finance", action: "delete" } });

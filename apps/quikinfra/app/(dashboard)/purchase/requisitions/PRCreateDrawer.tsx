@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { X, Plus, Trash2, AlertTriangle, FileText, CheckCircle2, Circle } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "@/components/PageShell";
 import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
@@ -58,6 +59,44 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   const { data: existingPRsData } = usePurchaseRequisitions({ projectId: projectId || undefined });
   const createMutation = useCreatePR();
   const { me } = usePermissions();
+
+  // Per-material remaining budget for the project (filtered to the
+  // picked BOQ leaf when present). Used to render Estimated / Consumed
+  // / Remaining columns on the estimation card and to gate submit when
+  // a PR line exceeds its remaining qty.
+  const { data: budgetData } = useQuery({
+    queryKey: [
+      "pr-estimation-budget",
+      projectId || "__none__",
+      selectedBoq?.id ?? "__all__",
+    ],
+    queryFn: async () => {
+      const params = new URLSearchParams({ projectId });
+      if (selectedBoq?.id) params.set("boqItemId", selectedBoq.id);
+      const res = await fetch(
+        `/api/purchase/requisitions/estimation-budget?${params.toString()}`,
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return (await res.json()) as {
+        data: Array<{
+          itemId: string;
+          itemName: string;
+          uomCode: string;
+          estimated: number;
+          consumed: number;
+          remaining: number;
+        }>;
+      };
+    },
+    enabled: !!projectId,
+  });
+  const budgetByItem = useMemo(() => {
+    const map = new Map<string, { estimated: number; consumed: number; remaining: number; itemName: string; uomCode: string }>();
+    for (const row of budgetData?.data ?? []) {
+      map.set(row.itemId, row);
+    }
+    return map;
+  }, [budgetData]);
 
   // Hide commercial info (Rate, Amount, Estimated Total) from field users.
   // Field users are the transactional `USER` role — site engineers,
@@ -244,6 +283,46 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
   const lineAmount = (line: PRLine) => (parseFloat(line.quantity) || 0) * (parseFloat(line.estimatedRate) || 0);
   const totalAmount = lines.reduce((sum, l) => sum + lineAmount(l), 0);
 
+  const requestedByItem = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const l of lines) {
+      if (!l.itemId) continue;
+      const qty = parseFloat(l.quantity) || 0;
+      if (qty <= 0) continue;
+      map.set(l.itemId, (map.get(l.itemId) ?? 0) + qty);
+    }
+    return map;
+  }, [lines]);
+
+  const overBudgetItems = useMemo(() => {
+    const out: Array<{
+      itemId: string;
+      itemName: string;
+      uomCode: string;
+      requested: number;
+      remaining: number;
+    }> = [];
+    for (const [itemId, requested] of requestedByItem) {
+      const b = budgetByItem.get(itemId);
+      if (!b) continue;
+      if (requested > b.remaining) {
+        out.push({
+          itemId,
+          itemName: b.itemName,
+          uomCode: b.uomCode,
+          requested,
+          remaining: b.remaining,
+        });
+      }
+    }
+    return out;
+  }, [requestedByItem, budgetByItem]);
+
+  const overBudgetItemIds = useMemo(
+    () => new Set(overBudgetItems.map((b) => b.itemId)),
+    [overBudgetItems],
+  );
+
   const handleSubmit = async () => {
     setError("");
 
@@ -282,6 +361,14 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
         ),
       );
     if (filled.length === 0) { setError("Add at least one material line"); return; }
+
+    if (overBudgetItems.length > 0) {
+      const first = overBudgetItems[0];
+      setError(
+        `${first.itemName || first.itemId} exceeds estimation budget: requested ${first.requested}${first.uomCode ? ` ${first.uomCode}` : ""}, only ${first.remaining} left.`,
+      );
+      return;
+    }
 
     for (const { l, idx } of filled) {
       const n = idx + 1;
@@ -531,13 +618,13 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                                   PR Status
                                 </th>
                                 <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-24">
-                                  Qty / Unit
+                                  Estimated
                                 </th>
-                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-20">
-                                  Waste %
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-24">
+                                  Consumed
                                 </th>
-                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-28">
-                                  Std Rate (₹)
+                                <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-24">
+                                  Remaining
                                 </th>
                                 <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase w-32">
                                   Total (₹)
@@ -548,8 +635,21 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                               {mats.map((m: any, mi: number) => {
                                 const total = parseFloat(m.estimatedCost ?? "0") || 0;
                                 const isRaised = m.itemId && raisedItemIds.has(m.itemId);
+                                const budget = m.itemId ? budgetByItem.get(m.itemId) : null;
+                                const estimated = budget?.estimated ?? Number(m.totalQty ?? m.qtyPerUnit ?? 0);
+                                const consumed = budget?.consumed ?? 0;
+                                const remaining = budget
+                                  ? budget.remaining
+                                  : Math.max(0, estimated - consumed);
+                                const requested = m.itemId
+                                  ? requestedByItem.get(m.itemId) ?? 0
+                                  : 0;
+                                const isOver = !!budget && requested > budget.remaining;
                                 return (
-                                  <tr key={`${m.itemId ?? "x"}-${mi}`}>
+                                  <tr
+                                    key={`${m.itemId ?? "x"}-${mi}`}
+                                    className={isOver ? "bg-rose-50/60" : undefined}
+                                  >
                                     <td className="px-3 py-2 text-gray-800">
                                       {m.itemName ?? m.itemId ?? "—"}
                                       {m.uomCode && (
@@ -572,15 +672,26 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                                       )}
                                     </td>
                                     <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                                      {m.qtyPerUnit ?? "—"}
+                                      {estimated.toLocaleString("en-IN", { maximumFractionDigits: 4 })}
                                     </td>
                                     <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                                      {m.wastePercent ?? 0}
+                                      {consumed.toLocaleString("en-IN", { maximumFractionDigits: 4 })}
                                     </td>
-                                    <td className="px-3 py-2 text-right tabular-nums text-gray-700">
-                                      {m.standardRate != null
-                                        ? Number(m.standardRate).toLocaleString("en-IN")
-                                        : "—"}
+                                    <td
+                                      className={`px-3 py-2 text-right tabular-nums font-semibold ${
+                                        isOver
+                                          ? "text-rose-700"
+                                          : remaining <= 0
+                                            ? "text-amber-700"
+                                            : "text-emerald-700"
+                                      }`}
+                                    >
+                                      {remaining.toLocaleString("en-IN", { maximumFractionDigits: 4 })}
+                                      {isOver && (
+                                        <span className="ml-1 text-[10px] font-bold uppercase">
+                                          over
+                                        </span>
+                                      )}
                                     </td>
                                     <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-900">
                                       {total > 0
@@ -632,12 +743,40 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
               </button>
             </div>
 
+            {overBudgetItems.length > 0 && (
+              <div className="mb-3 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 shrink-0" />
+                  <div className="flex-1 text-xs text-rose-800 leading-relaxed">
+                    <div className="font-semibold mb-1">
+                      Over estimation budget — adjust before saving
+                    </div>
+                    <ul className="space-y-0.5">
+                      {overBudgetItems.map((b) => (
+                        <li key={b.itemId}>
+                          <span className="font-semibold">{b.itemName || b.itemId}</span>:
+                          requested {b.requested}
+                          {b.uomCode ? ` ${b.uomCode}` : ""}, only {b.remaining} remaining.
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
               {lines.map((line, i) => {
                 const amt = lineAmount(line);
                 const stockLow = line.quantity && parseFloat(line.quantity) > parseFloat(line.availableStock || "0");
+                const isOverBudget = !!line.itemId && overBudgetItemIds.has(line.itemId);
                 return (
-                  <div key={i} className="border border-gray-200 rounded-xl p-4 bg-white">
+                  <div
+                    key={i}
+                    className={`border rounded-xl p-4 bg-white ${
+                      isOverBudget ? "border-rose-300 ring-1 ring-rose-200" : "border-gray-200"
+                    }`}
+                  >
                     <div className="flex items-start gap-3">
                       <span className="text-xs font-bold text-gray-400 mt-2 w-5 shrink-0">{i + 1}.</span>
                       <div className="flex-1 space-y-3">
@@ -673,11 +812,22 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
                             grid drops from 5 columns to 3. */}
                         <div className={`grid gap-3 ${isFieldUser ? "grid-cols-3" : "grid-cols-5"}`}>
                           <div>
-                            <label className="block text-[10px] font-medium text-gray-500 mb-1">Quantity *</label>
+                            <label className="block text-[10px] font-medium text-gray-500 mb-1">
+                              Quantity *
+                              {isOverBudget && (
+                                <span className="ml-1.5 text-[9px] font-bold uppercase text-rose-600">
+                                  over budget
+                                </span>
+                              )}
+                            </label>
                             <input type="number" step="0.01" min="0" value={line.quantity}
                               onChange={e => updateLine(i, "quantity", e.target.value)}
                               placeholder="0"
-                              className="w-full px-2.5 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                              className={`w-full px-2.5 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 ${
+                                isOverBudget
+                                  ? "border-rose-400 bg-rose-50 focus:ring-rose-300"
+                                  : "border-gray-300 focus:ring-orange-500"
+                              }`} />
                           </div>
                           <div>
                             <label className="block text-[10px] font-medium text-gray-500 mb-1">UOM *</label>
@@ -785,7 +935,7 @@ export function PRCreateDrawer({ open, onClose }: { open: boolean; onClose: () =
           </div>
           <div className="flex items-center gap-3">
             <SecondaryButton onClick={onClose}>Cancel</SecondaryButton>
-            <PrimaryButton onClick={handleSubmit} disabled={saving}>
+            <PrimaryButton onClick={handleSubmit} disabled={saving || overBudgetItems.length > 0}>
               {saving ? "Creating..." : "Create PR (Draft)"}
             </PrimaryButton>
           </div>

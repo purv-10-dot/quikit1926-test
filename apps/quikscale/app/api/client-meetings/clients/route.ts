@@ -1,14 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { requireAdmin } from "@/lib/api/requireAdmin";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { createClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
-const withOrgAuth = withOrgAuthForModule("clientMeetings.clients");
+// RBAC v2: Client Master is now per-action gated, mirroring KPI / WWW. The
+// previous `requireAdmin()` gate on POST/PUT/DELETE/restore is removed —
+// roles with `ClientMaster.{create,update,delete}` grants in the permission
+// matrix can perform the matching action.
+const auth = withOrgAuthForResource("clientMeetings.clients", "ClientMaster");
 
 const CLIENT_SORT_WHITELIST = [
   "name",
@@ -34,7 +37,7 @@ function mapClientSort(key: string, dir: SortDirection): Prisma.ClientOrderByWit
  *   ?sortBy=<col>&sortOrder=<asc|desc> → server-side sort (whitelist enforced).
  *     Falls back to the historical `createdAt asc` when omitted/invalid.
  */
-export const GET = withOrgAuth(async ({ orgId }, request) => {
+export const GET = auth.view(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
   const { orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
   const rows = await db.client.findMany({
@@ -84,15 +87,11 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
 });
 
 /**
- * POST /api/client-meetings/clients — admin-only.
+ * POST /api/client-meetings/clients — gated by `ClientMaster.create`.
  * Body accepts teamMemberIds[] to populate the client's roster at create time.
  */
-export async function POST(request: NextRequest) {
+export const POST = auth.create(async ({ orgId, userId }, request) => {
   try {
-    const auth = await requireAdmin();
-    if ("error" in auth && auth.error) return auth.error;
-    const { orgId, userId } = auth as { orgId: string; userId: string };
-
     const parsed = createClientSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -167,4 +166,4 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to create client") }, { status: 500 });
   }
-}
+});

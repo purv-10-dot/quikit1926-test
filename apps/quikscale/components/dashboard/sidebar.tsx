@@ -20,6 +20,7 @@ import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { NAV_RESOURCE } from "@/lib/api/permissionsRegistry";
 import { UserMenu, globalSignOut } from "@quikit/ui";
+import { QuikScaleMark } from "@/components/brand/quikscale-mark";
 
 /* ─── Types ─── */
 interface NavSubItem { label: string; href: string; icon: React.ElementType; moduleKey: string; }
@@ -273,15 +274,17 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
       )}>
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded bg-accent-50 text-accent-700 flex-shrink-0 flex items-center justify-center font-bold text-sm">G</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/quikscale.svg" alt="QuikScale" className="w-8 h-8 rounded flex-shrink-0 object-contain" />
             <div className="leading-tight min-w-0">
-              <p className="text-sm font-semibold text-gray-900 truncate">GOAL</p>
+              <p className="text-sm font-semibold text-gray-900 truncate">QuikScale</p>
               <p className="text-[10px] text-gray-400 uppercase tracking-wider">Performance OS</p>
             </div>
           </Link>
         )}
         {collapsed && (
-          <div className="w-8 h-8 rounded bg-accent-50 text-accent-700 flex items-center justify-center font-bold text-sm flex-shrink-0">G</div>
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/brand/quikscale.svg" alt="QuikScale" className="w-8 h-8 rounded flex-shrink-0 object-contain" />
         )}
 
         <div className="flex items-center gap-1 flex-shrink-0">

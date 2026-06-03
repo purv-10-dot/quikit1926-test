@@ -132,6 +132,34 @@ export function computeQtd(
 }
 
 /**
+ * QTD achieved/goal pair used for PROGRESS display — the dashboard KPI Overview
+ * cards and the KPI table's progress bar.
+ *
+ * Standalone KPIs must NOT use the server-stamped `kpi.qtdAchieved`: that value
+ * is a cumulative SUM regardless of division type, so a Standalone KPI shows
+ * (e.g.) 365/80 = 456% when its true QTD is the avg-per-week (52.14/80). For
+ * those we re-derive via `computeQtd(...,"Standalone")` = Σ values / weeks-with-
+ * target, against the constant quarterly target. Cumulative KPIs keep the
+ * server-stamped aggregate, byte-identical to the previous behavior.
+ *
+ * Mirrors the inline logic in KPITable's progress cell (kpi.divisionType branch)
+ * so the overview card and the table always agree.
+ */
+export function resolveProgressQtd(
+  kpi: KPIRow,
+  currentWeek: number | null,
+): { achieved: number; goal: number } {
+  if (kpi.divisionType === "Standalone") {
+    const { qtdAchieved, qtdGoal } = computeQtd(kpi, currentWeek, "Standalone");
+    return { achieved: qtdAchieved ?? 0, goal: qtdGoal ?? kpi.target ?? 0 };
+  }
+  return {
+    achieved: kpi.qtdAchieved ?? 0,
+    goal: kpi.qtdGoal ?? kpi.target ?? 0,
+  };
+}
+
+/**
  * Weekly Goal for a specific week. Uses the saved per-week target when set,
  * otherwise falls back to the flat 1/13 split of the quarterly target.
  */

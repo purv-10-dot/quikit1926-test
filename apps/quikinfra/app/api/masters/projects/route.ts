@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { requireMastersAction } from "@/lib/auth/requireMastersAction";
+import { hasMatrixAction, getTenantContext } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   listProjects,
@@ -21,8 +22,18 @@ import { parsePagination, paginateDb } from "@/lib/http/pagination";
  */
 
 export async function GET(req: NextRequest) {
+  // Projects are reference data every role needs to pick a project across
+  // BOQ / DPR / PR / GRN — not just the Masters admin screen. So the LIST is
+  // readable by ANY authenticated user in the org. This is safe because the
+  // query below is always scoped to the caller's orgId + their granted
+  // projectIds: a user with no project grants gets an empty list, a user
+  // with grants gets only their projects, and an admin gets all. Project
+  // VIEW is therefore available to every role by default; create/edit/delete
+  // (POST/PATCH/DELETE) still require the full Masters permission.
   const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  if (!ctx) {
+    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  }
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
   const baseOpts = {
@@ -39,8 +50,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.project", "add")) {
     return envelopeErr("FORBIDDEN", `Action "add" not allowed for master.project`, 403);
   }
@@ -50,9 +62,8 @@ export async function POST(req: NextRequest) {
   if (!codeCheck.valid) return NextResponse.json({ error: codeCheck.error }, { status: 400 });
   const nameCheck = validateRequired(body.name, "Project Name");
   if (!nameCheck.valid) return NextResponse.json({ error: nameCheck.error }, { status: 400 });
-  if (!body.companyId || !String(body.companyId).trim()) {
-    return NextResponse.json({ error: "Company is required" }, { status: 400 });
-  }
+  // Company is no longer required — the Add Project form doesn't collect it.
+  // Existing projects keep their companyId; new projects can leave it null.
   if (!body.clientId || !String(body.clientId).trim()) {
     return NextResponse.json({ error: "Client is required" }, { status: 400 });
   }
@@ -65,7 +76,6 @@ export async function POST(req: NextRequest) {
       name: body.name,
       description: body.description,
       projectType: body.projectType,
-      companyId: body.companyId,
       clientId: body.clientId,
       departmentId: body.departmentId,
       address: body.address,

@@ -1,0 +1,94 @@
+/* Outer wrapper provides the scroll runway. Height = (1 + PIN_VH) viewports
+   so the sticky child can pin for PIN_VH viewports of scroll. Trimmed to
+   0.8 (was 1.5) so the word-reveal still feels deliberate but the empty
+   trailing zone after the headline shrinks meaningfully. */
+.wrap {
+  position: relative;
+  width: 100%;
+  height: calc((1 + 0.8) * 100vh);   /* 180vh */
+  align-self: stretch;
+}
+
+/* Pinned content — stays at the top of the viewport for the duration of
+   the wrap, while internal scroll progress drives the word reveal. */
+.sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 10vw;
+  /* z-index/isolation so ::before sits below the text content but above
+     whatever fixed BG is behind the section. */
+  isolation: isolate;
+}
+
+/* Radial vignette behind the headline that darkens the BG image (which
+   may include composited dashboard art at this scroll position), making
+   sure the text reads cleanly over whatever's behind. */
+.sticky::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 70% 55% at 50% 50%,
+    rgba(0, 0, 0, 0.78) 0%,
+    rgba(0, 0, 0, 0.55) 40%,
+    transparent 80%
+  );
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Big merged lead line */
+.headline {
+  font-family: var(--font-serif), 'Times New Roman', serif;
+  font-weight: 400;
+  font-size: 56px;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+  margin-bottom: 0;
+  color: #fff;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
+  max-width: 56ch;
+}
+
+.body {
+  font-size: clamp(15px, 1.2vw, 19px);
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.86);
+  max-width: 48ch;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* Each word — opacity / transform set inline by JS from scroll progress */
+.word {
+  display: inline-block;
+  will-change: opacity, transform;
+}
+
+/* Tablet — between mobile and desktop. Headline at 56px wraps every
+   3 words on 768px viewports, so we drop it to 40px for a more
+   natural rhythm. */
+@media (min-width: 721px) and (max-width: 1023px) {
+  .sticky { padding: 0 6vw; }
+  .headline {
+    font-size: 40px;
+    line-height: 1.18;
+    max-width: 100%;
+  }
+  .body { font-size: 16px; }
+}
+
+@media (max-width: 720px) {
+  .sticky { padding: 0 22px; }
+  .headline {
+    font-size: 30px;
+    line-height: 1.22;
+    max-width: 100%;
+  }
+  .body { font-size: 14px; line-height: 1.55; }
+}

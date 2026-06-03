@@ -1,5 +1,6 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { db } from "@/lib/db/prisma";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { PROJECT_DOCUMENT_MAX_FILE_SIZE_BYTES } from "@/lib/storage/validation";
@@ -42,11 +43,9 @@ function toListItem(
 }
 
 export async function GET(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
-
+  const ctxOrResp = await requireProjectsFinanceAction("construction.project", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search")?.toLowerCase() ?? "";
 
@@ -83,8 +82,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireProjectsFinanceAction("construction.project", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "pm.documents", "add")) {
     return envelopeErr("FORBIDDEN", `Action "add" not allowed for pm.documents`, 403);
   }

@@ -4,10 +4,10 @@ import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 
-// Was previously gated by `requireAdmin` — now uses the same RBAC v2 path as
-// every other resource. Anyone with User:view on this org's QuikScale app can
-// list roles; only User:create can create one. The admin AppRole still has
-// every action by default (seeded via `seedAdminAppRole`).
+// RBAC v2: gated by the existing `User` resource. Listing/creating roles is
+// part of user administration, so it shares the User CRUD grants — no
+// separate Role resource is exposed in the matrix. Admin role bypass still
+// applies inside `userCan()`.
 const auth = withOrgAuthForResource("orgSetup.users", "User");
 
 const createRoleSchema = z.object({

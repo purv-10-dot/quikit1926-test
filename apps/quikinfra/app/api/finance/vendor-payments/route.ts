@@ -1,14 +1,16 @@
 /**
- * GET  /api/finance/vendor-payments   — list (search by paymentNo / vendor / invoiceNo)
- * POST /api/finance/vendor-payments   — create a pending payment
+ * GET  /api/finance/vendor-payments — list (search by paymentNo / vendor / invoiceNo)
+ * POST /api/finance/vendor-payments — create a pending payment
  *
- * Reference implementation of the backend API standards in docs/API_STANDARDS.md.
- * Follow this shape for every new/refactored route: auth → validate → service → envelope.
+ * v2 permission gate: `construction.finance` + `view` (both methods).
+ * Finance is read-only authority today; only admin + ho_user roles get
+ * the grant. The legacy `finance.view` key mapped to this same pair.
  */
 
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { requirePermission } from "@/lib/auth/context";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { getTenantContext } from "@/lib/auth/context";
 import { ok, created } from "@/lib/http/envelope";
 import { toHttpResponse, DomainError } from "@/lib/http/errors";
 import {
@@ -18,10 +20,12 @@ import {
   type CreateVendorPaymentInput,
 } from "@/lib/finance/vendor-payment-service";
 
-export async function GET(req: NextRequest) {
+const auth = withOrgAuthForResource("construction.finance");
+
+export const GET = auth.view(async (_authCtx, req: NextRequest) => {
   try {
-    const ctx = await requirePermission("finance.view");
-    if (ctx instanceof NextResponse) return ctx;
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const query = parseListQuery(req);
     const data = await listVendorPayments(ctx, query);
@@ -30,12 +34,12 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     return toHttpResponse(err);
   }
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = auth.view(async (_authCtx, req: NextRequest) => {
   try {
-    const ctx = await requirePermission("finance.view");
-    if (ctx instanceof NextResponse) return ctx;
+    const ctx = await getTenantContext();
+    if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const input = await parseCreateBody(req);
     const record = await createVendorPayment(ctx, input);
@@ -44,7 +48,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return toHttpResponse(err);
   }
-}
+});
 
 function parseListQuery(req: NextRequest): ListVendorPaymentsQuery {
   const { searchParams } = new URL(req.url);

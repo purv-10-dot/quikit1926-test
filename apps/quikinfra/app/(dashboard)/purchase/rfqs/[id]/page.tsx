@@ -11,7 +11,8 @@
 
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Send, FileText, Mail, Building2, Eye } from "lucide-react";
+import { Send, FileText, Mail, Phone, Building2, Eye } from "lucide-react";
+import { WhatsAppLink } from "@/components/WhatsAppLink";
 import {
   PageHeader, PageContainer, StatusChip,
   PrimaryButton, PageSkeleton, ApprovalTimeline,
@@ -284,28 +285,54 @@ export default function RFQDetailPage() {
                             <Building2 className="w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                              <span className="text-sm font-semibold text-gray-900">
-                                {v.vendorName || v.vendorId || "—"}
-                              </span>
-                              {v.email && (
-                                <span className="inline-flex items-center gap-1 text-xs text-gray-500">
-                                  <Mail className="w-3 h-3" />
-                                  {v.email}
+                            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <span className="text-sm font-semibold text-gray-900">
+                                  {v.vendorName || v.vendorId || "—"}
                                 </span>
-                              )}
-                              {v.vendorId && items.length > 0 && (
-                                <a
-                                  href={`/api/purchase/rfqs/${id}/preview/pdf?vendorId=${encodeURIComponent(v.vendorId)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 hover:underline"
-                                  title="Open the PDF that is attached to this vendor's email"
-                                >
-                                  <Eye className="w-3 h-3" />
-                                  View PDF
-                                </a>
-                              )}
+                                {v.email && (
+                                  <span className="inline-flex items-center gap-1 text-xs text-gray-500 break-all">
+                                    <Mail className="w-3 h-3 shrink-0" />
+                                    {v.email}
+                                  </span>
+                                )}
+                                {v.phone && (
+                                  <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                                    <Phone className="w-3 h-3 shrink-0" />
+                                    {v.phone}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 ml-auto">
+                                {v.phone && (
+                                  <WhatsAppLink
+                                    phone={String(v.phone)}
+                                    message={
+                                      rfq.rfqNumber
+                                        ? `Hello, regarding Request for Quotation ${rfq.rfqNumber}.`
+                                        : undefined
+                                    }
+                                    title={
+                                      rfq.rfqNumber
+                                        ? `WhatsApp vendor about ${rfq.rfqNumber}`
+                                        : "WhatsApp vendor"
+                                    }
+                                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white hover:bg-[#20bd5a] transition-colors"
+                                  />
+                                )}
+                                {v.vendorId && items.length > 0 && (
+                                  <a
+                                    href={`/api/purchase/rfqs/${id}/preview/pdf?vendorId=${encodeURIComponent(v.vendorId)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 hover:underline"
+                                    title="Open the PDF that is attached to this vendor's email"
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                    View PDF
+                                  </a>
+                                )}
+                              </div>
                             </div>
                             <div className="mt-2">
                               <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-1">

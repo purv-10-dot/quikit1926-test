@@ -71,7 +71,12 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - 'turbo.json'
-
+            quikinfra:
+              - 'apps/quikinfra/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
       - name: Generate Matrix Output
         id: set-matrix
         run: |
