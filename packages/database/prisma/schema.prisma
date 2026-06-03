@@ -217,6 +217,9 @@ model Org {
   priorities              Priority[]
   quarterSettings         QuarterSetting[]
   talentAssessments       TalentAssessment[]
+  talentBenchmark         TalentBenchmark?
+  swtEntries              SWTEntry[]
+  surveys                 Survey[]
   userAppRoles            UserAppRole[]
   userPermissionExtras    UserPermissionExtra[]
   userTablePreferences    UserTablePreference[]
@@ -513,24 +516,32 @@ model Team {
 }
 
 model AccountabilityFunction {
-  id               String                   @id @default(cuid())
-  orgId            String
-  name             String
-  description      String?
-  teamId           String?
-  parentFunctionId String?
-  assignedToUserId String?
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
-  assignedTo       User?                    @relation(fields: [assignedToUserId], references: [id])
-  org              Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  parentFunction   AccountabilityFunction?  @relation("FunctionHierarchy", fields: [parentFunctionId], references: [id])
-  childFunctions   AccountabilityFunction[] @relation("FunctionHierarchy")
-  team             Team?                    @relation(fields: [teamId], references: [id])
+  id                String                   @id @default(cuid())
+  orgId             String
+  name              String
+  description       String?
+  teamId            String?
+  parentFunctionId  String?
+  assignedToUserId  String?
+  chartType         String                   @default("face")
+  sortOrder         Int                      @default(0)
+  expectedOutcomes  String?
+  leadingIndicators String?
+  deletedAt         DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  assignedTo        User?                    @relation(fields: [assignedToUserId], references: [id])
+  org               Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  parentFunction    AccountabilityFunction?  @relation("FunctionHierarchy", fields: [parentFunctionId], references: [id])
+  childFunctions    AccountabilityFunction[] @relation("FunctionHierarchy")
+  team              Team?                    @relation(fields: [teamId], references: [id])
 
   @@unique([orgId, name])
+  @@unique([orgId, chartType, name])
   @@index([orgId])
+  @@index([orgId, chartType])
   @@index([assignedToUserId])
+  @@index([deletedAt])
   @@schema("app_quikscale")
 }
 
@@ -1347,33 +1358,56 @@ model OPSPPlan {
 }
 
 model HabitAssessment {
-  id                 String   @id @default(cuid())
+  id                 String                    @id @default(cuid())
   orgId              String
   assessmentDate     DateTime
   quarter            String
   year               Int
-  habit1_vision      Int
-  habit2_meetings    Int
-  habit3_scoreboards Int
-  habit4_accountable Int
-  habit5_rhythm      Int
-  habit6_sticking    Int
-  habit7_cascading   Int
-  habit8_recognition Int
-  habit9_training    Int
-  habit10_innovation Int
+  habit1_vision      Int?
+  habit2_meetings    Int?
+  habit3_scoreboards Int?
+  habit4_accountable Int?
+  habit5_rhythm      Int?
+  habit6_sticking    Int?
+  habit7_cascading   Int?
+  habit8_recognition Int?
+  habit9_training    Int?
+  habit10_innovation Int?
   averageScore       Float?
   maturityLevel      String?
   notes              String?
   assessedBy         String
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  // Multi-user campaign lifecycle (admin launches draft → active → closed).
+  // Legacy single-user rows have isLegacy=true and populated habit*_ scores.
+  status             String                    @default("draft")
+  publishedAt        DateTime?
+  closedAt           DateTime?
+  deadline           DateTime?
+  isLegacy           Boolean                   @default(false)
+  org                Org                       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  responses          HabitAssessmentResponse[]
 
   @@index([orgId])
   @@index([quarter, year])
   @@index([assessmentDate])
   @@index([orgId, quarter, year])
+  @@index([orgId, status])
+  @@schema("app_quikscale")
+}
+
+model HabitAssessmentResponse {
+  id                String          @id @default(cuid())
+  habitAssessmentId String
+  respondentUserId  String
+  subItemBits       Json
+  submittedAt       DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  habitAssessment   HabitAssessment @relation(fields: [habitAssessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([habitAssessmentId, respondentUserId])
+  @@index([habitAssessmentId])
   @@schema("app_quikscale")
 }
 
@@ -1504,6 +1538,14 @@ model TalentAssessment {
   year             Int
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  rehireDecision   String   @default("unrated")
+  rightSeat        String   @default("unrated")
+  coreValuesScore  Int?
+  capacity         String?
+  doMore           String?
+  doLess           String?
+  classification   String?
+  autoSignals      Json?
   assessor         User     @relation("TalentAssessor", fields: [assessorId], references: [id])
   org              Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user             User     @relation("TalentAssessed", fields: [userId], references: [id])
@@ -1511,6 +1553,110 @@ model TalentAssessment {
   @@unique([orgId, userId, quarter, year])
   @@index([orgId])
   @@index([userId])
+  @@schema("app_quikscale")
+}
+
+model TalentBenchmark {
+  id           String   @id @default(cuid())
+  orgId        String   @unique
+  perfCut      Int      @default(50)
+  potentialCut Int      @default(50)
+  updatedBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  org          Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@schema("app_quikscale")
+}
+
+model SWTEntry {
+  id             String   @id @default(cuid())
+  orgId          String
+  quarter        String
+  year           Int
+  type           String
+  content        String
+  impact         String?
+  category       String?
+  trendDirection String?
+  sortOrder      Int      @default(0)
+  createdBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([orgId, year, quarter])
+  @@schema("app_quikscale")
+}
+
+model Survey {
+  id          String           @id @default(cuid())
+  orgId       String
+  type        String
+  title       String
+  question    String
+  quarter     String
+  year        Int
+  status      String           @default("draft")
+  publicToken String           @unique
+  createdBy   String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  org         Org              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  questions   SurveyQuestion[]
+  responses   SurveyResponse[]
+
+  @@index([orgId])
+  @@index([orgId, type, year, quarter])
+  @@schema("app_quikscale")
+}
+
+model SurveyQuestion {
+  id           String         @id @default(cuid())
+  surveyId     String
+  order        Int
+  text         String
+  answerType   String         @default("nps_rank")
+  allowComment Boolean        @default(false)
+  required     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  survey       Survey         @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  answers      SurveyAnswer[]
+
+  @@unique([surveyId, order])
+  @@index([surveyId])
+  @@schema("app_quikscale")
+}
+
+model SurveyResponse {
+  id              String         @id @default(cuid())
+  surveyId        String
+  score           Int
+  comment         String?
+  respondentName  String?
+  respondentEmail String?
+  submittedAt     DateTime       @default(now())
+  survey          Survey         @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  answers         SurveyAnswer[]
+
+  @@index([surveyId])
+  @@schema("app_quikscale")
+}
+
+model SurveyAnswer {
+  id         String         @id @default(cuid())
+  responseId String
+  questionId String
+  scoreInt   Int?
+  scoreBool  Boolean?
+  comment    String?
+  question   SurveyQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  response   SurveyResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, questionId])
+  @@index([questionId])
   @@schema("app_quikscale")
 }
 

@@ -11,5 +11,10 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "additionalDirectories": [
+      "C:\\Users\\user\\AppData\\Local\\Temp\\qs-doc-build\\sections"
+    ]
   }
 }
