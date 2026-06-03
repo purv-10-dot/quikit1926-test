@@ -34,8 +34,7 @@ export function PriorityCell({ value, onCommit }: PriorityCellProps) {
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs hover:bg-gray-100"
-        title={`Priority: ${meta.label}`}
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs hover:bg-gray-100 focus:outline-none focus-visible:outline-none dark:hover:bg-slate-700/50"
       >
         <Icon className={`h-3.5 w-3.5 ${meta.tone}`} />
         <span className="text-gray-700">{meta.label}</span>

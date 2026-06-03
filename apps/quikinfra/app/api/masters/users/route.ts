@@ -9,6 +9,7 @@ const withOrgAuth = withOrgAuthForModule("masters");
  * Returns only active memberships; excludes soft-deleted users.
  */
 export const GET = withOrgAuth(async ({ orgId }) => {
+  // Gated by construction.masters.view via withOrgAuth's permission option below.
   const memberships = await db.orgMember.findMany({
     where: { orgId, status: "active" },
     select: {
@@ -19,4 +20,4 @@ export const GET = withOrgAuth(async ({ orgId }) => {
   });
   const users = memberships.map(m => ({ ...m.user, role: m.role }));
   return NextResponse.json({ success: true, data: users });
-});
+}, { permission: { resource: "construction.masters", action: "view" } });

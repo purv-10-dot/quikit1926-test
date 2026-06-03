@@ -31,7 +31,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
         <input
           id={id}
           className={cn(
-            `flex w-full border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)] focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50`,
+            `flex w-full border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-secondary)] focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100 dark:placeholder:text-gray-500`,
             sizeClasses,
             error && "border-[var(--color-danger)] focus:ring-[var(--color-danger)]",
             className

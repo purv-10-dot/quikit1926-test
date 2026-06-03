@@ -1,25 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin } from "@/lib/auth/context";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { listWorkflows, createWorkflow } from "@/lib/workflows/repository";
 
 /**
- * GET  /api/settings/workflows      — list workflows (tenant-scoped)
- * POST /api/settings/workflows      — create workflow + steps
+ * GET  /api/settings/workflows — list workflows (tenant-scoped)
+ * POST /api/settings/workflows — create workflow + steps
  *
+ * v2 permission gate: `construction.workflows` + `manage`.
  * Storage: Postgres (`cn_approval_workflows` + `cn_approval_workflow_steps`).
  */
+const auth = withOrgAuthForResource("construction.workflows");
 
-export async function GET(req: NextRequest) {
-  const ctxOrResponse = await requireSuperAdmin();
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
-
+export const GET = auth.manage(async (authCtx, req: NextRequest) => {
   const { searchParams } = new URL(req.url);
   const entityType = searchParams.get("entityType") ?? undefined;
   // `projectId` query param accepts:
-  //   omitted        → no filter (admin grid shows Default + every override)
-  //   "default"/""   → Default-only (projectId IS NULL)
-  //   <projectId>    → that project's overrides only
+  //   omitted       → no filter (admin grid shows Default + every override)
+  //   "default"/""  → Default-only (projectId IS NULL)
+  //   <projectId>   → that project's overrides only
   const rawProjectId = searchParams.get("projectId");
   let projectIdFilter: string | null | undefined;
   if (rawProjectId === null) {
@@ -31,18 +29,14 @@ export async function GET(req: NextRequest) {
   }
 
   const data = await listWorkflows({
-    orgId: ctx.orgId,
+    orgId: authCtx.orgId,
     entityType,
     projectId: projectIdFilter,
   });
   return NextResponse.json({ data, total: data.length });
-}
+});
 
-export async function POST(req: NextRequest) {
-  const ctxOrResponse = await requireSuperAdmin();
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
-
+export const POST = auth.manage(async (authCtx, req: NextRequest) => {
   const body = await req.json();
 
   // The QuickCreateDrawer ships `isActive` as string "true"/"false".
@@ -70,8 +64,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // `projectId` on the body: empty string / "default" / null → Default
-    // workflow (tenant-wide). Any other string → a project-scoped override.
     const rawProjectId = body.projectId;
     const projectId =
       rawProjectId === undefined ||
@@ -82,13 +74,13 @@ export async function POST(req: NextRequest) {
         : String(rawProjectId);
 
     const record = await createWorkflow({
-      orgId: ctx.orgId,
+      orgId: authCtx.orgId,
       projectId,
       name: String(body.name).trim(),
       entityType: String(body.entityType).trim(),
       isActive,
       steps,
-      createdBy: ctx.userId,
+      createdBy: authCtx.userId,
     });
     return NextResponse.json(record, { status: 201 });
   } catch (err: any) {
@@ -98,4 +90,4 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
-}
+});

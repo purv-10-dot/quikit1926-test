@@ -65,7 +65,6 @@ export default function PurchaseRequisitionsPage() {
     { key: "projectName", label: "Project", sortable: true, searchable: true },
     { key: "requestDate", label: "Date", type: "date", sortable: true },
     { key: "requiredDate", label: "Required Date", type: "date", sortable: true },
-    { key: "purpose", label: "Purpose", searchable: true },
     {
       key: "lineCount", label: "Items", type: "number", sortable: true,
       render: (row) => `${row.lineCount ?? 0} items`,

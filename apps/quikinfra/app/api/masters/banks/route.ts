@@ -12,6 +12,7 @@ import { withListRoute, withMutationRoute, DomainError } from "@/lib/http";
  */
 
 export async function GET(req: NextRequest) {
+  // Lookup data — list readable by any authenticated org user (scoped to orgId).
   return withListRoute(req, { entityLabel: "bank" }, async ({ ctx, searchParams, pagination }) => {
     const baseOpts = {
       orgId: ctx.orgId,
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
     {
       entityLabel: "bank",
       successStatus: 201,
+      requirePermission: "construction.masters.create",
       parseBody: (raw) => {
         const body = (raw ?? {}) as Record<string, unknown>;
         const required = (key: string, label: string) => {

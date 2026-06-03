@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, GitBranch, Plus, Trash2, X, Zap } from "lucide-react";
+import { ChevronDown, ChevronRight, GitBranch, Plus, Trash2, Zap } from "lucide-react";
 import { Skeleton, SkeletonAvatar, SkeletonBadge } from "@/components/skeleton";
 import {
   TYPE_META,
@@ -115,16 +115,6 @@ function EpicLinker({
             className="w-full rounded-t border-b border-gray-200 px-2 py-1.5 text-sm focus:outline-none"
           />
           <div className="max-h-56 overflow-y-auto py-1">
-            {linked && (
-              <button
-                type="button"
-                onClick={() => { onChange(null); setOpen(false); }}
-                className="flex w-full items-center gap-2 px-2 py-1 text-left text-xs text-red-600 hover:bg-red-50"
-              >
-                <X className="h-3 w-3" />
-                Remove from epic
-              </button>
-            )}
             {filtered.length === 0 && (
               <p className="px-2 py-2 text-xs text-gray-400">{search ? "No matches" : "No epics in this project"}</p>
             )}

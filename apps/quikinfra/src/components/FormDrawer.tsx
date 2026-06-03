@@ -15,7 +15,7 @@ interface FormDrawerProps {
   onClose: () => void;
   title: string;
   subtitle?: string;
-  width?: "md" | "lg" | "xl" | "2xl";
+  width?: "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl";
   children: ReactNode;
   onSubmit?: () => void;
   submitLabel?: string;
@@ -28,6 +28,8 @@ const WIDTH_MAP = {
   lg: "max-w-lg",
   xl: "max-w-xl",
   "2xl": "max-w-2xl",
+  "3xl": "max-w-3xl",
+  "4xl": "max-w-4xl",
 };
 
 /** Inset, rounded right drawers — shared by FormDrawer + feature slide-overs. */

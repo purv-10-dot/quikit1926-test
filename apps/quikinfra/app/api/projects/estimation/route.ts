@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -17,7 +18,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { estimationDate: "desc" },
   });
   return NextResponse.json({ success: true, data: list });
-});
+}, { permission: { resource: "construction.estimation", action: "view" } });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
@@ -74,4 +75,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     return created;
   });
   return NextResponse.json({ success: true, data: est }, { status: 201 });
-});
+}, { permission: { resource: "construction.estimation", action: "create" } });

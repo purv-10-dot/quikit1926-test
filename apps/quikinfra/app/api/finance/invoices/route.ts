@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -20,7 +21,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { invoiceDate: "desc" },
   });
   return NextResponse.json({ success: true, data: list });
-});
+}, { permission: { resource: "construction.finance", action: "view" } });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = invoiceCreateSchema.parse(await req.json());
@@ -67,4 +68,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   });
   await logAudit({ orgId, userId, actionType: "create", entityType: "cnClientInvoice", entityId: invoice.id, entityRef: invoice.invoiceNumber, newValues: { invoiceNumber: invoice.invoiceNumber, total: invoice.total, customerId: invoice.customerId } });
   return NextResponse.json({ success: true, data: invoice }, { status: 201 });
-});
+}, { permission: { resource: "construction.finance", action: "create" } });

@@ -111,6 +111,7 @@ export function Sidebar() {
   const [spacesOpen, setSpacesOpen] = useState(true);
   const [opsOpen, setOpsOpen] = useState(true);
   const [dashboardsOpen, setDashboardsOpen] = useState(true);
+  const [reportsOpen, setReportsOpen] = useState(true);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const recentRowRef = useRef<HTMLDivElement>(null);
@@ -162,12 +163,12 @@ export function Sidebar() {
   return (
     <aside
       data-tour="sidebar"
-      className="w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-[calc(100vh-48px)] overflow-y-auto"
+      className="w-[232px] shrink-0 border-r border-gray-200 bg-white flex flex-col h-full overflow-y-auto"
     >
       <nav className="flex-1 py-2">
         <div className="px-2 space-y-0.5">
           {canSee("home") && (
-            <NavRow href="/" icon={User} label="For you" active={isActive("/")} />
+            <NavRow href="/dashboard" icon={User} label="For you" active={isActive("/dashboard")} />
           )}
           {/* TODO: Recent + Plans + Starred + Apps — coming soon. Restore when ready.
           <div ref={recentRowRef}>
@@ -295,7 +296,7 @@ export function Sidebar() {
           )}
         </div>
 
-        <div className="my-2 mx-3 border-t border-gray-200" />
+        <div className="my-2" />
 
         <div className="px-2 space-y-0.5">
           <FiltersSection />
@@ -334,7 +335,7 @@ export function Sidebar() {
                 label="Default dashboard"
                 indent
               />
-              <div className="my-1.5 border-t border-gray-100" />
+              <div className="my-1.5" />
               {/* <NavRow
                 href="/dashboards"
                 icon={LayoutDashboard}
@@ -343,15 +344,41 @@ export function Sidebar() {
               /> */}
             </div>
           )}
-          {canSee("timesheet") && (
+          {canSee("timesheet") && perms.isAdmin && (
             <span data-tour="timesheet">
               <NavRow href="/timesheet" icon={Clock} label="Timesheet" active={isActive("/timesheet")} />
             </span>
           )}
           {canSee("reports") && (
             <span data-tour="reports">
-              <NavRow href="/reports" icon={BarChart3} label="Reports" active={isActive("/reports")} />
+              <NavRow
+                icon={BarChart3}
+                label="Reports"
+                expandable
+                expanded={reportsOpen}
+                onToggle={() => setReportsOpen((v) => !v)}
+              />
             </span>
+          )}
+          {canSee("reports") && reportsOpen && (
+            <div className="pr-2 space-y-1.5 mb-1">
+              <NavRow
+                href="/reports"
+                icon={BarChart3}
+                label="Project Report"
+                active={pathname === "/reports"}
+                indent
+              />
+              {perms.isAdmin && (
+                <NavRow
+                  href="/reports/resource"
+                  icon={BarChart3}
+                  label="Resource Report"
+                  active={isActive("/reports/resource")}
+                  indent
+                />
+              )}
+            </div>
           )}
           {/* TODO: coming soon — Operations / Customers / Customer experiences.
               Restore the full subtree once these modules are implemented.
@@ -375,7 +402,7 @@ export function Sidebar() {
           */}
         </div>
 
-        <div className="my-2 mx-3 border-t border-gray-200" />
+        <div className="my-2" />
 {/* 
         <div className="px-2 space-y-0.5">
           <NavRow href="https://confluence" icon={Map} label="Confluence" external />

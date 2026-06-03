@@ -1,0 +1,26 @@
+.bgWrap {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: #050507;
+}
+
+.video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  will-change: transform;
+  /* Zoom 15% from the center — crops ~7.5% off every edge equally,
+     enough to push the bottom-right Veo watermark out of frame while
+     keeping the portal centered. */
+  object-position: center;
+  transform: scale(1.15);
+  transform-origin: center center;
+}
+
+.vignette,
+.grain { display: none; }

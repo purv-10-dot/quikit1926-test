@@ -1,5 +1,6 @@
+import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import {
@@ -24,9 +25,9 @@ export async function POST(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireStoreAction("construction.issue", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "store.issue", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.issue`, 403);
   }

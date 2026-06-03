@@ -12,7 +12,15 @@ interface StatusCellProps {
 
 function blockStyles(hex: string | null | undefined): React.CSSProperties {
   const c = hex && /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : "#94a3b8";
-  return { backgroundColor: `${c}1a`, color: c };
+  // The `--qt-status-c` CSS var carries the status color to dark-mode
+  // overrides in globals.css, where the bg opacity is bumped from 10% to
+  // ~30% and the text is mixed with white so the pill stays legible on the
+  // dark surface. Light-mode defaults remain via the inline bg/color below.
+  return {
+    "--qt-status-c": c,
+    backgroundColor: `${c}1a`,
+    color: c,
+  } as React.CSSProperties;
 }
 
 export function StatusCell({ value, statuses, onCommit }: StatusCellProps) {
@@ -27,9 +35,10 @@ export function StatusCell({ value, statuses, onCommit }: StatusCellProps) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         style={blockStyles(current?.color)}
-        className="w-full flex items-center justify-center px-2 py-1.5 text-[11px] font-semibold hover:brightness-95 transition"
+        data-status-pill
+        className="qt-status-pill w-full flex items-center justify-center px-2 py-1.5 text-xs font-semibold hover:brightness-95 transition"
       >
-        <span className="truncate">{current?.name ?? "—"}</span>
+        <span>{current?.name ?? "—"}</span>
       </button>
       <PopoverPanel anchorRef={btnRef} open={open} onClose={() => setOpen(false)} width={160}>
         {statuses.map((s) => (
@@ -41,7 +50,8 @@ export function StatusCell({ value, statuses, onCommit }: StatusCellProps) {
               if (s.id !== value) onCommit(s.id);
             }}
             style={blockStyles(s.color)}
-            className={`w-full flex items-center justify-center px-2 py-1.5 text-[11px] font-semibold transition hover:brightness-95 ${
+            data-status-pill
+            className={`qt-status-pill w-full flex items-center justify-center px-2 py-1.5 text-xs font-semibold transition hover:brightness-95 ${
               s.id === value ? "ring-2 ring-inset ring-blue-400" : ""
             }`}
           >

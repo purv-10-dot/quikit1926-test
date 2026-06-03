@@ -9,6 +9,7 @@ import { listGRNs } from "@/lib/purchase/grn-repository";
 import { listMaterialIssues } from "@/lib/store/material-issue-repository";
 import { listStockTransfers } from "@/lib/store/stock-transfer-repository";
 import { canActOnStepForInbox } from "@/lib/approvals/workflow-rbac";
+import { findCnUsersByIds } from "@/lib/users/lookup";
 
 /**
  * GET /api/approvals/inbox?status=pending|approved|all
@@ -460,6 +461,39 @@ export async function GET(req: NextRequest) {
       // behavior). Per-route guards still enforce the real rule.
       console.error("[approvals-inbox] canAct batch lookup failed", err);
       for (const it of items) it.canAct = true;
+    }
+  }
+
+  // Resolve submittedBy user IDs to display names in one batch. Per-block
+  // mappers stamp the raw `createdBy` cuid; the UI renders this verbatim
+  // ("Submitted by cmpqh2hy0000…") which is unreadable. Look every unique
+  // id up against auth.User once and rewrite `submittedBy` to a name.
+  // Unresolved ids (deleted users, etc.) get cleared so the UI just shows
+  // "Submitted DD/MM/YYYY" without a trailing junk identifier.
+  if (items.length > 0) {
+    try {
+      const uniqueIds = Array.from(
+        new Set(items.map((i) => i.submittedBy).filter((v): v is string => !!v)),
+      );
+      if (uniqueIds.length > 0) {
+        const users = await findCnUsersByIds(uniqueIds);
+        const nameById = new Map<string, string>(
+          users.map((u) => [u.id, u.fullName]),
+        );
+        for (const it of items) {
+          if (it.submittedBy) {
+            it.submittedBy = nameById.get(it.submittedBy) ?? undefined;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[approvals-inbox] submittedBy resolve failed", err);
+      // Non-fatal — strip the raw ids so the UI doesn't leak cuids.
+      for (const it of items) {
+        if (it.submittedBy && /^c[a-z0-9]{20,}$/.test(it.submittedBy)) {
+          it.submittedBy = undefined;
+        }
+      }
     }
   }
 

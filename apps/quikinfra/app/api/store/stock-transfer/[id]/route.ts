@@ -11,7 +11,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params 
   });
   if (!t) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: t });
-});
+}, { permission: { resource: "construction.transfer", action: "view" } });
 
 export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const t = await db.cnStockTransfer.findFirst({ where: { id: params.id, orgId, deletedAt: null }, select: { id: true, status: true } });
@@ -19,4 +19,4 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req
   if (t.status === "received") return NextResponse.json({ success: false, error: "Fully-posted transfer is immutable" }, { status: 400 });
   await db.cnStockTransfer.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
   return NextResponse.json({ success: true });
-});
+}, { permission: { resource: "construction.transfer", action: "delete" } });

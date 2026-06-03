@@ -1,15 +1,15 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/shell/sidebar";
 import { Header } from "@/components/shell/header";
-import { RouteProgress } from "@/components/shell/route-progress";
 import { KanTour } from "@/components/tour/kan-tour";
 import { SessionGuard } from "@/components/session-guard";
 import { IssueCreatedToast } from "@/components/issue-created-toast";
 import { NoAccessGate } from "@/components/shell/no-access-gate";
 import { ThemeApplier } from "@quikit/ui/theme-applier";
+import { ThemeSync } from "@/components/shell/theme-sync";
 import { ImpersonationBanner } from "@quikit/ui";
 
 export default function DashboardLayout({
@@ -43,10 +43,16 @@ export default function DashboardLayout({
   return (
     <SessionGuard>
       <ThemeApplier />
+      <ThemeSync />
       <ImpersonationBanner />
       <NoAccessGate>
         <div className="flex flex-col h-screen bg-white">
-          {!fullscreen && <Header onToggleSidebar={() => setSidebarVisible((v) => !v)} />}
+          {!fullscreen && (
+            <Header
+              onToggleSidebar={() => setSidebarVisible((v) => !v)}
+              sidebarOpen={sidebarVisible && !isSettings}
+            />
+          )}
           <div className="flex flex-1 overflow-hidden">
             {!fullscreen && sidebarVisible && !isSettings && <Sidebar />}
             <main className="flex-1 overflow-y-auto bg-white">{children}</main>
@@ -54,9 +60,6 @@ export default function DashboardLayout({
           <IssueCreatedToast />
         </div>
       </NoAccessGate>
-      <Suspense fallback={null}>
-        <RouteProgress />
-      </Suspense>
       <KanTour />
     </SessionGuard>
   );

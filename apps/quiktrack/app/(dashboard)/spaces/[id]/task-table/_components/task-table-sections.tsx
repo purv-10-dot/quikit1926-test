@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { Folder } from "lucide-react";
 import { useInfiniteIssues } from "@/lib/hooks/useInfiniteIssues";
+import { DeleteTaskModal } from "@/components/delete-task-modal";
 import {
   EmptyChildrenRow,
   GroupHeaderRow,
@@ -29,17 +30,25 @@ function SentinelRow({ refCb }: { refCb: (el: HTMLElement | null) => void }) {
   );
 }
 
-function deleteIssueAndReload(id: string, reload: () => void) {
-  if (typeof window !== "undefined" && !window.confirm("Delete this work item? This is reversible from trash.")) return;
-  fetch(`/api/issues/${id}`, { method: "DELETE" })
-    .then((r) => r.json() as Promise<{ success: boolean; error?: string }>)
-    .then((res) => {
-      if (!res.success) throw new Error(res.error ?? "Delete failed");
-      reload();
-    })
-    .catch((e) => {
-      if (typeof window !== "undefined") window.alert(e instanceof Error ? e.message : "Delete failed");
-    });
+function useDeleteIssueModal(items: TaskIssue[], reload: () => void) {
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const requestDelete = useCallback((id: string) => setPendingId(id), []);
+  const pending = pendingId ? items.find((x) => x.id === pendingId) ?? null : null;
+  const modal = pending ? (
+    <DeleteTaskModal
+      open
+      onClose={() => setPendingId(null)}
+      issueId={pending.id}
+      issueKey={pending.key}
+      issueTitle={pending.title}
+      subtaskCount={pending.subtaskCount ?? 0}
+      onDeleted={() => {
+        setPendingId(null);
+        reload();
+      }}
+    />
+  ) : null;
+  return { requestDelete, modal };
 }
 
 function patchIssueAndReload(id: string, patch: Record<string, unknown>, reload: () => void) {
@@ -66,15 +75,16 @@ export function WithoutParentSection({ ctx }: { ctx: SectionCtx }) {
     { projectId: ctx.projectId, epicId: "null", excludeType: "EPIC,SUBTASK" },
     expanded,
   );
-  const onDelete = useCallback((id: string) => deleteIssueAndReload(id, result.reload), [result.reload]);
+  const del = useDeleteIssueModal(result.items, result.reload);
   const onPatchIssue = useCallback(
     (id: string, patch: Record<string, unknown>) => patchIssueAndReload(id, patch, result.reload),
     [result.reload],
   );
-  const childCtx: TaskRowContext = { ...ctx, onDelete, onPatchIssue };
+  const childCtx: TaskRowContext = { ...ctx, onDelete: del.requestDelete, onPatchIssue };
 
   return (
     <>
+      {del.modal}
       <GroupHeaderRow
         label="Without Parent"
         count={expanded ? result.total : undefined}
@@ -110,15 +120,16 @@ export function EpicsSection({ ctx }: { ctx: SectionCtx }) {
     { projectId: ctx.projectId, type: "EPIC" },
     true,
   );
-  const onDelete = useCallback((id: string) => deleteIssueAndReload(id, result.reload), [result.reload]);
+  const del = useDeleteIssueModal(result.items, result.reload);
   const onPatchIssue = useCallback(
     (id: string, patch: Record<string, unknown>) => patchIssueAndReload(id, patch, result.reload),
     [result.reload],
   );
-  const childCtx: TaskRowContext = { ...ctx, onDelete, onPatchIssue };
+  const childCtx: TaskRowContext = { ...ctx, onDelete: del.requestDelete, onPatchIssue };
 
   return (
     <>
+      {del.modal}
       {result.loading &&
         Array.from({ length: SKELETON_INITIAL_COUNT }).map((_, i) => (
           <TaskTableSkeletonRow key={`epic-skel-${i}`} depth={0} />
@@ -151,15 +162,16 @@ function EpicWithTasks({
     { projectId, epicId: epic.id, excludeType: "SUBTASK" },
     expanded,
   );
-  const onDelete = useCallback((id: string) => deleteIssueAndReload(id, result.reload), [result.reload]);
+  const del = useDeleteIssueModal(result.items, result.reload);
   const onPatchIssue = useCallback(
     (id: string, patch: Record<string, unknown>) => patchIssueAndReload(id, patch, result.reload),
     [result.reload],
   );
-  const childCtx: TaskRowContext = { ...ctx, onDelete, onPatchIssue };
+  const childCtx: TaskRowContext = { ...ctx, onDelete: del.requestDelete, onPatchIssue };
 
   return (
     <>
+      {del.modal}
       <TaskTableRow
         issue={epic}
         depth={0}
@@ -212,15 +224,16 @@ function TaskWithSubtasks({
     { projectId, parentId: issue.id },
     expanded && hasSubtasks,
   );
-  const onDelete = useCallback((id: string) => deleteIssueAndReload(id, result.reload), [result.reload]);
+  const del = useDeleteIssueModal(result.items, result.reload);
   const onPatchIssue = useCallback(
     (id: string, patch: Record<string, unknown>) => patchIssueAndReload(id, patch, result.reload),
     [result.reload],
   );
-  const childCtx: TaskRowContext = { ...ctx, onDelete, onPatchIssue };
+  const childCtx: TaskRowContext = { ...ctx, onDelete: del.requestDelete, onPatchIssue };
 
   return (
     <>
+      {del.modal}
       <TaskTableRow
         issue={issue}
         depth={depth}

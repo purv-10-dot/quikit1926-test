@@ -243,8 +243,7 @@ export function SpacesGrid() {
               <th className="px-4 py-3 font-medium">Key</th>
               <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium">Lead</th>
-              <th className="px-4 py-3 font-medium">Space URL</th>
-              <th className="px-4 py-3 w-10" />
+              <th className="px-4 py-3 font-medium whitespace-nowrap">Space URL</th>
             </tr>
           </thead>
           <tbody>
@@ -271,9 +270,6 @@ export function SpacesGrid() {
                       <div className="h-6 w-6 rounded-full bg-gray-200 animate-pulse" />
                       <div className="h-3 w-24 rounded bg-gray-200 animate-pulse" />
                     </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="h-3 w-20 rounded bg-gray-200 animate-pulse" />
                   </td>
                   <td className="px-4 py-3 text-center">
                     <div className="mx-auto h-4 w-4 rounded bg-gray-200 animate-pulse" />
@@ -340,7 +336,7 @@ export function SpacesGrid() {
                     </span>
                     <span className="text-gray-700">{leadName(s.lead)}</span>
                   </div>
-                </td>              
+                </td>
                 <td className="px-4 py-3">
                   <SpaceRowMenu spaceId={s.id} />
                 </td>

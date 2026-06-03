@@ -23,6 +23,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Check,
+  Eye,
   Pencil,
   Send,
   Trash2,
@@ -302,7 +303,20 @@ export default function WorkOrderDetailPage() {
                 <h2 className="text-sm font-semibold text-gray-900">
                   Overview
                 </h2>
-                <StatusChip status={wo.status ?? "draft"} />
+                <div className="flex items-center gap-2">
+                  {boqItems.length > 0 && (
+                    <a
+                      href={`/api/projects/work-orders/${id}/preview/pdf`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 hover:underline"
+                      title="Open the Work Order PDF in a new tab"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> View PDF
+                    </a>
+                  )}
+                  <StatusChip status={wo.status ?? "draft"} />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">

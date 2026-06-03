@@ -6,34 +6,38 @@ const pillars = [
   {
     key: "people",
     name: "People",
+    subtitle: "HAPPINESS & ACCOUNTABILITY",
     quote: "The right people, in the right seats, doing the right things.",
     body:
-      "Build a team and culture that can carry the weight of growth. Track accountability rhythms, ownership, and talent density — so the company never depends on a single leader.",
-    inProduct: "Owners on every Rock, KPI, and Critical Number.",
+      "Build the team that can carry the weight of growth. Track accountability, ownership, and talent density — so performance is visible, every seat is owned, and the company never depends on a single leader.",
+    inProduct: "Goals, 1:1s, FACe & PACe charts, talent reviews, and NPS — all connected.",
   },
   {
     key: "strategy",
     name: "Strategy",
-    quote: "A clear, differentiated strategy that everyone understands.",
+    subtitle: "REVENUE & GROWTH",
+    quote: "A clear, differentiated plan everyone understands — and can recite.",
     body:
-      "One page. BHAG, core values, annual priorities, quarterly Rocks. A living strategic plan the whole company can recite — not a 50-page document that lives in a drive.",
-    inProduct: "One-Page Strategic Plan (OPSP), live and editable.",
+      "One page. BHAG, core values, 3–5 year targets, quarterly Rocks, and the Rockefeller Habits checklist. A living OPSP the whole company can see — not a 50-page document that lives in a drive.",
+    inProduct: "OPSP live and editable. Versioned quarter on quarter.",
   },
   {
     key: "execution",
     name: "Execution",
+    subtitle: "PROFIT & TIME",
     quote: "Discipline and consistency in how the work gets done.",
     body:
-      "Daily huddles, weekly teams, monthly leadership, quarterly planning. The rhythm that surfaces problems fast and resolves them faster — operationalized inside the tool.",
-    inProduct: "Meeting Rhythm engine with red / yellow / green flags.",
+      "KPI tracking with red/amber/green health, weekly Rock progress, and WWW action items from every meeting. A slipping Rock surfaces in week 3 — not at the quarter-end retrospective.",
+    inProduct: "Meeting Rhythm engine with R/Y/G flags. KPIs. Rocks. WWW.",
   },
   {
     key: "cash",
     name: "Cash",
-    quote: "Understanding the cash flow that fuels growth.",
+    subtitle: "OXYGEN & OPTIONS",
+    quote: "Profitable companies still run out of cash and die.",
     body:
-      "Profitable companies still run out of cash and die. Full visibility into the financial levers — cash conversion cycle, runway, burn — alongside the operational picture.",
-    inProduct: "Cash conversion cycle and financial KPIs on the same scorecard.",
+      "The Power of One — model how a 1% change in price, volume, COGS, overheads, or debtor days compounds into cash and EBIT. Your finance team stops guessing about the levers.",
+    inProduct: "Cash conversion cycle and Power of One on the same scorecard.",
   },
 ] as const;
 
@@ -102,15 +106,12 @@ export default function FourPillars() {
     >
       <div className="pillars-hscroll-pin">
         <header className="section-header pillars-hscroll-header">
-          <span className="section-eyebrow">The Four Pillars</span>
+          <span className="section-eyebrow">The Four Decisions</span>
           <h2 className="section-title">
-            <span className="serif">The soul of Scaling Up,</span>{" "}
-            <span className="serif-bold">in four colors.</span>
+            <span className="serif">Most tools track one thing.</span>{" "}
+            <span className="serif-bold">Your business isn&apos;t one thing.</span>
           </h2>
-          <p className="section-lede">
-            Every feature, every screen, every metric in QuikScale maps back to one of the
-            four pillars. Scroll to reveal each one.
-          </p>
+          <p className="section-lede">A single platform that sees your business the way you do — as one interconnected system.</p>
         </header>
 
         <div className="pillars-row-wrap">
@@ -119,13 +120,10 @@ export default function FourPillars() {
               <article key={p.key} className={`pillar-card pillar-${p.key}`}>
                 <div className="pillar-card-head">
                   <h3 className="pillar-name serif-bold">{p.name}</h3>
+                  <span className="pillar-subtitle">{p.subtitle}</span>
                 </div>
                 <p className="pillar-quote">&ldquo;{p.quote}&rdquo;</p>
                 <p className="pillar-body">{p.body}</p>
-                <p className="pillar-inproduct">
-                  <span className="pillar-inproduct-label">In QuikScale</span>
-                  <span>{p.inProduct}</span>
-                </p>
               </article>
             ))}
             <span className="pillars-row-spacer" aria-hidden="true" />

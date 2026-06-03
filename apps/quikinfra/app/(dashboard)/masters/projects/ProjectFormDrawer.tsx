@@ -13,7 +13,7 @@ import {
 } from "@/components/FormDrawer";
 import { OpenCageAddressAutocomplete } from "@/components/OpenCageAddressAutocomplete";
 import { toast } from "@/lib/toast";
-import { useCreateProject, useUpdateProject, useCompanies, useCustomers } from "@/hooks/use-masters";
+import { useCreateProject, useUpdateProject, useCustomers } from "@/hooks/use-masters";
 import {
   validateForm, type ValidationRules,
   validateProjectCode, validateMinLength, validateDateISO, validateDateRange,
@@ -42,7 +42,7 @@ interface Props { open: boolean; onClose: () => void; editData?: any; }
 
 const emptyForm = {
   code: "", name: "", description: "", projectType: "Building",
-  companyId: "", clientId: "",
+  clientId: "",
   address: "", city: "", state: "", pincode: "", siteGstin: "",
   startDate: "", expectedEndDate: "", actualEndDate: "",
   projectValue: "", budget: "", purchaseLimit: "",
@@ -55,7 +55,6 @@ const rules: ValidationRules<typeof emptyForm> = {
     { validator: (v) => validateMinLength(v, 3, "Project name") },
   ],
   code: [{ required: true, label: "Project code" }, { validator: validateProjectCode }],
-  companyId: [{ required: true, label: "Company" }],
   clientId: [{ required: true, label: "Client" }],
   startDate: [
     { required: true, label: "Start date" },
@@ -75,7 +74,6 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject();
-  const { data: companiesData } = useCompanies();
   const { data: customersData } = useCustomers();
 
   const set = (key: string, val: any) => {
@@ -89,7 +87,6 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
         setForm({
           ...emptyForm,
           ...editData,
-          companyId: editData.companyId ?? "",
           clientId: editData.clientId ?? "",
           description: editData.description ?? "",
           projectType: editData.projectType ?? "Building",
@@ -114,17 +111,6 @@ export function ProjectFormDrawer({ open, onClose, editData }: Props) {
       setErrors({});
     }
   }, [open, editData?.id, editData]);
-
-  const companies = (companiesData?.data ?? []).filter((c: any) => c?.status !== "inactive");
-  // Company is a required FK in the DB. Since we removed the Company picker
-  // from the modal, auto-select the first active company when creating.
-  useEffect(() => {
-    if (!open) return;
-    if (editData?.id) return; // keep existing company on edits
-    if (form.companyId) return;
-    const first = companies[0];
-    if (first?.id) setForm((prev) => ({ ...prev, companyId: first.id }));
-  }, [open, editData?.id, form.companyId, companies]);
 
   const customerOptions = (customersData?.data ?? []).map((c: any) => ({ value: c.id, label: c.name }));
 

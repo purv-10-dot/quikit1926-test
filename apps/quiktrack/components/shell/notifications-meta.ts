@@ -3,7 +3,7 @@ export interface NotificationActor {
   firstName: string | null;
   lastName: string | null;
   email: string;
-  avatar: string | null;
+  avatarUrl: string | null;
 }
 
 export interface NotificationRow {

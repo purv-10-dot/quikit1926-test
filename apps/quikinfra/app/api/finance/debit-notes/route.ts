@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -17,7 +18,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { noteDate: "desc" },
   });
   return NextResponse.json({ success: true, data: list });
-});
+}, { permission: { resource: "construction.finance", action: "view" } });
 
 /**
  * POST /api/finance/debit-notes — reduces a vendor bill's outstanding. Same
@@ -67,4 +68,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     return note;
   });
   return NextResponse.json({ success: true, data: result }, { status: 201 });
-});
+}, { permission: { resource: "construction.finance", action: "create" } });

@@ -11,19 +11,32 @@ let _transporter: nodemailer.Transporter | null = null;
 
 function getTransporter(): nodemailer.Transporter | null {
   if (_transporter) return _transporter;
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
+
+  // Mirror apps/quikit/lib/email.ts so the same SMTP creds work for both
+  // apps: honour SMTP_HOST/PORT, accept the EMAIL_* aliases, and derive
+  // `secure` from the port (465 = implicit TLS, 587 = STARTTLS) instead of
+  // hardcoding 465/secure — Office365 (the prod provider) is 587/STARTTLS.
+  const host = process.env.SMTP_HOST;
+  const port = process.env.SMTP_PORT;
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASSWORD;
+
+  if (!host || !user || !pass) return null;
+
+  const portNum = port ? parseInt(port, 10) : 587;
   _transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    host,
+    port: portNum,
+    secure: portNum === 465,
+    auth: { user, pass },
+    tls: { ciphers: "SSLv3" },
   });
   return _transporter;
 }
 
 function fromAddress(): string {
-  const user = process.env.SMTP_USER ?? "quikitsupport@gmail.com";
-  return `"QuikIT Support" <${user}>`;
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER || process.env.EMAIL_USER;
+  return from ? `"QuikIT Support" <${from}>` : `"QuikIT Support" <noreply@quikit.app>`;
 }
 
 /* ────────────────────────────────────────────────────────────────────────── *

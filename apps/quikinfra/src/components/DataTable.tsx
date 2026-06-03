@@ -59,6 +59,13 @@ interface DataTableProps<T = Record<string, unknown>> {
    * key lives under a different field.
    */
   getHistoryEntityId?: (row: T) => string;
+  /**
+   * Per-page subtitle override for the Approval Timeline drawer header.
+   * Default resolution walks a document-number priority list before
+   * falling back to row name / code. Override when the page needs a
+   * different label (e.g. Stock Reconciliation prefers `reconNo`).
+   */
+  getHistoryRowLabel?: (row: T) => string;
   /** Headline shown when the table has no data at all (no filters applied). */
   emptyTitle?: string;
   /** Sub-line under {@link emptyTitle}. */
@@ -172,11 +179,32 @@ function matchCond<T extends Record<string, unknown>>(
 
 // ─── Change History Drawer ────────────────────────────────────────────────────
 
-const MOCK_HISTORY: HistoryEvent[] = [
-  { id: 'm3', at: '2024-04-07T14:30:00.000Z', byId: 'u1', byName: 'Akhilesh Sharma', kind: 'status_change', label: 'Status changed', changes: [{ field: 'Status', from: 'Inactive', to: 'Active' }] },
-  { id: 'm2', at: '2024-03-01T10:00:00.000Z', byId: 'u2', byName: 'Alice Johnson',   kind: 'update',        label: 'Updated',        changes: [{ field: 'Role', from: 'Read Only', to: 'Tenant Admin' }, { field: 'Org', from: '—', to: 'Acme North' }] },
-  { id: 'm1', at: '2024-01-15T09:00:00.000Z', byId: 'u1', byName: 'Akhilesh Sharma', kind: 'create',        label: 'Record created' },
+// Priority list for resolving a row → drawer subtitle. Document numbers
+// win over names/codes; raw `id` is the last-resort fallback so the
+// drawer never silently shows a CUID when a friendly identifier exists.
+// `grnNumber` is placed before `poNumber` because GRN rows carry both
+// and the local doc number should take precedence over the source PO.
+const HISTORY_LABEL_FIELDS = [
+  'prNumber', 'mrNumber',
+  'indentNumber', 'rfqNumber',
+  'grnNumber', 'poNumber',
+  'reconciliationNumber', 'reconNumber', 'reconNo',
+  'issueNumber', 'transferNumber', 'returnNumber', 'gatePassNumber',
+  'woNumber', 'estimationNumber', 'dprNumber',
+  'invoiceNumber', 'billNumber', 'paymentNumber', 'receiptNumber',
+  'name', 'fullName', 'displayName',
+  'code', 'projectCode',
 ];
+
+function historyRowLabel(row: unknown): string {
+  const r = row as Record<string, unknown>;
+  for (const key of HISTORY_LABEL_FIELDS) {
+    const v = r[key];
+    if (typeof v === 'string' && v.trim()) return v;
+    if (typeof v === 'number') return String(v);
+  }
+  return String(r.id ?? 'Record');
+}
 
 interface HistoryChange { field: string; from?: string | null; to?: string | null }
 interface HistoryEvent {
@@ -260,13 +288,13 @@ function HistoryDrawer({
   entityType?: string;
   entityId?: string;
 }) {
-  const useMock = !entityType || !entityId;
-  const [events, setEvents] = useState<HistoryEvent[]>(useMock ? MOCK_HISTORY : []);
-  const [loading, setLoading] = useState(!useMock);
+  const skipFetch = !entityType || !entityId;
+  const [events, setEvents] = useState<HistoryEvent[]>([]);
+  const [loading, setLoading] = useState(!skipFetch);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (useMock) return;
+    if (skipFetch) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -285,7 +313,7 @@ function HistoryDrawer({
       .catch((e) => { if (!cancelled) setError(e?.message ?? 'Failed to load history'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [useMock, entityType, entityId]);
+  }, [skipFetch, entityType, entityId]);
 
   // Derived summary used by the header banner.
   // status: latest approval-flow state we can infer from the events.
@@ -891,7 +919,7 @@ export function DataTable<T extends Record<string, unknown>>({
   id, columns: rawColumns, data, onAdd, addLabel = 'Add New',
   defaultSort, defaultSortDir = 'asc', auditEnabled = true,
   fitToContent = false,
-  historyEntityType, getHistoryEntityId,
+  historyEntityType, getHistoryEntityId, getHistoryRowLabel,
   emptyTitle, emptyHint,
 }: DataTableProps<T>) {
   // Merge audit cols
@@ -1015,35 +1043,39 @@ export function DataTable<T extends Record<string, unknown>>({
   const visibleCols = columns.filter(c => !hiddenCols.has(c.key));
   const orderedCols = [...visibleCols.filter(c => frozenCols.has(c.key)), ...visibleCols.filter(c => !frozenCols.has(c.key))];
 
-  // History col
-  const allCols: ColDef<T>[] = [
-    ...orderedCols,
-    {
-      key: '__history', label: '', sortable: false, searchable: false, hideable: false, freezable: false,
-      width: '48px',
-      render: (row) => {
-        const r = row as Record<string, unknown>;
-        const entityId = getHistoryEntityId ? getHistoryEntityId(row) : String(r.id ?? '');
-        return (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setHistoryRow({
-                label: String(r.name ?? r.id ?? 'Record'),
-                entityId: entityId || undefined,
-              });
-            }}
-            title="View change history"
-            className="group/btn relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 ring-1 ring-inset ring-orange-200/50 transition-all duration-200 hover:from-orange-100 hover:to-orange-200 hover:text-orange-700 hover:ring-orange-300 hover:shadow-[0_0_0_3px_rgba(251,146,60,0.15)] active:scale-95"
-          >
-            <span className="absolute inset-0 rounded-lg bg-white/30 opacity-0 transition-opacity group-hover/btn:opacity-100" />
-            <History className="relative z-10 h-3.5 w-3.5 transition-transform duration-300 group-hover/btn:-rotate-12" />
-          </button>
-        );
-      },
+  // History column is only appended when the page wires up an entity
+  // type — otherwise the drawer would fetch nothing and show an empty
+  // "No activity yet" panel, which reads as a broken button.
+  const historyCol: ColDef<T> = {
+    key: '__history', label: '', sortable: false, searchable: false, hideable: false, freezable: false,
+    width: '48px',
+    render: (row) => {
+      const r = row as Record<string, unknown>;
+      const entityId = getHistoryEntityId ? getHistoryEntityId(row) : String(r.id ?? '');
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setHistoryRow({
+              label: getHistoryRowLabel
+                ? getHistoryRowLabel(row)
+                : historyRowLabel(row),
+              entityId: entityId || undefined,
+            });
+          }}
+          title="View change history"
+          className="group/btn relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 text-orange-600 ring-1 ring-inset ring-orange-200/50 transition-all duration-200 hover:from-orange-100 hover:to-orange-200 hover:text-orange-700 hover:ring-orange-300 hover:shadow-[0_0_0_3px_rgba(251,146,60,0.15)] active:scale-95"
+        >
+          <span className="absolute inset-0 rounded-lg bg-white/30 opacity-0 transition-opacity group-hover/btn:opacity-100" />
+          <History className="relative z-10 h-3.5 w-3.5 transition-transform duration-300 group-hover/btn:-rotate-12" />
+        </button>
+      );
     },
-  ];
+  };
+  const allCols: ColDef<T>[] = historyEntityType
+    ? [...orderedCols, historyCol]
+    : orderedCols;
 
   const frozenLeft = (key: string): number | undefined => {
     if (!frozenCols.has(key)) return undefined;
@@ -1261,13 +1293,13 @@ export function DataTable<T extends Record<string, unknown>>({
             <thead className="text-left sticky top-0 z-20">
               <tr>
                 {allCols.map(col => {
-                  if (col.key === '__history') return <th key="__history" className="w-12 min-w-[48px] max-w-[48px] border-b border-slate-200 bg-gradient-to-b from-white to-slate-50/60 px-1.5 py-3.5 text-center" />;
+                  if (col.key === '__history') return <th key="__history" className="w-12 min-w-[48px] max-w-[48px] border-b border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 px-1.5 py-3.5 text-center" />;
                   const left = frozenLeft(col.key);
                   const frozen = left !== undefined;
                   const isSorted = sorts.find(s => s.key === col.key);
                   return (
                     <th key={col.key}
-                      className={`px-4 py-3.5 whitespace-nowrap select-none text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500 bg-gradient-to-b from-white to-slate-50/60 border-b border-slate-200 ${isSorted ? 'shadow-[inset_0_-2px_0_0_rgb(249,115,22)]' : ''} ${frozen ? 'sticky z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}`}
+                      className={`px-4 py-3 whitespace-nowrap select-none text-xs font-semibold text-slate-700 bg-gradient-to-b from-slate-50 to-slate-100/80 border-b border-slate-200 shadow-[inset_0_-1px_0_rgba(15,23,42,0.04)] ${isSorted ? 'shadow-[inset_0_-2px_0_0_rgb(249,115,22)]' : ''} ${frozen ? 'sticky z-30 bg-gradient-to-b from-slate-50 to-slate-100/80 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]' : ''}`}
                       style={{ left: frozen ? left : undefined, width: col.width }}>
                       {col.sortable !== false ? (
                         <button onClick={() => {

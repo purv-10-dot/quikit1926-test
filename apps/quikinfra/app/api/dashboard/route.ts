@@ -58,10 +58,7 @@ export async function GET() {
   //
   // Project-level restriction (projectsAssigned) is independent of the
   // above and still applies whenever the user has a non-empty list.
-  const isPlatformAdmin =
-    roleKey === "super_admin" ||
-    roleKey === "admin" ||
-    permissions?.has?.("*") === true;
+ 
 
   // Every user — platform admin included — is scoped to their own org.
   // Per-org isolation is enforced everywhere in the ERP; cross-tenant
@@ -74,19 +71,7 @@ export async function GET() {
   const scoped = Array.isArray(projectIds) && projectIds.length > 0;
   const projectScope = scoped ? { projectId: { in: projectIds! } } : {};
 
-  logger.info({
-    msg: "dashboard_context_resolved",
-    userId: ctx.userId,
-    userEmail: ctx.userEmail,
-    ctxOrgId: orgId,
-    scopedOrgId: orgId,
-    roleKey,
-    userType: ctx.userType,
-    isPlatformAdmin,
-    permissionsCount: permissions?.size ?? 0,
-    projectIdsCount: projectIds?.length ?? 0,
-    scoped,
-  });
+  
 
   // Calendar-month bounds, server-local TZ — good enough for a dashboard tile.
   const monthStart = new Date();

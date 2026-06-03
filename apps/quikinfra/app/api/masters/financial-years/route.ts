@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext } from "@/lib/auth/context";
+import { requireMastersAction } from "@/lib/auth/requireMastersAction";
+
 import {
   listFinancialYears,
   countFinancialYears,
@@ -8,8 +9,9 @@ import {
 import { parsePagination, paginateDb } from "@/lib/http/pagination";
 
 export async function GET(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  const ctxOrResp = await requireMastersAction("view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";
@@ -24,8 +26,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const body = await req.json();
   if (!body?.label || !String(body.label).trim()) {

@@ -1,7 +1,8 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
 import { BOQError } from "@/lib/boq";
-import { getTenantContext, tenantCreate, hasMatrixAction } from "@/lib/auth/context";
+import { tenantCreate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { parsePagination } from "@/lib/http/pagination";
 import { parseStoredWeatherDetail } from "@/lib/weather/dpr-weather";
@@ -98,8 +99,9 @@ export async function GET(req: NextRequest) {
   const projectId = searchParams.get("projectId") ?? "";
   const search = searchParams.get("search")?.toLowerCase() ?? "";
 
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  const ctxOrResp = await requireProjectsFinanceAction("construction.dpr", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const where: Record<string, unknown> = {
     orgId: ctx.orgId,
@@ -209,9 +211,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await getTenantContext();
-    if (!ctx)
-      return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    const ctxOrResp = await requireProjectsFinanceAction("construction.dpr", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
     if (!hasMatrixAction(ctx, "pm.dpr", "add")) {
       return envelopeErr("FORBIDDEN", `Action "add" not allowed for pm.dpr`, 403);
     }

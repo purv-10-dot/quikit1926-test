@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireSuperAdmin } from "@/lib/auth/context";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import {
   findWorkflowById,
   updateWorkflow,
@@ -11,30 +11,22 @@ import {
  * PATCH  /api/settings/workflows/:id — update name / entityType / isActive / steps
  * DELETE /api/settings/workflows/:id — remove workflow + its steps (cascade)
  *
+ * v2 permission gate: `construction.workflows` + `manage`.
  * Storage: Postgres.
  */
+const auth = withOrgAuthForResource("construction.workflows");
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const ctxOrResponse = await requireSuperAdmin();
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
-
-  const wf = await findWorkflowById(ctx.orgId, params.id);
+export const GET = auth.manage<{ id: string }>(async (authCtx, _req, { params }) => {
+  const wf = await findWorkflowById(authCtx.orgId, params.id);
   if (!wf) return NextResponse.json({ error: "Workflow not found" }, { status: 404 });
   return NextResponse.json(wf);
-}
+});
 
-export async function PATCH(
+export const PATCH = auth.manage<{ id: string }>(async (
+  authCtx,
   req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const ctxOrResponse = await requireSuperAdmin();
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
-
+  { params },
+) => {
   const body = await req.json();
   const isActive =
     body.isActive === undefined
@@ -58,34 +50,26 @@ export async function PATCH(
     amountThresholdMin: l.amountThresholdMin ?? null,
   }));
 
-  const updated = await updateWorkflow(ctx.orgId, params.id, {
+  const updated = await updateWorkflow(authCtx.orgId, params.id, {
     name: body.name,
     entityType: body.entityType,
     isActive,
     steps,
-    updatedBy: ctx.userId,
+    updatedBy: authCtx.userId,
   });
   if (!updated) return NextResponse.json({ error: "Workflow not found" }, { status: 404 });
   return NextResponse.json(updated);
-}
+});
 
 // Alias — some UI callers use PUT.
-export async function PUT(
-  req: NextRequest,
-  ctx: { params: { id: string } },
-) {
-  return PATCH(req, ctx);
-}
+export const PUT = PATCH;
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } },
-) {
-  const ctxOrResponse = await requireSuperAdmin();
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
-
-  const result = await deleteWorkflow(ctx.orgId, params.id);
+export const DELETE = auth.manage<{ id: string }>(async (
+  authCtx,
+  _req,
+  { params },
+) => {
+  const result = await deleteWorkflow(authCtx.orgId, params.id);
   if (result.status === "not_found") {
     return NextResponse.json({ error: "Workflow not found" }, { status: 404 });
   }
@@ -100,4 +84,4 @@ export async function DELETE(
     );
   }
   return NextResponse.json({ success: true });
-}
+});

@@ -1,5 +1,6 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextResponse } from "next/server";
-import { getTenantContext } from "@/lib/auth/context";
+
 import { findRfqById } from "@/lib/purchase/rfq-repository";
 import { buildRfqPreview } from "@/lib/purchase/rfq-email";
 
@@ -15,8 +16,9 @@ export async function GET(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requirePurchaseAction("construction.rfq", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const rfq = await findRfqById(ctx.orgId, params.id);
   if (!rfq) return NextResponse.json({ error: "RFQ not found" }, { status: 404 });

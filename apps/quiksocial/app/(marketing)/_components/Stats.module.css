@@ -1,0 +1,104 @@
+.section {
+  position: relative;
+  z-index: 4;          /* paints over the fixed BG image */
+  padding: clamp(80px, 12vh, 160px) 10vw;
+  color: #fff;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.75);
+  margin: 0 0 56px;
+  background: rgba(10, 11, 13, 0.4);
+  backdrop-filter: blur(8px);
+}
+.dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.9);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  /* No gap — cards sit flush so the dividing lines (border-left on the
+     2nd-4th card) read as continuous separators between them. */
+  gap: 0;
+}
+
+.card {
+  position: relative;
+  padding: 36px 28px;
+  border: none;
+  background: transparent;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;   /* lead at top, rest at bottom */
+  align-items: flex-start;
+}
+
+/* Vertical divider between adjacent cards */
+.card + .card {
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.lead {
+  font-family: var(--font-serif), 'Times New Roman', serif;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 64px;
+  line-height: 1.05;
+  letter-spacing: -0.018em;
+  margin: 0;
+  text-shadow: 0 4px 28px rgba(0, 0, 0, 0.5);
+  background: linear-gradient(180deg, #fff 0%, rgba(255, 255, 255, 0.55) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.rest {
+  font-family: var(--font-serif), 'Times New Roman', serif;
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 1.15;
+  letter-spacing: -0.018em;
+  color: rgba(255, 255, 255, 0.88);
+  text-shadow: 0 4px 28px rgba(0, 0, 0, 0.5);
+}
+
+/* Tablet — 4 across is too cramped at 768–1023px. Two rows of two. */
+@media (min-width: 721px) and (max-width: 1023px) {
+  .section { padding: clamp(64px, 10vh, 120px) 6vw; }
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .lead { font-size: 52px; }
+  .rest { font-size: 28px; }
+  /* First column items lose the left border; second-column items keep
+     it. Items in row 2 also need a top border for the row separator. */
+  .card + .card { border-left: 1px solid rgba(255, 255, 255, 0.22); }
+  .card:nth-child(2n + 1) { border-left: none; }
+  .card:nth-child(n + 3) { border-top: 1px solid rgba(255, 255, 255, 0.22); }
+}
+
+@media (max-width: 720px) {
+  .section { padding: 72px 22px; }
+  .eyebrow { margin-bottom: 32px; }
+  .grid { grid-template-columns: 1fr; gap: 0; }
+  .card { padding: 28px 4px; min-height: 0; gap: 14px; }
+  .lead { font-size: 48px; }
+  .rest { font-size: 24px; line-height: 1.25; }
+  /* Stack divider: flip from vertical (border-left) to horizontal (border-top) */
+  .card + .card {
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.22);
+  }
+}

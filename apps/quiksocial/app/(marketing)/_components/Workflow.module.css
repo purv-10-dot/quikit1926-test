@@ -1,0 +1,215 @@
+.section {
+  position: relative;
+  z-index: 4;
+  color: #fff;
+  /* height is set inline from PIN_VH so JS and CSS agree on scroll range */
+}
+
+/* Pin the inner viewport for the duration of the section's scroll range
+   so each card can reveal one-per-viewport of additional scrolling. */
+.sticky {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(80px, 12vh, 160px) 10vw;
+  gap: 56px;
+}
+
+.head {
+  max-width: 1200px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.75);
+  margin-bottom: 22px;
+  background: rgba(10, 11, 13, 0.4);
+  backdrop-filter: blur(8px);
+}
+.dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.9);
+}
+
+.title {
+  font-family: var(--font-serif), 'Times New Roman', serif;
+  font-weight: 400;
+  font-size: clamp(40px, 5vw, 76px);
+  line-height: 1.05;
+  letter-spacing: -0.022em;
+  margin: 0;
+  max-width: 22ch;
+  text-shadow: 0 4px 28px rgba(0, 0, 0, 0.5);
+}
+.title em {
+  font-style: italic;
+  background: linear-gradient(180deg, #fff 0%, rgba(255, 255, 255, 0.55) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  position: relative;
+}
+.steps::before {
+  content: "";
+  position: absolute;
+  top: 22px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.step {
+  position: relative;
+  padding: 0 24px 0 24px;
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+  min-height: 240px;
+  /* JS drives opacity + transform each frame based on scroll progress. */
+  opacity: 0;
+  transform: translate3d(120px, 0, 0);
+  will-change: opacity, transform;
+}
+.step:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+
+.step::after {
+  content: "";
+  position: absolute;
+  top: 18px;
+  left: 24px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(5, 5, 7, 1);
+}
+.step:first-child::after { left: 0; }
+
+.num {
+  display: block;
+  margin-top: 48px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 18px;
+}
+
+.stepTitle {
+  font-family: var(--font-serif), 'Times New Roman', serif;
+  font-weight: 400;
+  font-style: italic;
+  font-size: clamp(28px, 2.6vw, 38px);
+  line-height: 1.05;
+  letter-spacing: -0.018em;
+  margin: 0 0 14px;
+  background: linear-gradient(180deg, #fff 0%, rgba(255, 255, 255, 0.55) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.body {
+  font-size: clamp(13px, 0.95vw, 15px);
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.78);
+  margin: 0;
+}
+
+/* Tablet — 4-column grid is too narrow at 768–1023px, switch to 2x2.
+   Pin-scrubbed reveal still runs because the section height stays the
+   same; only the grid columns change. */
+@media (min-width: 721px) and (max-width: 1023px) {
+  .sticky { padding: clamp(60px, 10vh, 120px) 6vw; }
+  .title { font-size: clamp(36px, 4.6vw, 56px); }
+  .steps { grid-template-columns: repeat(2, 1fr); row-gap: 56px; }
+  /* Disable the single horizontal rail across the top — it doesn't
+     make sense in a 2x2 grid. Each step keeps its left border instead. */
+  .steps::before { display: none; }
+  .step { border-left: 1px solid rgba(255, 255, 255, 0.22); }
+  /* First and third (left column) lose the divider so it sits cleanly */
+  .step:nth-child(2n + 1) { border-left: none; padding-left: 0; }
+}
+
+@media (max-width: 720px) {
+  /* Collapse the 500vh pin-scrub runway — the section becomes a normal
+     stacked block so the steps render in flow instead of fighting a
+     scroll range that doesn't suit small screens. Inline `height` from
+     JS is overridden here. */
+  .section { height: auto !important; }
+  .sticky {
+    position: static;
+    padding: 64px 22px;
+    gap: 28px;
+    min-height: 0;
+    height: auto;
+  }
+  .title { font-size: 34px; }
+
+  /* One shared left rail for the whole timeline. The `<ol>` gets a
+     left padding equal to where step content starts; the rail sits at
+     x=10px inside that gutter so dots can ride it. The per-step
+     border-left is removed so there's only ONE line, not two. */
+  .steps {
+    grid-template-columns: 1fr;
+    padding-left: 30px;
+    position: relative;
+  }
+  .steps::before {
+    top: 6px;
+    bottom: 6px;
+    left: 10px;
+    width: 1px;
+    height: auto;
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  /* The rAF scrub is skipped on mobile (see Workflow.js), so step
+     visibility is driven by the global [data-reveal] / [data-shown]
+     rules — which fade + slide each step up as it enters the viewport,
+     staggered via inline --delay set in JS. */
+  .step {
+    border-left: none !important;
+    padding: 14px 0;
+    min-height: 0;
+  }
+  .step:first-child { padding-top: 0; }
+  /* Dot centered on the 1px rail at x=10px (rail is in .steps coord
+     space; .step is offset by .steps' 30px padding-left, so the dot's
+     `left` here is relative to the step → −24.5px to land at x=10px in
+     the `<ol>` coord space). */
+  .step::after {
+    top: 20px;
+    left: -24.5px;
+    width: 9px;
+    height: 9px;
+  }
+  .step:first-child::after { left: -24.5px; top: 6px; }
+
+  .num { margin-top: 0; margin-bottom: 8px; }
+  .stepTitle { font-size: 24px; margin-bottom: 8px; }
+  .body { font-size: 14px; }
+}
