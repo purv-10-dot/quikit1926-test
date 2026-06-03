@@ -87,7 +87,7 @@ export const GET = withOrgAuth<{ platform: string }>(
           clientId,
           redirectUri,
           state,
-          "pages_manage_posts,pages_read_engagement,pages_show_list,business_management,publish_video",
+          "pages_manage_posts,pages_read_engagement,pages_show_list,business_management",
         );
         break;
       }
