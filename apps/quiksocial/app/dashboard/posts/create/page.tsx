@@ -505,7 +505,14 @@ export default function CreatePostPage() {
         });
       }
     };
-  }, [data.selectedIdeaIndex, data.ideas, data.prompt, data.objective, data.includeLogo, activeBrand]);
+    // data.attachment MUST be in the deps array — buildAttachmentPayload
+    // reads it inside the callback. Without it, if the user attaches an
+    // offering AFTER the last dep change (e.g. re-attaches between
+    // generations without changing the prompt or idea), the closure
+    // captures the OLD attachment and the worker never sees imageUrl.
+    // buildAttachmentPayload is stable (useCallback with empty deps) but
+    // listing it satisfies react-hooks/exhaustive-deps without harm.
+  }, [data.selectedIdeaIndex, data.ideas, data.prompt, data.objective, data.includeLogo, data.attachment, activeBrand, buildAttachmentPayload]);
 
   // ── Step 3 handlers ────────────────────────────────────────────────────────
 
@@ -534,6 +541,12 @@ export default function CreatePostPage() {
             modificationPrompt,
             brandName: activeBrand?.name,
             logoUrl: activeBrand?.logoUrl ?? null,
+            // Phase-1: forward the attachment so the product stays in the
+            // image across successive edits. Without this, each regenerate
+            // re-rendered the scene without the product (RegenerateImageRequest
+            // didn't even declare the field). Spread is no-op when nothing
+            // is attached.
+            ...buildAttachmentPayload(data.attachment),
           }),
         });
       } catch {
@@ -630,7 +643,12 @@ export default function CreatePostPage() {
         }
       };
     },
-    [data.imageUrl, activeBrand],
+    // data.attachment must be in the deps — the Phase-1 fix added
+    // buildAttachmentPayload(data.attachment) to the body but kept the
+    // deps as [data.imageUrl, activeBrand] which captures a stale
+    // attachment whenever the user re-attaches without changing the
+    // source image URL. Same root cause as handleGenerateImage above.
+    [data.imageUrl, data.attachment, activeBrand, buildAttachmentPayload],
   );
 
   // ── Step 4: Save ────────────────────────────────────────────────────────────
