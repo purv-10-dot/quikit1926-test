@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState } from "react";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
+import { useSessionState } from "@/lib/hooks/useSessionState";
 
 type Quarter = "Q1" | "Q2" | "Q3" | "Q4";
 
@@ -10,10 +11,9 @@ interface FilterContextValue {
   setFilterTeam: (v: string) => void;
   filterOwner: string;
   setFilterOwner: (v: string) => void;
-  // Shared year + quarter — session-scoped. Persists when the user navigates
-  // between KPI / Priority / WWW / dashboard so picking "FY2026 Q2" on one
-  // page carries over on the next. Resets on full page reload (by design —
-  // user said session-only in the brainstorm).
+  // Shared year + quarter — persisted to sessionStorage. Carries across KPI /
+  // Priority / WWW / dashboard navigation AND survives a full page refresh for
+  // the browser-tab session (cleared when the tab closes).
   year: number;
   setYear: (y: number) => void;
   quarter: Quarter;
@@ -35,10 +35,12 @@ const FilterContext = createContext<FilterContextValue>({
 });
 
 export function FilterProvider({ children }: { children: React.ReactNode }) {
+  // Team stays in-memory (per-page scope, not synced). Owner + year + quarter
+  // are the shared, cross-page filter and persist for the browser-tab session.
   const [filterTeam, setFilterTeamRaw] = useState("");
-  const [filterOwner, setFilterOwner] = useState("");
-  const [year, setYear] = useState<number>(DEFAULT_YEAR);
-  const [quarter, setQuarter] = useState<Quarter>(DEFAULT_QUARTER);
+  const [filterOwner, setFilterOwner] = useSessionState<string>("qs:filter:owner", "");
+  const [year, setYear] = useSessionState<number>("qs:filter:year", DEFAULT_YEAR);
+  const [quarter, setQuarter] = useSessionState<Quarter>("qs:filter:quarter", DEFAULT_QUARTER);
 
   function setFilterTeam(v: string) {
     setFilterTeamRaw(v);

@@ -29,10 +29,10 @@ const FISCAL_YEARS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 1 + i);
 
 export default function PriorityPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("Priority");
-  // Year + quarter via shared FilterContext (session-scoped persistence).
-  // Team / Owner are seeded from context on first mount so the Dashboard's
-  // selection hands off, but live locally — clearing here doesn't propagate
-  // to KPI / WWW.
+  // Year + quarter via shared FilterContext (persisted across nav + refresh).
+  // Team lives locally (per-page scope). Owner is seeded from context on mount
+  // AND written back on change/clear, so it stays in sync across Dashboard /
+  // KPI / WWW. (Status stays local to this page.)
   const ctx = useFilterContext();
   const { year, setYear, quarter, setQuarter } = ctx;
   const [filterTeam, setFilterTeam] = useState<string>(ctx.filterTeam);
@@ -301,7 +301,7 @@ export default function PriorityPage() {
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
                   <FilterPicker
                     value={filterOwner}
-                    onChange={setFilterOwner}
+                    onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
                     allLabel="All owners"
                   />
@@ -323,7 +323,7 @@ export default function PriorityPage() {
                 </div>
                 {(filterTeam || filterStatus || filterOwner) && (
                   <button
-                    onClick={() => { setFilterTeam(""); setFilterStatus(""); setFilterOwner(""); }}
+                    onClick={() => { setFilterTeam(""); setFilterStatus(""); setFilterOwner(""); ctx.setFilterOwner(""); }}
                     className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Clear filters
