@@ -71,6 +71,32 @@ export function useUpsertTalent() {
   });
 }
 
+export interface TalentBenchmark { perfCut: number; potentialCut: number; isDefault: boolean; updatedAt: string | null; }
+
+export function useTalentBenchmark() {
+  return useQuery<TalentBenchmark>({
+    queryKey: ["performance", "talent", "benchmark"],
+    queryFn: () => fetchJSON(`${BASE}/talent/benchmark`),
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useUpdateTalentBenchmark() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { perfCut: number; potentialCut: number }) =>
+      fetch(`${BASE}/talent/benchmark`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["performance", "talent", "benchmark"] });
+      qc.invalidateQueries({ queryKey: ["performance", "talent"] }); // re-fetch so quadrants re-sort
+    },
+  });
+}
+
 /* ── R10b: Cycle Hub ───────────────────────────────────────────────────── */
 
 export function useCycle() {

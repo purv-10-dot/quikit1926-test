@@ -202,6 +202,34 @@ export const PERMISSION_TREE: PermissionModule[] = [
       { resource: "People.Talent", label: "Talent", actions: ACTIONS },
     ],
   },
+  {
+    key: "Habits",
+    label: "Habits",
+    leaves: [{ resource: "Habits", label: "Rockefeller Habits", actions: ACTIONS }],
+  },
+  {
+    key: "FACe",
+    label: "FACe",
+    leaves: [{ resource: "FACe", label: "Function Accountability Chart", actions: ACTIONS }],
+  },
+  {
+    key: "PACe",
+    label: "PACe",
+    leaves: [{ resource: "PACe", label: "Process Accountability Chart", actions: ACTIONS }],
+  },
+  {
+    key: "SWT",
+    label: "SWT",
+    leaves: [{ resource: "SWT", label: "Strengths, Weaknesses & Trends", actions: ACTIONS }],
+  },
+  {
+    key: "Survey",
+    label: "NPS Surveys",
+    leaves: [
+      { resource: "Survey", label: "Surveys", actions: ACTIONS },
+      { resource: "Survey.Responses", label: "Survey Responses", actions: ["view", "create"] },
+    ],
+  },
 ];
 
 /* ───────────────────────── Sidebar → resource mapping ───────────────────────── */
@@ -244,6 +272,11 @@ export const NAV_RESOURCE: Record<string, string> = {
   "people.oneOnOne": "People.OneOnOne",
   "people.feedback": "People.Feedback",
   "people.talent": "People.Talent",
+  habits: "Habits",
+  face: "FACe",
+  pace: "PACe",
+  swt: "SWT",
+  survey: "Survey",
 };
 
 /* ───────────────────────── Derived helpers ───────────────────────── */

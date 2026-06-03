@@ -64,3 +64,5 @@ goals.json
 dist/
 build/
 .env
+
+.vercel

@@ -72,11 +72,15 @@ export function withOrgAuth<Params = Record<string, never>>(
     let response: NextResponse;
     try {
       const session = await getServerSession(authOptions);
+      // DEBUG — remove after diagnosing quarter guard issue
+      console.log("[withOrgAuth] path:", req.nextUrl.pathname, "session.user:", JSON.stringify(session?.user ?? null));
       if (!session?.user?.id) {
         response = NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
       } else {
         userIdForLog = session.user.id;
         const orgId = await getOrgId(session.user.id);
+        // DEBUG
+        console.log("[withOrgAuth] getOrgId result:", orgId);
         if (!orgId) {
           response = NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
         } else {
