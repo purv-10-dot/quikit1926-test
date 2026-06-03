@@ -1,7 +1,8 @@
+import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { handleApprovalAction } from "@/lib/workflow/handle-approval";
 import { postMaterialIssueOutward } from "@/lib/stock/ledger-service";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 
 /**
@@ -17,8 +18,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireStoreAction("construction.issue", "approve");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "store.issue", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.issue`, 403);
   }

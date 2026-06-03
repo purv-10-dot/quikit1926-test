@@ -233,6 +233,7 @@ async function handleAuthCodeExchange(
       name: `${user.firstName} ${user.lastName}`,
       tenant_id: authCode.orgId,
       role: membership?.role ?? "member",
+      sessionId: authCode.sessionId ?? undefined,
     },
     clientId,
   );
@@ -246,6 +247,7 @@ async function handleAuthCodeExchange(
       userId: authCode.userId,
       orgId: authCode.orgId,
       scopes: authCode.scopes,
+      sessionId: authCode.sessionId,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
     },
   });
@@ -316,6 +318,7 @@ async function handleRefreshToken(
       name: `${user.firstName} ${user.lastName}`,
       tenant_id: stored.orgId,
       role: membership?.role ?? "member",
+      sessionId: stored.sessionId ?? undefined,
     },
     clientId,
   );
@@ -328,6 +331,7 @@ async function handleRefreshToken(
       userId: stored.userId,
       orgId: stored.orgId,
       scopes: stored.scopes,
+      sessionId: stored.sessionId,
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     },
   });

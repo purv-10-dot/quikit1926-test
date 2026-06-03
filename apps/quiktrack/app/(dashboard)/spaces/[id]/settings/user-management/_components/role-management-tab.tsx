@@ -7,6 +7,7 @@ import { ProjectPermissionMatrix } from "./permission-matrix";
 import { ProjectNavigationPanel } from "./navigation-panel";
 import { AddRoleModal } from "./add-role-modal";
 import { FieldPermissionMatrix } from "@/app/(dashboard)/settings/user-management/_components/field-permission-matrix";
+import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 interface ProjectRole {
   id: string;
@@ -21,6 +22,11 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [subTab, setSubTab] = useState<"fields" | "entities" | "navigation">("fields");
   const [addOpen, setAddOpen] = useState(false);
+  const projectPerms = useMyProjectPermissions(projectId);
+  // Only app-wide admins (tenant admin / super admin) can edit project roles.
+  // Project-level "ProjectMember:update" no longer unlocks role editing —
+  // it remains scoped to assigning members.
+  const canManageRoles = projectPerms.isAdmin;
 
   const rolesQ = useQuery({
     queryKey: ["quiktrack", "project-roles", projectId],
@@ -31,7 +37,17 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
     },
   });
 
+  const projectQ = useQuery({
+    queryKey: ["quiktrack", "project-name", projectId],
+    queryFn: async () => {
+      const r = await fetch(`/api/projects/${projectId}`);
+      const j = await r.json();
+      return (j.data?.name as string | undefined) ?? null;
+    },
+  });
+
   const roles = rolesQ.data ?? [];
+  const projectName = projectQ.data ?? "this space";
 
   useEffect(() => {
     if (!selectedRoleId && roles.length > 0) setSelectedRoleId(roles[0].id);
@@ -53,16 +69,26 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full">
       <aside className="w-72 border-r border-gray-200 bg-white flex flex-col">
+        <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-200">
+          <div className="text-[10px] font-semibold tracking-wider uppercase text-emerald-700">
+            Space-scoped
+          </div>
+          <div className="text-xs text-emerald-900 truncate" title={projectName}>
+            {projectName}
+          </div>
+        </div>
         <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-900">Project Roles</h2>
-          <button
-            type="button"
-            onClick={() => setAddOpen(true)}
-            className="w-6 h-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"
-            aria-label="Add role"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
+          <h2 className="text-sm font-semibold text-gray-900">Roles in this space</h2>
+          {canManageRoles && (
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              className="w-6 h-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center"
+              aria-label="Add role"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto py-2">
           {rolesQ.isLoading ? (
@@ -81,7 +107,7 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
                 }`}
               >
                 <span className="inline-flex items-center gap-2 truncate">
-                  <Shield className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                  <Shield className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
                   <span className="truncate">{r.name}</span>
                   {r.isDefault && (
                     <span className="text-[9px] uppercase tracking-wider bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
@@ -89,17 +115,19 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
                     </span>
                   )}
                 </span>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (confirm(`Delete role "${r.name}"?`)) del.mutate(r.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </span>
+                {canManageRoles && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete role "${r.name}"?`)) del.mutate(r.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </span>
+                )}
               </button>
             );
           })}
@@ -109,11 +137,15 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
       <section className="flex-1 min-w-0 bg-gray-50 overflow-y-auto">
         {selectedRole ? (
           <div className="px-8 py-6 space-y-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-semibold text-gray-900">
                 Permissions — {selectedRole.name}
               </h3>
-              <Shield className="h-4 w-4 text-amber-500" />
+              <Shield className="h-4 w-4 text-emerald-500" />
+              <span className="text-[10px] font-semibold tracking-wider uppercase bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">
+                Space-scoped
+              </span>
+              <span className="text-xs text-gray-500">· {projectName}</span>
             </div>
 
             <nav className="flex gap-6 border-b border-gray-200">
@@ -148,17 +180,29 @@ export function ProjectRoleManagementTab({ projectId }: { projectId: string }) {
               </span>
             </div>
 
-            {subTab === "fields" ? (
-              <FieldPermissionMatrix
-                roleId={selectedRole.id}
-                endpoint={`/api/projects/${projectId}/roles/${selectedRole.id}/field-permissions`}
-                queryKey={["quiktrack", "project-role-field-perms", projectId, selectedRole.id]}
-              />
-            ) : subTab === "entities" ? (
-              <ProjectPermissionMatrix projectId={projectId} roleId={selectedRole.id} />
-            ) : (
-              <ProjectNavigationPanel projectId={projectId} roleId={selectedRole.id} />
+            {!canManageRoles && !projectPerms.loading && (
+              <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+                <Shield className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-600" />
+                <span>
+                  <span className="font-semibold">Read-only.</span> Only app admins can edit
+                  project roles. Ask a tenant admin if you need changes here.
+                </span>
+              </div>
             )}
+
+            <fieldset disabled={!canManageRoles} className="contents">
+              {subTab === "fields" ? (
+                <FieldPermissionMatrix
+                  roleId={selectedRole.id}
+                  endpoint={`/api/projects/${projectId}/roles/${selectedRole.id}/field-permissions`}
+                  queryKey={["quiktrack", "project-role-field-perms", projectId, selectedRole.id]}
+                />
+              ) : subTab === "entities" ? (
+                <ProjectPermissionMatrix projectId={projectId} roleId={selectedRole.id} />
+              ) : (
+                <ProjectNavigationPanel projectId={projectId} roleId={selectedRole.id} />
+              )}
+            </fieldset>
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-sm text-gray-500">

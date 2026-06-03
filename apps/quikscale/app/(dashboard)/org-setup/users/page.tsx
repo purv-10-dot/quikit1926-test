@@ -26,6 +26,7 @@ import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { notify } from "@/lib/utils/notify";
 
 /* ─── Types ─────────────────────────────────────────────────────────────────── */
 interface OrgUser {
@@ -543,6 +544,15 @@ function UserPanel({
         }
       }
 
+      // Success toast — match the actual action (edit / link-existing / invite).
+      if (editUser) {
+        notify.saved("User", "updated");
+      } else if (form.linkExistingUserId) {
+        notify.success("QuikScale access granted");
+      } else {
+        notify.success("User invited");
+      }
+
       onSaved(savedUser);
       // If a temp password came back, keep the panel open so the parent's
       // modal can render the plaintext once. Otherwise close immediately.
@@ -551,6 +561,9 @@ function UserPanel({
       } else {
         onClose();
       }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      notify.error(err, { context: "user" });
     } finally {
       setSaving(false);
     }
@@ -1009,12 +1022,19 @@ function ConfirmDialog({
 
 /* ─── Main Page ──────────────────────────────────────────────────────────────── */
 export default function OrgUsersPage() {
+  // `canCreate` (server-side User.create) still controls whether the edit
+  // drawer can submit a create. The Add User BUTTON visibility is gated
+  // separately below by the UI-only `User.AddUser.create` sub-permission.
   const { canCreate, canUpdate } = useResourcePermissions("User");
-  // RBAC v2 — User Management tab is now permission-driven (was admin-only).
-  // Anyone with User:view can see roles; the sub-actions (create/edit/delete
-  // role, edit permissions, change members) gate independently below.
+  // RBAC v2 — Add User button + User Management tab are gated by the nested
+  // UI-only sub-permissions under OrgSetup → Users (mirrors OPSP.History →
+  // EditFinalize). Admin role bypass is handled inside `useMyPermissions()`.
+  // Strict gating: a Member who has `User.create` on the API but no
+  // `User.AddUser.create` will NOT see the button — the sub-permission is
+  // the single source of truth for button visibility.
   const myPerms = useMyPermissions();
-  const canViewUserMgmt = myPerms.isAdmin || myPerms.has("User", "view");
+  const canShowAddUser = myPerms.isAdmin || myPerms.has("User.AddUser", "create");
+  const canViewUserMgmt = myPerms.isAdmin || myPerms.has("User.Management", "view");
   const [tab, setTab] = useState<"users" | "roles">("users");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   // Shared cache invalidator — every user mutation (create/edit/status-change/
@@ -1099,6 +1119,9 @@ export default function OrgUsersPage() {
   }, [crud.items, crud.search, roleFilter, statusFilter]);
 
   function handleSaved(user: OrgUser & { tempPassword?: string }) {
+    // Optimistic write keeps the list responsive while the temp-password
+    // modal opens — no ~150ms gap between "User invited" toast and the new
+    // row appearing.
     crud.setItems((prev) => {
       const idx = prev.findIndex((u) => u.userId === user.userId);
       if (idx >= 0) {
@@ -1108,6 +1131,13 @@ export default function OrgUsersPage() {
       }
       return [...prev, user];
     });
+    // Reconcile with server. The POST response doesn't always carry every
+    // field the canonical GET returns — auto-assigned UserAppRole, joined
+    // team names, lastSignInAt, etc. land via downstream hooks (the
+    // optional PATCH /role, default-role seeder, audit-log writer). Without
+    // this refetch the optimistically-written row could stay partially
+    // stale until the admin hard-reloaded the page.
+    crud.refetch();
     // Bust shared caches — user team assignment / role / status changes ripple
     // into every consumer that reads users or teams.
     queryClient.invalidateQueries({ queryKey: ["teams"] });
@@ -1128,14 +1158,26 @@ export default function OrgUsersPage() {
     user: OrgUser,
     newStatus: "inactive" | "active"
   ) {
-    const res = await fetch(`/api/org/users/${user.userId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
-    });
-    const json = await res.json();
-    if (json.success) handleSaved(json.data);
-    setConfirmUser(null);
+    try {
+      const res = await fetch(`/api/org/users/${user.userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        notify.error(json.error, { context: "user" });
+        return;
+      }
+      handleSaved(json.data);
+      notify.success(
+        newStatus === "active" ? "User reactivated" : "User deactivated",
+      );
+    } catch (err: unknown) {
+      notify.error(err, { context: "user" });
+    } finally {
+      setConfirmUser(null);
+    }
   }
 
   const activeCount = crud.items.filter((u) => u.status === "active").length;
@@ -1268,8 +1310,8 @@ export default function OrgUsersPage() {
             )}
           </div>
 
-          {/* Add User — RBAC v2 gated */}
-          {canCreate && (
+          {/* Add User — gated by the dedicated `User.AddUser.create` sub-permission. */}
+          {canShowAddUser && (
             <button
               onClick={() => crud.openCreate()}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-accent-600 hover:bg-accent-700 rounded-lg"
@@ -1540,7 +1582,11 @@ function TempPasswordModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      // `z-[200]` so the modal sits above the `z-[100]` dashboard header in
+      // `components/dashboard/header.tsx`. Matches the convention used by the
+      // confirm-delete modal at line 987 in this file. Lower z-indexes left
+      // the header + sidebar bright and clickable on top of the backdrop.
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
       <div

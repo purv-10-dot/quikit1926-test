@@ -1,6 +1,7 @@
+import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { resolveUserNames } from "@/lib/users/resolve-names";
@@ -28,11 +29,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
-
+  const ctxOrResp = await requireStoreAction("construction.issue", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   const row = await findMaterialIssueById(ctx.orgId, params.id);
   if (!row) {
     return NextResponse.json({ error: "Issue not found" }, { status: 404 });
@@ -143,10 +142,9 @@ export async function GET(
 }
 
 async function handleUpdate(req: NextRequest, id: string) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
+  const ctxOrResp = await requireStoreAction("construction.issue", "edit");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "store.issue", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.issue`, 403);
   }
@@ -226,10 +224,9 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) {
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-  }
+  const ctxOrResp = await requireStoreAction("construction.issue", "delete");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "store.issue", "delete")) {
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for store.issue`, 403);
   }

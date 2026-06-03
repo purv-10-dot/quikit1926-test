@@ -15,6 +15,7 @@ import {
   validatePAN,
 } from "@/lib/validators";
 import { isWhitebooksGstVerifyEnabled } from "@/lib/integrations/whitebooks-gst";
+import { requireMastersAction } from "@/lib/auth/requireMastersAction";
 
 /**
  * Per-row Vendor endpoints — Postgres-backed.
@@ -29,8 +30,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const row = await findVendorById(ctx.orgId, params.id);
   if (!row) return NextResponse.json({ error: "Vendor not found" }, { status: 404 });
@@ -157,8 +159,9 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("delete");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.vendor", "delete")) {
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for master.vendor`, 403);
   }

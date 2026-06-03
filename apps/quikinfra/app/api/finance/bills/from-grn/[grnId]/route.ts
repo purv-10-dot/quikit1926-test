@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -50,4 +51,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req, ctx: { params: { 
     },
   });
   return NextResponse.json({ success: true, data: bill }, { status: 201 });
-});
+}, { permission: { resource: "construction.finance", action: "create" } });

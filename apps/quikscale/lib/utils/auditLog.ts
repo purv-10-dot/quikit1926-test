@@ -249,7 +249,31 @@ const MEMBER_LIST_KEYS = new Set([
   "dashboardNAUserIds",
   "absentClientMemberIds",
   "dashboardNAClientMemberIds",
+  "teamMemberIds",
 ]);
+
+/**
+ * Strip HTML to plain text. Rich-text fields (e.g. `notesKPDashboard`,
+ * `otherNotes`) are stored as HTML by the editor, so without this the audit
+ * log showed raw markup like `<p>note</p>`. Only touches strings that actually
+ * look like HTML, leaving plain values (and lone `<`/`>`) untouched.
+ */
+function stripHtml(s: string): string {
+  if (!/<\/?[a-z][\s\S]*>/i.test(s)) return s;
+  const text = s
+    .replace(/<\s*br\s*\/?>/gi, " ")
+    .replace(/<\/(p|div|li|h[1-6]|tr|ul|ol)>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text || "—";
+}
 
 function fmtValue(
   key: string,
@@ -308,7 +332,7 @@ function fmtValue(
       // Trim opaque cuid: `cmofp1fjg001toopvmm3gb6zb` → `cmofp1…3gb6zb`
       return `${v.slice(0, 6)}…${v.slice(-6)}`;
     }
-    return v;
+    return stripHtml(v);
   }
   // Arrays / objects → JSON, but short
   try {

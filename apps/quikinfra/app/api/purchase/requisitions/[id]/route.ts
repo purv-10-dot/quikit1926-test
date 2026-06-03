@@ -1,5 +1,6 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { findPRById, updatePR, deletePR } from "@/lib/purchase/pr-repository";
@@ -19,8 +20,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requirePurchaseAction("construction.pr", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   const pr = await findPRById(ctx.orgId, params.id);
   if (!pr) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -93,8 +95,9 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requirePurchaseAction("construction.pr", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "purchase.mr", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.mr`, 403);
   }
@@ -111,8 +114,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requirePurchaseAction("construction.pr", "edit");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "purchase.mr", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.mr`, 403);
   }
@@ -139,8 +143,9 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requirePurchaseAction("construction.pr", "delete");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "purchase.mr", "delete")) {
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for purchase.mr`, 403);
   }

@@ -1,6 +1,7 @@
+import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   createMaterialIssue,
@@ -27,8 +28,9 @@ import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
  */
 
 export async function GET(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  const ctxOrResp = await requireStoreAction("construction.issue", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "";
@@ -90,9 +92,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireStoreAction("construction.issue", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "store.issue", "add")) {
     return envelopeErr("FORBIDDEN", `Action "add" not allowed for store.issue`, 403);
   }

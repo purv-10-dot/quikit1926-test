@@ -25,4 +25,4 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
   });
   await logAudit({ orgId, userId, actionType: "status_change", entityType: "cnPurchaseOrder", entityId: po.id, oldValues: { status: "draft" }, newValues: { status: "sent" } });
   return NextResponse.json({ success: true, data: updated });
-});
+}, { permission: { resource: "construction.po", action: "edit" } });

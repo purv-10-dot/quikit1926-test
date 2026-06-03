@@ -8,6 +8,7 @@ import { useFilterContext } from "@/lib/context/FilterContext";
 import { FilterPicker, userToFilterOption, FiscalPeriodPicker, type FiscalQuarter } from "@quikit/ui";
 import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
 import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
@@ -22,8 +23,10 @@ import { useCurrentWeek, useWeekDateRange, useWeekLabels } from "@/lib/hooks/use
 import { progressColor, weekCellColors, fmt, fmtCompact, getProgressBadgeColors, getLatestWeeklyNote } from "@/lib/utils/kpiHelpers";
 import { getLatestPriorityNote } from "@/lib/utils/priorityHelpers";
 import { getColorByPercentage } from "@/lib/utils/colorLogic";
+import { dashboardKpiHiddenColumns } from "@/lib/utils/dashboardColumns";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { KPITable } from "../kpi/components/KPITable";
+import { resolveProgressQtd } from "../kpi/components/kpiStats";
 import { PriorityTable } from "../priority/components/PriorityTable";
 import { WWWTable } from "../www/components/WWWTable";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -488,14 +491,19 @@ function WeekTableHead({ staticCols, allCols, frozenUpTo, allColKeys, onFreeze, 
 
 // ── KPI mini cards ────────────────────────────────────────────────────────────
 
-function KPICard({ kpi }: { kpi: KPIRow }) {
+function KPICard({ kpi, currentWeek }: { kpi: KPIRow; currentWeek: number | null }) {
   // Same denominator for ratio AND percentage so the math agrees with what
   // the user reads. `getProgressBadgeColors` runs the canonical
   // `getColorByPercentage` internally and returns READABLE-on-white text
   // colors (text-blue-700 etc.) instead of the text-on-color text-white
   // tones — so the percentage label is visible on the white card.
-  const achieved = kpi.qtdAchieved ?? 0;
-  const goal = kpi.qtdGoal ?? kpi.target ?? 0;
+  //
+  // Standalone KPIs: the server-stamped `kpi.qtdAchieved` is a cumulative SUM
+  // regardless of division type, so the card showed (e.g.) 365/80 = 456% on a
+  // Standalone KPI whose true QTD is the avg-per-week (52.14/80). resolveProgressQtd
+  // re-derives it for Standalone (matching the KPI table) and leaves Cumulative
+  // KPIs byte-identical.
+  const { achieved, goal } = resolveProgressQtd(kpi, currentWeek);
   const pct = goal > 0 ? (achieved / goal) * 100 : 0;
   const hasAnyWeeklyValue = (kpi.weeklyValues ?? []).some((wv) => wv.value != null);
   const badge = kpi.qtdAchieved != null
@@ -999,8 +1007,15 @@ export default function DashboardPage() {
   // "TeamKPI" = Team KPI. Pattern matches the sidebar's existing nav-gate
   // (components/dashboard/sidebar.tsx).
   const perms = useMyPermissions();
-  const canViewIndividualKPI = perms.has("KPI", "view");
-  const canViewTeamKPI = perms.has("TeamKPI", "view");
+  // Also gate on the org-level feature flags so super-admin disabling
+  // `kpi.individual` or `kpi.teams` for this tenant hides the matching side
+  // of the KPI Type toggle (mirrors how the sidebar gates the nav links —
+  // see components/dashboard/sidebar.tsx). Without this, the toggle still
+  // appeared in the Team-tab filter even when the matching module link was
+  // hidden from the sidebar, snapping users to an empty data view.
+  const disabled = useDisabledModules();
+  const canViewIndividualKPI = perms.has("KPI", "view") && !disabled.has("kpi.individual");
+  const canViewTeamKPI = perms.has("TeamKPI", "view") && !disabled.has("kpi.teams");
   const showKpiTypeToggle = canViewIndividualKPI && canViewTeamKPI;
 
   // If the user's current selection points at a permission they don't have
@@ -1234,7 +1249,17 @@ export default function DashboardPage() {
               </button>
 
               {showFilter && (
-                <div className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4">
+                <div
+                  // Stop mousedown from bubbling to the document-level
+                  // click-outside handler. Without this, picking an option in
+                  // the inner FilterPicker dropdown races with React's
+                  // unmount of that button and the outer popover closes too
+                  // — leaving users unable to set multiple filters in one
+                  // session. Clicks truly outside this panel still bubble
+                  // through and close as expected.
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="absolute top-full right-0 mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-4 space-y-4"
+                >
                   {/* A — Team scope */}
                   <div>
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
@@ -1267,12 +1292,19 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   )}
-                  {/* C — Owner */}
+                  {/* C — Owner. Picking an owner is treated as the "done"
+                      signal for the filter step — committing it auto-closes
+                      the popover so the user gets immediate feedback that
+                      the filter is applied. Team + KPI Type selections keep
+                      the popover open so users can still narrow further. */}
                   <div>
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
                     <FilterPicker
                       value={teamTabOwnerId}
-                      onChange={setTeamTabOwnerId}
+                      onChange={(v) => {
+                        setTeamTabOwnerId(v);
+                        setShowFilter(false);
+                      }}
                       options={users.map(userToFilterOption)}
                       allLabel="All Users"
                       hasMore={usersHasMore}
@@ -1344,7 +1376,7 @@ export default function DashboardPage() {
                       <div className="h-1.5 bg-gray-100 rounded w-full" />
                     </div>
                   ))
-                : kpis.map(k => <KPICard key={k.id} kpi={k} />)
+                : kpis.map(k => <KPICard key={k.id} kpi={k} currentWeek={currentWeek} />)
               }
             </div>
           </KPIOverviewContainer>
@@ -1377,9 +1409,10 @@ export default function DashboardPage() {
                 onRefresh={() => {}}
                 fillWidth
                 hideColumns={[
-                  ...(activeTab === "team"
-                    ? ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "teamHead"]
-                    : ["_checkbox", "_log", "_id", "progress", "owner", "targetValue", "description", "team", "teamHead", "kpiOwner"]),
+                  // On the Team tab the owner column shown follows the KPI Type
+                  // toggle: individual KPIs carry a single `owner`, team KPIs
+                  // carry multiple `ownerIds` (`kpiOwner`). See dashboardColumns.
+                  ...dashboardKpiHiddenColumns(activeTab, teamTabKpiType),
                   ...hiddenWeekCols,
                 ]}
               />
@@ -1402,7 +1435,12 @@ export default function DashboardPage() {
           }
         >
           {priLoading ? <Spinner /> : (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            // No `overflow-hidden` here — PriorityTable already wraps itself
+            // in HorizontalScroller, which IS the correct scroll context for
+            // its sticky frozen columns. Clipping at this outer layer
+            // prevented the inner sticky cascade from ever triggering when
+            // the column widths exceeded the dashboard container.
+            <div className="bg-white border border-gray-200 rounded-xl">
               <PriorityTable
                 priorities={pagedPriorities}
                 onRefresh={() => {}}

@@ -68,6 +68,12 @@ export interface ListRouteOptions {
    * Singular form reads best in 409 / 404 messages.
    */
   entityLabel: string;
+  /**
+   * Optional permission check. If set, the wrapper rejects with 403
+   * before the handler runs when the user lacks this permission.
+   * Mirrors the same option on `withMutationRoute`.
+   */
+  requirePermission?: string;
 }
 
 /**
@@ -94,6 +100,14 @@ export async function withListRoute<T>(
   return safeRun(async () => {
     const ctx = await getTenantContext();
     if (!ctx) return unauthorized();
+
+    if (opts.requirePermission && !hasPermission(ctx, opts.requirePermission)) {
+      return envelopeErr(
+        "FORBIDDEN",
+        `Missing permission: ${opts.requirePermission}`,
+        403,
+      );
+    }
 
     const url = new URL(req.url);
     const result = await handler({

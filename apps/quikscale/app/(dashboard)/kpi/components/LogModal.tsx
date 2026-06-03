@@ -12,7 +12,7 @@ import { CURRENCIES, getScales, getMultiplier, formatActual } from "@/lib/utils/
 import { WeeklyScroller } from "./WeeklyScroller";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
-import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { humanizeApiError } from "@/lib/utils/humanizeError";
 import {
   buildBreakdown,
@@ -919,10 +919,11 @@ export function LogModal({ kpi, onClose, onRefresh, initialTab = "updates", canU
 
   const isTeamKPI = kpi.kpiLevel === "team";
   const currentUserId = session?.user?.id ?? "";
-  const sessionRole = (session?.user as { membershipRole?: string } | undefined)?.membershipRole;
-  const isAdminActor =
-    (sessionRole && (ROLE_HIERARCHY[sessionRole] ?? 0) >= ROLE_HIERARCHY[ROLES.ADMIN]) ||
-    !!(session?.user as { isSuperAdmin?: boolean } | undefined)?.isSuperAdmin;
+  // Admin signal comes from the dynamic RBAC permission set (same source as the
+  // sidebar / Add buttons), NOT the legacy org-level membershipRole hierarchy:
+  // a dynamic "admin" role presents as membershipRole "app_admin" (below the old
+  // ADMIN tier) and was wrongly treated as a non-admin, disabling every owner row.
+  const { isAdmin: isAdminActor } = useMyPermissions();
   const isTeamHeadActor = isTeamKPI && !!kpi.team?.headId && kpi.team.headId === currentUserId;
   // Shortcut used throughout: can the actor edit ANY owner's row?
   // ANDed with RBAC `update` so a no-update user can't edit weekly cells

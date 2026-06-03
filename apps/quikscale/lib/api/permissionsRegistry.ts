@@ -84,8 +84,42 @@ export const PERMISSION_TREE: PermissionModule[] = [
     label: "Org Setup",
     leaves: [
       { resource: "Team", label: "Teams", actions: ACTIONS },
-      { resource: "User", label: "Users", actions: ACTIONS },
       { resource: "Quarter", label: "Quarter Settings", actions: ACTIONS },
+    ],
+    // `User` is a SubModule (not a flat leaf) so it can host UI-only
+    // sub-permissions for the Add User button and the User Management tab —
+    // mirrors the OPSP.History → EditFinalize nesting pattern.
+    subModules: [
+      {
+        key: "User",
+        label: "Users",
+        leaves: [
+          { resource: "User", label: "Users", actions: ACTIONS },
+        ],
+        subModules: [
+          {
+            // UI-only: gates the "Add User" button on the Users tab. Server
+            // still enforces `User.create` on POST /api/org/users, so this
+            // sub-permission can hide the affordance without weakening the
+            // API. Action is `create` (the button triggers a create flow).
+            key: "User.AddUser",
+            label: "Add User Button",
+            leaves: [
+              { resource: "User.AddUser", label: "Add User Button", actions: ["create"] },
+            ],
+          },
+          {
+            // UI-only: gates visibility of the "User Management" tab in the
+            // page navigation. Inside the tab, role-mgmt actions still gate
+            // on the `Role` resource (server- and UI-side).
+            key: "User.Management",
+            label: "User Management Tab",
+            leaves: [
+              { resource: "User.Management", label: "User Management Tab", actions: ["view"] },
+            ],
+          },
+        ],
+      },
     ],
   },
   {
@@ -252,6 +286,99 @@ export type Resource = string;
 /** True when `s` is a known resource in the tree. */
 export function isResource(s: string): s is Resource {
   return _resourceSet.has(s);
+}
+
+/* ───────────────────── Feature-flag → permission tree ───────────────────── */
+
+/**
+ * Reverse of `NAV_RESOURCE`. Maps a permission-leaf resource ("TeamKPI") to
+ * the feature-flag moduleKey ("kpi.teams") so the permission matrix can hide
+ * leaves whose module the Super Admin has disabled for the tenant.
+ *
+ * Built once at module-load. Stable as long as NAV_RESOURCE is — every
+ * sidebar-mapped resource appears here; resources without a sidebar (e.g.
+ * sub-sub-permissions like `User.AddUser`, `OPSP.History.EditFinalize`)
+ * inherit their parent's flag via TREE_MODULE_FLAG_KEY below.
+ */
+export const RESOURCE_TO_MODULE_KEY: Readonly<Record<string, string>> = (() => {
+  const out: Record<string, string> = {};
+  for (const [moduleKey, resource] of Object.entries(NAV_RESOURCE)) {
+    out[resource] = moduleKey;
+  }
+  return out;
+})();
+
+/**
+ * PermissionTree module-level key ("KPI", "OrgSetup", …) → feature-flag
+ * moduleKey ("kpi", "orgSetup", …). The tree uses PascalCase headings; the
+ * Super Admin feature-flag system uses lowercase dot-namespaced keys.
+ */
+export const TREE_MODULE_FLAG_KEY: Readonly<Record<string, string>> = {
+  Dashboard: "dashboard",
+  KPI: "kpi",
+  Priority: "priority",
+  OrgSetup: "orgSetup",
+  WWW: "www",
+  ClientMeetings: "clientMeetings",
+  OPSP: "opsp",
+  Analytics: "analytics",
+  People: "people",
+};
+
+/**
+ * Filter the permission tree to only modules/leaves the tenant has enabled.
+ *
+ * Rules:
+ *   - A module/leaf is hidden when its own moduleKey OR any ancestor moduleKey
+ *     is in the `disabled` set (the cascade is handled by `isModuleEnabled`).
+ *   - Leaves with no moduleKey mapping (e.g. user-extra-only resources)
+ *     inherit their parent module's flag.
+ *   - Sub-modules without a moduleKey mapping inherit their parent too.
+ *   - A module with all leaves AND all sub-modules hidden is removed entirely.
+ *
+ * Pure / side-effect-free. Safe to call inside a render.
+ */
+export function filterTreeByEnabledModules(
+  tree: readonly PermissionModule[],
+  disabled: Set<string>,
+  isModuleEnabled: (moduleKey: string, disabled: Set<string>) => boolean,
+): PermissionModule[] {
+  const isLeafEnabled = (leaf: PermissionLeaf, parentFlagKey: string | undefined): boolean => {
+    const flagKey = RESOURCE_TO_MODULE_KEY[leaf.resource] ?? parentFlagKey;
+    if (!flagKey) return true;
+    return isModuleEnabled(flagKey, disabled);
+  };
+
+  const filterSubModule = (
+    sub: PermissionSubModule,
+    parentFlagKey: string | undefined,
+  ): PermissionSubModule | null => {
+    // A sub-module's flag key is its own (if any leaf or itself maps), else
+    // it inherits from the parent module. Sub-sub-permissions like
+    // `User.AddUser` resolve via the parent `User` leaf's moduleKey.
+    const ownFlagKey =
+      RESOURCE_TO_MODULE_KEY[sub.leaves[0]?.resource ?? ""] ?? parentFlagKey;
+    if (ownFlagKey && !isModuleEnabled(ownFlagKey, disabled)) return null;
+    const leaves = sub.leaves.filter((l) => isLeafEnabled(l, ownFlagKey));
+    const subModules = (sub.subModules ?? [])
+      .map((s) => filterSubModule(s, ownFlagKey))
+      .filter((s): s is PermissionSubModule => s !== null);
+    if (leaves.length === 0 && subModules.length === 0) return null;
+    return { ...sub, leaves, subModules: subModules.length ? subModules : sub.subModules };
+  };
+
+  return tree
+    .map((mod): PermissionModule | null => {
+      const flagKey = TREE_MODULE_FLAG_KEY[mod.key];
+      if (flagKey && !isModuleEnabled(flagKey, disabled)) return null;
+      const leaves = (mod.leaves ?? []).filter((l) => isLeafEnabled(l, flagKey));
+      const subModules = (mod.subModules ?? [])
+        .map((s) => filterSubModule(s, flagKey))
+        .filter((s): s is PermissionSubModule => s !== null);
+      if (leaves.length === 0 && subModules.length === 0) return null;
+      return { ...mod, leaves, subModules };
+    })
+    .filter((m): m is PermissionModule => m !== null);
 }
 
 /** True when `s` is one of the four action verbs. */

@@ -105,10 +105,24 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
       : {}),
     ...(filterStatusId ? { statusId: filterStatusId } : {}),
     ...(filterStatusCategory ? { status: { category: filterStatusCategory } } : {}),
+    // sprintId supports three shapes:
+    //   "null"           → unscoped issues (backlog)
+    //   "id1,id2,id3"    → IN-list (multi-active-sprint board view)
+    //   "id"             → single id, exact match
+    //   absent           → no sprint filter
     ...(filterSprintId === "null"
       ? { sprintId: null }
       : filterSprintId
-        ? { sprintId: filterSprintId }
+        ? filterSprintId.includes(",")
+          ? {
+              sprintId: {
+                in: filterSprintId
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              },
+            }
+          : { sprintId: filterSprintId }
         : {}),
     ...(filterParentId === "null"
       ? { parentId: null }

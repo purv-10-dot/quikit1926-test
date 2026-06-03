@@ -31,7 +31,7 @@ function generateRequestId(): string {
 
 const sharedMiddleware = createMiddleware({
   loginRoute: "/login",
-  publicRoutes: ["/login", "/invite", "/reset-password", "/auth-handoff", "/api/auth"],
+  publicRoutes: ["/invite", "/auth-handoff", "/api/auth"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
@@ -54,6 +54,16 @@ export async function middleware(request: NextRequest) {
     return res;
   }
 
+  // ── Public marketing landing at "/" — render without auth. Exact-match
+  //    only (not a prefix via publicRoutes, which would make every route
+  //    public under the shared middleware's startsWith check). The page
+  //    server-redirects authed users to /dashboard.
+  if (request.nextUrl.pathname === "/") {
+    const res = NextResponse.next({ request: { headers: forwarded } });
+    res.headers.set("x-request-id", requestId);
+    return res;
+  }
+
   // ── Settings role gate (runs before delegating to the shared mw) ─
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
   const { pathname } = request.nextUrl;
@@ -66,19 +76,6 @@ export async function middleware(request: NextRequest) {
       res.headers.set("x-request-id", requestId);
       return res;
     }
-  }
-
-  // Forced password reset — only applies to local-credentials sessions
-  // that carry the mustChangePassword flag; central-auth sessions never
-  // set it.
-  if (
-    token &&
-    (token as { mustChangePassword?: boolean }).mustChangePassword === true &&
-    pathname !== "/reset-password"
-  ) {
-    const res = NextResponse.redirect(new URL("/reset-password", request.url));
-    res.headers.set("x-request-id", requestId);
-    return res;
   }
 
   // Delegate auth-gate + central-login redirect to the shared middleware.
@@ -124,5 +121,5 @@ export async function middleware(request: NextRequest) {
 // Matcher covers API routes too (for the request-id header) but skips
 // static assets and Next internals.
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|marketing/).*)"],
 };

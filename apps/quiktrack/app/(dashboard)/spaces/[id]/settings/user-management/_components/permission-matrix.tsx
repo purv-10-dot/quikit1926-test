@@ -86,13 +86,13 @@ export function ProjectPermissionMatrix({
     setOpenMods(next);
   }
 
-  if (q.isLoading) return <p className="text-sm text-gray-500">Loading…</p>;
+  if (q.isLoading) return <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden dark:bg-gray-900 dark:border-gray-700">
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-left">
-          <tr className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <thead className="bg-gray-50 text-left dark:bg-gray-800/60">
+          <tr className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-300">
             <th className="px-4 py-3">Entity</th>
             {ACTIONS.map((a) => (
               <th key={a} className="px-4 py-3 text-center w-24">{a}</th>
@@ -113,7 +113,7 @@ export function ProjectPermissionMatrix({
           ))}
         </tbody>
       </table>
-      <div className="px-4 py-3 border-t border-gray-100 flex justify-end">
+      <div className="px-4 py-3 border-t border-gray-100 flex justify-end dark:border-gray-700">
         <Button onClick={() => save.mutate()} disabled={save.isPending} className="bg-blue-600 hover:bg-blue-700">
           {save.isPending ? "Saving…" : "Save changes"}
         </Button>
@@ -148,11 +148,11 @@ function ModuleRow({
 
   if (onlyLeaf) {
     return (
-      <tr className="border-t border-gray-100 hover:bg-gray-50">
-        <td className="px-4 py-2.5 font-semibold text-gray-900">
+      <tr className="border-t border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/40">
+        <td className="px-4 py-2.5 font-semibold text-gray-900 dark:text-gray-100">
           <button type="button" onClick={() => onToggleLeaf(onlyLeaf)} className="inline-flex items-center gap-2">
             {mod.label}
-            <span className="text-[10px] font-normal bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] font-normal bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded dark:bg-blue-500/15 dark:text-blue-300">
               {grantedCount}/{totalActions}
             </span>
           </button>
@@ -167,10 +167,10 @@ function ModuleRow({
                   type="checkbox"
                   checked={granted.has(key)}
                   onChange={() => onToggleCell(onlyLeaf.resource, a)}
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded dark:border-gray-600 dark:bg-gray-800 dark:accent-blue-500"
                 />
               ) : (
-                <span className="text-gray-300">—</span>
+                <span className="text-gray-300 dark:text-gray-600">—</span>
               )}
             </td>
           );
@@ -181,12 +181,12 @@ function ModuleRow({
 
   return (
     <>
-      <tr className="border-t border-gray-100 hover:bg-gray-50">
-        <td className="px-4 py-2.5 font-semibold text-gray-900">
+      <tr className="border-t border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/40">
+        <td className="px-4 py-2.5 font-semibold text-gray-900 dark:text-gray-100">
           <button type="button" onClick={() => onToggleMod(mod.key)} className="inline-flex items-center gap-1.5">
             {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             {mod.label}
-            <span className="text-[10px] font-normal bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] font-normal bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded dark:bg-blue-500/15 dark:text-blue-300">
               {grantedCount}/{totalActions}
             </span>
           </button>
@@ -194,10 +194,10 @@ function ModuleRow({
         <td colSpan={4} />
       </tr>
       {isOpen && leaves.map((leaf) => (
-        <tr key={leaf.resource} className="bg-white border-t border-gray-50 hover:bg-gray-50">
-          <td className="px-4 py-1.5 pl-10 text-gray-700">
+        <tr key={leaf.resource} className="bg-white border-t border-gray-50 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-800 dark:hover:bg-gray-800/40">
+          <td className="px-4 py-1.5 pl-10 text-gray-700 dark:text-gray-200">
             <button type="button" onClick={() => onToggleLeaf(leaf)} className="inline-flex items-center gap-1">
-              <span className="text-gray-400">↳</span>{leaf.label}
+              <span className="text-gray-400 dark:text-gray-600">↳</span>{leaf.label}
             </button>
           </td>
           {ACTIONS.map((a) => {
@@ -210,10 +210,10 @@ function ModuleRow({
                     type="checkbox"
                     checked={granted.has(key)}
                     onChange={() => onToggleCell(leaf.resource, a)}
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded dark:border-gray-600 dark:bg-gray-800 dark:accent-blue-500"
                   />
                 ) : (
-                  <span className="text-gray-300">—</span>
+                  <span className="text-gray-300 dark:text-gray-600">—</span>
                 )}
               </td>
             );

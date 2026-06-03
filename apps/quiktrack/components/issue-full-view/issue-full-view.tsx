@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
+import { IssueAttachments } from "@/components/issue-attachments";
 import { IssueViewSkeleton } from "@/components/skeleton";
 import { IssueDetailsPanel } from "./issue-details-panel";
 import { IssueHeaderSections } from "./issue-header-sections";
@@ -108,6 +109,7 @@ export function IssueFullView({
             window.location.href = `/spaces/${projectId}/work/${id}`;
           }}
         />
+        <IssueAttachments issueId={issue.id} />
         <IssueActivity issueId={issue.id} projectId={projectId} />
       </div>
 

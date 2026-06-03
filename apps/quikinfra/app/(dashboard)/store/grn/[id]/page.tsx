@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Download, Send, FileText, Paperclip } from "lucide-react";
+import { Download, Send, FileText, Paperclip, Eye } from "lucide-react";
 import {
   PageHeader, PageContainer, StatusChip, PageSkeleton,
   PrimaryButton, SecondaryButton, ApprovalTimeline,
@@ -105,6 +105,17 @@ export default function GRNDetailPage() {
         actions={
           <div className="flex items-center gap-2">
             <StatusChip status={grn.status} />
+            {lines.length > 0 && (
+              <a
+                href={`/api/purchase/grn/${id}/preview/pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-orange-700 bg-orange-50 border border-orange-200 hover:bg-orange-100 transition-colors"
+                title="Open the GRN PDF in a new tab"
+              >
+                <Eye className="w-3.5 h-3.5" /> View PDF
+              </a>
+            )}
             <SecondaryButton onClick={() => window.print()}>
               <Download className="w-4 h-4" /> Print
             </SecondaryButton>

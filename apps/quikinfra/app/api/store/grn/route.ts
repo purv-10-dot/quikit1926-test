@@ -25,7 +25,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { grnDate: "desc" },
   });
   return NextResponse.json({ success: true, data: grns });
-});
+}, { permission: { resource: "construction.grn", action: "view" } });
 
 /**
  * POST /api/store/grn — create GRN as DRAFT.
@@ -135,4 +135,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   });
 
   return NextResponse.json({ success: true, data: grn }, { status: 201 });
-});
+}, { permission: { resource: "construction.grn", action: "create" } });

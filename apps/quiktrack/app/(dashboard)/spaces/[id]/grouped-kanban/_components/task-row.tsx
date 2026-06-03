@@ -60,8 +60,10 @@ function TaskRowImpl({
     >
       <SortableTask taskId={task.id} groupId={groupId}>
         <div
-          className={`grid ${ROW_GRID_TEMPLATE} items-stretch px-0 [&>*]:self-stretch [&>*]:flex [&>*]:items-center [&>*]:justify-center [&>*:nth-child(2)]:justify-start [&>*]:px-2 [&>*]:py-1.5 [&>*]:border-r [&>*]:border-slate-200 [&>*:last-child]:border-r-0 ${
-            isSelected ? "bg-blue-50/60" : ""
+          className={`grid ${ROW_GRID_TEMPLATE} items-stretch px-0 transition-colors [&>*]:self-stretch [&>*]:flex [&>*]:items-center [&>*]:justify-center [&>*:nth-child(2)]:justify-start [&>*]:px-2 [&>*]:py-1.5 [&>*]:border-r [&>*]:border-slate-200 dark:[&>*]:border-slate-700 [&>*:last-child]:border-r-0 ${
+            isSelected
+              ? "bg-blue-50/60 dark:bg-blue-500/15"
+              : "hover:bg-slate-50 dark:hover:bg-slate-800/40"
           }`}
         >
           <span

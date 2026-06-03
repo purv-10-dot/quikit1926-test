@@ -1,7 +1,8 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
 import { buildMRLines } from "@/lib/purchase-engine";
 import { validateMRDates, PurchaseValidationError } from "@/lib/purchase-service";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findProjectById } from "@/lib/masters/projects-repository";
 import {
@@ -11,6 +12,10 @@ import {
   withPrNumberRetry,
 } from "@/lib/purchase/pr-repository";
 import { parsePagination } from "@/lib/http/pagination";
+import {
+  validatePrLinesAgainstBudget,
+  formatBreachMessage,
+} from "@/lib/purchase/estimation-consumption";
 
 /**
  * Purchase Requisition API — Postgres-backed.
@@ -29,8 +34,9 @@ export async function GET(req: NextRequest) {
   const search = searchParams.get("search") ?? "";
   const projectId = searchParams.get("projectId") ?? "";
 
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  const ctxOrResp = await requirePurchaseAction("construction.pr", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   // Pagination is opt-in: `?page=` or `?pageSize=` activates it. Without
   // those params the route returns the legacy "all rows" shape so any
@@ -57,8 +63,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requirePurchaseAction("construction.pr", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "purchase.mr", "add")) {
     return envelopeErr("FORBIDDEN", `Action "add" not allowed for purchase.mr`, 403);
   }
@@ -89,6 +96,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: err.message, code: err.code }, { status: 400 });
       }
     }
+  }
+
+  const budgetCheck = await validatePrLinesAgainstBudget(
+    ctx.orgId,
+    body.projectId,
+    (body.lines ?? []).map((l: any) => ({
+      itemId: l.itemId,
+      quantity: l.quantity,
+    })),
+    { boqItemId: body.boqItemId ?? null },
+  );
+  if (!budgetCheck.ok) {
+    return NextResponse.json(
+      {
+        error: `PR exceeds approved estimation budget — ${formatBreachMessage(budgetCheck.breaches)}`,
+        code: "ESTIMATION_BUDGET_EXCEEDED",
+        breaches: budgetCheck.breaches,
+      },
+      { status: 400 },
+    );
   }
 
   const allAvailable = lines.every((l: any) => l.stockCheckStatus === "AVAILABLE");

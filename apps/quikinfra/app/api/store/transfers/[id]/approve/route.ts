@@ -1,5 +1,6 @@
+import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   findStockTransferById,
@@ -27,9 +28,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResponse = await requireAuth();
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+  const ctxOrResp = await requireStoreAction("construction.transfer", "approve");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   if (!hasMatrixAction(ctx, "store.transfer", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for store.transfer`, 403);

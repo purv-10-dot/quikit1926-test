@@ -1,6 +1,8 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
+import { findCnUserById } from "@/lib/users/lookup";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { requireAuth, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findRfqById } from "@/lib/purchase/rfq-repository";
 import { sendRfqEmailsToVendors } from "@/lib/purchase/rfq-email";
@@ -32,9 +34,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResponse = await requireAuth();
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+  const ctxOrResp = await requirePurchaseAction("construction.rfq", "approve");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   if (!hasMatrixAction(ctx, "purchase.rfq", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.rfq`, 403);
@@ -111,10 +113,7 @@ export async function POST(
   ) {
     let expected = "an authorized approver";
     if (currentStep.approverUserId) {
-      const pinned = await (db as any).cnUser.findUnique({
-        where: { id: currentStep.approverUserId },
-        select: { fullName: true },
-      });
+      const pinned = await findCnUserById(currentStep.approverUserId);
       expected = pinned?.fullName
         ? `${pinned.fullName} (pinned approver)`
         : "the pinned approver for this step";

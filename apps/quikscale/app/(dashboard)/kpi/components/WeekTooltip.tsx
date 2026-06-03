@@ -47,7 +47,10 @@ export function WeekTooltip({
         <>
           <p className="font-semibold text-gray-200 mb-1.5 text-[11px]">Week {weekNumber}</p>
           {value !== undefined && value !== null && (
-            <p className="text-gray-300 text-[11px]">
+            // `break-words` lets long unbroken numbers (e.g. user-entered
+            // overflow values like `2.111…e+103`) wrap inside the tooltip
+            // instead of spilling past the right edge.
+            <p className="text-gray-300 text-[11px] break-words">
               Total achieved: <span className="text-white font-medium">{value}</span>
             </p>
           )}
@@ -83,7 +86,10 @@ export function WeekTooltip({
           )}
 
           {note && (
-            <p className="text-gray-300 text-[11px] leading-relaxed whitespace-pre-wrap mt-2 pt-2 border-t border-gray-700">
+            // `whitespace-pre-wrap` preserves user line breaks; `break-words`
+            // wraps long unbroken strings (e.g. pasted IDs / "ddddddd…")
+            // so they stay inside the tooltip instead of breaking layout.
+            <p className="text-gray-300 text-[11px] leading-relaxed whitespace-pre-wrap break-words mt-2 pt-2 border-t border-gray-700">
               {note}
             </p>
           )}

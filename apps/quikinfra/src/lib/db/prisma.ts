@@ -18,12 +18,17 @@ import "@/lib/config/env";
 // postinstall. The relative path resolves through the app's node_modules.
 import { PrismaClient } from "../../../node_modules/.prisma-qc2/client";
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+// Distinct global slot — the central `@quikit/database` package also caches
+// its client on `global.prisma`, so if we use the same key it clobbers us
+// and queries through this `db` end up hitting the central client (which
+// has Cn* models WITHOUT @@map directives, so they point at non-existent
+// tables like "CnCompany" instead of the real "Companies").
+const globalForPrisma = globalThis as unknown as { prismaQuikInfra: PrismaClient };
 
 export const db: PrismaClient =
-  globalForPrisma.prisma ??
+  globalForPrisma.prismaQuikInfra ??
   new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+if (process.env.NODE_ENV !== "production") globalForPrisma.prismaQuikInfra = db;

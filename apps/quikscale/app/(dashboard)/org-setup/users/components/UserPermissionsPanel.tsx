@@ -21,11 +21,14 @@ import { ChevronDown, ChevronRight, Loader2, Save, Undo2, X, Lock, Info } from "
 import {
   PERMISSION_TREE,
   ACTIONS,
+  filterTreeByEnabledModules,
   type Action,
   type PermissionLeaf,
   type PermissionModule,
   type PermissionSubModule,
 } from "@/lib/api/permissionsRegistry";
+import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
+import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 
 interface Pair {
   resource: string;
@@ -159,8 +162,16 @@ export function UserPermissionsPanel({
   const [extras, setExtras] = useState<Set<string>>(new Set());
   const [savedExtras, setSavedExtras] = useState<Set<string>>(new Set());
   const [roleNames, setRoleNames] = useState<string[]>([]);
+  // Hide modules the Super Admin has disabled for this tenant — same
+  // filter the role-matrix uses, so the Effective Permissions view stays
+  // consistent with what the user can actually exercise.
+  const disabledModules = useDisabledModules();
+  const visibleTree = useMemo(
+    () => filterTreeByEnabledModules(PERMISSION_TREE, disabledModules, isModuleEnabled),
+    [disabledModules],
+  );
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(PERMISSION_TREE.map((m) => m.key)),
+    () => new Set(visibleTree.map((m) => m.key)),
   );
 
   useEffect(() => {
@@ -344,7 +355,7 @@ export function UserPermissionsPanel({
               </tr>
             </thead>
             <tbody>
-              {PERMISSION_TREE.map((mod) => (
+              {visibleTree.map((mod) => (
                 <ModuleRows
                   key={mod.key}
                   mod={mod}

@@ -103,6 +103,22 @@ const ICON_FALLBACKS: Record<string, { emoji: string; bg: string }> = {
 const DEFAULT_ICON = { emoji: "📦", bg: "bg-gray-100" };
 
 /**
+ * Brand logos by slug. These override the API-provided `iconUrl`, which is an
+ * app-relative path (e.g. "/app-icons/quikscale.png") that only resolves on
+ * the launcher's origin — when the switcher is hosted inside another app it
+ * 404s and falls back to the emoji. Each app ships these SVGs in its own
+ * public/app-icons, so a slug-relative path resolves on every origin.
+ */
+const BRAND_ICONS: Record<string, string> = {
+  quikit: "/app-icons/quikit.svg",
+  admin: "/app-icons/admin.svg",
+  quikinfra: "/app-icons/quikinfra.svg",
+  quikscale: "/app-icons/quikscale.svg",
+  quiktrack: "/app-icons/quiktrack.svg",
+  quiksocial: "/app-icons/quiksocial.svg",
+};
+
+/**
  * Google-style app switcher grid.
  *
  * Renders a 3x3 grid icon button that, when clicked, shows a popover with
@@ -270,6 +286,7 @@ export function AppSwitcher({ apiUrl = "/api/apps/switcher", prefetch = true }: 
               <div className="grid grid-cols-3 gap-1">
                 {apps.map((app) => {
                   const iconInfo = ICON_FALLBACKS[app.slug] || DEFAULT_ICON;
+                  const iconSrc = BRAND_ICONS[app.slug] ?? app.iconUrl;
                   const isCurrent = app.id === currentApp?.id;
 
                   return (
@@ -277,7 +294,31 @@ export function AppSwitcher({ apiUrl = "/api/apps/switcher", prefetch = true }: 
                       key={app.id}
                       onClick={() => {
                         setOpen(false);
-                        window.location.href = app.baseUrl;
+                        // Route the launch through the auth host's post-login
+                        // bridge so the user lands on the target app already
+                        // signed in. Direct navigation to app.baseUrl would
+                        // hit the target with no cookie (cookies don't cross
+                        // hosts/ports), bouncing the user back through
+                        // launcher → auth /login. The bridge reads the
+                        // existing auth-host session, mints a short-lived
+                        // handoff JWT, and redirects to the target's
+                        // /auth-handoff endpoint, which plants a host-scoped
+                        // session cookie before sending the user to
+                        // /dashboard. Same mechanism the marketing landing's
+                        // Login button uses (see buildLoginUrl).
+                        //
+                        // When already on the same app, skip the bridge —
+                        // it's just a navigation to its own dashboard.
+                        const target = `${app.baseUrl.replace(/\/+$/, "")}/dashboard`;
+                        if (isCurrent) {
+                          window.location.href = target;
+                          return;
+                        }
+                        const authBase = (
+                          (typeof process !== "undefined" && process.env.NEXT_PUBLIC_AUTH_URL) ||
+                          "http://localhost:3001"
+                        ).replace(/\/+$/, "");
+                        window.location.href = `${authBase}/api/post-login?callbackUrl=${encodeURIComponent(target)}`;
                       }}
                       className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-colors ${
                         isCurrent
@@ -286,11 +327,12 @@ export function AppSwitcher({ apiUrl = "/api/apps/switcher", prefetch = true }: 
                       }`}
                       title={app.description || app.name}
                     >
-                      {app.iconUrl ? (
+                      {iconSrc ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={app.iconUrl}
+                          src={iconSrc}
                           alt={app.name}
-                          className="h-10 w-10 rounded-xl object-cover"
+                          className="h-10 w-10 rounded-xl object-contain"
                         />
                       ) : (
                         <div className={`h-10 w-10 rounded-xl ${iconInfo.bg} flex items-center justify-center text-xl`}>

@@ -10,6 +10,7 @@ import { useSession } from "next-auth/react";
 import { signOutAndClear } from "@/lib/auth/client-logout";
 import { usePermissions } from "@/hooks/use-permissions";
 import { UserAvatar } from "@/components/PageShell";
+import { AppSwitcher, UserMenu } from "@quikit/ui";
 import {
   LayoutDashboard, Database, ShoppingCart, Warehouse,
   FolderKanban, CheckCircle2, FileBarChart2, Settings,
@@ -35,6 +36,36 @@ const USER_TYPE_LABELS: Record<string, string> = {
   USER: "User",
 };
 
+// Pretty-print a v2 CnAppRole.name value (e.g. "admin", "ho_user",
+// "site_admin", "user", or any admin-created custom name like
+// "project_manager") for display in the sidebar chip.
+//
+// The roleKey field on the session/api/me response is sourced server-side
+// from `app_quikinfra.AppRole.name` via context.ts → assignment.role.name,
+// so this function always sees the authoritative value from the DB. When
+// an admin renames a role through the matrix UI, the new label flows here
+// on the next session refetch — no code change needed.
+function formatRoleNameFromDB(roleKey: string | null | undefined): string | null {
+  if (!roleKey) return null;
+  // Known v2 roles get explicit labels; everything else is title-cased
+  // automatically (handles future custom roles cleanly).
+  switch (roleKey.toLowerCase()) {
+    case "admin":
+      return "Admin";
+    case "ho_user":
+      return "HO User";
+    case "site_admin":
+      return "Site Admin";
+    case "user":
+      return "User";
+    default:
+      return roleKey
+        .split("_")
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+        .join(" ");
+  }
+}
+
 // ─── Nav Types ──────────────────────────────────────────────────────
 
 interface NavItem {
@@ -57,11 +88,11 @@ interface NavItem {
    */
   moduleKey?: string;
   /**
-   * When true, this item is visible ONLY to platform Super Admins
-   * (userType === "SUPER_ADMIN"). Tenant Admins and lower roles never
-   * see it, even with the `*` permission wildcard. Used for platform-
-   * managed surfaces like Users and Workflows where MoreYeahs handles
-   * provisioning on the client's behalf.
+   * When true, this item is gated behind the v2 Settings permissions
+   * (`construction.users.manage` / `construction.workflows.manage`).
+   * Tenant admins get these by default; sub-admins can be granted
+   * individually via UserPermissionExtra. Platform admins with the
+   * `*` wildcard also pass.
    */
   superAdminOnly?: boolean;
   badge?: number;
@@ -509,19 +540,36 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
   const [focusNavSearch, setFocusNavSearch] = useState(false);
   const navSearchRef = useRef<HTMLInputElement>(null);
 
-  // Platform-only nav items (Settings → Users / Workflows) are gated on
-  // the user's PDF-spec userType being exactly SUPER_ADMIN. Tenant admins
-  // do NOT qualify, so they don't see those rows in the sidebar.
-  const isSuperAdmin = userType === "SUPER_ADMIN";
+  // Settings → Users / Workflows visibility. Driven by the v2 permission
+  // system directly: anyone holding either manage permission (admin role
+  // by default, or sub-admin who got "Grant Settings access") sees the
+  // items. The earlier `userType === "SUPER_ADMIN"` side-channel mutation
+  // in context.ts is no longer needed because of this direct check.
+  // Header welcome label — prefer the user's role ("Admin", "HO User",
+  // "Site Admin", or any admin-created custom name). Falls back to the
+  // first name while permissions are still loading so we don't flash
+  // "Welcome, User!" on first paint.
+  const displayRole =
+    formatRoleNameFromDB(roleKey) ??
+    (userType
+      ? (USER_TYPE_LABELS[userType] ?? userType.replace(/_/g, " "))
+      : null);
+  const welcomeLabel =
+    displayRole ??
+    (session?.user?.name ?? "").split(" ")[0] ??
+    "User";
+  const isSuperAdmin =
+    can("construction.users.manage") || can("construction.workflows.manage");
 
   // Filter nav by the user's permission set + module whitelist + saved
-  // permission matrix. While permissions are loading show the full nav
-  // to avoid a flash of empty sidebar — once /api/me responds we hide
-  // what the user can't see.
+  // permission matrix. While permissions are loading we render a skeleton
+  // (see `permsLoading` branches in the nav blocks) rather than the full
+  // nav — showing CONSTRUCTION_NAV during load flashed every module to
+  // restricted users before collapsing to their allotted set.
   const visibleNav = useMemo(
     () =>
       permsLoading
-        ? CONSTRUCTION_NAV
+        ? []
         : filterNav(CONSTRUCTION_NAV, can, hasModule, canViewMenu, isSuperAdmin),
     [permsLoading, can, hasModule, canViewMenu, isSuperAdmin]
   );
@@ -559,9 +607,11 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
           className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl py-1 pl-0.5 pr-2 text-left transition-colors hover:bg-slate-50"
           aria-label="Collapse sidebar"
         >
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b from-[#FFAF55] to-[#ea580c] text-lg text-white shadow-[0_4px_14px_rgba(249,115,22,0.35)]">
-            🏗️
-          </div>
+          <img
+            src="/app-icons/quikinfra.svg"
+            alt="QuikInfra"
+            className="h-10 w-10 shrink-0 rounded-xl shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
+          />
           <div className="min-w-0">
             <h1 className="truncate text-sm font-bold tracking-tight text-slate-900">Quik Infra</h1>
             <p className="truncate text-xs text-gray-500">Construction ERP</p>
@@ -603,7 +653,16 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-1">
-        {displayNav.length === 0 ? (
+        {permsLoading ? (
+          <div className="space-y-1.5 px-1 py-1">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-2 py-2">
+                <div className="h-5 w-5 shrink-0 animate-pulse rounded-md bg-slate-200" />
+                <div className="h-3 flex-1 animate-pulse rounded bg-slate-200" style={{ maxWidth: `${60 + ((i * 13) % 35)}%` }} />
+              </div>
+            ))}
+          </div>
+        ) : displayNav.length === 0 ? (
           <p className="px-3 py-6 text-center text-sm text-gray-400">No menu items match your search</p>
         ) : (
           displayNav.map((item) => (
@@ -618,32 +677,9 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
         )}
       </nav>
 
-      <div className="border-t border-gray-100 bg-white p-4">
-        <div className="flex items-center gap-3">
-          <UserAvatar src={session?.user?.image} name={session?.user?.name} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-slate-900">{session?.user?.name ?? "User"}</p>
-            {(userType || roleKey) && (
-              <p className="truncate text-xs text-gray-500">
-                {userType
-                  ? (USER_TYPE_LABELS[userType] ?? userType.replace(/_/g, " "))
-                  : roleKey!.replace(/_/g, " ")}
-              </p>
-            )}
-            {session?.user?.email ? (
-              <p
-                className={`truncate text-xs ${(userType || roleKey) ? "mt-0.5 text-gray-400" : "text-gray-500"}`}
-              >
-                {session.user.email}
-              </p>
-            ) : null}
-          </div>
-          <button onClick={() => signOutAndClear("/login")}
-            className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors" title="Sign out">
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      {/* Bottom profile block was moved to the top header bar (matches
+          QuikScale's layout). The header now hosts avatar / name / email /
+          AppSwitcher / sign-out via <UserMenu> — see the main return. */}
     </div>
   );
 
@@ -652,11 +688,11 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
       <button
         type="button"
         onClick={() => setSidebarOpen(true)}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-b from-[#FFAF55] to-[#ea580c] text-lg text-white shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-[0_4px_14px_rgba(249,115,22,0.35)]"
         aria-label="Expand sidebar"
         title="Expand sidebar"
       >
-        🏗️
+        <img src="/app-icons/quikinfra.svg" alt="QuikInfra" className="h-11 w-11 rounded-xl" />
       </button>
       <button
         type="button"
@@ -671,8 +707,22 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
         <Search className="h-5 w-5" />
       </button>
       <div className="mx-auto my-2 h-px w-7 shrink-0 bg-gray-100" aria-hidden />
-      <nav className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto py-1">
-        {visibleNav.map((item, i) =>
+      {/* Nav list — overflow-y-auto so long sidebars scroll, but the
+          native scrollbar is hidden because the rail is only 56px wide
+          and a visible scrollbar would eat ~12px and shove icons
+          off-centre. Standard hide-scrollbar incantation: Firefox uses
+          `scrollbar-width: none`, WebKit/Chromium uses the pseudo
+          element. Functionality (scroll-wheel + touch) stays intact. */}
+      <nav
+        className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto py-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {permsLoading
+          ? Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="flex h-10 w-10 shrink-0 items-center justify-center">
+                <div className="h-9 w-9 animate-pulse rounded-xl bg-slate-200" />
+              </div>
+            ))
+          : visibleNav.map((item, i) =>
           item.isSection ? (
             <div key={`rail-sep-${item.label}-${i}`} className="mx-auto my-1.5 h-px w-7 shrink-0 bg-gray-100" aria-hidden />
           ) : (
@@ -686,16 +736,8 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
           ),
         )}
       </nav>
-      <div className="mx-auto my-2 h-px w-7 shrink-0 bg-gray-100" aria-hidden />
-      <button
-        type="button"
-        onClick={() => setSidebarOpen(true)}
-        className="flex shrink-0 rounded-full ring-2 ring-white/80 transition-opacity hover:opacity-90"
-        aria-label="Expand sidebar for profile and sign out"
-        title={session?.user?.name ?? "Profile"}
-      >
-        <UserAvatar src={session?.user?.image} name={session?.user?.name} className="h-10 w-10" />
-      </button>
+      {/* Profile avatar was moved to the top header bar's UserMenu so
+          the collapsed rail now ends at the nav list. */}
     </div>
   );
 
@@ -741,6 +783,37 @@ export function QuikInfraShell({ children }: { children: ReactNode }) {
         className={`flex min-h-0 min-w-0 flex-1 flex-col py-4 pr-4 pl-4 ${sidebarOpen ? "lg:pl-3" : "lg:pl-4"}`}
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06),0_8px_24px_rgba(15,23,42,0.04)]">
+          {/* ── Top header bar ────────────────────────────────────────────
+              Matches QuikScale's layout. Left side: mobile menu trigger +
+              welcome message. Right side: AppSwitcher (cross-app launcher)
+              + UserMenu (avatar / name / email / sign-out). Replaces the
+              former bottom-of-sidebar profile block. */}
+          <header className="shrink-0 flex items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 sm:px-6 py-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                className="lg:hidden p-1.5 rounded-md hover:bg-gray-100 text-gray-600"
+                aria-label="Open menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <h1 className="truncate text-base font-semibold text-gray-900">
+                Welcome, {welcomeLabel}!
+              </h1>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <AppSwitcher />
+              <UserMenu
+                user={{
+                  name: session?.user?.name ?? "User",
+                  email: session?.user?.email ?? "",
+                }}
+                onSignOut={() => signOutAndClear()}
+                avatarClassName="bg-orange-600"
+              />
+            </div>
+          </header>
           <main className="min-h-0 flex-1 overflow-y-auto bg-white">
             {children}
           </main>

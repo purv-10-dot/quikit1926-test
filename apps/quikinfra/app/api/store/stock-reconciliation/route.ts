@@ -13,7 +13,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { reconciliationDate: "desc" },
   });
   return NextResponse.json({ success: true, data: rows });
-});
+}, { permission: { resource: "construction.reconciliation", action: "view" } });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
@@ -53,4 +53,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     include: { lines: true },
   });
   return NextResponse.json({ success: true, data: rec }, { status: 201 });
-});
+}, { permission: { resource: "construction.reconciliation", action: "create" } });

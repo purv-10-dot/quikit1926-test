@@ -116,6 +116,58 @@ export const GET = withProjectAccess<{ id: string }>(
       .reduce((acc, x) => acc + x.count, 0);
     const progress = totalIssues === 0 ? 0 : Math.round((doneCount / totalIssues) * 100);
 
+    // ── Epic progress ──────────────────────────────────────────────────────
+    // For each epic, bucket its child issues by status category (DONE /
+    // IN_PROGRESS / everything-else = TO DO) so the Summary can render a
+    // stacked progress bar per epic, Jira-style.
+    const epics = await db.qtIssue.findMany({
+      where: { projectId, isDeleted: false, type: "EPIC" },
+      select: { id: true, key: true, title: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const categoryByStatusId = new Map(
+      statuses.map((s) => [s.id, s.category] as const),
+    );
+    let epicProgress: Array<{
+      id: string;
+      key: string;
+      title: string;
+      done: number;
+      inProgress: number;
+      todo: number;
+      total: number;
+    }> = [];
+    if (epics.length > 0) {
+      const epicIds = epics.map((e) => e.id);
+      const children = await db.qtIssue.findMany({
+        where: { projectId, isDeleted: false, epicId: { in: epicIds } },
+        select: { epicId: true, statusId: true },
+      });
+      const buckets = new Map<string, { done: number; inProgress: number; todo: number }>();
+      for (const id of epicIds) buckets.set(id, { done: 0, inProgress: 0, todo: 0 });
+      for (const c of children) {
+        if (!c.epicId) continue;
+        const b = buckets.get(c.epicId);
+        if (!b) continue;
+        const cat = categoryByStatusId.get(c.statusId);
+        if (cat === "DONE") b.done += 1;
+        else if (cat === "IN_PROGRESS") b.inProgress += 1;
+        else b.todo += 1;
+      }
+      epicProgress = epics.map((e) => {
+        const b = buckets.get(e.id) ?? { done: 0, inProgress: 0, todo: 0 };
+        return {
+          id: e.id,
+          key: e.key,
+          title: e.title,
+          done: b.done,
+          inProgress: b.inProgress,
+          todo: b.todo,
+          total: b.done + b.inProgress + b.todo,
+        };
+      });
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -126,6 +178,7 @@ export const GET = withProjectAccess<{ id: string }>(
         byType,
         byPriority,
         byAssignee,
+        epicProgress,
         recent: {
           completed: completedRecently,
           updated: updatedRecently,

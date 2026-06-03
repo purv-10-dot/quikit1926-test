@@ -1,6 +1,8 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
+import { findCnUserById } from "@/lib/users/lookup";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { requireAuth, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import { boqService, BOQError } from "@/lib/boq";
@@ -26,9 +28,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResponse = await requireAuth();
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+  const ctxOrResp = await requireProjectsFinanceAction("construction.dpr", "approve");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   if (!hasMatrixAction(ctx, "pm.dpr", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.dpr`, 403);
@@ -131,10 +133,7 @@ export async function POST(
   ) {
     let expected = "an authorized approver";
     if (currentStep.approverUserId) {
-      const pinned = await (db as any).cnUser.findUnique({
-        where: { id: currentStep.approverUserId },
-        select: { fullName: true },
-      });
+      const pinned = await findCnUserById(currentStep.approverUserId);
       expected = pinned?.fullName
         ? `${pinned.fullName} (pinned approver)`
         : "the pinned approver for this step";

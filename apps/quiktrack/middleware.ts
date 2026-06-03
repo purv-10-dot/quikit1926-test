@@ -5,8 +5,16 @@ import { NextResponse } from "next/server";
 /**
  * quiktrack middleware.
  *
- * Wraps the @quikit/auth factory so unauthenticated traffic gets routed
- * through the launcher's hand-off flow instead of a same-domain login.
+ * Behaviour:
+ *   - `/`  → public marketing landing page (200 OK for everyone). The page
+ *           component itself server-redirects authed users to /dashboard,
+ *           so logged-in users never see the brochure.
+ *   - `/dashboard`, `/spaces`, … → auth required. Unauth users get routed
+ *           through the launcher's /apps?handoff=… handshake to acquire a
+ *           cross-domain session cookie.
+ *   - `/auth-handoff` is public so the cross-domain cookie-bridge from the
+ *           auth host can plant the session cookie on this host.
+ *
  * Cookies don't cross *.vercel.app subdomains, so the launcher mints a
  * short-lived JWT and `/auth-handoff` exchanges it for our session cookie.
  */
@@ -17,8 +25,9 @@ const APP_SLUG = "quiktrack";
 const factoryMiddleware = createMiddleware({
   loginRoute: "/login",
   // No local org picker — no-org users are sent to the launcher /apps
-  // via centralSelectOrgUrl (cross-domain handoff).
-  publicRoutes: ["/login", "/invitations", "/auth-handoff"],
+  // via centralSelectOrgUrl (cross-domain handoff). `/` is public so the
+  // marketing landing renders without auth.
+  publicRoutes: ["/", "/login", "/invitations", "/auth-handoff"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
@@ -42,5 +51,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|marketing/).*)"],
 };

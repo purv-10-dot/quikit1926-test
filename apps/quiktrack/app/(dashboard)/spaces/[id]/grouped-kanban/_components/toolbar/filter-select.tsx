@@ -23,6 +23,8 @@ interface FilterSelectProps {
   placeholder: string;
   width?: number;
   align?: "left" | "right";
+  /** Stretch the trigger to fill its parent (used inside stacked filter rows). */
+  expand?: boolean;
 }
 
 export function FilterSelect({
@@ -32,11 +34,15 @@ export function FilterSelect({
   placeholder,
   width = 220,
   align = "left",
+  expand = false,
 }: FilterSelectProps) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const current = options.find((o) => o.value === value);
   const isPlaceholder = !current || current.muted;
+  const widthClasses = expand
+    ? "flex w-full justify-between max-w-none"
+    : "inline-flex shrink-0 max-w-[180px]";
 
   return (
     <>
@@ -44,7 +50,7 @@ export function FilterSelect({
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium border rounded-md transition shrink-0 max-w-[180px] ${
+        className={`${widthClasses} items-center gap-1.5 h-8 px-2.5 text-xs font-medium border rounded-md transition ${
           open
             ? "border-blue-400 ring-2 ring-blue-100 bg-white text-gray-900"
             : isPlaceholder

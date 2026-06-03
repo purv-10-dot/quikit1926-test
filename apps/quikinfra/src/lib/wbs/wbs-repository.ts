@@ -92,6 +92,39 @@ export interface CreateWbsTaskInput {
   predecessors?: string[];
 }
 
+/**
+ * Compute the next free WBS code for a parent, from authoritative DB state.
+ * Mirrors the client's nextWbsCode() but server-side, so rapid / concurrent
+ * adds (or a stale client task list on a slow DB) can't collide on the
+ * (orgId, projectId, wbsCode) unique key. Roots get "1", "2", … ; children
+ * get "<parentCode>.<n>". Uses max(trailing-segment)+1 so deleting a middle
+ * sibling never reproduces an existing code.
+ */
+async function nextFreeWbsCode(
+  orgId: string,
+  projectId: string,
+  parentId: string | null,
+): Promise<string> {
+  const siblings = (await (db as any).cnWBSTask.findMany({
+    where: { orgId, projectId, parentId },
+    select: { wbsCode: true },
+  })) as Array<{ wbsCode: string }>;
+  const trailing = siblings.map((s) => {
+    const code = s.wbsCode ?? "";
+    const seg = code.includes(".") ? code.slice(code.lastIndexOf(".") + 1) : code;
+    const n = parseInt(seg, 10);
+    return Number.isFinite(n) ? n : 0;
+  });
+  const next = trailing.length === 0 ? 1 : Math.max(...trailing) + 1;
+  if (parentId === null) return `${next}`;
+  const parent = (await (db as any).cnWBSTask.findFirst({
+    where: { orgId, projectId, id: parentId },
+    select: { wbsCode: true },
+  })) as { wbsCode: string } | null;
+  const prefix = parent?.wbsCode ?? "";
+  return prefix ? `${prefix}.${next}` : `${next}`;
+}
+
 export async function createWbsTask(
   ctx: TenantContext,
   projectId: string,
@@ -139,51 +172,77 @@ export async function createWbsTask(
     }
   }
 
-  const created = await db.$transaction(async (tx) => {
-    let task;
+  // Insert with the client-supplied code first; on a unique-key collision
+  // (a stale/duplicate client auto-code, or a concurrent add) recompute the
+  // next free code from authoritative DB state and retry. This is what stops
+  // rapid / concurrent "Add task" clicks — common on the slow DB where the
+  // client's task list lags — from throwing P2002. The composite key
+  // (orgId, projectId, wbsCode) is the only unique on this model, so any
+  // P2002 here is the duplicate-code case.
+  const MAX_ATTEMPTS = 12;
+  let created:
+    | {
+        id: string;
+        parentId: string | null;
+        wbsCode: string;
+        name: string;
+        startDate: Date;
+        endDate: Date;
+        status: WbsStatus;
+        progress: number;
+      }
+    | null = null;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
-      task = await (tx as any).cnWBSTask.create({
-        data: dataPayload,
-        select: {
-          id: true,
-          parentId: true,
-          wbsCode: true,
-          name: true,
-          startDate: true,
-          endDate: true,
-          status: true,
-          progress: true,
-        },
+      created = await db.$transaction(async (tx) => {
+        const task = await (tx as any).cnWBSTask.create({
+          data: dataPayload,
+          select: {
+            id: true,
+            parentId: true,
+            wbsCode: true,
+            name: true,
+            startDate: true,
+            endDate: true,
+            status: true,
+            progress: true,
+          },
+        });
+        if (predecessors.length > 0) {
+          await (tx as any).cnWBSDependency.createMany({
+            data: predecessors.map((fromTaskId) => ({
+              orgId: ctx.orgId,
+              projectId,
+              fromTaskId,
+              toTaskId: task.id,
+              createdBy: ctx.userId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+        return task;
       });
+      break; // success
     } catch (err: any) {
-      // P2002 = Prisma unique constraint violation. The composite key
-      // (orgId, projectId, wbsCode) is the only one on this
-      // model, so any P2002 here is the duplicate-code case.
       if (err?.code === "P2002") {
-        throw new WbsError(
-          "DUPLICATE_WBS_CODE",
-          `A task with code "${input.wbsCode}" already exists in this project. Pick a different code or delete the existing task first.`,
-          409,
+        dataPayload.wbsCode = await nextFreeWbsCode(
+          ctx.orgId,
+          projectId,
+          (dataPayload.parentId as string | null) ?? null,
         );
+        continue;
       }
       throw err;
     }
+  }
 
-    if (predecessors.length > 0) {
-      await (tx as any).cnWBSDependency.createMany({
-        data: predecessors.map((fromTaskId) => ({
-          orgId: ctx.orgId,
-          projectId,
-          fromTaskId,
-          toTaskId: task.id,
-          createdBy: ctx.userId,
-        })),
-        skipDuplicates: true,
-      });
-    }
-
-    return task;
-  });
+  if (!created) {
+    throw new WbsError(
+      "DUPLICATE_WBS_CODE",
+      `Could not assign a unique WBS code for "${input.name}" after several attempts. Please try again.`,
+      409,
+    );
+  }
 
   return {
     id: created.id,

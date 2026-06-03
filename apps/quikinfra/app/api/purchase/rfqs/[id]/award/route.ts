@@ -58,4 +58,4 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
   });
 
   return NextResponse.json({ success: true });
-});
+}, { permission: { resource: "construction.rfq", action: "approve" } });

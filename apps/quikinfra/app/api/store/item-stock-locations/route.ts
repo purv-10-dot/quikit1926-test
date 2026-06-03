@@ -1,6 +1,7 @@
+import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext } from "@/lib/auth/context";
+
 
 /**
  * GET /api/store/item-stock-locations?itemId=...&projectId=...
@@ -15,8 +16,9 @@ import { getTenantContext } from "@/lib/auth/context";
  * }
  */
 export async function GET(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireStoreAction("construction.stock", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const { searchParams } = new URL(req.url);
   const itemId = (searchParams.get("itemId") ?? "").trim();

@@ -52,7 +52,7 @@ export function DateCell({ value, onCommit, placeholder = "—" }: DateCellProps
         if ((e.target as HTMLElement).closest("[data-clear-date]")) return;
         openPicker();
       }}
-      className="flex items-center justify-center gap-1 hover:bg-gray-100 rounded px-1 py-0.5 cursor-pointer w-full min-w-0"
+      className="flex items-center justify-center gap-1 hover:bg-gray-100 dark:hover:bg-slate-700/50 px-1 py-0.5 cursor-pointer w-full min-w-0 focus:outline-none focus-visible:outline-none"
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -62,8 +62,8 @@ export function DateCell({ value, onCommit, placeholder = "—" }: DateCellProps
         }
       }}
     >
-      <CalIcon className="h-3 w-3 text-gray-400 shrink-0" />
-      <span className={`text-xs truncate ${display ? "text-gray-700" : "text-gray-400"}`}>
+      <CalIcon className="h-3 w-3 text-gray-400 shrink-0 dark:text-slate-500" />
+      <span className={`text-xs truncate ${display ? "text-gray-700 dark:text-slate-200" : "text-gray-400 dark:text-slate-500"}`}>
         {display ?? placeholder}
       </span>
       {display && (
@@ -74,7 +74,7 @@ export function DateCell({ value, onCommit, placeholder = "—" }: DateCellProps
             e.stopPropagation();
             onCommit(null);
           }}
-          className="ml-auto text-gray-300 hover:text-red-500 shrink-0"
+          className="ml-auto text-gray-300 hover:text-red-500 shrink-0 dark:text-slate-600 dark:hover:text-red-400"
           title="Clear due date"
           aria-label="Clear due date"
         >

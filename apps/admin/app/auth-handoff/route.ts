@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
     firstName?: string | null;
     lastName?: string | null;
     name?: string | null;
+    sessionId?: string | null;
   };
   try {
     const result = await jwtVerify(
@@ -83,6 +84,9 @@ export async function GET(request: NextRequest) {
       firstName: payload.firstName ?? undefined,
       lastName: payload.lastName ?? undefined,
       name: payload.name ?? undefined,
+      // Shared Redis session id — lets the central /api/verify-token (called
+      // by this app's middleware) soft-invalidate the handoff session.
+      sessionId: payload.sessionId ?? undefined,
     },
     secret: nextAuthSecret,
     maxAge: 7 * 24 * 60 * 60,

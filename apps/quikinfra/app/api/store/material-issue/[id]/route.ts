@@ -20,7 +20,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params 
   });
   if (!issue) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: issue });
-});
+}, { permission: { resource: "construction.issue", action: "view" } });
 
 export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.cnMaterialIssue.findFirst({
@@ -39,4 +39,4 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req
     data: { deletedAt: new Date(), updatedBy: userId },
   });
   return NextResponse.json({ success: true });
-});
+}, { permission: { resource: "construction.issue", action: "delete" } });
