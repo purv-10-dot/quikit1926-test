@@ -99,6 +99,8 @@ function buildUserResponse(
 
 // GET /api/org/users — list every OrgMember who has UserAppAccess to
 // QuikTrack in this org (whether or not they're members of any project).
+// GET /api/org/users — list every OrgMember who has UserAppAccess to
+// QuikTrack in this org (whether or not they're members of any project).
 export const GET = withOrgAuth(async ({ orgId }) => {
   const appId = await getQuikTrackAppId();
 

@@ -63,12 +63,19 @@ export function formatReviewValue(
 ): string {
   if (n == null || !Number.isFinite(n)) return "—";
   if (dataType === "Currency") {
-    const code = currency ?? "USD";
-    const entry = CURRENCIES.find((c) => c.code === code);
-    const symbol = entry?.symbol ?? code;
-    // INR uses Indian grouping (10,00,000) — match formatActual in lib/utils/currency.
-    const locale = code === "INR" ? "en-IN" : "en-US";
-    return `${symbol}${n.toLocaleString(locale, { maximumFractionDigits: 2 })}`;
+    // The legacy Categories form persists the dropdown placeholder `"NONE"`
+    // (and sometimes whitespace / casing variants) into `currency` when the
+    // user doesn't pick a real code. Without this guard the `CURRENCIES`
+    // lookup misses, the symbol falls back to the raw code, and the cell
+    // renders as `"NONE4,000,000"` instead of `"4,000,000"`.
+    const code = (currency ?? "").trim().toUpperCase();
+    if (code && code !== "NONE") {
+      const entry = CURRENCIES.find((c) => c.code === code);
+      const symbol = entry?.symbol ?? code;
+      // INR uses Indian grouping (10,00,000) — match formatActual in lib/utils/currency.
+      const locale = code === "INR" ? "en-IN" : "en-US";
+      return `${symbol}${n.toLocaleString(locale, { maximumFractionDigits: 2 })}`;
+    }
   }
   return formatReviewNumber(n);
 }

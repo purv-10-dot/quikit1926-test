@@ -5,9 +5,10 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { getQuikScaleAppId } from "@/lib/api/permissions";
 import { assertReconcileLeavesAdminPopulated, AdminLockoutError } from "@/lib/api/preventAdminLockout";
 
-// RBAC v2 — was `requireAdmin`. Now gated by User:view (GET) / User:update (PUT).
-// Admin-lockout guard (`assertReconcileLeavesAdminPopulated`) is preserved on
-// PUT so the last admin can never be detached from the admin role.
+// RBAC v2: gated by the `User` resource. Assigning users to a role rides
+// on the same User CRUD grants. Admin-lockout guard
+// (`assertReconcileLeavesAdminPopulated`) is preserved on PUT so the last
+// admin can never be detached from the admin role.
 const auth = withOrgAuthForResource("orgSetup.users", "User");
 
 const putBodySchema = z.object({

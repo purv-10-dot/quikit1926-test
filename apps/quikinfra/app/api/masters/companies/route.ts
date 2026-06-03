@@ -20,6 +20,7 @@ import {
  */
 
 export async function GET(req: NextRequest) {
+  // Lookup data — list readable by any authenticated org user (scoped to orgId).
   return withListRoute(req, { entityLabel: "company" }, async ({ ctx, searchParams, pagination }) => {
     const baseOpts = {
       orgId: ctx.orgId,
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest) {
     {
       entityLabel: "company",
       successStatus: 201,
+      requirePermission: "construction.masters.create",
       requireMatrix: { menuKey: "org.company", action: "add" },
       parseBody: (raw) => {
         const body = (raw ?? {}) as Record<string, unknown>;

@@ -94,11 +94,10 @@ const MODULE_GROUPS: ModuleGroup[] = [
   },
 ];
 
-// Sentinel for the Default scope. Keeping it as a string (instead of
-// `null`) means it works as a React `key` and as a stable selector
-// without sprinkling null-checks through the JSX.
-const DEFAULT_SCOPE = "__default__" as const;
-type Scope = typeof DEFAULT_SCOPE | string;
+// Workflows are configured strictly per project — no tenant-wide Default
+// scope. The scope state holds a `CnProject.id`, or `null` when no
+// projects exist yet (the page renders an empty-state in that case).
+type Scope = string | null;
 
 interface DrawerState {
   // The module the drawer is acting on. `module.entities` is always
@@ -137,7 +136,16 @@ export default function WorkflowsPage() {
 
   const isPageLoading = workflowsLoading || projectsLoading;
 
-  const [scope, setScope] = useState<Scope>(DEFAULT_SCOPE);
+  // Default-load the first active project once projects arrive. Until
+  // then `scope` stays null and the page falls through to the no-projects
+  // empty state. `useEffect` only fires once because we only set it when
+  // the current scope is null AND projects.length > 0.
+  const [scope, setScope] = useState<Scope>(null);
+  useEffect(() => {
+    if (scope === null && projects.length > 0) {
+      setScope(projects[0].id);
+    }
+  }, [scope, projects]);
   const [drawerState, setDrawerState] = useState<DrawerState | null>(null);
 
 // Accordion state — `collapsedModules` holds the module keys (e.g.
@@ -176,21 +184,21 @@ export default function WorkflowsPage() {
     });
   };
 
-  // Bucket workflows by (scope, entityType) once. Key shape:
-  //   "<projectId | __default__>::<entityType>"
-  // Lookup inside the module card render is then O(1).
+  // Bucket workflows by (projectId, entityType) once. Tenant-wide rows
+  // (projectId IS NULL) are now legacy data — ignored on the page since
+  // the runtime resolver no longer falls back to them. Key shape:
+  //   "<projectId>::<entityType>"
   const workflowByScopeAndEntity = useMemo(() => {
     const map = new Map<string, any>();
     for (const wf of workflows) {
-      const scopeKey = wf.projectId ?? DEFAULT_SCOPE;
-      map.set(`${scopeKey}::${wf.entityType}`, wf);
+      if (!wf.projectId) continue;
+      map.set(`${wf.projectId}::${wf.entityType}`, wf);
     }
     return map;
   }, [workflows]);
 
-  // Count of override rows per project — drives the badge on each
-  // project tab. We only count rows whose projectId is set (Default
-  // rows belong to the Default tab).
+  // Count of workflows configured per project — drives the small badge
+  // next to each project entry in the scope picker.
   const overrideCountByProject = useMemo(() => {
     const counts = new Map<string, number>();
     for (const wf of workflows) {
@@ -200,48 +208,28 @@ export default function WorkflowsPage() {
     return counts;
   }, [workflows]);
 
-  // Count of tenant-wide Default rules — surfaces as a badge on the
-  // pinned "Default (all projects)" row in the scope picker, so admins
-  // can tell at a glance whether legacy module-level workflows are
-  // still in place after the per-project migration.
-  const defaultRulesCount = useMemo(
-    () => workflows.filter((wf) => !wf.projectId).length,
-    [workflows],
-  );
-
-  const activeScopeKey: string = scope;
-  const activeProjectId: string | null =
-    scope === DEFAULT_SCOPE ? null : scope;
+  const activeProjectId = scope;
   const activeProject = activeProjectId
     ? projects.find((p) => p.id === activeProjectId)
     : null;
   const activeProjectLabel =
     activeProject?.siteName ?? activeProject?.name ?? activeProject?.code ?? "Project";
 
-  // Helper used by the card renderer: which workflow row applies right
-  // now for (currentScope, entityType)? Falls back to the Default row
-  // when we're on a project tab and that module isn't overridden — this
-  // is what the resolver will pick at submit time.
+  // Which workflow row applies for (currentProject, entityType)? No
+  // cascade — undefined when the project hasn't configured this page.
   const effectiveWorkflow = (entityType: string) => {
-    const own = workflowByScopeAndEntity.get(`${activeScopeKey}::${entityType}`);
-    if (own) return { workflow: own, isOverride: activeProjectId !== null };
-    if (activeProjectId !== null) {
-      const fallback = workflowByScopeAndEntity.get(`${DEFAULT_SCOPE}::${entityType}`);
-      if (fallback) return { workflow: fallback, isOverride: false };
-    }
-    return { workflow: undefined, isOverride: false };
+    if (!activeProjectId) return { workflow: undefined };
+    const own = workflowByScopeAndEntity.get(`${activeProjectId}::${entityType}`);
+    return { workflow: own };
   };
 
   // Summary counts for the banner — totals are scoped to what applies
   // at submit time. On the Default tab that's just Default rows; on a
-  // project tab it's the union of project rows + inherited defaults.
+  // Coverage counters — scoped to the currently-selected project.
   const totalEntities = MODULE_GROUPS.reduce((sum, m) => sum + m.entities.length, 0);
   const configuredEntities = MODULE_GROUPS.reduce((sum, m) => {
     return sum + m.entities.filter((e) => !!effectiveWorkflow(e.type).workflow).length;
   }, 0);
-  const ownOverrideCount = activeProjectId
-    ? (overrideCountByProject.get(activeProjectId) ?? 0)
-    : 0;
 
   // All workflow operations now target a single page (entity type)
   // rather than aggregating across a module. The parent `mod` is still
@@ -251,27 +239,25 @@ export default function WorkflowsPage() {
   // so the "save = create one row per entity" loop still works without
   // a second mode.
   const handleConfigure = (entity: ModuleEntity, mod: ModuleGroup) => {
+    if (!activeProjectId) return;
     setDrawerState({
       module: { ...mod, entities: [entity] },
       pageLabel: entity.label,
       moduleLabel: mod.label,
       scopeProjectId: activeProjectId,
-      scopeLabel: activeProjectId ? activeProjectLabel : "Default",
+      scopeLabel: activeProjectLabel,
     });
   };
 
   const handleEdit = (entity: ModuleEntity, mod: ModuleGroup) => {
-    // Edit only touches the in-scope row for this page. On a project
-    // tab that means the project's override (never the inherited
-    // Default — clicking Edit while inherited is a Configure-as-Override
-    // path, handled by handleConfigure with the same scope).
-    const existing = workflowByScopeAndEntity.get(`${activeScopeKey}::${entity.type}`);
+    if (!activeProjectId) return;
+    const existing = workflowByScopeAndEntity.get(`${activeProjectId}::${entity.type}`);
     setDrawerState({
       module: { ...mod, entities: [entity] },
       pageLabel: entity.label,
       moduleLabel: mod.label,
       scopeProjectId: activeProjectId,
-      scopeLabel: activeProjectId ? activeProjectLabel : "Default",
+      scopeLabel: activeProjectLabel,
       prefill: {
         name: existing?.name ?? "",
         isActive: existing?.isActive ?? true,
@@ -299,7 +285,7 @@ export default function WorkflowsPage() {
     <>
       <PageHeader
         title="Approval Workflows"
-        subtitle="Configure a workflow for each page — defaulted once, customized per project where needed"
+        subtitle="Configure a workflow per project — set approval steps for each page that needs one"
         breadcrumbs={[{ label: "Settings", href: "/settings" }, { label: "Workflows" }]}
       />
 
@@ -320,7 +306,6 @@ export default function WorkflowsPage() {
               onChange={setScope}
               projects={projects}
               overrideCountByProject={overrideCountByProject}
-              defaultRulesCount={defaultRulesCount}
             />
           </div>
           <div className="flex-1 min-w-[300px] bg-white rounded-xl border border-gray-200 flex items-center justify-between gap-3 px-4 py-3">
@@ -345,21 +330,15 @@ export default function WorkflowsPage() {
                 <CircleDashed className="w-3 h-3" />{" "}
                 {totalEntities - configuredEntities} Pending
               </span>
-              {scope !== DEFAULT_SCOPE && (
-                <span className="inline-flex items-center gap-1 text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full font-semibold">
-                  {ownOverrideCount} Custom
-                </span>
-              )}
             </div>
           </div>
         </div>
 
         {/* No-projects guard — without at least one active project the
-            entire page is non-actionable (workflows save against a scope,
-            and the Default scope has been deliberately hidden from the
-            picker). Show a clear inline empty state with a direct path
-            to the Projects master rather than letting the admin click
-            disabled rows. */}
+            entire page is non-actionable (workflows now save strictly
+            per project). Show a clear inline empty state with a direct
+            path to the Projects master rather than letting the admin
+            click disabled rows. */}
         {projects.length === 0 ? (
           <div className="bg-white rounded-xl border border-dashed border-gray-300 p-8 flex flex-col items-center text-center">
             <div className="relative inline-flex items-center justify-center w-20 h-20 mb-4">
@@ -400,7 +379,6 @@ export default function WorkflowsPage() {
             }));
             const moduleConfigured = entityRows.filter((r) => r.workflow).length;
             const moduleTotal = entityRows.length;
-            const moduleOverrides = entityRows.filter((r) => r.isOverride).length;
 
             const isCollapsed = collapsedModules.has(mod.key);
 
@@ -446,11 +424,6 @@ export default function WorkflowsPage() {
                     >
                       {moduleConfigured}/{moduleTotal} configured
                     </span>
-                    {scope !== DEFAULT_SCOPE && moduleOverrides > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 text-[10px] font-semibold">
-                        {moduleOverrides} custom for project
-                      </span>
-                    )}
                   </div>
                 </button>
 
@@ -470,99 +443,40 @@ export default function WorkflowsPage() {
                          2-column card grid which made every row look
                          identical regardless of state. */}
                 <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
-                  {entityRows.map(({ entity, workflow, isOverride }) => {
+                  {entityRows.map(({ entity, workflow }) => {
                     const isConfigured = !!workflow;
-                    const isInherited =
-                      isConfigured && !isOverride && scope !== DEFAULT_SCOPE;
                     const stepCount = workflow?.steps?.length ?? 0;
 
-                    // Status row tint — a soft full-row background
-                    // (not just the icon) makes the active vs empty
-                    // states pop without adding more chips. Inherited
-                    // rows on project tabs get a faint grey so they
-                    // read as "this lives somewhere else (Default)".
-                    const rowTint = !isConfigured
-                      ? "bg-white"
-                      : isOverride
-                        ? "bg-orange-50/30"
-                        : isInherited
-                          ? "bg-gray-50/50"
-                          : "bg-emerald-50/30";
+                    // Two row states now — configured (faint green) or
+                    // empty (plain white). No inherited / override
+                    // variants since Default is gone.
+                    const rowTint = isConfigured
+                      ? "bg-emerald-50/30"
+                      : "bg-white";
 
-                    // Single, plain-language summary line under the
-                    // page name. We compose it conditionally so the
-                    // user reads ONE coherent sentence per state
-                    // instead of stacking three pills + a step count
-                    // + a workflow name.
-                    let summary: React.ReactNode;
-                    if (!isConfigured) {
-                      summary = (
-                        <span className="text-gray-500">
-                          No workflow yet — set up approval steps for this page.
+                    const summary: React.ReactNode = !isConfigured ? (
+                      <span className="text-gray-500">
+                        No workflow yet — set up approval steps for this page.
+                      </span>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-gray-800">
+                          {workflow?.name ?? "Untitled"}
+                        </span>{" "}
+                        <span className="text-gray-400">·</span>{" "}
+                        <span className="tabular-nums">
+                          {stepCount} approval {stepCount === 1 ? "step" : "steps"}
                         </span>
-                      );
-                    } else if (isInherited) {
-                      summary = (
-                        <>
-                          <span className="text-gray-500">Using Default:</span>{" "}
-                          <span className="font-semibold text-gray-700">
-                            {workflow?.name ?? "Untitled"}
-                          </span>{" "}
-                          <span className="text-gray-400">·</span>{" "}
-                          <span className="tabular-nums">
-                            {stepCount} approval {stepCount === 1 ? "step" : "steps"}
-                          </span>
-                        </>
-                      );
-                    } else if (isOverride) {
-                      summary = (
-                        <>
-                          <span className="text-orange-700 font-semibold">
-                            Custom for this project:
-                          </span>{" "}
-                          <span className="font-semibold text-gray-800">
-                            {workflow?.name ?? "Untitled"}
-                          </span>{" "}
-                          <span className="text-gray-400">·</span>{" "}
-                          <span className="tabular-nums">
-                            {stepCount} approval {stepCount === 1 ? "step" : "steps"}
-                          </span>
-                        </>
-                      );
-                    } else {
-                      // Default tab, configured.
-                      summary = (
-                        <>
-                          <span className="font-semibold text-gray-800">
-                            {workflow?.name ?? "Untitled"}
-                          </span>{" "}
-                          <span className="text-gray-400">·</span>{" "}
-                          <span className="tabular-nums">
-                            {stepCount} approval {stepCount === 1 ? "step" : "steps"}
-                          </span>
-                        </>
-                      );
-                    }
+                      </>
+                    );
 
                     return (
                       <div
                         key={entity.type}
                         className={`flex items-center gap-4 px-4 py-3 transition-colors ${rowTint}`}
                       >
-                        {/* Status indicator — 28px circle with a tick
-                            for active, an empty ring for unconfigured.
-                            Sized for instant scannability, not
-                            decoration. */}
                         <PageStatusIcon
-                          state={
-                            !isConfigured
-                              ? "empty"
-                              : isOverride
-                                ? "custom"
-                                : isInherited
-                                  ? "inherited"
-                                  : "active"
-                          }
+                          state={isConfigured ? "active" : "empty"}
                         />
 
                         <div className="min-w-0 flex-1">
@@ -574,46 +488,14 @@ export default function WorkflowsPage() {
                           </div>
                         </div>
 
-                        {/* Action column — one primary button per
-                            state, plus an optional "Reset to Default"
-                            link-style action when a project override
-                            exists. Keeps the right edge alignment
-                            consistent across rows. */}
                         <div className="flex items-center gap-2 shrink-0">
-                          {scope === DEFAULT_SCOPE ? (
-                            isConfigured ? (
-                              <button
-                                type="button"
-                                onClick={() => handleEdit(entity, mod)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold text-orange-700 bg-white hover:bg-orange-50 border border-orange-200 transition-colors"
-                              >
-                                <Pencil className="w-3 h-3" /> Edit
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleConfigure(entity, mod)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-orange-600 hover:bg-orange-700 transition-colors"
-                              >
-                                <Plus className="w-3 h-3" /> Configure
-                              </button>
-                            )
-                          ) : isOverride ? (
+                          {isConfigured ? (
                             <button
                               type="button"
                               onClick={() => handleEdit(entity, mod)}
                               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold text-orange-700 bg-white hover:bg-orange-50 border border-orange-200 transition-colors"
                             >
                               <Pencil className="w-3 h-3" /> Edit
-                            </button>
-                          ) : isInherited ? (
-                            <button
-                              type="button"
-                              onClick={() => handleConfigure(entity, mod)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-orange-600 hover:bg-orange-700 transition-colors"
-                              title="Give just this page its own rule for this project (Default still applies elsewhere)"
-                            >
-                              <Plus className="w-3 h-3" /> Customize
                             </button>
                           ) : (
                             <button
@@ -706,20 +588,12 @@ function ProjectScopeDropdown({
   onChange,
   projects,
   overrideCountByProject,
-  defaultRulesCount = 0,
   bare = false,
 }: {
   scope: Scope;
   onChange: (next: Scope) => void;
   projects: any[];
   overrideCountByProject: Map<string, number>;
-  /**
-   * Number of tenant-wide Default workflows currently configured. Drives
-   * the badge on the "Default (all projects)" row at the top of the
-   * dropdown, so admins can tell at a glance whether legacy rules from
-   * the old module-level UI are still in place.
-   */
-  defaultRulesCount?: number;
   /**
    * When true, drops the trigger's own `bg-white rounded-xl border`
    * chrome. Used when the dropdown sits inside a parent card that
@@ -728,16 +602,8 @@ function ProjectScopeDropdown({
    */
   bare?: boolean;
 }) {
-  // Scope picker surfaces two kinds of choice:
-  //   1. The pinned "Default (all projects)" row — tenant-wide rules
-  //      (projectId IS NULL). This is where workflows configured under
-  //      the old module-level UI live. Pinned at the top so admins can
-  //      always find/edit them after the migration to per-project rules.
-  //   2. One row per active project — per-project overrides on top of
-  //      the Default rules.
-  // When there are zero projects, the trigger still allows picking
-  // Default — workflows can be configured tenant-wide without any
-  // project existing yet.
+  // Project picker — one row per active project. No tenant-wide
+  // Default option: workflows are configured strictly per project.
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -792,22 +658,15 @@ function ProjectScopeDropdown({
     });
   }, [enriched, query]);
 
-  const isDefault = scope === DEFAULT_SCOPE;
-  const active = !isDefault ? enriched.find((p) => p.id === scope) ?? null : null;
-  const triggerLabel = isDefault
-    ? "Default (all projects)"
-    : active?.label ?? "Select scope";
-  const triggerSub = isDefault
-    ? defaultRulesCount > 0
-      ? `${defaultRulesCount} tenant-wide rule${defaultRulesCount === 1 ? "" : "s"} — applies to every project`
-      : "No tenant-wide rules yet"
-    : active
-      ? active.overrides > 0
-        ? `${active.overrides} custom rule${active.overrides === 1 ? "" : "s"}`
-        : "Uses Default rules"
-      : projects.length === 0
-        ? "No active projects yet — pick Default to configure tenant-wide rules"
-        : "Choose Default or a specific project";
+  const active = scope ? enriched.find((p) => p.id === scope) ?? null : null;
+  const triggerLabel = active?.label ?? "Select a project";
+  const triggerSub = active
+    ? active.overrides > 0
+      ? `${active.overrides} workflow${active.overrides === 1 ? "" : "s"} configured`
+      : "No workflows configured yet"
+    : projects.length === 0
+      ? "Add a project to configure workflows"
+      : "Pick a project to configure its workflows";
 
   return (
     <div ref={rootRef} className="relative">
@@ -884,57 +743,10 @@ function ProjectScopeDropdown({
           </div>
 
           <div className="max-h-80 overflow-y-auto">
-            {/* Pinned Default row — always visible (ignores search) so
-                admins can switch back to tenant-wide rules in one click.
-                This is where workflows from the old module-level UI live. */}
-            {!query && (
-              <button
-                type="button"
-                onClick={() => {
-                  onChange(DEFAULT_SCOPE);
-                  setOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors border-b border-gray-100 ${
-                  isDefault ? "bg-orange-50" : "hover:bg-gray-50"
-                }`}
-              >
-                <span
-                  className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
-                    isDefault
-                      ? "bg-orange-100 text-orange-700"
-                      : "bg-gray-100 text-gray-500"
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                </span>
-                <span className="flex flex-col leading-tight min-w-0 flex-1">
-                  <span
-                    className={`text-sm font-semibold truncate ${
-                      isDefault ? "text-orange-700" : "text-gray-900"
-                    }`}
-                  >
-                    Default (all projects)
-                  </span>
-                  <span className="text-[11px] text-gray-500 truncate">
-                    {defaultRulesCount > 0
-                      ? `${defaultRulesCount} tenant-wide rule${defaultRulesCount === 1 ? "" : "s"}`
-                      : "Configure tenant-wide rules"}
-                  </span>
-                </span>
-                {defaultRulesCount > 0 && (
-                  <span className="inline-flex items-center justify-center text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full bg-orange-100 text-orange-700 shrink-0">
-                    {defaultRulesCount}
-                  </span>
-                )}
-                {isDefault && (
-                  <CheckCircle2 className="w-4 h-4 text-orange-600 shrink-0" />
-                )}
-              </button>
-            )}
             {filtered.length === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-gray-400 italic">
                 {projects.length === 0
-                  ? "No active projects yet — Default rules will apply tenant-wide."
+                  ? "No active projects yet."
                   : `No projects match “${query}”.`}
               </div>
             ) : (
@@ -971,8 +783,8 @@ function ProjectScopeDropdown({
                       </span>
                       <span className="text-[11px] text-gray-500 truncate">
                         {p.overrides > 0
-                          ? `${p.overrides} custom rule${p.overrides === 1 ? "" : "s"}`
-                          : "Uses Default rules"}
+                          ? `${p.overrides} workflow${p.overrides === 1 ? "" : "s"} configured`
+                          : "No workflows configured"}
                       </span>
                     </span>
                     {p.overrides > 0 && (

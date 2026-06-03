@@ -1,6 +1,7 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext, tenantUpdate, hasMatrixAction } from "@/lib/auth/context";
+import { tenantUpdate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { resolveUserNames } from "@/lib/users/resolve-names";
@@ -52,9 +53,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireProjectsFinanceAction("construction.wo", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const row = await (db as any).cnWorkOrder.findFirst({
     where: { id: params.id, orgId: ctx.orgId},
@@ -150,9 +151,9 @@ export async function GET(
 }
 
 async function handleUpdate(req: NextRequest, id: string) {
-  const ctx = await getTenantContext();
-  if (!ctx)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireProjectsFinanceAction("construction.wo", "edit");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "pm.work_order", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.work_order`, 403);
   }
@@ -257,9 +258,9 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireProjectsFinanceAction("construction.wo", "delete");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "pm.work_order", "delete")) {
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for pm.work_order`, 403);
   }

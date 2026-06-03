@@ -1,6 +1,7 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import {
@@ -28,9 +29,9 @@ export async function POST(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireProjectsFinanceAction("construction.dpr", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "pm.dpr", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for pm.dpr`, 403);
   }

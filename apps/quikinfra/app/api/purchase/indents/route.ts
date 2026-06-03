@@ -1,8 +1,9 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
 import { nextProjectScopedDocNumber } from "@/lib/db/doc-number";
 import { isVendorBlacklisted } from "@/lib/masters/vendors-repository";
 import { validateIndentCreation, PurchaseValidationError } from "@/lib/purchase-service";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { listIndents, createIndent } from "@/lib/purchase/indent-repository";
 import { findPRById } from "@/lib/purchase/pr-repository";
@@ -71,8 +72,9 @@ async function resolveIndentVisibility(ctx: {
  */
 
 export async function GET(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  const ctxOrResp = await requirePurchaseAction("construction.indent", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "";
@@ -109,8 +111,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await getTenantContext();
-    if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    const ctxOrResp = await requirePurchaseAction("construction.indent", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
     if (!hasMatrixAction(ctx, "purchase.indent", "add")) {
       return envelopeErr("FORBIDDEN", `Action "add" not allowed for purchase.indent`, 403);
     }

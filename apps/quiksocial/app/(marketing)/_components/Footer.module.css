@@ -1,0 +1,185 @@
+.footer {
+  position: relative;
+  z-index: 4;
+  background: transparent;
+  color: #fff;
+  padding: 48px 8% 0;
+  overflow: hidden;
+}
+
+/* ===== PRODUCTS PANEL — Liquid glass ===== */
+.products {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 48px;
+  align-items: center;
+  padding: 0 56px;
+  border-radius: 24px;
+  margin-bottom: 48px;
+  /* Translucent fill + multi-stop tint for subtle depth */
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 50%, rgba(255, 255, 255, 0.04) 100%),
+    rgba(15, 17, 22, 0.18);
+  /* The "glass" — refraction blur + slight saturation/luminance lift */
+  backdrop-filter: blur(28px) saturate(140%);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+  /* Two borders — outer hairline + inner highlight — sell the glass edge */
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),         /* top inner highlight */
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),        /* bottom inner edge */
+    0 30px 60px -20px rgba(0, 0, 0, 0.45);           /* lift */
+}
+
+.copy {
+  padding: 40px 0;
+  max-width: 560px;
+}
+
+.headline {
+  font-weight: 600;
+  font-size: 34px;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  margin: 0 0 12px;
+  color: #fff;
+}
+
+.desc {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.65);
+  max-width: 46ch;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 20px;
+  padding: 12px 22px;
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  width: fit-content;
+  background: transparent;
+  color: #fff;
+  border: 1px solid #fff;
+  font-weight: 600;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+}
+.cta:hover {
+  background: linear-gradient(135deg, #ffaf55 0%, #ea580c 100%);
+  border: 1px solid transparent;
+  color: #fff;
+}
+
+.orbit {
+  position: relative;
+  display: flex;
+  align-items: flex-end;     /* bottom-align the illustration */
+  justify-content: center;
+  align-self: stretch;       /* fill the products card height so flex-end has room */
+}
+.orbit img {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  display: block;
+}
+.orbit::before { display: none; }
+
+/* ===== BRAND + LINKS GRID ===== */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 48px;
+  padding: 0;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  width: fit-content;
+}
+.logoImg {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+
+.copyline {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+}
+.colHead {
+  font-weight: 500;
+  font-size: 15px;
+  color: #fff;
+  margin: 0 0 24px;
+}
+.colList {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 0;
+  margin: 0;
+}
+.colList a {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.2s ease;
+}
+.colList a:hover { color: #fff; }
+
+/* Full-bleed watermark image at the very bottom of the footer */
+.watermark {
+  margin: 0 -8%;            /* no top/bottom margin → flush with brand row & footer end */
+}
+.watermark img {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-bottom: -1px;      /* hide any sub-pixel gap below the image */
+}
+
+@media (max-width: 900px) {
+  .footer { padding: 48px 20px 0; }
+  .watermark { margin: 8px -20px 0; }
+  .products {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 24px;
+    margin-bottom: 32px;
+  }
+  .copy { padding: 0; }
+  .headline { font-size: 24px; }
+  .desc { font-size: 13px; }
+  .orbit { display: none; }
+  .grid { grid-template-columns: 1fr; gap: 32px; }
+  .cta { padding: 10px 18px; font-size: 12px; }
+  .colHead { margin-bottom: 16px; }
+  .colList { gap: 16px; }
+  .colList a { font-size: 13px; }
+  .copyline { font-size: 12px; }
+  .logo { height: 36px; }
+}

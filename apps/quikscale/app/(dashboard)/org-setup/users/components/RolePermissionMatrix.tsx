@@ -29,12 +29,15 @@ import { ChevronDown, ChevronRight, Loader2, Save, Undo2, Shield, Info, Pencil, 
 import {
   PERMISSION_TREE,
   ACTIONS,
+  filterTreeByEnabledModules,
   type Action,
   type PermissionLeaf,
   type PermissionModule,
   type PermissionSubModule,
 } from "@/lib/api/permissionsRegistry";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
+import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
+import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 
 interface RoleDetail {
   id: string;
@@ -136,11 +139,21 @@ export function RolePermissionMatrix({
   // but the dirty bar's Save button is hidden so changes can never persist.
   // The viewer can still EXPLORE permissions to understand them.
   const { canUpdate } = useResourcePermissions("User");
+  // RBAC v2: the matrix only shows modules the tenant has enabled in the
+  // Super Admin feature-flag panel. Disabling `kpi.teams` for "Success
+  // Alchemists" hides the "Team KPI" row everywhere — sidebar, matrix,
+  // effective-permissions panel. Existing grants on hidden rows are kept
+  // in `RolePermission` so re-enabling the module restores the same state.
+  const disabledModules = useDisabledModules();
+  const visibleTree = useMemo(
+    () => filterTreeByEnabledModules(PERMISSION_TREE, disabledModules, isModuleEnabled),
+    [disabledModules],
+  );
   const [role, setRole] = useState<RoleDetail | null>(null);
   const [grants, setGrants] = useState<Set<string>>(new Set());
   const [savedGrants, setSavedGrants] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(PERMISSION_TREE.map((m) => m.key)),
+    () => new Set(visibleTree.map((m) => m.key)),
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -405,6 +418,7 @@ export function RolePermissionMatrix({
           </p>
         )}
         <EntitiesTable
+          tree={visibleTree}
           grants={grants}
           expanded={expanded}
           onToggleExpanded={toggleExpanded}
@@ -460,7 +474,7 @@ interface RowHandlers {
   onBulkSetAction: (node: NodeWithChildren, action: Action, makeOn: boolean) => void;
 }
 
-function EntitiesTable(props: RowHandlers) {
+function EntitiesTable({ tree, ...props }: { tree: readonly PermissionModule[] } & RowHandlers) {
   return (
     <table className="w-full border-collapse table-fixed">
       <colgroup>
@@ -485,7 +499,7 @@ function EntitiesTable(props: RowHandlers) {
         </tr>
       </thead>
       <tbody>
-        {PERMISSION_TREE.map((mod) => (
+        {tree.map((mod) => (
           <ModuleRows key={mod.key} mod={mod} {...props} />
         ))}
       </tbody>

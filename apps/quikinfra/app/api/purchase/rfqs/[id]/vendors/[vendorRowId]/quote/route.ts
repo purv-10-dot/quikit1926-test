@@ -1,5 +1,6 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { saveVendorQuote } from "@/lib/purchase/rfq-repository";
 
@@ -16,9 +17,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string; vendorRowId: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requirePurchaseAction("construction.rfq", "edit");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "purchase.quote_analysis", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.quote_analysis`, 403);
   }

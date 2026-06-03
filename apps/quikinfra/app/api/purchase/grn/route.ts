@@ -1,3 +1,4 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
 import { nextProjectScopedDocNumber } from "@/lib/db/doc-number";
 import {
@@ -25,8 +26,9 @@ import { parsePagination } from "@/lib/http/pagination";
  */
 
 export async function GET(req: NextRequest) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ data: [], total: 0 });
+  const ctxOrResp = await requirePurchaseAction("construction.grn", "view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status") ?? "";

@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
@@ -22,7 +23,7 @@ export const GET = withOrgAuth(async ({ orgId }, _req, ctx: { params: { id: stri
   });
   if (!bill) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: bill });
-});
+}, { permission: { resource: "construction.finance", action: "view" } });
 
 export const PATCH = withOrgAuth(async ({ orgId, userId, session }, req, ctx: { params: { id: string } }) => {
   const body = await req.json();
@@ -38,4 +39,4 @@ export const PATCH = withOrgAuth(async ({ orgId, userId, session }, req, ctx: { 
     return NextResponse.json({ success: true, data: updated });
   }
   return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });
-});
+}, { permission: { resource: "construction.finance", action: "edit" } });

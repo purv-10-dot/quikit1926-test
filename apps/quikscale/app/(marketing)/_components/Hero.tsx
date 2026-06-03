@@ -5,10 +5,13 @@ export default function Hero() {
 
       <h1 className="hero-bold-title">
         <span className="hero-bold-line">
-          Run People, Strategy, Execution<span className="cash-desktop"> &amp; Cash</span>
+          Your Scaling Up Strategy,
         </span>
         <span className="hero-bold-line">
-          <span className="cash-laptop">&amp; Cash </span>from <span className="accent-primary serif-bold">One dashboard</span>
+          Run by <span className="accent-primary serif-bold">AI Agents.</span>
+        </span>
+        <span className="hero-bold-line hero-bold-line--muted">
+          Not spreadsheets.
         </span>
       </h1>
 
@@ -16,18 +19,24 @@ export default function Hero() {
 
       <div className="hero-bold-row">
         <p className="hero-bold-desc">
-          QuikScale is the goal and KPI tracking tool built natively on the Scaling Up
-          methodology. Replace spreadsheets, status decks, and quarterly chaos with
-          real-time control over your OPSP, Rocks, Critical Numbers, and Meeting
-          Rhythms — across every team.
+          QuikScale digitises the full Scaling Up toolkit — OPSP, KPI tracking,
+          Rocks, Rockefeller Habits, FACe charts, and cash modelling — so your
+          plan stays live between offsites, not just during them. Replace
+          spreadsheets, stale PDFs, and quarterly chaos with a single connected
+          platform.
         </p>
-        <a href="#demo" className="btn-bold-cta">
-          TAKE A PRODUCT TOUR
-        </a>
+        <div className="hero-bold-cta-group">
+          <a href="#demo" className="btn-bold-cta">
+            Book a Demo
+          </a>
+        </div>
       </div>
 
       <div className="hero-bold-image">
-        <img src="/marketing/hero-bg.webp" alt="QuikScale platform" />
+        <img
+          src="/Frame 2131329815.png"
+          alt="QuikScale dashboard — Scaling Up software India"
+        />
       </div>
     </section>
   );

@@ -77,6 +77,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
   const [woType, setWoType] = useState("Work Order");
   const [contractorId, setContractorId] = useState("");
   const [workType, setWorkType] = useState("Without Material (Aakar supplies)");
+  const [workName, setWorkName] = useState("");
   const [plannedStart, setPlannedStart] = useState("");
   const [plannedEnd, setPlannedEnd] = useState("");
 
@@ -94,6 +95,7 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
     setWoType(editData.type ?? "Work Order");
     setContractorId(editData.contractorId ?? "");
     setWorkType(editData.workType ?? "Without Material (Aakar supplies)");
+    setWorkName(editData.title ?? "");
     setPlannedStart(editData.plannedStart ? String(editData.plannedStart).slice(0, 10) : "");
     setPlannedEnd(editData.plannedEnd ? String(editData.plannedEnd).slice(0, 10) : "");
     const rawScope: any[] = Array.isArray(editData.boqItems) ? editData.boqItems : [];
@@ -176,13 +178,14 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
       });
 
       const project = projects.find((p: any) => p.id === projectId);
+      const fallbackTitle = `${woType} for ${project?.name ?? ""}`.trim();
       const payload = {
         projectId,
         contractorId: contractorId || null,
         contractorName: contractor?.name ?? editData?.contractorName ?? "New Contractor",
         type: woType,
         workType,
-        title: `${woType} for ${project?.name ?? ""}`.trim(),
+        title: workName.trim() || fallbackTitle,
         plannedStart: plannedStart || null,
         plannedEnd: plannedEnd || null,
         boqItems,
@@ -283,6 +286,17 @@ export function WorkOrderForm({ editData, embedded = false, onSaved }: Props) {
           <h2 className="text-xs font-bold text-orange-700 uppercase tracking-wider mb-4 flex items-center gap-2">
             <Briefcase className="w-4 h-4" /> BASIC INFORMATION
           </h2>
+          <div className="mb-4">
+            <Field label="WORK NAME">
+              <input
+                type="text"
+                value={workName}
+                onChange={(e) => setWorkName(e.target.value)}
+                placeholder="e.g. Tower-2 Plumbing Rough-in (auto-derived from WO type + project if left blank)"
+                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400"
+              />
+            </Field>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Field label="PROJECT" required>
               <SelectInput

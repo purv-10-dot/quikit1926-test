@@ -1,6 +1,7 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { requireAuth, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findIndentById } from "@/lib/purchase/indent-repository";
 import { actOnApproval } from "@/lib/approvals/act-on-approval";
@@ -24,9 +25,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const ctxOrResponse = await requireAuth();
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+  const ctxOrResp = await requirePurchaseAction("construction.indent", "approve");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
 
   if (!hasMatrixAction(ctx, "purchase.indent", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.indent`, 403);

@@ -73,4 +73,4 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
     return NextResponse.json({ success: false, error: `Transaction failed: ${msg}` }, { status: 500 });
   }
   return NextResponse.json({ success: true, data: { id: rec.id, status: "posted", postedAt } });
-});
+}, { permission: { resource: "construction.reconciliation", action: "approve" } });

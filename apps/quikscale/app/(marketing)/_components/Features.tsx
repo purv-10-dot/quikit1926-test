@@ -4,26 +4,18 @@ export default function Features() {
       <header className="section-header">
         <span className="section-eyebrow">The Product</span>
         <h2 className="section-title">
-          <span className="serif">Your strategy,</span>{" "}
-          <span className="serif-bold">live and visible.</span>
+          <span className="serif">Affordable strategy execution software</span>{" "}
+          <span className="serif-bold">— faithful to the Scaling Up framework.</span>
         </h2>
         <p className="section-lede">
-          Six surfaces, one strategic OS. Real data — not empty states.
+          Five surfaces. One strategic OS. Real data — not empty states.
         </p>
       </header>
 
       <div className="features-grid">
+
         {/* OPSP Builder */}
-        <article className="feature-card feature-wide">
-          <div className="feature-copy">
-            <span className="feature-tag tag-strategy">Strategy</span>
-            <h3 className="feature-title serif-bold">One-Page Strategic Plan</h3>
-            <p className="feature-body">
-              The flagship Scaling Up artifact, digitized and live. BHAG, core values,
-              annual priorities, quarterly Rocks, and Critical Numbers — captured on a
-              single page the whole company can see.
-            </p>
-          </div>
+        <article className="feature-card">
           <div className="feature-visual opsp-visual">
             <div className="opsp-row">
               <div className="opsp-cell">
@@ -52,16 +44,15 @@ export default function Features() {
               </div>
             </div>
           </div>
+          <div className="feature-copy">
+            <span className="feature-tag tag-strategy">Strategy</span>
+            <h3 className="feature-title serif-bold">One-Page Strategic Plan</h3>
+            <p className="feature-body">A living document — not a static PDF — the whole company reads from and updates in real time.</p>
+          </div>
         </article>
 
         {/* KPI Scorecard */}
         <article className="feature-card">
-          <span className="feature-tag tag-execution">Execution</span>
-          <h3 className="feature-title serif-bold">Critical Number tracking</h3>
-          <p className="feature-body">
-            Every owner reports their one number. The cockpit flags red, yellow, and green
-            — the whole company&apos;s health at a glance.
-          </p>
           <div className="feature-visual scorecard-visual">
             <div className="kpi-row">
               <span className="kpi-label">MRR growth</span>
@@ -84,16 +75,15 @@ export default function Features() {
               <span className="kpi-flag flag-green" />
             </div>
           </div>
+          <div className="feature-copy">
+            <span className="feature-tag tag-execution">Execution</span>
+            <h3 className="feature-title serif-bold">Critical Number Tracking</h3>
+            <p className="feature-body">R/Y/G flags on every KPI, every week — no 45-minute manual review.</p>
+          </div>
         </article>
 
         {/* Quarterly Rocks */}
         <article className="feature-card">
-          <span className="feature-tag tag-cash">Priorities</span>
-          <h3 className="feature-title serif-bold">Quarterly Rocks</h3>
-          <p className="feature-body">
-            3–5 priorities, each with an owner, due date, and progress. The things that
-            absolutely must get done this quarter — tracked against the 90-day cadence.
-          </p>
           <div className="feature-visual rocks-visual">
             <div className="rock-row">
               <span className="rock-owner" data-initials="MK" />
@@ -114,33 +104,30 @@ export default function Features() {
               <span className="rock-pct">95%</span>
             </div>
           </div>
+          <div className="feature-copy">
+            <span className="feature-tag tag-cash">Priorities</span>
+            <h3 className="feature-title serif-bold">Quarterly Rocks</h3>
+            <p className="feature-body">A slipping Rock surfaces in week 3 — not at the quarter-end retrospective.</p>
+          </div>
         </article>
 
         {/* Meeting rhythm */}
         <article className="feature-card">
-          <span className="feature-tag tag-people">People</span>
-          <h3 className="feature-title serif-bold">Meeting Rhythm engine</h3>
-          <p className="feature-body">
-            Daily huddles. Weekly teams. Monthly leadership. Quarterly planning. The
-            cadence runs inside the tool — agendas, owners, and follow-ups linked to
-            Rocks and KPIs.
-          </p>
           <div className="feature-visual rhythm-visual">
             <div className="rhythm-row"><span className="rhythm-dot dot-people" /><span>Daily huddle · 09:00</span><span className="rhythm-sub">15 min</span></div>
             <div className="rhythm-row"><span className="rhythm-dot dot-execution" /><span>Weekly L10 · Mon</span><span className="rhythm-sub">60 min</span></div>
             <div className="rhythm-row"><span className="rhythm-dot dot-strategy" /><span>Monthly leadership</span><span className="rhythm-sub">2 hr</span></div>
             <div className="rhythm-row"><span className="rhythm-dot dot-cash" /><span>Quarterly planning</span><span className="rhythm-sub">1 day</span></div>
           </div>
+          <div className="feature-copy">
+            <span className="feature-tag tag-people">People</span>
+            <h3 className="feature-title serif-bold">Meeting Rhythm Engine</h3>
+            <p className="feature-body">Every cadence inside the platform — agendas, attendance, and action items linked to Rocks and KPIs.</p>
+          </div>
         </article>
 
         {/* Goal cascade */}
         <article className="feature-card">
-          <span className="feature-tag tag-strategy">Strategy</span>
-          <h3 className="feature-title serif-bold">Top-down goal cascade</h3>
-          <p className="feature-body">
-            Company → department → individual. Every employee sees how their work
-            connects to the BHAG. Alignment isn&apos;t a memo — it&apos;s a tree.
-          </p>
           <div className="feature-visual cascade-visual">
             <div className="cascade-node node-top">$250M ARR · BHAG</div>
             <div className="cascade-row">
@@ -155,7 +142,13 @@ export default function Features() {
               <div className="cascade-node leaf">CX · RD</div>
             </div>
           </div>
+          <div className="feature-copy">
+            <span className="feature-tag tag-strategy">Strategy</span>
+            <h3 className="feature-title serif-bold">Top-Down Goal Cascade</h3>
+            <p className="feature-body">Every team member sees how their work connects to the BHAG — a live tree, not a slide.</p>
+          </div>
         </article>
+
       </div>
     </section>
   );

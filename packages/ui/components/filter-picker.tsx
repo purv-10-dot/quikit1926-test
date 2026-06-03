@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type UIEvent } from "react";
 
 function avatarBg(name: string): string {
   const colors = [
@@ -39,6 +39,20 @@ interface FilterPickerProps {
   options: FilterOption[];
   allLabel?: string;
   placeholder?: string;
+  /**
+   * Optional infinite-scroll hooks. Pass these when `options` is a paginated
+   * server-side slice that should grow as the user scrolls. Callers that pass
+   * the full list of options can omit all three — behavior is unchanged.
+   *
+   *   - `onLoadMore`: invoked when the dropdown's scroll position nears the
+   *     bottom of the list. Wire to your infinite-query's `fetchNextPage`.
+   *   - `hasMore`: true while more pages remain on the server.
+   *   - `loadingMore`: true while the next page is in flight (controls the
+   *     "Loading more…" footer and suppresses duplicate fetches).
+   */
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
 
 export function FilterPicker({
@@ -47,6 +61,9 @@ export function FilterPicker({
   options,
   allLabel = "All",
   placeholder = "Search...",
+  onLoadMore,
+  hasMore = false,
+  loadingMore = false,
 }: FilterPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -76,6 +93,20 @@ export function FilterPicker({
     onChange(val);
     setOpen(false);
     setSearch("");
+  }
+
+  // Infinite-scroll trigger: when the dropdown list is within ~40px of the
+  // bottom and there's a next page available, fire `onLoadMore`. Guarded on
+  // `loadingMore` so we don't queue duplicate fetches while one is in flight.
+  // While the user is typing in the search box we suppress fetches — search
+  // filters only the already-loaded slice (server-side search would be a
+  // future addition).
+  function handleScroll(e: UIEvent<HTMLDivElement>) {
+    if (!onLoadMore || !hasMore || loadingMore || search.trim()) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) {
+      onLoadMore();
+    }
   }
 
   return (
@@ -131,7 +162,7 @@ export function FilterPicker({
           </div>
 
           {/* Options */}
-          <div className="max-h-48 overflow-y-auto">
+          <div className="max-h-48 overflow-y-auto" onScroll={handleScroll}>
             {/* All option */}
             {!search.trim() && (
               <button
@@ -185,6 +216,14 @@ export function FilterPicker({
 
             {filtered.length === 0 && (
               <div className="px-3 py-4 text-xs text-gray-400 text-center">No results</div>
+            )}
+
+            {/* Infinite-scroll loading footer. Only renders when the caller
+                opts in via `onLoadMore` AND a fetch is in flight. */}
+            {onLoadMore && loadingMore && (
+              <div className="px-3 py-2 text-[10px] text-gray-400 text-center border-t border-gray-100">
+                Loading more…
+              </div>
             )}
           </div>
         </div>

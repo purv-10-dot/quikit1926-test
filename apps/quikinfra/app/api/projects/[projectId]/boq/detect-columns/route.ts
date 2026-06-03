@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { requirePermission } from "@/lib/auth/context";
+import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
+import { getTenantContext } from "@/lib/auth/context";
 import { ok, err } from "@/lib/http/envelope";
 import { logger } from "@/lib/observability/logger";
 import { detectColumnsForSheet } from "@/lib/boq/import/universal-adapter";
 import type { DetectedSheetColumns } from "@/lib/boq/import/universal-adapter";
+
+const auth = withOrgAuthForResource("construction.boq");
 
 /**
  * POST /api/projects/:projectId/boq/detect-columns
@@ -21,15 +24,13 @@ import type { DetectedSheetColumns } from "@/lib/boq/import/universal-adapter";
  * No rows are parsed here — this is purely a metadata sniff, so it's cheap
  * and safe to call multiple times as the user clicks around.
  */
-export async function POST(
+export const POST = auth.importOrEdit<{ projectId: string }>(async (
+  _authCtx,
   req: NextRequest,
-  { params }: { params: { projectId: string } }
-) {
-  const ctxOrResponse = await requirePermission("boq.import", {
-    matrix: { menuKey: "pm.boq", action: "edit" },
-  });
-  if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
-  const ctx = ctxOrResponse;
+  { params },
+) => {
+  const ctx = await getTenantContext();
+  if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let formData: FormData;
   try {
@@ -84,4 +85,4 @@ export async function POST(
     fileSize: file.size,
     sheets,
   });
-}
+});

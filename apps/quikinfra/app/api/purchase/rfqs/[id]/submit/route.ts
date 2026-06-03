@@ -1,6 +1,7 @@
+import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db/prisma";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { findRfqById } from "@/lib/purchase/rfq-repository";
@@ -27,8 +28,9 @@ export async function POST(
   req: Request,
   { params }: { params: { id: string } },
 ) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requirePurchaseAction("construction.rfq", "create");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "purchase.rfq", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for purchase.rfq`, 403);
   }

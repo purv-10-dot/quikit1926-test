@@ -89,4 +89,4 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     .sort((a, b) => a.itemCode.localeCompare(b.itemCode));
 
   return NextResponse.json({ success: true, data, mode: "aggregate" });
-});
+}, { permission: { resource: "construction.stock", action: "view" } });

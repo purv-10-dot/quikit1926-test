@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
+import { requireMastersAction } from "@/lib/auth/requireMastersAction";
+import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import {
   findMachineryById,
@@ -8,16 +9,18 @@ import {
 } from "@/lib/masters/machinery-repository";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("view");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   const row = await findMachineryById(ctx.orgId, params.id);
   if (!row) return NextResponse.json({ error: "Machinery not found" }, { status: 404 });
   return NextResponse.json(row);
 }
 
 async function handleUpdate(req: NextRequest, id: string) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("edit");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.machinery", "edit")) {
     return envelopeErr("FORBIDDEN", `Action "edit" not allowed for master.machinery`, 403);
   }
@@ -48,8 +51,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const ctx = await getTenantContext();
-  if (!ctx) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  const ctxOrResp = await requireMastersAction("delete");
+  if (ctxOrResp instanceof NextResponse) return ctxOrResp;
+  const ctx = ctxOrResp;
   if (!hasMatrixAction(ctx, "master.machinery", "delete")) {
     return envelopeErr("FORBIDDEN", `Action "delete" not allowed for master.machinery`, 403);
   }

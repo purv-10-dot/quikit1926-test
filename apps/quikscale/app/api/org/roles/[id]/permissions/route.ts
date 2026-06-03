@@ -4,8 +4,8 @@ import { db } from "@/lib/db";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { isResource, isAction, isValidPermissionPair } from "@/lib/api/permissionsRegistry";
 
-// RBAC v2 — was `requireAdmin`. Now gated by User:view (GET) / User:update (PUT).
-// v2 spec: admin permissions are editable like any other role; `isSystem` only
+// RBAC v2: gated by the `User` resource. Editing a role's permission grants
+// rides on the same User CRUD as inviting/managing users. `isSystem` still
 // protects rename/delete (enforced in [id]/route.ts).
 const auth = withOrgAuthForResource("orgSetup.users", "User");
 

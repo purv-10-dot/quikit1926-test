@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -27,7 +28,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
     orderBy: { expenseDate: "desc" },
   });
   return NextResponse.json({ success: true, data: list });
-});
+}, { permission: { resource: "construction.finance", action: "view" } });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const input = expenseSchema.parse(await req.json());
@@ -51,4 +52,4 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     },
   });
   return NextResponse.json({ success: true, data: e }, { status: 201 });
-});
+}, { permission: { resource: "construction.finance", action: "create" } });

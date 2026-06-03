@@ -11,8 +11,6 @@ export interface ProjectRecord {
   name: string;
   description: string;
   projectType: string;
-  companyId: string;
-  companyName: string;
   clientId: string | null;
   clientName: string;
   departmentId: string | null;
@@ -52,8 +50,6 @@ function toRecord(row: any): ProjectRecord {
     name: row.name ?? "",
     description: row.description ?? "",
     projectType: row.projectType ?? "",
-    companyId: row.companyId,
-    companyName: row.company?.name ?? "",
     clientId: row.clientId ?? null,
     clientName: row.client?.name ?? "",
     departmentId: row.departmentId ?? null,
@@ -130,7 +126,7 @@ export async function listProjects(
 ): Promise<ProjectRecord[]> {
   const rows = await (db as any).cnProject.findMany({
     where: buildProjectsWhere(opts),
-    include: { company: true, client: true },
+    include: { client: true },
     orderBy: { createdAt: "desc" },
     ...(typeof opts.take === "number" ? { take: opts.take } : {}),
     ...(typeof opts.skip === "number" ? { skip: opts.skip } : {}),
@@ -153,7 +149,7 @@ export async function findProjectById(
 ): Promise<ProjectRecord | null> {
   const row = await (db as any).cnProject.findFirst({
     where: { id, orgId },
-    include: { company: true, client: true },
+    include: { client: true },
   });
   return row ? toRecord(row) : null;
 }
@@ -165,7 +161,6 @@ export interface CreateProjectInput {
   name: string;
   description?: string;
   projectType?: string | null;
-  companyId: string;
   clientId?: string | null;
   departmentId?: string | null;
   address?: string;
@@ -193,7 +188,6 @@ export async function createProject(
       name: input.name.trim(),
       description: input.description ?? null,
       projectType: input.projectType ?? null,
-      companyId: input.companyId,
       clientId: input.clientId ?? null,
       departmentId: input.departmentId ?? null,
       address: input.address ?? null,
@@ -221,7 +215,7 @@ export async function createProject(
       createdBy: input.createdBy,
       updatedBy: input.createdBy,
     },
-    include: { company: true, client: true },
+    include: { client: true },
   });
   return toRecord(row);
 }
@@ -247,7 +241,6 @@ export async function updateProject(
   if (patch.name !== undefined) data.name = patch.name.trim();
   if (patch.description !== undefined) data.description = patch.description || null;
   if (patch.projectType !== undefined) data.projectType = patch.projectType || null;
-  if (patch.companyId !== undefined) data.companyId = patch.companyId;
   if (patch.clientId !== undefined) data.clientId = patch.clientId || null;
   if (patch.departmentId !== undefined) data.departmentId = patch.departmentId || null;
   if (patch.address !== undefined) data.address = patch.address || null;
@@ -284,7 +277,7 @@ export async function updateProject(
   const row = await (db as any).cnProject.update({
     where: { id },
     data,
-    include: { company: true, client: true },
+    include: { client: true },
   });
   return toRecord(row);
 }

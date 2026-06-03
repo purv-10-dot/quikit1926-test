@@ -141,6 +141,56 @@ export function getClientSelectableUserTypes(): UserTypeDescriptor[] {
 }
 
 /**
+ * Resolve a form descriptor from a `CnAppRole.name` (lower-snake — e.g.
+ * "admin", "ho_user", "purchase_manager"). System roles return their
+ * existing catalog entry so the form keeps the same module/site rules.
+ * Custom roles created in Settings → Roles fall through to a conservative
+ * default: requires both module + site assignment, no cross-site
+ * visibility. The admin can still narrow scope per-user on Edit.
+ */
+const SYSTEM_ROLE_TO_USER_TYPE: Record<string, UserType> = {
+  admin: USER_TYPES.ADMIN,
+  ho_user: USER_TYPES.HO_USER,
+  site_admin: USER_TYPES.SITE_ADMIN,
+  user: USER_TYPES.USER,
+};
+
+export function getDescriptorByRoleName(
+  roleName: string | null | undefined,
+): UserTypeDescriptor {
+  const lower = (roleName ?? "").toLowerCase();
+  const mapped = SYSTEM_ROLE_TO_USER_TYPE[lower];
+  if (mapped) {
+    const found = USER_TYPE_CATALOG.find((t) => t.key === mapped);
+    if (found) return found;
+  }
+  return {
+    key: USER_TYPES.USER,
+    label: roleName ?? "Role",
+    shortDescription:
+      "Custom role. Permissions are defined in Settings → Roles. Defaults to requiring module + site assignment — narrow the scope below if needed.",
+    clientSelectable: true,
+    backingRole: ROLE_KEYS.USER,
+    crossSite: false,
+    requiresModuleAssignment: true,
+    requiresSiteAssignment: true,
+  };
+}
+
+/** Title-case a `CnAppRole.name` for UI display. "ho_user" → "HO User". */
+export function formatRoleLabel(roleName: string | null | undefined): string {
+  const lower = (roleName ?? "").toLowerCase();
+  const mapped = SYSTEM_ROLE_TO_USER_TYPE[lower];
+  if (mapped) {
+    return USER_TYPE_CATALOG.find((t) => t.key === mapped)?.label ?? roleName ?? "";
+  }
+  return (roleName ?? "")
+    .split("_")
+    .map((p) => (p.length <= 2 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1)))
+    .join(" ");
+}
+
+/**
  * Ordinal authority ranking used by approval workflows.
  *
  * Higher = more authority. Used in two places:

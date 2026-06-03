@@ -54,6 +54,44 @@ async function syncTeamTargetToChildren(teamKpiId: string) {
         weeklyTargets: childWeekly as any,
       },
     });
+
+    // ── Cascade-clear child weekly actuals for zero-target weeks ──
+    // Mirrors the same rule we apply on the parent (PUT handler). When the
+    // team's new breakdown zeros out a week, the child's derived
+    // weeklyTarget for that week is also 0 — and any actuals the child's
+    // owner previously logged are now meaningless and would torpedo the
+    // child's progressPercent the same way they did on the parent.
+    const childZeroWeeks = Object.entries(childWeekly)
+      .filter(([, v]) => v === 0)
+      .map(([w]) => parseInt(w, 10))
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 13);
+    if (childZeroWeeks.length > 0) {
+      await db.kPIWeeklyValue.updateMany({
+        where: { kpiId: child.id, weekNumber: { in: childZeroWeeks } },
+        data: { value: null },
+      });
+      // Recompute cached aggregates on the child so its UI badge clears too.
+      const surviving = await db.kPIWeeklyValue.findMany({
+        where: { kpiId: child.id, value: { not: null } },
+        select: { value: true },
+      });
+      const newQtdAchieved = surviving.reduce((s, r) => s + (r.value ?? 0), 0);
+      const goal = childTarget > 0 ? childTarget : null;
+      const newPct = goal != null ? (newQtdAchieved / goal) * 100 : null;
+      const newHealth = newPct != null
+        ? newPct >= 100 ? "on-track"
+        : newPct >= 80 ? "behind-schedule"
+        : "critical"
+        : null;
+      await db.kPI.update({
+        where: { id: child.id },
+        data: {
+          qtdAchieved: newQtdAchieved,
+          ...(newPct != null && { progressPercent: newPct }),
+          ...(newHealth != null && { healthStatus: newHealth }),
+        },
+      });
+    }
   }
 }
 
@@ -228,6 +266,52 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
     }
   }
 
+  // Duplicate-name guard — mirrors POST. Same name allowed when any of
+  // owner/team, measurement unit, division type, or color-coding differ.
+  // Excludes self via NOT: { id }. Soft-deleted and auto-created child KPIs
+  // (parentKPIId set) are excluded.
+  {
+    const effectiveQuarter = validated.quarter ?? existingKPI.quarter;
+    const effectiveYear = validated.year ?? existingKPI.year;
+    const effectiveMeasurementUnit = validated.measurementUnit ?? existingKPI.measurementUnit;
+    const effectiveDivisionType = validated.divisionType ?? existingKPI.divisionType;
+    const effectiveReverseColor = validated.reverseColor ?? existingKPI.reverseColor ?? false;
+    const effectiveOwner = effectiveLevel === "team"
+      ? null
+      : (validated.owner ?? existingKPI.owner);
+    const effectiveTeamId = effectiveLevel === "team"
+      ? (validated.teamId ?? existingKPI.teamId)
+      : null;
+    const dup = await db.kPI.findFirst({
+      where: {
+        orgId,
+        name: validated.name,
+        quarter: effectiveQuarter,
+        year: effectiveYear,
+        kpiLevel: effectiveLevel,
+        measurementUnit: effectiveMeasurementUnit,
+        divisionType: effectiveDivisionType,
+        reverseColor: effectiveReverseColor,
+        ...(effectiveLevel === "team"
+          ? { teamId: effectiveTeamId }
+          : { owner: effectiveOwner }),
+        deletedAt: null,
+        parentKPIId: null,
+        NOT: { id: params.id },
+      },
+      select: { id: true },
+    });
+    if (dup) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `A KPI named "${validated.name}" with the same ${effectiveLevel === "team" ? "team" : "owner"}, measurement unit, division type, and color coding already exists for ${effectiveQuarter} ${effectiveYear}.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   // When qtdGoal or target changes, recompute progressPercent from existing qtdAchieved
   // so the header badge and stats display don't show stale data after save.
   const newQtdGoal = validated.qtdGoal !== undefined
@@ -291,6 +375,58 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       owner_user: { select: { id: true, firstName: true, lastName: true } },
     },
   });
+
+  // ── Cascade-clear weekly actuals when their target is set to 0 ──
+  // Editing the breakdown (e.g. zeroing W1/W2 because the user re-anchors
+  // the quarter at the current week) should also wipe any previously-entered
+  // `KPIWeeklyValue.value` for those weeks. Otherwise the old value lingers
+  // against a zero target and torpedoes `progressPercent`
+  // (`qtdAchieved / 0` → astronomical "Exceeded %" badge).
+  //
+  // Only `value` is nulled — `notes` are preserved so the user can still see
+  // what was originally entered against the now-zero week.
+  if (validated.weeklyTargets !== undefined) {
+    const wt = validated.weeklyTargets as Record<string, number>;
+    const zeroWeeks = Object.entries(wt)
+      .filter(([, v]) => v === 0)
+      .map(([w]) => parseInt(w, 10))
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 13);
+    if (zeroWeeks.length > 0) {
+      await db.kPIWeeklyValue.updateMany({
+        where: { kpiId: params.id, weekNumber: { in: zeroWeeks } },
+        data: { value: null, updatedBy: userId },
+      });
+
+      // ── Recompute cached aggregates from the surviving weekly values ──
+      // The earlier recompute used `existingKPI.qtdAchieved`, which is stale
+      // after we cleared. Without this second pass the "Exceeded %" badge
+      // stays huge until the next weekly-value mutation.
+      const surviving = await db.kPIWeeklyValue.findMany({
+        where: { kpiId: params.id, value: { not: null } },
+        select: { value: true },
+      });
+      const newQtdAchieved = surviving.reduce((s, r) => s + (r.value ?? 0), 0);
+      const goalForPct = updatedKPI.qtdGoal ?? updatedKPI.target ?? null;
+      const newPct = goalForPct != null && goalForPct > 0
+        ? (newQtdAchieved / goalForPct) * 100
+        : null;
+      const newHealth = newPct != null
+        ? (updatedKPI.status === "completed"
+            ? "complete"
+            : newPct >= 100 ? "on-track"
+            : newPct >= 80 ? "behind-schedule"
+            : "critical")
+        : null;
+      await db.kPI.update({
+        where: { id: params.id },
+        data: {
+          qtdAchieved: newQtdAchieved,
+          ...(newPct != null && { progressPercent: newPct }),
+          ...(newHealth != null && { healthStatus: newHealth }),
+        },
+      });
+    }
+  }
 
   // ── Target sync between Team KPI ↔ child Individual KPIs ──
   // (a) Team edit  → push target/weeklyTargets/contributions to children

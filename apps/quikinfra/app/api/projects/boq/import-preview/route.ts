@@ -1,3 +1,4 @@
+import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextResponse } from "next/server";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import * as XLSX from "xlsx";
@@ -75,4 +76,4 @@ export const POST = withOrgAuth(async (_ctx, req) => {
     groups: normalized.filter((r) => r.kind === "group").length,
   };
   return NextResponse.json({ success: true, summary, rows: normalized });
-});
+}, { permission: { resource: "construction.boq", action: "import" } });

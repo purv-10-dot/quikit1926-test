@@ -62,7 +62,6 @@ model CnCompany {
   createdBy   String
   updatedBy   String
 
-  projects CnProject[]
   banks    CnBank[]
   finYears CnFinancialYear[]
 
@@ -100,7 +99,6 @@ model CnProject {
   name             String
   description      String?
   projectType      String?
-  companyId        String
   clientId         String?
   departmentId     String?
   address          String?
@@ -121,7 +119,6 @@ model CnProject {
   createdBy        String
   updatedBy        String
 
-  company          CnCompany               @relation(fields: [companyId], references: [id])
   client           CnCustomer?             @relation(fields: [clientId], references: [id])
   locations        CnLocation[]
   boqItems         CnBOQItem[]
@@ -150,7 +147,6 @@ model CnProject {
 
   @@unique([orgId, code])
   @@index([orgId])
-  @@index([companyId])
   @@map("Projects")
   @@schema("app_quikinfra")
 }
@@ -510,7 +506,6 @@ model CnWorkCategory {
   orgId       String
   name        String
   description String?
-  sacCode     String?
   sortOrder   Int?
   status      String   @default("active")
   createdAt   DateTime @default(now())
@@ -1662,7 +1657,7 @@ model CnDailyProgressReport {
 }
 
 model CnProjectDocument {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   orgId            String
   projectId        String
   documentName     String
@@ -1677,9 +1672,9 @@ model CnProjectDocument {
   uploadedByUserId String
   uploadDate       DateTime?
   fileObjectId     String?
-  status           String   @default("active")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  status           String    @default("active")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   createdBy        String
   updatedBy        String
 
@@ -2143,55 +2138,9 @@ model CnBOQLockState {
 }
 
 // ============================================================================
-// RBAC â€” Role / Permission / RolePermission
+// RBAC — moved to central schema (packages/database/prisma/schema.prisma)
+//   See: CnAppRole, CnRolePermissionV2, CnUserAppRole, CnUserPermissionExtra
 // ============================================================================
-
-model CnRole {
-  id          String   @id @default(cuid())
-  orgId       String
-  key         String // e.g. "admin", "site_admin", "user", "super_admin"
-  name        String
-  description String?
-  isSystem    Boolean  @default(false) // seeded roles cannot be deleted
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  createdBy   String
-  updatedBy   String
-
-  permissions CnRolePermission[]
-
-  @@unique([orgId, key])
-  @@index([orgId])
-  @@map("Roles")
-  @@schema("app_quikinfra")
-}
-
-model CnPermission {
-  id          String  @id @default(cuid())
-  key         String  @unique // e.g. "boq.read", "boq.import", "boq.lock", "rab.approve"
-  name        String
-  module      String // "boq" | "purchase" | "rab" | "dpr" | "wo" | "masters" | "settings"
-  description String?
-
-  roles CnRolePermission[]
-
-  @@index([module])
-  @@map("Permissions")
-  @@schema("app_quikinfra")
-}
-
-model CnRolePermission {
-  roleId       String
-  permissionId String
-
-  role       CnRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission CnPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@id([roleId, permissionId])
-  @@index([permissionId])
-  @@map("Role_permissions")
-  @@schema("app_quikinfra")
-}
 
 // ============================================================================
 // LEDGERS & BALANCES â€” transaction-safe side-effect storage
@@ -2303,105 +2252,24 @@ model CnIdempotencyKey {
 }
 
 // ============================================================================
-// DEMO USERS â€” seeded accounts with real login for testing role restrictions
+// CnUser (app_quikinfra.User) was DROPPED in Step H of the v2 RBAC
+// migration. Every field it carried has moved to central / v2 tables:
+//
+//   identity (email, firstName, lastName, password)    → auth.User
+//   org membership (status, invitedAt, acceptedAt,
+//     invitationToken, inviteMethod, inviteProvider)   → quikit.OrgMember
+//   profile (department, mobile, mobileAccessEnabled)  → app_quikinfra.User_profiles
+//   role (userType, roleKey)                            → app_quikinfra.UserAppRole + CnAppRole
+//   modulesAssigned (legacy array)                      → CnUserPermissionExtra revokes
+//   projectsAssigned (legacy array)                     → app_quikinfra.User_project_access
+//   permissionMatrix (legacy JSON)                      → CnUserPermissionExtra revokes
+//   lastLoginAt                                         → auth.User.lastSignInAt
+//   inviteToken / inviteTokenExpires                    → OrgMember.invitationToken + 7-day TTL
+//
+// The legacy `cn_demo_users` table was removed earlier when the demo
+// login page was retired. Nothing in the codebase reads from these
+// tables anymore.
 // ============================================================================
-//
-// Not a platform-wide User table â€” this is a small, scoped table the
-// QuikInfra app owns for demo + QA. When the root workspace User
-// table becomes the authoritative source, this table disappears and the
-// NextAuth CredentialsProvider switches to querying the root User model
-// instead.
-//
-// Password is stored as scrypt hash (node:crypto built-in, no bcrypt dep).
-// Format: "<salt_hex>:<hash_hex>".
-// Demo password for every seeded row is "12345" â€” change via the seed or
-// a /api/admin/password route (not yet built).
-model CnDemoUser {
-  id           String   @id @default(cuid())
-  orgId        String   @default("default")
-  email        String   @unique
-  passwordHash String
-  name         String
-  displayRole  String // UI label: SUPER_ADMIN | ADMIN | HO_USER | SITE_ADMIN | USER
-  roleKey      String // maps to cn_roles.key (super_admin, admin, ho_user, site_admin, user)
-  department   String?
-  status       String   @default("active")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([orgId])
-  @@index([email])
-  @@map("Demo_users")
-  @@schema("app_quikinfra")
-}
-
-// ============================================================================
-// USERS â€” tenant-invited user accounts (persisted)
-// ============================================================================
-//
-// This is the real application user table. Rows are created by the
-// "Settings â†’ Users â†’ Add User" invite flow (POST /api/settings/users)
-// and live for the lifetime of the tenant.
-//
-// `cn_demo_users` stays as the seeded 5-account table used by the
-// demo login page. Both are checked by NextAuth's `authorize()` â€” the
-// seeded accounts first, then this table. Eventually cn_demo_users can
-// be removed entirely once the login page is updated to stop advertising
-// the seed accounts.
-//
-// A unique index on (tenantId, email) enforces "one account per email
-// per tenant", matching how multi-tenant SaaS systems usually shape it.
-// Plain `email` is also indexed for the NextAuth lookup path which
-// doesn't carry tenant context at authorize-time.
-model CnUser {
-  id    String @id @default(cuid())
-  orgId String @default("default")
-
-  // Identity
-  email        String
-  username     String
-  fullName     String
-  mobile       String? // 10-digit Indian mobile (optional)
-  department   String?
-  passwordHash String // scrypt "salt:hash" â€” never plaintext
-
-  // Authorisation
-  userType         String // USER_TYPES key: ADMIN | HO_USER | SITE_ADMIN | USER
-  roleKey          String // materialised at invite time from USER_TYPE_CATALOG.backingRole
-  modulesAssigned  String[] @default([]) // scope: module keys this user is allowed to see
-  projectsAssigned String[] @default([]) // scope: per-site restrictions
-
-  // Account lifecycle
-  status             String    @default("active") // active | inactive | suspended
-  mustChangePassword Boolean   @default(true)
-  lastLoginAt        DateTime?
-
-  // Invite metadata
-  inviteToken        String?
-  inviteTokenExpires DateTime?
-  invitedAt          DateTime  @default(now())
-  invitedBy          String? // user id of the admin who invited
-  invitedByName      String?
-  acceptedAt         DateTime?
-
-  // Per-menu Add/Edit/Delete/View matrix edited on the Permissions page.
-  // Shape: { [menuKey]: { add, edit, delete, view: boolean } }. Null until
-  // the admin saves the matrix for the first time.
-  permissionMatrix Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  createdBy String?
-  updatedBy String?
-
-  @@unique([orgId, email])
-  @@unique([orgId, username])
-  @@index([email])
-  @@index([status])
-  @@index([inviteToken])
-  @@map("User")
-  @@schema("app_quikinfra")
-}
 
 // ============================================================================
 // FILE OBJECTS â€” generic attachment pointer (attaches to any entity)

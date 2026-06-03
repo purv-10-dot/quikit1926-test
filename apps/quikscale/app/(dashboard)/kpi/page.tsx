@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useKPIs, useDeleteKPI, useBulkRestoreKPI } from "@/lib/hooks/useKPI";
+import { notify } from "@/lib/utils/notify";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -145,16 +146,28 @@ export default function IndividualKPIPage() {
 
   async function handleBulkDelete() {
     if (!selectedKPIIds.size) return;
-    await Promise.all([...selectedKPIIds].map(id => deleteKPI.mutateAsync(id)));
-    setClearSelectionTrigger(n => n + 1);
-    refetch();
+    const count = selectedKPIIds.size;
+    try {
+      await Promise.all([...selectedKPIIds].map(id => deleteKPI.mutateAsync(id)));
+      notify.success(`Deleted ${count} KPI${count === 1 ? "" : "s"}`);
+      setClearSelectionTrigger(n => n + 1);
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "KPI", fallback: "Couldn't delete the selected KPIs. Please try again." });
+    }
   }
 
   async function handleBulkRestore() {
     if (!selectedKPIIds.size) return;
-    await bulkRestoreKPI.mutateAsync([...selectedKPIIds]);
-    setClearSelectionTrigger(n => n + 1);
-    refetch();
+    const count = selectedKPIIds.size;
+    try {
+      await bulkRestoreKPI.mutateAsync([...selectedKPIIds]);
+      notify.success(`Restored ${count} KPI${count === 1 ? "" : "s"}`);
+      setClearSelectionTrigger(n => n + 1);
+      refetch();
+    } catch (err) {
+      notify.error(err, { context: "KPI", fallback: "Couldn't restore the selected KPIs. Please try again." });
+    }
   }
 
   // Hidden columns — now driven through Manage Columns modal via TablePrefs

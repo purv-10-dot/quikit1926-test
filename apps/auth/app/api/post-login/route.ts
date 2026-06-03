@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { SignJWT } from "jose";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -101,6 +102,12 @@ export async function GET(request: NextRequest) {
   const sessionOrgId = session.user.orgId;
   const isSuperAdmin = Boolean(session.user.isSuperAdmin);
 
+  // The session callback doesn't surface the Redis session id — read it off
+  // the raw JWT so the handoff token carries the shared session id into the
+  // target app (lets it be soft-invalidated from the shared session store).
+  const jwt = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const sessionId = (jwt?.sessionId as string | undefined) ?? null;
+
   let orgId = sessionOrgId ?? null;
   let membershipRole: string | null =
     (session.user.membershipRole as string | undefined) ?? null;
@@ -151,6 +158,7 @@ export async function GET(request: NextRequest) {
     firstName,
     lastName,
     name,
+    sessionId,
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt()

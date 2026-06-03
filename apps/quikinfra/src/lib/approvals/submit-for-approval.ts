@@ -113,27 +113,24 @@ export async function submitForApproval(
   // an active workflow wins; the matched key is also stored on the
   // resulting instance row so the approve route can find it.
   //
-  // Two-pass project resolution: when `input.projectId` is set, look for
-  // a project-scoped workflow first (projectId = that id) and only fall
-  // back to the tenant-wide Default (projectId IS NULL) if there's no
-  // override. When `projectId` is unset, only the Default pass runs.
+  // Project-scoped resolution only — tenant-wide Default workflows are
+  // no longer supported (admins configure approvals per project on the
+  // Workflows page). Submissions without a `projectId` therefore have
+  // no workflow to match and will throw `NoActiveWorkflowError` below.
   const candidateTypes = Array.isArray(input.entityType)
     ? input.entityType
     : [input.entityType as string];
 
-  const projectIdScopes: Array<string | null> =
-    input.projectId != null ? [input.projectId, null] : [null];
-
   let workflow: any = null;
   let entityType = candidateTypes[0];
-  outer: for (const projectScope of projectIdScopes) {
+  if (input.projectId != null) {
     for (const t of candidateTypes) {
       const found = await (db as any).cnApprovalWorkflow.findFirst({
         where: {
           orgId: ctx.orgId,
           entityType: t,
           isActive: true,
-          projectId: projectScope,
+          projectId: input.projectId,
         },
         include: { steps: { orderBy: { stepOrder: "asc" } } },
         orderBy: { createdAt: "desc" },
@@ -141,7 +138,7 @@ export async function submitForApproval(
       if (found && found.steps.length > 0) {
         workflow = found;
         entityType = t;
-        break outer;
+        break;
       }
     }
   }

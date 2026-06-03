@@ -4,8 +4,8 @@ export default function WhoItsFor() {
       <header className="section-header">
         <span className="section-eyebrow">Who it&apos;s for</span>
         <h2 className="section-title">
-          <span className="serif">Built for the people who</span>{" "}
-          <span className="serif-bold">already speak the language.</span>
+          <span className="serif">Built for the people who already</span>{" "}
+          <span className="serif-bold">speak the language.</span>
         </h2>
       </header>
 
@@ -22,7 +22,8 @@ export default function WhoItsFor() {
           <h3 className="who-title serif-bold">Growth-stage leadership teams</h3>
           <p className="who-body">
             Founders, CEOs, COOs, and their leadership teams running on Scaling Up. You
-            know what a Rock is. You don&apos;t need a glossary.
+            know what a Rock is. You set the BHAG. Now you need a platform that runs the
+            methodology as written — not a generic OKR tool you have to translate it into.
           </p>
         </article>
         <article className="who-tile">
@@ -35,8 +36,10 @@ export default function WhoItsFor() {
           </span>
           <h3 className="who-title serif-bold">Certified Scaling Up coaches</h3>
           <p className="who-body">
-            Manage every client engagement from one command center. Health, Rocks, and
-            rhythms across the entire book of business.
+            Manage every client engagement from one command center. Rock health, KPI
+            status, and meeting rhythms across your entire book of business — so you
+            walk into every coaching session already knowing what&apos;s red and what to
+            address.
           </p>
         </article>
         <article className="who-tile">
@@ -50,25 +53,13 @@ export default function WhoItsFor() {
           </span>
           <h3 className="who-title serif-bold">Companies in quarterly rhythm</h3>
           <p className="who-body">
-            10 to 500 people. Quarterly planning is sacred. The OPSP lives on the wall —
-            now it lives in QuikScale too.
+            10 to 500 people. Quarterly planning is sacred. The OPSP lives on the wall
+            and in the offsite deck — now it lives in QuikScale, updated in real time
+            between sessions, not just when you remember to open the spreadsheet.
           </p>
         </article>
       </div>
 
-      <blockquote className="who-quote">
-        <p className="serif">
-          &ldquo;Finally a tool that doesn&apos;t ask my CEOs to translate their language
-          into someone else&apos;s framework. It just <em>is</em> Scaling Up.&rdquo;
-        </p>
-        <footer className="who-cite">
-          <span className="who-cite-avatar pillar-strategy" aria-hidden="true" />
-          <span>
-            <strong>Certified Scaling Up Coach</strong>
-            <span className="who-cite-sub">11 client companies on QuikScale</span>
-          </span>
-        </footer>
-      </blockquote>
     </section>
   );
 }

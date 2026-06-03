@@ -33,9 +33,9 @@ interface RoleRow {
 export function RolesTab() {
   // RBAC v2 — `+ Add Role` requires User:create, trash icons require
   // User:delete. The Permission matrix's edit affordances are gated inside
-  // RolePermissionMatrix on User:update. The tab itself is already gated by
-  // User:view at the page level (so this component only renders when the
-  // user can at least view roles).
+  // RolePermissionMatrix on User:update. The tab itself is gated by the
+  // `User.Management` sub-permission at the page level (so this component
+  // only renders when the user can see the User Management tab).
   const { canCreate, canDelete } = useResourcePermissions("User");
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);

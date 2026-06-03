@@ -21,7 +21,7 @@ const LOGIN_HREF = buildLoginUrl({
 
 export default function Nav() {
   return (
-    <nav className="nav site-nav">
+    <nav className="nav site-nav" aria-label="Primary">
       <a href="/" className="logo-link" aria-label="QuikScale">
         <img src="/marketing/logo.png" alt="QuikScale" className="logo-img" />
       </a>

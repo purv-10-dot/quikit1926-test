@@ -229,6 +229,25 @@ function enrichPR(
   const lines = (row.lines ?? []).map((l: any) => {
     const item = itemById.get(l.itemId) ?? null;
     const uom = uomById.get(l.uomId) ?? null;
+
+    // Rate cascade: prefer the rate entered on the PR line, then fall
+    // back to the item master's `standardRate`. The PR create drawer
+    // doesn't capture rate (it's negotiated later in the RFQ/PO flow),
+    // so without this fallback the detail view shows blank rate/amount
+    // for every line. The master rate is the canonical "expected" value.
+    const lineRateNum = parseFloat(String(l.estimatedRate ?? "")) || 0;
+    const masterRateNum = item?.standardRate != null
+      ? parseFloat(String(item.standardRate)) || 0
+      : 0;
+    const effectiveRate = lineRateNum > 0 ? lineRateNum : masterRateNum;
+
+    // Amount cascade: stored line amount → qty × effective rate.
+    const qtyNum = parseFloat(String(l.quantity ?? "")) || 0;
+    const lineAmtNum = parseFloat(String(l.estimatedAmount ?? "")) || 0;
+    const effectiveAmount = lineAmtNum > 0
+      ? lineAmtNum
+      : qtyNum * effectiveRate;
+
     return {
       id: l.id,
       itemId: l.itemId,
@@ -237,8 +256,8 @@ function enrichPR(
       uomId: l.uomId,
       uomCode: uom?.code ?? "",
       quantity: l.quantity?.toString?.() ?? String(l.quantity ?? ""),
-      estimatedRate: l.estimatedRate?.toString?.() ?? "",
-      estimatedAmount: l.estimatedAmount?.toString?.() ?? "",
+      estimatedRate: effectiveRate > 0 ? String(effectiveRate) : "",
+      estimatedAmount: effectiveAmount > 0 ? String(effectiveAmount) : "",
       specification: l.specification ?? "",
       priority: l.priority ?? "MEDIUM",
       availableStock: l.currentStock?.toString?.() ?? "0",
@@ -266,7 +285,19 @@ function enrichPR(
     deliveryLocationId: row.deliveryLocationId ?? "",
     deliveryLocationName: location?.name ?? "",
     stockCheckSummary: row.stockCheckSummary ?? "",
-    estimatedTotal: row.estimatedTotal?.toString?.() ?? "0",
+    // Aggregate cascade: stored estimatedTotal → sum of effective line
+    // amounts (qty × effective rate). Same reason as per-line: PR
+    // creation doesn't always have a saved total, so derive it from
+    // the enriched lines.
+    estimatedTotal: (() => {
+      const stored = parseFloat(String(row.estimatedTotal ?? "")) || 0;
+      if (stored > 0) return String(stored);
+      const derived = lines.reduce(
+        (sum: number, l: any) => sum + (parseFloat(l.estimatedAmount) || 0),
+        0,
+      );
+      return derived > 0 ? String(derived) : "0";
+    })(),
     lineCount: lines.length,
     status: row.status,
     approvalId: row.approvalId ?? null,

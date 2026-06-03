@@ -11,7 +11,7 @@ import {
   CATEGORY_TYPE_INFO,
   type CategoryType as CategoryTypeEnum,
 } from "@/lib/utils/breakdownCalc";
-import { toast } from "sonner";
+import { notify } from "@/lib/utils/notify";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -516,7 +516,7 @@ export default function CategoryMgmtPage() {
                       if (!canDelete) {
                         e.preventDefault();
                         e.stopPropagation();
-                        toast.error("You don't have permission to delete");
+                        notify.error("You don't have permission to delete");
                       }
                     }}
                   >
@@ -561,7 +561,7 @@ export default function CategoryMgmtPage() {
                     <td className="w-10 px-3 py-3" onClick={e => {
                       e.stopPropagation();
                       if (!canDelete) {
-                        toast.error("You don't have permission to delete");
+                        notify.error("You don't have permission to delete");
                         return;
                       }
                       toggleOne(item.id);
