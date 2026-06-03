@@ -185,7 +185,13 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
       image_url:
         Array.isArray(s.imageUrls) && s.imageUrls.length > 0 ? s.imageUrls[0] : null,
     })),
-    platforms: ["instagram"],
+    // Platform is chosen at SCHEDULING time, not generation (CLAUDE.md:
+    // "Platform selection REMOVED from here"). Do NOT assert a platform
+    // here — it only seeds a caption-context line on the Python side
+    // (image size is fixed 1080x1350 regardless), and stamping
+    // "instagram" pre-selected the platform before the user reached
+    // scheduling. The Python CampaignRequest.platforms default covers
+    // the caption hint internally.
     attachedOffering: campaign.attachedOffering ?? null,
     attachedAsset: campaign.attachedAsset ?? null,
   };

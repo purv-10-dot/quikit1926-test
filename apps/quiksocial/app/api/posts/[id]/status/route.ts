@@ -34,6 +34,12 @@ function aliasPost<T extends AnyRow>(
 const patchStatusSchema = z.object({
   status: z.string().min(1),
   scheduledFor: z.string().nullish(),
+  // Platform is chosen at SCHEDULING time (per CLAUDE.md): the modal
+  // sends the user's pick here so the row reflects what we'll publish
+  // to. Optional — pre-scheduled flows that don't change platform omit
+  // it. The schedule modal forwards it; the create flow's draft uses
+  // the same value via the create route.
+  platform: z.string().nullish(),
 });
 
 export const PATCH = withOrgAuth<{ id: string }>(
@@ -119,6 +125,13 @@ export const PATCH = withOrgAuth<{ id: string }>(
 
     if (body.scheduledFor !== undefined) {
       data.scheduledFor = body.scheduledFor ? new Date(body.scheduledFor) : null;
+    }
+
+    // Platform is chosen at SCHEDULING time: persist the user's pick from
+    // the schedule modal. Campaign posts are created with a neutral
+    // placeholder, so this is where the real platform lands.
+    if (typeof body.platform === "string" && body.platform.trim()) {
+      data.platform = body.platform.trim();
     }
 
     if (

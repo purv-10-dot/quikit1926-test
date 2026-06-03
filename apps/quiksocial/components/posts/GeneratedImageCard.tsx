@@ -66,10 +66,24 @@ export default function GeneratedImageCard({
   };
 
   const handleDownload = () => {
+    // The HTML `download` attribute is honored ONLY for same-origin URLs.
+    // Cloudinary is cross-origin, so a plain anchor just opens the image
+    // in a new tab (silent no-download). For Cloudinary URLs, inject the
+    // `fl_attachment` transformation — it sets Content-Disposition:
+    // attachment server-side, forcing a download cross-origin with no
+    // CORS and no proxy route. Non-Cloudinary URLs keep the anchor path.
+    const filename = `post-${Date.now()}`;
+    let href = imageUrl;
+    const uploadMarker = "/upload/";
+    if (imageUrl.includes("res.cloudinary.com") && imageUrl.includes(uploadMarker)) {
+      href = imageUrl.replace(
+        uploadMarker,
+        `${uploadMarker}fl_attachment:${filename}/`,
+      );
+    }
     const a = document.createElement("a");
-    a.href = imageUrl;
-    a.download = `post-${Date.now()}.png`;
-    a.target = "_blank";
+    a.href = href;
+    a.download = `${filename}.png`;
     a.click();
   };
 
