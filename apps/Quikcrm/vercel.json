@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "cd ../.. && npm install",
+  "buildCommand": "cd ../.. && npx turbo build --filter=quikcrm",
+  "outputDirectory": ".next",
+  "crons": [
+    {
+      "path": "/api/notifications/tasks/daily?type=morning",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/notifications/tasks/daily?type=evening",
+      "schedule": "30 11 * * *"
+    }
+  ]
+}
