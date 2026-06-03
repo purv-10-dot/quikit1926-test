@@ -7,9 +7,11 @@ import { Button } from "@quikit/ui";
 import {
   PERMISSION_TREE,
   walkLeaves,
+  type Action,
   type PermissionLeaf,
   type PermissionModule,
 } from "@/lib/api/permissionsRegistry";
+import { PermissionCell, type CellState } from "./permission-cell";
 
 interface Payload {
   roleId: string;
@@ -85,6 +87,20 @@ export function ProjectPermissionMatrix({
     else next.add(modKey);
     setOpenMods(next);
   }
+  // Toggle every leaf in a module that supports `action`. If they're all on,
+  // turn them all off; otherwise turn them all on (matches leaf-row behavior).
+  function toggleModAction(leaves: PermissionLeaf[], action: Action) {
+    const supporting = leaves.filter((l) => l.actions.includes(action));
+    if (supporting.length === 0) return;
+    const next = new Set(granted);
+    const allOn = supporting.every((l) => next.has(`${l.resource}:${action}`));
+    for (const l of supporting) {
+      const key = `${l.resource}:${action}`;
+      if (allOn) next.delete(key);
+      else next.add(key);
+    }
+    setGranted(next);
+  }
 
   if (q.isLoading) return <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>;
 
@@ -109,6 +125,7 @@ export function ProjectPermissionMatrix({
               onToggleCell={toggleCell}
               onToggleLeaf={toggleLeafRow}
               onToggleMod={toggleMod}
+              onToggleModAction={toggleModAction}
             />
           ))}
         </tbody>
@@ -129,6 +146,7 @@ function ModuleRow({
   onToggleCell,
   onToggleLeaf,
   onToggleMod,
+  onToggleModAction,
 }: {
   mod: PermissionModule;
   granted: Set<string>;
@@ -136,6 +154,7 @@ function ModuleRow({
   onToggleCell: (resource: string, action: string) => void;
   onToggleLeaf: (leaf: PermissionLeaf) => void;
   onToggleMod: (key: string) => void;
+  onToggleModAction: (leaves: PermissionLeaf[], action: Action) => void;
 }) {
   const leaves = leavesFor(mod);
   const totalActions = leaves.reduce((n, l) => n + l.actions.length, 0);
@@ -162,16 +181,11 @@ function ModuleRow({
           const key = `${onlyLeaf.resource}:${a}`;
           return (
             <td key={a} className="px-4 py-2.5 text-center">
-              {valid ? (
-                <input
-                  type="checkbox"
-                  checked={granted.has(key)}
-                  onChange={() => onToggleCell(onlyLeaf.resource, a)}
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded dark:border-gray-600 dark:bg-gray-800 dark:accent-blue-500"
-                />
-              ) : (
-                <span className="text-gray-300 dark:text-gray-600">—</span>
-              )}
+              <PermissionCell
+                state={valid ? (granted.has(key) ? "on" : "off") : "na"}
+                onClick={valid ? () => onToggleCell(onlyLeaf.resource, a) : undefined}
+                title={valid ? `${onlyLeaf.label}: ${a}` : undefined}
+              />
             </td>
           );
         })}
@@ -191,7 +205,27 @@ function ModuleRow({
             </span>
           </button>
         </td>
-        <td colSpan={4} />
+        {ACTIONS.map((a) => {
+          const supporting = leaves.filter((l) => l.actions.includes(a));
+          const grantedN = supporting.filter((l) => granted.has(`${l.resource}:${a}`)).length;
+          const state: CellState =
+            supporting.length === 0
+              ? "na"
+              : grantedN === 0
+                ? "off"
+                : grantedN === supporting.length
+                  ? "on"
+                  : "partial";
+          return (
+            <td key={a} className="px-4 py-2.5 text-center">
+              <PermissionCell
+                state={state}
+                onClick={supporting.length ? () => onToggleModAction(leaves, a) : undefined}
+                title={supporting.length ? `${mod.label}: ${a} (${grantedN}/${supporting.length})` : undefined}
+              />
+            </td>
+          );
+        })}
       </tr>
       {isOpen && leaves.map((leaf) => (
         <tr key={leaf.resource} className="bg-white border-t border-gray-50 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-800 dark:hover:bg-gray-800/40">
@@ -205,16 +239,11 @@ function ModuleRow({
             const key = `${leaf.resource}:${a}`;
             return (
               <td key={a} className="px-4 py-1.5 text-center">
-                {valid ? (
-                  <input
-                    type="checkbox"
-                    checked={granted.has(key)}
-                    onChange={() => onToggleCell(leaf.resource, a)}
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded dark:border-gray-600 dark:bg-gray-800 dark:accent-blue-500"
-                  />
-                ) : (
-                  <span className="text-gray-300 dark:text-gray-600">—</span>
-                )}
+                <PermissionCell
+                  state={valid ? (granted.has(key) ? "on" : "off") : "na"}
+                  onClick={valid ? () => onToggleCell(leaf.resource, a) : undefined}
+                  title={valid ? `${leaf.label}: ${a}` : undefined}
+                />
               </td>
             );
           })}
