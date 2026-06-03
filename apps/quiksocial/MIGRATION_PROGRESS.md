@@ -176,6 +176,72 @@ patterns (orgId, withOrgAuth, unwrap, { success, data } envelope).
      pill through to publish-now via JSON body. posts/create also uses
      it on the draft create (was hardcoded "instagram").
 
+### Sprint 3 v2 fixes synced (commits 038d3b0f → f3325c09)
+
+Four bugfix commits from quiksocial-v2 main shipped between May 29 –
+Jun 3 that need to be in the monorepo before this PR ships. The other
+~8 v2 commits in this window are either (a) Python AI-service work
+that stays external on Railway, or (b) v2's E2 multi-tenant transition
+work which the monorepo's architecture (real orgId from QuikIT IdP
+OIDC session) doesn't need.
+
+1. **`038d3b0f` ← v2 `e54f3bf`** — Instagram publish uses IG Business
+   Account ID. Schema change (SocialAccount.igBusinessAccountId
+   String?) + restructured dispatch.ts resolveCredentials with a
+   self-heal Graph lookup + OAuth callback persists the id at connect
+   time + new scripts/backfill-ig-business-account.ts for legacy rows.
+   Fixes the cryptic "Object with ID '...' does not exist" error from
+   Meta when the publisher passed the FB Page ID instead of the IG
+   Business Account ID.
+
+2. **`70cb7bef` ← v2 `a672c33`** — Drop deprecated Facebook
+   `publish_video` scope. One-line scope-string edit. Non-developer
+   FB users were hitting "Invalid Scopes: publish_video" before the
+   consent screen rendered.
+
+3. **`2a903636` ← v2 `b864b1e`** — Cloudinary fl_attachment +
+   platform at scheduling.
+   - GeneratedImageCard download injects `fl_attachment:NAME/` into
+     Cloudinary URLs (cross-origin download attribute is ignored;
+     this sets Content-Disposition server-side).
+   - Removed `platforms: ["instagram"]` hardcode from
+     campaigns/generate AI payload — platform is now genuinely picked
+     at scheduling.
+   - posts/[id]/status PATCH route accepts and persists body.platform;
+     content-hub handleScheduleSave forwards the modal's chosen
+     platform to both schedule and approve-and-schedule branches.
+
+4. **`f3325c09` ← v2 `8e6d10e` + `6eea0e9`** — posts/create regenerate
+   forwards attachment + stale-closure dep fixes. Bug: the user
+   attaches an offering with a cover image but Python's
+   `had_product_image` logged false every time. Two causes:
+   (a) regenerate-image POST never sent attachedOffering,
+   (b) two useCallbacks read data.attachment without listing it in
+   their deps array — captured stale null after re-attach.
+
+## v2 commits explicitly NOT synced
+
+These were reviewed and skipped because they target v2-specific
+architecture the monorepo never had:
+
+- `2f5c3d4` E2 per-user tenant provisioning — replaced by monorepo's
+  `@quikit/auth` + real `orgId` session.
+- `487ed28` Anchor post-schedule + auto-reply rules on brand tenant
+  (E2 bugs 4+5) — fixes session-vs-brand tenant divergence which
+  monorepo's withOrgAuth + org-scoped BrandMembership prevents.
+- `b80b494` 401 silent on scrape/start + diagnostics — v2 middleware
+  stack; monorepo uses withOrgAuth (already returns 401 explicitly).
+- `09398cc` Infinite redirect loop on /dashboard/brands/create —
+  v2-middleware-specific.
+- `1edd49d` BrandMembership backfill — pre-E2 data which the monorepo
+  doesn't have.
+- `55b2be8` First-brand redirect to client (FirstBrandGate) — v2 fix
+  for an infinite-loop bug the monorepo doesn't have. Confirmed N/A.
+- `ec25393` Middleware /login redirect — monorepo middleware already
+  uses /login via createMiddleware's loginRoute.
+- Python AI-service commits (template-engine, providers, image
+  Phase 2) — out of scope; Python service stays external on Railway.
+
 ### Brand Creation Wizard port (commit 3492660f)
 
 `app/dashboard/brands/create/page.tsx` (1487 → 1991 LOC) + new `app/dashboard/brands/create/CatalogDiscoveryStep.tsx` (1106 LOC).
