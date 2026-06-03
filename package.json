@@ -24,6 +24,7 @@
     "db:migrate:status": "cd packages/database && npx prisma migrate status",
     "db:studio": "cd packages/database && npx prisma studio",
     "db:generate": "cd packages/database && npx prisma generate",
+    "db:sync:quikinfra": "npx prisma db push --schema=packages/database/prisma/schema.prisma --skip-generate && npx prisma migrate diff --from-empty --to-schema-datamodel apps/quikinfra/prisma/schema.prisma --script > app-tables.sql && npx prisma db execute --schema=apps/quikinfra/prisma/schema.prisma --file app-tables.sql",
     "db:seed:e2e": "cd packages/database && npm run db:seed:e2e",
     "db:seed:quikvc": "cd packages/database && npm run db:seed:quikvc",
     "e2e": "cd apps/quikscale && npx playwright test",

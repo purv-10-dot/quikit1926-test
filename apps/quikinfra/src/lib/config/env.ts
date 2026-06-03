@@ -12,8 +12,8 @@
  *     are free but not required — the cached result is reused.
  *   - Dev mode is permissive: missing optional vars default sensibly.
  *   - Production mode is strict: `NEXTAUTH_SECRET` and `DATABASE_URL`
- *     are REQUIRED. `STORAGE_DRIVER=local` is rejected (LAN-only demo,
- *     not for public internet).
+ *     are REQUIRED. `STORAGE_DRIVER=local` is currently permitted (storage
+ *     is not business-critical yet); note local storage is ephemeral.
  *
  * Importing this module has a side effect (validation). That's intentional —
  * production boot should fail loudly on config errors. Never wrap in
@@ -89,14 +89,10 @@ const schema = z
           message: "DATABASE_URL is required in production",
         });
       }
-      if (env.STORAGE_DRIVER === "local") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["STORAGE_DRIVER"],
-          message:
-            "STORAGE_DRIVER=local is not allowed in production — local storage has no durability, backup, or multi-node story. Use s3 or r2.",
-        });
-      }
+      // NOTE: STORAGE_DRIVER=local is permitted in production for now —
+      // storage is not a business-critical feature yet. Local storage on a
+      // pod is ephemeral (uploads are lost on restart/redeploy). Switch to
+      // s3/r2 before relying on file uploads in production.
     }
 
     // Storage driver sanity checks
