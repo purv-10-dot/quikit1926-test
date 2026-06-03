@@ -5899,6 +5899,14 @@ model SocialAccount {
   platform         String
   accountId        String
   pageId           String?
+  // Instagram Business Account ID. Required for IG publishing (Graph
+  // API's POST /{id}/media expects this, NOT the Facebook Page ID).
+  // Always null for non-Instagram rows. May be null on legacy IG rows
+  // created before this column existed — the publisher self-heals via
+  // a one-shot GET /{pageId}?fields=instagram_business_account lookup,
+  // or run scripts/backfill-ig-business-account.ts to backfill the
+  // whole table at once.
+  igBusinessAccountId String?
   accountName      String
   profilePicture   String?
   accessToken      String

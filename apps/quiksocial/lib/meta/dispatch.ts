@@ -45,12 +45,62 @@ export interface PublishDispatchResult {
 
 interface ResolvedCredentials {
   accessToken: string;
-  /** For Instagram: IG Business Account ID. For Facebook: Page ID. */
+  /** Display identifier — what we show in the UI (FB Page ID for FB rows,
+   *  IG Business Account ID for IG rows in the happy path). Do NOT use
+   *  this for Graph API calls — `pageId` and `igBusinessAccountId` are
+   *  the authoritative typed slots. */
   accountId: string;
-  /** Always the Page ID. Same as accountId for Facebook. */
+  /** Facebook Page ID. Source of truth for FB Graph calls + the lookup
+   *  base for `GET /{page_id}?fields=instagram_business_account` when
+   *  self-healing a legacy IG row. */
   pageId: string | null;
+  /** Instagram Business Account ID. Required for every IG Graph call —
+   *  POST /{ig-user-id}/media, /media_publish, token validation. Null on
+   *  FB rows AND on legacy IG rows created before the column existed.
+   *  When null on an IG publish attempt, the self-heal step in
+   *  `resolveCredentials` tries one Graph API lookup; if that also fails,
+   *  the publisher returns the user-facing "please reconnect" error. */
+  igBusinessAccountId: string | null;
   /** Always from a connected SocialAccount row (no env-var fallback). */
   source: "social-account";
+}
+
+/**
+ * One-shot lookup: given a Facebook Page ID + Page access token, return
+ * the Page's linked Instagram Business Account ID (or null if none).
+ *
+ * Used by `resolveCredentials` to self-heal legacy IG rows that pre-date
+ * the `igBusinessAccountId` column. The result is persisted to the
+ * SocialAccount row so subsequent publishes skip this lookup. Failure
+ * (token expired, no IG linked, network error) returns null — the
+ * caller then surfaces the user-facing reconnect prompt.
+ */
+async function lookupIgBusinessAccountId(
+  pageId: string,
+  accessToken: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v24.0/${encodeURIComponent(pageId)}` +
+        `?fields=instagram_business_account&access_token=${encodeURIComponent(accessToken)}`,
+    );
+    const data = (await res.json().catch(() => null)) as
+      | { instagram_business_account?: { id?: string }; error?: { message?: string } }
+      | null;
+    if (!data || data.error || !data.instagram_business_account?.id) {
+      if (data?.error) {
+        console.warn(
+          "[dispatch] IG business account lookup failed:",
+          data.error.message ?? data.error,
+        );
+      }
+      return null;
+    }
+    return data.instagram_business_account.id;
+  } catch (err) {
+    console.warn("[dispatch] IG business account lookup network error:", err);
+    return null;
+  }
 }
 
 function pickFirstImage(post: {
@@ -84,51 +134,78 @@ async function resolveCredentials(
   platform: SupportedPlatform,
 ): Promise<{ creds?: ResolvedCredentials; error?: string }> {
   // 1. Brand-scoped lookup first (the team-member case)
+  let row: Awaited<ReturnType<typeof db.socialAccount.findFirst>> = null;
   if (brandId) {
-    const brandAccount = await db.socialAccount.findFirst({
+    row = await db.socialAccount.findFirst({
       where: { orgId, brandId, platform, isActive: true },
       orderBy: { updatedAt: "desc" },
     });
-    if (brandAccount?.accessToken && brandAccount?.accountId) {
-      return {
-        creds: {
-          accessToken: brandAccount.accessToken,
-          accountId: brandAccount.accountId,
-          pageId: brandAccount.pageId ?? null,
-          source: "social-account",
-        },
-      };
-    }
   }
 
   // 2. User-scoped fallback (single-tenant case — no brand attached)
-  if (userId) {
-    const userAccount = await db.socialAccount.findFirst({
+  if (!row && userId) {
+    row = await db.socialAccount.findFirst({
       where: { orgId, userId, platform, isActive: true },
       orderBy: { updatedAt: "desc" },
     });
-    if (userAccount?.accessToken && userAccount?.accountId) {
-      return {
-        creds: {
-          accessToken: userAccount.accessToken,
-          accountId: userAccount.accountId,
-          pageId: userAccount.pageId ?? null,
-          source: "social-account",
-        },
-      };
+  }
+
+  if (!row?.accessToken || !row?.accountId) {
+    // No connected SocialAccount for the brand or user. There is deliberately
+    // NO env-var fallback: publishing to a shared demo account
+    // (META_PAGE_ACCESS_TOKEN / META_IG_ACCOUNT_ID / META_PAGE_ID) silently
+    // "succeeds" and flips the post to Published even though nothing reached
+    // the user's selected page — masking the real "not connected" state. The
+    // cron + publish-now routes turn this error into status='failed' with the
+    // message as `failedReason` so the Content Hub surfaces a clear
+    // "connect account" prompt.
+    return {
+      error: `No ${platform} account connected for this brand. Connect ${platform} in Integrations and try again.`,
+    };
+  }
+
+  // Self-heal legacy IG rows that pre-date the `igBusinessAccountId`
+  // column. A row connected before this fix shipped stores only the FB
+  // Page ID. Without this branch the first publish attempt fails with
+  // the cryptic "Object does not exist" Graph error; with it, we do one
+  // extra Graph API call to resolve the IG Business Account ID, write
+  // it back to the row, and proceed. Subsequent publishes skip this
+  // entirely.
+  let igBusinessAccountId = row.igBusinessAccountId ?? null;
+  if (
+    platform === "instagram" &&
+    !igBusinessAccountId &&
+    row.pageId &&
+    row.accessToken
+  ) {
+    const looked = await lookupIgBusinessAccountId(row.pageId, row.accessToken);
+    if (looked) {
+      try {
+        await db.socialAccount.update({
+          where: { id: row.id },
+          data: { igBusinessAccountId: looked },
+        });
+        console.info(
+          `[dispatch] self-healed SocialAccount ${row.id} with igBusinessAccountId=${looked}`,
+        );
+      } catch (err) {
+        console.warn(
+          `[dispatch] self-heal write failed for SocialAccount ${row.id}:`,
+          err,
+        );
+      }
+      igBusinessAccountId = looked;
     }
   }
 
-  // No connected SocialAccount for the brand or user. There is deliberately
-  // NO env-var fallback: publishing to a shared demo account
-  // (META_PAGE_ACCESS_TOKEN / META_IG_ACCOUNT_ID / META_PAGE_ID) silently
-  // "succeeds" and flips the post to Published even though nothing reached
-  // the user's selected page — masking the real "not connected" state. The
-  // cron + publish-now routes turn this error into status='failed' with the
-  // message as `failedReason` so the Content Hub surfaces a clear
-  // "connect account" prompt.
   return {
-    error: `No ${platform} account connected for this brand. Connect ${platform} in Integrations and try again.`,
+    creds: {
+      accessToken: row.accessToken,
+      accountId: row.accountId,
+      pageId: row.pageId ?? null,
+      igBusinessAccountId,
+      source: "social-account",
+    },
   };
 }
 
@@ -172,9 +249,24 @@ export async function publishPost(
     return { success: false, platform, error: credErr ?? "No credentials" };
   }
 
+  // Instagram requires the IG Business Account ID for every Graph API
+  // call. If self-heal couldn't recover one (no IG linked to the Page,
+  // or the lookup itself failed), surface the user-friendly reconnect
+  // prompt instead of letting the IG Graph API return its cryptic
+  // "Object with ID '...' does not exist" error.
+  if (platform === "instagram" && !creds.igBusinessAccountId) {
+    return {
+      success: false,
+      platform,
+      error:
+        "Instagram Business Account ID not found — please reconnect your Instagram account in Integrations.",
+      needsReconnect: true,
+    };
+  }
+
   const validation =
     platform === "instagram"
-      ? await validateInstagramToken(creds.accessToken, creds.accountId)
+      ? await validateInstagramToken(creds.accessToken, creds.igBusinessAccountId!)
       : await validateFacebookToken(creds.accessToken);
   if (!validation.valid) {
     return {
@@ -187,7 +279,7 @@ export async function publishPost(
 
   if (platform === "instagram") {
     const r: InstagramPublishResult = await publishToInstagram({
-      igUserId: creds.accountId,
+      igUserId: creds.igBusinessAccountId!,
       accessToken: creds.accessToken,
       imageUrl,
       caption: post.content,
