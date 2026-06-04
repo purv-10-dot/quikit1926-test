@@ -338,15 +338,26 @@ export default function OPSPHistoryPage() {
                                       </button>
                                       {(() => {
                                         const isDraft = opsp.status === "draft";
-                                        // v2: a user with OPSP.History.EditFinalize:update can edit
-                                        // finalized/reviewed OPSPs too. The base OPSP.History:update
-                                        // is also required — without it the Edit button is hidden.
-                                        if (!canUpdateHistory) return null;
-                                        const editable = isDraft || canEditFinalized;
+                                        // Edit rights, by status:
+                                        //   • draft     → base update right (OPSP.History:update or admin)
+                                        //   • finalized → the elevated "Edit after Finalize" grant. This
+                                        //     binds DYNAMICALLY: it resolves from role grants ∪ per-user
+                                        //     extras, so granting the extra to a single user (e.g. only
+                                        //     Pravin) unlocks editing for just them — even if the admin
+                                        //     role itself doesn't carry it.
+                                        const editable = isDraft ? canUpdateHistory : canEditFinalized;
+                                        // Show the Edit affordance to anyone who can act on it: base
+                                        // updaters (shown disabled on finalized as a hint) AND holders of
+                                        // the EditFinalize grant (shown enabled on finalized). Hidden
+                                        // outright only when neither applies.
+                                        const showEdit = isDraft
+                                          ? canUpdateHistory
+                                          : canUpdateHistory || canEditFinalized;
+                                        if (!showEdit) return null;
                                         const titleText = !editable
-                                          ? "OPSP is finalized and cannot be edited"
+                                          ? "OPSP is finalized — needs the 'Edit after Finalize' permission"
                                           : !isDraft
-                                            ? "Edit this finalized OPSP (extended permission)"
+                                            ? "Edit this finalized OPSP (Edit after Finalize)"
                                             : "Edit this OPSP";
                                         return (
                                           <button

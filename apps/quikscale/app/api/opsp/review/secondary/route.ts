@@ -6,6 +6,7 @@ import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { opspReviewSecondarySaveSchema } from "@/lib/schemas/opspReviewSchema";
+import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 
 /**
  * POST /api/opsp/review/secondary
@@ -28,10 +29,13 @@ export async function POST(req: NextRequest) {
     const { year, quarter, horizon, rowIndex, category, status, comment } = parsed.data;
     const yearNum = typeof year === "number" ? year : parseInt(year);
 
-    // 1. Verify OPSP exists
+    // OPSP is org-shared: secondary-review entries attach to the canonical owner's plan.
+    const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
+    // 1. Verify the org's OPSP exists
     const opsp = await db.oPSPData.findUnique({
       where: {
-        orgId_userId_year_quarter: { orgId, userId, year: yearNum, quarter },
+        orgId_userId_year_quarter: { orgId, userId: ownerId, year: yearNum, quarter },
       },
       select: { id: true },
     });

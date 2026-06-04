@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 
 const withOrgAuth = withOrgAuthForModule("opsp");
 
@@ -31,8 +32,11 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     return NextResponse.json({ success: false, error: "Invalid year/quarter" }, { status: 400 });
   }
 
+  // OPSP is org-shared: submit the review of the canonical owner's plan.
+  const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
   const opsp = await db.oPSPData.findUnique({
-    where: { orgId_userId_year_quarter: { orgId, userId, year, quarter } },
+    where: { orgId_userId_year_quarter: { orgId, userId: ownerId, year, quarter } },
     select: { id: true, status: true },
   });
   if (!opsp) {
@@ -55,7 +59,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     actorId: userId,
     action: "UPDATE",
     entityType: "OPSPData",
-    entityId: `${orgId}:${userId}:${year}:${quarter}`,
+    entityId: `${orgId}:${ownerId}:${year}:${quarter}`,
     changes: ["status:reviewed"],
     reason: "OPSP review submitted",
   });

@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { getOrgId } from "@/lib/api/getOrgId";
+import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 import { toErrorMessage } from "@/lib/api/errors";
 import { getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { diffDays, addDays } from "@/lib/utils/quarterGen";
@@ -63,10 +64,14 @@ export async function GET(_req: NextRequest) {
     const fiscalYear = getFiscalYear();
     const fiscalQuarter = getFiscalQuarter();
 
-    // Parallelize the three reads — they're all per-(org,user,period) lookups.
+    // OPSP is org-shared: the deadline/review banners track the org's canonical
+    // plan, so every member sees the same finalize/review countdown.
+    const ownerId = await resolveOpspOwnerOrSelf(orgId, session.user.id);
+
+    // Parallelize the three reads — period lookups for the org's OPSP.
     const [opsp, flagRows, strictQuarterSetting] = await Promise.all([
       db.oPSPData.findFirst({
-        where: { orgId, userId: session.user.id, year: fiscalYear, quarter: fiscalQuarter },
+        where: { orgId, userId: ownerId, year: fiscalYear, quarter: fiscalQuarter },
         select: { id: true, status: true, createdAt: true, year: true, quarter: true },
       }),
       db.featureFlag.findMany({

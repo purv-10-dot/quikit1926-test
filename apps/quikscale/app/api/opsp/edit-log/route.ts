@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { userCan } from "@/lib/api/permissions";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { resolveOpspOwnerId } from "@/lib/api/opspOwner";
 
 const withOrgAuth = withOrgAuthForModule("opsp");
 
@@ -37,9 +38,14 @@ function safeParse(v: string | null): Record<string, unknown> | null {
   }
 }
 
-async function findOpsp(orgId: string, userId: string, year: number, quarter: string) {
+// OPSP is org-shared — the edit log attaches to the canonical owner's record,
+// so every permitted editor reads/writes the same plan's history. If the org
+// has no OPSP yet there's nothing to log against (returns null → 404/empty).
+async function findOpsp(orgId: string, year: number, quarter: string) {
+  const ownerId = await resolveOpspOwnerId(orgId);
+  if (!ownerId) return null;
   return db.oPSPData.findUnique({
-    where: { orgId_userId_year_quarter: { orgId, userId, year, quarter } },
+    where: { orgId_userId_year_quarter: { orgId, userId: ownerId, year, quarter } },
     select: { id: true, status: true },
   });
 }
@@ -59,7 +65,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     return NextResponse.json({ success: false, error: "Invalid payload" }, { status: 400 });
   }
 
-  const opsp = await findOpsp(orgId, userId, year, quarter);
+  const opsp = await findOpsp(orgId, year, quarter);
   if (!opsp) {
     return NextResponse.json({ success: false, error: "OPSP not found" }, { status: 404 });
   }
@@ -113,7 +119,7 @@ export const PATCH = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => 
     return NextResponse.json({ success: false, error: "Invalid payload" }, { status: 400 });
   }
 
-  const opsp = await findOpsp(orgId, userId, year, quarter);
+  const opsp = await findOpsp(orgId, year, quarter);
   if (!opsp) {
     return NextResponse.json({ success: false, error: "OPSP not found" }, { status: 404 });
   }
@@ -157,7 +163,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     return NextResponse.json({ success: false, error: "Invalid year/quarter" }, { status: 400 });
   }
 
-  const opsp = await findOpsp(orgId, userId, year, quarter);
+  const opsp = await findOpsp(orgId, year, quarter);
   if (!opsp) return NextResponse.json({ success: true, data: [] });
 
   const logs = await db.auditLog.findMany({

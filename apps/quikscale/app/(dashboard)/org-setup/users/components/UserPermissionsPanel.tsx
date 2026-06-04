@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Loader2, Save, Undo2, X, Lock, Info } from "lucide-react";
 import {
   PERMISSION_TREE,
@@ -155,6 +156,7 @@ export function UserPermissionsPanel({
   userId: string;
   onClose?: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -278,6 +280,13 @@ export function UserPermissionsPanel({
         return;
       }
       setSavedExtras(new Set(extras));
+      // The effective permission set the app gates on (`/api/me/permissions`,
+      // cached 5min under this key) just changed for the edited user. Invalidate
+      // so the grant takes effect immediately — e.g. an "Edit after Finalize"
+      // extra unlocks the OPSP History Edit button without a hard refresh —
+      // rather than after the stale window elapses. (For a *different* user the
+      // refetch fires on their next mount; only their tab can't be pushed to.)
+      void queryClient.invalidateQueries({ queryKey: ["me-permissions"] });
     } catch {
       setError("Network error saving permissions");
     } finally {
