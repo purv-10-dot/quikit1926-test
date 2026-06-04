@@ -19,6 +19,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { classificationBoxPosition, type PlayerClass } from "@/lib/schemas/talentSchema";
 
 type Quadrant = "A" | "B" | "C" | "D";
 
@@ -29,7 +30,7 @@ interface QuadrantPerson {
   teamName: string | null;
   performanceScore: number | null;
   potentialScore: number | null;
-  quadrant: Quadrant | null;
+  classification: PlayerClass | null;
   kpiScore: number | null;
   rehireDecision: string;
   coreValuesScore: number | null;
@@ -65,14 +66,6 @@ function initials(p: QuadrantPerson) {
   return `${p.firstName[0] ?? ""}${p.lastName[0] ?? ""}`.toUpperCase();
 }
 
-// Stable jitter so dots that share exact coordinates don't perfectly overlap.
-// Hash the userId into a [-3, +3] vbUnit offset.
-function jitter(userId: string): { dx: number; dy: number } {
-  let h = 0;
-  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) | 0;
-  return { dx: (h % 7) - 3, dy: (((h >> 3) % 7) - 3) };
-}
-
 interface Props {
   people: QuadrantPerson[];
   onSelect: (userId: string) => void;
@@ -98,34 +91,44 @@ export default function QuadrantView({ people, onSelect, perfCut = 50, potential
     return people.filter((p) => p.teamName === teamFilter);
   }, [people, teamFilter]);
 
-  // Only dots with both scores get plotted.
+  // Plot anyone with a saved classification (the badge) and both scores. The
+  // box comes from the classification; the scores feed the hover tooltip.
   const plotted = useMemo(
-    () => filtered.filter((p) => p.performanceScore !== null && p.potentialScore !== null && p.quadrant),
+    () => filtered.filter((p) => p.performanceScore !== null && p.potentialScore !== null && p.classification),
     [filtered],
   );
 
-  // Unrated bucket — people in the team but missing scores.
+  // Unrated bucket — people in the team but missing scores or a classification.
   const unrated = useMemo(() => filtered.filter((p) => !plotted.includes(p)), [filtered, plotted]);
 
-  // Per-quadrant counts (filtered).
+  // Per-box counts (filtered), by classification. D is kept (always 0) so the
+  // legend still renders the four boxes unchanged.
   const counts = useMemo(() => {
     const c: Record<Quadrant, number> = { A: 0, B: 0, C: 0, D: 0 };
-    for (const p of plotted) c[p.quadrant!]++;
+    for (const p of plotted) c[p.classification!]++;
     return c;
   }, [plotted]);
 
-  // Build heat-map grid: count dots per cell.
+  // Each plotted person + the box coordinate they render at. Position comes
+  // from the saved classification (the badge), so a "C Player" lands in the C
+  // box — see classificationBoxPosition.
+  const dots = useMemo(
+    () => plotted.map((p) => ({ p, ...classificationBoxPosition(p.classification!, p.userId, perfCut, potentialCut) })),
+    [plotted, perfCut, potentialCut],
+  );
+
+  // Build heat-map grid: count dots per cell (using their box coordinates).
   const heat = useMemo(() => {
     const grid: number[][] = Array.from({ length: HEAT_ROWS }, () => Array(HEAT_COLS).fill(0));
-    for (const p of plotted) {
-      const cx = Math.min(HEAT_COLS - 1, Math.floor((p.performanceScore! / 100) * HEAT_COLS));
-      const cy = Math.min(HEAT_ROWS - 1, Math.floor(((100 - p.potentialScore!) / 100) * HEAT_ROWS));
+    for (const d of dots) {
+      const cx = Math.min(HEAT_COLS - 1, Math.floor((d.perf / 100) * HEAT_COLS));
+      const cy = Math.min(HEAT_ROWS - 1, Math.floor(((100 - d.pot) / 100) * HEAT_ROWS));
       grid[cy]![cx]!++;
     }
     let max = 0;
     for (const row of grid) for (const v of row) if (v > max) max = v;
     return { grid, max };
-  }, [plotted]);
+  }, [dots]);
 
   function xToPx(perf: number) { return PAD_L + (perf / 100) * PLOT_W; }
   function yToPx(pot: number)  { return PAD_T + ((100 - pot) / 100) * PLOT_H; }
@@ -241,12 +244,11 @@ export default function QuadrantView({ people, onSelect, perfCut = 50, potential
             <text x={PAD_L + PLOT_W / 2} y={VB_H - 8} fontSize="10" fill="#64748b" textAnchor="middle">Performance →</text>
             <text x={12} y={PAD_T + PLOT_H / 2} fontSize="10" fill="#64748b" textAnchor="middle" transform={`rotate(-90 12 ${PAD_T + PLOT_H / 2})`}>Potential →</text>
 
-            {/* Dots */}
-            {plotted.map((p) => {
-              const { dx, dy } = jitter(p.userId);
-              const cx = xToPx(p.performanceScore!) + dx;
-              const cy = yToPx(p.potentialScore!) + dy;
-              const fill = DOT_FILL[p.quadrant!];
+            {/* Dots — positioned by the classification box, coloured by it too */}
+            {dots.map(({ p, perf, pot }) => {
+              const cx = xToPx(perf);
+              const cy = yToPx(pot);
+              const fill = DOT_FILL[p.classification!];
               const isHov = hovered?.userId === p.userId;
               return (
                 <g

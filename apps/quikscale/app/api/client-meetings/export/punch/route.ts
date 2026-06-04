@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { computeMemberPunchIn, calculateOverallFinalAverage } from "@/lib/services/clientMeetingsMath";
-import { applyPctFill, applyHeader, workbookToBuffer, EXCEL_COLORS } from "@/lib/exports/clientMeetingsExcel";
+import { applyPlainCell, applyHeader, workbookToBuffer, EXCEL_COLORS } from "@/lib/exports/clientMeetingsExcel";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
 
@@ -135,17 +135,18 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
         ...values.map((v) => (typeof v === "number" ? `${v}%` : v)),
         weekIdx === 0 ? `${rep.WeeklyTotalAverage}%` : "",
       ]);
-      values.forEach((v, i) => {
-        const cell = row.getCell(3 + i);
-        if (typeof v === "number") applyPctFill(cell, v, true);
-        else {
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: v === "AB" ? EXCEL_COLORS.RED : EXCEL_COLORS.GRAY } };
-          cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-          cell.alignment = { horizontal: "center" };
-        }
+      // Colour-free data cells (per user request) — numbers and the AB / NA
+      // labels all render as plain centered text, no traffic-light fills.
+      values.forEach((_v, i) => {
+        applyPlainCell(row.getCell(3 + i));
       });
       if (weekIdx === 0) {
-        applyPctFill(row.getCell(8), rep.WeeklyTotalAverage, true);
+        // Keep the per-member "Total Weekly Avg" box lightly shaded (no
+        // traffic-light colour) so the block still reads as a summary.
+        const totCell = row.getCell(8);
+        totCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: EXCEL_COLORS.TOTAL } };
+        totCell.font = { bold: true };
+        totCell.alignment = { horizontal: "center", vertical: "middle" };
       }
       rowIdx++;
     });

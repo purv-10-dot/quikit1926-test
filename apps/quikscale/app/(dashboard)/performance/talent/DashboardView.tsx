@@ -10,6 +10,9 @@ import { useMemo } from "react";
 import QuadrantView from "./QuadrantView";
 
 type Quadrant = "A" | "B" | "C" | "D";
+// The saved A/B/C "player" rating (badge) — never "D". This is the source of
+// truth for which box a person falls in; see the count loop below.
+type PlayerClass = "A" | "B" | "C";
 
 interface DashPerson {
   userId: string;
@@ -18,7 +21,7 @@ interface DashPerson {
   teamName: string | null;
   performanceScore: number | null;
   potentialScore: number | null;
-  quadrant: Quadrant | null;
+  classification: PlayerClass | null;
   kpiScore: number | null;
   rehireDecision: string;
   coreValuesScore: number | null;
@@ -45,18 +48,20 @@ interface Props {
 }
 
 export default function DashboardView({ people, onSelect, perfCut, potentialCut }: Props) {
-  // Per-team A/B/C/D counts.
+  // Per-team counts, bucketed by the saved A/B/C classification (the badge) —
+  // NOT a score-derived quadrant. A "C Player" therefore counts under C, never
+  // D. The D band is kept (renders at 0) so the chart looks unchanged.
   const distribution = useMemo(() => {
     const byTeam = new Map<string, Record<Quadrant, number>>();
     const ORG = "Organisation";
     const org: Record<Quadrant, number> = { A: 0, B: 0, C: 0, D: 0 };
     let unrated = 0;
     for (const p of people) {
-      if (!p.quadrant) { unrated++; continue; }
-      org[p.quadrant]++;
+      if (!p.classification) { unrated++; continue; }
+      org[p.classification]++;
       const team = p.teamName ?? "No team";
       const row = byTeam.get(team) ?? { A: 0, B: 0, C: 0, D: 0 };
-      row[p.quadrant]++;
+      row[p.classification]++;
       byTeam.set(team, row);
     }
     const teams = Array.from(byTeam.entries())

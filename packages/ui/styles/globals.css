@@ -250,6 +250,31 @@ html {
   height: 0;
 }
 
+/* Opt-in: bring back a visible, draggable scrollbar for a specific scroll area.
+   Class specificity (0,1,0 / 0,1,1) overrides the global `*` hide above.
+   Used by compact scroll regions like the multi-select chip box. */
+.scrollbar-visible {
+  scrollbar-width: thin;                                  /* Firefox */
+  scrollbar-color: var(--color-border, #cbd5e1) transparent;
+}
+.scrollbar-visible::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-visible::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-visible::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;                               /* slate-300 */
+  border-radius: 9999px;
+  border: 2px solid transparent;                          /* inset look — thumb floats off the edge */
+  background-clip: content-box;
+}
+.scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;                               /* slate-400 on hover — clearly grabbable */
+}
+
 /* ============================================================================
    TYPOGRAPHY SCALE — Plus Jakarta Sans design-system tokens
    See docs/typography.md for the full spec. Every heading + body style

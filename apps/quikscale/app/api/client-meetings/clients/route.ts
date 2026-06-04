@@ -39,7 +39,7 @@ function mapClientSort(key: string, dir: SortDirection): Prisma.ClientOrderByWit
  */
 export const GET = auth.view(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
-  const { orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
+  const { sortBy, sortOrder, orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
   const rows = await db.client.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     orderBy,
@@ -48,6 +48,17 @@ export const GET = auth.view(async ({ orgId }, request) => {
       _count: { select: { memberships: { where: { deletedAt: null } } } },
     },
   });
+
+  // Case-insensitive name sort. Postgres orders text by collation (byte order),
+  // so `ORDER BY name` groups all uppercase before all lowercase ("E" < "a").
+  // Prisma's `orderBy` can't express case-insensitivity (`mode: "insensitive"`
+  // is filter-only), so re-sort the `name` column in JS. Safe here because the
+  // endpoint returns the full org list (no pagination) and `displayId` is
+  // assigned from this order below.
+  if (sortBy === "name") {
+    const dir = sortOrder === "desc" ? -1 : 1;
+    rows.sort((a, b) => dir * a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }
 
   // Actor name/initials resolution (same pattern as Client Members).
   const actorIds = [...new Set(rows.flatMap(r => [r.createdBy, r.updatedBy].filter(Boolean) as string[]))];

@@ -649,7 +649,7 @@ export default function TalentAssessmentPage() {
           <DashboardView
             people={people.map((p) => ({
               userId: p.userId, firstName: p.firstName, lastName: p.lastName, teamName: p.teamName,
-              performanceScore: p.performanceScore, potentialScore: p.potentialScore, quadrant: p.quadrant,
+              performanceScore: p.performanceScore, potentialScore: p.potentialScore, classification: p.classification,
               kpiScore: p.kpiScore, rehireDecision: p.rehireDecision, coreValuesScore: p.coreValuesScore,
             }))}
             onSelect={(userId) => { const f = people.find((p) => p.userId === userId); if (f) setSelected(f); }}

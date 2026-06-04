@@ -154,3 +154,36 @@ export function classifyTalent(input: {
   // No manager call — no classification yet.
   return null;
 }
+
+// ─── Quadrant-chart placement by classification ──────────────────────────────
+/** The saved A/B/C "player" rating shown on the badge. There is no "D" rating. */
+export type PlayerClass = "A" | "B" | "C";
+
+/**
+ * Plot coordinate for a person on the talent quadrant chart, derived from their
+ * saved A/B/C `classification` (the badge) — NOT from quadrantFromScores().
+ *
+ * The two systems both use the letters A/B/C/D but disagree: quadrant "C" is a
+ * high-performance Specialist while classification "C" is at-risk, so plotting
+ * by score dropped a saved "C Player" into the chart's "D" box. The badge is
+ * the source of truth, so we place the dot in the box that matches the rating:
+ * A → top-right, B → top-left, C → bottom-right. The bottom-left "D" box is
+ * left empty (the rating has no D). Dots are spread deterministically within
+ * their box (userId hash → 0.2–0.8 of the box span) so they don't stack.
+ */
+export function classificationBoxPosition(
+  classification: PlayerClass,
+  userId: string,
+  perfCut = 50,
+  potentialCut = 50,
+): { perf: number; pot: number } {
+  let h = 0;
+  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) | 0;
+  const fx = 0.2 + ((Math.abs(h) % 100) / 100) * 0.6;
+  const fy = 0.2 + ((Math.abs(h >> 5) % 100) / 100) * 0.6;
+  const right = classification === "A" || classification === "C";
+  const top = classification === "A" || classification === "B";
+  const perf = right ? perfCut + fx * (100 - perfCut) : fx * perfCut;
+  const pot = top ? potentialCut + fy * (100 - potentialCut) : fy * potentialCut;
+  return { perf, pot };
+}

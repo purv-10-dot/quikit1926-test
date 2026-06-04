@@ -130,8 +130,11 @@ export function RightPanel({
           </div>
         )}
 
-        {/* Body — scrolls vertically, fixed horizontal padding + section gap */}
-        <div className="flex-1 overflow-y-auto min-h-0 px-6 py-5 space-y-5">
+        {/* Body — scrolls vertically, fixed horizontal padding + section gap.
+            `scrollbar-visible` opts back IN to a visible scrollbar (the app
+            hides scrollbars globally), so on short screens (13" laptops) users
+            get a clear visual cue that the form scrolls. */}
+        <div className="scrollbar-visible flex-1 overflow-y-auto min-h-0 px-6 py-5 space-y-5">
           {children}
         </div>
 

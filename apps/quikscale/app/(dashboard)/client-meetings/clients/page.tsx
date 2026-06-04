@@ -771,6 +771,9 @@ export default function ClientsPage() {
                 onChange={(ids) => setEditing({ ...editing, form: { ...editing.form, teamMemberIds: ids } })}
                 users={memberPickerOptions}
                 placeholder="Select members…"
+                // Show every selected member as a chip (no "+N more" collapse) —
+                // the trigger uses flex-wrap so chips wrap onto multiple lines.
+                chipLimit={Infinity}
               />
             )}
           </div>
