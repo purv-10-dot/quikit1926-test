@@ -5,6 +5,12 @@ const auth = withOrgAuthForResource("opsp.categories", "OPSP.Categories");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { validationError } from "@/lib/api/validationError";
 import { createCategorySchema } from "@/lib/schemas/categorySchema";
+import { writeAuditLog } from "@/lib/api/auditLog";
+
+// Fixed org-level channel so all category audit entries list together
+// (the per-category id lives in the logged values). Kept in sync with
+// app/api/categories/[id]/route.ts and app/api/categories/logs/route.ts.
+const CATEGORY_AUDIT_ENTITY_ID = "category-mgmt";
 
 // GET /api/categories — list all categories for tenant
 export const GET = auth.view(async ({ orgId }, request) => {
@@ -53,6 +59,21 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         breakdownType: breakdownType ?? "Automatic",
         createdBy: userId,
       },
+    });
+    await writeAuditLog({
+      orgId,
+      actorId: userId,
+      action: "CREATE",
+      entityType: "Category",
+      entityId: CATEGORY_AUDIT_ENTITY_ID,
+      newValues: {
+        name: item.name,
+        dataType: item.dataType,
+        currency: item.currency,
+        categoryType: item.categoryType,
+        description: item.description,
+      },
+      changes: ["name", "dataType", "currency", "categoryType", "description"],
     });
     return NextResponse.json({ success: true, data: item }, { status: 201 });
   } catch (err: unknown) {

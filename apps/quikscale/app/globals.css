@@ -160,3 +160,12 @@ html.dark .glass {
 .qs-toast.qs-toast-tinted {
   border-left: 3px solid var(--toast-tint, var(--accent-500, #0066cc));
 }
+
+/* OPSP edit-after-finalize: ring the field whose change-note card is open.
+   Added/removed imperatively in opsp/page.tsx (survives re-renders since field
+   classNames are static). */
+.opsp-edit-active {
+  box-shadow: 0 0 0 2px var(--accent-500, #0066cc) !important;
+  border-radius: 0.375rem;
+  transition: box-shadow 0.15s ease;
+}

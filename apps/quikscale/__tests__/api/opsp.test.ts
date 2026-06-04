@@ -160,6 +160,27 @@ describe("PUT /api/opsp — happy path", () => {
 });
 
 // ═══════════════════════════════════════════════
+// PUT /api/opsp — review lock (status === "reviewed")
+// ═══════════════════════════════════════════════
+
+describe("PUT /api/opsp — review lock", () => {
+  beforeEach(asAuthed);
+
+  it("blocks editing a reviewed OPSP with 403 and never upserts (locked for everyone)", async () => {
+    // Once the review is submitted the record is hard-locked — the guard returns
+    // before any permission check, so even an admin session is rejected.
+    mockDb.oPSPData.findUnique.mockResolvedValue({ status: "reviewed" } as never);
+
+    const res = await PUT(buildPUT({ year: 2026, quarter: "Q1", coreValues: ["X"] }), params);
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(mockDb.oPSPData.upsert).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════
 // POST /api/opsp (finalize) — auth
 // ═══════════════════════════════════════════════
 

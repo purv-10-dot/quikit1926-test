@@ -9,7 +9,7 @@ import { FInput } from "./components/RichEditor";
 import { Card } from "./components/Card";
 import { populateCatCache } from "./components/category";
 import { ActionsModal, RocksModal, KeyThrustsModal, KeyInitiativesModal, AccountabilityModal, QuarterlyPrioritiesModal } from "./components/modals";
-import { Eye, Check, AlertTriangle, Loader2 } from "lucide-react";
+import { Eye, Check, AlertTriangle, Loader2, History } from "lucide-react";
 import { fiscalYearLabel, getFiscalYear, getFiscalQuarter } from "@/lib/utils/fiscal";
 import { OPSPSetupWizard } from "./components/SetupWizard";
 import { ObjectivesSection } from "./components/ObjectivesSection";
@@ -21,6 +21,9 @@ import { useOPSPForm, type FormData } from "./hooks/useOPSPForm";
 import { OPSPPreview } from "./components/OPSPPreview";
 import { validateOPSP, backfillPeriods, type ValidationError } from "./lib/validateOPSP";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { EditNoteCard } from "./components/EditNoteCard";
+import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
+import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, type PendingEdit } from "./lib/editLog";
 
 /* ═══════════════════════════════════════════════
    Main Page
@@ -42,6 +45,8 @@ export default function OPSPPage() {
     showSetupWizard,
     loadForPeriod,
     completeSetup,
+    save,
+    setAutosaveEnabled,
   } = useOPSPForm({ urlYear, urlQuarter });
 
   // UI-only state (modal opens, year picker, finalize confirm) stays on the page.
@@ -118,21 +123,195 @@ export default function OPSPPage() {
   // RBAC v2: editing the OPSP requires `update`; admins bypass.
   const canUpdateOPSPCreate = myPerms.isAdmin || myPerms.has("OPSP.Create", "update");
   const statusLocked = form.status === "finalized" || form.status === "reviewed";
-  const isLocked = (statusLocked && !canEditFinalized) || !canUpdateOPSPCreate;
+  // Once the OPSP Review has been submitted (`reviewed`), the OPSP is locked for
+  // EVERYONE — even users with `OPSP.History.EditFinalize:update`. Editing it
+  // would invalidate a review that's already been finalized against its targets.
+  const reviewSubmitted = form.status === "reviewed";
+  const isLocked = reviewSubmitted || (statusLocked && !canEditFinalized) || !canUpdateOPSPCreate;
+  // Show the blue "review locked" banner ONLY to users who could otherwise edit a
+  // finalized OPSP (the same predicate that drives the amber "Editing enabled"
+  // banner) — they're the ones who lost edit access because the review was
+  // submitted. Everyone else just sees the standard green "Finalized — read-only".
+  const reviewLockBanner = reviewSubmitted && canEditFinalized && canUpdateOPSPCreate;
 
-  const set = <K extends keyof FormData>(key: K, value: FormData[K]) => {
+  /* ── Edit-after-finalize change logging ──
+     Active only in the amber "Editing enabled" state (finalized, editable, not
+     reviewed). Every field change is captured (baseline → latest), shown in a
+     note card, and logged with an optional note. Autosave is unchanged. */
+  const loggedEdit = statusLocked && !isLocked;
+  const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
+  const [savingNote, setSavingNote] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const pendingRef = useRef<PendingEdit | null>(null);
+  // Always-current form (avoids stale closures when committing) + the form
+  // snapshot taken when a pending edit starts, so Cancel can revert the unsaved
+  // change cleanly (incl. cascade side-effects on grid rows).
+  const formRef = useRef(form);
+  formRef.current = form;
+  const formSnapshotRef = useRef<FormData | null>(null);
+  // The DOM element currently ring-highlighted as "being edited" + its viewport
+  // rect, used to anchor the overlay note card directly beneath it. The ring
+  // class is toggled on the element directly so it survives re-renders (field
+  // classNames are static); the card overlays (fixed) so it never shifts the form.
+  const highlightElRef = useRef<HTMLElement | null>(null);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+
+  const clearHighlight = () => {
+    highlightElRef.current?.classList.remove("opsp-edit-active");
+    highlightElRef.current = null;
+    setAnchorRect(null);
+  };
+  const highlightActive = () => {
+    const el = typeof document !== "undefined" ? document.activeElement : null;
+    if (!(el instanceof HTMLElement)) return;
+    if (el !== highlightElRef.current) {
+      clearHighlight();
+      el.classList.add("opsp-edit-active");
+      highlightElRef.current = el;
+    }
+    setAnchorRect(el.getBoundingClientRect());
+  };
+
+  // Keep the overlay card anchored as the page scrolls / resizes while open.
+  useEffect(() => {
+    if (!pendingEdit) return;
+    const reposition = () => {
+      const el = highlightElRef.current;
+      if (el) setAnchorRect(el.getBoundingClientRect());
+    };
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [pendingEdit]);
+
+  // Suspend the debounced autosave while editing a finalized OPSP — changes are
+  // committed explicitly via the change-note "Save" button (or auto-committed
+  // when switching fields). Draft editing keeps autosave on.
+  useEffect(() => {
+    setAutosaveEnabled(!loggedEdit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loggedEdit]);
+
+  const logChange = (edit: PendingEdit, note: string) =>
+    fetch("/api/opsp/edit-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        year: form.year,
+        quarter: form.quarter,
+        field: edit.field,
+        label: edit.label,
+        oldValue: edit.oldValue,
+        newValue: edit.newValue,
+        note: note || undefined,
+      }),
+    }).catch(() => {});
+
+  // Commit a pending edit: persist the form (autosave is off in this mode) AND
+  // log the change. Used by Save and by the auto-commit-on-field-switch path.
+  const commitPending = async (edit: PendingEdit, note: string) => {
+    await save(formRef.current);
+    await logChange(edit, note);
+  };
+
+  // Merge consecutive edits to the SAME field (keep the baseline old value, update
+  // the new). Switching to a different field auto-commits the previous one
+  // (persist + note-less log) so nothing is lost now that autosave is off.
+  const captureChange = (desc: PendingEdit | null) => {
+    if (!desc) return;
+    const prev = pendingRef.current;
+    if (prev && prev.field === desc.field) {
+      const merged = { ...prev, newValue: desc.newValue };
+      pendingRef.current = merged;
+      setPendingEdit(merged);
+      return;
+    }
+    if (prev) void commitPending(prev, "");
+    // Snapshot the form BEFORE this edit applies (captureChange runs ahead of
+    // setForm) so Cancel can restore it exactly.
+    formSnapshotRef.current = formRef.current;
+    pendingRef.current = desc;
+    setPendingEdit(desc);
+    highlightActive();
+  };
+
+  // note === null → Cancel: discard the unsaved change (revert to snapshot).
+  // string → Save: persist the value + log the change with the note.
+  const resolvePending = async (note: string | null) => {
+    const edit = pendingRef.current;
+    const snapshot = formSnapshotRef.current;
+    pendingRef.current = null;
+    setPendingEdit(null);
+    clearHighlight();
+    formSnapshotRef.current = null;
+    if (!edit) return;
+    if (note === null) {
+      if (snapshot) setForm(snapshot);
+      return;
+    }
+    setSavingNote(true);
+    await commitPending(edit, note);
+    setSavingNote(false);
+  };
+
+  const set = <K extends keyof FormData>(key: K, value: FormData[K], opts?: { skipLog?: boolean }) => {
     if (isLocked && key !== "status") return; // read-only guard
+    if (loggedEdit && key !== "status" && !opts?.skipLog) {
+      captureChange(describeSetChange(key as string, form[key], value));
+    }
     setForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Explicit per-field change report — used by components that perform multi-cell
+  // writes in one set() (Targets/Goals/Actions "Projected" auto-distributes to
+  // period cells; "Category" resets the row). They report the exact field the
+  // user edited so the log shows that, not an auto-filled period cell.
+  const logEdit = (e: PendingEdit) => {
+    if (loggedEdit) captureChange(e);
   };
 
   const setArr = (key: keyof FormData, idx: number, value: string) => {
     if (isLocked) return; // read-only guard
+    if (loggedEdit) {
+      captureChange(describeArrChange(key as string, idx, (form[key] as string[])[idx], value));
+    }
     setForm(prev => {
       const arr = [...(prev[key] as string[])];
       arr[idx] = value;
       return { ...prev, [key]: arr };
     });
   };
+
+  // ── Drawer editing (Edit after Finalize) ──
+  // Apply a value edited in the history drawer back into the form (raw set by
+  // path — no cascade), persist it explicitly (autosave is off in this mode),
+  // and log the change.
+  const applyDrawerValue = async (
+    field: string,
+    label: string,
+    oldValue: string,
+    newValue: string,
+    note: string,
+  ) => {
+    const nextForm = applyFieldPath(
+      formRef.current as unknown as Record<string, unknown>,
+      field,
+      newValue,
+    ) as unknown as FormData;
+    setForm(nextForm);
+    await save(nextForm);
+    await logChange({ field, label, oldValue, newValue }, note);
+  };
+  // Update an existing log entry's note.
+  const editDrawerNote = (id: string, note: string) =>
+    fetch("/api/opsp/edit-log", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ year: form.year, quarter: form.quarter, id, note }),
+    }).catch(() => {});
 
   /* ── Finalize ──
      The header pill reflects the OPSP's *status*, not whether the current
@@ -305,6 +484,9 @@ export default function OPSPPage() {
             <Check className="h-4 w-4" />
             {isFinalized ? "Finalized" : "Finalize"}
           </button>
+          {isFinalized && (
+            <button onClick={() => setHistoryOpen(true)} className="p-1.5 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50" title="Edit history"><History className="h-4 w-4" /></button>
+          )}
           <button onClick={() => setPreviewOpen(true)} className="p-1.5 border border-gray-300 rounded-lg text-gray-500 hover:bg-gray-50" title="Preview OPSP"><Eye className="h-4 w-4" /></button>
         </div>
       </div>
@@ -413,14 +595,28 @@ export default function OPSPPage() {
       />
 
       {/* ── Finalized banner ──
-         Two variants:
-         - When the OPSP is finalized AND the current user cannot edit it
-           (`isLocked`): show the read-only lock copy.
-         - When the OPSP is finalized but the current user has
-           `OPSP.History.EditFinalize:update` (`isFinalized && !isLocked`):
-           show an amber "you have permission to edit" banner so the editor
-           still knows they are mutating a finalized document. */}
-      {isFinalized && isLocked && (
+         Three variants (in priority order). Note the OPSP is read-only for
+         EVERYONE once reviewed; only the banner *copy* depends on permission.
+         - `reviewLockBanner` (reviewed AND the user could otherwise edit it):
+           blue "review submitted — editing locked" — explains why a user who
+           normally could edit a finalized OPSP no longer can.
+         - Finalized/locked for everyone else (`isFinalized && isLocked`): green
+           "read-only". Covers no-permission users, incl. reviewed ones (who get
+           the same standard read-only copy they'd see for any finalized OPSP).
+         - Finalized but the user can edit (`isFinalized && !isLocked`): amber
+           "you have permission to edit". */}
+      {reviewLockBanner && (
+        <div className="mx-6 mt-6 flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+            <Check className="h-4 w-4 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-blue-800">OPSP Review submitted — editing locked</p>
+            <p className="text-xs text-blue-600">This OPSP&apos;s review has been finalized, so the OPSP can no longer be edited.</p>
+          </div>
+        </div>
+      )}
+      {isFinalized && isLocked && !reviewLockBanner && (
         <div className="mx-6 mt-6 flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
           <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
             <Check className="h-4 w-4 text-green-600" />
@@ -465,7 +661,6 @@ export default function OPSPPage() {
               ))}
             </div>
           </div>
-
           {/* 4-col grid */}
           <div className="overflow-x-auto pb-2">
           <div className="flex gap-4 items-stretch" style={{ minWidth: 1200 }}>
@@ -475,17 +670,18 @@ export default function OPSPPage() {
             <TargetsSection
               form={form}
               set={set}
+              logEdit={logEdit}
               onExpandKeyThrusts={() => setKeyThrustsOpen(true)}
             />
 
             <GoalsSection
               form={form}
               set={set}
+              logEdit={logEdit}
               onExpandKeyInitiatives={() => setKeyInitiativesOpen(true)}
             />
           </div>
           </div>{/* end overflow-x-auto */}
-
           {/* Process + Weaknesses */}
           <div className="grid grid-cols-2 gap-4 mt-4">
             {(["processItems","weaknesses"] as const).map((key, ci) => (
@@ -496,8 +692,7 @@ export default function OPSPPage() {
                 </Card>
               </div>
             ))}
-          </div>
-        </div>
+          </div>        </div>
 
         {/* ══════════════════════════ PROCESS ══════════════════════════ */}
         <div>
@@ -516,12 +711,12 @@ export default function OPSPPage() {
               </div>
             ))}
           </div>
-
           <div className="grid grid-cols-3 gap-4">
 
             <ActionsSection
               form={form}
               set={set}
+              logEdit={logEdit}
               onExpandActions={() => setActionsOpen(true)}
               onExpandRocks={() => setRocksOpen(true)}
             />
@@ -533,7 +728,6 @@ export default function OPSPPage() {
               onExpandQPriorities={() => setQPrioritiesOpen(true)}
             />
           </div>
-
           {/* Trends */}
           <div className="mt-4">
             <p className="text-sm font-medium text-gray-700 mb-2">Trends</p>
@@ -549,10 +743,41 @@ export default function OPSPPage() {
                 </Card>
               ))}
             </div>
-          </div>
-        </div>
+          </div>        </div>
 
       </div>
+
+      {/* Edit-after-finalize: overlay note card anchored beneath the edited
+          field (fixed → never shifts the form), plus the history drawer. */}
+      {pendingEdit && anchorRect && (() => {
+        const vh = typeof window !== "undefined" ? window.innerHeight : 9999;
+        const vw = typeof window !== "undefined" ? window.innerWidth : 9999;
+        const estH = 210;
+        const below = anchorRect.bottom + 6;
+        const top = below + estH > vh ? Math.max(8, anchorRect.top - estH - 6) : below;
+        const width = Math.max(320, Math.min(anchorRect.width, 440));
+        const left = Math.max(8, Math.min(anchorRect.left, vw - width - 8));
+        return (
+          <div className="fixed z-[60]" style={{ top, left, width }}>
+            <EditNoteCard
+              pending={pendingEdit}
+              saving={savingNote}
+              onSave={(n) => void resolvePending(n)}
+              onCancel={() => void resolvePending(null)}
+            />
+          </div>
+        );
+      })()}
+      <OPSPHistoryDrawer
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        year={form.year}
+        quarter={form.quarter}
+        canEdit={loggedEdit}
+        currentValue={(f) => getFieldValue(form as unknown as Record<string, unknown>, f)}
+        onApplyValue={applyDrawerValue}
+        onEditNote={editDrawerNote}
+      />
     </div>
   );
 }

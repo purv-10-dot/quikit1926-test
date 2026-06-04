@@ -214,10 +214,17 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
   const currentStatus = current?.status ?? "draft";
 
   // (a) Server-side mirror of the client `isLocked` predicate. Without this
-  // a malicious client could call PUT directly and overwrite a finalized
-  // OPSP. The History page Edit button and the OPSP editor lock are gated
-  // on the same permission, so this just closes the loop on the server.
-  if (currentStatus === "finalized" || currentStatus === "reviewed") {
+  // a malicious client could call PUT directly and overwrite a locked OPSP.
+  // Once the review is SUBMITTED (`reviewed`) the OPSP is locked for everyone —
+  // even holders of `OPSP.History.EditFinalize:update` — because the review has
+  // been finalized against it. A merely `finalized` OPSP stays editable for
+  // users with that permission.
+  if (currentStatus === "reviewed") {
+    return forbidden(
+      "This OPSP's review has been submitted and finalized — it can no longer be edited.",
+    );
+  }
+  if (currentStatus === "finalized") {
     const canEditFinalized = await userCan(
       userId,
       orgId,

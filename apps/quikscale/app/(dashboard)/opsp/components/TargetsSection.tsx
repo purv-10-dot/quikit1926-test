@@ -16,16 +16,20 @@ import { CategorySelect, ProjectedInput } from "./category";
 import { breakdownProjected } from "./modals";
 import { WithTooltip } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
+import type { PendingEdit } from "../lib/editLog";
 
 interface Props {
   form: FormData;
-  set: <K extends keyof FormData>(key: K, value: FormData[K]) => void;
+  set: <K extends keyof FormData>(key: K, value: FormData[K], opts?: { skipLog?: boolean }) => void;
+  /** Report the exact field the user edited (Projected/Category) for the change log. */
+  logEdit?: (e: PendingEdit) => void;
   onExpandKeyThrusts: () => void;
 }
 
 export function TargetsSection({
   form,
   set,
+  logEdit,
   onExpandKeyThrusts,
 }: Props) {
   return (
@@ -52,6 +56,12 @@ export function TargetsSection({
                 value={row.category}
                 excludeNames={form.targetRows.map((r, idx) => idx === i ? "" : r.category)}
                 onChange={(v) => {
+                  logEdit?.({
+                    field: `targetRows.${i}.category`,
+                    label: `Targets (3–5 yrs) · ${row.category || "#" + (i + 1)} · Category`,
+                    oldValue: row.category ?? "",
+                    newValue: v,
+                  });
                   const next = [...form.targetRows];
                   next[i] = {
                     ...next[i],
@@ -63,7 +73,7 @@ export function TargetsSection({
                     y4: "",
                     y5: "",
                   };
-                  set("targetRows", next);
+                  set("targetRows", next, { skipLog: true });
                 }}
               />
             </div>
@@ -72,6 +82,12 @@ export function TargetsSection({
                 categoryName={row.category}
                 value={row.projected}
                 onChange={(v) => {
+                  logEdit?.({
+                    field: `targetRows.${i}.projected`,
+                    label: `Targets (3–5 yrs) · ${row.category || "#" + (i + 1)} · Projected`,
+                    oldValue: row.projected ?? "",
+                    newValue: v,
+                  });
                   const next = [...form.targetRows];
                   // Automatic categories: auto-fill y1..y{targetYears}.
                   // Manual categories: breakdownProjected returns null → keep
@@ -90,7 +106,7 @@ export function TargetsSection({
                     });
                   }
                   next[i] = { ...next[i], projected: v, ...yPatch };
-                  set("targetRows", next);
+                  set("targetRows", next, { skipLog: true });
                 }}
               />
             </div>

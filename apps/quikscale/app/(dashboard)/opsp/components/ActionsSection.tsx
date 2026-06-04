@@ -19,10 +19,13 @@ import { CategorySelect, ProjectedInput } from "./category";
 import { breakdownProjected } from "./modals";
 import { WithTooltip, OwnerSelect } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
+import type { PendingEdit } from "../lib/editLog";
 
 interface Props {
   form: FormData;
-  set: <K extends keyof FormData>(key: K, value: FormData[K]) => void;
+  set: <K extends keyof FormData>(key: K, value: FormData[K], opts?: { skipLog?: boolean }) => void;
+  /** Report the exact field the user edited (Projected/Category) for the change log. */
+  logEdit?: (e: PendingEdit) => void;
   onExpandActions: () => void;
   onExpandRocks: () => void;
 }
@@ -34,6 +37,7 @@ const MIN_ACTION_ROWS = 6;
 export function ActionsSection({
   form,
   set,
+  logEdit,
   onExpandActions,
   onExpandRocks,
 }: Props) {
@@ -71,6 +75,12 @@ export function ActionsSection({
                       value={row.category}
                       excludeNames={form.actionsQtr.map((r, idx) => idx === i ? "" : r.category)}
                       onChange={(v) => {
+                        logEdit?.({
+                          field: `actionsQtr.${i}.category`,
+                          label: `Actions (QTR) · ${row.category || "#" + (i + 1)} · Category`,
+                          oldValue: row.category ?? "",
+                          newValue: v,
+                        });
                         const next = [...form.actionsQtr];
                         next[i] = {
                           ...next[i],
@@ -80,7 +90,7 @@ export function ActionsSection({
                           m2: "",
                           m3: "",
                         };
-                        set("actionsQtr", next);
+                        set("actionsQtr", next, { skipLog: true });
                       }}
                     />
                   </div>
@@ -89,6 +99,12 @@ export function ActionsSection({
                       categoryName={row.category}
                       value={row.projected}
                       onChange={(v) => {
+                        logEdit?.({
+                          field: `actionsQtr.${i}.projected`,
+                          label: `Actions (QTR) · ${row.category || "#" + (i + 1)} · Projected`,
+                          oldValue: row.projected ?? "",
+                          newValue: v,
+                        });
                         const next = [...form.actionsQtr];
                         // Automatic categories: auto-fill m1..m3.
                         // Manual categories: breakdownProjected returns null →
@@ -104,7 +120,7 @@ export function ActionsSection({
                             }
                           : {};
                         next[i] = { ...next[i], projected: v, ...mPatch };
-                        set("actionsQtr", next);
+                        set("actionsQtr", next, { skipLog: true });
                       }}
                     />
                   </div>

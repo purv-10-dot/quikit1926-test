@@ -21,9 +21,10 @@ import {
   DataTable,
   type DataTableColumn,
 } from "@quikit/ui";
-import { Clock, FileText, X, RotateCcw, AlertTriangle } from "lucide-react";
+import { Clock, FileText, X, RotateCcw, AlertTriangle, History } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
+import { OPSPHistoryDrawer } from "../components/OPSPHistoryDrawer";
 import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
 
 /* ═══════════════════════════════════════════════
@@ -487,6 +488,8 @@ export default function OPSPReviewPage() {
 
   // Year/Quarter picker
   const [showYearPicker, setShowYearPicker] = useState(false);
+  // OPSP edit-after-finalize history (read-only) — same drawer as the editor.
+  const [editHistoryOpen, setEditHistoryOpen] = useState(false);
   const yearRef = useRef<HTMLDivElement>(null);
 
   // Primary modal
@@ -1178,6 +1181,16 @@ export default function OPSPReviewPage() {
           </div>
           </>)}
 
+          {/* OPSP edit history — opens the same drawer as the editor, scoped to
+              the selected period (read-only here). */}
+          <button
+            onClick={() => setEditHistoryOpen(true)}
+            className="flex items-center justify-center p-1.5 border border-gray-200 rounded-md text-gray-500 hover:bg-gray-50"
+            title="OPSP edit history"
+          >
+            <History className="h-4 w-4" />
+          </button>
+
           {/* Year / Quarter picker (shared across Review + Critical Review tabs) */}
           <div className="relative" ref={yearRef}>
             <button
@@ -1555,6 +1568,17 @@ export default function OPSPReviewPage() {
           />
         );
       })()}
+
+      {/* OPSP edit-after-finalize history (read-only), scoped to the fields that
+          appear in OPSP Review (Targets/Goals/Actions + Rocks/Key Initiatives/
+          Key Thrusts) — People/Objectives/etc. edits are hidden here. */}
+      <OPSPHistoryDrawer
+        open={editHistoryOpen}
+        onClose={() => setEditHistoryOpen(false)}
+        year={year}
+        quarter={quarter}
+        fields={["targetRows", "goalRows", "actionsQtr", "rocks", "keyInitiatives", "keyThrusts"]}
+      />
     </div>
   );
 }

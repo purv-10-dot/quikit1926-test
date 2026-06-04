@@ -20,6 +20,7 @@ Reference + onboarding for the QuikIT monorepo. Read in the order below if you'r
 9. [08-claude-code-setup.md](./08-claude-code-setup.md) — using Claude Code on this codebase
 10. [09-troubleshooting.md](./09-troubleshooting.md) — symptom → cause → fix decision tree
 11. [10-glossary.md](./10-glossary.md) — domain language (OPSP, KPI, Rocks, etc.)
+12. [14-roles-and-permissions.md](./14-roles-and-permissions.md) — auth → org → in-app RBAC: the full role & permission flow (plain-English + code)
 
 ### Annotated reference code
 - [exemplars/api-route.example.ts](./exemplars/api-route.example.ts) — full GET/POST + audit + transaction
