@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, MoreHorizontal, X } from "lucide-react";
 import { StyledSelect } from "@/app/(dashboard)/spaces/[id]/settings/user-management/_components/styled-select";
+import { emitMembersChanged } from "@/lib/hooks/useMembersChanged";
 
 interface ProjectRole {
   id: string;
@@ -28,6 +29,11 @@ interface ChipPerson {
   firstName?: string;
   lastName?: string;
   email: string;
+  /** existing-user only: already has QuikTrack app access. When true we add
+   *  them to *this project* via the project-members endpoint (no app-role or
+   *  app-access side effects). When false we link them through /api/org/users
+   *  which also grants app access. */
+  hasAccess?: boolean;
 }
 
 /**
@@ -102,26 +108,83 @@ export function AddPeopleModal({
     enabled: debounced.length >= 2,
   });
 
+  // Current project members — used to mark people already in this space in the
+  // typeahead (disabled, "already in" badge) and to block re-adding them by
+  // typed email.
+  const membersQ = useQuery({
+    queryKey: ["quiktrack", "project-members", projectId],
+    queryFn: async () => {
+      const r = await fetch(`/api/projects/${projectId}/members`);
+      const j = await r.json();
+      return ((j.data?.members as Array<{ userId: string; user: { email: string } | null }>) ?? []).map(
+        (m) => ({ userId: m.userId, email: (m.user?.email ?? "").toLowerCase() }),
+      );
+    },
+  });
+
+  const projectMemberIds = new Set((membersQ.data ?? []).map((m) => m.userId));
+  const projectMemberEmails = new Set(
+    (membersQ.data ?? []).map((m) => m.email).filter(Boolean),
+  );
+  // Resolve a typed email back to a known org user (so we link/route them
+  // correctly instead of treating them as a brand-new invite).
+  const searchByEmail = new Map(
+    (searchQ.data ?? []).map((h) => [h.email.toLowerCase(), h] as const),
+  );
+
   function commitTypedEmail() {
     const t = input.trim().replace(/[,;]\s*$/, "");
     if (!t) return;
     const parts = t.split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+    const blocked: string[] = [];
     setPeople((cur) => {
       const next = [...cur];
       for (const p of parts) {
         const isEmail = /\S+@\S+\.\S+/.test(p);
         if (!isEmail) continue;
-        if (next.some((x) => x.email.toLowerCase() === p.toLowerCase())) continue;
-        next.push({ id: `e:${p}`, label: p, kind: "email", email: p });
+        const lower = p.toLowerCase();
+        // Already in this project — nothing to add.
+        if (projectMemberEmails.has(lower)) {
+          blocked.push(p);
+          continue;
+        }
+        if (next.some((x) => x.email.toLowerCase() === lower)) continue;
+        // Typed the address of a known org user → add as an existing-user chip
+        // (links silently / adds to project) rather than a new-email invite.
+        const hit = searchByEmail.get(lower);
+        // Resolved to a user already in the project — block (the email-only
+        // check above misses cases where the member row had no email).
+        if (hit && projectMemberIds.has(hit.userId)) {
+          blocked.push(p);
+          continue;
+        }
+        if (hit) {
+          next.push({
+            id: `u:${hit.userId}`,
+            label: `${hit.firstName} ${hit.lastName}`.trim() || hit.email,
+            kind: "existing-user",
+            userId: hit.userId,
+            firstName: hit.firstName,
+            lastName: hit.lastName,
+            email: hit.email,
+            hasAccess: hit.hasQuikTrackAccess,
+          });
+        } else {
+          next.push({ id: `e:${p}`, label: p, kind: "email", email: p });
+        }
       }
       return next;
     });
+    if (blocked.length) {
+      setError(`${blocked.join(", ")} ${blocked.length > 1 ? "are" : "is"} already in this project.`);
+    }
     setInput("");
     setShowHits(false);
   }
 
   function addExistingUser(h: SearchResult) {
-    if (h.hasQuikTrackAccess) return;
+    // Already a member of this project — nothing to add (row is disabled too).
+    if (projectMemberIds.has(h.userId)) return;
     setPeople((cur) => {
       if (cur.some((x) => x.userId === h.userId || x.email.toLowerCase() === h.email.toLowerCase())) return cur;
       return [
@@ -134,6 +197,7 @@ export function AddPeopleModal({
           firstName: h.firstName,
           lastName: h.lastName,
           email: h.email,
+          hasAccess: h.hasQuikTrackAccess,
         },
       ];
     });
@@ -157,6 +221,36 @@ export function AddPeopleModal({
     mutationFn: async () => {
       const failures: string[] = [];
       for (const p of people) {
+        // Existing app member → add to THIS project only via the project
+        // members endpoint. Scope stays project-local: no app access or
+        // app-role rows are touched. The upsert is idempotent, so re-adding
+        // someone already in the project is harmless.
+        if (p.kind === "existing-user" && p.userId && p.hasAccess) {
+          const r = await fetch(`/api/projects/${projectId}/members`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: p.userId }),
+          });
+          const j = await r.json();
+          if (!r.ok) {
+            failures.push(`${p.email}: ${j.error ?? "Failed"}`);
+            continue;
+          }
+          if (projectRoleId) {
+            const rr = await fetch(`/api/projects/${projectId}/members/${p.userId}/role`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ projectRoleId }),
+            });
+            if (!rr.ok) {
+              failures.push(`${p.email}: ${(await rr.json()).error ?? "Failed to set role"}`);
+            }
+          }
+          continue;
+        }
+
+        // New email, or existing org member without app access → go through
+        // /api/org/users, which grants QuikTrack access and adds to the project.
         const body: Record<string, unknown> = {
           projects: [
             { projectId, ...(projectRoleId ? { projectRoleId } : {}) },
@@ -187,16 +281,36 @@ export function AddPeopleModal({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["quiktrack", "project-members", projectId] });
       qc.invalidateQueries({ queryKey: ["quiktrack", "org-users"] });
+      // Nudge the open board / backlog / etc. views (they cache members in
+      // local state, outside React Query) to refetch without a reload.
+      emitMembersChanged(projectId);
       onClose();
     },
     onError: (e: Error) => setError(e.message),
   });
 
+  // Keep people already in the project in the list — they render disabled with
+  // an "already in" badge so it's clear why they can't be picked. Just drop the
+  // ones already added as chips.
   const hits = (searchQ.data ?? []).filter(
     (h) => !people.some((x) => x.userId === h.userId || x.email.toLowerCase() === h.email.toLowerCase()),
   );
-  const canSubmit = people.length > 0 && !mut.isPending;
+  // A chip is "already in" when its user id or email matches a current project
+  // member. Belt-and-suspenders against chips that slipped in before the member
+  // list finished loading (the add-time guards can't see data that wasn't there
+  // yet). Such chips block submission until removed.
+  const chipInProject = (p: ChipPerson) =>
+    (p.userId ? projectMemberIds.has(p.userId) : false) ||
+    projectMemberEmails.has(p.email.toLowerCase());
+  const hasBlockedChip = people.some(chipInProject);
+
+  const canSubmit = people.length > 0 && !hasBlockedChip && !mut.isPending;
   const roles = rolesQ.data ?? [];
+
+  // The Native/SSO invitation method only governs how a brand-new account is
+  // created + emailed. Existing org members are linked silently, so only show
+  // the picker when at least one chip is a new email address.
+  const needsInvitationMethod = people.some((p) => p.kind === "email" && !chipInProject(p));
 
   return (
     <div
@@ -241,10 +355,17 @@ export function AddPeopleModal({
             }`}
             onClick={() => inputRef.current?.focus()}
           >
-            {people.map((p) => (
+            {people.map((p) => {
+              const blocked = chipInProject(p);
+              return (
               <span
                 key={p.id}
-                className="inline-flex items-center gap-1.5 h-6 pl-1 pr-1.5 text-xs bg-gray-100 rounded-full text-gray-800"
+                title={blocked ? "Already in this project" : undefined}
+                className={`inline-flex items-center gap-1.5 h-6 pl-1 pr-1.5 text-xs rounded-full ${
+                  blocked
+                    ? "bg-red-50 text-red-700 ring-1 ring-red-200"
+                    : "bg-gray-100 text-gray-800"
+                }`}
               >
                 <span
                   className="h-5 w-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold"
@@ -256,13 +377,14 @@ export function AddPeopleModal({
                 <button
                   type="button"
                   onClick={() => removeChip(p.id)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className={blocked ? "text-red-400 hover:text-red-600" : "text-gray-400 hover:text-gray-600"}
                   aria-label={`Remove ${p.label}`}
                 >
                   <X className="h-3 w-3" />
                 </button>
               </span>
-            ))}
+              );
+            })}
             <input
               ref={inputRef}
               value={input}
@@ -288,16 +410,16 @@ export function AddPeopleModal({
 
           {showHits && debounced.length >= 2 && hits.length > 0 && (
             <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-56 overflow-y-auto">
-              {hits.map((h) => (
+              {hits.map((h) => {
+                const inProject = projectMemberIds.has(h.userId);
+                return (
                 <button
                   key={h.userId}
                   type="button"
-                  disabled={h.hasQuikTrackAccess}
+                  disabled={inProject}
                   onClick={() => addExistingUser(h)}
                   className={`w-full px-3 py-2 flex items-center gap-2 text-left text-sm border-b border-gray-100 last:border-b-0 ${
-                    h.hasQuikTrackAccess
-                      ? "opacity-50 cursor-not-allowed"
-                      : "hover:bg-blue-50"
+                    inProject ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-50"
                   }`}
                 >
                   <span
@@ -310,16 +432,26 @@ export function AddPeopleModal({
                     <span className="block font-medium truncate">{h.firstName} {h.lastName}</span>
                     <span className="block text-xs text-gray-500 truncate">{h.email}</span>
                   </span>
-                  {h.hasQuikTrackAccess ? (
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                      Already in
+                  {inProject ? (
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 shrink-0">
+                      {h.hasQuikTrackAccess ? "Already in app & project" : "Already in project"}
+                    </span>
+                  ) : h.hasQuikTrackAccess ? (
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 shrink-0">
+                      In app · add to project
                     </span>
                   ) : (
-                    <Check className="h-3.5 w-3.5 text-blue-600 opacity-60" />
+                    <Check className="h-3.5 w-3.5 text-blue-600 opacity-60 shrink-0" />
                   )}
                 </button>
-              ))}
+                );
+              })}
             </div>
+          )}
+          {hasBlockedChip && (
+            <p className="mt-1.5 text-[11px] text-red-600">
+              Highlighted people are already in this project — remove them to continue.
+            </p>
           )}
         </div>
 
@@ -333,7 +465,8 @@ export function AddPeopleModal({
           </div>
         </div> */}
 
-        {/* Invitation method */}
+        {/* Invitation method — only relevant when inviting brand-new emails. */}
+        {needsInvitationMethod && (
         <div className="mt-4">
           <span className="text-xs font-semibold text-gray-700 block mb-1.5">
             Invitation method
@@ -367,6 +500,7 @@ export function AddPeopleModal({
             Only applies to new emails. Existing org members get linked silently — no email.
           </p>
         </div>
+        )}
 
         {/* Role — this project's roles only */}
         <div className="mt-4">

@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createProjectSchema } from "@/lib/validation/project";
 import { seedProjectDefaults, getStarterProjectRoleId } from "@/lib/services/projectDefaults";
-import { userCan, forbidden } from "@/lib/api/permissions";
+import { userCan, forbidden, isQuikTrackAppAdmin } from "@/lib/api/permissions";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
@@ -20,7 +20,12 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     where: { userId, orgId, status: "active" },
     select: { role: true },
   });
-  const isAdmin = orgAdmin?.role === "admin" || orgAdmin?.role === "owner";
+  // Org owners/admins AND QuikTrack app-admins see every space in the org;
+  // everyone else sees only spaces they're a member of.
+  const isAdmin =
+    orgAdmin?.role === "admin" ||
+    orgAdmin?.role === "owner" ||
+    (await isQuikTrackAppAdmin(userId, orgId));
 
   const where: Record<string, unknown> = { orgId, isDeleted: false };
   if (!isAdmin) {

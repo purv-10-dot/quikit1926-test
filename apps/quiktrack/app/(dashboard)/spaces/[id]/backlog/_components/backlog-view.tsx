@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import {
   FilterSelect,
   type FilterSelectOption,
@@ -2252,6 +2253,19 @@ export function BacklogView({ projectId }: { projectId: string }) {
       alive = false;
     };
   }, [projectId]);
+
+  // Refetch members when membership changes via the Add-people modal.
+  useMembersChanged(projectId, () => {
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (!res?.success) return;
+        setMembers(
+          Array.isArray(res.data) ? res.data : (res.data?.members ?? []),
+        );
+      })
+      .catch(() => undefined);
+  });
 
   const loadMoreSprints = useCallback(async () => {
     if (sprintsLoading || !sprintsHasMore) return;

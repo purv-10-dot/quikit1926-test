@@ -30,6 +30,7 @@ import { CreateGroupModal } from "./modals/create-group-modal";
 import { TaskContextMenu } from "./context-menu/task-context-menu";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { CreateIssueModal } from "@/components/create-issue-modal";
+import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 
 export function GroupedKanbanView({ projectId }: { projectId: string }) {
   const [searchInput, setSearchInput] = useState("");
@@ -112,6 +113,21 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
       alive = false;
     };
   }, [projectId]);
+
+  // Refetch members when membership changes via the Add-people modal.
+  useMembersChanged(projectId, () => {
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json())
+      .then((mRes) => {
+        const list = Array.isArray(mRes?.data?.members)
+          ? mRes.data.members
+          : Array.isArray(mRes?.data)
+            ? mRes.data
+            : [];
+        setMembers(list);
+      })
+      .catch(() => undefined);
+  });
 
   // Grouped Kanban is active-work only — default filter ("all") already
   // unions every ACTIVE sprint server-side. No auto-lock needed.

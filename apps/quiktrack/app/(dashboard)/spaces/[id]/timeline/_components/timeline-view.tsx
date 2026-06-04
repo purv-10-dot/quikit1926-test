@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import type { Col, Member, TimelineIssue, ZoomLevel } from "./timeline-meta";
 import {
   WORK_COL_WIDTH,
@@ -89,6 +90,22 @@ export function TimelineView({ projectId }: { projectId: string }) {
       alive = false;
     };
   }, [projectId]);
+
+  // Refetch members when membership changes via the Add-people modal.
+  useMembersChanged(projectId, () => {
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j?.success) return;
+        const list = Array.isArray(j.data?.members)
+          ? j.data.members
+          : Array.isArray(j.data)
+            ? j.data
+            : [];
+        setMembers(list);
+      })
+      .catch(() => undefined);
+  });
 
   // Root-level fetch: epics only.
   const loadEpics = useCallback(
