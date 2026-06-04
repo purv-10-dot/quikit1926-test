@@ -7,6 +7,22 @@ interface EpicLite {
   id: string;
   key: string;
   title: string;
+  startDate: string | null;
+  dueDate: string | null;
+}
+
+function fmtDate(d: string | null): string {
+  if (!d) return "None";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "None";
+  return dt.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+}
+
+interface EpicProgress {
+  done: number;
+  inProgress: number;
+  todo: number;
+  total: number;
 }
 
 const EPIC_PAGE = 20;
@@ -38,6 +54,9 @@ export function EpicPanel({
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Per-epic progress (done / in-progress / todo) for the stacked bar, sourced
+  // from the same summary endpoint the Summary tab uses. Keyed by epic id.
+  const [progress, setProgress] = useState<Map<string, EpicProgress>>(new Map());
 
   // Refs keep loadMore stable (deps: [projectId]) without stale cursor reads.
   const cursorRef = useRef<string | null>(null);
@@ -59,6 +78,8 @@ export function EpicPanel({
             id: e.id,
             key: e.key,
             title: e.title,
+            startDate: e.startDate ?? null,
+            dueDate: e.dueDate ?? null,
           }));
           setEpics((prev) => (initial ? fresh : [...prev, ...fresh]));
           cursorRef.current = res.nextCursor ?? null;
@@ -73,12 +94,28 @@ export function EpicPanel({
     [projectId],
   );
 
-  // Initial page.
+  const loadProgress = useCallback(() => {
+    fetch(`/api/projects/${projectId}/summary`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (!res?.success) return;
+        const rows = (res.data?.epicProgress ?? []) as Array<{ id: string } & EpicProgress>;
+        const m = new Map<string, EpicProgress>();
+        for (const e of rows) {
+          m.set(e.id, { done: e.done, inProgress: e.inProgress, todo: e.todo, total: e.total });
+        }
+        setProgress(m);
+      })
+      .catch(() => undefined);
+  }, [projectId]);
+
+  // Initial page + progress.
   useEffect(() => {
     cursorRef.current = null;
     hasMoreRef.current = true;
     void loadMore(true);
-  }, [loadMore]);
+    loadProgress();
+  }, [loadMore, loadProgress]);
 
   // Infinite scroll — load the next page as the sentinel scrolls into view.
   useEffect(() => {
@@ -102,10 +139,11 @@ export function EpicPanel({
       cursorRef.current = null;
       hasMoreRef.current = true;
       void loadMore(true);
+      loadProgress();
     }
     window.addEventListener("quiktrack:issue-updated", reload);
     return () => window.removeEventListener("quiktrack:issue-updated", reload);
-  }, [loadMore]);
+  }, [loadMore, loadProgress]);
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -135,6 +173,7 @@ export function EpicPanel({
         cursorRef.current = null;
         hasMoreRef.current = true;
         await loadMore(true);
+        loadProgress();
         onCreated();
       }
     } finally {
@@ -165,13 +204,51 @@ export function EpicPanel({
                 <span className="h-3 w-3 shrink-0 rounded-sm bg-purple-500" />
                 <span className="truncate text-sm text-gray-800">{e.title}</span>
               </button>
+              {/* Progress bar (Done / In progress / To do) — mirrors Summary,
+                  with a styled hover tooltip showing the per-status breakdown. */}
+              {(() => {
+                const p = progress.get(e.id);
+                const t = Math.max(1, p?.total ?? 0);
+                const donePct = p ? (p.done / t) * 100 : 0;
+                const inProgPct = p ? (p.inProgress / t) * 100 : 0;
+                const total = p?.total ?? 0;
+                const rows = p
+                  ? [
+                      { label: "Done", count: p.done },
+                      { label: "In Progress", count: p.inProgress },
+                      { label: "To Do", count: p.todo },
+                    ].filter((r) => r.count > 0)
+                  : [];
+                return (
+                  <div className="group/bar relative mx-2 mb-2">
+                    <div className="flex h-1.5 overflow-hidden rounded-full bg-gray-200">
+                      <div className="h-full bg-green-500" style={{ width: `${donePct}%` }} />
+                      <div className="h-full bg-blue-500" style={{ width: `${inProgPct}%` }} />
+                    </div>
+                    <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden whitespace-nowrap rounded-md bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-lg group-hover/bar:block">
+                      {total > 0 ? (
+                        rows.map((r) => (
+                          <div key={r.label}>
+                            {r.label}: {r.count} of {total} (work item{r.count === 1 ? "" : "s"})
+                          </div>
+                        ))
+                      ) : (
+                        <div>No work items</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               {isOpen && (
-                <div className="px-3 pb-3 pl-8 text-xs text-gray-500">
-                  <p className="font-mono text-[10px] text-gray-400">{e.key}</p>
+                <div className="px-3 pb-3 pl-8 text-xs">
+                  <p className="text-gray-500">Start date</p>
+                  <p className="mb-2 text-amber-700">{fmtDate(e.startDate)}</p>
+                  <p className="text-gray-500">Due date</p>
+                  <p className="mb-2 text-amber-700">{fmtDate(e.dueDate)}</p>
                   <button
                     type="button"
                     onClick={() => onOpenEpic(e.id)}
-                    className="mt-2 w-full rounded border border-gray-200 px-2 py-1.5 text-center text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    className="mt-1 w-full rounded border border-gray-200 px-2 py-1.5 text-center text-xs font-medium text-gray-700 hover:bg-gray-50"
                   >
                     View all details
                   </button>

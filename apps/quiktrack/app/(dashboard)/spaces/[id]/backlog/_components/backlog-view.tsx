@@ -1147,6 +1147,10 @@ function IssueRow({
   const meta = TYPE_META[issue.type];
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(issue.title);
+  // Tooltip shown only when the title is actually clipped (scrollWidth >
+  // clientWidth). Recomputed on each hover so it tracks resize/zoom.
+  const [showTitleTip, setShowTitleTip] = useState(false);
+  const titleRef = useRef<HTMLSpanElement>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
@@ -1323,21 +1327,28 @@ function IssueRow({
         </div>
       ) : (
         <div
-          className="group/ttip relative flex-1 flex items-center gap-1.5 min-w-0"
+          className="relative flex-1 flex items-center gap-1.5 min-w-0"
+          onMouseEnter={() => {
+            const el = titleRef.current;
+            setShowTitleTip(!!el && el.scrollWidth > el.clientWidth);
+          }}
+          onMouseLeave={() => setShowTitleTip(false)}
           onClick={() => {
             setTitleDraft(issue.title);
             setTitleEditing(true);
           }}
         >
-          <span className={`text-sm truncate cursor-text ${isDone ? "text-gray-400 line-through" : "text-gray-900"}`}>{issue.title}</span>
+          <span ref={titleRef} className={`text-sm truncate cursor-text ${isDone ? "text-gray-400 line-through" : "text-gray-900"}`}>{issue.title}</span>
           <Pencil className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
-          {/* Hover tooltip — full (untruncated) title. */}
-          <span
-            role="tooltip"
-            className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden max-w-md whitespace-normal break-words rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-normal normal-case text-gray-800 shadow-lg group-hover/ttip:block dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-          >
-            {issue.title}
-          </span>
+          {/* Tooltip — only when the title is truncated; full title, dark style. */}
+          {showTitleTip && (
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute left-0 top-full z-50 mt-1 max-w-md whitespace-normal break-words rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal normal-case text-white shadow-lg"
+            >
+              {issue.title}
+            </span>
+          )}
         </div>
       )}
 
