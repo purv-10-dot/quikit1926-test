@@ -11,6 +11,7 @@ import {
 } from "@quikit/ui";
 import { StyledSelect } from "./styled-select";
 import { RolePicker } from "./role-picker";
+import { emitMembersChanged } from "@/lib/hooks/useMembersChanged";
 
 interface OrgUser {
   userId: string;
@@ -83,6 +84,7 @@ function Drawer({ projectId, onClose }: { projectId: string; onClose: () => void
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["quiktrack", "project-members", projectId] });
+      emitMembersChanged(projectId);
       onClose();
     },
     onError: (e: Error) => setError(e.message),
@@ -115,6 +117,8 @@ function Drawer({ projectId, onClose }: { projectId: string; onClose: () => void
         value={userId}
         onChange={setUserId}
         placeholder="Select a user…"
+        searchable
+        searchPlaceholder="Search by name or email…"
         options={users.map((u) => ({
           value: u.userId,
           label: `${u.firstName} ${u.lastName}`.trim() || u.email,
