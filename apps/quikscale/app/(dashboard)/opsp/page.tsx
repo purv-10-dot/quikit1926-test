@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -24,6 +24,8 @@ import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { EditNoteCard } from "./components/EditNoteCard";
 import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, type PendingEdit } from "./lib/editLog";
+import { useOpspAck } from "@/lib/hooks/useOpspAck";
+import { editedFieldPaths, fieldMatchesEdited, latestEdit, type EditLogLike } from "@/lib/utils/opspEditHighlight";
 
 /* ═══════════════════════════════════════════════
    Main Page
@@ -336,6 +338,52 @@ export default function OPSPPage() {
     window.dispatchEvent(new Event("opsp-finalized"));
   };
 
+  /* ── Post-finalize "what changed" highlight ──
+     For a finalized OPSP, fetch the edit-log, highlight the changed fields the
+     FIRST time each user views them, and let them acknowledge via the History
+     drawer footer ("Mark changes as reviewed"). The acknowledgement is stored
+     per user/device and re-surfaces when a newer edit lands. */
+  const userId = (session?.user as { id?: string } | undefined)?.id ?? "anon";
+  const [editLog, setEditLog] = useState<EditLogLike[]>([]);
+  useEffect(() => {
+    if (!isFinalized) { setEditLog([]); return; }
+    let cancelled = false;
+    fetch(`/api/opsp/edit-log?year=${form.year}&quarter=${form.quarter}`)
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled && j?.success) setEditLog(j.data as EditLogLike[]); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isFinalized, form.year, form.quarter, historyOpen]);
+  // The Form's highlight/banner/footer surface only edits made by SOMEONE ELSE
+  // — a user doesn't need their own post-finalize edits flagged back to them.
+  // (The History drawer still lists the full history, incl. the user's own.)
+  const othersEditLog = useMemo(
+    () => editLog.filter((e) => e.actorId !== userId),
+    [editLog, userId],
+  );
+  const latestChange = useMemo(() => latestEdit(othersEditLog), [othersEditLog]);
+  const editedPaths = useMemo(() => new Set(editedFieldPaths(othersEditLog)), [othersEditLog]);
+  const { unacknowledged, acknowledge } = useOpspAck(
+    userId, form.year, form.quarter, "form", latestChange?.ts ?? 0,
+  );
+  const showChangedHighlight = isFinalized && unacknowledged && editedPaths.size > 0;
+
+  // Toggle the persistent "changed after finalize" ring on tagged fields. Same
+  // imperative pattern as `opsp-edit-active`; distinct class so the two never clash.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const els = document.querySelectorAll<HTMLElement>("[data-opsp-field]");
+    els.forEach((el) => {
+      const matched = showChangedHighlight && fieldMatchesEdited(el.dataset.opspField ?? "", editedPaths);
+      el.classList.toggle("opsp-edit-changed", matched);
+    });
+    return () => {
+      document
+        .querySelectorAll<HTMLElement>(".opsp-edit-changed")
+        .forEach((el) => el.classList.remove("opsp-edit-changed"));
+    };
+  }, [showChangedHighlight, editedPaths]);
+
   /* ── Header save indicator ── */
   const SaveBadge = () => {
     if (saveState === "saving") return <span className="flex items-center gap-1 text-xs text-gray-400"><Loader2 className="h-3 w-3 animate-spin" />Saving…</span>;
@@ -639,6 +687,34 @@ export default function OPSPPage() {
         </div>
       )}
 
+      {/* ── "Edited after finalize" notice ──
+         Shown the first time a user views post-finalize changes (until they
+         acknowledge via the History drawer footer). The changed fields are
+         ringed in amber below. Tells read-only viewers WHO changed it and how
+         to inspect the changes. */}
+      {showChangedHighlight && (
+        <div className="mx-6 mt-3 flex items-center justify-between gap-3 px-4 py-3 bg-amber-50/70 border border-amber-200 rounded-xl">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+              <History className="h-4 w-4 text-amber-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-800 truncate">
+                This OPSP was edited after it was finalized
+                {latestChange?.actorName ? ` by ${latestChange.actorName}` : ""}
+              </p>
+              <p className="text-xs text-amber-600">The changed fields are highlighted below — open History to review them.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+          >
+            <History className="h-3.5 w-3.5" /> Open History
+          </button>
+        </div>
+      )}
+
       <div className={cn("px-6 py-6 space-y-8", isLocked && "opsp-finalized")}>
 
         {/* ══════════════════════════ PEOPLE ══════════════════════════ */}
@@ -655,7 +731,7 @@ export default function OPSPPage() {
                 <div key={key} className="flex-1 min-w-[220px]">
                   <p className="text-sm font-medium text-gray-700 mb-2 capitalize">{["Employees","Customers","Shareholders"][ci]}</p>
                   <Card className="space-y-2">
-                    {[0,1,2].map(i => <FInput key={i} value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} />)}
+                    {[0,1,2].map(i => <div key={i} data-opsp-field={`${key}.${i}`}><FInput value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} /></div>)}
                   </Card>
                 </div>
               ))}
@@ -688,7 +764,7 @@ export default function OPSPPage() {
               <div key={key}>
                 <p className="text-sm font-medium text-gray-700 mb-2">{["Strengths/Core Competencies","Weaknesses:"][ci]}</p>
                 <Card className="space-y-2">
-                  {[0,1,2].map(i => <FInput key={i} value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} />)}
+                  {[0,1,2].map(i => <div key={i} data-opsp-field={`${key}.${i}`}><FInput value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} /></div>)}
                 </Card>
               </div>
             ))}
@@ -706,7 +782,7 @@ export default function OPSPPage() {
               <div key={key}>
                 <p className="text-sm font-medium text-gray-700 mb-2">{["Make/Buy","Sell","Record Keeping"][ci]}</p>
                 <Card className="space-y-2">
-                  {[0,1,2].map(i => <FInput key={i} value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} />)}
+                  {[0,1,2].map(i => <div key={i} data-opsp-field={`${key}.${i}`}><FInput value={(form[key] as string[])[i]} onChange={v => setArr(key, i, v)} /></div>)}
                 </Card>
               </div>
             ))}
@@ -736,9 +812,9 @@ export default function OPSPPage() {
                 <Card key={col} className="space-y-2">
                   {[0,1,2].map(row => {
                     const idx = col * 3 + row;
-                    return <FInput key={row} value={form.trends[idx] ?? ""} onChange={v => {
+                    return <div key={row} data-opsp-field={`trends.${idx}`}><FInput value={form.trends[idx] ?? ""} onChange={v => {
                       const next = [...form.trends]; next[idx] = v; set("trends", next);
-                    }} />;
+                    }} /></div>;
                   })}
                 </Card>
               ))}
@@ -777,6 +853,11 @@ export default function OPSPPage() {
         currentValue={(f) => getFieldValue(form as unknown as Record<string, unknown>, f)}
         onApplyValue={applyDrawerValue}
         onEditNote={editDrawerNote}
+        ackFooter={
+          isFinalized && editedPaths.size > 0
+            ? { acknowledged: !unacknowledged, onAcknowledge: acknowledge, actorName: latestChange?.actorName }
+            : undefined
+        }
       />
     </div>
   );

@@ -67,6 +67,7 @@ export function ActionsSection({
             {form.actionsQtr.map((row, i) => (
               <div
                 key={i}
+                data-opsp-field={`actionsQtr.${i}`}
                 className="grid grid-cols-[1fr_auto] gap-1.5 items-start py-0.5 group"
               >
                 <div className="grid grid-cols-5 gap-1.5 items-start">
@@ -174,7 +175,7 @@ export function ActionsSection({
           </div>
           <div className="divide-y divide-gray-100">
             {form.rocks.map((row, i) => (
-              <div key={i} className="flex items-center gap-1.5 py-1.5">
+              <div key={i} data-opsp-field={`rocks.${i}`} className="flex items-center gap-1.5 py-1.5">
                 <span className="text-xs text-gray-400 w-5 flex-shrink-0">
                   {String(i + 1).padStart(2, "0")}
                 </span>

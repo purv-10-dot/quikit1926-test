@@ -57,6 +57,7 @@ export function AccountabilitySection({
               {form.kpiAccountability.map((row, i) => (
                 <tr
                   key={i}
+                  data-opsp-field={`kpiAccountability.${i}`}
                   className="border-b border-gray-200 last:border-b-0"
                 >
                   <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">
@@ -128,6 +129,7 @@ export function AccountabilitySection({
               {form.quarterlyPriorities.map((row, i) => (
                 <tr
                   key={i}
+                  data-opsp-field={`quarterlyPriorities.${i}`}
                   className="border-b border-gray-200 last:border-b-0"
                 >
                   <td className="border-r border-gray-200 px-3 py-2.5 text-xs text-gray-400 text-center w-12">

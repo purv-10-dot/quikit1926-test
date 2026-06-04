@@ -169,3 +169,15 @@ html.dark .glass {
   border-radius: 0.375rem;
   transition: box-shadow 0.15s ease;
 }
+
+/* OPSP "edited after finalize" highlight: amber ring on fields/rows changed
+   after the OPSP was finalized, shown until the viewer acknowledges via the
+   History drawer footer. Toggled imperatively in opsp/page.tsx (Form) and via
+   row classNames in the Review table. Amber = semantic "attention/changed",
+   distinct from the accent live-edit ring above. */
+.opsp-edit-changed {
+  box-shadow: 0 0 0 2px #f59e0b !important;
+  border-radius: 0.375rem;
+  background: rgba(245, 158, 11, 0.06);
+  transition: box-shadow 0.15s ease;
+}

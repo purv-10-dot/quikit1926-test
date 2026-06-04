@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RightPanel } from "@quikit/ui";
-import { ChevronDown, ChevronRight, Clock, FileText, Pencil, Check, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, FileText, Pencil, Check, X, Eye } from "lucide-react";
 
 interface EditLogEntry {
   id: string;
@@ -45,6 +45,7 @@ export function OPSPHistoryDrawer({
   onApplyValue,
   onEditNote,
   fields,
+  ackFooter,
 }: {
   open: boolean;
   onClose: () => void;
@@ -65,6 +66,14 @@ export function OPSPHistoryDrawer({
     note: string,
   ) => Promise<unknown> | void;
   onEditNote?: (id: string, note: string) => Promise<unknown> | void;
+  /** Optional sticky footer to acknowledge ("mark reviewed") the post-finalize
+   *  highlights shown behind the drawer. When acknowledged the button disables
+   *  and the host page clears its highlights. */
+  ackFooter?: {
+    acknowledged: boolean;
+    onAcknowledge: () => void;
+    actorName?: string;
+  };
 }) {
   const [entries, setEntries] = useState<EditLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -156,6 +165,42 @@ export function OPSPHistoryDrawer({
       title="OPSP edit history"
       subtitle={`Changes after finalize · ${quarter} ${year}`}
       size="md"
+      footer={
+        ackFooter ? (
+          <div className="flex items-center justify-between w-full gap-2">
+            <span className="text-[11px] text-gray-500 truncate">
+              {ackFooter.actorName
+                ? `Latest change by ${ackFooter.actorName}`
+                : "Post-finalize changes"}
+            </span>
+            <button
+              type="button"
+              onClick={ackFooter.onAcknowledge}
+              disabled={ackFooter.acknowledged}
+              className={
+                ackFooter.acknowledged
+                  ? "inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-400 cursor-not-allowed"
+                  : "inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-700"
+              }
+              title={
+                ackFooter.acknowledged
+                  ? "You've reviewed these changes"
+                  : "Mark these changes as reviewed and hide the highlights"
+              }
+            >
+              {ackFooter.acknowledged ? (
+                <>
+                  <Check className="h-3.5 w-3.5" /> Reviewed
+                </>
+              ) : (
+                <>
+                  <Eye className="h-3.5 w-3.5" /> Mark changes as reviewed
+                </>
+              )}
+            </button>
+          </div>
+        ) : undefined
+      }
     >
       {groups.length > 0 && (
         <div className="flex items-center justify-between pb-2">
