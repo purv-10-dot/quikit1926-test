@@ -5,18 +5,14 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createIssueSchema } from "@/lib/validation/issue";
 import { getDefaultStatusId } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
-import { userCanInProject, forbidden } from "@/lib/api/permissions";
+import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 
 async function userIsProjectMember(
   userId: string,
   orgId: string,
   projectId: string,
 ): Promise<boolean> {
-  const m = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  if (m?.role === "admin" || m?.role === "owner") return true;
+  if (await hasAdminAccess(userId, orgId)) return true;
   const pm = await db.qtProjectMember.findFirst({
     where: { projectId, userId, isDeleted: false },
     select: { id: true },

@@ -15,9 +15,11 @@
  * Why required > readonly: a required row pins the field as "must be filled"
  * but still expects a value, so it's more permissive than read-only.
  *
- * Tenant admins bypass everything — empty map (i.e., "no restrictions").
+ * Global admins (tenant admin OR app admin) bypass everything — empty map
+ * (i.e., "no restrictions").
  */
 import { db } from "@/lib/db";
+import { hasAdminAccess } from "@/lib/api/permissions";
 import {
   DEFAULT_FIELD_LEVEL,
   FIELD_TREE,
@@ -42,11 +44,7 @@ export async function getEffectiveFieldLevels(
   projectId: string,
   entity: string,
 ): Promise<Map<string, FieldLevel>> {
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  if (tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner") {
+  if (await hasAdminAccess(userId, orgId)) {
     return new Map();
   }
 

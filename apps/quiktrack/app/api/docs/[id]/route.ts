@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
+import type { Action } from "@/lib/api/permissionsRegistry";
 
 /**
  * Single-doc routes — also raw-SQL backed because the local Prisma client is
@@ -33,24 +35,19 @@ async function loadDoc(orgId: string, docId: string): Promise<DocRow | null> {
   return rows[0] ?? null;
 }
 
-async function userHasProjectAccess(
+/**
+ * Doc permission: global admins (tenant/app) bypass; everyone else is gated by
+ * their custom project role (Doc:view / Doc:update / Doc:delete). Replaces the
+ * old legacy-VIEWER + org-tier check.
+ */
+async function canDoc(
   userId: string,
   orgId: string,
   projectId: string,
-): Promise<{ canRead: boolean; canWrite: boolean }> {
-  const member = await db.qtProjectMember.findFirst({
-    where: { projectId, userId, isDeleted: false },
-    select: { role: true },
-  });
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-  if (isAdmin) return { canRead: true, canWrite: true };
-  if (!member) return { canRead: false, canWrite: false };
-  const isViewer = member.role === "VIEWER";
-  return { canRead: true, canWrite: !isViewer };
+  action: Action,
+): Promise<boolean> {
+  if (await hasAdminAccess(userId, orgId)) return true;
+  return userCanInProject(userId, orgId, projectId, "Doc", action);
 }
 
 export const GET = withOrgAuth<{ id: string }>(
@@ -59,8 +56,7 @@ export const GET = withOrgAuth<{ id: string }>(
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const access = await userHasProjectAccess(userId, orgId, doc.projectId);
-    if (!access.canRead) {
+    if (!(await canDoc(userId, orgId, doc.projectId, "view"))) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     return NextResponse.json({ success: true, data: doc });
@@ -78,8 +74,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const access = await userHasProjectAccess(userId, orgId, doc.projectId);
-    if (!access.canWrite) {
+    if (!(await canDoc(userId, orgId, doc.projectId, "update"))) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
     const parsed = patchSchema.safeParse(await req.json());
@@ -112,8 +107,7 @@ export const DELETE = withOrgAuth<{ id: string }>(
     if (!doc) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const access = await userHasProjectAccess(userId, orgId, doc.projectId);
-    if (!access.canWrite) {
+    if (!(await canDoc(userId, orgId, doc.projectId, "delete"))) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
     await db.$executeRaw`

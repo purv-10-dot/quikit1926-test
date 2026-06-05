@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 /**
  * Read-only history feed for an issue. Rows are written by the various PATCH
@@ -21,12 +22,7 @@ export const GET = withOrgAuth<{ id: string }>(
       where: { projectId: issue.projectId, userId, isDeleted: false },
       select: { id: true },
     });
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-    if (!access && !isAdmin) {
+    if (!access && !(await hasAdminAccess(userId, orgId))) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
     const rows = await db.qtIssueHistory.findMany({

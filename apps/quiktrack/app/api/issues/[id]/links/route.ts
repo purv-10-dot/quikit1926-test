@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 import { recordIssueEvent } from "@/lib/services/issueHistory";
 
 const LINK_TYPES = ["RELATES_TO"] as const;
@@ -33,12 +34,7 @@ async function loadAccessibleIssue(
     where: { projectId: issue.projectId, userId, isDeleted: false },
     select: { id: true },
   });
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-  if (!access && !isAdmin) return null;
+  if (!access && !(await hasAdminAccess(userId, orgId))) return null;
   return issue;
 }
 

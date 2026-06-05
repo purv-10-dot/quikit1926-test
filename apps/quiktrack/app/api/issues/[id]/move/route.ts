@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
 import { moveIssueSchema } from "@/lib/validation/issue";
 import {
   recordIssueChanges,
@@ -20,19 +21,12 @@ export const PATCH = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const member = await db.qtProjectMember.findFirst({
-      where: { projectId: issue.projectId, userId, isDeleted: false },
-      select: { role: true },
-    });
-    if (!member || member.role === "VIEWER") {
-      const tenantAdmin = await db.orgMember.findFirst({
-        where: { userId, orgId, status: "active" },
-        select: { role: true },
-      });
-      const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-      if (!isAdmin) {
-        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
-      }
+    // Global admins bypass; everyone else needs Issue:update via their role.
+    if (
+      !(await hasAdminAccess(userId, orgId)) &&
+      !(await userCanInProject(userId, orgId, issue.projectId, "Issue", "update"))
+    ) {
+      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
     const parsed = moveIssueSchema.safeParse(await req.json());
     if (!parsed.success) {

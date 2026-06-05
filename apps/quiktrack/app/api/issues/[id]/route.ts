@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { userCanInProject, forbidden } from "@/lib/api/permissions";
+import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { filterUpdatePayload } from "@/lib/api/fieldLevels";
 import { updateIssueSchema } from "@/lib/validation/issue";
 import { emailIssueAssigned, emailIssueStatusChanged } from "@/lib/email/sendEmail";
@@ -32,11 +32,7 @@ export const GET = withOrgAuth<{ id: string }>(
       where: { projectId: issue.projectId, userId, isDeleted: false },
       select: { id: true },
     });
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+    const isAdmin = await hasAdminAccess(userId, orgId);
     if (!access && !isAdmin) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
@@ -89,11 +85,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+    const isAdmin = await hasAdminAccess(userId, orgId);
     if (!isAdmin) {
       const member = await db.qtProjectMember.findFirst({
         where: { projectId: issue.projectId, userId, isDeleted: false },
@@ -291,11 +283,7 @@ export const DELETE = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+    const isAdmin = await hasAdminAccess(userId, orgId);
     if (!isAdmin) {
       const member = await db.qtProjectMember.findFirst({
         where: { projectId: issue.projectId, userId, isDeleted: false },

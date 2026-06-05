@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { userCanInProject, forbidden } from "@/lib/api/permissions";
+import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 
 const createCommentSchema = z.object({
   body: z.string().min(1).max(20_000),
@@ -22,12 +22,7 @@ async function loadAccessibleIssue(
     where: { projectId: issue.projectId, userId, isDeleted: false },
     select: { id: true },
   });
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-  if (!access && !isAdmin) return null;
+  if (!access && !(await hasAdminAccess(userId, orgId))) return null;
   return issue;
 }
 
@@ -76,11 +71,7 @@ export const POST = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+    const isAdmin = await hasAdminAccess(userId, orgId);
     if (!isAdmin && !(await userCanInProject(userId, orgId, issue.projectId, "IssueComment", "create"))) {
       return forbidden();
     }

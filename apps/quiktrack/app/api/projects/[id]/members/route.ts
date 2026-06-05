@@ -149,5 +149,5 @@ export const POST = withProjectAccess<{ id: string }>(
       { status: 201 },
     );
   },
-  { paramKey: "id", requireRoles: ["PROJECT_ADMIN"] },
+  { paramKey: "id", requirePermission: { resource: "ProjectMember", action: "create" } },
 );
