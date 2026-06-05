@@ -25,13 +25,17 @@ export async function logAudit(args: {
       data: {
         orgId: args.orgId,
         userId: args.userId,
-        actionType: args.actionType,
+        action: args.actionType,
         entityType: args.entityType,
         entityId: args.entityId,
-        entityRef: args.entityRef ?? null,
-        oldValues: (args.oldValues as Prisma.InputJsonValue) ?? undefined,
-        newValues: (args.newValues as Prisma.InputJsonValue) ?? undefined,
-        metadata: (args.metadata as Prisma.InputJsonValue) ?? undefined,
+        // CnAuditLog stores the diff in a single `changes` Json column; fold
+        // the structured fields the callers pass into it.
+        changes: {
+          ref: args.entityRef ?? null,
+          old: args.oldValues ?? null,
+          new: args.newValues ?? null,
+          meta: args.metadata ?? null,
+        } as Prisma.InputJsonValue,
       },
     });
   } catch (err) {

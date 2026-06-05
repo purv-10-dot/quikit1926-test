@@ -7,13 +7,16 @@
  * the first request touches the broken path.
  *
  * Contract:
- *   - Called once from `src/lib/db/prisma.ts` and `src/lib/auth/context.ts`
- *     (the two earliest-loaded server-side modules). Additional callers
- *     are free but not required — the cached result is reused.
+ *   - Called once from `lib/db.ts` (the central DB client re-export, the
+ *     earliest-loaded server-side module that every DB-touching route
+ *     imports). Additional callers are free but not required — the cached
+ *     result is reused.
  *   - Dev mode is permissive: missing optional vars default sensibly.
  *   - Production mode is strict: `NEXTAUTH_SECRET` and `DATABASE_URL`
- *     are REQUIRED. `STORAGE_DRIVER=local` is currently permitted (storage
- *     is not business-critical yet); note local storage is ephemeral.
+ *     are REQUIRED.
+ *
+ * Storage config is NOT validated here. File uploads read AWS_* directly in
+ * the storage layer (src/lib/storage) — same convention as quiktrack.
  *
  * Importing this module has a side effect (validation). That's intentional —
  * production boot should fail loudly on config errors. Never wrap in
@@ -46,22 +49,6 @@ const schema = z
     NEXTAUTH_SECRET: z.string().min(16, "NEXTAUTH_SECRET must be at least 16 chars").optional(),
     NEXTAUTH_URL: z.string().url().optional(),
 
-    // ── Storage ──────────────────────────────────────────────────
-    STORAGE_DRIVER: z.enum(["s3", "r2", "local"]).default("local"),
-    STORAGE_BUCKET: z.string().optional(),
-    STORAGE_UPLOAD_URL_TTL_SEC: z.coerce.number().int().positive().optional(),
-    STORAGE_DOWNLOAD_URL_TTL_SEC: z.coerce.number().int().positive().optional(),
-    STORAGE_S3_REGION: z.string().optional(),
-    STORAGE_S3_ACCESS_KEY_ID: z.string().optional(),
-    STORAGE_S3_SECRET_ACCESS_KEY: z.string().optional(),
-    STORAGE_R2_ACCOUNT_ID: z.string().optional(),
-    STORAGE_R2_ACCESS_KEY_ID: z.string().optional(),
-    STORAGE_R2_SECRET_ACCESS_KEY: z.string().optional(),
-    STORAGE_R2_ENDPOINT: z.string().url().optional(),
-    STORAGE_LOCAL_DIR: z.string().optional(),
-    STORAGE_LOCAL_BASE_URL: z.string().url().optional(),
-    STORAGE_LOCAL_SIGNING_SECRET: z.string().min(16).optional(),
-
     // ── Observability ────────────────────────────────────────────
     SENTRY_DSN: z.string().url().optional(),
     SENTRY_ENVIRONMENT: z.string().optional(),
@@ -87,32 +74,6 @@ const schema = z
           code: z.ZodIssueCode.custom,
           path: ["DATABASE_URL"],
           message: "DATABASE_URL is required in production",
-        });
-      }
-      // NOTE: STORAGE_DRIVER=local is permitted in production for now —
-      // storage is not a business-critical feature yet. Local storage on a
-      // pod is ephemeral (uploads are lost on restart/redeploy). Switch to
-      // s3/r2 before relying on file uploads in production.
-    }
-
-    // Storage driver sanity checks
-    if (env.STORAGE_DRIVER === "s3") {
-      if (!env.STORAGE_S3_REGION || !env.STORAGE_S3_ACCESS_KEY_ID || !env.STORAGE_S3_SECRET_ACCESS_KEY || !env.STORAGE_BUCKET) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["STORAGE_DRIVER"],
-          message:
-            "STORAGE_DRIVER=s3 requires STORAGE_S3_REGION, STORAGE_S3_ACCESS_KEY_ID, STORAGE_S3_SECRET_ACCESS_KEY, STORAGE_BUCKET",
-        });
-      }
-    }
-    if (env.STORAGE_DRIVER === "r2") {
-      if (!env.STORAGE_R2_ACCOUNT_ID || !env.STORAGE_R2_ACCESS_KEY_ID || !env.STORAGE_R2_SECRET_ACCESS_KEY || !env.STORAGE_BUCKET) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["STORAGE_DRIVER"],
-          message:
-            "STORAGE_DRIVER=r2 requires STORAGE_R2_ACCOUNT_ID, STORAGE_R2_ACCESS_KEY_ID, STORAGE_R2_SECRET_ACCESS_KEY, STORAGE_BUCKET",
         });
       }
     }

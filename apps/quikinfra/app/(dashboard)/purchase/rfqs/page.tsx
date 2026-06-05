@@ -13,6 +13,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Send, CheckCircle2, GitCompare } from "lucide-react";
 import { PageHeader, PageContainer, StatusChip, TabBar } from "@/components/PageShell";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { useRFQs, useIndents, useSubmitRFQ } from "@/hooks/use-approvals";
 import { useMenuActions } from "@/hooks/use-permissions";
@@ -60,6 +61,10 @@ export default function RFQsPage() {
   const [activeTab, setActiveTab] = useState("all");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [peekTarget, setPeekTarget] = useState<{ type: SourceDocType; id: string } | null>(null);
+  // RFQ awaiting submit confirmation — drives the ConfirmDialog (replaces
+  // the native window.confirm). `null` when the dialog is closed.
+  const [submitTarget, setSubmitTarget] = useState<any | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const { canAdd } = useMenuActions("/purchase/rfqs");
 
   // Item-picker modal state — the per-vendor "Assign items" button
@@ -107,11 +112,16 @@ export default function RFQsPage() {
     [allRows, activeTab],
   );
 
-  const handleSubmit = async (id: string) => {
-    if (!confirm("Submit this RFQ for approval?")) return;
+  const doSubmit = async () => {
+    if (!submitTarget) return;
+    setSubmitError(null);
     try {
-      await submitMutation.mutateAsync(id);
-    } catch { /* error toast handled globally */ }
+      await submitMutation.mutateAsync(submitTarget.id);
+      setSubmitTarget(null);
+    } catch (err: any) {
+      // Keep the dialog open so the user can read the failure reason.
+      setSubmitError(err?.message ?? "Failed to submit RFQ");
+    }
   };
 
   const { data: projectsData } = useProjects();
@@ -806,7 +816,8 @@ export default function RFQsPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleSubmit(row.id);
+                  setSubmitError(null);
+                  setSubmitTarget(row);
                 }}
                 className="p-1.5 rounded hover:bg-gray-100 text-orange-500"
                 title="Submit for Approval"
@@ -913,6 +924,36 @@ export default function RFQsPage() {
             `/purchase/orders?rfqId=${encodeURIComponent(compareCtx.rfqId)}&vendorRowId=${encodeURIComponent(vendorRowId)}`,
           );
         }}
+      />
+
+      <ConfirmDialog
+        open={!!submitTarget}
+        onClose={() => {
+          if (!submitMutation.isPending) {
+            setSubmitTarget(null);
+            setSubmitError(null);
+          }
+        }}
+        onConfirm={doSubmit}
+        title="Submit for Approval"
+        confirmLabel="Submit"
+        tone="primary"
+        loading={submitMutation.isPending}
+        message={
+          <>
+            Submit RFQ{" "}
+            <span className="font-semibold text-slate-900">
+              {submitTarget?.rfqNumber ?? submitTarget?.id}
+            </span>{" "}
+            for approval? It will be routed through the active RFQ workflow
+            and you won't be able to edit it until an approver returns it.
+            {submitError && (
+              <span className="mt-3 block rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {submitError}
+              </span>
+            )}
+          </>
+        }
       />
     </>
   );

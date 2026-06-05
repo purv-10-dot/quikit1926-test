@@ -16,8 +16,8 @@
  * `lineCount`, etc.).
  */
 
-import { db } from "@/lib/db/prisma";
-import { Prisma } from "../../../node_modules/.prisma-qc2/client";
+import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface StockTransferLine {
   itemId?: string | null;

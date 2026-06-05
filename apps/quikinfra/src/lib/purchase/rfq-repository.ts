@@ -10,7 +10,7 @@
  * fallback for legacy ids (same pattern as the indent repository).
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 
 // ─── Types ─────────────────────────────────────────────────────────

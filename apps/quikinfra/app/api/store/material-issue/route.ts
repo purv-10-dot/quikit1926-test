@@ -11,8 +11,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
   const issues = await db.cnMaterialIssue.findMany({
     where: {
       orgId,
-      deletedAt: includeDeleted ? { not: null } : null,
-      ...(status ? { status } : {}),
+      ...(status ? { status } : includeDeleted ? {} : { status: { not: "cancelled" } }),
     },
     include: {
       project: { select: { id: true, name: true } },
@@ -39,7 +38,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   if (!location) return NextResponse.json({ success: false, error: "Location not found" }, { status: 400 });
 
   const dup = await db.cnMaterialIssue.findFirst({
-    where: { orgId, issueNumber: input.issueNumber, deletedAt: null },
+    where: { orgId, issueNumber: input.issueNumber },
     select: { id: true },
   });
   if (dup) {
@@ -61,6 +60,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       purpose: input.purpose,
       status: "draft",
       createdBy: userId,
+      updatedBy: userId,
       lines: {
         create: input.lines.map((l) => ({
           itemId: l.itemId,

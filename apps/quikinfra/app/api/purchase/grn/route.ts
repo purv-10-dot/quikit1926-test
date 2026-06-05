@@ -12,7 +12,7 @@ import { getTenantContext, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findPOById } from "@/lib/purchase/po-repository";
 import { listGRNs, createGRN } from "@/lib/purchase/grn-repository";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { parsePagination } from "@/lib/http/pagination";
 
 /**

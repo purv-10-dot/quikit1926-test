@@ -1,6 +1,6 @@
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { BOQError } from "@/lib/boq";
 import { tenantCreate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
@@ -275,6 +275,7 @@ export async function POST(req: NextRequest) {
         weatherCondition: body.weatherCondition ?? body.weather ?? null,
         weatherDetail: parseStoredWeatherDetail(body.weatherDetail) ?? null,
         remarks: body.siteRemarks ?? null,
+        consumptionLocationId: body.consumptionLocationId ?? null,
         status: requestedStatus,
         workItems: {
           create: workItems.map((w: any) => ({

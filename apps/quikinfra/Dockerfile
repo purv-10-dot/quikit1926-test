@@ -85,27 +85,11 @@ RUN echo "[next-env-bake]" \
       "NEXTAUTH=$NEXTAUTH_URL" \
       > /tmp/.next-env-bake.txt && cat /tmp/.next-env-bake.txt
 
-# QuikInfra has TWO Prisma schemas: the shared platform schema
-# (packages/database) and its own dedicated `app_quikinfra` schema, which
-# generates to a custom output (node_modules/.prisma-qc2) to avoid clobbering
-# the shared client. Both must be generated before the build.
+# QuikInfra now runs on the single shared central Prisma client
+# (packages/database). The `app_quikinfra` tables are Postgres schemas inside
+# that one multi-schema datasource, so generating the central client is enough —
+# there is no longer a dedicated app-local schema or `.prisma-qc2` client.
 RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
-RUN npx prisma generate --schema=apps/quikinfra/prisma/schema.prisma
-# Generate app-tables.sql from the app-local datamodel (no DB introspection,
-# so it never trips P4002). The entrypoint applies this at runtime to create
-# the app's tables (Companies, Vendors, ...). Make CREATE TABLE/INDEX
-# idempotent so a re-apply is harmless even outside the entrypoint guard.
-RUN npx prisma migrate diff \
-      --from-empty \
-      --to-schema-datamodel apps/quikinfra/prisma/schema.prisma \
-      --script > app-tables.raw.sql \
- && sed -E \
-      -e 's/^CREATE TABLE /CREATE TABLE IF NOT EXISTS /' \
-      -e 's/^CREATE UNIQUE INDEX /CREATE UNIQUE INDEX IF NOT EXISTS /' \
-      -e 's/^CREATE INDEX /CREATE INDEX IF NOT EXISTS /' \
-      app-tables.raw.sql > app-tables.sql \
- && rm app-tables.raw.sql \
- && test -s app-tables.sql
 RUN mkdir -p apps/quikinfra/public
 RUN mkdir -p apps/quikinfra/.next/static
 # Write .env.production from ARG/ENV values so Next.js loadEnv()
@@ -145,82 +129,20 @@ COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/.next/static    
 COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/public          ./public
 COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/public          ./apps/quikinfra/public
 
-# Prisma clients (engine + generated bindings); standalone doesn't always trace
-# these. Two clients: the shared platform client (@prisma/.prisma) and the
-# dedicated app_quikinfra client (.prisma-qc2, custom output path).
-COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma                       ./node_modules/@prisma
-COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma                       ./node_modules/.prisma
-COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/node_modules/.prisma-qc2    ./apps/quikinfra/node_modules/.prisma-qc2
-
-# Prisma CLI + both schemas — needed so docker-entrypoint.sh can run
-# `prisma db push` against the live DB at startup (the image build only
-# generated the client; it never created the tables). db push is history-free,
-# so it works on a dump-restored DB where `migrate deploy` would fail (P3005).
-COPY --from=installer --chown=nextjs:nodejs /app/node_modules/prisma                         ./node_modules/prisma
-COPY --from=installer --chown=nextjs:nodejs /app/packages/database/prisma/schema.prisma      ./packages/database/prisma/schema.prisma
-COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/prisma/schema.prisma         ./apps/quikinfra/prisma/schema.prisma
-COPY --from=installer --chown=nextjs:nodejs /app/app-tables.sql                              ./app-tables.sql
-# Entrypoint is inlined here (single-file) via a heredoc. It reconciles the DB
-# before serving: (1) `prisma db push` the shared platform schema, then
-# (2) create the app-local tables from app-tables.sql — but only if they're
-# missing (guarded by probing app_quikinfra."Companies"). app-tables.sql is
-# generated at build via `migrate diff --from-empty`, so it has no cross-schema
-# FKs and never trips P4002. Creating all 73 app tables in one apply means every
-# masters/purchase/store API works. Bypass the whole sync with QC_SKIP_DB_SYNC=1.
-# (Quoted delimiter 'EOSH' => no build-time expansion; $VARS resolve at runtime.)
-COPY --chmod=0755 --chown=nextjs:nodejs <<'EOSH' ./docker-entrypoint.sh
-#!/bin/sh
-set -e
-
-PRISMA="node node_modules/prisma/build/index.js"
-
-if [ "${QC_SKIP_DB_SYNC}" = "1" ]; then
-  echo "[entrypoint] QC_SKIP_DB_SYNC=1 — skipping schema sync"
-else
-  echo "[entrypoint] syncing shared platform schema (packages/database)…"
-  $PRISMA db push \
-    --schema=packages/database/prisma/schema.prisma \
-    --skip-generate
-
-  echo "[entrypoint] checking app-local tables (apps/quikinfra)…"
-  # Probe for app_quikinfra."Companies" via the app's own .prisma-qc2 client.
-  # "present" => skip; anything else (incl. failure) => attempt creation.
-  # The heredoc body / closing APPCHECK must stay at column 0 (sh heredoc rule).
-APP_TABLES=$(node <<'APPCHECK'
-const { PrismaClient } = require("./apps/quikinfra/node_modules/.prisma-qc2/client");
-const db = new PrismaClient();
-db.$queryRawUnsafe('SELECT to_regclass(\'app_quikinfra."Companies"\') AS t')
-  .then((r) => process.stdout.write(r && r[0] && r[0].t != null ? "present" : "missing"))
-  .catch(() => process.stdout.write("missing"))
-  .finally(() => db.$disconnect());
-APPCHECK
-)
-
-  case "$APP_TABLES" in
-    *present*)
-      echo "[entrypoint] app-local tables already present — skipping"
-      ;;
-    *)
-      echo "[entrypoint] creating app-local tables (Companies, Vendors, Projects, Departments, Items, …) from app-tables.sql…"
-      $PRISMA db execute \
-        --schema=apps/quikinfra/prisma/schema.prisma \
-        --file app-tables.sql
-      echo "[entrypoint] app-local tables created"
-      ;;
-  esac
-
-  echo "[entrypoint] schema sync complete"
-fi
-
-echo "[entrypoint] starting server on :${PORT:-3006}"
-exec node apps/quikinfra/server.js
-EOSH
+# Prisma client (engine + generated bindings); standalone doesn't always trace
+# these. Single shared central client only (@prisma/.prisma) — the former
+# dedicated `.prisma-qc2` app client no longer exists.
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma  ./node_modules/@prisma
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma  ./node_modules/.prisma
 
 RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
 
 USER nextjs
 EXPOSE 3006
 
-# Entrypoint reconciles the DB schema (db push, both schemas) before serving.
-# Set QC_SKIP_DB_SYNC=1 to bypass when schema is managed out-of-band.
-CMD ["sh", "docker-entrypoint.sh"]
+# The central schema is owned and migrated out-of-band (integration owner /
+# Neon), exactly like quiktrack and quikscale. The container no longer runs
+# `prisma db push` at startup — pushing the full multi-schema datasource from
+# an app container would touch every other app's tables (app_quikscale,
+# app_quiktrack, auth, public, …) and is unsafe in production.
+CMD ["node", "apps/quikinfra/server.js"]

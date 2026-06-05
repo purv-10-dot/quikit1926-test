@@ -8,7 +8,7 @@ import {
   softDeleteIndent,
 } from "@/lib/purchase/indent-repository";
 import { resolveUserNames } from "@/lib/users/resolve-names";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 /**
  * Indent per-row endpoints — Postgres-backed.

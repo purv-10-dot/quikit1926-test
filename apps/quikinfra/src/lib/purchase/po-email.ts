@@ -9,7 +9,7 @@
  * mailer hit an SMTP hiccup.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 import { sendMail } from "@/lib/email/mailer";
 import { generatePoPdf, type PoPdfLine } from "./po-pdf";

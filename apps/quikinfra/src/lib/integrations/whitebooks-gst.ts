@@ -11,6 +11,23 @@
 
 import { logger } from "@/lib/observability/logger";
 
+/**
+ * v2 permission keys that may call the vendor GST endpoints. The vendor
+ * picker lives in the RFQ and PO drawers (and reads vendors off Indents),
+ * so any role that can view/create those documents must be able to verify
+ * a vendor's GST. These are the live `construction.*` keys seeded from
+ * PERMISSION_TREE — the previous `purchase.po.read` legacy keys never
+ * existed in the v2 tree, so no non-admin could pass the gate.
+ */
+export const VENDOR_PICKER_PERMISSIONS = [
+  "construction.rfq.view",
+  "construction.rfq.create",
+  "construction.po.view",
+  "construction.po.create",
+  "construction.indent.view",
+  "construction.indent.create",
+] as const;
+
 export function isWhitebooksGstVerifyEnabled(): boolean {
   const email = process.env.WHITEBOOKS_ACCOUNT_EMAIL?.trim();
   const clientId = process.env.WHITEBOOKS_CLIENT_ID?.trim();

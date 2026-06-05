@@ -13,9 +13,11 @@ import { createPortal } from "react-dom";
 import { Search, X, ChevronDown, Check, ChevronLeft, ChevronRight } from "lucide-react";
 
 type PopoverPosition = {
-  top: number;
+  top?: number;
+  bottom?: number;
   left: number;
   width: number;
+  maxHeight: number;
   placement: "below" | "above";
 };
 
@@ -42,10 +44,19 @@ function usePopoverPosition(
       const spaceAbove = r.top;
       const placement: "below" | "above" =
         spaceBelow >= estimatedHeight || spaceBelow >= spaceAbove ? "below" : "above";
-      const top = placement === "below" ? r.bottom + 4 : Math.max(8, r.top - estimatedHeight - 4);
       let left = r.left;
       if (left + width > vw - 8) left = Math.max(8, vw - width - 8);
-      setPos({ top, left, width, placement });
+      // Anchor to the edge of the trigger and let the popover grow toward
+      // the available space. For "above" we pin the popover's BOTTOM to the
+      // trigger's top so a short list hugs the trigger instead of floating
+      // up with a fixed-height gap. maxHeight keeps it inside the viewport.
+      if (placement === "below") {
+        const maxHeight = Math.max(120, Math.min(estimatedHeight, spaceBelow - 8));
+        setPos({ top: r.bottom + 4, left, width, maxHeight, placement });
+      } else {
+        const maxHeight = Math.max(120, Math.min(estimatedHeight, spaceAbove - 8));
+        setPos({ bottom: vh - r.top + 4, left, width, maxHeight, placement });
+      }
     };
     update();
     window.addEventListener("resize", update);
@@ -347,10 +358,12 @@ export function GroupedMaterialSelect({
           style={{
             position: "fixed",
             top: popoverPos.top,
+            bottom: popoverPos.bottom,
             left: popoverPos.left,
             width: popoverPos.width,
+            maxHeight: popoverPos.maxHeight,
           }}
-          className={`z-[100] bg-white ${ui.popover} shadow-lg max-h-72 overflow-hidden flex flex-col`}
+          className={`z-[100] bg-white ${ui.popover} shadow-lg overflow-hidden flex flex-col`}
         >
           <div className={`flex items-center gap-2 ${ui.searchWrap} border-b border-gray-100`}>
             {step === "items" && (
@@ -654,10 +667,12 @@ export function GroupedMaterialMultiSelect({
           style={{
             position: "fixed",
             top: popoverPos.top,
+            bottom: popoverPos.bottom,
             left: popoverPos.left,
             width: popoverPos.width,
+            maxHeight: popoverPos.maxHeight,
           }}
-          className="z-[100] max-h-72 overflow-hidden flex flex-col rounded-lg border border-gray-200 bg-white shadow-lg ring-1 ring-black/5"
+          className="z-[100] overflow-hidden flex flex-col rounded-lg border border-gray-200 bg-white shadow-lg ring-1 ring-black/5"
         >
           <div className="flex items-center gap-2 px-2.5 py-2 border-b border-gray-100">
             {step === "items" && (

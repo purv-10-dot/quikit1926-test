@@ -24,7 +24,7 @@
 
 import { createHash, randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24h

@@ -47,7 +47,7 @@ import {
 import { SelectInput } from "@/components/FormDrawer";
 import { GroupedMaterialSelect } from "@/components/GroupedMaterialSelect";
 import { DPRWeatherMetrics } from "@/components/DPRWeatherMetrics";
-import { useProjects, useItems, useItemGroups, useUOMs, useContractors } from "@/hooks/use-masters";
+import { useProjects, useItems, useItemGroups, useUOMs, useContractors, useLocations } from "@/hooks/use-masters";
 import { useWorkOrders } from "@/hooks/use-projects";
 import { BOQActivityPickerModal } from "../../work-orders/new/BOQActivityPickerModal";
 import {
@@ -77,27 +77,16 @@ interface WorkItem {
 
 interface MaterialRow {
   itemId: string;
-  itemName: string;
-  uomCode: string;
-  totalTender: string;
-  prevReceived: string;
-  todayReceived: string;
-  prevUsed: string;
-  todayUsed: string;
+  consumedQty: string;
+  remarks: string;
 }
 
 interface ManpowerRow {
   contractorId: string;
-  workingArea: string;
-  messan: string;
-  maleHelper: string;
-  femaleHelper: string;
-  carpenter: string;
-  fitter: string;
-  painter: string;
-  plumber: string;
-  electrician: string;
-  operator: string;
+  category: string;
+  skillType: string;
+  count: string;
+  hoursWorked: string;
 }
 
 interface StaffRow {
@@ -132,27 +121,16 @@ const newWorkItem = (): WorkItem => ({
 
 const newMaterial = (): MaterialRow => ({
   itemId: "",
-  itemName: "",
-  uomCode: "",
-  totalTender: "0",
-  prevReceived: "0",
-  todayReceived: "0",
-  prevUsed: "0",
-  todayUsed: "0",
+  consumedQty: "0",
+  remarks: "",
 });
 
 const newManpower = (): ManpowerRow => ({
   contractorId: "",
-  workingArea: "",
-  messan: "0",
-  maleHelper: "0",
-  femaleHelper: "0",
-  carpenter: "0",
-  fitter: "0",
-  painter: "0",
-  plumber: "0",
-  electrician: "0",
-  operator: "0",
+  category: "",
+  skillType: "",
+  count: "0",
+  hoursWorked: "0",
 });
 
 const newStaff = (): StaffRow => ({
@@ -196,18 +174,43 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const { data: itemGroupsResult } = useItemGroups();
   const { data: uomsResult } = useUOMs();
   const { data: contractorsResult } = useContractors();
+  const { data: locationsResult } = useLocations();
 
   const projects = projectsResult?.data ?? [];
   const items = (itemsResult?.data ?? []) as any[];
   const itemGroups = (itemGroupsResult?.data ?? []) as any[];
   const uoms = (uomsResult?.data ?? []) as any[];
   const contractors = (contractorsResult?.data ?? []) as any[];
+  const locations = (locationsResult?.data ?? []) as any[];
 
   // Header state
   const [projectId, setProjectId] = useState(() => editData?.projectId ?? "");
+  // Where consumed materials are deducted from on approval. Required by the
+  // approve endpoint whenever the DPR logs material consumption.
+  const [consumptionLocationId, setConsumptionLocationId] = useState(
+    () => editData?.consumptionLocationId ?? "",
+  );
+  // Project dropdown options. In EDIT mode the DPR's own project must always
+  // be selectable even if the (user-scoped / still-loading / inactive)
+  // projects list doesn't include it — otherwise a DPR that already has a
+  // project shows the empty "Select Project…" placeholder.
+  const projectOptions = useMemo(() => {
+    const opts = (projects as any[]).map((p) => ({ value: p.id, label: p.name }));
+    if (editData?.projectId && !opts.some((o) => o.value === editData.projectId)) {
+      opts.unshift({
+        value: editData.projectId,
+        label: editData.projectName || "Current project",
+      });
+    }
+    return opts;
+  }, [projects, editData?.projectId, editData?.projectName]);
   const selectedProject = useMemo(
-    () => (projects as any[]).find((p) => p.id === projectId),
-    [projects, projectId],
+    () =>
+      (projects as any[]).find((p) => p.id === projectId) ??
+      (editData?.projectId && editData.projectId === projectId
+        ? { id: editData.projectId, name: editData.projectName || "Current project" }
+        : undefined),
+    [projects, projectId, editData?.projectId, editData?.projectName],
   );
 
   // Work Orders for the selected project (drives the Contractor/WO dropdown
@@ -319,28 +322,17 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const [materials, setMaterials] = useState<MaterialRow[]>(() =>
     (editData?.materials ?? []).map((m: any) => ({
       itemId: m.itemId ?? "",
-      itemName: m.itemName ?? "",
-      uomCode: m.uomCode ?? "",
-      totalTender: String(m.totalTender ?? "0"),
-      prevReceived: String(m.prevReceived ?? "0"),
-      todayReceived: String(m.todayReceived ?? "0"),
-      prevUsed: String(m.prevUsed ?? "0"),
-      todayUsed: String(m.todayUsed ?? "0"),
+      consumedQty: String(m.consumedQty ?? "0"),
+      remarks: m.remarks ?? "",
     }))
   );
   const [manpower, setManpower] = useState<ManpowerRow[]>(() =>
     (editData?.manpower ?? []).map((m: any) => ({
       contractorId: m.contractorId ?? "",
-      workingArea: m.workingArea ?? "",
-      messan: String(m.messan ?? "0"),
-      maleHelper: String(m.maleHelper ?? "0"),
-      femaleHelper: String(m.femaleHelper ?? "0"),
-      carpenter: String(m.carpenter ?? "0"),
-      fitter: String(m.fitter ?? "0"),
-      painter: String(m.painter ?? "0"),
-      plumber: String(m.plumber ?? "0"),
-      electrician: String(m.electrician ?? "0"),
-      operator: String(m.operator ?? "0"),
+      category: m.category ?? "",
+      skillType: m.skillType ?? "",
+      count: String(m.count ?? "0"),
+      hoursWorked: String(m.hoursWorked ?? "0"),
     }))
   );
   const [staff, setStaff] = useState<StaffRow[]>(() =>
@@ -433,21 +425,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const addMaterial = () => setMaterials((p) => [...p, newMaterial()]);
   const updateMaterial = (idx: number, field: keyof MaterialRow, value: string) =>
     setMaterials((prev) =>
-      prev.map((row, i) => {
-        if (i !== idx) return row;
-        const next = { ...row, [field]: value };
-        if (field === "itemId") {
-          const item = items.find((it) => it.id === value);
-          if (item) {
-            next.itemName = item.name ?? "";
-            next.uomCode = item.uomCode ?? "";
-          } else {
-            next.itemName = "";
-            next.uomCode = "";
-          }
-        }
-        return next;
-      })
+      prev.map((row, i) => (i !== idx ? row : { ...row, [field]: value }))
     );
   const removeMaterial = (idx: number) =>
     setMaterials((prev) => prev.filter((_, i) => i !== idx));
@@ -461,20 +439,6 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const removeManpower = (idx: number) =>
     setManpower((prev) => prev.filter((_, i) => i !== idx));
 
-  const manpowerTotal = (row: ManpowerRow) => {
-    const n = (v: string) => parseInt(v) || 0;
-    return (
-      n(row.messan) +
-      n(row.maleHelper) +
-      n(row.femaleHelper) +
-      n(row.carpenter) +
-      n(row.fitter) +
-      n(row.painter) +
-      n(row.plumber) +
-      n(row.electrician) +
-      n(row.operator)
-    );
-  };
 
   // ── Staff handlers ──
   const addStaff = () => setStaff((p) => [...p, newStaff()]);
@@ -511,6 +475,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
     try {
       const payload = {
         projectId,
+        consumptionLocationId: consumptionLocationId || null,
         reportDate,
         weatherCondition,
         weatherDetail,
@@ -542,42 +507,20 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
         }),
         materials: materials
           .filter((m) => m.itemId)
-          .map((m) => {
-            const prevR = parseFloat(m.prevReceived) || 0;
-            const todayR = parseFloat(m.todayReceived) || 0;
-            const prevU = parseFloat(m.prevUsed) || 0;
-            const todayU = parseFloat(m.todayUsed) || 0;
-            return {
-              itemId: m.itemId,
-              itemName: m.itemName,
-              uomCode: m.uomCode,
-              totalTender: parseFloat(m.totalTender) || 0,
-              prevReceived: prevR,
-              todayReceived: todayR,
-              totalReceived: prevR + todayR,
-              prevUsed: prevU,
-              todayUsed: todayU,
-              totalUsed: prevU + todayU,
-              balanceSite: prevR + todayR - (prevU + todayU),
-            };
-          }),
-        manpower: manpower
-          .filter((m) => m.contractorId)
           .map((m) => ({
-            contractorId: m.contractorId,
-            contractorName:
-              contractors.find((c) => c.id === m.contractorId)?.name ?? "",
-            workingArea: m.workingArea,
-            messan: parseInt(m.messan) || 0,
-            maleHelper: parseInt(m.maleHelper) || 0,
-            femaleHelper: parseInt(m.femaleHelper) || 0,
-            carpenter: parseInt(m.carpenter) || 0,
-            fitter: parseInt(m.fitter) || 0,
-            painter: parseInt(m.painter) || 0,
-            plumber: parseInt(m.plumber) || 0,
-            electrician: parseInt(m.electrician) || 0,
-            operator: parseInt(m.operator) || 0,
-            total: manpowerTotal(m),
+            itemId: m.itemId,
+            consumedQty: parseFloat(m.consumedQty) || 0,
+            uomId: items.find((it: any) => it.id === m.itemId)?.uomId ?? "",
+            remarks: m.remarks || null,
+          })),
+        manpower: manpower
+          .filter((m) => m.category || m.contractorId)
+          .map((m) => ({
+            contractorId: m.contractorId || null,
+            category: m.category,
+            skillType: m.skillType,
+            count: parseInt(m.count) || 0,
+            hoursWorked: parseFloat(m.hoursWorked) || 0,
           })),
         staff: staff
           .filter((s) => s.name)
@@ -721,7 +664,7 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                     value={projectId}
                     onChange={setProjectId}
                     placeholder="Select Project…"
-                    options={projects.map((p: any) => ({ value: p.id, label: p.name }))}
+                    options={projectOptions}
                   />
                 </div>
               </div>
@@ -1171,6 +1114,26 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                 </button>
               }
             >
+              {/* Consumption location — stock is deducted from here on
+                  approval, so it's required whenever materials are logged. */}
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Consumption Location
+                </label>
+                <div className="min-w-[240px]">
+                  <SelectInput
+                    value={consumptionLocationId}
+                    onChange={setConsumptionLocationId}
+                    placeholder="Select location…"
+                    options={locations
+                      .filter((l: any) => l.status !== "inactive")
+                      .map((l: any) => ({ value: l.id, label: l.name }))}
+                  />
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  Required to approve when materials are logged — stock is deducted here.
+                </span>
+              </div>
               {materials.length === 0 ? (
                 <EmptyHint
                   text="No materials recorded yet."
@@ -1180,34 +1143,21 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                 />
               ) : (
                 <div className="border border-gray-200 rounded-xl overflow-x-auto">
-                  <table className="w-full text-xs min-w-[1280px]">
+                  <table className="w-full text-xs min-w-[640px]">
                     <thead className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase font-bold text-gray-500">
                       <tr>
-                        <th className="px-2 py-2 text-left min-w-[200px]">Material Name</th>
-                        <th className="px-2 py-2 text-left w-[70px]">Unit</th>
-                        <th className="px-2 py-2 text-right w-[100px]">Total Tender</th>
-                        <th className="px-2 py-2 text-right w-[100px]">Prev. Rcvd</th>
-                        <th className="px-2 py-2 text-right w-[100px]">Today Rcvd</th>
-                        <th className="px-2 py-2 text-right w-[100px]">Total Rcvd</th>
-                        <th className="px-2 py-2 text-right w-[100px]">Prev. Used</th>
-                        <th className="px-2 py-2 text-right w-[100px]">Today Used</th>
-                        <th className="px-2 py-2 text-right w-[100px]">Total Used</th>
-                        <th className="px-2 py-2 text-right w-[110px]">Balance Site</th>
-                        <th className="px-2 py-2 text-right w-[110px]">Bal. Procure</th>
+                        <th className="px-2 py-2 text-left min-w-[220px]">Material Name</th>
+                        <th className="px-2 py-2 text-left w-[80px]">Unit</th>
+                        <th className="px-2 py-2 text-right w-[130px]">Consumed Qty</th>
+                        <th className="px-2 py-2 text-left min-w-[200px]">Remarks</th>
                         <th className="w-[40px]"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {materials.map((m, idx) => {
-                        const tender = parseFloat(m.totalTender) || 0;
-                        const prevR = parseFloat(m.prevReceived) || 0;
-                        const todayR = parseFloat(m.todayReceived) || 0;
-                        const totalR = prevR + todayR;
-                        const prevU = parseFloat(m.prevUsed) || 0;
-                        const todayU = parseFloat(m.todayUsed) || 0;
-                        const totalU = prevU + todayU;
-                        const balSite = totalR - totalU;
-                        const balProcure = Math.max(tender - totalR, 0);
+                        const item = items.find((it: any) => it.id === m.itemId);
+                        const uomCode =
+                          uoms.find((u: any) => u.id === item?.uomId)?.code ?? "—";
                         return (
                           <tr key={idx}>
                             <td className="px-2 py-1.5 min-w-[180px]">
@@ -1225,39 +1175,21 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                               />
                             </td>
                             <td className="px-2 py-1.5 text-gray-600 uppercase">
-                              {m.uomCode || "—"}
+                              {uomCode}
                             </td>
                             <NumCell
-                              value={m.totalTender}
-                              onChange={(v) => updateMaterial(idx, "totalTender", v)}
+                              value={m.consumedQty}
+                              onChange={(v) => updateMaterial(idx, "consumedQty", v)}
                             />
-                            <NumCell
-                              value={m.prevReceived}
-                              onChange={(v) => updateMaterial(idx, "prevReceived", v)}
-                            />
-                            <NumCell
-                              value={m.todayReceived}
-                              onChange={(v) => updateMaterial(idx, "todayReceived", v)}
-                            />
-                            <td className="px-2 py-1.5 text-right text-gray-900 font-semibold tabular-nums">
-                              {totalR.toLocaleString("en-IN")}
-                            </td>
-                            <NumCell
-                              value={m.prevUsed}
-                              onChange={(v) => updateMaterial(idx, "prevUsed", v)}
-                            />
-                            <NumCell
-                              value={m.todayUsed}
-                              onChange={(v) => updateMaterial(idx, "todayUsed", v)}
-                            />
-                            <td className="px-2 py-1.5 text-right text-gray-900 font-semibold tabular-nums">
-                              {totalU.toLocaleString("en-IN")}
-                            </td>
-                            <td className="px-2 py-1.5 text-right text-gray-900 font-semibold tabular-nums">
-                              {balSite.toLocaleString("en-IN")}
-                            </td>
-                            <td className="px-2 py-1.5 text-right text-gray-900 font-semibold tabular-nums">
-                              {balProcure.toLocaleString("en-IN")}
+                            <td className="px-2 py-1.5">
+                              <input
+                                value={m.remarks}
+                                onChange={(e) =>
+                                  updateMaterial(idx, "remarks", e.target.value)
+                                }
+                                placeholder="Optional note"
+                                className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                              />
                             </td>
                             <td className="px-2 py-1.5 text-right">
                               <button
@@ -1301,21 +1233,14 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                 />
               ) : (
                 <div className="border border-gray-200 rounded-xl overflow-x-auto">
-                  <table className="w-full text-xs min-w-[1320px]">
+                  <table className="w-full text-xs min-w-[760px]">
                     <thead className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase font-bold text-gray-500">
                       <tr>
-                        <th className="px-2 py-2 text-left w-[180px]">Contractor</th>
-                        <th className="px-2 py-2 text-left w-[150px]">Working Area</th>
-                        <th className="px-2 py-2 text-right w-[80px]">Messan</th>
-                        <th className="px-2 py-2 text-right w-[80px]">Male H.</th>
-                        <th className="px-2 py-2 text-right w-[80px]">Female H.</th>
-                        <th className="px-2 py-2 text-right w-[80px]">Carp.</th>
-                        <th className="px-2 py-2 text-right w-[80px]">Fitter</th>
-                        <th className="px-2 py-2 text-right w-[80px]">Painter</th>
-                        <th className="px-2 py-2 text-right w-[80px]">Plumber</th>
-                        <th className="px-2 py-2 text-right w-[80px]">Elec.</th>
-                        <th className="px-2 py-2 text-right w-[90px]">Operator</th>
-                        <th className="px-2 py-2 text-right w-[80px]">Total</th>
+                        <th className="px-2 py-2 text-left w-[200px]">Contractor</th>
+                        <th className="px-2 py-2 text-left min-w-[160px]">Category</th>
+                        <th className="px-2 py-2 text-left min-w-[140px]">Skill Type</th>
+                        <th className="px-2 py-2 text-right w-[100px]">Count</th>
+                        <th className="px-2 py-2 text-right w-[110px]">Hours</th>
                         <th className="w-[40px]"></th>
                       </tr>
                     </thead>
@@ -1326,32 +1251,32 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
                             <SelectInput
                               value={m.contractorId}
                               onChange={(v) => updateManpower(idx, "contractorId", v)}
-                              placeholder="Select Contractor…"
+                              placeholder="Self / Select…"
                               options={contractors.map((c) => ({ value: c.id, label: c.name }))}
                             />
                           </td>
                           <td className="px-2 py-1.5">
                             <input
-                              value={m.workingArea}
+                              value={m.category}
                               onChange={(e) =>
-                                updateManpower(idx, "workingArea", e.target.value)
+                                updateManpower(idx, "category", e.target.value)
                               }
-                              placeholder="Area"
+                              placeholder="e.g. Mason"
                               className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
                             />
                           </td>
-                          <NumCell value={m.messan} onChange={(v) => updateManpower(idx, "messan", v)} />
-                          <NumCell value={m.maleHelper} onChange={(v) => updateManpower(idx, "maleHelper", v)} />
-                          <NumCell value={m.femaleHelper} onChange={(v) => updateManpower(idx, "femaleHelper", v)} />
-                          <NumCell value={m.carpenter} onChange={(v) => updateManpower(idx, "carpenter", v)} />
-                          <NumCell value={m.fitter} onChange={(v) => updateManpower(idx, "fitter", v)} />
-                          <NumCell value={m.painter} onChange={(v) => updateManpower(idx, "painter", v)} />
-                          <NumCell value={m.plumber} onChange={(v) => updateManpower(idx, "plumber", v)} />
-                          <NumCell value={m.electrician} onChange={(v) => updateManpower(idx, "electrician", v)} />
-                          <NumCell value={m.operator} onChange={(v) => updateManpower(idx, "operator", v)} />
-                          <td className="px-2 py-1.5 text-right text-orange-700 font-bold tabular-nums">
-                            {manpowerTotal(m) || 0}
+                          <td className="px-2 py-1.5">
+                            <input
+                              value={m.skillType}
+                              onChange={(e) =>
+                                updateManpower(idx, "skillType", e.target.value)
+                              }
+                              placeholder="e.g. Skilled"
+                              className="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-300 focus:border-orange-400"
+                            />
                           </td>
+                          <NumCell value={m.count} onChange={(v) => updateManpower(idx, "count", v)} />
+                          <NumCell value={m.hoursWorked} onChange={(v) => updateManpower(idx, "hoursWorked", v)} />
                           <td className="px-2 py-1.5 text-right">
                             <button onClick={() => removeManpower(idx)} className="text-gray-400 hover:text-red-600">
                               <Trash2 className="w-3.5 h-3.5" />

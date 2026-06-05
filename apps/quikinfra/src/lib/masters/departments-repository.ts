@@ -2,7 +2,7 @@
  * Departments master — Prisma-backed CRUD for `cn_departments`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface DepartmentRecord {
   id: string;

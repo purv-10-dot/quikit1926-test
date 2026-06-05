@@ -11,7 +11,7 @@
  * Priya Kulkarni" without a second query per row.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { findCnUsersByIds } from "@/lib/users/lookup";
 
 export interface ApprovalHistoryRecord {

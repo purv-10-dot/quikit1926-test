@@ -7,6 +7,12 @@ const nextConfig = {
   // It stays off for local `next build` because standalone symlinks the
   // monorepo's workspace deps, which requires admin privileges on Windows.
   output: process.env.NEXT_BUILD_STANDALONE === "1" ? "standalone" : undefined,
+  // Skip type/lint checks during `next build` — these run in CI, and the
+  // build tree may not include every devDep. Matches apps/quikscale +
+  // apps/quiktrack (both set these). Without this, a type error in any single
+  // route fails the whole build.
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
   experimental: {
     // Trace workspace deps (@quikit/*) into the standalone bundle by rooting
     // file-tracing at the monorepo root rather than this app's directory.
@@ -15,16 +21,10 @@ const nextConfig = {
     // route only ships the icons it actually imports. No source changes
     // required — Next rewrites the imports at build time.
     optimizePackageImports: ["lucide-react"],
-    // Prisma client is generated to .prisma-qc2 (custom output, see
-    // prisma/schema.prisma). Next.js's default file-tracing only walks the
-    // standard .prisma path, so we explicitly include the engine binaries
-    // and the generated client for every API route. Without this Vercel
-    // deploys crash with "Query Engine not found for rhel-openssl-3.0.x".
-    // On Next 14 this key sits under `experimental`; it moved to the top
-    // level in Next 15.
-    outputFileTracingIncludes: {
-      "/api/**/*": ["./node_modules/.prisma-qc2/client/**/*"],
-    },
+    // QuikInfra now uses the shared central Prisma client (@quikit/database),
+    // generated to the standard node_modules/.prisma path which Next's
+    // default file-tracing already walks — no custom include needed (matches
+    // apps/quiktrack + apps/quikscale).
   },
 };
 

@@ -14,7 +14,7 @@ const withOrgAuth = withOrgAuthForModule("store");
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const issue = await db.cnMaterialIssue.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
+    where: { id: params.id, orgId },
     include: { lines: true },
   });
   if (!issue) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -27,6 +27,10 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
       { status: 400 },
     );
   }
+  if (!issue.locationId) {
+    return NextResponse.json({ success: false, error: "Issue has no location; cannot post" }, { status: 400 });
+  }
+  const locationId = issue.locationId;
 
   // Pre-check: current balance per item at this location (projectId + locationId + itemId)
   const insufficient: Array<{ itemId: string; available: number; requested: number }> = [];
@@ -35,12 +39,12 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
       where: {
         orgId,
         projectId: issue.projectId,
-        locationId: issue.locationId,
+        locationId,
         itemId: line.itemId,
       },
       _sum: { qtyIn: true, qtyOut: true },
     });
-    const available = Number(agg._sum.qtyIn ?? 0) - Number(agg._sum.qtyOut ?? 0);
+    const available = Number(agg._sum?.qtyIn ?? 0) - Number(agg._sum?.qtyOut ?? 0);
     if (available < Number(line.issuedQty)) {
       insufficient.push({ itemId: line.itemId, available, requested: Number(line.issuedQty) });
     }
@@ -65,7 +69,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
           data: {
             orgId,
             projectId: issue.projectId,
-            locationId: issue.locationId,
+            locationId,
             itemId: line.itemId,
             transactionType: "issue",
             transactionRefId: issue.id,
@@ -82,7 +86,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
       }
       await tx.cnMaterialIssue.update({
         where: { id: issue.id },
-        data: { status: "posted", postedAt, postedBy: userId, updatedBy: userId },
+        data: { status: "posted", updatedBy: userId },
       });
     });
   } catch (err: unknown) {
