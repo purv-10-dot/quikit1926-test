@@ -15,6 +15,12 @@ import { IssueViewSkeleton } from "@/components/skeleton";
 import { IssueDetailsPanel } from "./issue-details-panel";
 import { IssueHeaderSections } from "./issue-header-sections";
 import type { IssuePageData, IssueType } from "./types";
+import type { MentionItem } from "@/components/editor/mention";
+
+interface Member {
+  userId: string;
+  user: { firstName: string | null; lastName: string | null; email: string } | null;
+}
 
 const TYPE_META: Record<
   IssueType,
@@ -43,6 +49,7 @@ export function IssueFullView({
 }) {
   const [issue, setIssue] = useState<IssuePageData | null>(null);
   const [projectName, setProjectName] = useState<string>("Project");
+  const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -61,6 +68,16 @@ export function IssueFullView({
       .then((r) => r.json())
       .then((j) => {
         if (j?.success && j.data?.name) setProjectName(j.data.name);
+      })
+      .catch(() => undefined);
+  }, [projectId]);
+
+  // Project members — feed the @-mention list in the comment editor.
+  useEffect(() => {
+    void fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.success) setMembers((j.data?.members ?? j.data ?? []) as Member[]);
       })
       .catch(() => undefined);
   }, [projectId]);
@@ -89,6 +106,17 @@ export function IssueFullView({
 
   const T = TYPE_META[issue.type] ?? TYPE_META.TASK;
 
+  // People list for @-mentions in the comment editor.
+  const memberMentions: MentionItem[] = members
+    .filter((m) => m.user)
+    .map((m) => ({
+      id: m.userId,
+      name:
+        [m.user!.firstName, m.user!.lastName].filter(Boolean).join(" ").trim() ||
+        m.user!.email,
+      email: m.user!.email,
+    }));
+
   return (
     <div className="grid grid-cols-[1fr_360px] gap-6 px-8 pb-6 mx-auto items-start">
       {/* Left column scrolls; the breadcrumb header inside it pins itself
@@ -100,6 +128,7 @@ export function IssueFullView({
           projectName={projectName}
           typeIcon={T}
           onPatch={patch}
+          mentions={memberMentions}
         />
 
         <LinkedWorkItems
@@ -110,7 +139,7 @@ export function IssueFullView({
           }}
         />
         <IssueAttachments issueId={issue.id} />
-        <IssueActivity issueId={issue.id} projectId={projectId} />
+        <IssueActivity issueId={issue.id} projectId={projectId} mentions={memberMentions} />
       </div>
 
       {/* Right rail — sticks to the top of the scrolling viewport so it stays

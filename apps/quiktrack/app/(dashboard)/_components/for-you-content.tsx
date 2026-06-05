@@ -56,7 +56,7 @@ export function ForYouContent() {
   const perms = useMyPermissions();
   const canCreateProject = perms.loading || perms.has("Project", "create");
   const currentUserId = session?.user?.id ?? null;
-  const [tab, setTab] = useState<Tab>("recommended");
+  const [tab, setTab] = useState<Tab>("viewed");
   const [allSpaces, setAllSpaces] = useState<SpaceCard[] | null>(null);
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
 
@@ -149,7 +149,7 @@ export function ForYouContent() {
             {recommended.map((s) => (
               <Link
                 key={s.id}
-                href={`/spaces/${s.id}/board`}
+                href={`/spaces/${s.id}/backlog`}
                 className="flex items-center gap-3 border border-gray-200 rounded-md p-3 hover:bg-gray-50"
               >
                 {s.icon ? (
@@ -346,7 +346,7 @@ function SpaceList({
       {spaces.map((s) => (
         <Link
           key={s.id}
-          href={`/spaces/${s.id}/board`}
+          href={`/spaces/${s.id}/backlog`}
           className="flex items-center gap-3 border border-gray-200 rounded-md p-3 hover:bg-gray-50"
         >
           {s.icon ? (

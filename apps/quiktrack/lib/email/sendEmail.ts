@@ -376,6 +376,35 @@ export async function emailIssueMention(args: {
   });
 }
 
+export async function emailProjectInvite(args: {
+  to: string;
+  recipientName: string | null;
+  projectId: string;
+  projectName: string;
+  invitedBy: string | null;
+}): Promise<void> {
+  const link = `${appUrl()}/spaces/${args.projectId}/board`;
+  const html = shell({
+    headerSubtitle: "Project invitation",
+    headerTitle: "Project",
+    greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
+    intro: `You've been added to a project in QuikTrack${
+      args.invitedBy ? ` by ${args.invitedBy}` : ""
+    }.`,
+    rows: [
+      ["Project", esc(args.projectName)],
+      ...(args.invitedBy ? ([["Invited by", esc(args.invitedBy)]] as Array<[string, string]>) : []),
+    ],
+    ctaLabel: "Open project",
+    ctaHref: link,
+  });
+  await sendEmail({
+    to: args.to,
+    subject: `You've been added to "${args.projectName}"`,
+    html,
+  });
+}
+
 export async function emailDocMention(args: {
   to: string;
   recipientName: string | null;

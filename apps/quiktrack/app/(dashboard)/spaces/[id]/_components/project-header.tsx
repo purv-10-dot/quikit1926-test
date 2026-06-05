@@ -149,7 +149,7 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
       kind: "project",
       title: project.name,
       meta: "Team-managed software",
-      href: `/spaces/${project.id}/board`,
+      href: `/spaces/${project.id}/backlog`,
       icon: project.icon ?? null,
       color: project.color ?? null,
     });

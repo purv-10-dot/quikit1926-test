@@ -212,6 +212,7 @@ export function UserTimeDrawer({
             value={projectId}
             onChange={setProjectId}
             options={projectOptions}
+            searchable
             minWidth={200}
           />
           <div className="relative">

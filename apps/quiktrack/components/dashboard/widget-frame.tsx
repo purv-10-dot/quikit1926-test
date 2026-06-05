@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   Maximize2,
   Minimize2,
-  RefreshCw,
   Link2,
   Trash2,
 } from "lucide-react";
@@ -19,13 +18,11 @@ export function WidgetFrame({
   title,
   editing,
   onRemove,
-  onRefresh,
   children,
 }: {
   title: string;
   editing?: boolean;
   onRemove?: () => void;
-  onRefresh?: () => void;
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -58,14 +55,6 @@ export function WidgetFrame({
             aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
           >
             <Maximize2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={onRefresh}
-            className="p-1 rounded hover:bg-gray-100"
-            aria-label="Refresh"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
           </button>
           {/* <button
             type="button"

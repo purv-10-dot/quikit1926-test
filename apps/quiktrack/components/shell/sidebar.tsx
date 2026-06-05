@@ -252,7 +252,7 @@ export function Sidebar() {
                       return (
                         <Link
                           key={`recent-${s.id}`}
-                          href={`/spaces/${s.id}/board`}
+                          href={`/spaces/${s.id}/backlog`}
                           className={`flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
                               ? "bg-blue-50 text-blue-700 font-medium"
                               : "text-gray-700 hover:bg-gray-100"

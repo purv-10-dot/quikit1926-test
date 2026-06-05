@@ -417,7 +417,7 @@ export const GlobalSearchPopover = forwardRef<GlobalSearchPopoverHandle>(
                       {projects.map((p) => (
                         <li key={p.id}>
                           <Link
-                            href={`/spaces/${p.id}/board`}
+                            href={`/spaces/${p.id}/backlog`}
                             onClick={() => setOpen(false)}
                             className="flex items-center gap-3 px-4 py-1.5 text-[13px] hover:bg-blue-50/40"
                           >

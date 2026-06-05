@@ -87,7 +87,7 @@ export function CreateProjectForm() {
         setError(json.error || "Failed to create project");
         return;
       }
-      router.push(`/spaces/${json.data.id}/board`);
+      router.push(`/spaces/${json.data.id}/backlog`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {

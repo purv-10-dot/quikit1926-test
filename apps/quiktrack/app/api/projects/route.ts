@@ -10,6 +10,8 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const search = url.searchParams.get("search")?.trim() || "";
   const filterParam = url.searchParams.get("filter") || "";
   const filterTypes = filterParam.split(",").map((s) => s.trim()).filter(Boolean);
+  const keysParam = url.searchParams.get("keys") || "";
+  const filterKeys = keysParam.split(",").map((s) => s.trim()).filter(Boolean);
   const sort = (url.searchParams.get("sort") || "name") as "name" | "updatedAt";
   const order = (url.searchParams.get("order") || "asc") as "asc" | "desc";
   const page = Math.max(1, Number(url.searchParams.get("page") || 1));
@@ -39,6 +41,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   }
   if (filterTypes.length > 0) {
     where.projectType = { in: filterTypes };
+  }
+  if (filterKeys.length > 0) {
+    where.projectKey = { in: filterKeys };
   }
 
   const orderBy = sort === "name" ? { name: order } : { updatedAt: order };

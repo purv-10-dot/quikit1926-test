@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withProjectAccess } from "@/lib/api/withProjectAccess";
 import { addMemberSchema } from "@/lib/validation/member";
+import { notifyProjectInvite } from "@/lib/services/projectNotifications";
 import { randomBytes } from "node:crypto";
 
 export const GET = withProjectAccess<{ id: string }>(
@@ -94,6 +95,10 @@ export const POST = withProjectAccess<{ id: string }>(
           { status: 400 },
         );
       }
+      const alreadyMember = await db.qtProjectMember.findFirst({
+        where: { projectId, userId: parsed.data.userId, isDeleted: false },
+        select: { id: true },
+      });
       const member = await db.qtProjectMember.upsert({
         where: { projectId_userId: { projectId, userId: parsed.data.userId } },
         create: {
@@ -104,6 +109,16 @@ export const POST = withProjectAccess<{ id: string }>(
         },
         update: { role: parsed.data.role, isDeleted: false },
       });
+      // Existing org/app member added to this project → email them (only when
+      // it's a genuinely new membership, not a role change / re-add).
+      if (!alreadyMember) {
+        void notifyProjectInvite({
+          orgId,
+          projectId,
+          recipientUserId: parsed.data.userId,
+          actorUserId: userId,
+        });
+      }
       return NextResponse.json({ success: true, data: member }, { status: 201 });
     }
 
@@ -115,6 +130,10 @@ export const POST = withProjectAccess<{ id: string }>(
         select: { id: true },
       });
       if (inTenant) {
+        const alreadyMember = await db.qtProjectMember.findFirst({
+          where: { projectId, userId: existing.id, isDeleted: false },
+          select: { id: true },
+        });
         const member = await db.qtProjectMember.upsert({
           where: { projectId_userId: { projectId, userId: existing.id } },
           create: {
@@ -125,6 +144,14 @@ export const POST = withProjectAccess<{ id: string }>(
           },
           update: { role: parsed.data.role, isDeleted: false },
         });
+        if (!alreadyMember) {
+          void notifyProjectInvite({
+            orgId,
+            projectId,
+            recipientUserId: existing.id,
+            actorUserId: userId,
+          });
+        }
         return NextResponse.json({ success: true, data: member }, { status: 201 });
       }
     }

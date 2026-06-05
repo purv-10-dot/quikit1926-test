@@ -89,7 +89,7 @@ function ProjectRow({ project: p, striped }: { project: Project; striped: boolea
     >
       <div className="min-w-0">
         <Link
-          href={`/spaces/${p.id}/board`}
+          href={`/spaces/${p.id}/backlog`}
           className="inline-flex items-center gap-2"
         >
           <span

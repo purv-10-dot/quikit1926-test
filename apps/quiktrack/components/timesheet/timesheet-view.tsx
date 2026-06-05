@@ -328,49 +328,6 @@ export function TimesheetView({
     win.document.close();
   }
 
-  function printableView() {
-    window.print();
-  }
-
-  async function downloadRawData() {
-    const params = new URLSearchParams({
-      from: range.from.toISOString(),
-      to: range.to.toISOString(),
-    });
-    if (projectId) params.set("projectId", projectId);
-    const res = await fetch(`/api/timesheets?${params.toString()}`).then((r) => r.json());
-    if (!res?.success) return;
-    type Raw = {
-      id: string;
-      entryDate: string;
-      hours: number;
-      description: string | null;
-      project?: { name: string } | null;
-      issue?: { key: string; title: string } | null;
-    };
-    const items: Raw[] = res.data ?? [];
-    const header = ["Date", "Project", "Work Item", "Hours", "Description"];
-    const lines = [header.join(",")];
-    for (const e of items) {
-      lines.push(
-        [
-          new Date(e.entryDate).toISOString().slice(0, 10),
-          escapeCsv(e.project?.name ?? ""),
-          escapeCsv(e.issue ? `${e.issue.key} ${e.issue.title}` : ""),
-          String(e.hours),
-          escapeCsv(e.description ?? ""),
-        ].join(","),
-      );
-    }
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `timesheet-raw-${range.from.toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   // ============================== Render ==============================
 
   const visibleRows = useMemo(
@@ -429,8 +386,6 @@ export function TimesheetView({
             onCsv={downloadCsv}
             onXls={downloadXls}
             onPdf={downloadPdf}
-            onPrintable={printableView}
-            onRaw={() => void downloadRawData()}
           />
           <button
             type="button"
@@ -811,14 +766,10 @@ function MoreMenu({
   onCsv,
   onXls,
   onPdf,
-  onPrintable,
-  onRaw,
 }: {
   onCsv: () => void;
   onXls: () => void;
   onPdf: () => void;
-  onPrintable: () => void;
-  onRaw: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -858,24 +809,6 @@ function MoreMenu({
             onClick={() => {
               setOpen(false);
               onCsv();
-            }}
-          />
-          <ExportRow
-            badge="PRT"
-            badgeClass="bg-gray-200 text-gray-700"
-            label="Printable View"
-            onClick={() => {
-              setOpen(false);
-              onPrintable();
-            }}
-          />
-          <ExportRow
-            badge="RAW"
-            badgeClass="bg-purple-100 text-purple-700"
-            label="Download Raw Data"
-            onClick={() => {
-              setOpen(false);
-              onRaw();
             }}
           />
         </div>

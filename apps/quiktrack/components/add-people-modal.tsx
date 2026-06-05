@@ -132,54 +132,78 @@ export function AddPeopleModal({
     (searchQ.data ?? []).map((h) => [h.email.toLowerCase(), h] as const),
   );
 
-  function commitTypedEmail() {
+  async function commitTypedEmail() {
     const t = input.trim().replace(/[,;]\s*$/, "");
     if (!t) return;
     const parts = t.split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+    setInput("");
+    setShowHits(false);
+
     const blocked: string[] = [];
-    setPeople((cur) => {
-      const next = [...cur];
-      for (const p of parts) {
-        const isEmail = /\S+@\S+\.\S+/.test(p);
-        if (!isEmail) continue;
-        const lower = p.toLowerCase();
-        // Already in this project — nothing to add.
-        if (projectMemberEmails.has(lower)) {
-          blocked.push(p);
-          continue;
-        }
-        if (next.some((x) => x.email.toLowerCase() === lower)) continue;
-        // Typed the address of a known org user → add as an existing-user chip
-        // (links silently / adds to project) rather than a new-email invite.
-        const hit = searchByEmail.get(lower);
-        // Resolved to a user already in the project — block (the email-only
-        // check above misses cases where the member row had no email).
-        if (hit && projectMemberIds.has(hit.userId)) {
-          blocked.push(p);
-          continue;
-        }
-        if (hit) {
-          next.push({
-            id: `u:${hit.userId}`,
-            label: `${hit.firstName} ${hit.lastName}`.trim() || hit.email,
-            kind: "existing-user",
-            userId: hit.userId,
-            firstName: hit.firstName,
-            lastName: hit.lastName,
-            email: hit.email,
-            hasAccess: hit.hasQuikTrackAccess,
-          });
-        } else {
-          next.push({ id: `e:${p}`, label: p, kind: "email", email: p });
+    const toAdd: ChipPerson[] = [];
+    for (const p of parts) {
+      if (!/\S+@\S+\.\S+/.test(p)) continue;
+      const lower = p.toLowerCase();
+      // Already in this project — nothing to add.
+      if (projectMemberEmails.has(lower)) {
+        blocked.push(p);
+        continue;
+      }
+      if (
+        people.some((x) => x.email.toLowerCase() === lower) ||
+        toAdd.some((x) => x.email.toLowerCase() === lower)
+      ) {
+        continue;
+      }
+      // Resolve the typed address to a known org user: cached search hits
+      // first, then a direct lookup. This means a typed email belonging to an
+      // existing member is LINKED (existing-user chip → no invitation method),
+      // not treated as a brand-new invite.
+      let hit = searchByEmail.get(lower);
+      if (!hit) {
+        try {
+          const r = await fetch(
+            `/api/users/search?q=${encodeURIComponent(p)}&limit=5`,
+          ).then((res) => res.json());
+          hit = ((r.data as SearchResult[]) ?? []).find(
+            (u) => u.email.toLowerCase() === lower,
+          );
+        } catch {
+          /* offline / failed → fall through to a new-email chip */
         }
       }
-      return next;
-    });
+      if (hit && projectMemberIds.has(hit.userId)) {
+        blocked.push(p);
+        continue;
+      }
+      if (hit) {
+        toAdd.push({
+          id: `u:${hit.userId}`,
+          label: `${hit.firstName} ${hit.lastName}`.trim() || hit.email,
+          kind: "existing-user",
+          userId: hit.userId,
+          firstName: hit.firstName,
+          lastName: hit.lastName,
+          email: hit.email,
+          hasAccess: hit.hasQuikTrackAccess,
+        });
+      } else {
+        toAdd.push({ id: `e:${p}`, label: p, kind: "email", email: p });
+      }
+    }
+
+    if (toAdd.length) {
+      setPeople((cur) => {
+        const next = [...cur];
+        for (const c of toAdd) {
+          if (!next.some((x) => x.email.toLowerCase() === c.email.toLowerCase())) next.push(c);
+        }
+        return next;
+      });
+    }
     if (blocked.length) {
       setError(`${blocked.join(", ")} ${blocked.length > 1 ? "are" : "is"} already in this project.`);
     }
-    setInput("");
-    setShowHits(false);
   }
 
   function addExistingUser(h: SearchResult) {
@@ -417,6 +441,9 @@ export function AddPeopleModal({
                   key={h.userId}
                   type="button"
                   disabled={inProject}
+                  // Keep the input focused so its onBlur (commitTypedEmail)
+                  // doesn't close the dropdown before this click registers.
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => addExistingUser(h)}
                   className={`w-full px-3 py-2 flex items-center gap-2 text-left text-sm border-b border-gray-100 last:border-b-0 ${
                     inProject ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-50"
@@ -497,7 +524,7 @@ export function AddPeopleModal({
             })}
           </div>
           <p className="mt-1 text-[10.5px] text-gray-400">
-            Only applies to new emails. Existing org members get linked silently — no email.
+            Only applies to new emails. Existing org members are emailed that they were added to this project.
           </p>
         </div>
         )}
