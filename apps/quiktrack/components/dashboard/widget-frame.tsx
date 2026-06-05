@@ -67,7 +67,7 @@ export function WidgetFrame({
           >
             <RefreshCw className="h-3.5 w-3.5" />
           </button>
-          <button
+          {/* <button
             type="button"
             onClick={() => {
               if (typeof window === "undefined") return;
@@ -77,7 +77,7 @@ export function WidgetFrame({
             aria-label="Copy link"
           >
             <Link2 className="h-3.5 w-3.5" />
-          </button>
+          </button> */}
           {editing && onRemove && (
             <button
               type="button"

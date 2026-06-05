@@ -417,13 +417,13 @@ export function TimesheetView({
             <span className="font-semibold text-gray-800">{formatHours(grandTotal)}</span> of{" "}
             <span className="font-semibold text-gray-800">{capacity}h</span>
           </span>
-          <button
+          {/* <button
             type="button"
             className="h-9 w-9 inline-flex items-center justify-center text-gray-600 hover:bg-gray-100 rounded"
             aria-label="View options"
           >
             <Menu className="h-4 w-4" />
-          </button>
+          </button> */}
           <PeriodSwitcher value={period} onChange={setPeriod} />
           <MoreMenu
             onCsv={downloadCsv}

@@ -1,13 +1,38 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 
+/**
+ * Structured backlog "View settings" blob. Strictly shaped so the DB only
+ * ever stores clean data, not arbitrary JSON. `.partial()` keeps it
+ * forward-compatible — clients may PUT a subset and the server merges.
+ */
+const backlogSettingsSchema = z
+  .object({
+    epicPanel: z.boolean(),
+    emptySprints: z.boolean(),
+    density: z.enum(["default", "compact"]),
+    fields: z
+      .object({
+        workType: z.boolean(),
+        key: z.boolean(),
+        epic: z.boolean(),
+        status: z.boolean(),
+        assignee: z.boolean(),
+      })
+      .partial(),
+  })
+  .partial();
+
 const upsertSchema = z.object({
   viewKey: z.string().min(1).max(60),
   projectId: z.string().min(1).nullable().optional(),
-  hiddenColumns: z.array(z.string()).default([]),
-  columnOrder: z.array(z.string()).default([]),
+  // Column prefs are optional now so a settings-only PUT (or a column-only
+  // PUT) writes only what it carries and never clobbers the other concern.
+  hiddenColumns: z.array(z.string()).optional(),
+  columnOrder: z.array(z.string()).optional(),
+  settings: backlogSettingsSchema.optional(),
 });
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
@@ -25,7 +50,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   });
   return NextResponse.json({
     success: true,
-    data: pref ?? { hiddenColumns: [], columnOrder: [] },
+    data: pref ?? { hiddenColumns: [], columnOrder: [], settings: null },
   });
 });
 
@@ -39,6 +64,19 @@ export const PUT = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   const projectId = parsed.data.projectId ?? null;
+  const { hiddenColumns, columnOrder, settings } = parsed.data;
+
+  // Build the patch from only the fields the request actually carried, so a
+  // settings-only PUT leaves column prefs untouched (and vice versa).
+  const data: {
+    hiddenColumns?: string[];
+    columnOrder?: string[];
+    settings?: typeof settings;
+  } = {};
+  if (hiddenColumns !== undefined) data.hiddenColumns = hiddenColumns;
+  if (columnOrder !== undefined) data.columnOrder = columnOrder;
+  if (settings !== undefined) data.settings = settings;
+
   const existing = await db.qtUserViewPref.findFirst({
     where: { orgId: orgId, userId, viewKey: parsed.data.viewKey, projectId },
     select: { id: true },
@@ -46,10 +84,7 @@ export const PUT = withOrgAuth(async ({ orgId, userId }, req) => {
   const pref = existing
     ? await db.qtUserViewPref.update({
         where: { id: existing.id },
-        data: {
-          hiddenColumns: parsed.data.hiddenColumns,
-          columnOrder: parsed.data.columnOrder,
-        },
+        data,
       })
     : await db.qtUserViewPref.create({
         data: {
@@ -57,8 +92,9 @@ export const PUT = withOrgAuth(async ({ orgId, userId }, req) => {
           userId,
           viewKey: parsed.data.viewKey,
           projectId,
-          hiddenColumns: parsed.data.hiddenColumns,
-          columnOrder: parsed.data.columnOrder,
+          hiddenColumns: hiddenColumns ?? [],
+          columnOrder: columnOrder ?? [],
+          settings: settings ?? undefined,
         },
       });
   return NextResponse.json({ success: true, data: pref });

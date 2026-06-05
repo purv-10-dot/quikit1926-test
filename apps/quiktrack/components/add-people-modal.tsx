@@ -326,13 +326,13 @@ export function AddPeopleModal({
             Add people to {projectName}
           </h3>
           <div className="flex items-center gap-1 shrink-0">
-            <button
+            {/* <button
               type="button"
               className="p-1 rounded hover:bg-gray-100 text-gray-500"
               aria-label="More"
             >
               <MoreHorizontal className="h-4 w-4" />
-            </button>
+            </button> */}
             <button
               type="button"
               onClick={onClose}
