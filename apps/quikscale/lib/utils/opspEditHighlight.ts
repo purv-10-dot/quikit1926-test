@@ -60,6 +60,17 @@ export function editedRowIndices(entries: EditLogLike[], arrayName: string): Set
   return out;
 }
 
+/**
+ * Entries created strictly after `sinceTs` (epoch ms) — i.e. the edits made
+ * *since* the viewer last acknowledged. `sinceTs === 0` means "never acked", so
+ * every entry is returned. Used to highlight only the changes from the latest
+ * round, not the whole post-finalize set.
+ */
+export function editsSince<T extends { createdAt: string }>(entries: T[], sinceTs: number): T[] {
+  if (!sinceTs) return entries;
+  return entries.filter((e) => Date.parse(e.createdAt) > sinceTs);
+}
+
 /** The most recent edit (max createdAt) + who made it. Null when no entries. */
 export function latestEdit(entries: EditLogLike[]): { ts: number; actorName: string } | null {
   let best: { ts: number; actorName: string } | null = null;

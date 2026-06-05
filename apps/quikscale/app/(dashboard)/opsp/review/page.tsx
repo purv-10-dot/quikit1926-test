@@ -28,7 +28,7 @@ import { OPSPHistoryDrawer } from "../components/OPSPHistoryDrawer";
 import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
 import { useSession } from "next-auth/react";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
-import { editedRowIndices, latestEdit, REVIEW_PRIMARY_ARRAY, type EditLogLike } from "@/lib/utils/opspEditHighlight";
+import { editedRowIndices, editsSince, latestEdit, REVIEW_PRIMARY_ARRAY, type EditLogLike } from "@/lib/utils/opspEditHighlight";
 
 /** Top-level OPSP fields whose post-finalize edits are relevant to the Review
  *  (same allow-list the Review history drawer uses). */
@@ -506,31 +506,42 @@ export default function OPSPReviewPage() {
   const { data: sessionData } = useSession();
   const reviewUserId = (sessionData?.user as { id?: string } | undefined)?.id ?? "anon";
   const [editLog, setEditLog] = useState<EditLogLike[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/opsp/edit-log?year=${year}&quarter=${quarter}`)
-      .then((r) => r.json())
-      .then((j) => { if (!cancelled && j?.success) setEditLog(j.data as EditLogLike[]); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [year, quarter, editHistoryOpen]);
+  // `no-store`: the edit-log is live — never serve a stale cached copy, or a
+  // second round of post-finalize edits won't re-surface the highlight.
+  const loadEditLog = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/opsp/edit-log?year=${year}&quarter=${quarter}`, { cache: "no-store" });
+      const j = await res.json();
+      if (j?.success) setEditLog(j.data as EditLogLike[]);
+    } catch {
+      /* transient — keep the previous list */
+    }
+  }, [year, quarter]);
+  // Refresh on mount, period change, and drawer open/close (drawer edits add entries).
+  useEffect(() => { void loadEditLog(); }, [loadEditLog, editHistoryOpen]);
   // Only Review-relevant fields drive the highlight/ack (matches the drawer's allow-list).
   const reviewEditLog = useMemo(
     () => editLog.filter((e) => REVIEW_EDIT_FIELDS.includes(e.field.split(".")[0])),
     [editLog],
   );
-  const latestChange = useMemo(() => latestEdit(reviewEditLog), [reviewEditLog]);
-  const { unacknowledged: changesUnacked, acknowledge: ackChanges } = useOpspAck(
-    reviewUserId, year, quarter, "review", latestChange?.ts ?? 0,
+  // Acknowledgement tracks the latest of ALL edits (so any new edit re-surfaces),
+  // but the highlight + banner are scoped to edits made SINCE the last ack — so a
+  // new round only lights up the categories changed in that round, not every
+  // category ever touched after finalize.
+  const latestAll = useMemo(() => latestEdit(reviewEditLog), [reviewEditLog]);
+  const { unacknowledged: changesUnacked, acknowledge: ackChanges, ackedTs } = useOpspAck(
+    reviewUserId, year, quarter, "review", latestAll?.ts ?? 0,
   );
+  const newEditLog = useMemo(() => editsSince(reviewEditLog, ackedTs), [reviewEditLog, ackedTs]);
+  const latestChange = useMemo(() => latestEdit(newEditLog), [newEditLog]);
   // Primary rows map directly to source-array indices (rowIndex = source index).
   // Secondary rows are re-indexed after filtering empties, so we don't highlight
   // them here — those edits still surface in the History drawer.
   const editedPrimarySet = useMemo(
-    () => editedRowIndices(reviewEditLog, REVIEW_PRIMARY_ARRAY[horizon] ?? ""),
-    [reviewEditLog, horizon],
+    () => editedRowIndices(newEditLog, REVIEW_PRIMARY_ARRAY[horizon] ?? ""),
+    [newEditLog, horizon],
   );
-  const showRowHighlight = changesUnacked && reviewEditLog.length > 0;
+  const showRowHighlight = changesUnacked && newEditLog.length > 0;
 
   // Primary modal
   const [primaryOpen, setPrimaryOpen] = useState(false);
@@ -576,12 +587,14 @@ export default function OPSPReviewPage() {
   useEffect(() => { if (topTab === "review") loadData(); }, [loadData, topTab]);
   useEffect(() => { setSecondaryEdits({}); }, [data, horizon]);
 
-  // Re-fetch when tab regains focus (e.g. user finalized OPSP on another page)
+  // Re-fetch when tab regains focus (e.g. user finalized or made more edits on
+  // another page/tab). Refresh BOTH the review values AND the edit-log so a new
+  // round of post-finalize edits re-surfaces the row highlight here.
   useEffect(() => {
-    function onFocus() { if (topTab === "review") loadData(); }
+    function onFocus() { if (topTab === "review") { loadData(); void loadEditLog(); } }
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [loadData, topTab]);
+  }, [loadData, loadEditLog, topTab]);
 
   /* ── Derived data ── */
   const periodLabels = useMemo(() => {

@@ -8,6 +8,7 @@ import { validationError } from "@/lib/api/validationError";
 import { opspReviewSaveSchema } from "@/lib/schemas/opspReviewSchema";
 import { getScales } from "@/lib/utils/currency";
 import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
+import { resolveReviewTarget } from "@/lib/utils/opspReviewTarget";
 
 /**
  * Server-side mirror of the client `resolveProjected` logic. OPSP stores
@@ -162,7 +163,13 @@ export async function GET(req: NextRequest) {
         const projected = resolveStoredValue(row.projected as string, meta);
 
         periods[pKey] = {
-          target: entry?.targetValue ? Number(entry.targetValue) : (planTarget ?? projected),
+          // Live OPSP target wins; the saved review snapshot is only a fallback
+          // so a post-finalize edit isn't masked by a stale snapshot.
+          target: resolveReviewTarget(
+            planTarget,
+            projected,
+            entry?.targetValue != null ? Number(entry.targetValue) : null,
+          ),
           achieved: entry?.achievedValue != null ? Number(entry.achievedValue) : null,
           gap: null,
           achievedPct: null,
@@ -572,10 +579,16 @@ async function getQuarterCumulativeForCategory(
   // Build per-period (target, achieved) pairs in m1..m3 order, then let
   // aggregateByType collapse them to a single footer value.
   const periods = (["m1", "m2", "m3"] as const).map((pKey) => {
-    const sourceTarget = resolveStoredValue(sourceRows[rowIdx][pKey] as string, meta) ?? 0;
+    const sourceTarget = resolveStoredValue(sourceRows[rowIdx][pKey] as string, meta);
     const entry = entries.find((e) => e.period === pKey);
     return {
-      target: entry?.targetValue ? Number(entry.targetValue) : sourceTarget,
+      // Live OPSP target wins; the saved review snapshot is only a fallback.
+      target:
+        resolveReviewTarget(
+          sourceTarget,
+          null,
+          entry?.targetValue != null ? Number(entry.targetValue) : null,
+        ) ?? 0,
       achieved: entry?.achievedValue != null ? Number(entry.achievedValue) : null,
     };
   });

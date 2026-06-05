@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useUsers } from "@/lib/hooks/useUsers";
@@ -25,7 +25,7 @@ import { EditNoteCard } from "./components/EditNoteCard";
 import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, type PendingEdit } from "./lib/editLog";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
-import { editedFieldPaths, fieldMatchesEdited, latestEdit, type EditLogLike } from "@/lib/utils/opspEditHighlight";
+import { editedFieldPaths, fieldMatchesEdited, editsSince, latestEdit, type EditLogLike } from "@/lib/utils/opspEditHighlight";
 
 /* ═══════════════════════════════════════════════
    Main Page
@@ -345,15 +345,25 @@ export default function OPSPPage() {
      per user/device and re-surfaces when a newer edit lands. */
   const userId = (session?.user as { id?: string } | undefined)?.id ?? "anon";
   const [editLog, setEditLog] = useState<EditLogLike[]>([]);
-  useEffect(() => {
+  // `no-store`: the edit-log is live — never serve a stale cached copy.
+  const loadEditLog = useCallback(async () => {
     if (!isFinalized) { setEditLog([]); return; }
-    let cancelled = false;
-    fetch(`/api/opsp/edit-log?year=${form.year}&quarter=${form.quarter}`)
-      .then((r) => r.json())
-      .then((j) => { if (!cancelled && j?.success) setEditLog(j.data as EditLogLike[]); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [isFinalized, form.year, form.quarter, historyOpen]);
+    try {
+      const res = await fetch(`/api/opsp/edit-log?year=${form.year}&quarter=${form.quarter}`, { cache: "no-store" });
+      const j = await res.json();
+      if (j?.success) setEditLog(j.data as EditLogLike[]);
+    } catch {
+      /* transient — keep the previous list */
+    }
+  }, [isFinalized, form.year, form.quarter]);
+  useEffect(() => { void loadEditLog(); }, [loadEditLog, historyOpen]);
+  // Refresh when the tab regains focus so a viewer sees new edits re-surface
+  // live (e.g. an editor changed more fields in another tab).
+  useEffect(() => {
+    const onFocus = () => { void loadEditLog(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [loadEditLog]);
   // The Form's highlight/banner/footer surface only edits made by SOMEONE ELSE
   // — a user doesn't need their own post-finalize edits flagged back to them.
   // (The History drawer still lists the full history, incl. the user's own.)
@@ -361,11 +371,16 @@ export default function OPSPPage() {
     () => editLog.filter((e) => e.actorId !== userId),
     [editLog, userId],
   );
-  const latestChange = useMemo(() => latestEdit(othersEditLog), [othersEditLog]);
-  const editedPaths = useMemo(() => new Set(editedFieldPaths(othersEditLog)), [othersEditLog]);
-  const { unacknowledged, acknowledge } = useOpspAck(
-    userId, form.year, form.quarter, "form", latestChange?.ts ?? 0,
+  // Acknowledge against the latest of ALL others' edits; scope the highlight +
+  // banner to edits made SINCE the last ack, so a new round only flags the
+  // fields changed in that round (not everything ever changed after finalize).
+  const latestAll = useMemo(() => latestEdit(othersEditLog), [othersEditLog]);
+  const { unacknowledged, acknowledge, ackedTs } = useOpspAck(
+    userId, form.year, form.quarter, "form", latestAll?.ts ?? 0,
   );
+  const newOthers = useMemo(() => editsSince(othersEditLog, ackedTs), [othersEditLog, ackedTs]);
+  const latestChange = useMemo(() => latestEdit(newOthers), [newOthers]);
+  const editedPaths = useMemo(() => new Set(editedFieldPaths(newOthers)), [newOthers]);
   const showChangedHighlight = isFinalized && unacknowledged && editedPaths.size > 0;
 
   // Toggle the persistent "changed after finalize" ring on tagged fields. Same
@@ -854,7 +869,7 @@ export default function OPSPPage() {
         onApplyValue={applyDrawerValue}
         onEditNote={editDrawerNote}
         ackFooter={
-          isFinalized && editedPaths.size > 0
+          isFinalized && othersEditLog.length > 0
             ? { acknowledged: !unacknowledged, onAcknowledge: acknowledge, actorName: latestChange?.actorName }
             : undefined
         }

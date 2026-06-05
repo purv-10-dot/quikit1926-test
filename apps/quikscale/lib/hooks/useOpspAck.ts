@@ -23,7 +23,7 @@ export function useOpspAck(
   quarter: string,
   surface: "form" | "review",
   latestEditTs: number,
-): { unacknowledged: boolean; acknowledge: () => void } {
+): { unacknowledged: boolean; acknowledge: () => void; ackedTs: number } {
   const key = `quikscale:opsp-ack:${userId}:${year}:${quarter}:${surface}`;
   const [storedTs, setStoredTs] = useState(0);
 
@@ -50,5 +50,5 @@ export function useOpspAck(
     }
   }, [key, latestEditTs]);
 
-  return { unacknowledged, acknowledge };
+  return { unacknowledged, acknowledge, ackedTs: storedTs };
 }
