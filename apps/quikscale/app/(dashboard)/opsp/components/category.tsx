@@ -533,7 +533,7 @@ export function ProjectedInput({
   return (
     <div
       className={cn(
-        "flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-accent-400 overflow-hidden",
+        "flex items-center border border-gray-200 rounded bg-white overflow-hidden",
         className,
       )}
     >

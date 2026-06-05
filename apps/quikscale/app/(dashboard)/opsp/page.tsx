@@ -714,12 +714,15 @@ export default function OPSPPage() {
               <History className="h-4 w-4 text-amber-600" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-amber-800 truncate">
-                This OPSP was edited after it was finalized
-                {latestChange?.actorName ? ` by ${latestChange.actorName}` : ""}
-              </p>
-              <p className="text-xs text-amber-600">The changed fields are highlighted below — open History to review them.</p>
-            </div>
+  <p className="text-sm font-semibold text-amber-800 truncate">
+    {latestChange?.actorName
+      ? `${latestChange.actorName} updated the OPSP after it was finalized.`
+      : "Updated the OPSP after it was finalized."}
+  </p>
+  <p className="text-xs text-amber-600">
+    The changed fields are highlighted below — open History to review them.
+  </p>
+</div>
           </div>
           <button
             onClick={() => setHistoryOpen(true)}

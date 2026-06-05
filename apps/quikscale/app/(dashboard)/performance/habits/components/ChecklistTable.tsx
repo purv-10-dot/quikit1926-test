@@ -1,16 +1,19 @@
 "use client";
 
-import { Users } from "lucide-react";
+import { useState } from "react";
+import { Download, Users } from "lucide-react";
 import {
   HABIT_DEFINITIONS,
   type CampaignAggregate,
   type HabitAggregate,
   type SubItemAggregate,
 } from "@/lib/schemas/habitSchema";
+import { notify } from "@/lib/utils/notify";
 
 interface Props {
   aggregate: CampaignAggregate;
   campaignLabel: string;
+  campaignId: string;
 }
 
 /**
@@ -25,8 +28,41 @@ interface Props {
  * The colour ramp uses solid Tailwind classes (no inline styles) so the
  * locked-table palette rules from CLAUDE.md still apply — semantic, not theme.
  */
-export function ChecklistTable({ aggregate, campaignLabel }: Props) {
+export function ChecklistTable({ aggregate, campaignLabel, campaignId }: Props) {
   const hasData = aggregate.respondentCount > 0;
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      // The xlsx (with header block + colour-coded % cells) is built on the
+      // server — we just stream the blob and trigger a browser download.
+      const res = await fetch(`/api/habits/${campaignId}/export`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        notify.error(errJson?.error, {
+          context: "habits checklist",
+          fallback: "Couldn't export. Please try again.",
+        });
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = /filename="([^"]+)"/.exec(disposition);
+      const filename = match?.[1] ?? "Rockefeller_Habits.xlsx";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <section className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
@@ -50,15 +86,27 @@ export function ChecklistTable({ aggregate, campaignLabel }: Props) {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2.5 pl-3 pr-1 py-1 rounded-lg bg-amber-50/80 border border-amber-100 flex-shrink-0">
-          <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-900/70 text-right leading-tight max-w-[70px]">
-            No. of
-            <br />
-            Participants
-          </span>
-          <span className="text-2xl font-bold tabular-nums text-gray-900 px-1">
-            {aggregate.respondentCount}
-          </span>
+        <div className="flex items-center gap-2.5 flex-shrink-0">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-800 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm disabled:opacity-50 transition-colors whitespace-nowrap"
+            title="Download this checklist as a colour-coded Excel file"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exporting ? "Exporting…" : "Export to Excel"}
+          </button>
+          <div className="flex items-center gap-2.5 pl-3 pr-1 py-1 rounded-lg bg-amber-50/80 border border-amber-100">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-amber-900/70 text-right leading-tight max-w-[70px]">
+              No. of
+              <br />
+              Participants
+            </span>
+            <span className="text-2xl font-bold tabular-nums text-gray-900 px-1">
+              {aggregate.respondentCount}
+            </span>
+          </div>
         </div>
       </header>
 

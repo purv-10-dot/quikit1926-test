@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import { isOrgAdmin as hasV2AdminRole } from "@/lib/api/permissions";
 import { DEFAULT_BENCHMARK } from "@/lib/schemas/talentSchema";
 import { z } from "zod";
 
@@ -8,13 +9,21 @@ const withOrgAuth = withOrgAuthForModule("people.talent");
 
 const ADMIN_ROLES = new Set(["org_admin", "admin", "super_admin"]);
 
+/**
+ * QuikScale runs two parallel admin systems (see lib/api/requireAdmin.ts):
+ * the legacy `OrgMember.role` string and dynamic-RBAC v2
+ * (`UserAppRole` → `AppRole`), which is what Org Setup → User Management
+ * writes. An admin promoted via the v2 UI keeps `OrgMember.role = "member"`,
+ * so a legacy-only tier check wrongly 403s them. Consult both.
+ */
 async function isOrgAdmin(userId: string, orgId: string, isSuperAdmin: boolean): Promise<boolean> {
   if (isSuperAdmin) return true;
   const m = await db.orgMember.findFirst({
     where: { userId, orgId, status: "active" },
     select: { role: true },
   });
-  return m ? ADMIN_ROLES.has(m.role) : false;
+  if (m && ADMIN_ROLES.has(m.role)) return true;
+  return hasV2AdminRole(userId, orgId);
 }
 
 export const GET = withOrgAuth(async ({ orgId }) => {

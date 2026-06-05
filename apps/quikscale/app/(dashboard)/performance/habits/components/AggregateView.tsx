@@ -237,6 +237,7 @@ export function AggregateView({ campaignId, onDeleted }: Props) {
         <div className="space-y-4 sm:space-y-5 min-w-0">
           <ChecklistTable
             aggregate={aggregate}
+            campaignId={campaign.id}
             campaignLabel={
               totalRounds > 1
                 ? `${campaign.quarter} ${campaign.year} · Round ${round}`
