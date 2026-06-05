@@ -263,9 +263,7 @@ function AssessmentDrawer({
         <div className="grid grid-cols-2 gap-2 text-xs">
           <SignalTile label="KPI Hit Rate"        value={person.kpiScore}            suffix="%" subtitle={`${person.kpiCount} KPIs`} />
           <SignalTile label="Priority Completion" value={person.priorityScore}       suffix="%" subtitle={`${person.priorityCount} priorities`} />
-          <SignalTile label="Daily Huddles"       value={person.huddleAttendancePct} suffix="%" subtitle="last 90d" />
           <SignalTile label="Last Review"         value={person.lastReviewScore}     suffix="" subtitle={person.lastReviewPeriod ?? "—"} />
-          <SignalTile label="Tenure"              value={person.tenureDays !== null ? Math.floor(person.tenureDays / 30) : null} suffix=" mo" subtitle="" />
         </div>
 
         {/* Seats owned — FACe diagnostic */}

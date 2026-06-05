@@ -88,7 +88,7 @@ const navigation: SidebarEntry[] = [
   { label: "SWT",     href: "/performance/swt",    icon: BarChart2, moduleKey: "swt" },
 
   { type: "section", label: "People" },
-  { label: "Goals & Pillars", href: "/performance/goals", icon: Target, moduleKey: "people", children: [
+  { label: "Goals & Pillars", icon: Target, moduleKey: "people", children: [
     { label: "Cycle",           href: "/performance/cycle",      icon: Activity,      moduleKey: "people.cycle" },
     { label: "Self-Assessment", href: "/performance/self",       icon: User,          moduleKey: "people.self" },
     { label: "Reviews",         href: "/performance/reviews",    icon: ClipboardList, moduleKey: "people.reviews" },

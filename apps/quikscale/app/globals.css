@@ -161,13 +161,14 @@ html.dark .glass {
   border-left: 3px solid var(--toast-tint, var(--accent-500, #0066cc));
 }
 
-/* OPSP edit-after-finalize: ring the field whose change-note card is open.
+/* OPSP edit-after-finalize: marks the field whose change-note card is open.
    Added/removed imperatively in opsp/page.tsx (survives re-renders since field
-   classNames are static). */
+   classNames are static). The blue highlight ring was removed per product
+   request — the change-note card still anchors to the field, so this class is
+   intentionally a visual no-op (kept so the page.tsx classList toggle + ref
+   tracking continue to work without change). */
 .opsp-edit-active {
-  box-shadow: 0 0 0 2px var(--accent-500, #0066cc) !important;
-  border-radius: 0.375rem;
-  transition: box-shadow 0.15s ease;
+  /* no highlight ring */
 }
 
 /* OPSP "edited after finalize" highlight: amber ring on fields/rows changed
