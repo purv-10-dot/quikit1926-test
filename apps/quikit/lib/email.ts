@@ -63,14 +63,26 @@ export async function sendMemberAddedEmail(params: {
   to: string;
   orgName: string;
   role: string;
-  /** Set only when a new user was created — render a credentials block. */
+  /** Set only when a new user was created via Native — render a credentials block. */
   tempPassword?: string;
+  /** "sso" | "native". When "sso", render a provider CTA instead of credentials. */
+  inviteMethod?: string;
+  /** "google" | "microsoft" — used to label the SSO sign-in CTA. */
+  ssoProvider?: string | null;
 }): Promise<void> {
   const transporter = getTransporter();
   const loginUrl = getLoginUrl();
   const safeOrg = esc(params.orgName);
   const safeRole = esc(params.role);
   const safeEmail = esc(params.to);
+
+  const isSso = params.inviteMethod === "sso";
+  const providerLabel =
+    params.ssoProvider === "google"
+      ? "Google"
+      : params.ssoProvider === "microsoft"
+        ? "Microsoft"
+        : null;
 
   const credentialsBlock = params.tempPassword
     ? `
@@ -82,7 +94,9 @@ export async function sendMemberAddedEmail(params: {
         </table>
         <p style="margin:12px 0 0;color:#94a3b8;font-size:12px;">Please change this password after your first sign-in.</p>
       </div>`
-    : `<p style="margin:0 0 20px;color:#475569;font-size:14px;line-height:1.6;">Sign in with your existing QuikIT credentials to access this organization.</p>`;
+    : isSso
+      ? `<p style="margin:0 0 20px;color:#475569;font-size:14px;line-height:1.6;">Sign in with <strong>${providerLabel ?? "your single sign-on provider"}</strong> to access this organization — no password required.</p>`
+      : `<p style="margin:0 0 20px;color:#475569;font-size:14px;line-height:1.6;">Sign in with your existing QuikIT credentials to access this organization.</p>`;
 
   const html = `<!DOCTYPE html>
 <html>
