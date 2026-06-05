@@ -10,6 +10,7 @@ import {
   selectIssueHistorySnapshot,
 } from "@/lib/services/issueHistory";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
+import { notifyMentions } from "@/lib/services/mentions";
 
 async function loadIssueForTenant(orgId: string, issueId: string) {
   return db.qtIssue.findFirst({
@@ -77,6 +78,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         id: true,
         key: true,
         projectId: true,
+        description: true, // for the mention diff (only email newly-added @mentions)
         // Snapshot every tracked field for the activity-history diff.
         // (`title`, `statusId`, `assigneeId` are part of this snapshot too.)
         ...selectIssueHistorySnapshot,
@@ -143,6 +145,19 @@ export const PATCH = withOrgAuth<{ id: string }>(
       before: issue,
       after: updated,
     });
+
+    // Email anyone newly @-mentioned in the description (diff vs the previous
+    // description so edits don't re-notify existing mentions).
+    if ("description" in parsed.data) {
+      void notifyMentions({
+        orgId,
+        actorUserId: userId,
+        issue: { id: updated.id, key: updated.key, title: updated.title, projectId: updated.projectId },
+        context: "description",
+        html: updated.description ?? "",
+        prevHtml: issue.description ?? null,
+      });
+    }
 
     // Subtask roll-up: when a subtask's eta or dates move, refresh the
     // parent's roll-up. If the subtask was reparented we have to refresh

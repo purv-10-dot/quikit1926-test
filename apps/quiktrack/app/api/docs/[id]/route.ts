@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
 import type { Action } from "@/lib/api/permissionsRegistry";
+import { notifyDocMentions } from "@/lib/services/mentions";
 
 /**
  * Single-doc routes — also raw-SQL backed because the local Prisma client is
@@ -94,6 +95,17 @@ export const PATCH = withOrgAuth<{ id: string }>(
           "updatedAt" = NOW()
       WHERE id = ${params.id}
     `;
+    // Email anyone newly @-mentioned in the doc (diff vs the previous content
+    // so the auto-saving editor doesn't re-notify existing mentions).
+    if (parsed.data.content !== undefined) {
+      void notifyDocMentions({
+        orgId,
+        actorUserId: userId,
+        doc: { id: params.id, title: nextTitle, projectId: doc.projectId },
+        html: nextContent,
+        prevHtml: doc.content,
+      });
+    }
     return NextResponse.json({
       success: true,
       data: { ...doc, title: nextTitle, content: nextContent, updatedBy: userId },

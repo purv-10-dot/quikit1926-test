@@ -78,6 +78,27 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
     };
   }, [docId]);
 
+  // People list for @-mentions in the doc editor.
+  const [mentions, setMentions] = useState<{ id: string; name: string; email?: string }[]>([]);
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json())
+      .then((j) => {
+        const list: Array<{ userId: string; user: { firstName: string | null; lastName: string | null; email: string } | null }> =
+          Array.isArray(j?.data?.members) ? j.data.members : Array.isArray(j?.data) ? j.data : [];
+        setMentions(
+          list
+            .filter((m) => m.user)
+            .map((m) => ({
+              id: m.userId,
+              name: [m.user!.firstName, m.user!.lastName].filter(Boolean).join(" ").trim() || m.user!.email,
+              email: m.user!.email,
+            })),
+        );
+      })
+      .catch(() => undefined);
+  }, [projectId]);
+
   function scheduleSave() {
     dirtyRef.current = true;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -190,6 +211,7 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
             <RichTextEditor
               chromeless
               value={content}
+              mentions={mentions}
               onChange={(html) => {
                 setContent(html);
                 scheduleSave();

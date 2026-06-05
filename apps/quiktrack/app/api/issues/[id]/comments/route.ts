@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
+import { notifyMentions } from "@/lib/services/mentions";
 
 const createCommentSchema = z.object({
   body: z.string().min(1).max(20_000),
@@ -15,7 +16,7 @@ async function loadAccessibleIssue(
 ) {
   const issue = await db.qtIssue.findFirst({
     where: { id: issueId, orgId: orgId, isDeleted: false },
-    select: { id: true, projectId: true },
+    select: { id: true, projectId: true, key: true, title: true },
   });
   if (!issue) return null;
   const access = await db.qtProjectMember.findFirst({
@@ -107,6 +108,14 @@ export const POST = withOrgAuth<{ id: string }>(
         email: true,
         avatar: true,
       },
+    });
+    // Email anyone @-mentioned in the comment (fire-and-forget).
+    void notifyMentions({
+      orgId,
+      actorUserId: userId,
+      issue: { id: issue.id, key: issue.key, title: issue.title, projectId: issue.projectId },
+      context: "comment",
+      html: parsed.data.body,
     });
     return NextResponse.json(
       { success: true, data: { ...created, user: author } },

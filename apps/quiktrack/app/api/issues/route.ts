@@ -6,6 +6,7 @@ import { createIssueSchema } from "@/lib/validation/issue";
 import { getDefaultStatusId } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
+import { notifyMentions } from "@/lib/services/mentions";
 
 async function userIsProjectMember(
   userId: string,
@@ -393,6 +394,17 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   // Roll up ETA + dates onto the parent when this is a subtask.
   if (issue.type === "SUBTASK" && issue.parentId) {
     void recalcParentRollup(issue.parentId, orgId);
+  }
+
+  // Email anyone @-mentioned in the new issue's description.
+  if (issue.description) {
+    void notifyMentions({
+      orgId,
+      actorUserId: userId,
+      issue: { id: issue.id, key: issue.key, title: issue.title, projectId: issue.projectId },
+      context: "description",
+      html: issue.description,
+    });
   }
 
   return NextResponse.json({ success: true, data: issue }, { status: 201 });

@@ -534,6 +534,15 @@ export function EditIssueModal({
   const assignee = members.find((m) => m.userId === assigneeId) ?? null;
   const linkedEpic = epics.find((e) => e.id === epicId) ?? null;
 
+  // People list for @-mentions in the description + comment editors.
+  const memberMentions = members
+    .filter((m) => m.user)
+    .map((m) => ({
+      id: m.userId,
+      name: [m.user!.firstName, m.user!.lastName].filter(Boolean).join(" ").trim() || m.user!.email,
+      email: m.user!.email,
+    }));
+
   return (
     <>
       {issue && (
@@ -848,7 +857,7 @@ export function EditIssueModal({
                 <h3 className="text-sm font-semibold text-gray-900 mb-1">Description</h3>
                 {descEditing ? (
                   <div>
-                    <RichTextEditor value={description} onChange={setDescription} />
+                    <RichTextEditor value={description} onChange={setDescription} mentions={memberMentions} />
                     <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
@@ -1364,6 +1373,7 @@ export function EditIssueModal({
                   <IssueActivity
                     issueId={issue.id}
                     projectId={issue.projectId}
+                    mentions={memberMentions}
                   />
                 </div>
               )}
