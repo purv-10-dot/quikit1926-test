@@ -12,6 +12,7 @@ import {
   Share2,
   Zap,
   Link as LinkIcon,
+  Settings as SettingsIcon,
   Maximize2,
   Minimize2,
   Globe,
@@ -228,6 +229,14 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
               )}
             </div>
             */}
+            <Link
+              href={`/spaces/${projectId}/settings`}
+              className="p-1.5 rounded border border-gray-200 hover:bg-gray-100"
+              aria-label="Settings"
+              title="Settings"
+            >
+              <SettingsIcon className="h-3.5 w-3.5 text-gray-600" />
+            </Link>
             <button
               type="button"
               onClick={() => setFeedbackOpen(true)}

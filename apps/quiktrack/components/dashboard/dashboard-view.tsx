@@ -100,7 +100,7 @@ export function DashboardView({
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
         <div className="flex items-center gap-1.5 text-gray-500">
-          <button
+          {/* <button
             type="button"
             onClick={() => {
               const next = !starred;
@@ -116,8 +116,8 @@ export function DashboardView({
             <Star
               className={`h-4 w-4 ${starred ? "fill-yellow-400 text-yellow-500" : ""}`}
             />
-          </button>
-          <button
+          </button> */}
+          {/* <button
             type="button"
             onClick={() => {
               if (typeof window === "undefined") return;
@@ -127,7 +127,7 @@ export function DashboardView({
             aria-label="Copy link"
           >
             <Link2 className="h-4 w-4" />
-          </button>
+          </button> */}
           <button
             type="button"
             onClick={() => setRefreshKey((k) => k + 1)}
@@ -148,12 +148,12 @@ export function DashboardView({
             {editing ? <Check className="h-3.5 w-3.5" /> : <Edit3 className="h-3.5 w-3.5" />}
             {editing ? "Done" : "Edit"}
           </button>
-          <button
+          {/* <button
             className="p-1.5 rounded hover:bg-gray-100 border border-gray-300 h-8 w-8 inline-flex items-center justify-center"
             aria-label="More"
           >
             <MoreHorizontal className="h-4 w-4" />
-          </button>
+          </button> */}
         </div>
       </div>
 

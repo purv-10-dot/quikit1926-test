@@ -5,6 +5,7 @@ import Link from "next/link";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
 import { EpicPanel } from "./epic-panel";
 import {
   ViewSettingsPopover,
@@ -24,7 +25,6 @@ import {
   Plus,
   CalendarDays,
   User as UserIcon,
-  Settings as SettingsIcon,
   SlidersHorizontal,
   BarChart3,
   Bug,
@@ -2001,42 +2001,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const sprintSentinelRef = useRef<HTMLDivElement>(null);
 
   // ── Backlog view settings (Epic panel / Empty sprints / Density / Fields) ──
-  // Persisted per-user per-project in localStorage. Initialised to defaults to
-  // avoid a hydration mismatch, then hydrated from storage on mount.
-  const [settings, setSettings] = useState<BacklogViewSettings>(DEFAULT_VIEW_SETTINGS);
+  // Persisted per-user, per-org, per-project in the DB (qtUserViewPref.settings)
+  // so they survive logout/login and sync across devices. A localStorage cache
+  // inside the hook seeds the first paint to avoid a flash of defaults.
+  const { settings, updateSettings } = useBacklogViewSettings(projectId);
   const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
   const viewSettingsRef = useRef<HTMLDivElement>(null);
-  const settingsStorageKey = `quiktrack:backlog-view:${projectId}`;
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(settingsStorageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Partial<BacklogViewSettings>;
-      setSettings({
-        ...DEFAULT_VIEW_SETTINGS,
-        ...parsed,
-        fields: { ...DEFAULT_VIEW_SETTINGS.fields, ...(parsed.fields ?? {}) },
-      });
-    } catch {
-      /* ignore malformed prefs */
-    }
-  }, [settingsStorageKey]);
-
-  const updateSettings = useCallback(
-    (patch: Partial<BacklogViewSettings>) => {
-      setSettings((s) => {
-        const next = { ...s, ...patch };
-        try {
-          window.localStorage.setItem(settingsStorageKey, JSON.stringify(next));
-        } catch {
-          /* storage full / unavailable — non-fatal */
-        }
-        return next;
-      });
-    },
-    [settingsStorageKey],
-  );
 
   const reloadEpics = useCallback(() => {
     fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`)
@@ -2785,14 +2755,6 @@ export function BacklogView({ projectId }: { projectId: string }) {
             title="Insights"
           >
             <BarChart3 className="h-4 w-4" />
-          </Link>
-          <Link
-            href={`/spaces/${projectId}/settings`}
-            className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
-            aria-label="Settings"
-            title="Settings"
-          >
-            <SettingsIcon className="h-4 w-4" />
           </Link>
           {/* <div className="relative" ref={moreMenuRef}>
             <button

@@ -85,9 +85,9 @@ export function AssignedToMeWidget({ refreshKey = 0 }: { refreshKey?: number }) 
         <div>T</div>
         <div>Key</div>
         <div>Summary</div>
-        <div className="text-right inline-flex items-center justify-end gap-0.5">
+        {/* <div className="text-right inline-flex items-center justify-end gap-0.5">
           P <ChevronDown className="h-3 w-3" />
-        </div>
+        </div> */}
       </div>
       <ul>
         {rows.map((i) => {

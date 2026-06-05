@@ -61,7 +61,7 @@ export function ActivityStreamWidget({ refreshKey = 0 }: { refreshKey?: number }
     <div>
       <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
         <h4 className="text-base font-semibold text-gray-900">Your Company QuikTrack</h4>
-        <div className="flex items-center gap-1 text-blue-600">
+        {/* <div className="flex items-center gap-1 text-blue-600">
           <button
             type="button"
             className="p-1 rounded bg-blue-50 hover:bg-blue-100"
@@ -83,7 +83,7 @@ export function ActivityStreamWidget({ refreshKey = 0 }: { refreshKey?: number }
           >
             <Rss className="h-4 w-4 text-orange-500" />
           </button>
-        </div>
+        </div> */}
       </div>
 
       {rows.length === 0 ? (

@@ -151,14 +151,14 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
             <span className="text-[11px] text-gray-500 mr-1">
               {saving ? "Saving…" : "All changes saved"}
             </span>
-            <button
+            {/* <button
               type="button"
               onClick={() => void save()}
               className="h-8 px-3 text-xs font-medium text-gray-500 bg-gray-100 rounded cursor-default"
               disabled
             >
               Publish
-            </button>
+            </button> */}
             <button
               type="button"
               onClick={close}
@@ -166,9 +166,9 @@ export function DocEditor({ projectId, docId }: { projectId: string; docId: stri
             >
               Close
             </button>
-            <button className="p-1.5 rounded hover:bg-gray-100 text-gray-500" aria-label="More">
+            {/* <button className="p-1.5 rounded hover:bg-gray-100 text-gray-500" aria-label="More">
               <MoreHorizontal className="h-4 w-4" />
-            </button>
+            </button> */}
             <button
               type="button"
               onClick={() => setMaximized((v) => !v)}
