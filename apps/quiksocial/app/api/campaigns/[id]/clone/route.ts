@@ -2,17 +2,16 @@
  * POST /api/campaigns/[id]/clone
  *
  * Body (all optional):
- *   useSameProducts: boolean  — copy productIds / serviceIds across
+ *   useSameOfferings: boolean — copy offeringIds across (alias:
+ *                               useSameProducts for legacy clients).
  *
  * Clone rules:
  *   Copies   → name, totalPosts, frequency, weeklyDay, monthlyDate,
  *              postTime, brandColors, themeRotationPlan
  *   Clears   → describeConcept, celeryTaskId, generatedPosts,
  *              failedPosts, assetIds, status
- *   Optional → productIds / serviceIds (only if useSameProducts=true)
+ *   Optional → offeringIds (only if useSameOfferings/useSameProducts=true)
  *   Set      → clonedFromId = source.id; new dates start from today
- *
- * Ported to QuikIT (Phase 3, Batch 2).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -42,14 +41,18 @@ function aliasCampaign<T extends AnyRow>(
 }
 
 const cloneSchema = z
-  .object({ useSameProducts: z.boolean().optional() })
+  .object({
+    useSameOfferings: z.boolean().optional(),
+    // Legacy alias from pre-Offering clients.
+    useSameProducts: z.boolean().optional(),
+  })
   .partial();
 
 export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req: NextRequest, { params }) => {
     const json = await req.json().catch(() => ({}));
     const body = cloneSchema.parse(json ?? {});
-    const useSameProducts = Boolean(body.useSameProducts);
+    const useSameOfferings = Boolean(body.useSameOfferings ?? body.useSameProducts);
 
     const source = await db.campaign.findFirst({
       where: { id: params.id, orgId },
@@ -92,8 +95,7 @@ export const POST = withOrgAuth<{ id: string }>(
         generatedPosts: 0,
         describeConcept: null, // intentionally cleared
         includeLogo: source.includeLogo,
-        productIds: useSameProducts ? source.productIds ?? [] : [],
-        serviceIds: useSameProducts ? source.serviceIds ?? [] : [],
+        offeringIds: useSameOfferings ? source.offeringIds ?? [] : [],
         assetIds: [], // intentionally cleared
         brandColorPrimary: source.brandColorPrimary,
         brandColorSecondary: source.brandColorSecondary,

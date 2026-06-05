@@ -36,8 +36,13 @@ import {
   Plus,
   CalendarIcon,
   Zap,
+  // lucide-react doesn't export MessageSquareReply on the installed version
+  // (^0.294.0). Alias MessageCircle — same visual semantic for the Auto-reply
+  // nav glyph. Matches the workaround in app/dashboard/auto-reply/page.tsx.
+  MessageCircle as MessageSquareReply,
 } from "lucide-react";
 import { QuikPostButton } from "@/components/quik-post";
+import { QuikitAppSwitcher } from "@/components/quikit-app-switcher";
 import { useBrandCreation } from "@/components/providers/BrandCreationContext";
 import { useWorkspaceRole } from "@/hooks/useWorkspaceRole";
 
@@ -63,16 +68,23 @@ const SIDEBAR_ICONS: Record<string, string> = {
   integrations: "/images/all_Icon/Integrations.png",
 };
 
-const catalogItems = [
-  { name: "Products", href: "/dashboard/products", icon: Package },
-  { name: "Services", href: "/dashboard/services", icon: Briefcase },
-];
+// Catalog is now ONE page at /dashboard/catalog that groups offerings
+// by type. The old Products/Services split-page pair was retired with
+// the Phase-2 Offering unification — keeping the sidebar a single
+// direct link removes the expandable chrome that the old split needed.
+const catalogNavItem = {
+  name: "Catalog",
+  href: "/dashboard/catalog",
+  icon: Package,
+  pngKey: "catalog",
+};
 
 const socialNavLinksBeforeCatalog = [
   { name: "Content Hub", href: "/dashboard/content-hub", icon: FileText, pngKey: "contentHub" },
   { name: "Campaigns", href: "/dashboard/campaigns", icon: Repeat, pngKey: "campaigns" },
   { name: "Assets", href: "/dashboard/assets", icon: FolderOpen, pngKey: null },
   { name: "Calendar", href: "/dashboard/calendar", icon: CalendarIcon, pngKey: "calendar" },
+  { name: "Auto-reply", href: "/dashboard/auto-reply", icon: MessageSquareReply, pngKey: null },
 ];
 
 const integrationsNavItem = {
@@ -197,7 +209,6 @@ export default function DashboardLayout({
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"social" | "email">("social");
-  const [catalogOpen, setCatalogOpen] = useState(false);
 
   // Brand / workspace state
   const [activeBrand, setActiveBrand] = useState<any>(null);
@@ -250,16 +261,6 @@ export default function DashboardLayout({
   // Sync sidebar tab with route
   useEffect(() => {
     setSidebarTab(pathname?.startsWith("/dashboard/email") ? "email" : "social");
-  }, [pathname]);
-
-  // Auto-expand catalog for product/service routes
-  useEffect(() => {
-    if (
-      pathname?.startsWith("/dashboard/products") ||
-      pathname?.startsWith("/dashboard/services")
-    ) {
-      setCatalogOpen(true);
-    }
   }, [pathname]);
 
   // Reset avatar error on change
@@ -893,153 +894,15 @@ export default function DashboardLayout({
                         />
                       ))}
 
-                      {/* Catalog (expandable) */}
-                      <div>
-                        <button
-                          type="button"
-                          onClick={() => setCatalogOpen((v) => !v)}
-                          title={!sidebarOpen ? "Catalog" : undefined}
-                          style={{
-                            ...navItemStyle(
-                              Boolean(
-                                pathname?.startsWith("/dashboard/products") ||
-                                  pathname?.startsWith("/dashboard/services")
-                              ),
-                              sidebarOpen
-                            ),
-                            width: "100%",
-                          }}
-                          onMouseEnter={(e) => {
-                            const isActive =
-                              pathname?.startsWith("/dashboard/products") ||
-                              pathname?.startsWith("/dashboard/services");
-                            if (!isActive) {
-                              (e.currentTarget as HTMLElement).style.background =
-                                "rgba(255,255,255,0.08)";
-                              (e.currentTarget as HTMLElement).style.color = "#ffffff";
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            const isActive =
-                              pathname?.startsWith("/dashboard/products") ||
-                              pathname?.startsWith("/dashboard/services");
-                            if (!isActive) {
-                              (e.currentTarget as HTMLElement).style.background =
-                                "transparent";
-                              (e.currentTarget as HTMLElement).style.color =
-                                "rgba(255, 255, 255, 0.90)";
-                            }
-                          }}
-                        >
-                          <NavPng src={SIDEBAR_ICONS.catalog} />
-                          {sidebarOpen && (
-                            <>
-                              <span style={{ flex: 1, textAlign: "left" }}>
-                                Catalog
-                              </span>
-                              <ChevronDown
-                                size={13}
-                                style={{
-                                  transform: catalogOpen
-                                    ? "rotate(180deg)"
-                                    : "rotate(0deg)",
-                                  transition: "transform 0.2s",
-                                  color: "rgba(255,255,255,0.50)",
-                                }}
-                              />
-                            </>
-                          )}
-                        </button>
-
-                        {sidebarOpen && catalogOpen && (
-                          // v1 catalog children — Figma tree treatment.
-                          // (See reference dashboard-layout.tsx:849-895 and
-                          //  app/globals.css:466-486 in the v1 git index.)
-                          //
-                          // Vertical connector at left:22 spans the full
-                          // height of the children block; each child has
-                          // an L-branch (a 12px horizontal hairline) that
-                          // meets the connector at the row's vertical
-                          // centre. Children render at the same 44px / 16px
-                          // / weight-500 nav-item metrics, just with a
-                          // 38px left padding so the icon clears the L.
-                          <div
-                            style={{
-                              position: "relative",
-                              marginTop: 2,
-                              paddingBottom: 6,
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 10,
-                            }}
-                          >
-                            {/* Vertical connector. `bottom: 28` = half a 44px
-                                row + the wrapper's 6px paddingBottom. That
-                                makes the line terminate exactly at the L-branch
-                                of the last sub-item rather than running past
-                                it into the wrapper's bottom padding. */}
-                            <div
-                              aria-hidden
-                              style={{
-                                position: "absolute",
-                                top: 0,
-                                bottom: 28,
-                                left: 22,
-                                width: 1,
-                                background: "rgba(255, 255, 255, 0.30)",
-                              }}
-                            />
-                            {catalogItems.map((item) => {
-                              const active = Boolean(pathname?.startsWith(item.href));
-                              return (
-                                <Link
-                                  key={item.href}
-                                  href={item.href}
-                                  style={{
-                                    ...navItemStyle(active, true),
-                                    position: "relative",
-                                    padding: "8px 10px 8px 38px",
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!active) {
-                                      (e.currentTarget as HTMLElement).style.background =
-                                        "rgba(255, 255, 255, 0.10)";
-                                      (e.currentTarget as HTMLElement).style.color =
-                                        "#ffffff";
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!active) {
-                                      (e.currentTarget as HTMLElement).style.background =
-                                        "transparent";
-                                      (e.currentTarget as HTMLElement).style.color =
-                                        "rgba(255, 255, 255, 0.90)";
-                                    }
-                                  }}
-                                >
-                                  {/* L-shaped branch */}
-                                  <span
-                                    aria-hidden
-                                    style={{
-                                      position: "absolute",
-                                      top: "50%",
-                                      left: 22,
-                                      width: 12,
-                                      height: 1,
-                                      background: "rgba(255, 255, 255, 0.30)",
-                                      transform: "translateY(-50%)",
-                                    }}
-                                  />
-                                  <NavIconBox>
-                                    <item.icon size={18} />
-                                  </NavIconBox>
-                                  <span>{item.name}</span>
-                                </Link>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      {/* Catalog — single page (unified offerings; the
+                          old expandable Products/Services dropdown was
+                          retired with the Phase-2 Offering model). */}
+                      <SidebarNavLink
+                        href={catalogNavItem.href}
+                        name={catalogNavItem.name}
+                        pngKey={catalogNavItem.pngKey}
+                        IconComponent={catalogNavItem.icon}
+                      />
 
                       {/* Integrations */}
                       <SidebarNavLink
@@ -1505,6 +1368,11 @@ export default function DashboardLayout({
             }),
           }}
         >
+          {/* QuiKit app switcher — 3×3 grid icon + glass popover, local
+              styled (see apps/quiksocial/components/quikit-app-switcher.tsx
+              for why we don't import @quikit/ui's AppSwitcher here). */}
+          <QuikitAppSwitcher />
+
           {/* Notification bell */}
           <button
             type="button"

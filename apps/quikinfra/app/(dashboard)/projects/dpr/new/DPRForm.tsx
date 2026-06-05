@@ -242,61 +242,67 @@ export function DPRForm({ editData, embedded = false, onSaved }: DPRFormProps = 
   const [workHalted, setWorkHalted] = useState(!!editData?.workHalted);
   const [siteRemarks, setSiteRemarks] = useState(editData?.siteRemarks ?? "");
 
-  useEffect(() => {
-    if (isEdit) return;
-    if (!projectId || !reportDate) return;
-
-    const ac = new AbortController();
-    let cancelled = false;
-    setWeatherLoading(true);
-    setWeatherHint("");
-    setWeatherDetail(null);
-
-    (async () => {
-      try {
-        const res = await fetch(
-          `/api/projects/dpr/weather?projectId=${encodeURIComponent(projectId)}&reportDate=${encodeURIComponent(reportDate)}`,
-          { signal: ac.signal },
-        );
-        const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-        if (cancelled) return;
-        if (!res.ok) {
-          const msg = typeof json.error === "string" ? json.error : "";
-          if (res.status !== 401 && res.status !== 403 && msg) {
-            setWeatherHint(msg);
-          }
-          return;
-        }
-        const data =
-          json.ok === true && json.data && typeof json.data === "object"
-            ? (json.data as Record<string, unknown>)
-            : json;
-        const cond = data.weatherCondition;
-        if (cond === "Clear" || cond === "Cloudy" || cond === "Rain") {
-          setWeatherCondition(cond);
-          setWeatherDetail(parseStoredWeatherDetail(data.detail));
-          const loc =
-            typeof data.resolvedLocation === "string"
-              ? data.resolvedLocation.trim()
-              : "";
-          setWeatherHint(loc ? `Suggested from weather near ${loc}` : "");
-        }
-      } catch (e: unknown) {
-        const name =
-          e && typeof e === "object" && "name" in e
-            ? String((e as { name?: string }).name)
-            : "";
-        if (name === "AbortError") return;
-      } finally {
-        if (!cancelled) setWeatherLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      ac.abort();
-    };
-  }, [projectId, reportDate, isEdit]);
+  // Weather auto-suggest is disabled for now — the /api/projects/dpr/weather
+  // endpoint needs WEATHER_API_KEY (OpenWeather) which isn't configured, so the
+  // call was returning WEATHER_NOT_CONFIGURED. The manual Clear/Cloudy/Rain
+  // pills below still work. To re-enable, uncomment this effect and set
+  // WEATHER_API_KEY in the env.
+  //
+  // useEffect(() => {
+  //   if (isEdit) return;
+  //   if (!projectId || !reportDate) return;
+  //
+  //   const ac = new AbortController();
+  //   let cancelled = false;
+  //   setWeatherLoading(true);
+  //   setWeatherHint("");
+  //   setWeatherDetail(null);
+  //
+  //   (async () => {
+  //     try {
+  //       const res = await fetch(
+  //         `/api/projects/dpr/weather?projectId=${encodeURIComponent(projectId)}&reportDate=${encodeURIComponent(reportDate)}`,
+  //         { signal: ac.signal },
+  //       );
+  //       const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  //       if (cancelled) return;
+  //       if (!res.ok) {
+  //         const msg = typeof json.error === "string" ? json.error : "";
+  //         if (res.status !== 401 && res.status !== 403 && msg) {
+  //           setWeatherHint(msg);
+  //         }
+  //         return;
+  //       }
+  //       const data =
+  //         json.ok === true && json.data && typeof json.data === "object"
+  //           ? (json.data as Record<string, unknown>)
+  //           : json;
+  //       const cond = data.weatherCondition;
+  //       if (cond === "Clear" || cond === "Cloudy" || cond === "Rain") {
+  //         setWeatherCondition(cond);
+  //         setWeatherDetail(parseStoredWeatherDetail(data.detail));
+  //         const loc =
+  //           typeof data.resolvedLocation === "string"
+  //             ? data.resolvedLocation.trim()
+  //             : "";
+  //         setWeatherHint(loc ? `Suggested from weather near ${loc}` : "");
+  //       }
+  //     } catch (e: unknown) {
+  //       const name =
+  //         e && typeof e === "object" && "name" in e
+  //           ? String((e as { name?: string }).name)
+  //           : "";
+  //       if (name === "AbortError") return;
+  //     } finally {
+  //       if (!cancelled) setWeatherLoading(false);
+  //     }
+  //   })();
+  //
+  //   return () => {
+  //     cancelled = true;
+  //     ac.abort();
+  //   };
+  // }, [projectId, reportDate, isEdit]);
 
   // Work done
   const [workItems, setWorkItems] = useState<WorkItem[]>(() =>

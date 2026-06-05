@@ -19,6 +19,10 @@
  */
 
 import { db } from "@/lib/db";
+import {
+  seedAllDefaultRoles,
+  ensureUserOnRole,
+} from "@/lib/rbac/seedDefaultRoles";
 
 /**
  * @returns number of invites accepted (0 when nothing was pending)
@@ -108,6 +112,17 @@ export async function applyPendingInvitesForEmail(
         data: { activeBrandId: firstBrandId },
       });
     }
+  }
+
+  // Org-level RBAC parity (matches QuikScale/QuikTrack): land the user on the
+  // default "User" org-role so they have a QsUserAppRole alongside the
+  // brand-level BrandMembership rows above. Best-effort — the
+  // /api/me/permissions lazy seed remains the fallback if this throws.
+  try {
+    const { userRoleId } = await seedAllDefaultRoles(orgId);
+    await ensureUserOnRole(userId, orgId, userRoleId);
+  } catch {
+    // swallow — never block sign-in on org-role assignment
   }
 
   return invites.length;

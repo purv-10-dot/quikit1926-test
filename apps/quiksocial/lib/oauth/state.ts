@@ -7,16 +7,17 @@
  *
  * Ported from quiksocial-v2 verbatim except for:
  *   - appUrl() default → localhost:3007 (QuikSocial's port in QuikIT)
- *
- * TODO(integration): the state should also carry orgId so the callback
- * doesn't need to fall back to DEFAULT_ORG_ID. Adding orgId to OAuthState
- * is a follow-up PR — strictly additive, no signature break.
+ *   - state now carries orgId (set at connect time) so the callback writes
+ *     the SocialAccount under the user's real org instead of DEFAULT_ORG_ID.
+ *     Optional on the type so legacy in-flight links (issued before orgId
+ *     was added) still decode — the callback falls back to DEFAULT_ORG_ID.
  */
 
 import { createHmac } from "crypto";
 
 interface OAuthState {
   userId: string;
+  orgId?: string;
   brandId: string;
   platform: string;
 }

@@ -18,6 +18,62 @@
 
 import { cacheDel, cacheGet, cacheSet, getRedis } from "@quikit/redis";
 
+/* ─── Cross-process invalidation (pub/sub) ──────────────────────────────────
+ *
+ * The in-memory layer is per-process. Without pub/sub, when one Node process
+ * calls `invalidate("tenantAppBlocked:abc")`, peer processes keep serving the
+ * stale value from their local LRU until their own TTL elapses. That's how
+ * "block app for tenant X" can stay invisible to half the pods for up to a
+ * minute.
+ *
+ * Fix: on `invalidate(key)`, publish the key on a Redis channel. Every
+ * process subscribes once at module load and drops its local copy on receipt.
+ * The subscriber is lazy and fail-silent — a Redis outage simply degrades
+ * back to per-process TTL behavior.
+ */
+const INVALIDATION_CHANNEL = "quikit:cache-invalidate";
+
+let _subscriber: ReturnType<typeof getRedis> | null = null;
+let _subscriberInitTried = false;
+
+function ensureInvalidationSubscriber(): void {
+  if (_subscriberInitTried) return;
+  _subscriberInitTried = true;
+
+  const main = getRedis();
+  if (!main) return;
+
+  try {
+    // ioredis pub/sub requires a dedicated connection — `duplicate()` mirrors
+    // the connection options without sharing the subscriber state.
+    const sub = main.duplicate();
+    _subscriber = sub;
+    sub.on("error", () => {
+      // Swallow — a broken subscriber must not break auth.
+    });
+    sub.subscribe(INVALIDATION_CHANNEL).catch(() => {
+      // Best-effort subscribe; failure leaves this process on per-TTL eviction.
+    });
+    sub.on("message", (channel: string, key: string) => {
+      if (channel === INVALIDATION_CHANNEL && key) {
+        localStore.delete(key);
+      }
+    });
+  } catch {
+    // ioredis duplicate / subscribe failures fall back silently.
+  }
+}
+
+async function publishInvalidation(key: string): Promise<void> {
+  const client = getRedis();
+  if (!client) return;
+  try {
+    await client.publish(INVALIDATION_CHANNEL, key);
+  } catch {
+    // Best-effort — the local invalidate has already happened.
+  }
+}
+
 interface CacheEntry<T> { value: T; expiresAt: number; }
 
 const MAX_LOCAL_ENTRIES = 1000;
@@ -93,6 +149,11 @@ export async function getOrSet<T>(
   ttlSeconds: number,
   loader: () => Promise<T>,
 ): Promise<T> {
+  // Lazily bind the cross-process invalidation listener on the first cache
+  // touch. Doing it here (vs. at module load) keeps test envs that never
+  // exercise the cache path from spinning up an unused Redis subscriber.
+  ensureInvalidationSubscriber();
+
   // Layer 1: in-memory.
   const local = localGet<T>(key);
   if (local !== undefined) return local;
@@ -113,10 +174,13 @@ export async function getOrSet<T>(
   return fresh;
 }
 
-/** Manual invalidation — use after a mutation that changes cached state. */
+/** Manual invalidation — use after a mutation that changes cached state.
+ *  Drops the local copy, deletes the Redis key, and publishes the key on
+ *  the invalidation channel so peer processes evict their local copies too. */
 export async function invalidate(key: string): Promise<void> {
   localDelete(key);
   await redisDelete(key);
+  await publishInvalidation(key);
 }
 
 /** Test / dev helper — wipe the in-memory layer. */

@@ -155,25 +155,6 @@ export default function OrgsPage() {
       .catch(() => {});
   }, []);
 
-  // Admin Portal is mandatory on every new org — the first Org Admin needs
-  // it to manage members/teams/etc. The checkbox in the form is disabled
-  // (always-checked); this id is used both to pre-select it in createForm
-  // and to skip toggle-off attempts.
-  const adminAppId =
-    platformApps.find((a) => a.slug === "admin")?.id ?? null;
-
-  // Once the App registry has loaded, ensure adminAppId is included in the
-  // create-form's appIds. Idempotent — runs again if the user opens/closes
-  // the panel and platformApps re-resolves.
-  useEffect(() => {
-    if (!adminAppId) return;
-    setCreateForm((prev) =>
-      prev.appIds.includes(adminAppId)
-        ? prev
-        : { ...prev, appIds: [...prev.appIds, adminAppId] }
-    );
-  }, [adminAppId]);
-
   // Edit panel
   const [editOpen, setEditOpen] = useState(false);
   const [editOrg, setEditOrg] = useState<TenantInfo | null>(null);
@@ -266,8 +247,9 @@ export default function OrgsPage() {
       slug: "",
       plan: "startup",
       billingEmail: "",
-      // Keep Admin Portal pre-selected after reset — it's mandatory.
-      appIds: adminAppId ? [adminAppId] : [],
+      // No app is pre-selected — the super admin manually picks every app
+      // (including Admin Portal) during org creation.
+      appIds: [],
       admin: {
         firstName: "",
         lastName: "",
@@ -278,9 +260,6 @@ export default function OrgsPage() {
   }
 
   function toggleCreateAppId(id: string) {
-    // Admin Portal can't be deselected — checkbox is also rendered disabled,
-    // but guard at the handler level too in case of programmatic clicks.
-    if (id === adminAppId) return;
     setCreateForm((prev) => ({
       ...prev,
       appIds: prev.appIds.includes(id)
@@ -697,29 +676,20 @@ export default function OrgsPage() {
               <p className="text-xs text-gray-400 italic">No active applications available.</p>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                {platformApps.map((a) => {
-                  const isAdmin = a.id === adminAppId;
-                  return (
-                    <label
-                      key={a.id}
-                      title={isAdmin ? "Admin Portal is required for every organization." : undefined}
-                      className={`flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg ${
-                        isAdmin
-                          ? "bg-gray-50 cursor-not-allowed opacity-80"
-                          : "hover:bg-gray-50 cursor-pointer"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isAdmin || createForm.appIds.includes(a.id)}
-                        disabled={isAdmin}
-                        onChange={() => toggleCreateAppId(a.id)}
-                        className="rounded text-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed"
-                      />
-                      <span className="text-sm">{a.name}</span>
-                    </label>
-                  );
-                })}
+                {platformApps.map((a) => (
+                  <label
+                    key={a.id}
+                    className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={createForm.appIds.includes(a.id)}
+                      onChange={() => toggleCreateAppId(a.id)}
+                      className="rounded text-indigo-600"
+                    />
+                    <span className="text-sm">{a.name}</span>
+                  </label>
+                ))}
               </div>
             )}
           </div>

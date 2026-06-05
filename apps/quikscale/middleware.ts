@@ -10,8 +10,10 @@ import { NextResponse } from "next/server";
  *           page component itself server-redirects authed users to
  *           /dashboard, so logged-in users never see the brochure.
  *   - `/dashboard`, `/kpi`, `/opsp`, … → auth required. Unauth users get
- *           sent to `/` (the landing). From there they click "Login" to
- *           reach https://authn.quikit.ai/login.
+ *           sent to the central auth host's `/login` (set via
+ *           centralLoginUrl). Authed-no-org users get routed through the
+ *           launcher `/apps?handoff=quikscale` handshake to acquire a
+ *           cross-domain session cookie.
  *   - `/auth-handoff` is public so the cross-domain cookie-bridge from
  *           the auth host can plant the session cookie on this host.
  *
@@ -22,29 +24,96 @@ import { NextResponse } from "next/server";
  *   each click because `isLoginRoute` evaluated true). Keeping the
  *   loginRoute as a unique sentinel and rewriting the bounce here is the
  *   safe pattern until the factory grows an exact-match option.
+ *
+ * Session enforcement: `centralLoginUrl` + `INTERNAL_SECRET` together
+ * enable the factory's remote verify-token call against the central auth
+ * host. That endpoint runs `verifyJWT` → Redis EXISTS, so TTL expiry,
+ * admin revoke, or sibling-app signOut invalidates this app's session on
+ * the next protected page nav. Without this, the JWT cookie was trusted
+ * blindly until its own `exp` claim.
  */
+const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_URL;
+const QUIKIT_URL = process.env.NEXT_PUBLIC_QUIKIT_URL;
+const APP_SLUG = "quikscale";
+
 const factory = createMiddleware({
   loginRoute: "/login",
   publicRoutes: ["/", "/login", "/invitations", "/auth-handoff", "/api/health"],
+  centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
+  centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
+
+function sessionCookieName(): string {
+  return process.env.NODE_ENV === "production"
+    ? "__Secure-next-auth.session-token"
+    : "next-auth.session-token";
+}
 
 export async function middleware(request: NextRequest) {
   const res = await factory(request);
-  // Rewrite any same-host redirect to `/login*` → `/` (the marketing
-  // landing). Cross-host redirects from the factory are left alone — they
-  // already point at the central auth host.
-  if (res && (res.status === 307 || res.status === 308)) {
-    const loc = res.headers.get("location") ?? "";
-    try {
-      const locUrl = new URL(loc, request.url);
-      const sameHost = locUrl.host === request.nextUrl.host;
-      if (sameHost && locUrl.pathname.startsWith("/login")) {
-        return NextResponse.redirect(new URL("/", request.url));
-      }
-    } catch {
-      // non-URL location — leave the factory response as-is
+  if (!res || (res.status !== 307 && res.status !== 308)) return res;
+
+  const loc = res.headers.get("location") ?? "";
+  let locUrl: URL;
+  try {
+    locUrl = new URL(loc, request.url);
+  } catch {
+    return res;
+  }
+
+  // Case 1: same-host redirect to /login* → rewrite to `/` (marketing
+  // landing). Only reached when centralLoginUrl is unset (local-dev
+  // fallback) since otherwise the factory points unauth users at the
+  // cross-host central login.
+  if (
+    locUrl.host === request.nextUrl.host &&
+    locUrl.pathname.startsWith("/login")
+  ) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  // Case 2: cross-host redirect to central auth login WITH
+  // reason=session_expired (the factory's "your session was revoked"
+  // signal). Clear the stale NextAuth cookie before bouncing — otherwise
+  // the next attempt replays the same dead cookie and the factory's
+  // loop-breaker (`_redirect_count>=3` → next()) would let the revoked
+  // session through, undoing the revocation.
+  if (AUTH_URL) {
+    let authOrigin: string | null = null;
+    try { authOrigin = new URL(AUTH_URL).origin; } catch { authOrigin = null; }
+    if (
+      authOrigin &&
+      locUrl.origin === authOrigin &&
+      locUrl.searchParams.get("reason") === "session_expired"
+    ) {
+      const cleared = NextResponse.redirect(locUrl);
+      cleared.cookies.delete(sessionCookieName());
+      return cleared;
     }
   }
+
+  // Case 3: cross-host redirect to launcher /apps (no-org user). Rewrite
+  // to the launcher handoff handshake so the user lands back on quikscale
+  // with a fresh cookie instead of being stranded on the launcher's org
+  // picker.
+  if (QUIKIT_URL) {
+    let launcherOrigin: string | null = null;
+    try { launcherOrigin = new URL(QUIKIT_URL).origin; } catch { launcherOrigin = null; }
+    if (
+      launcherOrigin &&
+      locUrl.origin === launcherOrigin &&
+      locUrl.pathname === "/apps"
+    ) {
+      const handoff = new URL("/apps", QUIKIT_URL);
+      handoff.searchParams.set("handoff", APP_SLUG);
+      handoff.searchParams.set(
+        "to",
+        request.nextUrl.pathname + request.nextUrl.search,
+      );
+      return NextResponse.redirect(handoff);
+    }
+  }
+
   return res;
 }
 
