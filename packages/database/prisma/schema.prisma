@@ -27,6 +27,7 @@ model App {
   appRoles         AppRole[]
   AppRole          QtAppRole[]
   cnAppRoles       CnAppRole[]
+  qsAppRoles       QsAppRole[]
   healthChecks     AppHealthCheck[]
   moduleFlags      AppModuleFlag[]
   oauthClient      OAuthClient?
@@ -235,6 +236,8 @@ model Org {
   QtUserViewPref          QtUserViewPref[]
   UserAppRole             QtUserAppRole[]
   UserPermissionExtra     QtUserPermissionExtra[]
+  qsAppRoles              QsAppRole[]
+  qsUserAppRoles          QsUserAppRole[]
   vcApplications          VCApplication[]
   vcAuditLogs             VCAuditLog[]
   vcCapitalCalls          VCCapitalCall[]
@@ -343,6 +346,7 @@ model User {
   qtProjectUserRoles      QtProjectUserRole[]
   cnUserAppRoles          CnUserAppRole[]
   cnPermissionExtras      CnUserPermissionExtra[]
+  qsUserAppRoles          QsUserAppRole[]
   cnProfiles              CnUserProfile[]
   cnProjectAccess         CnUserProjectAccess[]
   accounts                Account[]
@@ -1252,27 +1256,27 @@ model OPSPData {
 }
 
 model OPSPReviewEntry {
-  id            String   @id @default(cuid())
-  orgId         String
-  opspId        String
-  userId        String
-  horizon       String
-  rowIndex      Int
-  category      String
-  period        String
-  targetValue   Decimal? @db.Decimal(20, 4)
-  achievedValue Decimal? @db.Decimal(20, 4)
+  id                 String   @id @default(cuid())
+  orgId              String
+  opspId             String
+  userId             String
+  horizon            String
+  rowIndex           Int
+  category           String
+  period             String
+  targetValue        Decimal? @db.Decimal(20, 4)
+  achievedValue      Decimal? @db.Decimal(20, 4)
   // Manually-entered "Last Year Same Period" — only populated when the prior
   // year's OPSPReviewEntry doesn't supply an auto value (in which case the
   // drawer disables the field). See app/api/opsp/review/route.ts.
   lastYearSamePeriod Decimal? @db.Decimal(20, 4)
-  comment       String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  updatedBy     String?
-  opsp          OPSPData @relation(fields: [opspId], references: [id], onDelete: Cascade)
-  org           Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment            String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  updatedBy          String?
+  opsp               OPSPData @relation(fields: [opspId], references: [id], onDelete: Cascade)
+  org                Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, opspId, horizon, rowIndex, period])
   @@index([orgId])
@@ -5016,29 +5020,29 @@ model VCAuditLog {
 }
 
 model QtProject {
-  id          String            @id @default(cuid())
-  orgId       String
-  projectKey  String
-  name        String
-  description String?
-  projectType String            @default("software")
-  icon        String?
-  color       String?           @default("#2563eb")
-  status      String            @default("active")
-  startDate   DateTime?
-  endDate     DateTime?
-  leadUserId  String?
-  isDeleted   Boolean           @default(false)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  docs        QtDoc[]
-  issues      QtIssue[]
-  statuses    QtIssueStatus[]
-  issueTypes  QtIssueType[]
-  pages       QtPage[]
-  taskGroups  QtTaskGroup[]
+  id               String              @id @default(cuid())
+  orgId            String
+  projectKey       String
+  name             String
+  description      String?
+  projectType      String              @default("software")
+  icon             String?
+  color            String?             @default("#2563eb")
+  status           String              @default("active")
+  startDate        DateTime?
+  endDate          DateTime?
+  leadUserId       String?
+  isDeleted        Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  createdBy        String?
+  updatedBy        String?
+  docs             QtDoc[]
+  issues           QtIssue[]
+  statuses         QtIssueStatus[]
+  issueTypes       QtIssueType[]
+  pages            QtPage[]
+  taskGroups       QtTaskGroup[]
   org              Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
   members          QtProjectMember[]
   teams            QtProjectTeam[]
@@ -5083,18 +5087,18 @@ model QtProjectMember {
 // QtProjectMember.projectRoleId assigns a ProjectRole to a project member.
 
 model QtAppRole {
-  id          String             @id @default(cuid())
-  orgId       String
-  appId       String
-  name        String
-  description String?
-  isSystem    Boolean            @default(false)
-  isDefault   Boolean            @default(false)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  createdBy   String?
-  app         App                @relation(fields: [appId], references: [id], onDelete: Cascade)
-  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  id               String                  @id @default(cuid())
+  orgId            String
+  appId            String
+  name             String
+  description      String?
+  isSystem         Boolean                 @default(false)
+  isDefault        Boolean                 @default(false)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  createdBy        String?
+  app              App                     @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org              Org                     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   navigations      QtRoleNavigation[]
   permissions      QtRolePermission[]
   fieldPermissions QtRoleFieldPermission[]
@@ -5167,7 +5171,7 @@ model QtRoleFieldPermission {
   roleId String
   entity String
   field  String
-  level  String    // "hidden" | "readonly" | "editable" | "required"
+  level  String // "hidden" | "readonly" | "editable" | "required"
   role   QtAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@unique([roleId, entity, field])
@@ -5197,7 +5201,7 @@ model QtProjectRoleFieldPermission {
   projectRoleId String
   entity        String
   field         String
-  level         String        // "hidden" | "readonly" | "editable" | "required"
+  level         String // "hidden" | "readonly" | "editable" | "required"
   projectRole   QtProjectRole @relation(fields: [projectRoleId], references: [id], onDelete: Cascade)
 
   @@unique([projectRoleId, entity, field])
@@ -5824,10 +5828,10 @@ model Brand {
   memberships            BrandMembership[]
   campaigns              Campaign[]
   posts                  Post[]
-  products               Product[]
-  services               Service[]
+  offerings              Offering[]
   socialAccounts         SocialAccount[]
   userPreferences        UserPreference[]
+  autoReplyRules         AutoReplyRule[]
 
   @@index([orgId])
   @@index([orgId, country])
@@ -5946,8 +5950,7 @@ model Campaign {
   generatedPosts      Int        @default(0)
   failedPosts         Int        @default(0)
   includeLogo         Boolean    @default(true)
-  productIds          String[]   @default([])
-  serviceIds          String[]   @default([])
+  offeringIds         String[]   @default([])
   assetIds            String[]   @default([])
   themeRotationPlan   Json?
   brandColorPrimary   String?
@@ -5957,8 +5960,7 @@ model Campaign {
   templateId          String?
   clonedFromId        String?
   lastGeneratedAt     DateTime?
-  attachedProduct     Json?
-  attachedService     Json?
+  attachedOffering    Json?
   attachedAsset       Json?
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
@@ -5978,7 +5980,7 @@ model Campaign {
 }
 
 model Post {
-  id                          String         @id @default(cuid())
+  id                          String                @id @default(cuid())
   orgId                       String
   brandId                     String
   campaignId                  String?
@@ -5988,7 +5990,7 @@ model Post {
   content                     String
   prompt                      String?
   platform                    String
-  status                      String         @default("draft")
+  status                      String                @default("draft")
   rejectionNote               String?
   scheduledFor                DateTime?
   requestedPublishTime        DateTime?
@@ -6001,9 +6003,9 @@ model Post {
   permalink                   String?
   failedReason                String?
   lockedAt                    DateTime?
-  isAiGenerated               Boolean        @default(false)
+  isAiGenerated               Boolean               @default(false)
   aiImageUrl                  String?
-  imageUrls                   String[]       @default([])
+  imageUrls                   String[]              @default([])
   videoUrl                    String?
   aiVideoUrl                  String?
   aiVideoTranscript           String?
@@ -6012,29 +6014,30 @@ model Post {
   youtubePrivacy              String?
   pinterestBoardId            String?
   pinterestLink               String?
-  selectedProductIds          String[]       @default([])
-  selectedServiceIds          String[]       @default([])
-  selectedAssetIds            String[]       @default([])
+  selectedOfferingIds         String[]              @default([])
+  selectedAssetIds            String[]              @default([])
   selectedAssetUrlsById       Json?
   displayImagesByVariantLabel Json?
   platformPostIds             Json?
-  attachedProduct             Json?
-  attachedService             Json?
+  attachedOffering            Json?
   attachedAsset               Json?
   storeidead                  Json?
   newPostCreateMeta           Json?
-  likes                       Int            @default(0)
-  comments                    Int            @default(0)
-  shares                      Int            @default(0)
-  reactions                   Int            @default(0)
+  likes                       Int                   @default(0)
+  comments                    Int                   @default(0)
+  shares                      Int                   @default(0)
+  reactions                   Int                   @default(0)
   engagementUpdatedAt         DateTime?
-  createdAt                   DateTime       @default(now())
-  updatedAt                   DateTime       @updatedAt
+  createdAt                   DateTime              @default(now())
+  updatedAt                   DateTime              @updatedAt
   createdBy                   String?
   updatedBy                   String?
-  brand                       Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
-  campaign                    Campaign?      @relation(fields: [campaignId], references: [id])
-  socialAccount               SocialAccount? @relation(fields: [socialAccountId], references: [id])
+  brand                       Brand                 @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  campaign                    Campaign?             @relation(fields: [campaignId], references: [id])
+  socialAccount               SocialAccount?        @relation(fields: [socialAccountId], references: [id])
+  autoReplyControl            AutoReplyPostControl?
+  autoReplyLogs               AutoReplyLog[]
+  autoReplyCursors            AutoReplyCursor[]
 
   @@index([orgId])
   @@index([orgId, brandId, scheduledFor])
@@ -6048,23 +6051,27 @@ model Post {
   @@schema("app_quiksocial")
 }
 
-model Product {
+model Offering {
   id                  String   @id @default(cuid())
   orgId               String
   brandId             String
+  type                String   @default("product")
   name                String
   description         String?
   price               String?
   currency            String?
+  url                 String?
   sku                 String?
   category            String?
   tone                String?
-  imageUrls           String[] @default([])
-  videoUrls           String[] @default([])
-  tags                String[] @default([])
+  duration            String?
   idealCustomerTitles String[] @default([])
   problemsSolved      String[] @default([])
   proofPoints         String[] @default([])
+  imageUrls           String[] @default([])
+  videoUrls           String[] @default([])
+  tags                String[] @default([])
+  metadata            Json?
   isActive            Boolean  @default(true)
   sortOrder           Int      @default(0)
   createdAt           DateTime @default(now())
@@ -6077,57 +6084,45 @@ model Product {
   @@index([orgId, brandId])
   @@index([orgId, brandId, isActive, createdAt(sort: Desc)])
   @@index([orgId, isActive])
+  @@index([orgId, brandId, type])
+  @@index([orgId, brandId, type, isActive, sortOrder])
   @@schema("app_quiksocial")
 }
 
-model Service {
-  id          String   @id @default(cuid())
-  orgId       String
-  brandId     String
-  name        String
-  description String?
-  pricing     String?
-  currency    String?
-  duration    String?
-  category    String?
-  imageUrls   String[] @default([])
-  videoUrls   String[] @default([])
-  tags        String[] @default([])
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  createdBy   String?
-  updatedBy   String?
-  brand       Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([orgId, brandId])
-  @@index([orgId, brandId, isActive, createdAt(sort: Desc)])
-  @@index([orgId, isActive])
-  @@schema("app_quiksocial")
-}
+// --- Product / Service models removed (replaced by unified Offering above).
 
 model SocialAccount {
-  id             String    @id @default(cuid())
-  orgId          String
-  brandId        String?
-  userId         String
-  platform       String
-  accountId      String
-  pageId         String?
-  accountName    String
-  profilePicture String?
-  accessToken    String
-  refreshToken   String?
-  expiresAt      DateTime?
-  isActive       Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  createdBy      String?
-  updatedBy      String?
-  posts          Post[]
-  brand          Brand?    @relation(fields: [brandId], references: [id])
+  id               String            @id @default(cuid())
+  orgId            String
+  brandId          String?
+  userId           String
+  platform         String
+  accountId        String
+  pageId           String?
+  // Instagram Business Account ID. Required for IG publishing (Graph
+  // API's POST /{id}/media expects this, NOT the Facebook Page ID).
+  // Always null for non-Instagram rows. May be null on legacy IG rows
+  // created before this column existed — the publisher self-heals via
+  // a one-shot GET /{pageId}?fields=instagram_business_account lookup,
+  // or run scripts/backfill-ig-business-account.ts to backfill the
+  // whole table at once.
+  igBusinessAccountId String?
+  accountName      String
+  profilePicture   String?
+  accessToken      String
+  refreshToken     String?
+  expiresAt        DateTime?
+  isActive         Boolean           @default(true)
+  autoReplyEnabled Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  createdBy        String?
+  updatedBy        String?
+  posts            Post[]
+  brand            Brand?            @relation(fields: [brandId], references: [id])
+  autoReplyRules   AutoReplyRule[]
+  autoReplyLogs    AutoReplyLog[]
+  autoReplyCursors AutoReplyCursor[]
 
   @@unique([orgId, userId, platform, accountId])
   @@index([orgId])
@@ -6151,6 +6146,212 @@ model UserPreference {
 
   @@unique([orgId, userId])
   @@index([userId])
+  @@schema("app_quiksocial")
+}
+
+// ============================================================================
+// AUTO-REPLY (Phase 1) — Meta Graph polling + template/AI reply pipeline.
+// Ported from quiksocial-v2. Polling is driven by instrumentation.ts cron
+// tick → /api/cron/auto-reply-monitor → internal API routes → Python AI
+// service on Railway (no BullMQ/Redis on the Next.js side).
+// ============================================================================
+
+enum AutoReplyTriggerType {
+  ANY_COMMENT
+  KEYWORD_MATCH
+
+  @@schema("app_quiksocial")
+}
+
+enum AutoReplyMode {
+  TEMPLATE
+  AI
+
+  @@schema("app_quiksocial")
+}
+
+enum AutoReplyKeywordMatch {
+  ANY
+  ALL
+
+  @@schema("app_quiksocial")
+}
+
+enum AutoReplyLogStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+
+  @@schema("app_quiksocial")
+}
+
+model AutoReplyRule {
+  id               String                @id @default(cuid())
+  orgId            String
+  brandId          String
+  socialAccountId  String
+  name             String
+  triggerType      AutoReplyTriggerType
+  replyMode        AutoReplyMode
+  isActive         Boolean               @default(true)
+  priority         Int                   @default(0)
+  templateBody     String?
+  keywords         String[]              @default([])
+  keywordMatch     AutoReplyKeywordMatch @default(ANY)
+  caseSensitive    Boolean               @default(false)
+  toneGuidance     String?
+  cooldownMinutes  Int                   @default(0)
+  maxRepliesPerDay Int                   @default(0)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  createdBy        String?
+  updatedBy        String?
+  brand            Brand                 @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  socialAccount    SocialAccount         @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  logs             AutoReplyLog[]
+
+  @@index([orgId])
+  @@index([orgId, brandId, isActive])
+  @@index([orgId, socialAccountId, isActive])
+  @@index([orgId, brandId, isActive, priority(sort: Desc)])
+  @@schema("app_quiksocial")
+}
+
+model AutoReplyPostControl {
+  id               String   @id @default(cuid())
+  orgId            String
+  postId           String   @unique
+  autoReplyEnabled Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  updatedBy        String?
+  post             Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@schema("app_quiksocial")
+}
+
+model AutoReplyLog {
+  id                String             @id @default(cuid())
+  orgId             String
+  ruleId            String
+  postId            String
+  socialAccountId   String
+  platformCommentId String
+  commentAuthor     String?
+  commentAuthorId   String?
+  commentText       String?
+  replyText         String?
+  replyMode         AutoReplyMode
+  status            AutoReplyLogStatus @default(PENDING)
+  failureReason     String?
+  providerUsed      String?
+  latencyMs         Int?
+  costUsd           Float?
+  platformReplyId   String?
+  sentAt            DateTime           @default(now())
+  rule              AutoReplyRule      @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  post              Post               @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount     SocialAccount      @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, platformCommentId])
+  @@index([orgId, ruleId, sentAt(sort: Desc)])
+  @@index([orgId, postId, sentAt(sort: Desc)])
+  @@index([orgId, sentAt(sort: Desc)])
+  @@index([orgId, status, sentAt])
+  @@schema("app_quiksocial")
+}
+
+model AutoReplyCursor {
+  id                   String        @id @default(cuid())
+  orgId                String
+  socialAccountId      String
+  postId               String
+  platformPostId       String
+  lastPolledAt         DateTime
+  lastCommentTimestamp DateTime?
+  lastPollError        String?
+  consecutiveErrors    Int           @default(0)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  socialAccount        SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  post                 Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, socialAccountId, postId])
+  @@index([orgId, socialAccountId])
+  @@schema("app_quiksocial")
+}
+
+/// QuikIT RBAC v2 — org-scoped role definition for QuikSocial. Sits on top
+/// of the per-brand BrandMembership (which keeps owning brand-level
+/// admin/approver/member); this AppRole gates org-wide "QuikSocial admin"
+/// capabilities. DB table is `AppRole` in `app_quiksocial` (via @@map);
+/// Prisma model name is prefixed `Qs` so it can coexist with QuikScale's
+/// AppRole + QuikTrack's QtAppRole etc. in a single schema.prisma.
+model QsAppRole {
+  id          String             @id @default(cuid())
+  orgId       String
+  appId       String
+  name        String
+  description String?
+  isSystem    Boolean            @default(false)
+  isDefault   Boolean            @default(false)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  createdBy   String?
+  app         App                @relation(fields: [appId], references: [id], onDelete: Cascade)
+  org         Org                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  navigations QsRoleNavigation[]
+  permissions QsRolePermission[]
+  members     QsUserAppRole[]
+
+  @@unique([orgId, appId, name])
+  @@index([orgId, appId])
+  @@map("AppRole")
+  @@schema("app_quiksocial")
+}
+
+model QsUserAppRole {
+  id         String    @id @default(cuid())
+  userId     String
+  orgId      String
+  roleId     String
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+  org        Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role       QsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId, roleId])
+  @@index([roleId])
+  @@index([userId, orgId])
+  @@map("UserAppRole")
+  @@schema("app_quiksocial")
+}
+
+model QsRolePermission {
+  id       String    @id @default(cuid())
+  roleId   String
+  resource String
+  action   String
+  role     QsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@index([roleId])
+  @@map("RolePermission")
+  @@schema("app_quiksocial")
+}
+
+model QsRoleNavigation {
+  id     String    @id @default(cuid())
+  roleId String
+  navKey String
+  role   QsAppRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, navKey])
+  @@index([roleId])
+  @@map("RoleNavigation")
   @@schema("app_quiksocial")
 }
 

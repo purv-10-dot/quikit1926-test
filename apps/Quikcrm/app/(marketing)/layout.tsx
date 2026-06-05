@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./marketing.css";
 
 /**
@@ -8,9 +9,16 @@ import "./marketing.css";
  * AFTER root globals.css so its resets win for the marketing surface. Dashboard
  * routes live in a different route group and never load this layout.
  *
- * The source landing uses Inter (Google Fonts) — we load it here so the ported
- * `font-family: 'Inter'` rules in marketing.css resolve exactly as designed.
+ * Fonts: Inter via next/font (the QuikScale / QuikTrack pattern), exposed as the
+ * `--font-sans` CSS variable that the ported marketing.css consumes.
  */
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 const SITE_URL = "https://crm.quikit.ai";
 const TITLE = "QuikCRM — Run your entire sales motion from one workspace";
@@ -139,18 +147,11 @@ const faqJsonLd = {
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
-    <>
-      {/* Inter — matches the source landing's typography exactly. */}
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
-        rel="stylesheet"
-      />
+    <div className={inter.variable}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
       {children}
-    </>
+    </div>
   );
 }

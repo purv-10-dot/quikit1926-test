@@ -1,17 +1,24 @@
 "use client";
 
 import { useEffect } from "react";
+import Nav from "./Nav";
+import { LOGIN_HREF } from "./login-href";
 import { LANDING_HTML } from "./landing-html";
 
 /**
  * QuikCRM marketing landing — client shell.
  *
  * The markup (LANDING_HTML) and styles (marketing.css) are ported verbatim
- * from the source landing page. The four scroll-driven effects below (hero
- * scroll-video scrub, image-banner mask, auto-hide nav, sticky horizontal
- * conversions) are the original vanilla-JS routines adapted to run inside a
+ * from the source landing page (the `.navbar` is rendered by <Nav /> instead,
+ * so its Login button can use the platform SSO handoff). The scroll-driven
+ * effects below are the original vanilla-JS routines adapted to run inside a
  * React effect with a `cancelled` guard so their requestAnimationFrame loops
- * and scroll listener are torn down on unmount (e.g. client-nav to /dashboard).
+ * and scroll listeners are torn down on unmount (e.g. client-nav to /dashboard):
+ *   1. hero scroll-video scrub + stretching headline + glass parallax
+ *   2. image-banner mask/scale reveal
+ *   3. back-to-top button (show past 600px, smooth-scroll to top)
+ *   4. auto-hide nav on scroll direction
+ *   5. sticky horizontal "conversions" scroll + scroll-scrubbed bg video
  */
 export default function LandingClient() {
   useEffect(() => {
@@ -20,6 +27,12 @@ export default function LandingClient() {
     // Reset scroll to top — the scrub timelines assume a 0 starting offset.
     if ("scrollRestoration" in history) history.scrollRestoration = "manual";
     window.scrollTo(0, 0);
+
+    // Wire the hero "Start Free Trial" CTAs to the platform login (Nav's Login
+    // button is already wired via the React component). Other CTAs stay as-is.
+    document
+      .querySelectorAll<HTMLAnchorElement>(".hg-cta .btn:not(.btn-light)")
+      .forEach((a) => a.setAttribute("href", LOGIN_HREF));
 
     // 1) Hero — scroll-video stage + stretching headline + glass parallax
     (function () {
@@ -179,7 +192,23 @@ export default function LandingClient() {
       requestAnimationFrame(tick);
     })();
 
-    // 3) Auto-hide / show nav on scroll direction
+    // 3) Back-to-top button — visible past 600px, smooth-scroll to top
+    const backTop = document.getElementById("backToTop");
+    function onBackTopScroll() {
+      if (!backTop) return;
+      if (window.scrollY > 600) backTop.classList.add("is-visible");
+      else backTop.classList.remove("is-visible");
+    }
+    function onBackTopClick() {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    if (backTop) {
+      backTop.addEventListener("click", onBackTopClick);
+      window.addEventListener("scroll", onBackTopScroll, { passive: true });
+      onBackTopScroll();
+    }
+
+    // 4) Auto-hide / show nav on scroll direction
     const nav = document.querySelector(".navbar");
     let lastY = window.scrollY;
     const navThreshold = 6;
@@ -197,7 +226,7 @@ export default function LandingClient() {
     }
     if (nav) window.addEventListener("scroll", onNavScroll, { passive: true });
 
-    // 4) Conversions — sticky horizontal scroll + scroll-scrubbed bg video
+    // 5) Conversions — sticky horizontal scroll + scroll-scrubbed bg video
     (function () {
       const section = document.getElementById("convSection");
       const track = document.getElementById("convTrack");
@@ -247,10 +276,15 @@ export default function LandingClient() {
     return () => {
       cancelled = true;
       window.removeEventListener("scroll", onNavScroll);
+      window.removeEventListener("scroll", onBackTopScroll);
+      if (backTop) backTop.removeEventListener("click", onBackTopClick);
     };
   }, []);
 
   return (
-    <main className="stage" id="main-content" dangerouslySetInnerHTML={{ __html: LANDING_HTML }} />
+    <>
+      <Nav />
+      <main className="stage" id="main-content" dangerouslySetInnerHTML={{ __html: LANDING_HTML }} />
+    </>
   );
 }

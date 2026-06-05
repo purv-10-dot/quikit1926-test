@@ -15,8 +15,8 @@ export const metadata: Metadata = {
   description: "Leads, accounts, contacts, automations, and telephony — sales execution on QuikIT.",
   icons: {
     icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
       { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/icon.png", sizes: "180x180", type: "image/png" },
     ],
     apple: "/apple-icon.png",
   },

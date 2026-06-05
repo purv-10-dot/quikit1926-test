@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { SignJWT } from "jose";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -170,6 +171,16 @@ export async function POST(request: NextRequest) {
   const name =
     firstName || lastName ? `${firstName ?? ""} ${lastName ?? ""}`.trim() : null;
 
+  // The session callback doesn't surface the Redis session id, so read it
+  // off the raw JWT. Carrying it into the handoff token lets the consumer
+  // app's auth-handoff endpoint stamp it onto the minted NextAuth cookie,
+  // so the consumer cookie shares the central session id and remote
+  // verify-token / the jwt-callback Redis check can soft-invalidate it.
+  // Without this, launcher-entered consumer sessions carry no sessionId
+  // and revocation is silently a no-op for them.
+  const jwt = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const sessionId = (jwt?.sessionId as string | undefined) ?? null;
+
   const key = new TextEncoder().encode(secret);
   const jti = crypto.randomUUID();
   const token = await new SignJWT({
@@ -184,6 +195,7 @@ export async function POST(request: NextRequest) {
     firstName,
     lastName,
     name,
+    sessionId,
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuedAt()

@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { unwrap } from "@/lib/utils/api-fetch";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, ChevronDown, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronDown, Sparkles, Plus } from "lucide-react";
 import {
   HOLIDAYS,
   getHolidaysForDate,
@@ -101,7 +101,11 @@ export default function CalendarPage() {
 
   // View state
   const [viewMode,    setViewMode]    = useState<ViewMode>("Month");
-  const [currentDate, setCurrentDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  // currentDate anchors all three views — Month reads only its month/year,
+  // while Week/Day derive their range from the full date. It MUST start as
+  // today (not the 1st of the month), or Week/Day open on the week containing
+  // the 1st (e.g. May 1 → "Apr 27 – May 3") regardless of today.
+  const [currentDate, setCurrentDate] = useState(new Date());
 
   // Country / holiday
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
@@ -208,7 +212,9 @@ export default function CalendarPage() {
   };
 
   const goToday = () => {
-    setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    // Jump to *today* — Month shows the current month, Week the current week,
+    // Day today. (Was pinned to the 1st, so Week/Day never reached this week.)
+    setCurrentDate(new Date());
   };
 
   // ── Tooltip handlers ──────────────────────────────────────────────────────
@@ -225,10 +231,20 @@ export default function CalendarPage() {
     setTooltip(null);
   };
 
+  // A post lands on the calendar by its most relevant date:
+  //   scheduledFor → scheduled / overdue
+  //   publishedAt  → published (carry NO scheduledFor — previously dropped)
+  //   createdAt    → drafts / approved with no date yet
+  // Mirrors the /api/posts date filter so what's fetched is what's shown.
+  function relevantDate(post: CalendarPost): string | null {
+    return post.scheduledFor ?? post.publishedAt ?? post.createdAt ?? null;
+  }
+
   // ── Derived: posts mapped by YYYY-MM-DD key ───────────────────────────────
   const postsByDay = posts.reduce<Record<string, CalendarPost[]>>((acc, post) => {
-    if (!post.scheduledFor) return acc;
-    const d    = new Date(post.scheduledFor);
+    const rel = relevantDate(post);
+    if (!rel) return acc;
+    const d    = new Date(rel);
     const key  = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
     if (!acc[key]) acc[key] = [];
     acc[key].push(post);
@@ -511,6 +527,10 @@ export default function CalendarPage() {
           return (
             <div
               key={day.toISOString()}
+              // Clicking anywhere in the column opens the day panel for that
+              // day (matches Month-view cell click). The post cards below also
+              // setSelectedDay(day) — bubbling to here is the same action.
+              onClick={() => setSelectedDay(day)}
               style={{
                 borderRadius: 12,
                 background: isToday ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
@@ -521,6 +541,7 @@ export default function CalendarPage() {
                 flexDirection: "column",
                 gap: 6,
                 overflowY: "auto",
+                cursor: "pointer",
               }}
             >
               {/* Column header */}
@@ -630,9 +651,33 @@ export default function CalendarPage() {
   function DayView() {
     const dayPosts = getDayPosts(currentDate);
     const holiday  = getDayHoliday(currentDate);
+    const iso = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${String(currentDate.getDate()).padStart(2, "0")}`;
 
     return (
       <div style={{ flex: 1, overflowY: "auto" }}>
+        {/* Day view has no date grid to click — this button is the create
+            entry point. Carries the day through as a locked scheduledDate. */}
+        <Link
+          href={`/dashboard/posts/create?scheduledDate=${iso}`}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            marginBottom: 12,
+            padding: "9px 0",
+            borderRadius: 10,
+            background: "rgba(255,255,255,0.07)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            color: "rgba(255,255,255,0.80)",
+            fontSize: 13,
+            fontWeight: 500,
+            textDecoration: "none",
+          }}
+        >
+          <Plus size={14} />
+          Create post for this day
+        </Link>
         {holiday && (
           <div
             style={{
@@ -704,9 +749,9 @@ export default function CalendarPage() {
                       >
                         {post.status}
                       </span>
-                      {post.scheduledFor && (
+                      {(post.scheduledFor || post.publishedAt) && (
                         <span style={{ fontSize: 11, color: "rgba(255,255,255,0.40)" }}>
-                          {formatTimeShort(post.scheduledFor)}
+                          {formatTimeShort(post.scheduledFor ?? post.publishedAt)}
                         </span>
                       )}
                     </div>
@@ -735,7 +780,7 @@ export default function CalendarPage() {
                     )}
                     {post.status === "overdue" && (
                       <Link
-                        href={`/dashboard/posts/${post._id}?reschedule=true`}
+                        href={`/dashboard/content-hub?post=${post._id}&reschedule=true`}
                         style={{
                           fontSize: 12,
                           padding: "4px 10px",
@@ -749,7 +794,7 @@ export default function CalendarPage() {
                       </Link>
                     )}
                     <Link
-                      href={`/dashboard/posts/${post._id}`}
+                      href={`/dashboard/content-hub?post=${post._id}`}
                       style={{
                         fontSize: 12,
                         padding: "4px 10px",
@@ -804,9 +849,9 @@ export default function CalendarPage() {
           <p style={{ color: "#ffffff", fontSize: 12, margin: "0 0 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {tooltip.post.content || "No caption"}
           </p>
-          {tooltip.post.scheduledFor && (
+          {(tooltip.post.scheduledFor || tooltip.post.publishedAt) && (
             <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 11, margin: 0 }}>
-              {formatTimeShort(tooltip.post.scheduledFor)}
+              {formatTimeShort(tooltip.post.scheduledFor ?? tooltip.post.publishedAt)}
             </p>
           )}
         </div>
@@ -931,12 +976,10 @@ export default function CalendarPage() {
             ))}
           </div>
 
-          {/* Plan this Month — Month view only.
-              Styled as a uniform glass header button to match Today /
-              nav arrows / view toggle. (Previously had a green tint that
-              didn't fit the rest of the header.) */}
-          {viewMode === "Month" && (
-            <button
+          {/* Plan this Month — a calendar-level action, shown in all three
+              views (Month / Week / Day), not just Month. Styled as a uniform
+              glass header button to match Today / nav arrows / view toggle. */}
+          <button
               type="button"
               onClick={() => setPlanModalOpen(true)}
               style={{
@@ -956,7 +999,6 @@ export default function CalendarPage() {
               <Sparkles size={13} />
               Plan this Month
             </button>
-          )}
 
           {/* Holiday country dropdown — same uniform glass treatment.
               When a country is selected we keep the button glass but

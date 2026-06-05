@@ -51,6 +51,11 @@ interface ScheduleModalProps {
   // of undefined keeps the create-flow caller behaviour unchanged
   // (modal opens blank).
   initialScheduledFor?: Date | null;
+  // When true, the date is fixed (chosen upstream, e.g. a calendar-cell
+  // click that pre-filled initialScheduledFor) and the calendar grid is
+  // rendered greyed-out / non-interactive — the user only picks a time.
+  // Default false keeps every existing caller's date editable.
+  lockDate?: boolean;
   onClose: () => void;
   // Returns null on success (the parent will navigate away), or an error
   // string on failure so the modal can render it without unmounting.
@@ -59,7 +64,7 @@ interface ScheduleModalProps {
   // Admin-only "Post Now" override. When provided, a Zap-icon button
   // appears beside Save/Schedule and invokes this directly. Returns null
   // on success, error string on failure.
-  onPublishNow?: () => Promise<string | null>;
+  onPublishNow?: (platform: string) => Promise<string | null>;
   publishingNow?: boolean;
   isAdmin?: boolean;
   // Mode toggle:
@@ -99,6 +104,7 @@ export default function ScheduleModal({
   caption,
   platform: defaultPlatform,
   initialScheduledFor,
+  lockDate = false,
   onClose,
   onSave,
   saving,
@@ -118,7 +124,11 @@ export default function ScheduleModal({
   const [viewYear, setViewYear] = useState(_initialDateObj ? _initialDateObj.getFullYear() : today.getFullYear());
   const [viewMonth, setViewMonth] = useState(_initialDateObj ? _initialDateObj.getMonth() : today.getMonth());
   const [selectedDate, setSelectedDate] = useState<string | null>(_initial?.dateStr ?? null);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(_initial?.slot ?? null);
+  // When the date is locked (calendar-origin), leave the time unpicked so
+  // the user actively chooses it — the only decision left to them.
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(
+    lockDate ? null : _initial?.slot ?? null,
+  );
   const [selectedPlatform, setSelectedPlatform] = useState<string>(defaultPlatform ?? "instagram");
   const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
   const [loadingPlatforms, setLoadingPlatforms] = useState(true);
@@ -218,7 +228,7 @@ export default function ScheduleModal({
   const handlePostNow = async () => {
     if (!onPublishNow) return;
     setError("");
-    const errMsg = await onPublishNow();
+    const errMsg = await onPublishNow(selectedPlatform);
     if (errMsg) setError(errMsg);
   };
 
@@ -360,6 +370,23 @@ export default function ScheduleModal({
             <div style={{ display: "flex", gap: 16 }}>
               {/* Calendar */}
               <div style={{ flex: 1 }}>
+                {lockDate && (
+                  <p
+                    style={{
+                      fontSize: 11,
+                      color: "rgba(255,255,255,0.55)",
+                      margin: "0 0 8px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    📅 Date set from calendar — choose a time
+                  </p>
+                )}
+                {/* When locked, the date is fixed upstream: grey out + freeze
+                    the grid so only the time-slot column stays interactive. */}
+                <div style={lockDate ? { opacity: 0.5, pointerEvents: "none" } : undefined}>
                 {/* Month nav */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                   <button type="button" onClick={handlePrevMonth} style={navBtnStyle}>
@@ -429,6 +456,7 @@ export default function ScheduleModal({
                       </button>
                     );
                   })}
+                </div>
                 </div>
               </div>
 

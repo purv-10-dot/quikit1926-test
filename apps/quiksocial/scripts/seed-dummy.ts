@@ -105,8 +105,7 @@ async function wipe(orgId: string, userIds: string[]) {
     db.post.deleteMany({ where: { orgId } }),
     db.campaign.deleteMany({ where: { orgId } }),
     db.assetLibrary.deleteMany({ where: { orgId } }),
-    db.product.deleteMany({ where: { orgId } }),
-    db.service.deleteMany({ where: { orgId } }),
+    db.offering.deleteMany({ where: { orgId } }),
     db.socialAccount.deleteMany({ where: { orgId } }),
     db.userPreference.deleteMany({ where: { orgId } }),
     db.brandMembership.deleteMany({ where: { orgId } }),
@@ -204,14 +203,17 @@ async function seedBrand(orgId: string, b: typeof BRANDS[number], userIds: Recor
     });
   }
 
-  // Products (only for first brand — coffee)
+  // Offerings (Phase 2 unified catalog): products for the default brand,
+  // services for everyone else. Each row uses the free-string `type` slug
+  // so the catalog UI groups them under "Products" / "Services" tabs.
   const products: { id: string }[] = [];
   if (b.isDefault) {
     for (const p of PRODUCT_TEMPLATES) {
-      const row = await db.product.create({
+      const row = await db.offering.create({
         data: {
           orgId,
           brandId: brand.id,
+          type: "product",
           name: p.name,
           description: p.description,
           price: p.price,
@@ -226,13 +228,15 @@ async function seedBrand(orgId: string, b: typeof BRANDS[number], userIds: Recor
     }
   } else {
     for (const s of SERVICE_TEMPLATES) {
-      await db.service.create({
+      await db.offering.create({
         data: {
           orgId,
           brandId: brand.id,
+          type: "service",
           name: s.name,
           description: s.description,
-          pricing: s.pricing,
+          // Service.pricing → Offering.price (unified column).
+          price: s.pricing,
           currency: s.currency,
           duration: s.duration,
           category: s.category,

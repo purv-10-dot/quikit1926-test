@@ -33,7 +33,7 @@ WORKDIR /app
 
 COPY --from=builder /app/out/json/ .
 COPY --from=builder /app/out/package-lock.json ./package-lock.json
-RUN npm install --ignore-scripts
+RUN npm ci --ignore-scripts
 
 COPY --from=builder /app/out/full/ .
 COPY turbo.json turbo.json
@@ -48,13 +48,9 @@ ARG NEXT_PUBLIC_AUTH_URL="https://placeholder.com"
 ARG NEXT_PUBLIC_QUIKIT_URL="https://placeholder.com"
 ARG NEXT_PUBLIC_QUIKINFRA_URL="https://placeholder.com"
 ARG NEXT_PUBLIC_SENTRY_DSN
-# Server-side OAuth client config. lib/auth.ts throws at *import* time when
-# these are unset, and `next build` evaluates the NextAuth route module while
-# collecting page data — so non-empty placeholders are required for the build
-# to pass. Real values are injected at container runtime (see docker-compose).
-ARG QUIKIT_URL="https://placeholder.com"
-ARG QUIKIT_CLIENT_ID="build-time-dummy"
-ARG QUIKIT_CLIENT_SECRET="build-time-dummy"
+ARG QUIKIT_URL="https://dummy-quikit.local"
+ARG QUIKIT_CLIENT_ID="dummy-client-id"
+ARG QUIKIT_CLIENT_SECRET="dummy-client-secret"
 
 ENV DATABASE_URL=$DATABASE_URL
 ENV DATABASE_URL_DIRECT=$DATABASE_URL_DIRECT
@@ -62,10 +58,10 @@ ENV NEXTAUTH_URL=$NEXTAUTH_URL
 ENV NEXT_PUBLIC_AUTH_URL=$NEXT_PUBLIC_AUTH_URL
 ENV NEXT_PUBLIC_QUIKIT_URL=$NEXT_PUBLIC_QUIKIT_URL
 ENV NEXT_PUBLIC_QUIKINFRA_URL=$NEXT_PUBLIC_QUIKINFRA_URL
+ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
 ENV QUIKIT_URL=$QUIKIT_URL
 ENV QUIKIT_CLIENT_ID=$QUIKIT_CLIENT_ID
 ENV QUIKIT_CLIENT_SECRET=$QUIKIT_CLIENT_SECRET
-ENV NEXTAUTH_SECRET="build-time-dummy-not-used-at-runtime"
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
@@ -140,6 +136,6 @@ COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/node_modules/.pr
 RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
 
 USER nextjs
-EXPOSE 3007
+EXPOSE 3006
 
 CMD ["node", "apps/quikinfra/server.js"]

@@ -34,6 +34,9 @@ const createPostSchema = z.object({
   scheduledFor: z.string().nullish(),
   imageUrl: z.string().nullish(),
   prompt: z.string().nullish(),
+  attachedOffering: z.unknown().optional(),
+  // Legacy aliases — fold into attachedOffering if attachedOffering itself
+  // wasn't supplied. Drop these once every client ships the unified shape.
   attachedProduct: z.unknown().optional(),
   attachedService: z.unknown().optional(),
   attachedAsset: z.unknown().optional(),
@@ -69,12 +72,22 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
   if (!isAdmin) where.createdBy = userId;
   if (status && status !== "all") where.status = status;
 
-  if (startDate && endDate) {
-    where.scheduledFor = { gte: new Date(startDate), lte: new Date(endDate) };
-  } else if (startDate) {
-    where.scheduledFor = { gte: new Date(startDate) };
-  } else if (endDate) {
-    where.scheduledFor = { lte: new Date(endDate) };
+  if (startDate || endDate) {
+    const range: { gte?: Date; lte?: Date } = {};
+    if (startDate) range.gte = new Date(startDate);
+    if (endDate) range.lte = new Date(endDate);
+    // A post appears on the calendar by its most relevant date:
+    //   scheduledFor  → scheduled / overdue
+    //   publishedAt   → published (these carry NO scheduledFor, so the old
+    //                   scheduledFor-only filter silently dropped them)
+    //   createdAt     → drafts / approved with no date set yet
+    // The calendar is the only caller that passes startDate/endDate, so
+    // broadening this filter doesn't affect Content Hub / Campaigns / etc.
+    where.OR = [
+      { scheduledFor: range },
+      { publishedAt: range },
+      { scheduledFor: null, publishedAt: null, createdAt: range },
+    ];
   }
 
   const PAGE_SIZE = 12;
@@ -163,8 +176,10 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
         typeof body.prompt === "string" && body.prompt.trim()
           ? body.prompt.trim()
           : null,
-      attachedProduct: (body.attachedProduct ?? undefined) as never,
-      attachedService: (body.attachedService ?? undefined) as never,
+      attachedOffering: ((body.attachedOffering ??
+        body.attachedProduct ??
+        body.attachedService ??
+        undefined) as never),
       attachedAsset: (body.attachedAsset ?? undefined) as never,
     },
   });

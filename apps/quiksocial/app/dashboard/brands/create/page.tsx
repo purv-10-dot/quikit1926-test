@@ -3,19 +3,19 @@
 export const dynamic = "force-dynamic";
 
 /**
- * Brand Creation Wizard — 5-step flow.
+ * Brand Creation Wizard — 6-step flow.
  *
  * Step 1 — Website entry + scrape trigger
  * Step 2 — AI Analysis review (editable, confidence badges)
- * Step 3 — Visual Identity (logo, colors, typography)
- * Step 4 — Tone Attributes (voice, tone tags, hashtags)
- * Step 5 — Review & Create (avoid list, USPs, writing style)
+ * Step 3 — Catalog Discovery (curate scraped offerings)
+ * Step 4 — Visual Identity (logo, colors, typography)
+ * Step 5 — Tone Attributes (voice, tone tags, hashtags)
+ * Step 6 — Review & Create (avoid list, USPs, writing style)
  *
  * CRITICAL: While this page is mounted, BrandCreationContext.wizardActive=true,
  * which locks out the entire sidebar in DashboardLayout.
  */
 
-import { unwrap } from "@/lib/utils/api-fetch";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -28,30 +28,39 @@ import {
   CheckCircle2,
   Globe,
   Upload,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import { useBrandCreation } from "@/components/providers/BrandCreationContext";
+import { offeringSetLabel } from "@/lib/offerings/labels";
+import { unwrap } from "@/lib/utils/api-fetch";
+import CatalogDiscoveryStep, {
+  offeringId,
+  type CatalogOffering,
+} from "./CatalogDiscoveryStep";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Confidence = "high" | "medium" | "low";
 
-interface ScrapedProduct {
+// Phase 2: unified Offering shape from the scraper. `type` is a free
+// string (product / service / menu_item / project / treatment / etc. —
+// see lib/offerings/labels.ts for the conventional set). Mirrors the
+// ScrapedOffering Pydantic model in apps/ai-service/models.py.
+interface ScrapedOffering {
+  type: string;
   name: string;
   description?: string | null;
   category?: string | null;
   price?: string | null;
-  tags?: string[];
-  image_url?: string | null;
-}
-
-interface ScrapedService {
-  name: string;
-  description?: string | null;
-  category?: string | null;
-  pricing?: string | null;
   duration?: string | null;
   tags?: string[];
   image_url?: string | null;
+  url?: string | null;
+  source?: string | null;
+  confidence?: string | null;
+  /** Phase 5 LLM marketability score (0-100); drives Step 3 sort order. */
+  marketability?: number | null;
 }
 
 interface ScrapeResult {
@@ -79,8 +88,10 @@ interface ScrapeResult {
     keywords?: string[];
     things_to_avoid?: string[];
   };
-  products?: ScrapedProduct[];
-  services?: ScrapedService[];
+  offerings?: ScrapedOffering[];
+  // Phase 1 sitemap / nav category hints — surfaced for the Phase 3
+  // curation UI; the wizard ignores this field today.
+  categories?: Array<{ name: string; url?: string | null; source?: string | null }>;
 }
 
 // ─── Wizard state ─────────────────────────────────────────────────────────────
@@ -116,11 +127,15 @@ interface WizardData {
   thingsToAvoid: string[];
   usps: string[];
   writingStyle: string;
-  // Hidden — populated from the scrape and POSTed alongside brand creation,
-  // then persisted into the Product / Service collections by the API. Not
-  // rendered in the wizard; the user reviews them on the catalog pages.
-  products: ScrapedProduct[];
-  services: ScrapedService[];
+  // Hidden — populated from the user's curation choices on Step 3, then
+  // POSTed alongside brand creation. Step 3 reads the full discovered
+  // list from scrapeData.offerings; this field holds only the subset
+  // the user actually wants in their catalog.
+  offerings: ScrapedOffering[];
+  // Phase 3: which discovered offerings the user has ticked in the
+  // curation step. IDs are synthesized via offeringId() from the step
+  // component. Persists across step-back/forward navigation.
+  selectedOfferingIds: string[];
 }
 
 // ─── Google Fonts subset ──────────────────────────────────────────────────────
@@ -130,6 +145,209 @@ const FONT_OPTIONS = [
   "Playfair Display", "Merriweather", "Source Sans Pro", "Nunito",
   "Poppins", "Ubuntu", "Oswald", "PT Sans", "Noto Sans",
 ];
+
+// ─── FontPicker ────────────────────────────────────────────────────────────────
+// Custom listbox replacement for the native <select> on the typography step.
+// Native <select> popups are OS-rendered and cannot be styled with
+// backdrop-filter, custom hover states, or rounded corners — they break the
+// glass aesthetic with a plain white opaque popup. This component reproduces
+// the menu using a styled popover so every surface in the wizard has the
+// same frosted appearance.
+//
+// Higher background alpha than the wizard card (0.85 vs 0.14) is intentional:
+// dropdown menus need contrast for the option text to be readable against the
+// blurred wallpaper underneath.
+
+function FontPicker({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click — pointerdown not click so the menu also closes
+  // when the user clicks a tag input or another menu trigger.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    const escHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", escHandler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", escHandler);
+    };
+  }, [open]);
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ position: "relative", width: "100%" }}
+    >
+      {/* Trigger — matches the look of the previous inline <select>: white
+          text, transparent bg, chevron at the right edge, label or selected
+          font name as the visible text. */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: "100%",
+          background: "transparent",
+          border: "none",
+          outline: "none",
+          padding: 0,
+          color: "#fff",
+          fontSize: 12,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 6,
+          fontFamily: "inherit",
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span
+          style={{
+            color: value ? "#fff" : "rgba(255,255,255,0.65)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {value || label}
+        </span>
+        <ChevronDown
+          size={13}
+          style={{
+            color: "rgba(255,255,255,0.55)",
+            flexShrink: 0,
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.15s",
+          }}
+        />
+      </button>
+
+      {/* Popover — glass tokens deliberately stronger than the wizard card
+          (0.85 alpha) so option text reads against the wallpaper. Scrollbar
+          styled inline via :global() pseudo because we don't have a separate
+          stylesheet for this component. */}
+      {open && (
+        <>
+          <style>{`
+            .qs-fontpicker-list::-webkit-scrollbar {
+              width: 6px;
+            }
+            .qs-fontpicker-list::-webkit-scrollbar-track {
+              background: transparent;
+            }
+            .qs-fontpicker-list::-webkit-scrollbar-thumb {
+              background: rgba(255, 255, 255, 0.20);
+              border-radius: 9999px;
+            }
+            .qs-fontpicker-list::-webkit-scrollbar-thumb:hover {
+              background: rgba(255, 255, 255, 0.30);
+            }
+          `}</style>
+          <div
+            role="listbox"
+            className="qs-fontpicker-list"
+            style={{
+              position: "absolute",
+              top: "calc(100% + 8px)",
+              left: 0,
+              right: 0,
+              maxHeight: 260,
+              overflowY: "auto",
+              background: "rgba(33, 33, 33, 0.85)",
+              border: "1px solid rgba(255, 255, 255, 0.10)",
+              borderRadius: 12,
+              backdropFilter: "blur(24px)",
+              WebkitBackdropFilter: "blur(24px)",
+              boxShadow: "0 8px 32px rgba(0, 0, 0, 0.35)",
+              padding: 4,
+              zIndex: 50,
+              scrollbarWidth: "thin",
+              scrollbarColor: "rgba(255,255,255,0.20) transparent",
+            }}
+          >
+            {options.map((font) => {
+              const isSelected = font === value;
+              return (
+                <button
+                  key={font}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={() => {
+                    onChange(font);
+                    setOpen(false);
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "rgba(255, 255, 255, 0.10)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "transparent";
+                    }
+                  }}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    border: "none",
+                    borderRadius: 8,
+                    background: isSelected
+                      ? "rgba(255, 255, 255, 0.15)"
+                      : "transparent",
+                    color: "#fff",
+                    fontSize: 13,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 8,
+                    fontFamily: `'${font}', sans-serif`,
+                    transition: "background 0.10s",
+                  }}
+                >
+                  <span>{font}</span>
+                  {isSelected && (
+                    <Check
+                      size={13}
+                      style={{ color: "#fff", flexShrink: 0 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
 
@@ -404,26 +622,42 @@ function ColorPicker({
 
 // ─── ProgressBar ─────────────────────────────────────────────────────────────
 
+// Wizard is 6 steps: 1 URL → 2 AI Analysis → 3 Catalog Discovery → 4 Visual
+// Identity → 5 Tone → 6 Review. Derive the array length from this constant
+// so adding/removing a step doesn't leave the indicator out of sync (which
+// is what produced the "appears wrong after renumbering" bug — the old
+// hardcoded 5-segment array survived a 5→6 transition somewhere).
+const WIZARD_TOTAL_STEPS = 6;
+
 function WizardProgress({ step }: { step: number }) {
   return (
     <div style={{ display: "flex", gap: 5 }}>
-      {[1, 2, 3, 4, 5].map((s) => (
-        <div
-          key={s}
-          style={{
-            flex: 1,
-            height: 4,
-            borderRadius: 4,
-            background:
-              s < step
-                ? "rgba(255,255,255,0.90)"
-                : s === step
-                ? "rgba(255,255,255,0.75)"
-                : "rgba(255,255,255,0.18)",
-            transition: "background 0.25s",
-          }}
-        />
-      ))}
+      {Array.from({ length: WIZARD_TOTAL_STEPS }, (_, i) => i + 1).map((s) => {
+        // Active step is the BRIGHTEST so the user can locate themselves
+        // at a glance. Previously the active segment used 0.75 white while
+        // completed segments used 0.90 — that read as "the indicator went
+        // backwards at my current step." Active = full white now;
+        // completed = mid-bright; future = dim.
+        const isPast = s < step;
+        const isActive = s === step;
+        const background = isActive
+          ? "#FFFFFF"
+          : isPast
+          ? "rgba(255,255,255,0.55)"
+          : "rgba(255,255,255,0.18)";
+        return (
+          <div
+            key={s}
+            style={{
+              flex: 1,
+              height: 4,
+              borderRadius: 4,
+              background,
+              transition: "background 0.25s",
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -550,8 +784,13 @@ function applyScrapeTo(scrape: ScrapeResult, prev: WizardData): Partial<WizardDa
     hashtags:            Array.isArray(ss.hashtags)        ? ss.hashtags        : prev.hashtags,
     thingsToAvoid:       Array.isArray(ss.things_to_avoid) ? ss.things_to_avoid : prev.thingsToAvoid,
     usps:                Array.isArray(kspRaw) ? (kspRaw as string[]) : prev.usps,
-    products:            Array.isArray(scrape.products) ? scrape.products : prev.products,
-    services:            Array.isArray(scrape.services) ? scrape.services : prev.services,
+    // Phase 3: don't auto-populate the brand-POST set from the scrape.
+    // The full discovered list lives in scrapeData.offerings (above);
+    // the Catalog Discovery step (Step 3) lets the user pick a subset
+    // and writes those picks back into data.offerings on advance.
+    // Result: scraping a brand with 80 offerings doesn't silently
+    // create 80 catalog rows when the user only wanted 12.
+    offerings:           prev.offerings,
     confidence:          deriveConfidence(scrape),
   };
 }
@@ -570,7 +809,8 @@ const INITIAL: WizardData = {
   typographyPrimary: "", typographySecondary: "", typographyAccent: "",
   brandVoice: "", toneAttributes: [], hashtags: [],
   thingsToAvoid: [], usps: [], writingStyle: "",
-  products: [], services: [],
+  offerings: [],
+  selectedOfferingIds: [],
 };
 
 // ─── Shared layout wrapper ────────────────────────────────────────────────────
@@ -655,7 +895,7 @@ export default function BrandCreatePage() {
 
   // Edit mode skips Step 1 (the URL-scrape step). Open directly on
   // Step 2 with the brand prefilled.
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(isEdit ? 2 : 1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(isEdit ? 2 : 1);
   const [data, setData] = useState<WizardData>(INITIAL);
   const [scraping, setScraping]   = useState(false);
   const [scrapeError, setScrapeError] = useState<string | null>(null);
@@ -669,12 +909,51 @@ export default function BrandCreatePage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/brands/${editBrandId}`, {
-          credentials: "include",
-        });
-        if (!res.ok || cancelled) return;
-        const { brand } = unwrap(await res.json());
+        // Bug 3 fix — fetch brand fields AND existing offerings in
+        // parallel. Without the offerings fetch, data.scrapeData stays
+        // null and the auto-skip useEffect on Step 3 silently bounces
+        // the user to Step 4, hiding their entire catalog from the
+        // edit flow.
+        const [brandRes, offeringsRes] = await Promise.all([
+          fetch(`/api/brands/${editBrandId}`, { credentials: "include" }),
+          fetch(
+            `/api/offerings?brandId=${editBrandId}&limit=100`,
+            { credentials: "include" },
+          ),
+        ]);
+        if (!brandRes.ok || cancelled) return;
+        const { brand } = unwrap(await brandRes.json());
         if (!brand || cancelled) return;
+
+        // Load existing offerings if the request succeeded. A failure
+        // here is non-fatal — the rest of the edit form still works.
+        let existingOfferings: ScrapedOffering[] = [];
+        if (offeringsRes.ok && !cancelled) {
+          const { offerings: rows } = unwrap(await offeringsRes.json());
+          if (Array.isArray(rows)) {
+            existingOfferings = rows.map((o: Record<string, unknown>) => ({
+              type: typeof o.type === "string" ? o.type : "product",
+              name: typeof o.name === "string" ? o.name : "",
+              description:
+                typeof o.description === "string" ? o.description : null,
+              category: typeof o.category === "string" ? o.category : null,
+              price: typeof o.price === "string" ? o.price : null,
+              duration: typeof o.duration === "string" ? o.duration : null,
+              tags: Array.isArray(o.tags)
+                ? (o.tags as unknown[]).filter(
+                    (t): t is string => typeof t === "string",
+                  )
+                : [],
+              image_url:
+                Array.isArray(o.imageUrls) && o.imageUrls.length > 0
+                  ? (o.imageUrls[0] as string)
+                  : null,
+              url: typeof o.url === "string" ? o.url : null,
+              source: "existing",
+              confidence: "high",
+            }));
+          }
+        }
 
         setData((prev) => ({
           ...prev,
@@ -698,6 +977,25 @@ export default function BrandCreatePage() {
           thingsToAvoid:  Array.isArray(brand.thingsToAvoid)     ? brand.thingsToAvoid     : [],
           usps:           Array.isArray(brand.keySellingPoints)  ? brand.keySellingPoints  : [],
           writingStyle:        brand.writing_style  ?? "",
+          // Bug 3 — seed scrapeData.offerings with the existing catalog
+          // so Step 3 renders them. Categories stays empty in edit mode
+          // — we have no nav-discovery data on a brand we already own.
+          // The auto-skip useEffect now sees offerings present and
+          // keeps the user on Step 3 instead of bouncing to Step 4.
+          scrapeData:
+            existingOfferings.length > 0
+              ? {
+                  ...(prev.scrapeData ?? {}),
+                  offerings: existingOfferings,
+                  categories: prev.scrapeData?.categories ?? [],
+                }
+              : prev.scrapeData,
+          // Default-select every existing offering so advancing past
+          // Step 3 doesn't silently drop them. User can untick.
+          selectedOfferingIds:
+            existingOfferings.length > 0
+              ? existingOfferings.map((o) => offeringId(o))
+              : prev.selectedOfferingIds,
         }));
       } finally {
         if (!cancelled) setLoadingEdit(false);
@@ -723,6 +1021,21 @@ export default function BrandCreatePage() {
   const dataRef = useRef(data);
   useEffect(() => { dataRef.current = data; }, [data]);
 
+  // Phase 3: auto-skip the Catalog Discovery step when there's nothing
+  // to curate AND nothing to explore. Triggers when:
+  //   * manual brand creation (data.scrapeData === null)
+  //   * scrape returned zero offerings AND zero category hints
+  // When there are category hints but no offerings, we KEEP the user on
+  // step 3 — they can still click Explore on a sitemap-discovered
+  // category to populate items. Without this guard the user would land
+  // on an empty curation step they can't do anything with.
+  useEffect(() => {
+    if (step !== 3) return;
+    const hasOfferings = (data.scrapeData?.offerings?.length ?? 0) > 0;
+    const hasCategories = (data.scrapeData?.categories?.length ?? 0) > 0;
+    if (!hasOfferings && !hasCategories) setStep(4);
+  }, [step, data.scrapeData]);
+
   const upd = (patch: Partial<WizardData>) =>
     setData((d) => ({ ...d, ...patch }));
 
@@ -740,8 +1053,11 @@ export default function BrandCreatePage() {
         }),
       });
       if (!res.ok) {
+        // QuikIT error envelopes carry `error` at the top level alongside
+        // `success: false` — unwrap() returns the original object in that
+        // case (no `data` key), so reading `.error` still works.
         const err = unwrap(await res.json().catch(() => ({})));
-        throw new Error(err.error ?? "Scraping failed");
+        throw new Error(err?.error ?? "Scraping failed");
       }
       const { scrapeId, wsToken, wsUrl } = unwrap(await res.json());
       upd({ scrapeId });
@@ -843,6 +1159,9 @@ export default function BrandCreatePage() {
       }
       try {
         const res = await fetch(`/api/brands/scrape/status/${scrapeId}`);
+        // QuikIT status route wraps the upstream pass-through payload in
+        // { success: true, data: <upstream> } — unwrap once to get the
+        // FastAPI shape (status/completed/failed + data/error fields).
         const result = unwrap(await res.json());
 
         if (result.status === "completed") {
@@ -906,14 +1225,13 @@ export default function BrandCreatePage() {
       usps:           data.usps,
       writingStyle:   data.writingStyle,
     };
-    // scrapeData / scraped products / scraped services are only relevant
-    // on initial creation. The brand POST handler persists products and
-    // services into their own collections so they show up on the catalog
-    // pages immediately after the wizard completes.
+    // scrapeData / scraped offerings are only relevant on initial creation.
+    // Phase 2: a single offerings[] array (each entry tagged with `type`)
+    // replaces the v1 products+services split. /api/brands persists them
+    // into the unified Offering table.
     if (!isEdit) {
       payload.scrapeData = data.scrapeData;
-      payload.products = data.products;
-      payload.services = data.services;
+      payload.offerings = data.offerings;
     }
 
     try {
@@ -927,7 +1245,7 @@ export default function BrandCreatePage() {
       });
       if (!res.ok) {
         const err = unwrap(await res.json().catch(() => ({})));
-        throw new Error(err.error ?? (isEdit ? "Brand update failed" : "Brand creation failed"));
+        throw new Error(err?.error ?? (isEdit ? "Brand update failed" : "Brand creation failed"));
       }
       const json = unwrap(await res.json());
       const brand = json.brand;
@@ -1080,7 +1398,16 @@ export default function BrandCreatePage() {
           }}>
             {[
               "Brand Logo",
-              "Products and services",
+              // Phase 2: catalog label adapts to the offering taxonomy.
+              // Pre-scrape (data.scrapeData is null) → fall back to the
+              // two most common types ("Products and Services"). After
+              // scrape returns, derive the actual type distribution from
+              // offerings[] so the heading reflects what the wizard found
+              // ("Menu Items", "Treatments", "Projects and Events", etc.).
+              offeringSetLabel(
+                data.scrapeData?.offerings?.map((o) => o.type)
+                  ?? ["product", "service"]
+              ),
               "Keywords and hashtags",
               "Typography",
               "Brand Colors",
@@ -1207,8 +1534,158 @@ export default function BrandCreatePage() {
     );
   }
 
-  // ── Step 3 — Visual Identity ──────────────────────────────────────────────
+  // ── Step 3 — Catalog Discovery (Phase 3) ──────────────────────────────────
   if (step === 3) {
+    const discoveryOfferings = data.scrapeData?.offerings ?? [];
+    const discoveryCategories = data.scrapeData?.categories ?? [];
+
+    // No offerings + no category hints = nothing to curate. This happens
+    // on the manual brand path (no scrape) and on the rare scrape that
+    // returned zero items. The auto-skip useEffect handles the common
+    // case by jumping forward to step 4; this branch covers the brief
+    // render-flash before the effect dispatches AND the back-nav case
+    // (user clicks Back from Visual Identity into Step 3 when there's
+    // still nothing to curate).
+    if (discoveryOfferings.length === 0 && discoveryCategories.length === 0) {
+      return (
+        <StepWrapper step={step} title="Pick what to market">
+          <div
+            style={{
+              padding: "32px 24px",
+              textAlign: "center",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.10)",
+              background: "rgba(33,33,33,0.14)",
+            }}
+          >
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                margin: "0 auto 12px",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.06)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Plus size={20} style={{ color: "rgba(255,255,255,0.40)" }} />
+            </div>
+            <div
+              style={{ fontSize: 15, fontWeight: 600, color: "#FFFFFF", marginBottom: 6 }}
+            >
+              {isEdit
+                ? "No catalog items on this brand yet"
+                : "No catalog items detected yet"}
+            </div>
+            <p
+              style={{
+                fontSize: 13,
+                color: "rgba(255,255,255,0.65)",
+                margin: "0 0 14px",
+                maxWidth: 380,
+                marginInline: "auto",
+                lineHeight: 1.5,
+              }}
+            >
+              {isEdit
+                ? "Scan your website to discover products and services, or add them manually from the catalog page."
+                : "That's fine — you can add products, services, or any other offerings from the catalog page after creating the brand."}
+            </p>
+            {/* Bug 3 — in edit mode, surface a "Scan website" CTA that
+                drops the user back to Step 1 with their existing
+                websiteUrl prefilled. They can re-scrape to repopulate
+                the catalog from the live site. */}
+            {isEdit && (
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#FFFFFF",
+                  color: "#0A0A0A",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Scan website
+              </button>
+            )}
+          </div>
+          <NavButtons onBack={() => setStep(2)} onNext={() => setStep(4)} />
+        </StepWrapper>
+      );
+    }
+
+    // Derive host display for the sub-header.
+    let brandHost = "";
+    try {
+      brandHost = data.websiteUrl ? new URL(data.websiteUrl).host : "";
+    } catch {
+      brandHost = data.websiteUrl ?? "";
+    }
+    const baseUrl = data.websiteUrl
+      ? data.websiteUrl.replace(/\/+$/, "")
+      : "";
+
+    const selectedSet = new Set(data.selectedOfferingIds);
+
+    return (
+      <StepWrapper step={step} title="Pick what to market">
+        <CatalogDiscoveryStep
+          brandName={data.brandName}
+          brandHost={brandHost}
+          baseUrl={baseUrl}
+          brandId={editBrandId ?? "pending"}
+          offerings={discoveryOfferings as CatalogOffering[]}
+          categories={discoveryCategories}
+          selectedIds={selectedSet}
+          onSelectionChange={(next) => upd({ selectedOfferingIds: Array.from(next) })}
+          onOfferingsAdded={(added) => {
+            // Merge into scrapeData.offerings so the discovery list grows.
+            // The component flags new items via its own internal newItemIds
+            // Set — we just supply the data.
+            const current = data.scrapeData?.offerings ?? [];
+            upd({
+              scrapeData: {
+                ...data.scrapeData,
+                offerings: [...current, ...(added as ScrapedOffering[])],
+              },
+            });
+          }}
+        />
+        <NavButtons
+          onBack={() => setStep(2)}
+          onNext={() => {
+            // Filter discovered offerings down to the user's picks. Only
+            // these survive into the brand POST. The unselected ones are
+            // dropped — they live in scrapeData but never make it to the
+            // Offering table.
+            const sel = new Set(data.selectedOfferingIds);
+            const picked = discoveryOfferings.filter((o) =>
+              sel.has(offeringId(o)),
+            );
+            upd({ offerings: picked });
+            setStep(4);
+          }}
+          nextLabel={
+            data.selectedOfferingIds.length > 0
+              ? `Add ${data.selectedOfferingIds.length} ${
+                  data.selectedOfferingIds.length === 1 ? "item" : "items"
+                } to catalog →`
+              : "Skip — no items selected →"
+          }
+        />
+      </StepWrapper>
+    );
+  }
+
+  // ── Step 4 — Visual Identity ──────────────────────────────────────────────
+  if (step === 4) {
     return (
       <StepWrapper step={step} title="Visual Identity">
         {/* Logo */}
@@ -1260,6 +1737,38 @@ export default function BrandCreatePage() {
         {/* Colors */}
         <div>
           <FieldLabel>Brand Colors</FieldLabel>
+          {/* Scrape-status hint: tells the user whether the colours shown
+              were extracted from their site or are just placeholder
+              defaults. Pre-fix, the wizard silently filled the three
+              defaults and there was no way for the user to know that
+              extraction had returned nulls. */}
+          {data.confidence?.colors === "low" && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "rgba(255,255,255,0.65)",
+                background: "rgba(245, 158, 11, 0.12)",
+                border: "1px solid rgba(245, 158, 11, 0.30)",
+                borderRadius: 8,
+                padding: "8px 12px",
+                marginBottom: 10,
+              }}
+            >
+              Colours not detected from your website — please set them manually
+              below. (Defaults shown are neutral placeholders.)
+            </div>
+          )}
+          {data.confidence?.colors === "high" && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "rgba(255,255,255,0.65)",
+                marginBottom: 10,
+              }}
+            >
+              ✓ Detected from your website — edit any swatch to override.
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
             <ColorPicker label="PRIMARY"   value={data.primaryColor}   onChange={(v) => upd({ primaryColor: v })} />
             <ColorPicker label="SECONDARY" value={data.secondaryColor} onChange={(v) => upd({ secondaryColor: v })} />
@@ -1284,17 +1793,12 @@ export default function BrandCreatePage() {
                   borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8,
                 }}
               >
-                <select
+                <FontPicker
+                  label={label}
                   value={data[key]}
-                  onChange={(e) => upd({ [key]: e.target.value })}
-                  style={{
-                    background: "transparent", border: "none", outline: "none",
-                    color: "#fff", fontSize: 12, cursor: "pointer", colorScheme: "dark",
-                  }}
-                >
-                  <option value="">{label}</option>
-                  {FONT_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-                </select>
+                  onChange={(v) => upd({ [key]: v })}
+                  options={FONT_OPTIONS}
+                />
                 {/* AaBbCc preview */}
                 <div style={{
                   fontSize: 18, fontWeight: 400, color: "rgba(255,255,255,0.60)",
@@ -1310,13 +1814,13 @@ export default function BrandCreatePage() {
           </div>
         </div>
 
-        <NavButtons onBack={() => setStep(2)} onNext={() => setStep(4)} />
+        <NavButtons onBack={() => setStep(3)} onNext={() => setStep(5)} />
       </StepWrapper>
     );
   }
 
-  // ── Step 4 — Tone Attributes ──────────────────────────────────────────────
-  if (step === 4) {
+  // ── Step 5 — Tone Attributes ──────────────────────────────────────────────
+  if (step === 5) {
     return (
       <StepWrapper step={step} title="Tone Attributes">
         <div>
@@ -1347,12 +1851,12 @@ export default function BrandCreatePage() {
           />
         </div>
 
-        <NavButtons onBack={() => setStep(3)} onNext={() => setStep(5)} />
+        <NavButtons onBack={() => setStep(4)} onNext={() => setStep(6)} />
       </StepWrapper>
     );
   }
 
-  // ── Step 5 — Review & Create ──────────────────────────────────────────────
+  // ── Step 6 — Review & Create ──────────────────────────────────────────────
   return (
     <StepWrapper step={step} title="Review & Create">
       <div style={{ fontSize: 13, color: "rgba(255,255,255,0.50)", marginTop: -12 }}>
@@ -1407,7 +1911,7 @@ export default function BrandCreatePage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
         <button
           type="button"
-          onClick={() => setStep(4)}
+          onClick={() => setStep(5)}
           style={{
             display: "flex", alignItems: "center", gap: 6,
             background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.14)",
