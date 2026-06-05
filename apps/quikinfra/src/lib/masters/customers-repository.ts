@@ -3,7 +3,7 @@
  * Auto-generates a CUS-### code when the caller doesn't supply one.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface CustomerRecord {
   id: string;

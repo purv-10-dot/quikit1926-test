@@ -12,7 +12,7 @@
  * `npx prisma db push` + `npx prisma generate` have run.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 // ─── Types ──────────────────────────────────────────────────────────
 

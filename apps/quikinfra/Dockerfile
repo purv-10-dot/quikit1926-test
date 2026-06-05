@@ -81,12 +81,11 @@ RUN echo "[next-env-bake]" \
       "NEXTAUTH=$NEXTAUTH_URL" \
       > /tmp/.next-env-bake.txt && cat /tmp/.next-env-bake.txt
 
-# QuikInfra has TWO Prisma schemas: the shared platform schema
-# (packages/database) and its own dedicated `app_quikinfra` schema, which
-# generates to a custom output (node_modules/.prisma-qc2) to avoid clobbering
-# the shared client. Both must be generated before the build.
+# QuikInfra now runs on the single shared central Prisma client
+# (packages/database). The `app_quikinfra` tables are Postgres schemas inside
+# that one multi-schema datasource, so generating the central client is enough —
+# there is no longer a dedicated app-local schema or `.prisma-qc2` client.
 RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
-RUN npx prisma generate --schema=apps/quikinfra/prisma/schema.prisma
 RUN mkdir -p apps/quikinfra/public
 RUN mkdir -p apps/quikinfra/.next/static
 # Write .env.production from ARG/ENV values so Next.js loadEnv()
@@ -115,7 +114,7 @@ RUN addgroup --system --gid 1001 nodejs \
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3007
+ENV PORT=3006
 ENV HOSTNAME="0.0.0.0"
 # Root for document/asset uploads (see docker-compose volume mount).
 ENV QC_DOCS_ROOT=/app/uploads
@@ -126,16 +125,20 @@ COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/.next/static    
 COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/public          ./public
 COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/public          ./apps/quikinfra/public
 
-# Prisma clients (engine + generated bindings); standalone doesn't always trace
-# these. Two clients: the shared platform client (@prisma/.prisma) and the
-# dedicated app_quikinfra client (.prisma-qc2, custom output path).
-COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma                       ./node_modules/@prisma
-COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma                       ./node_modules/.prisma
-COPY --from=installer --chown=nextjs:nodejs /app/apps/quikinfra/node_modules/.prisma-qc2    ./apps/quikinfra/node_modules/.prisma-qc2
+# Prisma client (engine + generated bindings); standalone doesn't always trace
+# these. Single shared central client only (@prisma/.prisma) — the former
+# dedicated `.prisma-qc2` app client no longer exists.
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/@prisma  ./node_modules/@prisma
+COPY --from=installer --chown=nextjs:nodejs /app/node_modules/.prisma  ./node_modules/.prisma
 
 RUN mkdir -p /app/uploads && chown -R nextjs:nodejs /app/uploads
 
 USER nextjs
 EXPOSE 3006
 
+# The central schema is owned and migrated out-of-band (integration owner /
+# Neon), exactly like quiktrack and quikscale. The container no longer runs
+# `prisma db push` at startup — pushing the full multi-schema datasource from
+# an app container would touch every other app's tables (app_quikscale,
+# app_quiktrack, auth, public, …) and is unsafe in production.
 CMD ["node", "apps/quikinfra/server.js"]

@@ -1,6 +1,6 @@
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { generateDocNumber } from "@/lib/db/doc-number";

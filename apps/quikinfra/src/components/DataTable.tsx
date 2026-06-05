@@ -70,6 +70,8 @@ interface DataTableProps<T = Record<string, unknown>> {
   emptyTitle?: string;
   /** Sub-line under {@link emptyTitle}. */
   emptyHint?: string;
+  /** When true, show a centered loading spinner instead of rows / empty state. */
+  loading?: boolean;
 }
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -920,7 +922,7 @@ export function DataTable<T extends Record<string, unknown>>({
   defaultSort, defaultSortDir = 'asc', auditEnabled = true,
   fitToContent = false,
   historyEntityType, getHistoryEntityId, getHistoryRowLabel,
-  emptyTitle, emptyHint,
+  emptyTitle, emptyHint, loading = false,
 }: DataTableProps<T>) {
   // Merge audit cols
   const columns = useMemo(() => {
@@ -1333,6 +1335,15 @@ export function DataTable<T extends Record<string, unknown>>({
                     {renderRows(group.rows)}
                   </>
                 ))
+              ) : loading ? (
+                <tr>
+                  <td colSpan={allCols.length} className="px-4 py-24 text-center bg-gradient-to-b from-white to-slate-50/40">
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="w-8 h-8 rounded-full border-2 border-orange-200 border-t-orange-500 animate-spin mb-3" />
+                      <div className="text-sm font-medium text-slate-500">Loading…</div>
+                    </div>
+                  </td>
+                </tr>
               ) : pageRows?.length ? renderRows(pageRows) : (
                 <tr>
                   <td colSpan={allCols.length} className="px-4 py-20 text-center bg-gradient-to-b from-white to-slate-50/40">

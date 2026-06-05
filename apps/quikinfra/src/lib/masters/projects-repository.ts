@@ -2,7 +2,7 @@
  * Projects master — Prisma-backed CRUD for `cn_projects`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface ProjectRecord {
   id: string;

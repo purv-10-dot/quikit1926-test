@@ -6,7 +6,7 @@
  * projectId (warehouses / head offices serving every project).
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface LocationRecord {
   id: string;

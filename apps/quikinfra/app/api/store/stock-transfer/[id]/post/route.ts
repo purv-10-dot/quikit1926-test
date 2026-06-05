@@ -16,22 +16,29 @@ const withOrgAuth = withOrgAuthForModule("store");
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const tr = await db.cnStockTransfer.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
+    where: { id: params.id, orgId },
     include: { lines: true },
   });
   if (!tr) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (tr.status === "received") return NextResponse.json({ success: false, error: "Already posted" }, { status: 409 });
+  if (!tr.fromProjectId || !tr.fromLocationId || !tr.toProjectId || !tr.toLocationId) {
+    return NextResponse.json({ success: false, error: "Transfer missing from/to project or location; cannot post" }, { status: 400 });
+  }
+  const fromProjectId = tr.fromProjectId;
+  const fromLocationId = tr.fromLocationId;
+  const toProjectId = tr.toProjectId;
+  const toLocationId = tr.toLocationId;
 
   // Source-balance pre-check
   const insufficient: Array<{ itemId: string; available: number; requested: number }> = [];
   for (const line of tr.lines) {
     const agg = await db.cnStockLedger.aggregate({
-      where: { orgId, projectId: tr.projectId, locationId: tr.fromLocationId, itemId: line.itemId },
+      where: { orgId, projectId: fromProjectId, locationId: fromLocationId, itemId: line.itemId },
       _sum: { qtyIn: true, qtyOut: true },
     });
-    const available = Number(agg._sum.qtyIn ?? 0) - Number(agg._sum.qtyOut ?? 0);
-    if (available < Number(line.quantity)) {
-      insufficient.push({ itemId: line.itemId, available, requested: Number(line.quantity) });
+    const available = Number(agg._sum?.qtyIn ?? 0) - Number(agg._sum?.qtyOut ?? 0);
+    if (available < Number(line.sentQty)) {
+      insufficient.push({ itemId: line.itemId, available, requested: Number(line.sentQty) });
     }
   }
   if (insufficient.length) {
@@ -46,17 +53,17 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
         await tx.cnStockLedger.create({
           data: {
             orgId,
-            projectId: tr.projectId,
-            locationId: tr.fromLocationId,
+            projectId: fromProjectId,
+            locationId: fromLocationId,
             itemId: line.itemId,
             transactionType: "transfer_out",
             transactionRefId: tr.id,
             transactionRefNumber: tr.transferNumber,
             transactionDate: tr.transferDate,
             qtyIn: 0,
-            qtyOut: line.quantity,
-            unitRate: line.unitRate,
-            amount: line.amount,
+            qtyOut: line.sentQty,
+            unitRate: 0,
+            amount: 0,
             uomId: line.uomId,
             createdBy: userId,
           },
@@ -65,17 +72,17 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
         await tx.cnStockLedger.create({
           data: {
             orgId,
-            projectId: tr.projectId,
-            locationId: tr.toLocationId,
+            projectId: toProjectId,
+            locationId: toLocationId,
             itemId: line.itemId,
             transactionType: "transfer_in",
             transactionRefId: tr.id,
             transactionRefNumber: tr.transferNumber,
             transactionDate: tr.transferDate,
-            qtyIn: line.quantity,
+            qtyIn: line.sentQty,
             qtyOut: 0,
-            unitRate: line.unitRate,
-            amount: line.amount,
+            unitRate: 0,
+            amount: 0,
             uomId: line.uomId,
             createdBy: userId,
           },

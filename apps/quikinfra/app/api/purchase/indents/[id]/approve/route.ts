@@ -1,6 +1,6 @@
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { findIndentById } from "@/lib/purchase/indent-repository";

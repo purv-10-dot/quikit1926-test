@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth/context";
 import { canActOnStepForInbox } from "@/lib/approvals/workflow-rbac";
 import { parsePagination } from "@/lib/http/pagination";

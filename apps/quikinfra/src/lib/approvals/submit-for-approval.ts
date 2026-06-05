@@ -25,7 +25,7 @@
  * `onCreatedInTxn` undefined and run the patch after the helper returns.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import {
   isSkippableByRaiser,
   userTypeFromRoleKey,

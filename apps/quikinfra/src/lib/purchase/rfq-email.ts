@@ -10,7 +10,7 @@
  * response or just log them.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 import { sendMail } from "@/lib/email/mailer";
 import { generateRfqPdf, type RfqPdfLine } from "./rfq-pdf";

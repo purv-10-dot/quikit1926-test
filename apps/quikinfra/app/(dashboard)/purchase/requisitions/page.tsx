@@ -6,6 +6,7 @@ import { Eye, Send } from "lucide-react";
 import {
   PageHeader, PageContainer, StatusChip, TabBar,
 } from "@/components/PageShell";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type ColDef } from "@/components/DataTable";
 import { usePurchaseRequisitions, useSubmitPR } from "@/hooks/use-purchase";
 import { usePermissions, useMenuActions } from "@/hooks/use-permissions";
@@ -29,6 +30,10 @@ export default function PurchaseRequisitionsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("all");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // PR awaiting submit confirmation — drives the ConfirmDialog (replaces
+  // the native window.confirm). `null` when the dialog is closed.
+  const [submitTarget, setSubmitTarget] = useState<any | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Fetch the unfiltered list once and derive both the tab counts and
   // the visible slice client-side. Keeps the page to one query and
@@ -45,11 +50,16 @@ export default function PurchaseRequisitionsPage() {
   const tabs = useMemo(() => buildTabCounts(allRows, STATUS_TABS), [allRows]);
   const data = useMemo(() => filterByTab(allRows, activeTab, STATUS_TABS), [allRows, activeTab]);
 
-  const handleSubmitPR = async (id: string) => {
-    if (!confirm("Submit this PR for approval?")) return;
+  const doSubmitPR = async () => {
+    if (!submitTarget) return;
+    setSubmitError(null);
     try {
-      await submitMutation.mutateAsync(id);
-    } catch { /* error toast handled globally */ }
+      await submitMutation.mutateAsync(submitTarget.id);
+      setSubmitTarget(null);
+    } catch (err: any) {
+      // Keep the dialog open so the user can read the failure reason.
+      setSubmitError(err?.message ?? "Failed to submit PR");
+    }
   };
 
   const columns: ColDef<any>[] = [
@@ -88,7 +98,7 @@ export default function PurchaseRequisitionsPage() {
             <Eye className="w-4 h-4" />
           </button>
           {row.status === "draft" && row.createdBy && me?.userId === row.createdBy && (
-            <button onClick={() => handleSubmitPR(row.id)}
+            <button onClick={() => { setSubmitError(null); setSubmitTarget(row); }}
               className="p-1.5 rounded hover:bg-gray-100 text-orange-500" title="Submit for Approval">
               <Send className="w-4 h-4" />
             </button>
@@ -124,6 +134,37 @@ export default function PurchaseRequisitionsPage() {
       </PageContainer>
 
       <PRCreateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+
+      <ConfirmDialog
+        open={!!submitTarget}
+        onClose={() => {
+          if (!submitMutation.isPending) {
+            setSubmitTarget(null);
+            setSubmitError(null);
+          }
+        }}
+        onConfirm={doSubmitPR}
+        title="Submit for Approval"
+        confirmLabel="Submit"
+        tone="primary"
+        loading={submitMutation.isPending}
+        message={
+          <>
+            Submit PR{" "}
+            <span className="font-semibold text-slate-900">
+              {submitTarget?.prNumber ?? submitTarget?.mrNumber ?? submitTarget?.id}
+            </span>{" "}
+            for approval? It will be routed through the active Purchase
+            Requisition workflow and you won't be able to edit it until an
+            approver returns it.
+            {submitError && (
+              <span className="mt-3 block rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {submitError}
+              </span>
+            )}
+          </>
+        }
+      />
     </>
   );
 }

@@ -1,31 +1,40 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
+import {
+  findInspectionById,
+  updateInspection,
+  softDeleteInspection,
+} from "@/lib/quality/inspections-repository";
 
 const withOrgAuth = withOrgAuthForModule("quality");
 
 const patchSchema = z.object({
-  decision: z.enum(["pending", "accepted", "rejected", "conditional"]).optional(),
-  remarks: z.string().optional().nullable(),
+  projectId: z.string().optional(),
+  boqItem: z.string().nullable().optional(),
+  checklistName: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  result: z.enum(["Pass", "Fail", "Conditional"]).nullable().optional(),
+  status: z.string().nullable().optional(),
+  remarks: z.string().nullable().optional(),
+  items: z.array(z.any()).optional(),
 });
 
 export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params }) => {
-  const insp = await db.cnQCInspection.findFirst({
-    where: { id: params.id, orgId },
-    include: { grn: true, project: true, defects: { include: { item: { select: { code: true, name: true } } } } },
-  });
+  const insp = await findInspectionById(orgId, params.id);
   if (!insp) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: insp });
 });
 
 export const PATCH = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
   const input = patchSchema.parse(await req.json());
-  const insp = await db.cnQCInspection.update({ where: { id: params.id }, data: { ...input, updatedBy: userId } });
+  const insp = await updateInspection(orgId, params.id, { ...input, updatedBy: userId });
+  if (!insp) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true, data: insp });
 });
 
 export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
-  await db.cnQCInspection.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
+  const ok = await softDeleteInspection(orgId, params.id, userId);
+  if (!ok) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true });
 });

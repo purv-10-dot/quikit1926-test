@@ -6,7 +6,7 @@
  * render it without a second query.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface BankRecord {
   id: string;

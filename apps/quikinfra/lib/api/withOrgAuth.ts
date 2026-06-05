@@ -6,6 +6,7 @@ import { toErrorMessage } from "@/lib/api/errors";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { logApiCall } from "@quikit/shared/apiLogging";
 import { userCan } from "@/lib/rbac/userCan";
+import { seedDefaultRoles, ensureUserOnRole } from "@/lib/rbac/seedDefaultRoles";
 
 /**
  * withOrgAuth — lifted from apps/quikscale and scoped to `quikinfra`.
@@ -65,6 +66,26 @@ export function withOrgAuth<Params = Record<string, never>>(
           response = NextResponse.json({ success: false, error: "No active membership" }, { status: 403 });
         } else {
           orgIdForLog = orgId;
+          // Self-healing RBAC seed (code-driven, runs on EVERY QuikInfra request
+          // before the permission gate): ensure this org's 4 roles exist and the
+          // central super-admin / org-admin is on the system "admin" role. Idempotent
+          // + 5-min cached, so it's a cheap no-op once seeded. This guarantees a
+          // freshly-reset org self-seeds on the next QuikInfra page load — no manual
+          // step, no reliance on /api/me/permissions firing. Best-effort.
+          try {
+            const seeded = await seedDefaultRoles(orgId);
+            const su = session.user as { isSuperAdmin?: boolean; membershipRole?: string };
+            const adminTier =
+              su.isSuperAdmin === true ||
+              ["super_admin", "platform_super_admin", "org_admin", "admin"].includes(
+                (su.membershipRole ?? "").toLowerCase(),
+              );
+            if (seeded && adminTier) {
+              await ensureUserOnRole(session.user.id, orgId, seeded.adminRoleId, "auto-bootstrap");
+            }
+          } catch {
+            // swallow — seeding must never block the request
+          }
           let blocked: NextResponse | null = null;
           if (options.moduleKey) {
             const ff = await gateModuleApi("quikinfra", options.moduleKey, orgId);

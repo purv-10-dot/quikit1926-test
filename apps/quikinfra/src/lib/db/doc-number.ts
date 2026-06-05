@@ -15,7 +15,7 @@
  *      callers should wrap creates in `withDocNumberRetry`.
  */
 
-import { db } from "./prisma";
+import { db } from "@/lib/db";
 
 const PREFIXES: Record<string, { model: string; field: string; prefix: string }> = {
   pr: { model: "cnPurchaseRequisition", field: "prNumber", prefix: "PR" },

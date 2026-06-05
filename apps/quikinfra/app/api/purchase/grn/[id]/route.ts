@@ -1,6 +1,6 @@
 import { requirePurchaseAction } from "@/lib/auth/requirePurchaseAction";
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 import { findGRNById } from "@/lib/purchase/grn-repository";
 import { resolveUserNames } from "@/lib/users/resolve-names";

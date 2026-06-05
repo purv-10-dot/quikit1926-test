@@ -30,7 +30,7 @@
  *   - shaping the response body for its UI clients
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { findCnUsersByIds } from "@/lib/users/lookup";
 import type { TenantContext } from "@/lib/auth/context";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";

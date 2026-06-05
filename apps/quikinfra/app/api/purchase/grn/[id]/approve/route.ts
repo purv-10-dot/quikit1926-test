@@ -8,7 +8,7 @@ import { assertTransition, TransitionError } from "@/lib/workflow/transitions";
 import { recordAudit } from "@/lib/workflow/audit";
 import { postGRNInward, StockError } from "@/lib/stock";
 import { GRNStatus } from "@/lib/purchase/enums";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 
 /**

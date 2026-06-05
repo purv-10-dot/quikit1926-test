@@ -8,7 +8,7 @@ const withOrgAuth = withOrgAuthForModule("store");
 export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const returns = await db.cnInternalReturn.findMany({
-    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, ...(includeDeleted ? {} : { status: { not: "cancelled" } }) },
     include: {
       issue: { select: { id: true, issueNumber: true } },
       project: { select: { id: true, name: true } },
@@ -23,7 +23,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = internalReturnCreateSchema.parse(body);
   const issue = await db.cnMaterialIssue.findFirst({
-    where: { id: input.issueId, orgId, deletedAt: null },
+    where: { id: input.issueId, orgId },
     select: { id: true, status: true, projectId: true, locationId: true },
   });
   if (!issue) return NextResponse.json({ success: false, error: "Issue not found" }, { status: 400 });
@@ -33,7 +33,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   if (issue.projectId !== input.projectId || issue.locationId !== input.locationId) {
     return NextResponse.json({ success: false, error: "Project/Location must match source issue" }, { status: 400 });
   }
-  const dup = await db.cnInternalReturn.findFirst({ where: { orgId, returnNumber: input.returnNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnInternalReturn.findFirst({ where: { orgId, returnNumber: input.returnNumber }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Return number '${input.returnNumber}' already exists` }, { status: 409 });
 
   const ret = await db.cnInternalReturn.create({
@@ -44,17 +44,15 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       projectId: input.projectId,
       locationId: input.locationId,
       returnDate: new Date(input.returnDate),
-      returnedBy: input.returnedBy,
-      reason: input.reason,
+      returnedById: input.returnedBy,
       status: "draft",
       createdBy: userId,
+      updatedBy: userId,
       lines: {
         create: input.lines.map((l) => ({
           itemId: l.itemId,
-          returnQty: l.returnQty,
+          returnedQty: l.returnQty,
           uomId: l.uomId,
-          unitRate: l.unitRate,
-          amount: l.returnQty * l.unitRate,
           remarks: l.remarks,
         })),
       },

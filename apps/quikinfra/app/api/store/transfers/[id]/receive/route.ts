@@ -2,7 +2,7 @@ import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import {
   findStockTransferById,
   patchStockTransferStatus,

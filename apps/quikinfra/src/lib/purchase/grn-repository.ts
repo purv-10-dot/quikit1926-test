@@ -3,7 +3,7 @@
  * `cn_grn_lines`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface GRNLineInput {
   poLineId?: string | null;
