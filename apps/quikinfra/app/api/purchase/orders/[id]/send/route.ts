@@ -8,7 +8,7 @@ const withOrgAuth = withOrgAuthForModule("purchase");
 
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const po = await db.cnPurchaseOrder.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
+    where: { id: params.id, orgId },
     select: { id: true, status: true, totalAmount: true },
   });
   if (!po) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });

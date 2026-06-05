@@ -5,7 +5,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { findPRById, updatePR, deletePR } from "@/lib/purchase/pr-repository";
 import { resolveUserNames } from "@/lib/users/resolve-names";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 /**
  * Individual PR operations — Postgres-backed via Prisma.

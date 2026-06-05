@@ -2,7 +2,7 @@
  * UOM master — Prisma-backed CRUD for `cn_uoms`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface UOMRecord {
   id: string;

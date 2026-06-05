@@ -2,7 +2,7 @@
  * Good Return repository — Postgres-backed CRUD for `cn_good_returns`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface GoodReturnLine {
   itemId?: string | null;

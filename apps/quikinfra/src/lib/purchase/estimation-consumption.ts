@@ -12,7 +12,7 @@
  * permanently eat budget. Open / approved / closed PRs all count.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { listEstimations } from "@/lib/projects/estimation-repository";
 
 const DEAD_PR_STATUSES = new Set(["rejected", "cancelled", "void"]);

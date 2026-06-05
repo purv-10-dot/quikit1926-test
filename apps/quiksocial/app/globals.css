@@ -135,6 +135,34 @@ textarea:-ms-input-placeholder {
 }
 
 /* =============================================================
+   Native <select> theming — GLOBAL.
+   The browser default is an opaque white control + a white option
+   list, which breaks the dark-glass theme on every page. The closed
+   control is themed to match .qs-input; the OS-rendered <option> list
+   (which inline styles on the <select> CANNOT reach — they only style
+   the control) is darkened here so it's legible app-wide.
+
+   Components may still inline-style the closed <select> (catalog,
+   campaigns, settings, the media picker all do) — those win by
+   specificity and already use these same token values, so they stay
+   consistent. We deliberately do NOT set `appearance` here: selects
+   that rely on the native arrow keep it, and the ones that opt into a
+   custom chevron (settings) still win with their inline appearance:none.
+   ============================================================= */
+select {
+  background-color: var(--qs-input-bg);
+  border: 1px solid var(--qs-input-border);
+  border-radius: var(--qs-input-radius);
+  color: var(--qs-text-primary);
+  color-scheme: dark;
+}
+select option,
+select optgroup {
+  background-color: #1a1a1a;
+  color: var(--qs-text-primary);
+}
+
+/* =============================================================
    Utility layer — reusable glass component classes
    Use these as @apply targets in component CSS, or apply them
    directly in JSX via className.

@@ -1,7 +1,7 @@
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { NextRequest, NextResponse } from "next/server";
 import { hasMatrixAction } from "@/lib/auth/context";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { PROJECT_DOCUMENT_MAX_FILE_SIZE_BYTES } from "@/lib/storage/validation";
 

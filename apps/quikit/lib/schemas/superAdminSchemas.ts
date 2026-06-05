@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { INVITE_METHOD } from "@quikit/shared";
+import { INVITE_METHOD, MEMBERSHIP_ROLES } from "@quikit/shared";
 
 // ─── Organizations ────────────────────────────────────────────────────────────
 
@@ -109,24 +109,39 @@ export const updateUserSchema = z.object({
 });
 
 // ─── Direct Add Member (FR-SA-011) ────────────────────────────────────────────
-// Lets a Superadmin add a member to any org without sending an invitation
-// email. The user is created in "active" status with the system default
-// password (and mustChangePassword=true so they're routed through the
-// Set-Password screen on first login).
+// Lets a Superadmin add a member to any org from the org-detail "Add Member"
+// drawer. The member is created in "active" status immediately (direct-add):
+//   - Native invite → User seeded with a temp password (mustChangePassword=true),
+//     routed through the Set-Password screen on first login.
+//   - SSO invite    → passwordless User; signs in via Google/Microsoft OAuth.
+//
+// firstName/lastName are OPTIONAL: the drawer intentionally defers names to the
+// member's first login (/complete-profile). Roles are limited to Org Admin and
+// Member per product requirement; promoting to org_admin cascades per-app admin
+// (see lib/memberRoleSync.ts).
+
+const orgMemberNameField = z
+  .string()
+  .max(50)
+  .regex(/^[A-Za-z\s'\-]*$/, "Name may contain only letters, spaces, apostrophes, and hyphens")
+  .optional()
+  .default("");
 
 export const directAddMemberSchema = z.object({
   orgId: z.string().min(1, "Organisation is required"),
   email: z.string().email("Invalid email"),
-  firstName: z
-    .string()
-    .min(1, "First name is required")
-    .max(50)
-    .regex(/^[A-Za-z\s'\-]+$/, "First name may contain only letters, spaces, apostrophes, and hyphens"),
-  lastName: z
-    .string()
-    .min(1, "Last name is required")
-    .max(50)
-    .regex(/^[A-Za-z\s'\-]+$/, "Last name may contain only letters, spaces, apostrophes, and hyphens"),
-  role: z.enum(["org_admin", "app_admin", "member"]),
+  firstName: orgMemberNameField,
+  lastName: orgMemberNameField,
+  role: z.enum([MEMBERSHIP_ROLES.ORG_ADMIN, MEMBERSHIP_ROLES.MEMBER]),
+  inviteMethod: inviteMethodEnum.default(INVITE_METHOD.NATIVE),
   appIds: z.array(z.string().min(1)).default([]),
+});
+
+// ─── Update Member Role (Req 1) ───────────────────────────────────────────────
+// Flip an existing member between Org Admin and Member from the org-detail
+// page. The change cascades to per-app admin access (see lib/memberRoleSync.ts).
+
+export const updateMemberRoleSchema = z.object({
+  userId: z.string().min(1, "User is required"),
+  role: z.enum([MEMBERSHIP_ROLES.ORG_ADMIN, MEMBERSHIP_ROLES.MEMBER]),
 });

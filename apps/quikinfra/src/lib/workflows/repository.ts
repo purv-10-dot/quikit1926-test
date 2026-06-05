@@ -9,7 +9,7 @@
  *   - cn_approval_workflow_steps (lines: stepOrder, role, thresholds)
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface WorkflowStepInput {
   stepOrder: number;

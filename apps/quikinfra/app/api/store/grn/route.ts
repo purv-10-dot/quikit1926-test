@@ -12,8 +12,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
   const grns = await db.cnGoodsReceiptNote.findMany({
     where: {
       orgId,
-      deletedAt: includeDeleted ? { not: null } : null,
-      ...(status ? { status } : {}),
+      ...(status ? { status } : includeDeleted ? {} : { status: { not: "cancelled" } }),
       ...(poId ? { poId } : {}),
     },
     include: {
@@ -42,7 +41,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
 
   // Validate FKs + PO status
   const po = await db.cnPurchaseOrder.findFirst({
-    where: { id: input.poId, orgId, deletedAt: null },
+    where: { id: input.poId, orgId },
     select: { id: true, status: true, vendorId: true, projectId: true, lines: { select: { id: true, orderedQty: true, receivedQty: true, pendingQty: true, itemId: true } } },
   });
   if (!po) return NextResponse.json({ success: false, error: "PO not found" }, { status: 400 });
@@ -71,15 +70,19 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     if (l.acceptedQty + l.rejectedQty > l.receivedQty) {
       errors.push(`Line for item ${l.itemId}: accepted+rejected > received`);
     }
-    if (l.poLineId) {
-      const poLine = po.lines.find((x) => x.id === l.poLineId);
-      if (!poLine) errors.push(`PO line ${l.poLineId} not found on this PO`);
-      else if (poLine.itemId !== l.itemId) errors.push(`PO line item mismatch on ${l.poLineId}`);
-      else if (Number(poLine.pendingQty) < l.receivedQty) {
-        errors.push(
-          `Over-receipt on PO line ${l.poLineId}: pending ${poLine.pendingQty}, attempting ${l.receivedQty}`,
-        );
-      }
+    // Every GRN line must reference a PO line — the DB column is NOT NULL and
+    // a GRN is always raised against a PO.
+    if (!l.poLineId) {
+      errors.push(`Line for item ${l.itemId}: must reference a PO line`);
+      continue;
+    }
+    const poLine = po.lines.find((x) => x.id === l.poLineId);
+    if (!poLine) errors.push(`PO line ${l.poLineId} not found on this PO`);
+    else if (poLine.itemId !== l.itemId) errors.push(`PO line item mismatch on ${l.poLineId}`);
+    else if (Number(poLine.pendingQty) < l.receivedQty) {
+      errors.push(
+        `Over-receipt on PO line ${l.poLineId}: pending ${poLine.pendingQty}, attempting ${l.receivedQty}`,
+      );
     }
   }
   if (errors.length) {
@@ -87,7 +90,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
 
   const dup = await db.cnGoodsReceiptNote.findFirst({
-    where: { orgId, grnNumber: input.grnNumber, deletedAt: null },
+    where: { orgId, grnNumber: input.grnNumber },
     select: { id: true },
   });
   if (dup) {
@@ -115,9 +118,10 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       remarks: input.remarks,
       status: "draft",
       createdBy: userId,
+      updatedBy: userId,
       lines: {
         create: input.lines.map((l) => ({
-          poLineId: l.poLineId ?? null,
+          poLineId: l.poLineId!,
           itemId: l.itemId,
           receivedQty: l.receivedQty,
           acceptedQty: l.acceptedQty,

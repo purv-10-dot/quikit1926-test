@@ -13,7 +13,7 @@
  * app keeps working until `npx prisma generate` / the ALTER TABLE runs.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 // ─── Types ──────────────────────────────────────────────────────────
 

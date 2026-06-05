@@ -16,7 +16,7 @@
  * columns regardless of whether the client is fresh.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface POLineInput {
   indentLineId?: string | null;

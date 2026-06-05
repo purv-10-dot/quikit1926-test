@@ -23,7 +23,7 @@ const withOrgAuth = withOrgAuthForModule("store");
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const grn = await db.cnGoodsReceiptNote.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
+    where: { id: params.id, orgId },
     include: {
       lines: true,
       po: { include: { lines: true } },
@@ -100,7 +100,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
       // 4. Mark GRN posted
       await tx.cnGoodsReceiptNote.update({
         where: { id: grn.id },
-        data: { status: "posted", postedAt, postedBy: userId, updatedBy: userId },
+        data: { status: "posted", updatedBy: userId },
       });
     });
   } catch (err: unknown) {

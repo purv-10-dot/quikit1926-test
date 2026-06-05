@@ -3,7 +3,7 @@
  * Hierarchical; depth derived from parent on write.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface ItemGroupRecord {
   id: string;

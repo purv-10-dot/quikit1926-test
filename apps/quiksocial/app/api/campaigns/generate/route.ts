@@ -96,17 +96,24 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     );
   }
 
-  const productIds: string[] = Array.isArray(campaign.productIds) ? campaign.productIds : [];
-  const serviceIds: string[] = Array.isArray(campaign.serviceIds) ? campaign.serviceIds : [];
+  const offeringIds: string[] = Array.isArray(campaign.offeringIds)
+    ? campaign.offeringIds
+    : [];
 
-  const [products, services] = await Promise.all([
-    productIds.length > 0
-      ? db.product.findMany({ where: { orgId, id: { in: productIds } } })
-      : Promise.resolve([]),
-    serviceIds.length > 0
-      ? db.service.findMany({ where: { orgId, id: { in: serviceIds } } })
-      : Promise.resolve([]),
-  ]);
+  const offerings =
+    offeringIds.length > 0
+      ? await db.offering.findMany({ where: { orgId, id: { in: offeringIds } } })
+      : [];
+
+  // Re-split into the products/services arrays the AI service still expects
+  // on the payload. Once the Python side moves to a unified `offerings`
+  // array, drop this split and ship a single `offerings: offerings.map(...)`.
+  const products = offerings.filter(
+    (o) => o.type !== "service" && o.type !== "treatment",
+  );
+  const services = offerings.filter(
+    (o) => o.type === "service" || o.type === "treatment",
+  );
 
   // Resolve colors. Campaign snapshot wins; fall back to brand fields.
   const primary = safeHex(
@@ -167,18 +174,25 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
     })),
     services: services.map((s) => ({
       id: s.id,
+      // Offering uses `price` for everything; the AI service's Service shape
+      // still calls the field `pricing`. Map for back-compat.
       name: s.name,
       description: s.description ?? null,
-      pricing: s.pricing ?? null,
+      pricing: s.price ?? null,
       duration: s.duration ?? null,
       category: s.category ?? null,
       tags: Array.isArray(s.tags) ? s.tags : [],
       image_url:
         Array.isArray(s.imageUrls) && s.imageUrls.length > 0 ? s.imageUrls[0] : null,
     })),
-    platforms: ["instagram"],
-    attachedProduct: campaign.attachedProduct ?? null,
-    attachedService: campaign.attachedService ?? null,
+    // Platform is chosen at SCHEDULING time, not generation (CLAUDE.md:
+    // "Platform selection REMOVED from here"). Do NOT assert a platform
+    // here — it only seeds a caption-context line on the Python side
+    // (image size is fixed 1080x1350 regardless), and stamping
+    // "instagram" pre-selected the platform before the user reached
+    // scheduling. The Python CampaignRequest.platforms default covers
+    // the caption hint internally.
+    attachedOffering: campaign.attachedOffering ?? null,
     attachedAsset: campaign.attachedAsset ?? null,
   };
 

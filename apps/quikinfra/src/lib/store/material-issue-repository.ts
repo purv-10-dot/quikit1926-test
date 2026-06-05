@@ -13,8 +13,8 @@
  * `lines`, etc.) so list / detail / drawer keep rendering unchanged.
  */
 
-import { db } from "@/lib/db/prisma";
-import { Prisma } from "../../../node_modules/.prisma-qc2/client";
+import { db } from "@/lib/db";
+import { Prisma } from "@quikit/database";
 
 export interface MIMaterialLine {
   itemId?: string | null;

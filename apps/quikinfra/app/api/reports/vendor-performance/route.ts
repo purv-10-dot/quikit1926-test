@@ -14,15 +14,15 @@ const withOrgAuth = withOrgAuthForModule("reports");
  */
 export const GET = withOrgAuth(async ({ orgId }) => {
   const vendors = await db.cnVendor.findMany({
-    where: { orgId, deletedAt: null },
+    where: { orgId },
     select: { id: true, code: true, name: true, rating: true },
   });
 
   const [pos, grns, grnLines] = await Promise.all([
-    db.cnPurchaseOrder.findMany({ where: { orgId, deletedAt: null }, select: { vendorId: true, totalAmount: true, deliveryDate: true, id: true, grns: { select: { id: true, grnDate: true } } } }),
-    db.cnGoodsReceiptNote.findMany({ where: { orgId, deletedAt: null, status: "posted" }, select: { vendorId: true, poId: true, grnDate: true, lines: { select: { amount: true, qualityStatus: true } } } }),
+    db.cnPurchaseOrder.findMany({ where: { orgId }, select: { vendorId: true, totalAmount: true, deliveryDate: true, id: true, grns: { select: { id: true, grnDate: true } } } }),
+    db.cnGoodsReceiptNote.findMany({ where: { orgId, status: "posted" }, select: { vendorId: true, poId: true, grnDate: true, lines: { select: { amount: true, qualityStatus: true } } } }),
     db.cnGRNLine.findMany({
-      where: { grn: { orgId, deletedAt: null, status: "posted" } },
+      where: { grn: { orgId, status: "posted" } },
       select: { qualityStatus: true, grn: { select: { vendorId: true } } },
     }),
   ]);

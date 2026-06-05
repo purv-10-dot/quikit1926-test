@@ -5,7 +5,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
 import { findRfqById, softDeleteRfq } from "@/lib/purchase/rfq-repository";
 import { resolveUserNames } from "@/lib/users/resolve-names";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 /**
  * RFQ per-row endpoints — Postgres-backed.

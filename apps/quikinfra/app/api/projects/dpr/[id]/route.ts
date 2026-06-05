@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { getTenantContext, tenantUpdate, hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
@@ -78,6 +78,7 @@ async function enrichDPR(row: any, project?: any): Promise<any> {
     orgId: row.orgId,
     projectId: row.projectId,
     projectName: project?.name ?? "",
+    consumptionLocationId: row.consumptionLocationId ?? null,
     reportDate: row.reportDate?.toISOString?.().slice(0, 10) ?? "",
     weatherCondition: row.weatherCondition ?? "",
     weatherDetail: parseStoredWeatherDetail(row.weatherDetail) ?? null,
@@ -251,6 +252,9 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
       }
     }
     if (body.siteRemarks !== undefined) data.remarks = body.siteRemarks;
+    if (body.consumptionLocationId !== undefined) {
+      data.consumptionLocationId = body.consumptionLocationId ?? null;
+    }
     if (body.status === "submitted" || body.status === "draft") {
       data.status = body.status;
     }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { getTenantContext } from "@/lib/auth/context";
 import { logger } from "@/lib/observability/logger";
 

@@ -8,9 +8,9 @@ const withOrgAuth = withOrgAuthForModule("store");
 export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const transfers = await db.cnStockTransfer.findMany({
-    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, ...(includeDeleted ? {} : { status: { not: "cancelled" } }) },
     include: {
-      project: { select: { id: true, name: true } },
+      fromProject: { select: { id: true, name: true } },
       fromLocation: { select: { id: true, name: true } },
       toLocation: { select: { id: true, name: true } },
     },
@@ -29,27 +29,27 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   ]);
   if (!from) return NextResponse.json({ success: false, error: "Source location not found" }, { status: 400 });
   if (!to) return NextResponse.json({ success: false, error: "Destination location not found" }, { status: 400 });
-  const dup = await db.cnStockTransfer.findFirst({ where: { orgId, transferNumber: input.transferNumber, deletedAt: null }, select: { id: true } });
+  const dup = await db.cnStockTransfer.findFirst({ where: { orgId, transferNumber: input.transferNumber }, select: { id: true } });
   if (dup) return NextResponse.json({ success: false, error: `Transfer number '${input.transferNumber}' already exists` }, { status: 409 });
 
   const tr = await db.cnStockTransfer.create({
     data: {
       orgId,
       transferNumber: input.transferNumber,
-      projectId: input.projectId,
+      fromProjectId: input.projectId,
+      toProjectId: input.projectId,
       fromLocationId: input.fromLocationId,
       toLocationId: input.toLocationId,
       transferDate: new Date(input.transferDate),
-      reason: input.reason,
+      transferReason: input.reason,
       status: "draft",
       createdBy: userId,
+      updatedBy: userId,
       lines: {
         create: input.lines.map((l) => ({
           itemId: l.itemId,
-          quantity: l.quantity,
+          sentQty: l.quantity,
           uomId: l.uomId,
-          unitRate: l.unitRate,
-          amount: l.quantity * l.unitRate,
           remarks: l.remarks,
         })),
       },

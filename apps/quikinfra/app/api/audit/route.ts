@@ -16,7 +16,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
       ...(entityId ? { entityId } : {}),
       ...(userId ? { userId } : {}),
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { timestamp: "desc" },
     take: limit,
   });
   return NextResponse.json({ success: true, data: list });
