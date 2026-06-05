@@ -44,7 +44,14 @@ export const GET = auth.view(async ({ orgId }, request) => {
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     orderBy,
     include: {
-      teamMembers: { include: { member: { select: { id: true, name: true, email: true } } } },
+      // Pull `member.deletedAt` so we can drop soft-deleted members from the
+      // roster below. A deleted ClientMember leaves its ClientTeamMember link
+      // behind, and this include previously had no deletedAt filter — so the
+      // grid leaked deleted members that the edit-form member picker (which
+      // only lists active members) can't render, producing the "grid shows 9 /
+      // edit form shows 5" mismatch. The dashboard + export routes already
+      // filter on `member.deletedAt`; this brings the list endpoint in line.
+      teamMembers: { include: { member: { select: { id: true, name: true, email: true, deletedAt: true } } } },
       _count: { select: { memberships: { where: { deletedAt: null } } } },
     },
   });
@@ -84,7 +91,9 @@ export const GET = auth.view(async ({ orgId }, request) => {
       startDate: r.startDate?.toISOString() ?? null,
       weeklyStartTime: r.weeklyStartTime, weeklyEndTime: r.weeklyEndTime,
       dailyStartTime: r.dailyStartTime,   dailyEndTime: r.dailyEndTime,
-      teamMembers: r.teamMembers.map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
+      teamMembers: r.teamMembers
+        .filter(tm => !tm.member.deletedAt)
+        .map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
       userMemberCount: r._count.memberships,
       createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(),
       createdBy: r.createdBy,

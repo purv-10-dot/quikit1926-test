@@ -15,7 +15,11 @@ export const GET = auth.view<{ id: string }>(async ({ orgId }, _req, { params })
   const row = await db.client.findFirst({
     where: { id: params.id, orgId, deletedAt: null },
     include: {
-      teamMembers: { include: { member: { select: { id: true, name: true, email: true } } } },
+      // Include `member.deletedAt` so soft-deleted members are filtered out of
+      // the roster below — consistent with the list/dashboard/export routes. A
+      // deleted ClientMember keeps its ClientTeamMember link, so without this
+      // filter the detail payload would surface members the edit form can't show.
+      teamMembers: { include: { member: { select: { id: true, name: true, email: true, deletedAt: true } } } },
       memberships: {
         where: { deletedAt: null },
         include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
@@ -33,7 +37,9 @@ export const GET = auth.view<{ id: string }>(async ({ orgId }, _req, { params })
       startDate: row.startDate?.toISOString() ?? null,
       weeklyStartTime: row.weeklyStartTime, weeklyEndTime: row.weeklyEndTime,
       dailyStartTime: row.dailyStartTime,   dailyEndTime: row.dailyEndTime,
-      teamMembers: row.teamMembers.map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
+      teamMembers: row.teamMembers
+        .filter(tm => !tm.member.deletedAt)
+        .map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
       // Legacy tenant-user memberships (kept for now; see migration note in schema).
       members: row.memberships.map(m => ({
         id: m.id,
