@@ -1,0 +1,32 @@
+  prisma-migrate:
+    name: Prisma — migrate deploy
+    runs-on: ubuntu-latest
+
+    # Run once per workflow
+    needs: detect-changes
+
+    # Run only when DB-related apps change OR manual trigger
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      contains(needs.detect-changes.outputs.apps, 'quikscale') ||
+      contains(needs.detect-changes.outputs.apps, 'quiktrack') ||
+      contains(needs.detect-changes.outputs.apps, 'quikinfra')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma migrate deploy
+        run: |
+          cd packages/database
+          npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
