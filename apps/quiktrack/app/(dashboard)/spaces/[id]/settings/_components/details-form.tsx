@@ -126,7 +126,7 @@ export function DetailsForm({ projectId }: { projectId: string }) {
           Spaces
         </Link>
         <span className="mx-1">/</span>
-        <Link href={`/spaces/${projectId}/board`} className="hover:underline">
+        <Link href={`/spaces/${projectId}/backlog`} className="hover:underline">
           {project?.name ?? "—"}
         </Link>
         <span className="mx-1">/</span>

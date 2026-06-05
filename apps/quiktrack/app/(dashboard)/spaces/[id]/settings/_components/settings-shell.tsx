@@ -86,7 +86,7 @@ export function SettingsShell({
       <aside className="w-[240px] shrink-0 border-r border-gray-200 px-3 py-4 overflow-y-auto">
         <button
           type="button"
-          onClick={() => router.push(`/spaces/${projectId}/board`)}
+          onClick={() => router.push(`/spaces/${projectId}/backlog`)}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-900 hover:text-gray-700"
         >
           <ArrowLeft className="h-4 w-4" />
