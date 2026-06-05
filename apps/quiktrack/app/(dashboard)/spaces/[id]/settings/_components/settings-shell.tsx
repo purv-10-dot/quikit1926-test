@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { SpaceIcon } from "@/components/space-icon";
 
 interface Project {
   id: string;
@@ -92,18 +93,7 @@ export function SettingsShell({
           Space settings
         </button>
         <div className="mt-5 flex items-center gap-2 px-2">
-          {project?.icon ? (
-            <span className="h-8 w-8 rounded flex items-center justify-center text-xl leading-none bg-gray-50 shrink-0">
-              {project.icon}
-            </span>
-          ) : (
-            <span
-              className="h-8 w-8 rounded flex items-center justify-center text-white text-sm font-semibold shrink-0"
-              style={{ background: project?.color ?? "#2563eb" }}
-            >
-              {project?.name?.charAt(0).toUpperCase() ?? "?"}
-            </span>
-          )}
+          <SpaceIcon icon={project?.icon} name={project?.name} color={project?.color} size={32} radius={8} />
           <div className="min-w-0">
             <div className="text-sm font-semibold text-gray-900 truncate">
               {project?.name ?? "—"}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, Info } from "lucide-react";
-import { PROJECT_EMOJIS } from "@/lib/utils/projectEmoji";
+import { SpaceIcon, PROJECT_ICONS } from "@/components/space-icon";
 
 interface Project {
   id: string;
@@ -141,9 +141,7 @@ export function DetailsForm({ projectId }: { projectId: string }) {
 
       <div className="flex flex-col items-center gap-3 mb-6">
         <div className="relative flex flex-col items-center" ref={iconRef}>
-          <div className="h-32 w-32 rounded bg-[#0a3055] flex items-center justify-center text-5xl leading-none">
-            {icon ?? "🚀"}
-          </div>
+          <SpaceIcon icon={icon} name={name} size={128} radius={16} />
           <button
             type="button"
             onClick={() => setIconPickerOpen((v) => !v)}
@@ -152,18 +150,21 @@ export function DetailsForm({ projectId }: { projectId: string }) {
             Change icon
           </button>
           {iconPickerOpen && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-[280px] bg-white border border-gray-200 rounded-md shadow-lg z-30 p-2 grid grid-cols-8 gap-1 max-h-60 overflow-y-auto">
-              {PROJECT_EMOJIS.map((e) => (
+            <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-[300px] bg-white border border-gray-200 rounded-md shadow-lg z-30 p-2 grid grid-cols-6 gap-1.5 max-h-60 overflow-y-auto">
+              {PROJECT_ICONS.map((opt) => (
                 <button
-                  key={e}
+                  key={opt.key}
                   type="button"
+                  title={opt.label}
                   onClick={() => {
-                    setIcon(e);
+                    setIcon(opt.key);
                     setIconPickerOpen(false);
                   }}
-                  className="h-8 w-8 rounded hover:bg-gray-100 flex items-center justify-center text-lg"
+                  className={`h-11 w-11 rounded-lg flex items-center justify-center hover:bg-gray-100 ${
+                    icon === opt.key ? "ring-2 ring-blue-500" : ""
+                  }`}
                 >
-                  {e}
+                  <SpaceIcon icon={opt.key} size={34} radius={9} />
                 </button>
               ))}
             </div>

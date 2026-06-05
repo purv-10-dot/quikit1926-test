@@ -7,6 +7,7 @@ import { recordActivity } from "@/lib/utils/history";
 import { AddPeopleModal } from "@/components/add-people-modal";
 import { ShareFeedbackModal } from "@/components/share-feedback-modal";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { SpaceIcon } from "@/components/space-icon";
 import {
   UserPlus,
   Share2,
@@ -170,17 +171,8 @@ export function ProjectHeader({ projectId }: { projectId: string }) {
           <div className="flex items-center gap-3">
             {!project ? (
               <span className="h-7 w-7 rounded bg-gray-200 animate-pulse" />
-            ) : project.icon ? (
-              <span className="h-7 w-7 rounded flex items-center justify-center text-xl leading-none bg-gray-50">
-                {project.icon}
-              </span>
             ) : (
-              <span
-                className="h-7 w-7 rounded flex items-center justify-center text-white text-sm font-semibold"
-                style={{ background: project.color ?? "#2563eb" }}
-              >
-                {project.name?.charAt(0).toUpperCase() || "?"}
-              </span>
+              <SpaceIcon icon={project.icon} name={project.name} color={project.color} size={28} radius={6} />
             )}
             {project ? (
               <h1 className="text-base font-semibold text-gray-900">{project.name}</h1>

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { BoardFilterSelect } from "@/app/(dashboard)/spaces/[id]/board/_components/board-filter-select";
+import { SpaceIcon } from "@/components/space-icon";
 
 type IssueType = "TASK" | "BUG" | "STORY" | "EPIC";
 type Priority = "HIGHEST" | "HIGH" | "MEDIUM" | "LOW" | "LOWEST";
@@ -677,21 +678,7 @@ function SpaceOption({
 }
 
 function ProjectIcon({ p }: { p: Project }) {
-  if (p.icon) {
-    return (
-      <span className="h-5 w-5 rounded flex items-center justify-center text-sm leading-none bg-gray-50">
-        {p.icon}
-      </span>
-    );
-  }
-  return (
-    <span
-      className="h-5 w-5 rounded flex items-center justify-center text-white text-[10px] font-semibold"
-      style={{ background: p.color || "#2563eb" }}
-    >
-      {p.name.charAt(0).toUpperCase()}
-    </span>
-  );
+  return <SpaceIcon icon={p.icon} name={p.name} color={p.color} size={20} radius={6} />;
 }
 
 function WorkTypePicker({

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { SpaceIcon } from "@/components/space-icon";
 import {
   Search,
   ChevronDown,
@@ -339,18 +340,7 @@ export function SpacesGrid() {
                     href={`/spaces/${s.id}/backlog`}
                     className="inline-flex items-center gap-2 text-blue-700 hover:underline"
                   >
-                    {s.icon ? (
-                      <span className="h-6 w-6 rounded flex items-center justify-center text-base bg-gray-50 leading-none">
-                        {s.icon}
-                      </span>
-                    ) : (
-                      <span
-                        className="h-6 w-6 rounded flex items-center justify-center text-white text-[11px] font-semibold"
-                        style={{ background: s.color || "#2563eb" }}
-                      >
-                        {s.name.charAt(0).toUpperCase()}
-                      </span>
-                    )}
+                    <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={24} radius={6} />
                     <span>{s.name}</span>
                   </Link>
                 </td>
