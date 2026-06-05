@@ -53,6 +53,10 @@ declare module "next-auth/jwt" {
     isSuperAdmin?: boolean;
     sessionId?: string;
     sessionTouchedAt?: number;
+    /** Last time we verified `sessionId` is still active in Redis. Throttles
+     *  the per-request liveness check so we hit Redis at most once per
+     *  SESSION_CHECK_INTERVAL ms per token. */
+    sessionCheckedAt?: number;
     impersonating?: boolean;
     impersonatorUserId?: string;
     impersonatorEmail?: string;

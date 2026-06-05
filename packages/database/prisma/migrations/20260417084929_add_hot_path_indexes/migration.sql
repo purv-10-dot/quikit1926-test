@@ -18,8 +18,18 @@
 CREATE INDEX IF NOT EXISTS "Notification_tenantId_userId_read_idx"
   ON "Notification" ("tenantId", "userId", "read");
 
-CREATE INDEX IF NOT EXISTS "PerformanceReview_tenantId_revieweeId_year_quarter_idx"
-  ON "PerformanceReview" ("tenantId", "revieweeId", "year", "quarter");
+-- PerformanceReview table doesn't exist in the live schema; guard the
+-- index creation so `prisma migrate reset` doesn't fail on this migration.
+-- If/when the model is added, this block creates the index automatically.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables WHERE table_name = 'PerformanceReview'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS "PerformanceReview_tenantId_revieweeId_year_quarter_idx"
+      ON "PerformanceReview" ("tenantId", "revieweeId", "year", "quarter");
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS "HabitAssessment_tenantId_quarter_year_idx"
   ON "HabitAssessment" ("tenantId", "quarter", "year");

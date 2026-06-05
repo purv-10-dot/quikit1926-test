@@ -167,17 +167,17 @@ export interface RightPanelCancelButtonProps {
 }
 
 export function RightPanelCancelButton({ onClick, label = "Cancel", disabled }: RightPanelCancelButtonProps) {
-  // return (
-  //   <button
-  //     type="button"
-  //     onClick={onClick}
-  //     disabled={disabled}
-  //     className="flex items-center gap-1.5 px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
-  //   >
-  //     <X className="h-3.5 w-3.5" />
-  //     {label}
-  //   </button>
-  // );
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-1.5 px-4 py-2 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+    >
+      <X className="h-3.5 w-3.5" />
+      {label}
+    </button>
+  );
 }
 
 export interface RightPanelSubmitButtonProps {

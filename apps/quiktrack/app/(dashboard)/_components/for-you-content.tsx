@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { Columns, Bookmark, Zap, CheckSquare, LayoutDashboard } from "lucide-react";
 import { TruckIllustration } from "@/components/illustrations/truck";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { SpaceIcon } from "@/components/space-icon";
 import {
   type HistoryEntry,
   fetchActivity,
@@ -56,7 +57,7 @@ export function ForYouContent() {
   const perms = useMyPermissions();
   const canCreateProject = perms.loading || perms.has("Project", "create");
   const currentUserId = session?.user?.id ?? null;
-  const [tab, setTab] = useState<Tab>("recommended");
+  const [tab, setTab] = useState<Tab>("viewed");
   const [allSpaces, setAllSpaces] = useState<SpaceCard[] | null>(null);
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
 
@@ -149,21 +150,10 @@ export function ForYouContent() {
             {recommended.map((s) => (
               <Link
                 key={s.id}
-                href={`/spaces/${s.id}/board`}
+                href={`/spaces/${s.id}/backlog`}
                 className="flex items-center gap-3 border border-gray-200 rounded-md p-3 hover:bg-gray-50"
               >
-                {s.icon ? (
-                  <span className="h-9 w-9 rounded flex items-center justify-center text-xl leading-none bg-gray-50 shrink-0">
-                    {s.icon}
-                  </span>
-                ) : (
-                  <span
-                    className="h-9 w-9 rounded flex items-center justify-center text-white text-sm font-semibold shrink-0"
-                    style={{ background: s.color ?? "#2563eb" }}
-                  >
-                    {s.name.charAt(0).toUpperCase()}
-                  </span>
-                )}
+                <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={36} radius={8} />
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-gray-900 truncate">{s.name}</div>
                   <div className="text-xs text-gray-500 truncate">
@@ -272,17 +262,8 @@ export function ForYouContent() {
                     href={r.href}
                     className="flex items-center gap-3 py-2 px-2 -mx-2 rounded hover:bg-gray-50"
                   >
-                    {r.icon ? (
-                      <span className="h-7 w-7 rounded flex items-center justify-center text-base leading-none bg-gray-50 shrink-0">
-                        {r.icon}
-                      </span>
-                    ) : r.kind === "project" ? (
-                      <span
-                        className="h-7 w-7 rounded flex items-center justify-center text-white text-[11px] font-semibold shrink-0"
-                        style={{ background: r.color ?? "#2563eb" }}
-                      >
-                        {r.title.charAt(0).toUpperCase()}
-                      </span>
+                    {r.icon || r.kind === "project" ? (
+                      <SpaceIcon icon={r.icon} name={r.title} color={r.color} size={28} radius={6} />
                     ) : (
                       <span className="h-7 w-7 rounded bg-gray-100 flex items-center justify-center shrink-0">
                         <KindIcon kind={r.kind} />
@@ -346,21 +327,10 @@ function SpaceList({
       {spaces.map((s) => (
         <Link
           key={s.id}
-          href={`/spaces/${s.id}/board`}
+          href={`/spaces/${s.id}/backlog`}
           className="flex items-center gap-3 border border-gray-200 rounded-md p-3 hover:bg-gray-50"
         >
-          {s.icon ? (
-            <span className="h-9 w-9 rounded flex items-center justify-center text-xl leading-none bg-gray-50 shrink-0">
-              {s.icon}
-            </span>
-          ) : (
-            <span
-              className="h-9 w-9 rounded flex items-center justify-center text-white text-sm font-semibold shrink-0"
-              style={{ background: s.color ?? "#2563eb" }}
-            >
-              {s.name.charAt(0).toUpperCase()}
-            </span>
-          )}
+          <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={36} radius={8} />
           <div className="min-w-0">
             <div className="text-sm font-medium text-gray-900 truncate">{s.name}</div>
             <div className="text-xs text-gray-500 truncate">

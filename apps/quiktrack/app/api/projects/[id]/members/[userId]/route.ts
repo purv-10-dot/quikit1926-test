@@ -19,7 +19,7 @@ export const PATCH = withProjectAccess<{ id: string; userId: string }>(
     });
     return NextResponse.json({ success: true, data: member });
   },
-  { paramKey: "id", requireRoles: ["PROJECT_ADMIN"] },
+  { paramKey: "id", requirePermission: { resource: "ProjectMember", action: "update" } },
 );
 
 export const DELETE = withProjectAccess<{ id: string; userId: string }>(
@@ -30,5 +30,5 @@ export const DELETE = withProjectAccess<{ id: string; userId: string }>(
     });
     return NextResponse.json({ success: true, data: { userId: params.userId } });
   },
-  { paramKey: "id", requireRoles: ["PROJECT_ADMIN"] },
+  { paramKey: "id", requirePermission: { resource: "ProjectMember", action: "delete" } },
 );

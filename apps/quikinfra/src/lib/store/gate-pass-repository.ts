@@ -15,7 +15,7 @@
  * `lineCount`, `lines`, etc.).
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface GatePassLine {
   itemId?: string | null;

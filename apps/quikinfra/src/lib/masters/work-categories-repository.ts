@@ -2,7 +2,7 @@
  * Work Categories master — Prisma-backed CRUD for `cn_work_categories`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface WorkCategoryRecord {
   id: string;

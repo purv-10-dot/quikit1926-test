@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 const createSchema = z.object({
   name: z.string().min(1).max(120),
@@ -20,12 +21,7 @@ export const GET = withOrgAuth(async ({ orgId }) => {
 });
 
 export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-  if (!isAdmin) {
+  if (!(await hasAdminAccess(userId, orgId))) {
     return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
   }
   const parsed = createSchema.safeParse(await req.json());

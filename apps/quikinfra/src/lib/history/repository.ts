@@ -13,7 +13,7 @@
  * `HistoryDrawer` renders — see [src/components/DataTable.tsx].
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 

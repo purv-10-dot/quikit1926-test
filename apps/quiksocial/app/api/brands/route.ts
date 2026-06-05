@@ -26,24 +26,26 @@ const safeHex = (val: unknown): string | null =>
 const toStringArray = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 
-const productInputSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().nullish(),
-  image_url: z.string().nullish(),
-  price: z.string().nullish(),
-  category: z.string().nullish(),
-  tags: z.array(z.string()).optional(),
-});
-
-const serviceInputSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().nullish(),
-  image_url: z.string().nullish(),
-  pricing: z.string().nullish(),
-  duration: z.string().nullish(),
-  category: z.string().nullish(),
-  tags: z.array(z.string()).optional(),
-});
+// Unified offering input (Phase 2). Older clients send the legacy
+// products[] / services[] arrays; this schema also accepts the new
+// `offerings[]` array with a free-string `type` and a unified `price`
+// field. POST handler folds everything into a single Offering write.
+const offeringInputSchema = z
+  .object({
+    type: z.string().nullish(),
+    name: z.string().min(1),
+    description: z.string().nullish(),
+    image_url: z.string().nullish(),
+    image_urls: z.array(z.string()).optional(),
+    price: z.string().nullish(),
+    pricing: z.string().nullish(), // legacy alias for Service.pricing
+    currency: z.string().nullish(),
+    duration: z.string().nullish(),
+    category: z.string().nullish(),
+    url: z.string().nullish(),
+    tags: z.array(z.string()).optional(),
+  })
+  .passthrough();
 
 const createBrandSchema = z
   .object({
@@ -76,8 +78,10 @@ const createBrandSchema = z
     targetAudience: z.unknown().optional(),
     writingStyle: z.string().optional(),
     scrapeData: z.unknown().optional(),
-    products: z.array(productInputSchema).optional(),
-    services: z.array(serviceInputSchema).optional(),
+    offerings: z.array(offeringInputSchema).optional(),
+    // Legacy — accepted and folded into offerings[] by the POST handler.
+    products: z.array(offeringInputSchema).optional(),
+    services: z.array(offeringInputSchema).optional(),
   })
   .passthrough();
 
@@ -210,45 +214,57 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req: NextRequest) => {
       },
     });
 
-    if (body.products && body.products.length > 0) {
-      const productRows = body.products
-        .filter((p) => p.name?.trim())
-        .map((p, idx) => ({
-          orgId,
-          brandId: brand.id,
-          createdBy: userId,
-          name: p.name.trim(),
-          description: p.description ?? null,
-          imageUrls: typeof p.image_url === "string" && p.image_url ? [p.image_url] : [],
-          price: p.price ?? null,
-          category: p.category ?? null,
-          tags: p.tags ?? [],
-          sortOrder: idx,
-        }));
-      if (productRows.length > 0) {
-        await tx.product.createMany({ data: productRows });
+    // Unified offerings ingestion (Phase 2). Accepts the new `offerings[]`
+    // array (each with a `type` field), OR the legacy products[]+services[]
+    // arrays. Legacy items are tagged with type="product" / type="service"
+    // so the catalog UI groups them sensibly.
+    type IncomingItem = z.infer<typeof offeringInputSchema>;
+    const incoming: IncomingItem[] = [];
+
+    if (Array.isArray(body.offerings)) {
+      for (const o of body.offerings) {
+        if (!o?.name?.trim()) continue;
+        incoming.push({ ...o, type: o.type?.trim() || "product" });
+      }
+    }
+    if (Array.isArray(body.products)) {
+      for (const p of body.products) {
+        if (!p?.name?.trim()) continue;
+        incoming.push({ ...p, type: "product" });
+      }
+    }
+    if (Array.isArray(body.services)) {
+      for (const s of body.services) {
+        if (!s?.name?.trim()) continue;
+        // Map legacy service.pricing → unified Offering.price.
+        const price = s.price ?? s.pricing ?? null;
+        incoming.push({ ...s, type: "service", price });
       }
     }
 
-    if (body.services && body.services.length > 0) {
-      const serviceRows = body.services
-        .filter((s) => s.name?.trim())
-        .map((s, idx) => ({
-          orgId,
-          brandId: brand.id,
-          createdBy: userId,
-          name: s.name.trim(),
-          description: s.description ?? null,
-          imageUrls: typeof s.image_url === "string" && s.image_url ? [s.image_url] : [],
-          pricing: s.pricing ?? null,
-          duration: s.duration ?? null,
-          category: s.category ?? null,
-          tags: s.tags ?? [],
-          sortOrder: idx,
-        }));
-      if (serviceRows.length > 0) {
-        await tx.service.createMany({ data: serviceRows });
-      }
+    if (incoming.length > 0) {
+      const offeringRows = incoming.map((o, idx) => ({
+        orgId,
+        brandId: brand.id,
+        createdBy: userId,
+        type: o.type?.trim() || "product",
+        name: o.name.trim(),
+        description: o.description ?? null,
+        imageUrls:
+          typeof o.image_url === "string" && o.image_url
+            ? [o.image_url]
+            : Array.isArray(o.image_urls)
+            ? o.image_urls.filter((u): u is string => typeof u === "string" && u.length > 0)
+            : [],
+        price: typeof o.price === "string" ? o.price : null,
+        currency: typeof o.currency === "string" ? o.currency : null,
+        category: typeof o.category === "string" ? o.category : null,
+        duration: typeof o.duration === "string" ? o.duration : null,
+        url: typeof o.url === "string" ? o.url : null,
+        tags: toStringArray(o.tags),
+        sortOrder: idx,
+      }));
+      await tx.offering.createMany({ data: offeringRows });
     }
 
     return brand;

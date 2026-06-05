@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Star, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, Star } from "lucide-react";
 import { FilterToolbar, type ToolbarState, defaultToolbarStateFor } from "./filter-toolbar";
-
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+import { Pager, SkeletonRows } from "./filter-view-parts";
 
 interface IssueRow {
   id: string;
@@ -146,25 +145,21 @@ export function FilterView({ filterId }: { filterId: string }) {
       />
 
       <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
           <thead className="bg-gray-50 border-b border-gray-200 text-left text-xs font-medium text-gray-600 uppercase tracking-wide">
             <tr>
-              <th className="px-3 py-2.5 w-[40%]">Work</th>
-              <th className="px-3 py-2.5">Assignee</th>
-              <th className="px-3 py-2.5">Reporter</th>
-              <th className="px-3 py-2.5">Priority</th>
-              <th className="px-3 py-2.5">Status</th>
-              <th className="px-3 py-2.5">Created</th>
-              <th className="px-3 py-2.5">Updated</th>
+              <th className="px-3 py-2.5 w-[34%]">Work</th>
+              <th className="px-3 py-2.5 w-[13%]">Assignee</th>
+              <th className="px-3 py-2.5 w-[13%]">Reporter</th>
+              <th className="px-3 py-2.5 w-[8%]">Priority</th>
+              <th className="px-3 py-2.5 w-[12%]">Status</th>
+              <th className="px-3 py-2.5 w-[10%]">Created</th>
+              <th className="px-3 py-2.5 w-[10%]">Updated</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading && items.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-gray-400 text-sm">
-                  Loading…
-                </td>
-              </tr>
+              <SkeletonRows rows={Math.min(pageSize, 8)} />
             ) : error ? (
               <tr>
                 <td colSpan={7} className="px-3 py-8 text-center text-red-600 text-sm">
@@ -181,7 +176,7 @@ export function FilterView({ filterId }: { filterId: string }) {
               items.map((it) => (
                 <tr key={it.id} className="hover:bg-gray-50">
                   <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       {it.project ? (
                         <Link
                           href={`/spaces/${it.project.id}/work/${it.id}`}
@@ -246,83 +241,16 @@ export function FilterView({ filterId }: { filterId: string }) {
   );
 }
 
-interface PagerProps {
-  page: number;
-  pageSize: number;
-  total: number;
-  loading: boolean;
-  rowCount: number;
-  onPageChange: (p: number) => void;
-  onPageSizeChange: (n: number) => void;
-}
-
-function Pager({ page, pageSize, total, loading, rowCount, onPageChange, onPageSizeChange }: PagerProps) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const end = total === 0 ? 0 : Math.min(total, (page - 1) * pageSize + rowCount);
-  const canPrev = page > 1 && !loading;
-  const canNext = page < totalPages && !loading;
-
-  return (
-    <div className="mt-3 flex items-center justify-between text-xs text-gray-600">
-      <div>
-        {loading && rowCount === 0
-          ? "Loading…"
-          : total === 0
-            ? "0 of 0"
-            : `${start}–${end} of ${total}`}
-      </div>
-      <div className="flex items-center gap-3">
-        <label className="flex items-center gap-1.5">
-          <span className="text-gray-500">Rows</span>
-          <select
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="h-7 px-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {PAGE_SIZE_OPTIONS.map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            disabled={!canPrev}
-            onClick={() => onPageChange(page - 1)}
-            className="h-7 w-7 inline-flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
-            aria-label="Previous page"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
-          <span className="px-2">
-            Page <span className="font-medium text-gray-800">{page}</span> of {totalPages}
-          </span>
-          <button
-            type="button"
-            disabled={!canNext}
-            onClick={() => onPageChange(page + 1)}
-            className="h-7 w-7 inline-flex items-center justify-center border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
-            aria-label="Next page"
-          >
-            <ChevronRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function UserCell({ user }: { user: UserLite | null }) {
   if (!user) return <span className="text-gray-400">Unassigned</span>;
   const initial = (user.firstName?.[0] ?? user.email[0] ?? "?").toUpperCase();
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 min-w-0">
       {user.avatar ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={user.avatar} alt="" className="h-6 w-6 rounded-full" />
+        <img src={user.avatar} alt="" className="h-6 w-6 rounded-full shrink-0" />
       ) : (
-        <span className="h-6 w-6 rounded-full bg-blue-500 text-white text-[11px] font-semibold flex items-center justify-center">
+        <span className="h-6 w-6 shrink-0 rounded-full bg-blue-500 text-white text-[11px] font-semibold flex items-center justify-center">
           {initial}
         </span>
       )}

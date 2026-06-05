@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Search } from "lucide-react";
 
 export interface StyledOption {
   value: string;
@@ -17,17 +17,53 @@ interface Props {
   onChange: (next: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  /** Show a search box at the top of the popover that filters options. */
+  searchable?: boolean;
+  /** Placeholder for the search box (defaults to "Search…"). */
+  searchPlaceholder?: string;
 }
 
 const POPOVER_MAX_H = 280;
 
-export function StyledSelect({ label, value, options, onChange, placeholder, disabled }: Props) {
+export function StyledSelect({
+  label,
+  value,
+  options,
+  onChange,
+  placeholder,
+  disabled,
+  searchable,
+  searchPlaceholder,
+}: Props) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [pos, setPos] = useState<{ top: number; left: number; width: number; flip: boolean } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  const filtered = useMemo(() => {
+    if (!searchable) return options;
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(
+      (o) =>
+        o.label.toLowerCase().includes(q) || (o.sub?.toLowerCase().includes(q) ?? false),
+    );
+  }, [options, query, searchable]);
+
+  // Reset the query each time the popover closes, and focus the search box
+  // when it opens so users can type immediately.
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+    } else if (searchable) {
+      const id = requestAnimationFrame(() => searchRef.current?.focus());
+      return () => cancelAnimationFrame(id);
+    }
+  }, [open, searchable]);
 
   const selected = options.find((o) => o.value === value) ?? null;
   const displayLabel = selected?.label ?? placeholder ?? "Select…";
@@ -111,12 +147,30 @@ export function StyledSelect({ label, value, options, onChange, placeholder, dis
               width: pos.width,
               maxHeight: POPOVER_MAX_H,
             }}
-            className="z-[1000] bg-white rounded-md shadow-xl border border-gray-200 py-1 overflow-y-auto"
+            className="z-[1000] bg-white rounded-md shadow-xl border border-gray-200 flex flex-col overflow-hidden"
           >
-            {options.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-gray-400">No options.</div>
+            {searchable && (
+              <div className="shrink-0 p-1.5 border-b border-gray-100">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={searchPlaceholder ?? "Search…"}
+                    className="w-full h-8 pl-7 pr-2 text-sm rounded border border-gray-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
+                  />
+                </div>
+              </div>
+            )}
+            <div className="py-1 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-gray-400">
+                {options.length === 0 ? "No options." : "No matches."}
+              </div>
             ) : (
-              options.map((o) => {
+              filtered.map((o) => {
                 const isSelected = o.value === value;
                 return (
                   <button
@@ -138,6 +192,7 @@ export function StyledSelect({ label, value, options, onChange, placeholder, dis
                 );
               })
             )}
+            </div>
           </div>,
           document.body,
         )}

@@ -11,6 +11,7 @@ import {
 } from "@quikit/ui";
 import { StyledSelect } from "./styled-select";
 import { RolePicker } from "./role-picker";
+import { emitMembersChanged } from "@/lib/hooks/useMembersChanged";
 
 interface OrgUser {
   userId: string;
@@ -63,6 +64,21 @@ function Drawer({ projectId, onClose }: { projectId: string; onClose: () => void
     },
   });
 
+  // Current project members — excluded from the picker so you can't re-add
+  // someone who's already in this project. NOTE: this shares its query key
+  // (and cache) with the Members tab, which stores full member objects — so we
+  // return that same shape and map to ids in the component below. Returning a
+  // pre-mapped `userId[]` here would be ignored on a cache hit and break the
+  // filter.
+  const membersQ = useQuery({
+    queryKey: ["quiktrack", "project-members", projectId],
+    queryFn: async () => {
+      const r = await fetch(`/api/projects/${projectId}/members`);
+      const j = await r.json();
+      return ((j.data?.members ?? j.data ?? []) as Array<{ userId: string }>);
+    },
+  });
+
   const mut = useMutation({
     mutationFn: async () => {
       const r = await fetch(`/api/projects/${projectId}/members`, {
@@ -83,12 +99,15 @@ function Drawer({ projectId, onClose }: { projectId: string; onClose: () => void
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["quiktrack", "project-members", projectId] });
+      emitMembersChanged(projectId);
       onClose();
     },
     onError: (e: Error) => setError(e.message),
   });
 
-  const users = usersQ.data ?? [];
+  const memberIds = new Set((membersQ.data ?? []).map((m) => m.userId));
+  // Drop anyone already in this project from the picker.
+  const users = (usersQ.data ?? []).filter((u) => !memberIds.has(u.userId));
   const roles = rolesQ.data ?? [];
 
   return (
@@ -115,6 +134,8 @@ function Drawer({ projectId, onClose }: { projectId: string; onClose: () => void
         value={userId}
         onChange={setUserId}
         placeholder="Select a user…"
+        searchable
+        searchPlaceholder="Search by name or email…"
         options={users.map((u) => ({
           value: u.userId,
           label: `${u.firstName} ${u.lastName}`.trim() || u.email,

@@ -16,7 +16,6 @@ import {
 } from "@/components/global-search-popover";
 import { SettingsPopover } from "@/components/shell/settings-popover";
 import { AppSwitcherVertical } from "@/components/shell/app-switcher-vertical";
-import { NotificationsPopover } from "@/components/shell/notifications-popover";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface HeaderProps {
@@ -137,7 +136,6 @@ export function Header({ onToggleSidebar, sidebarOpen = true }: HeaderProps) {
           </div>
 
           <div className="flex items-center gap-1">
-            <NotificationsPopover />
             <button
               type="button"
               onClick={() => setHelpOpen(true)}

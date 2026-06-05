@@ -15,7 +15,7 @@
  * and the save retried — keeps the app functional until the push.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface VendorRecord {
   id: string;

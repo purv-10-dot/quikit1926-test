@@ -6,6 +6,7 @@ import { Search, Upload } from "lucide-react";
 import { Pagination } from "@quikit/ui";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { useColumnPrefs, useColumnWidths } from "@/lib/hooks/useColumnPrefs";
+import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { ListTable } from "./list-table";
 import { ListFilterButton } from "./list-filters";
 import { ColumnMenuButton } from "./column-menu-button";
@@ -170,6 +171,14 @@ export function ListView({ projectId }: Props) {
       .catch(() => { /* best-effort */ });
     return () => { cancelled = true; };
   }, [projectId]);
+
+  // Refetch members when membership changes via the Add-people modal.
+  useMembersChanged(projectId, () => {
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json() as Promise<MembersResponse>)
+      .then((m) => { if (m.success) setMembers(m.data.members ?? []); })
+      .catch(() => undefined);
+  });
 
   // Main fetch — `seq` guards against out-of-order responses.
   const seqRef = useRef(0);

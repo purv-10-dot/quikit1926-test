@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, hasPermission } from "@/lib/auth/context";
 import { ok } from "@/lib/http/envelope";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { listPRs } from "@/lib/purchase/pr-repository";
 import { listIndents } from "@/lib/purchase/indent-repository";
 import { listPOs } from "@/lib/purchase/po-repository";

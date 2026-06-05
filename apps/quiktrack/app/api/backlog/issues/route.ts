@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
@@ -25,11 +26,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     where: { projectId, userId, isDeleted: false },
     select: { id: true },
   });
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+  const isAdmin = await hasAdminAccess(userId, orgId);
   if (!member && !isAdmin) {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
   }

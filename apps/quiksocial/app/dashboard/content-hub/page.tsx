@@ -2934,6 +2934,37 @@ export default function ContentHubPage() {
     setScheduleTarget({ post, mode });
   };
 
+  // Deep-link from the calendar day panel / Day view: there is no standalone
+  // post page, so "View" / "Reschedule" land here as
+  // /dashboard/content-hub?post=<id>[&reschedule=true]. Fetch the post by id
+  // (it may not be on the current page) and open its detail modal, or the
+  // reschedule flow. Runs once on mount; strips the params so a refresh won't
+  // reopen it.
+  useEffect(() => {
+    const postId = searchParams.get("post");
+    if (!postId) return;
+    const wantReschedule = searchParams.get("reschedule") === "true";
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/posts/${postId}`, { credentials: "include" });
+        if (!res.ok || cancelled) return;
+        const data = unwrap<{ post?: Post }>(await res.json());
+        if (!data?.post || cancelled) return;
+        if (wantReschedule) openSchedule(data.post, "reschedule");
+        else setSelectedPost(data.post);
+      } catch {
+        // A bad / forbidden id simply opens nothing.
+      }
+    })();
+    // Strip ?post=…&reschedule=… so a later refresh doesn't reopen the modal.
+    window.history.replaceState(null, "", window.location.pathname);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Member: "Suggest & Send for Review" — submits the chosen time as
   // requestedPublishTime and transitions the post to "review". Returns
   // null on success (modal will close), error string on failure. The
@@ -2976,7 +3007,7 @@ export default function ContentHubPage() {
   // failure (the modal renders it inline without unmounting).
   const handleScheduleSave = async (
     scheduledFor: Date | null,
-    _platform: string
+    platform: string
   ): Promise<string | null> => {
     if (!scheduleTarget) return "No post selected";
     if (!scheduledFor) {
@@ -2988,6 +3019,13 @@ export default function ContentHubPage() {
     setScheduleSaving(true);
     try {
       const iso = scheduledFor.toISOString();
+      // Platform is chosen here at scheduling — forward the user's pick so
+      // the status route persists it onto the post (it was being discarded
+      // before). Only send when the modal supplied one.
+      const platformField =
+        typeof platform === "string" && platform.trim()
+          ? { platform: platform.trim() }
+          : {};
 
       if (mode === "approve-and-schedule") {
         // Two-call: first set scheduledFor on the review post, then run
@@ -2998,7 +3036,7 @@ export default function ContentHubPage() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ status: "review", scheduledFor: iso }),
+          body: JSON.stringify({ status: "review", scheduledFor: iso, ...platformField }),
         });
         if (!r1.ok) {
           const d = unwrap(await r1.json().catch(() => ({})));
@@ -3011,7 +3049,7 @@ export default function ContentHubPage() {
         const d2 = unwrap(await r2.json().catch(() => ({})));
         if (!r2.ok) return d2.error ?? "Failed to approve";
         if (d2.requiresReschedule) return "Selected time has already passed.";
-        updatePostInList(post._id, { status: "scheduled", scheduledFor: iso });
+        updatePostInList(post._id, { status: "scheduled", scheduledFor: iso, ...platformField });
         handlePostUpdate(d2.post);
       } else {
         // schedule + reschedule: single PATCH /status with the new time.
@@ -3019,11 +3057,11 @@ export default function ContentHubPage() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ status: "scheduled", scheduledFor: iso }),
+          body: JSON.stringify({ status: "scheduled", scheduledFor: iso, ...platformField }),
         });
         const data = unwrap(await res.json().catch(() => ({})));
         if (!res.ok) return data.error ?? "Failed to schedule";
-        updatePostInList(post._id, { status: "scheduled", scheduledFor: iso });
+        updatePostInList(post._id, { status: "scheduled", scheduledFor: iso, ...platformField });
         handlePostUpdate(data.post);
       }
 
@@ -3045,14 +3083,16 @@ export default function ContentHubPage() {
   // ScheduleModal Post Now — admin override that publishes immediately.
   // Closes the modal on success, returns the error string on failure so
   // the modal can render it without unmounting.
-  const handleSchedulePublishNow = async (): Promise<string | null> => {
+  const handleSchedulePublishNow = async (platform: string): Promise<string | null> => {
     const target = scheduleTarget?.post;
     if (!target) return "No post selected";
     setSchedulePublishingNow(true);
     try {
       const res = await fetch(`/api/posts/${target._id}/publish-now`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({ platform }),
       });
       const data = unwrap(await res.json().catch(() => ({})));
       if (res.ok) {

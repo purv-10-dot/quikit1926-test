@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import type { Col, Member, TimelineIssue, ZoomLevel } from "./timeline-meta";
 import {
   WORK_COL_WIDTH,
@@ -89,6 +90,22 @@ export function TimelineView({ projectId }: { projectId: string }) {
       alive = false;
     };
   }, [projectId]);
+
+  // Refetch members when membership changes via the Add-people modal.
+  useMembersChanged(projectId, () => {
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j?.success) return;
+        const list = Array.isArray(j.data?.members)
+          ? j.data.members
+          : Array.isArray(j.data)
+            ? j.data
+            : [];
+        setMembers(list);
+      })
+      .catch(() => undefined);
+  });
 
   // Root-level fetch: epics only.
   const loadEpics = useCallback(
@@ -248,14 +265,14 @@ export function TimelineView({ projectId }: { projectId: string }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* <div className="flex items-center gap-2">
           <button className="p-1.5 rounded hover:bg-gray-100 text-gray-600" aria-label="Settings">
             <Sliders className="h-4 w-4" />
           </button>
           <button className="p-1.5 rounded hover:bg-gray-100 text-gray-600" aria-label="More">
             <MoreHorizontal className="h-4 w-4" />
           </button>
-        </div>
+        </div> */}
       </div>
 
       {/* Grid — explicit width on the inner div + overflow-x:scroll guarantees
@@ -355,7 +372,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
             {z}
           </button>
         ))}
-        <button
+        {/* <button
           className="px-2 h-8 text-gray-500 hover:bg-gray-50 border-l border-gray-200"
           aria-label="Info"
         >
@@ -366,7 +383,7 @@ export function TimelineView({ projectId }: { projectId: string }) {
           aria-label="Next"
         >
           <ChevronRight className="h-3.5 w-3.5" />
-        </button>
+        </button> */}
       </div>
 
       <EditIssueModal

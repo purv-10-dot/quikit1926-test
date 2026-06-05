@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 const bodySchema = z.object({
   projectId: z.string().min(1),
@@ -30,11 +31,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
   }
 
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+  const isAdmin = await hasAdminAccess(userId, orgId);
   if (!isAdmin) {
     const member = await db.qtProjectMember.findFirst({
       where: { projectId: project.id, userId, isDeleted: false },

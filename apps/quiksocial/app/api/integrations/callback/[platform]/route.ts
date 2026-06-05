@@ -43,6 +43,20 @@ interface ProfileResult {
    * Page-bound token.
    */
   pageAccessToken?: string;
+  /**
+   * Instagram Business Account ID, only populated on the IG path when
+   * the connected Page has an `instagram_business_account` link.
+   *
+   * The IG publisher (`lib/meta/instagram-publisher.ts`) calls
+   * `POST /{ig-user-id}/media` which REQUIRES this ID. Storing it on a
+   * dedicated column rather than overloading `accountId` keeps the
+   * semantics unambiguous: `accountId` is the platform-side identifier
+   * we display in the UI ("@username" for IG), `igBusinessAccountId` is
+   * the Graph API target. The two are equal in the happy path; the
+   * column exists so we can distinguish "no IG Business linked" from
+   * "linked but happened to share the FB Page ID".
+   */
+  igBusinessAccountId?: string;
 }
 
 // ── Facebook / Instagram ───────────────────────────────────────────────────
@@ -171,12 +185,19 @@ async function getInstagramProfile(accessToken: string): Promise<ProfileResult> 
         profilePicture: ig.profile_picture_url ?? undefined,
         pageId: page.id,
         pageAccessToken: page.access_token,
+        // Authoritative IG Business Account ID — populated explicitly so
+        // the publisher never has to guess whether `accountId` is the IG
+        // id or a fallback FB Page ID.
+        igBusinessAccountId: ig.id,
       };
     }
   }
 
   // No IG Business account found — fall back to FB user identity. UI can
-  // still show "connected" with an instructional state.
+  // still show "connected" with an instructional state. Note we do NOT
+  // set `igBusinessAccountId` here — the publisher will then fail with
+  // the clear "please reconnect your Instagram account" error rather
+  // than the cryptic "Object does not exist" Graph error.
   const fbProfile = await getFacebookProfile(accessToken);
   return { ...fbProfile, pageId: undefined };
 }
@@ -346,9 +367,13 @@ export async function GET(
   }
 
   const { userId, brandId } = stateData;
-  // TODO(integration): once OAuthState carries orgId, swap this to use
-  // stateData.orgId. Single-org default until then.
-  const orgId = DEFAULT_ORG_ID;
+  // Prefer the real org carried in the signed OAuth state (set at connect
+  // time) so the SocialAccount is written under the user's actual org and
+  // shows up in their org-scoped integrations list. The DEFAULT_ORG_ID
+  // fallback only covers legacy in-flight links issued before orgId was
+  // added to the state — note that path is a ghost-org orphan, not a real
+  // recovery (DEFAULT_ORG_ID may not resolve to a live Org).
+  const orgId = stateData.orgId ?? DEFAULT_ORG_ID;
   const redirectUri = `${base}/api/integrations/callback/${platform}`;
 
   try {
@@ -395,6 +420,10 @@ export async function GET(
       accountName: profile.accountName,
       profilePicture: profile.profilePicture ?? null,
       pageId: profile.pageId ?? null,
+      // Only populated on IG happy path — see `getInstagramProfile`.
+      // Null on FB rows AND on IG rows that fell through to the FB
+      // identity fallback (no Business linked at connect time).
+      igBusinessAccountId: profile.igBusinessAccountId ?? null,
       accessToken: tokenToStore,
       refreshToken: tokens.refreshToken ?? null,
       expiresAt: tokens.expiresAt ?? null,

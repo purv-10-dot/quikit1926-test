@@ -90,6 +90,7 @@ export function PopoverPanel({
   return createPortal(
     <div
       id="qt-popover-panel-active"
+      data-portal-popover
       role="dialog"
       style={{
         position: "fixed",

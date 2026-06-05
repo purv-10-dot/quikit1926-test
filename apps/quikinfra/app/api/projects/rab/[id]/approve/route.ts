@@ -7,7 +7,7 @@ import { assertTransition, TransitionError } from "@/lib/workflow/transitions";
 import { recordAudit } from "@/lib/workflow/audit";
 import { rateLimit, LIMITS } from "@/lib/workflow/rate-limit";
 import { logger } from "@/lib/observability/logger";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 const auth = withOrgAuthForResource("construction.rab");
 

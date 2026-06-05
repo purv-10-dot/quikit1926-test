@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ExternalLink, Pencil, Share2, Download } from "lucide-react";
+import { Pencil, Download } from "lucide-react";
 
 interface DocSummary {
   id: string;
@@ -47,15 +47,7 @@ export function DocsList({
                 className="text-sm font-medium text-blue-600 hover:underline flex items-center gap-1.5 min-w-0"
               >
                 <span className="truncate">{d.title}</span>
-                <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
               </button>
-            </div>
-
-            <div
-              className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
-              title={d.createdBy ?? "User"}
-            >
-              {(d.createdBy ?? "U").slice(0, 1).toUpperCase()}
             </div>
 
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -66,13 +58,6 @@ export function DocsList({
                 aria-label="Edit"
               >
                 <Pencil className="w-3.5 h-3.5 text-gray-600" />
-              </button>
-              <button
-                type="button"
-                className="p-1.5 rounded hover:bg-gray-200 transition-colors"
-                aria-label="Share"
-              >
-                <Share2 className="w-3.5 h-3.5 text-gray-600" />
               </button>
               <button
                 type="button"

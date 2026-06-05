@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { getQuikTrackAppId } from "@/lib/api/permissions";
-import { ADMIN_TIER_ROLES } from "@quikit/shared";
+import { getQuikTrackAppId, hasAdminAccess } from "@/lib/api/permissions";
 
 /**
  * Resource utilisation report — used by /reports/resource.
@@ -58,12 +57,8 @@ function workingDaysBetween(from: Date, to: Date): number {
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   try {
-    // Admin-tier gate. ADMIN_TIER_ROLES = {super_admin, org_admin, admin-legacy}.
-    const me = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    if (!me?.role || !ADMIN_TIER_ROLES.has(me.role)) {
+    // Admin-tier gate: tenant admin (org owner/admin) OR QuikTrack app-admin.
+    if (!(await hasAdminAccess(userId, orgId))) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 

@@ -14,7 +14,7 @@
  * without relaxing the schema.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface CompanyRecord {
   id: string;

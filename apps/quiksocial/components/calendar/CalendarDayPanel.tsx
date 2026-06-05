@@ -17,6 +17,7 @@ export interface CalendarPost {
   status: string;
   scheduledFor: string | null;
   publishedAt: string | null;
+  createdAt: string | null;
 }
 
 interface Props {
@@ -213,7 +214,7 @@ function ActionButton({
   if (post.status === "overdue") {
     return (
       <Link
-        href={`/dashboard/posts/${post._id}?reschedule=true`}
+        href={`/dashboard/content-hub?post=${post._id}&reschedule=true`}
         style={{ ...base, background: "rgba(239,68,68,0.18)", color: "#EF4444", textDecoration: "none" }}
       >
         Reschedule
@@ -222,7 +223,7 @@ function ActionButton({
   }
   return (
     <Link
-      href={`/dashboard/posts/${post._id}`}
+      href={`/dashboard/content-hub?post=${post._id}`}
       style={{ ...base, background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.70)", textDecoration: "none" }}
     >
       View
@@ -390,7 +391,7 @@ export default function CalendarDayPanel({
               </p>
               <div style={{ display: "flex", gap: 8 }}>
                 <Link
-                  href={`/dashboard/posts/create?festival=${encodeURIComponent(holiday.name)}&country=${holiday.country}&date=${isoDate}`}
+                  href={`/dashboard/posts/create?festival=${encodeURIComponent(holiday.name)}&country=${holiday.country}&scheduledDate=${isoDate}`}
                   style={{
                     flex: 1,
                     display: "flex",
@@ -408,7 +409,7 @@ export default function CalendarDayPanel({
                   Single Post
                 </Link>
                 <Link
-                  href={`/dashboard/campaigns/create?festival=${encodeURIComponent(holiday.name)}&country=${holiday.country}`}
+                  href={`/dashboard/campaigns?festival=${encodeURIComponent(holiday.name)}&scheduledDate=${isoDate}`}
                   style={{
                     flex: 1,
                     display: "flex",
@@ -433,7 +434,7 @@ export default function CalendarDayPanel({
           {/* Create Post for this day */}
           {isoDate && (
             <Link
-              href={`/dashboard/posts/create?date=${isoDate}`}
+              href={`/dashboard/posts/create?scheduledDate=${isoDate}`}
               style={{
                 display: "flex",
                 alignItems: "center",

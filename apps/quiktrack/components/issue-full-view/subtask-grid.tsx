@@ -4,9 +4,6 @@ import { useEffect, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
-  Plus,
-  MoreHorizontal,
-  LayoutGrid,
 } from "lucide-react";
 import { SubtaskRow } from "./subtask-row";
 import type { Priority } from "./types";
@@ -108,19 +105,6 @@ export function SubtaskGrid({
           )}
           Subtasks
         </button>
-        {total > 0 && (
-          <div className="flex items-center gap-1 text-gray-500">
-            <button className="p-1 rounded hover:bg-gray-100" aria-label="More">
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </button>
-            <button className="p-1 rounded hover:bg-gray-100" aria-label="Layout">
-              <LayoutGrid className="h-3.5 w-3.5" />
-            </button>
-            <button className="p-1 rounded hover:bg-gray-100" aria-label="Add subtask">
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
       </div>
       {!open ? null : total === 0 ? (
         <button
@@ -139,7 +123,10 @@ export function SubtaskGrid({
             <span className="text-[11px] text-gray-500 shrink-0">{pct}% Done</span>
           </div>
 
-          <div className="border border-gray-200 rounded-md overflow-x-auto">
+          {/* No `overflow` here — it would clip the row dropdowns (priority /
+              assignee / status) vertically. The grid is wide enough for the
+              issue page's left column. */}
+          <div className="border border-gray-200 rounded-md">
             <div className="grid grid-cols-[minmax(220px,2fr)_minmax(110px,1fr)_minmax(140px,1fr)_minmax(110px,1fr)_minmax(90px,0.7fr)] bg-gray-50 border-b border-gray-200 text-[11px] font-medium text-gray-600 uppercase tracking-wide">
               <div className="px-3 py-2">Work</div>
               <div className="px-3 py-2">Priority</div>

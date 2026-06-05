@@ -188,6 +188,30 @@ export default function CreatePostPage() {
   // Active when the admin's "Post Now" button (in ScheduleModal) is in flight.
   const [publishingNow, setPublishingNow] = useState(false);
 
+  // Scheduling date carried in from a calendar-cell click
+  // (/dashboard/posts/create?scheduledDate=YYYY-MM-DD). When present, Step 4's
+  // ScheduleModal opens locked to this date — the user only picks a time.
+  const [lockedScheduledDate, setLockedScheduledDate] = useState<Date | null>(null);
+
+  // Read the calendar-supplied scheduledDate once on mount. Parsed from
+  // window.location rather than useSearchParams to avoid the Suspense-boundary
+  // requirement that would otherwise trip `next build`.
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("scheduledDate");
+    if (!raw) return;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (!m) return;
+    const y = Number(m[1]);
+    const mo = Number(m[2]) - 1;
+    const d = Number(m[3]);
+    // Default to noon so the modal opens on the right day regardless of TZ;
+    // the time is irrelevant since lockDate clears the pre-selected slot.
+    const dt = new Date(y, mo, d, 12, 0, 0, 0);
+    // Reject impossible dates (e.g. 2026-02-31 rolling over to March).
+    if (Number.isNaN(dt.getTime()) || dt.getMonth() !== mo || dt.getDate() !== d) return;
+    setLockedScheduledDate(dt);
+  }, []);
+
   // Per-brand role drives Step 4 mode (admin: schedule; member: suggest).
   const activeBrandIdForRole = activeBrand?._id ?? activeBrand?.id ?? null;
   const { isAdmin } = useWorkspaceRole(activeBrandIdForRole);
@@ -222,37 +246,26 @@ export default function CreatePostPage() {
   const buildAttachmentPayload = useCallback((
     sel: AttachmentSelection | null,
   ): {
-    attachedProduct?: Record<string, unknown>;
-    attachedService?: Record<string, unknown>;
+    attachedOffering?: Record<string, unknown>;
     attachedAsset?: Record<string, unknown>;
   } => {
     if (!sel) return {};
-    if (sel.kind === "product") {
-      const p = sel.product;
+    if (sel.kind === "offering") {
+      const o = sel.offering;
+      // The offering's own free-string `type` (product / service / menu_item /
+      // treatment / …) flows through verbatim — Python's
+      // _build_attachment_directive branches on it for type-specific prompts.
       return {
-        attachedProduct: {
-          name: p.name,
-          description: p.description ?? null,
-          price: p.price ?? null,
-          currency: p.currency ?? null,
-          category: p.category ?? null,
-          tags: p.tags ?? [],
-          imageUrl: p.imageUrls?.[0] ?? null,
-        },
-      };
-    }
-    if (sel.kind === "service") {
-      const s = sel.service;
-      return {
-        attachedService: {
-          name: s.name,
-          description: s.description ?? null,
-          price: s.pricing ?? null,
-          currency: s.currency ?? null,
-          duration: s.duration ?? null,
-          category: s.category ?? null,
-          tags: s.tags ?? [],
-          imageUrl: s.imageUrls?.[0] ?? null,
+        attachedOffering: {
+          type: o.type || "product",
+          name: o.name,
+          description: o.description ?? null,
+          price: o.price ?? null,
+          currency: o.currency ?? null,
+          duration: o.duration ?? null,
+          category: o.category ?? null,
+          tags: o.tags ?? [],
+          imageUrl: o.imageUrls?.[0] ?? null,
         },
       };
     }
@@ -492,7 +505,14 @@ export default function CreatePostPage() {
         });
       }
     };
-  }, [data.selectedIdeaIndex, data.ideas, data.prompt, data.objective, data.includeLogo, activeBrand]);
+    // data.attachment MUST be in the deps array — buildAttachmentPayload
+    // reads it inside the callback. Without it, if the user attaches an
+    // offering AFTER the last dep change (e.g. re-attaches between
+    // generations without changing the prompt or idea), the closure
+    // captures the OLD attachment and the worker never sees imageUrl.
+    // buildAttachmentPayload is stable (useCallback with empty deps) but
+    // listing it satisfies react-hooks/exhaustive-deps without harm.
+  }, [data.selectedIdeaIndex, data.ideas, data.prompt, data.objective, data.includeLogo, data.attachment, activeBrand, buildAttachmentPayload]);
 
   // ── Step 3 handlers ────────────────────────────────────────────────────────
 
@@ -521,6 +541,12 @@ export default function CreatePostPage() {
             modificationPrompt,
             brandName: activeBrand?.name,
             logoUrl: activeBrand?.logoUrl ?? null,
+            // Phase-1: forward the attachment so the product stays in the
+            // image across successive edits. Without this, each regenerate
+            // re-rendered the scene without the product (RegenerateImageRequest
+            // didn't even declare the field). Spread is no-op when nothing
+            // is attached.
+            ...buildAttachmentPayload(data.attachment),
           }),
         });
       } catch {
@@ -617,7 +643,12 @@ export default function CreatePostPage() {
         }
       };
     },
-    [data.imageUrl, activeBrand],
+    // data.attachment must be in the deps — the Phase-1 fix added
+    // buildAttachmentPayload(data.attachment) to the body but kept the
+    // deps as [data.imageUrl, activeBrand] which captures a stale
+    // attachment whenever the user re-attaches without changing the
+    // source image URL. Same root cause as handleGenerateImage above.
+    [data.imageUrl, data.attachment, activeBrand, buildAttachmentPayload],
   );
 
   // ── Step 4: Save ────────────────────────────────────────────────────────────
@@ -677,7 +708,7 @@ export default function CreatePostPage() {
   // create flow can reuse the same publish-now route the Content Hub uses
   // for retries; the brief "draft" intermediate state is invisible to the
   // user because we navigate away on success.
-  const handlePublishNowFromCreate = async (): Promise<string | null> => {
+  const handlePublishNowFromCreate = async (platform: string): Promise<string | null> => {
     setPublishingNow(true);
     try {
       const brandId = activeBrand?._id ?? activeBrand?.id;
@@ -694,12 +725,11 @@ export default function CreatePostPage() {
         body: JSON.stringify({
           brandId,
           content: caption,
-          // platform here is informational metadata for the draft. The
-          // publish-now route resolves the actual destination via the
-          // brand's connected SocialAccount lookup, so an "instagram"
-          // default is safe even if the user later picked Facebook on
-          // the modal pills.
-          platform: "instagram",
+          // The user's selected platform from the ScheduleModal pill. Drives
+          // which publisher fires — publish-now reads post.platform, so the
+          // old hardcoded "instagram" sent every Post Now to IG even when the
+          // user picked Facebook. Also passed explicitly to publish-now below.
+          platform,
           imageUrl: data.imageUrl,
           status: "draft",
           prompt: data.prompt,
@@ -715,7 +745,9 @@ export default function CreatePostPage() {
       const postId = createJson.post._id as string;
       const publishRes = await fetch(`/api/posts/${postId}/publish-now`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({ platform }),
       });
       const publishJson = unwrap(await publishRes.json().catch(() => ({})));
       if (!publishRes.ok || !publishJson?.success) {
@@ -811,25 +843,25 @@ export default function CreatePostPage() {
   function Step1() {
     const att = data.attachment;
     const attLabel =
-      att?.kind === "product"
-        ? att.product.name
-        : att?.kind === "service"
-        ? att.service.name
+      att?.kind === "offering"
+        ? att.offering.name
         : att?.kind === "asset"
         ? att.asset.name
         : null;
     const attThumb =
-      att?.kind === "product"
-        ? att.product.imageUrls?.[0]
-        : att?.kind === "service"
-        ? att.service.imageUrls?.[0]
+      att?.kind === "offering"
+        ? att.offering.imageUrls?.[0]
         : att?.kind === "asset"
         ? att.asset.thumbnailUrl ?? att.asset.url
         : null;
     const attIcon =
-      att?.kind === "product" ? <Package size={14} /> :
-      att?.kind === "service" ? <Briefcase size={14} /> :
-      att?.kind === "asset" ? <ImageIcon size={14} /> : null;
+      att?.kind === "offering"
+        ? att.offering.type === "service" || att.offering.type === "treatment"
+          ? <Briefcase size={14} />
+          : <Package size={14} />
+        : att?.kind === "asset"
+        ? <ImageIcon size={14} />
+        : null;
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -1293,6 +1325,9 @@ export default function CreatePostPage() {
           brandId={activeBrand?._id ?? activeBrand?.id ?? ""}
           imageUrl={data.imageUrl}
           caption={data.caption}
+          // Pre-fill + lock the date when arriving from a calendar-cell click.
+          initialScheduledFor={lockedScheduledDate}
+          lockDate={!!lockedScheduledDate}
           onClose={() => setShowSchedule(false)}
           onSave={handleSave}
           saving={saving}

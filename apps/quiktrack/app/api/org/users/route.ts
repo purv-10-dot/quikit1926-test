@@ -9,6 +9,7 @@ import {
   seedAllDefaultRoles,
   ensureUserOnRole,
 } from "@/lib/api/seedAdminAppRole";
+import { notifyProjectInvite } from "@/lib/services/projectNotifications";
 import {
   INVITE_METHOD,
   renderInvitationEmail,
@@ -99,6 +100,8 @@ function buildUserResponse(
 
 // GET /api/org/users — list every OrgMember who has UserAppAccess to
 // QuikTrack in this org (whether or not they're members of any project).
+// GET /api/org/users — list every OrgMember who has UserAppAccess to
+// QuikTrack in this org (whether or not they're members of any project).
 export const GET = withOrgAuth(async ({ orgId }) => {
   const appId = await getQuikTrackAppId();
 
@@ -114,6 +117,7 @@ export const GET = withOrgAuth(async ({ orgId }) => {
     distinct: ["userId"],
   });
   const quiktrackUserIds = accessRows.map((r) => r.userId);
+
   if (quiktrackUserIds.length === 0) {
     return NextResponse.json({ success: true, data: [] });
   }
@@ -356,6 +360,10 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
       if (!validIdSet.has(assign.projectId)) continue;
 
       // 1. Membership row (legacy presence + enum).
+      const alreadyMember = await db.qtProjectMember.findFirst({
+        where: { projectId: assign.projectId, userId: newUserId, isDeleted: false },
+        select: { id: true },
+      });
       await db.qtProjectMember.upsert({
         where: { projectId_userId: { projectId: assign.projectId, userId: newUserId } },
         update: { isDeleted: false },
@@ -366,6 +374,18 @@ export const POST = withOrgAuth(async ({ orgId, userId: actorId }, req) => {
           invitedBy: actorId,
         },
       });
+
+      // Existing org member linked to a project (no new-user onboarding email
+      // covers them) → send a project-invite email. New/brand-new users get
+      // the onboarding email below instead, so we don't double up.
+      if (linkExistingUserId && !alreadyMember) {
+        void notifyProjectInvite({
+          orgId,
+          projectId: assign.projectId,
+          recipientUserId: newUserId,
+          actorUserId: actorId,
+        });
+      }
 
       // 2. Resolve which project role to assign. Explicit > project default.
       let targetProjectRoleId: string | null = null;

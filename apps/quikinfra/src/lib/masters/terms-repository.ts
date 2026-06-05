@@ -2,7 +2,7 @@
  * Terms & Conditions master — Prisma-backed CRUD for `cn_terms_conditions`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface TermsConditionRecord {
   id: string;

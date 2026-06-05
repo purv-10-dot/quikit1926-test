@@ -9,7 +9,7 @@ import { getQuikTrackAppId } from "@/lib/api/permissions";
 export const GET = withOrgAuth(async ({ orgId }, req) => {
   const url = new URL(req.url);
   const q = url.searchParams.get("q")?.trim() ?? "";
-  const limit = Math.min(20, Math.max(1, Number(url.searchParams.get("limit") ?? "10")));
+  const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? "10")));
 
   const [memberships, appId] = await Promise.all([
     db.orgMember.findMany({
@@ -29,6 +29,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
           : {}),
       },
       take: limit,
+      orderBy: { user: { firstName: "asc" } },
       select: {
         user: {
           select: { id: true, email: true, firstName: true, lastName: true, avatar: true },

@@ -344,6 +344,97 @@ export async function emailIssueStatusChanged(args: {
   });
 }
 
+export async function emailIssueMention(args: {
+  to: string;
+  recipientName: string | null;
+  issue: IssueRef;
+  mentionedBy: string | null;
+  context: "comment" | "description";
+  excerpt: string;
+}): Promise<void> {
+  const link = issueLink(args.issue.projectId, args.issue.id);
+  const project = args.issue.projectName ?? "QuikTrack";
+  const where = args.context === "comment" ? "a comment" : "the description";
+  const html = shell({
+    headerSubtitle: "You were mentioned",
+    headerTitle: "Task details",
+    greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
+    intro: `${args.mentionedBy ?? "Someone"} mentioned you in ${where} on a task in ${project}.`,
+    rows: [
+      ["Work", esc(args.issue.title)],
+      ["Key", `<span style="font-family: monospace;">${esc(args.issue.key)}</span>`],
+      ...((args.excerpt ? [["Note", esc(args.excerpt)]] : []) as Array<[string, string]>),
+      ...(args.mentionedBy ? ([["Mentioned by", esc(args.mentionedBy)]] as Array<[string, string]>) : []),
+    ],
+    ctaLabel: "View task",
+    ctaHref: link,
+  });
+  await sendEmail({
+    to: args.to,
+    subject: `[${args.issue.key}] You were mentioned`,
+    html,
+  });
+}
+
+export async function emailProjectInvite(args: {
+  to: string;
+  recipientName: string | null;
+  projectId: string;
+  projectName: string;
+  invitedBy: string | null;
+}): Promise<void> {
+  const link = `${appUrl()}/spaces/${args.projectId}/board`;
+  const html = shell({
+    headerSubtitle: "Project invitation",
+    headerTitle: "Project",
+    greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
+    intro: `You've been added to a project in QuikTrack${
+      args.invitedBy ? ` by ${args.invitedBy}` : ""
+    }.`,
+    rows: [
+      ["Project", esc(args.projectName)],
+      ...(args.invitedBy ? ([["Invited by", esc(args.invitedBy)]] as Array<[string, string]>) : []),
+    ],
+    ctaLabel: "Open project",
+    ctaHref: link,
+  });
+  await sendEmail({
+    to: args.to,
+    subject: `You've been added to "${args.projectName}"`,
+    html,
+  });
+}
+
+export async function emailDocMention(args: {
+  to: string;
+  recipientName: string | null;
+  docTitle: string;
+  projectId: string;
+  docId: string;
+  mentionedBy: string | null;
+  excerpt: string;
+}): Promise<void> {
+  const link = `${appUrl()}/spaces/${args.projectId}/docs/${args.docId}`;
+  const html = shell({
+    headerSubtitle: "You were mentioned",
+    headerTitle: "Document",
+    greeting: args.recipientName ? `Hi ${args.recipientName},` : "Hi,",
+    intro: `${args.mentionedBy ?? "Someone"} mentioned you in a document.`,
+    rows: [
+      ["Document", esc(args.docTitle || "Untitled")],
+      ...((args.excerpt ? [["Note", esc(args.excerpt)]] : []) as Array<[string, string]>),
+      ...(args.mentionedBy ? ([["Mentioned by", esc(args.mentionedBy)]] as Array<[string, string]>) : []),
+    ],
+    ctaLabel: "Open document",
+    ctaHref: link,
+  });
+  await sendEmail({
+    to: args.to,
+    subject: `You were mentioned in "${args.docTitle || "a document"}"`,
+    html,
+  });
+}
+
 export async function emailIssueOverdue(args: {
   to: string;
   recipientName: string | null;

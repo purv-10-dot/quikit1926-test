@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { requireOwnership } from "@/lib/auth/ownership";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import {
   deleteGatePass,

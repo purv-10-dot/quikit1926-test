@@ -5,7 +5,7 @@
  * No hardcoded dummy values.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 import { MRStatus, IndentStatus, POStatus, GRNStatus } from "./enums";
 import { stockService } from "./stock-service";

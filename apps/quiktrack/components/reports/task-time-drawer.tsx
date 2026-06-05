@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   X,
@@ -61,6 +62,14 @@ export function TaskTimeDrawer({
   const [assigneeId, setAssigneeId] = useState<string>("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  // Portal target — set after mount so SSR doesn't touch `document`. Without
+  // the portal, an ancestor stacking context (sticky header, theme wrappers)
+  // clips the drawer + backdrop below the app chrome.
+  const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setPortalEl(document.body);
+  }, []);
 
   const query = useQuery({
     queryKey: ["reports.taskTime", taskId, { assigneeId, page, pageSize }],
@@ -139,7 +148,8 @@ export function TaskTimeDrawer({
     URL.revokeObjectURL(url);
   }
 
-  return (
+  if (!portalEl) return null;
+  return createPortal(
     <div className="fixed inset-0 z-[70] bg-black/30" onMouseDown={onClose}>
       <aside
         onMouseDown={(e) => e.stopPropagation()}
@@ -189,6 +199,7 @@ export function TaskTimeDrawer({
             value={assigneeId}
             onChange={setAssigneeId}
             options={assigneeOptions.map((u) => ({ value: u.id, label: u.name }))}
+            searchable
             minWidth={180}
           />
           <div className="ml-auto inline-flex items-center gap-3 text-xs text-gray-600">
@@ -319,7 +330,8 @@ export function TaskTimeDrawer({
           )}
         </div>
       </aside>
-    </div>
+    </div>,
+    portalEl,
   );
 }
 

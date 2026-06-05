@@ -8,7 +8,7 @@ import { findIndentById } from "@/lib/purchase/indent-repository";
 import { findVendorsByIds } from "@/lib/masters/vendors-repository";
 import { assertVendorGstActiveForPo } from "@/lib/integrations/whitebooks-gst";
 import { findProjectById } from "@/lib/masters/projects-repository";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { parsePagination } from "@/lib/http/pagination";
 
 /**

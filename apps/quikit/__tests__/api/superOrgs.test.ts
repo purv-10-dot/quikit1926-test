@@ -143,6 +143,11 @@ describe("POST /api/super/orgs", () => {
   it("creates org and returns 201 on success", async () => {
     setSession(SUPER_ADMIN);
     mockDb.org.findUnique.mockResolvedValue(null as never);
+    // The route wraps its writes in db.$transaction(cb); run the callback
+    // against the mock so the org row is actually "created".
+    mockDb.$transaction.mockImplementation(
+      (async (cb: (tx: typeof mockDb) => unknown) => cb(mockDb)) as never,
+    );
 
     const createdTenant = {
       id: "t-new",
@@ -163,6 +168,6 @@ describe("POST /api/super/orgs", () => {
     expect(res.status).toBe(201);
     const body = await bodyOf(res);
     expect(body.success).toBe(true);
-    expect(body.data.id).toBe("t-new");
+    expect(body.data.org.id).toBe("t-new");
   });
 });

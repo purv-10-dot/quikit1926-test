@@ -13,6 +13,7 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { EpicsSection, WithoutParentSection } from "./task-table-sections";
 import type { EpicLite, IssueStatus, SprintLite, UserLite } from "./task-types";
 
@@ -85,6 +86,14 @@ export function TaskTableView({ projectId }: Props) {
       .catch(() => { /* best-effort */ });
     return () => { cancelled = true; };
   }, [projectId, refreshTick]);
+
+  // Refetch members when membership changes via the Add-people modal.
+  useMembersChanged(projectId, () => {
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json() as Promise<MembersResponse>)
+      .then((m) => { if (m.success) setMembers(m.data.members ?? []); })
+      .catch(() => undefined);
+  });
 
   const memberMap = useMemo(() => {
     const map = new Map<string, UserLite>();

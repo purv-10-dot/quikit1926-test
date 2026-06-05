@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { userCanInProject, forbidden } from "@/lib/api/permissions";
+import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { filterUpdatePayload } from "@/lib/api/fieldLevels";
 import { updateIssueSchema } from "@/lib/validation/issue";
 import { emailIssueAssigned, emailIssueStatusChanged } from "@/lib/email/sendEmail";
@@ -10,6 +10,7 @@ import {
   selectIssueHistorySnapshot,
 } from "@/lib/services/issueHistory";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
+import { notifyMentions } from "@/lib/services/mentions";
 
 async function loadIssueForTenant(orgId: string, issueId: string) {
   return db.qtIssue.findFirst({
@@ -32,11 +33,7 @@ export const GET = withOrgAuth<{ id: string }>(
       where: { projectId: issue.projectId, userId, isDeleted: false },
       select: { id: true },
     });
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+    const isAdmin = await hasAdminAccess(userId, orgId);
     if (!access && !isAdmin) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
@@ -81,6 +78,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
         id: true,
         key: true,
         projectId: true,
+        description: true, // for the mention diff (only email newly-added @mentions)
         // Snapshot every tracked field for the activity-history diff.
         // (`title`, `statusId`, `assigneeId` are part of this snapshot too.)
         ...selectIssueHistorySnapshot,
@@ -89,11 +87,7 @@ export const PATCH = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+    const isAdmin = await hasAdminAccess(userId, orgId);
     if (!isAdmin) {
       const member = await db.qtProjectMember.findFirst({
         where: { projectId: issue.projectId, userId, isDeleted: false },
@@ -151,6 +145,19 @@ export const PATCH = withOrgAuth<{ id: string }>(
       before: issue,
       after: updated,
     });
+
+    // Email anyone newly @-mentioned in the description (diff vs the previous
+    // description so edits don't re-notify existing mentions).
+    if ("description" in parsed.data) {
+      void notifyMentions({
+        orgId,
+        actorUserId: userId,
+        issue: { id: updated.id, key: updated.key, title: updated.title, projectId: updated.projectId },
+        context: "description",
+        html: updated.description ?? "",
+        prevHtml: issue.description ?? null,
+      });
+    }
 
     // Subtask roll-up: when a subtask's eta or dates move, refresh the
     // parent's roll-up. If the subtask was reparented we have to refresh
@@ -291,11 +298,7 @@ export const DELETE = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+    const isAdmin = await hasAdminAccess(userId, orgId);
     if (!isAdmin) {
       const member = await db.qtProjectMember.findFirst({
         where: { projectId: issue.projectId, userId, isDeleted: false },

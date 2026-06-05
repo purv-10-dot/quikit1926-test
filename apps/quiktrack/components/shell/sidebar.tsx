@@ -28,6 +28,7 @@ import { MoreSpacesPopover } from "./more-spaces-popover";
 import { PlansPopover } from "./plans-popover";
 import { RecentPopover } from "./recent-popover";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { SpaceIcon } from "@/components/space-icon";
 
 interface NavRowProps {
   href?: string;
@@ -252,24 +253,13 @@ export function Sidebar() {
                       return (
                         <Link
                           key={`recent-${s.id}`}
-                          href={`/spaces/${s.id}/board`}
+                          href={`/spaces/${s.id}/backlog`}
                           className={`flex items-center gap-2 px-3 h-8 text-sm rounded ${isCurrent
                               ? "bg-blue-50 text-blue-700 font-medium"
                               : "text-gray-700 hover:bg-gray-100"
                             }`}
                         >
-                          {s.icon ? (
-                            <span className="h-5 w-5 flex items-center justify-center text-base shrink-0 leading-none">
-                              {s.icon}
-                            </span>
-                          ) : (
-                            <span
-                              className="h-4 w-4 rounded-sm flex items-center justify-center text-[10px] text-white font-semibold shrink-0"
-                              style={{ background: s.color || "#2563eb" }}
-                            >
-                              {s.name.charAt(0).toUpperCase()}
-                            </span>
-                          )}
+                          <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
                           <span className="flex-1 truncate">{s.name}</span>
                         </Link>
                       );

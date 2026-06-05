@@ -26,6 +26,8 @@ export const updateIssueSchema = createIssueSchema
   .extend({
     statusId: z.string().min(1).optional(),
     sprintId: z.string().min(1).nullable().optional(),
+    // Nullable so an issue can be unassigned from the details panel / subtask grid.
+    assigneeId: z.string().min(1).nullable().optional(),
   });
 
 export const moveIssueSchema = z.object({

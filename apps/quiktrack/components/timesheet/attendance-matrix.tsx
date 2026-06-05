@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Mail } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   dateKey,
   formatHours,
@@ -212,11 +212,11 @@ export function AttendanceMatrix() {
 
       <div className="bg-white border border-gray-200 rounded-lg">
         <div className="overflow-auto max-h-[calc(100vh-280px)] qt-board-scroll">
-          <table className="text-xs border-collapse w-full">
+          <table className="text-xs border-separate border-spacing-0 w-full">
             <thead className="sticky top-0 z-30 bg-gray-50">
               <tr className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-500">
-                <th className="sticky left-0 z-40 bg-gray-50 px-3 py-2 text-left w-14 border-b border-gray-200">S. No.</th>
-                <th className="sticky left-14 z-40 bg-gray-50 px-3 py-2 text-left min-w-[180px] border-b border-gray-200">Member</th>
+                <th style={{ width: 56, minWidth: 56, maxWidth: 56, left: 0 }} className="sticky z-40 bg-gray-50 px-3 py-2 text-left border-b border-gray-200">S. No.</th>
+                <th style={{ left: 56, minWidth: 180 }} className="sticky z-40 bg-gray-50 px-3 py-2 text-left border-b border-gray-200">Member</th>
                 <th className="px-3 py-2 text-left min-w-[150px] border-b border-gray-200 bg-gray-50">Period totals</th>
                 {range.days.map((d) => (
                   <th
@@ -231,20 +231,19 @@ export function AttendanceMatrix() {
                     </div>
                   </th>
                 ))}
-                <th className="sticky right-0 z-40 bg-gray-50 px-3 py-2 text-center w-12 border-b border-gray-200">Mail</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="[&>tr>td]:border-b [&>tr>td]:border-gray-100">
               {loading && (
                 <tr>
-                  <td colSpan={3 + range.days.length + 1} className="px-3 py-10 text-center text-gray-400">
+                  <td colSpan={3 + range.days.length} className="px-3 py-10 text-center text-gray-400">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && allUsers.length === 0 && (
                 <tr>
-                  <td colSpan={3 + range.days.length + 1} className="px-3 py-10 text-center text-gray-400">
+                  <td colSpan={3 + range.days.length} className="px-3 py-10 text-center text-gray-400">
                     No members.
                   </td>
                 </tr>
@@ -253,11 +252,11 @@ export function AttendanceMatrix() {
               const cells = gridQ.data?.cells?.[u.id] ?? {};
               const t = rowTotals[u.id] ?? { present: 0, halfday: 0, absent: 0 };
               return (
-                <tr key={u.id} className="border-t border-gray-100 hover:bg-gray-50/60">
-                  <td className="sticky left-0 z-10 bg-white px-3 py-2 text-gray-600 tabular-nums">
+                <tr key={u.id} className="hover:bg-gray-50/60">
+                  <td style={{ width: 56, minWidth: 56, maxWidth: 56, left: 0 }} className="sticky z-10 bg-white px-3 py-2 text-gray-600 tabular-nums">
                     {idx + 1}
                   </td>
-                  <td className="sticky left-14 z-10 bg-white px-3 py-2 text-gray-900 font-medium whitespace-nowrap">
+                  <td style={{ left: 56 }} className="sticky z-10 bg-white px-3 py-2 text-gray-900 font-medium whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => setDrawerUser({ id: u.id, label: u.label })}
@@ -297,23 +296,12 @@ export function AttendanceMatrix() {
                       </td>
                     );
                   })}
-                  <td className="sticky right-0 z-10 bg-white px-3 py-2 text-center">
-                    <a
-                      href={`mailto:${u.email}?subject=${encodeURIComponent(
-                        `Timesheet — ${range.label}`,
-                      )}`}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded text-blue-600 hover:bg-blue-50"
-                      aria-label={`Email ${u.label}`}
-                    >
-                      <Mail className="h-3.5 w-3.5" />
-                    </a>
-                  </td>
                 </tr>
               );
             })}
             {hasMore && (
               <tr ref={sentinelRef}>
-                <td colSpan={3 + range.days.length + 1} className="px-3 py-3 text-center text-[11px] text-gray-400">
+                <td colSpan={3 + range.days.length} className="px-3 py-3 text-center text-[11px] text-gray-400">
                   Loading more…
                 </td>
               </tr>

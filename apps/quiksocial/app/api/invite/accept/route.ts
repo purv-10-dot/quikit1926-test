@@ -21,6 +21,10 @@ import { z } from "zod";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
 import { verifyInviteToken } from "@/lib/auth/invite-token";
+import {
+  seedAllDefaultRoles,
+  ensureUserOnRole,
+} from "@/lib/rbac/seedDefaultRoles";
 
 const DEFAULT_ORG_ID =
   process.env.DEFAULT_ORG_ID ||
@@ -249,6 +253,17 @@ export const POST = withOrgAuth(async ({ orgId, userId, session }, req: NextRequ
         data: { activeBrandId: firstBrandId },
       });
     }
+  }
+
+  // Org-level RBAC parity (matches QuikScale/QuikTrack): land the invitee on
+  // the default "User" org-role so they have a QsUserAppRole the moment they
+  // accept — brand-level BrandMembership above is unchanged. Best-effort: the
+  // /api/me/permissions lazy seed remains the fallback if this throws.
+  try {
+    const { userRoleId } = await seedAllDefaultRoles(orgId);
+    await ensureUserOnRole(userId, orgId, userRoleId, invite.invitedBy);
+  } catch {
+    // swallow — never block invite acceptance on org-role assignment
   }
 
   return NextResponse.json({

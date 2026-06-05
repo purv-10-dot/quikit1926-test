@@ -1,6 +1,6 @@
 import { requireStoreAction } from "@/lib/auth/requireStoreAction";
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 import { resolveUserNames } from "@/lib/users/resolve-names";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";

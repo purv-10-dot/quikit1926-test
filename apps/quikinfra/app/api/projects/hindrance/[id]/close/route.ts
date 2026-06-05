@@ -11,24 +11,22 @@ const withOrgAuth = withOrgAuthForModule("projects");
  * one so daysImpacted can be computed.
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { params }) => {
-  const h = await db.cnHindrance.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
+  const h = await db.cnHindrance.findFirst({ where: { id: params.id, orgId } });
   if (!h) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   if (h.status === "closed" || h.status === "resolved") {
     return NextResponse.json({ success: false, error: `Already ${h.status}` }, { status: 409 });
   }
   const body = await req.json().catch(() => ({}));
   const endDateStr: string | undefined = body?.endDate;
-  const endDate = endDateStr ? new Date(endDateStr) : (h.endDate ?? new Date());
-  const daysImpacted = Math.max(1, Math.ceil((endDate.getTime() - h.startDate.getTime()) / 86400000) + 1);
+  const endDate = endDateStr ? new Date(endDateStr) : (h.dateTo ?? new Date());
+  const daysImpacted = Math.max(1, Math.ceil((endDate.getTime() - h.dateFrom.getTime()) / 86400000) + 1);
 
   const updated = await db.cnHindrance.update({
     where: { id: h.id },
     data: {
       status: "closed",
-      endDate,
-      daysImpacted,
-      resolvedAt: new Date(),
-      resolvedBy: userId,
+      dateTo: endDate,
+      daysLost: daysImpacted,
       updatedBy: userId,
     },
   });

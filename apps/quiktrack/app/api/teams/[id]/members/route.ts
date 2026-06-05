@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 const addSchema = z.object({
   userId: z.string().min(1),
@@ -42,12 +43,7 @@ export const GET = withOrgAuth<{ id: string }>(
 
 export const POST = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, req, { params }) => {
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-    if (!isAdmin) {
+    if (!(await hasAdminAccess(userId, orgId))) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
     const team = await loadTeam(orgId, params.id);

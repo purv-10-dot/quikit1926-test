@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Check, X } from "lucide-react";
+import { ChevronDown, Check, X, Search } from "lucide-react";
 
 interface Option {
   value: string;
@@ -14,6 +14,7 @@ export function FilterDropdown({
   value,
   onChange,
   options,
+  searchable,
   minWidth = 170,
 }: {
   label: string;
@@ -21,10 +22,17 @@ export function FilterDropdown({
   value: string;
   onChange: (v: string) => void;
   options: Option[];
+  searchable?: boolean;
   minWidth?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+
+  // Clear the search box each time the menu closes.
+  useEffect(() => {
+    if (!open) setQ("");
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -43,6 +51,10 @@ export function FilterDropdown({
   }, [open]);
 
   const selected = options.find((o) => o.value === value);
+  const query = q.trim().toLowerCase();
+  const filtered = searchable && query
+    ? options.filter((o) => o.label.toLowerCase().includes(query))
+    : options;
 
   return (
     <div ref={ref} className="relative" style={{ minWidth }}>
@@ -90,10 +102,25 @@ export function FilterDropdown({
 
       {open && (
         <div className="absolute z-30 mt-1 left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg py-1 max-h-72 overflow-y-auto">
-          {options.length === 0 ? (
+          {searchable && (
+            <div className="px-2 pt-1 pb-1.5 sticky top-0 bg-white">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search…"
+                  className="w-full pl-7 pr-2 h-7 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+          )}
+          {filtered.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">No options</div>
           ) : (
-            options.map((o) => {
+            filtered.map((o) => {
               const active = o.value === value;
               return (
                 <button

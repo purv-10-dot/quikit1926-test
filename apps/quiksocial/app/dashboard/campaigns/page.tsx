@@ -656,6 +656,11 @@ interface CreateModalProps {
   mode: ModalMode;
   template?: CampaignTemplate;
   sourceCampaign?: Campaign;
+  // Festival → campaign handoff from the calendar day panel's "Campaign"
+  // button. Only set in "scratch" mode. Pre-fills name + concept + a short
+  // 7-day window anchored on the festival date.
+  festival?: string;
+  scheduledDate?: string;
   brandId: string;
   onClose: () => void;
   onCreated: (c: Campaign) => void;
@@ -665,6 +670,8 @@ function CreateCampaignModal({
   mode,
   template,
   sourceCampaign,
+  festival,
+  scheduledDate,
   brandId,
   onClose,
   onCreated,
@@ -674,17 +681,31 @@ function CreateCampaignModal({
     .toISOString()
     .split("T")[0];
 
+  // Festival flow: anchor a SHORT campaign on the festival date — a few posts
+  // around the event (teaser → day-of → follow-up), not a month-long arc. The
+  // window defaults to 7 days starting at the festival; the user can change it.
+  const festivalStart = scheduledDate || today;
+  let festivalEnd = defaultEnd;
+  if (scheduledDate) {
+    const t = new Date(scheduledDate).getTime();
+    festivalEnd = Number.isNaN(t)
+      ? defaultEnd
+      : new Date(t + 7 * 86_400_000).toISOString().split("T")[0];
+  }
+
   const [form, setForm] = useState<CampaignFormData>({
     name:
       mode === "template" && template
         ? `${template.name} Campaign`
         : mode === "clone" && sourceCampaign
         ? `${sourceCampaign.name} (Copy)`
+        : festival
+        ? `${festival} Campaign`
         : "",
     objective:
       mode === "template" && template ? template.objective : "Brand Awareness",
-    startDate: today,
-    endDate: defaultEnd,
+    startDate: festivalStart,
+    endDate: festivalEnd,
     frequency:
       mode === "template" && template
         ? template.frequency
@@ -696,7 +717,11 @@ function CreateCampaignModal({
     postTime:
       mode === "clone" && sourceCampaign ? sourceCampaign.postTime : "09:00",
     describeConcept:
-      mode === "template" && template ? template.conceptDirection : "",
+      mode === "template" && template
+        ? template.conceptDirection
+        : festival
+        ? `Create a campaign celebrating ${festival}.`
+        : "",
     includeLogo: true,
     totalPosts:
       mode === "template" && template
@@ -749,29 +774,21 @@ function CreateCampaignModal({
         // /api/campaigns POST handler (and the FastAPI request model)
         // expect. Mutually exclusive — only one of the three is non-null.
         const att = form.attachment;
-        const attachedProduct =
-          att?.kind === "product"
+        const attachedOffering =
+          att?.kind === "offering"
             ? {
-                name: att.product.name,
-                description: att.product.description ?? null,
-                price: att.product.price ?? null,
-                currency: att.product.currency ?? null,
-                category: att.product.category ?? null,
-                tags: att.product.tags ?? [],
-                imageUrl: att.product.imageUrls?.[0] ?? null,
-              }
-            : null;
-        const attachedService =
-          att?.kind === "service"
-            ? {
-                name: att.service.name,
-                description: att.service.description ?? null,
-                price: att.service.pricing ?? null,
-                currency: att.service.currency ?? null,
-                duration: att.service.duration ?? null,
-                category: att.service.category ?? null,
-                tags: att.service.tags ?? [],
-                imageUrl: att.service.imageUrls?.[0] ?? null,
+                // Offering's free-string `type` flows through verbatim; Python's
+                // _build_attachment_directive branches on it for type-specific
+                // prompts.
+                type: att.offering.type || "product",
+                name: att.offering.name,
+                description: att.offering.description ?? null,
+                price: att.offering.price ?? null,
+                currency: att.offering.currency ?? null,
+                duration: att.offering.duration ?? null,
+                category: att.offering.category ?? null,
+                tags: att.offering.tags ?? [],
+                imageUrl: att.offering.imageUrls?.[0] ?? null,
               }
             : null;
         const attachedAsset =
@@ -800,8 +817,7 @@ function CreateCampaignModal({
             describeConcept: form.describeConcept.trim() || null,
             includeLogo: form.includeLogo,
             templateId: template?.id ?? null,
-            attachedProduct,
-            attachedService,
+            attachedOffering,
             attachedAsset,
           }),
         });
@@ -1093,32 +1109,32 @@ function CreateCampaignModal({
           </Field>
         )}
 
-        {/* Optional attachment — Library / Product / Service. Same picker
-            as Create Post. The selected item drives the per-post prompt
-            directive AND is sent to Gemini as a multimodal reference so
-            every post in the campaign features the actual item. */}
+        {/* Optional attachment — Library / Catalog. Same picker as Create
+            Post. The selected item drives the per-post prompt directive AND
+            is sent to Gemini as a multimodal reference so every post in the
+            campaign features the actual item. */}
         {mode !== "clone" && (() => {
           const att = form.attachment;
           const label =
-            att?.kind === "product"
-              ? att.product.name
-              : att?.kind === "service"
-              ? att.service.name
+            att?.kind === "offering"
+              ? att.offering.name
               : att?.kind === "asset"
               ? att.asset.name
               : null;
           const thumb =
-            att?.kind === "product"
-              ? att.product.imageUrls?.[0]
-              : att?.kind === "service"
-              ? att.service.imageUrls?.[0]
+            att?.kind === "offering"
+              ? att.offering.imageUrls?.[0]
               : att?.kind === "asset"
               ? att.asset.thumbnailUrl ?? att.asset.url
               : null;
           const icon =
-            att?.kind === "product" ? <Package size={14} /> :
-            att?.kind === "service" ? <Briefcase size={14} /> :
-            att?.kind === "asset" ? <ImageIcon size={14} /> : null;
+            att?.kind === "offering"
+              ? att.offering.type === "service" || att.offering.type === "treatment"
+                ? <Briefcase size={14} />
+                : <Package size={14} />
+              : att?.kind === "asset"
+              ? <ImageIcon size={14} />
+              : null;
           return (
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <button
@@ -1427,6 +1443,8 @@ export default function CampaignsPage() {
     mode: ModalMode;
     template?: CampaignTemplate;
     sourceCampaign?: Campaign;
+    festival?: string;
+    scheduledDate?: string;
   } | null>(null);
 
   // Per-campaign generation state. Indexed by campaign._id.
@@ -1476,6 +1494,22 @@ export default function CampaignsPage() {
   }, [brandId]);
 
   useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
+
+  // Festival → campaign handoff from the calendar day panel's "Campaign"
+  // button: /dashboard/campaigns?festival=…&scheduledDate=YYYY-MM-DD opens the
+  // create modal pre-filled. Read once on mount via window.location (not
+  // useSearchParams — avoids the Suspense-boundary requirement on `next build`),
+  // then strip the query so a refresh / remount doesn't reopen the modal.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const festival = sp.get("festival") ?? undefined;
+    const rawDate = sp.get("scheduledDate");
+    const scheduledDate =
+      rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : undefined;
+    if (!festival && !scheduledDate) return;
+    setModal({ mode: "scratch", festival, scheduledDate });
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   const handleCreated = (c: Campaign) => {
     setCampaigns((prev) => [c, ...prev]);
@@ -2074,6 +2108,8 @@ export default function CampaignsPage() {
           mode={modal.mode}
           template={modal.template}
           sourceCampaign={modal.sourceCampaign}
+          festival={modal.festival}
+          scheduledDate={modal.scheduledDate}
           brandId={brandId}
           onClose={() => setModal(null)}
           onCreated={handleCreated}

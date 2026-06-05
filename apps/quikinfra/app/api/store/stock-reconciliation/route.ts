@@ -8,7 +8,7 @@ const withOrgAuth = withOrgAuthForModule("store");
 export const GET = withOrgAuth(async ({ orgId }, req) => {
   const includeDeleted = req.nextUrl.searchParams.get("includeDeleted") === "true";
   const rows = await db.cnStockReconciliation.findMany({
-    where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
+    where: { orgId, ...(includeDeleted ? {} : { status: { not: "cancelled" } }) },
     include: { project: { select: { id: true, name: true } }, location: { select: { id: true, name: true } } },
     orderBy: { reconciliationDate: "desc" },
   });
@@ -19,7 +19,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const body = await req.json();
   const input = reconCreateSchema.parse(body);
   const dup = await db.cnStockReconciliation.findFirst({
-    where: { orgId, reconciliationNumber: input.reconciliationNumber, deletedAt: null },
+    where: { orgId, reconciliationNumber: input.reconciliationNumber },
     select: { id: true },
   });
   if (dup) return NextResponse.json({ success: false, error: `Reconciliation number '${input.reconciliationNumber}' already exists` }, { status: 409 });
@@ -31,21 +31,20 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       projectId: input.projectId,
       locationId: input.locationId,
       reconciliationDate: new Date(input.reconciliationDate),
-      reason: input.reason,
+      conductedById: userId,
       status: "draft",
       createdBy: userId,
+      updatedBy: userId,
       lines: {
         create: input.lines.map((l) => {
-          const adjustmentQty = l.physicalQty - l.systemQty;
+          const varianceQty = l.physicalQty - l.systemQty;
           return {
             itemId: l.itemId,
             systemQty: l.systemQty,
             physicalQty: l.physicalQty,
-            adjustmentQty,
+            varianceQty,
             uomId: l.uomId,
-            unitRate: l.unitRate,
-            amount: Math.abs(adjustmentQty) * l.unitRate,
-            remarks: l.remarks,
+            reason: l.remarks,
           };
         }),
       },

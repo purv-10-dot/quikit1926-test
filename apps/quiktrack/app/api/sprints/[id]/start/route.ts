@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
 
 export const PATCH = withOrgAuth<{ id: string }>(
   async ({ orgId, userId }, _req, { params }) => {
@@ -22,16 +23,10 @@ export const PATCH = withOrgAuth<{ id: string }>(
       );
     }
 
-    const member = await db.qtProjectMember.findFirst({
-      where: { projectId: sprint.projectId, userId, isDeleted: false },
-      select: { role: true },
-    });
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-    if (!isAdmin && (!member || member.role === "VIEWER")) {
+    if (
+      !(await hasAdminAccess(userId, orgId)) &&
+      !(await userCanInProject(userId, orgId, sprint.projectId, "Sprint", "update"))
+    ) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 

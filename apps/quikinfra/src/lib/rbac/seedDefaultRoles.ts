@@ -169,7 +169,14 @@ function splitKeys(keys: string[]): Array<{ resource: string; action: string }> 
 export async function seedDefaultRoles(orgId: string): Promise<SeedResult | null> {
   const cacheHit = seedCache.get(orgId);
   if (cacheHit && Date.now() - cacheHit < SEED_CACHE_TTL_MS) {
-    return loadSeededIds(orgId);
+    // Cache hit — return the existing role IDs without re-seeding. BUT if the
+    // rows were deleted out-of-band (cache stale), fall through to a full
+    // re-seed in THIS call instead of returning null. Mirrors quikscale's
+    // seedAllDefaultRoles, so a delete + single reload re-seeds immediately
+    // (previously QuikInfra needed a second reload to recover).
+    const existing = await loadSeededIds(orgId);
+    if (existing) return existing;
+    // rows missing → fall through to the full seed below
   }
 
   const appId = await getQuikInfraAppId();

@@ -395,6 +395,48 @@ html.dark .qt-shimmer {
 .qt-rich-content img { max-width: 100%; height: auto; border-radius: 4px; margin: 0.5rem 0; }
 .qt-rich-content hr { border: 0; border-top: 1px solid #e5e7eb; margin: 0.75rem 0; }
 
+/* ============================================================================
+   DOC EDITOR — DARK MODE (covers ALL docs: edit + read view)
+   Both the "Write" editor canvas (.ProseMirror) and the read-mode renderer
+   (.qt-rich-content) are styled for a light page — the editor via Tailwind
+   utilities applied as arbitrary variants (`[&_.ProseMirror_th]:bg-gray-50`,
+   etc.) which the global `html.dark .bg-*` remaps DON'T match, and the reader
+   via hardcoded hex (#111827 headings, #f9fafb th, #d1d5db borders). On the
+   dark slate canvas the headings + table-header text wash out to near-zero
+   contrast (see dark-mode doc bug). Re-skin both surfaces here so every doc is
+   legible. Scoped to .ProseMirror / .qt-rich-content only — never touches the
+   app's data tables. `!important` is needed to beat the editor's inline
+   arbitrary-variant utilities.
+   ============================================================================ */
+html.dark .ProseMirror,
+html.dark .qt-rich-content { color: #e2e8f0; }
+
+/* Headings + bold read as off-white, not the light-mode near-black. */
+html.dark .ProseMirror :is(h1, h2, h3, h4, h5, h6),
+html.dark .ProseMirror strong,
+html.dark .qt-rich-content :is(h1, h2, h3, h4, h5, h6),
+html.dark .qt-rich-content strong { color: #f8fafc !important; }
+
+/* Tables — visible borders + a header strip one step lighter than the canvas
+   (#334155 over the #1e293b page), with light header text. */
+html.dark .ProseMirror :is(table, th, td),
+html.dark .qt-rich-content :is(table, th, td) { border-color: #475569 !important; }
+html.dark .ProseMirror th,
+html.dark .qt-rich-content th { background-color: #334155 !important; color: #f1f5f9 !important; }
+html.dark .ProseMirror td,
+html.dark .qt-rich-content td { color: #e2e8f0 !important; }
+
+/* Blockquote, links, code. */
+html.dark .ProseMirror blockquote,
+html.dark .qt-rich-content blockquote { border-left-color: #475569 !important; color: #cbd5e1 !important; }
+html.dark .ProseMirror a,
+html.dark .qt-rich-content a { color: #93c5fd !important; }
+html.dark .ProseMirror :not(pre) > code,
+html.dark .qt-rich-content :not(pre) > code { background-color: #334155 !important; color: #e2e8f0 !important; }
+html.dark .ProseMirror pre,
+html.dark .qt-rich-content pre { background-color: #0b1120 !important; color: #e5e7eb !important; }
+html.dark .qt-rich-content hr { border-top-color: #334155 !important; }
+
 /* Always-visible horizontal scrollbar for the timesheet grid (matches the
    Jira/Tempo scrollbar that sits permanently below the table). */
 .qt-timesheet-scroll::-webkit-scrollbar { height: 12px; }

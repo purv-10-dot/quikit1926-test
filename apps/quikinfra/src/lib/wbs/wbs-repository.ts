@@ -1,4 +1,4 @@
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 
 export type WbsStatus = "not_started" | "in_progress" | "completed" | "on_hold";
