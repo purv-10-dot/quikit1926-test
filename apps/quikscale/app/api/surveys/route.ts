@@ -51,6 +51,9 @@ export const POST = withOrgAuth(
         question:  questions[0]!.text, // keep legacy column populated for one release
         quarter:   parsed.data.quarter,
         year:      parsed.data.year,
+        // Server-generated, unguessable token for the public share link (/s/<token>).
+        // Matches the codebase convention (cf. invitationToken). `@unique` guards collisions.
+        publicToken: crypto.randomUUID(),
         createdBy: session?.user?.id ?? "system",
         questions: {
           create: questions.map((q, i) => ({

@@ -524,7 +524,6 @@ model AccountabilityFunction {
   childFunctions    AccountabilityFunction[] @relation("FunctionHierarchy")
   team              Team?                    @relation(fields: [teamId], references: [id])
 
-  @@unique([orgId, name])
   @@unique([orgId, chartType, name])
   @@index([orgId])
   @@index([orgId, chartType])
@@ -1587,7 +1586,7 @@ model Survey {
   quarter     String
   year        Int
   status      String           @default("draft")
-  publicToken String           @unique
+  publicToken String           @unique @default(cuid())
   createdBy   String
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
