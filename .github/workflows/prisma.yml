@@ -6,35 +6,39 @@ on:
     branches: [Pre-Prod]
 
 jobs:
+  detect-changes:
+    name: Detect Changed Apps
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.filter.outputs.changes }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            db:
+              - 'packages/database/**'
+
   prisma-migrate:
     name: Prisma — migrate deploy
     runs-on: ubuntu-latest
-
-    # Run once per workflow
     needs: detect-changes
 
-    # Run only when DB-related apps change OR manual trigger
     if: |
       github.event_name == 'workflow_dispatch' ||
-      contains(needs.detect-changes.outputs.apps, 'quikscale') ||
-      contains(needs.detect-changes.outputs.apps, 'quiktrack') ||
-      contains(needs.detect-changes.outputs.apps, 'quikinfra')
+      contains(needs.detect-changes.outputs.apps, 'db')
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Prisma migrate deploy
-        run: |
-          npx prisma migrate deploy \
-            --schema=packages/database/prisma/schema.prisma
+      - run: npm ci
+      - run: npx prisma migrate deploy --schema=packages/database/prisma/schema.prisma
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
