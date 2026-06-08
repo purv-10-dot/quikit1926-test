@@ -6023,6 +6023,8 @@ model QtDoc {
   title       String
   content     String
   templateKey String?
+  folderId    String?
+  sortOrder   Int       @default(0)
   createdBy   String?
   updatedBy   String?
   isDeleted   Boolean   @default(false)
@@ -6033,6 +6035,27 @@ model QtDoc {
 
   @@index([orgId])
   @@index([projectId, isDeleted, updatedAt])
+  @@schema("app_quiktrack")
+}
+
+// Single-level folders for grouping QtDoc rows within a project. Docs with a
+// null folderId live at the root ("uncategorized"). No Prisma relation block —
+// the Docs API is raw-SQL only (the local Prisma client is flaky for these
+// models on Windows), so the column + indexes are all that's needed.
+model QtDocFolder {
+  id        String   @id @default(cuid())
+  orgId     String
+  projectId String
+  name      String
+  sortOrder Int      @default(0)
+  createdBy String?
+  updatedBy String?
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([projectId, isDeleted, sortOrder])
   @@schema("app_quiktrack")
 }
 
