@@ -5,6 +5,8 @@ import { getToken } from "next-auth/jwt";
 import { SignJWT } from "jose";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { publicBaseUrl } from "@quikit/auth/public-url";
+import { clearSessionCookies } from "@quikit/auth/session-cookies";
 
 /**
  * GET /api/post-login?callbackUrl=<absolute-url>
@@ -71,8 +73,16 @@ function launcherFallback(): string {
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
-    // No session — bounce back to the auth app's login page.
-    return NextResponse.redirect(new URL("/login?reason=no_session", request.url));
+    // No session — bounce back to the auth app's login page. Build the URL from
+    // the auth app's own public origin (NEXTAUTH_URL / forwarded host), never
+    // `request.url`, which resolves to the pod bind address (0.0.0.0:3001) when
+    // the ingress doesn't preserve the Host header. Also evict any stale-but-
+    // cryptographically-valid session cookie so the browser stops replaying it
+    // (otherwise the user must manually clear cookies to recover).
+    const redirect = NextResponse.redirect(
+      new URL("/login?reason=no_session", publicBaseUrl(request)),
+    );
+    return clearSessionCookies(redirect);
   }
 
   const internalSecret = process.env.INTERNAL_SECRET;

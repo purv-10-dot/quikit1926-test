@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { encode } from "next-auth/jwt";
+import { publicBaseUrl } from "@quikit/auth/public-url";
 
 /**
  * GET /auth-handoff?token=<jwt>
@@ -14,8 +15,13 @@ import { encode } from "next-auth/jwt";
  */
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
+  // This app's own public origin — never `request.url` (resolves to the pod
+  // bind address 0.0.0.0:PORT when the ingress doesn't preserve the Host
+  // header). The session cookie below is host-only, so we must redirect back
+  // to the same host that served this request. See @quikit/auth/public-url.
+  const origin = publicBaseUrl(request);
   if (!token) {
-    return NextResponse.redirect(new URL("/login?reason=missing_handoff", request.url));
+    return NextResponse.redirect(new URL("/login?reason=missing_handoff", origin));
   }
 
   const internalSecret = process.env.INTERNAL_SECRET;
@@ -49,11 +55,11 @@ export async function GET(request: NextRequest) {
     payload = result.payload as typeof payload;
   } catch (err) {
     const reason = err instanceof Error && /exp/i.test(err.message) ? "expired" : "invalid";
-    return NextResponse.redirect(new URL(`/login?reason=${reason}_handoff`, request.url));
+    return NextResponse.redirect(new URL(`/login?reason=${reason}_handoff`, origin));
   }
 
   if (!payload.sub) {
-    return NextResponse.redirect(new URL("/login?reason=invalid_handoff", request.url));
+    return NextResponse.redirect(new URL("/login?reason=invalid_handoff", origin));
   }
 
   const sessionToken = await encode({
@@ -73,7 +79,7 @@ export async function GET(request: NextRequest) {
   });
 
   const safeTo = sanitizeRedirect(payload.to ?? "/");
-  const response = NextResponse.redirect(new URL(safeTo, request.url));
+  const response = NextResponse.redirect(new URL(safeTo, origin));
 
   const cookieName =
     process.env.NODE_ENV === "production"

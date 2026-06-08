@@ -79,24 +79,15 @@ export async function globalSignOut(options: GlobalSignOutOptions): Promise<void
 
   if (typeof window === "undefined") return;
 
-  // 1.5) Clear known user-scoped browser storage keys. Prevents user data
-  // bleeding between accounts on shared devices. The full page load below
-  // clears in-memory React state + module caches, but localStorage and
-  // sessionStorage persist across navigations and survive sign-out unless
-  // explicitly removed here.
+  // 1.5) Fully clear browser storage so no per-user UI state bleeds into the
+  // next session (important on shared devices). Runs AFTER localSignOut() so
+  // NextAuth's same-app cross-tab logout broadcast (`next-auth.message`) has
+  // already been written and received by sibling tabs. No auth/session data
+  // lives in storage — sessions are HttpOnly cookies + Redis — so a full wipe
+  // is safe; the page load below also drops in-memory React/React Query state.
   try {
-    const USER_SCOPED_PREFIXES = ["qt:", "qs:", "quikit:"];
-    for (const storage of [window.localStorage, window.sessionStorage]) {
-      if (!storage) continue;
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < storage.length; i++) {
-        const key = storage.key(i);
-        if (key && USER_SCOPED_PREFIXES.some((p) => key.startsWith(p))) {
-          keysToRemove.push(key);
-        }
-      }
-      for (const key of keysToRemove) storage.removeItem(key);
-    }
+    window.localStorage.clear();
+    window.sessionStorage.clear();
   } catch {
     // Storage access can throw under strict cookie/storage policies
     // (e.g. third-party-cookie blockers). Never block sign-out on this.

@@ -47,17 +47,24 @@ applyEnvFile(path.join(authRoot, "../admin/.env.local"), "fill");
 applyEnvFile(path.join(authRoot, ".env.local"), "overwrite");
 applyEnvFile(path.join(authRoot, ".env"), "overwrite");
 
-// Central auth dev uses `-p 3004`. If we only inherited env from `quikit`, NEXTAUTH_URL may still be the launcher (:3000).
-const authOwnEnv =
-  fs.existsSync(path.join(authRoot, ".env.local")) ||
-  fs.existsSync(path.join(authRoot, ".env"));
-if (!authOwnEnv) {
-  process.env.NEXTAUTH_URL = "http://localhost:3004";
-  process.env.NEXT_PUBLIC_AUTH_URL = "http://localhost:3004";
-} else {
-  if (!process.env.NEXTAUTH_URL) process.env.NEXTAUTH_URL = "http://localhost:3004";
-  if (!process.env.NEXT_PUBLIC_AUTH_URL) {
-    process.env.NEXT_PUBLIC_AUTH_URL = process.env.NEXTAUTH_URL;
+// Central auth dev uses `-p 3004`. If we only inherited env from `quikit`,
+// NEXTAUTH_URL may still be the launcher (:3000). This localhost fallback is a
+// DEV-ONLY convenience: in production the runtime env (k8s ConfigMap/Secret)
+// is the source of truth, and force-setting localhost here would clobber the
+// injected public origin — leaving redirects to fall back to the pod bind
+// address (the `0.0.0.0:3001` login-redirect bug). Never run it in prod.
+if (process.env.NODE_ENV !== "production") {
+  const authOwnEnv =
+    fs.existsSync(path.join(authRoot, ".env.local")) ||
+    fs.existsSync(path.join(authRoot, ".env"));
+  if (!authOwnEnv) {
+    process.env.NEXTAUTH_URL = "http://localhost:3004";
+    process.env.NEXT_PUBLIC_AUTH_URL = "http://localhost:3004";
+  } else {
+    if (!process.env.NEXTAUTH_URL) process.env.NEXTAUTH_URL = "http://localhost:3004";
+    if (!process.env.NEXT_PUBLIC_AUTH_URL) {
+      process.env.NEXT_PUBLIC_AUTH_URL = process.env.NEXTAUTH_URL;
+    }
   }
 }
 // Prisma migrate uses directUrl; runtime queries only need DATABASE_URL, but mirror if missing

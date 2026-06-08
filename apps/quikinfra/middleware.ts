@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { createMiddleware } from "@quikit/auth/middleware";
+import { publicBaseUrl } from "@quikit/auth/public-url";
+import { clearSessionCookies } from "@quikit/auth/session-cookies";
 
 /**
  * Roles allowed to reach /settings/* (user management, workflows, roles).
@@ -72,7 +74,9 @@ export async function middleware(request: NextRequest) {
       (token as { roleKey?: string }).roleKey ??
       (token as { membershipRole?: string }).membershipRole;
     if (!roleKey || !SETTINGS_ADMIN_ROLES.has(roleKey)) {
-      const res = NextResponse.redirect(new URL("/dashboard", request.url));
+      // Build on this host's public origin, never the pod bind address that
+      // `request.url` resolves to behind the ingress. See @quikit/auth/public-url.
+      const res = NextResponse.redirect(new URL("/dashboard", publicBaseUrl(request)));
       res.headers.set("x-request-id", requestId);
       return res;
     }
@@ -103,7 +107,10 @@ export async function middleware(request: NextRequest) {
         "to",
         isAuthInternal ? "/" : pn + request.nextUrl.search,
       );
-      const handoffRes = NextResponse.redirect(handoff);
+      // Evict stale NextAuth cookies before re-handshaking. Replacing the
+      // factory's redirect here would otherwise drop its Set-Cookie deletions;
+      // a successful handoff re-mints a fresh session cookie afterwards anyway.
+      const handoffRes = clearSessionCookies(NextResponse.redirect(handoff));
       handoffRes.headers.set("x-request-id", requestId);
       return handoffRes;
     }
