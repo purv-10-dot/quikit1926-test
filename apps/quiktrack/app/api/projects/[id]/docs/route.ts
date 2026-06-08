@@ -104,6 +104,9 @@ export const GET = withProjectAccess<{ id: string }>(
 const createSchema = z.object({
   title: z.string().min(1).max(255).optional(),
   templateKey: z.string().min(1).max(60).nullable().optional(),
+  // Optional edited body — sent when a draft is first saved so the user's
+  // edits persist on create instead of being overwritten by the template body.
+  content: z.string().max(2_000_000).optional(),
   // Optional target folder so a doc can be created directly inside one (the
   // folder "+" action). Must be a live folder in this project.
   folderId: z.string().min(1).nullable().optional(),
@@ -120,8 +123,10 @@ export const POST = withProjectAccess<{ id: string }>(
     }
     const tpl = getTemplate(parsed.data.templateKey);
     const id = randomUUID();
-    const title = parsed.data.title?.trim() || tpl?.name || "Untitled page";
-    const content = tpl?.body ?? "<p></p>";
+    const title = parsed.data.title?.trim() || tpl?.name || "Untitled doc";
+    // Prefer the edited body sent by the draft editor; fall back to the
+    // template body for a fresh create.
+    const content = parsed.data.content ?? tpl?.body ?? "<p></p>";
     const templateKey = parsed.data.templateKey ?? null;
     const folderId = parsed.data.folderId ?? null;
 

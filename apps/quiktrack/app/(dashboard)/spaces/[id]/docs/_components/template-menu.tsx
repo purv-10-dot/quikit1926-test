@@ -40,7 +40,7 @@ export function TemplateMenu({
       className="absolute right-0 top-full z-30 mt-1 w-72 rounded-lg border border-gray-200 bg-white p-1.5 shadow-lg"
     >
       <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-        New page from template
+        New doc from template
       </p>
       <div className="max-h-80 overflow-y-auto">
         {DOC_TEMPLATES.map((t) => (

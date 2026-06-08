@@ -15,7 +15,6 @@ import {
   useRenameFolder,
   useDeleteFolder,
   useMoveDoc,
-  useCreateDoc,
   type DocSummary,
   type FolderSummary,
 } from "./use-docs";
@@ -44,18 +43,15 @@ export function DocsView({ projectId }: { projectId: string }) {
   const renameFolderM = useRenameFolder(projectId);
   const deleteFolderM = useDeleteFolder(projectId);
   const moveDocM = useMoveDoc(projectId);
-  const createDocM = useCreateDoc(projectId);
 
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : "Something went wrong.");
 
+  // Open the draft editor seeded with the template — the doc is NOT created
+  // until the user edits/saves it there (see doc-editor save()).
   function createFromTemplate(templateKey: string, folderId?: string) {
-    createDocM.mutate(
-      { templateKey, folderId: folderId ?? null },
-      {
-        onSuccess: (doc) => router.push(`/spaces/${projectId}/docs/${doc.id}`),
-        onError: fail,
-      },
-    );
+    const params = new URLSearchParams({ template: templateKey });
+    if (folderId) params.set("folder", folderId);
+    router.push(`/spaces/${projectId}/docs/new?${params.toString()}`);
   }
 
   function createFolder() {
@@ -81,8 +77,8 @@ export function DocsView({ projectId }: { projectId: string }) {
     const msg =
       folder.docCount > 0
         ? `Delete "${folder.name}"? Its ${folder.docCount} ${
-            folder.docCount === 1 ? "page" : "pages"
-          } will move back to All pages.`
+            folder.docCount === 1 ? "doc" : "docs"
+          } will move back to All docs.`
         : `Delete "${folder.name}"?`;
     if (!window.confirm(msg)) return;
     deleteFolderM.mutate(folder, { onError: fail });
@@ -97,7 +93,7 @@ export function DocsView({ projectId }: { projectId: string }) {
       .then((r) => r.json())
       .then((j) => {
         if (!j?.success) return;
-        const safeName = doc.title.replace(/[^\w-]+/g, "_") || "page";
+        const safeName = doc.title.replace(/[^\w-]+/g, "_") || "doc";
         if (downloadFormat === "word") {
           downloadAsWord(safeName, doc.title, j.data.content);
         } else {
@@ -132,7 +128,7 @@ export function DocsView({ projectId }: { projectId: string }) {
     <div className="h-full flex overflow-hidden bg-white">
       <main className="flex-1 overflow-y-auto px-6 py-4">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Pages</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Docs</h1>
           <div className="flex items-center gap-3">
             {addingFolder ? (
               <div className="flex items-center gap-1">
@@ -198,7 +194,7 @@ export function DocsView({ projectId }: { projectId: string }) {
         ) : isEmpty ? (
           <div className="py-8 text-center">
             <p className="text-sm text-gray-500">
-              No pages yet — add a folder, or pick a template on the right to get started.
+              No docs yet — add a folder, or pick a template on the right to get started.
             </p>
           </div>
         ) : (
@@ -211,7 +207,6 @@ export function DocsView({ projectId }: { projectId: string }) {
                     key={f.id}
                     projectId={projectId}
                     folder={f}
-                    busy={createDocM.isPending}
                     onCreateDoc={(folderId, key) => createFromTemplate(key, folderId)}
                     onRename={renameFolder}
                     onDelete={deleteFolder}
@@ -233,7 +228,7 @@ export function DocsView({ projectId }: { projectId: string }) {
             >
               {folders.length > 0 && (
                 <p className="text-xs font-medium uppercase tracking-wider text-gray-400 px-3 pt-3 pb-1">
-                  All pages
+                  All docs
                 </p>
               )}
               <DocsTableHeader />
@@ -248,8 +243,8 @@ export function DocsView({ projectId }: { projectId: string }) {
                 onDownload={downloadDoc}
                 emptyText={
                   folders.length > 0
-                    ? "Drop a page here to move it out of a folder."
-                    : "No pages yet."
+                    ? "Drop a doc here to move it out of a folder."
+                    : "No docs yet."
                 }
               />
             </div>
@@ -257,10 +252,7 @@ export function DocsView({ projectId }: { projectId: string }) {
         )}
       </main>
 
-      <DocsTemplatesSidebar
-        busy={createDocM.isPending}
-        onCreate={(key) => createFromTemplate(key)}
-      />
+      <DocsTemplatesSidebar onCreate={(key) => createFromTemplate(key)} />
     </div>
   );
 }

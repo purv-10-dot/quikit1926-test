@@ -27,7 +27,9 @@ const factoryMiddleware = createMiddleware({
   // No local org picker — no-org users are sent to the launcher /apps
   // via centralSelectOrgUrl (cross-domain handoff). `/` is public so the
   // marketing landing renders without auth.
-  publicRoutes: ["/", "/login", "/invitations", "/auth-handoff"],
+  // `/share` = public shared-doc links (no login). Safe as a prefix: no other
+  // route starts with `/share`.
+  publicRoutes: ["/", "/login", "/invitations", "/auth-handoff", "/share"],
   centralLoginUrl: AUTH_URL ? `${AUTH_URL}/login` : undefined,
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });

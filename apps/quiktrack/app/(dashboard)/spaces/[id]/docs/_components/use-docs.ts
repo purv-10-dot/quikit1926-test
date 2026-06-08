@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryClient,
 } from "@tanstack/react-query";
 
 /**
@@ -261,32 +262,34 @@ export function useMoveDoc(projectId: string) {
   });
 }
 
-export function useCreateDoc(projectId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      templateKey,
-      folderId,
-    }: {
-      templateKey: string;
-      folderId?: string | null;
-    }): Promise<DocSummary> => {
-      const j = await fetch(`/api/projects/${projectId}/docs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templateKey, folderId: folderId ?? null }),
-      }).then((r) => r.json());
-      if (!j?.success) throw new Error(j?.error ?? "Couldn't create page.");
-      return j.data as DocSummary;
-    },
-    onSuccess: (doc, { folderId }) => {
-      const scope = folderId ?? ROOT;
-      // Seed the cache so the new page is already there when the user returns
-      // from the editor (within staleTime) — no refetch needed.
-      if (qc.getQueryData(listKey(projectId, scope)) !== undefined) {
-        qc.setQueryData<DocsInfinite>(listKey(projectId, scope), prependDocs([doc]));
-      }
-      if (folderId) qc.setQueryData(foldersKey(projectId), bumpCount(folderId, 1));
-    },
-  });
+// Note: doc creation lives in the draft editor (doc-editor.tsx), which POSTs on
+// first save and invalidates the relevant list — so picking a template never
+// leaves an empty doc behind. There's intentionally no create mutation here.
+
+/**
+ * Push an edited doc's title/updatedAt straight into whatever list cache holds
+ * it, and float it to the top of its page (lists are updatedAt-DESC). Called by
+ * the editor after each save so the Docs list reflects edits INSTANTLY — no
+ * 60s staleTime wait, no refetch. No-op if the doc isn't in any cached list.
+ */
+export function applyDocEditToCache(
+  qc: QueryClient,
+  projectId: string,
+  docId: string,
+  patch: { title: string; updatedAt: string },
+) {
+  const lists = qc.getQueriesData<DocsInfinite>({ queryKey: listPrefix(projectId) });
+  for (const [key, data] of lists) {
+    if (!data) continue;
+    let hit = false;
+    const pages = data.pages.map((p) => {
+      const found = p.data.find((d) => d.id === docId);
+      if (!found) return p;
+      hit = true;
+      const rest = p.data.filter((d) => d.id !== docId);
+      // Move it to the front of its page (lists are updatedAt-DESC).
+      return { ...p, data: [{ ...found, ...patch }, ...rest] };
+    });
+    if (hit) qc.setQueryData(key, { ...data, pages });
+  }
 }

@@ -18,6 +18,8 @@ interface DocRow {
   content: string;
   templateKey: string | null;
   folderId: string | null;
+  shareToken: string | null;
+  shareMode: string | null;
   createdBy: string | null;
   updatedBy: string | null;
   isDeleted: boolean;
@@ -28,6 +30,7 @@ interface DocRow {
 async function loadDoc(orgId: string, docId: string): Promise<DocRow | null> {
   const rows = await db.$queryRaw<DocRow[]>`
     SELECT id, "orgId", "projectId", title, content, "templateKey", "folderId",
+           "shareToken", "shareMode",
            "createdBy", "updatedBy", "isDeleted", "createdAt", "updatedAt"
     FROM app_quiktrack."QtDoc"
     WHERE id = ${docId} AND "orgId" = ${orgId} AND "isDeleted" = false

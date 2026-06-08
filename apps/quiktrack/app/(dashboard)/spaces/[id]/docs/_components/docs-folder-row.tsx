@@ -143,7 +143,7 @@ export function DocsFolderRow({
               {folder.name}
             </button>
             <span className="text-xs text-gray-400 shrink-0">
-              {folder.docCount} {folder.docCount === 1 ? "page" : "pages"}
+              {folder.docCount} {folder.docCount === 1 ? "doc" : "docs"}
             </span>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
               <div className="relative">
@@ -152,8 +152,8 @@ export function DocsFolderRow({
                   disabled={busy}
                   onClick={() => setMenuOpen((v) => !v)}
                   className="p-1.5 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
-                  aria-label="New page in folder"
-                  title="New page in this folder"
+                  aria-label="New doc in folder"
+                  title="New doc in this folder"
                 >
                   <Plus className="w-3.5 h-3.5 text-gray-600" />
                 </button>
@@ -205,7 +205,7 @@ export function DocsFolderRow({
             fetchNextPage={() => list.fetchNextPage()}
             onDownload={onDownload}
             onDragStart={onDragStartDoc}
-            emptyText="No pages in this folder yet."
+            emptyText="No docs in this folder yet."
           />
         </div>
       )}

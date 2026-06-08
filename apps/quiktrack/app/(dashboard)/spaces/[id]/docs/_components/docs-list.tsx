@@ -10,9 +10,12 @@ import type { DocSummary } from "./use-docs";
 export const DOC_DRAG_TYPE = "application/quiktrack-doc";
 
 /** Shared grid template so the header and every row align into columns:
- *  Title (flex) · Owner · Created · Last updated. Owner/date columns collapse
- *  away below `md` so the title stays usable on narrow screens. */
-const GRID = "grid grid-cols-[1fr] md:grid-cols-[1fr_180px_120px_120px] gap-3 items-center";
+ *  Title (flex) · Owner · Created · Last updated · Actions. Owner/date/actions
+ *  columns collapse away below `md` so the title stays usable on narrow
+ *  screens. The trailing column reserves room for the hover actions so they
+ *  never cover the dates. */
+const GRID =
+  "grid grid-cols-[1fr] md:grid-cols-[1fr_180px_110px_110px_72px] gap-3 items-center";
 
 /** Column header row, rendered once at the top of each section. */
 export function DocsTableHeader() {
@@ -24,6 +27,7 @@ export function DocsTableHeader() {
       <span className="hidden md:block">Owner</span>
       <span className="hidden md:block">Created</span>
       <span className="hidden md:block">Last updated</span>
+      <span className="hidden md:block" aria-hidden />
     </div>
   );
 }
@@ -59,7 +63,7 @@ export function DocRow({
         e.dataTransfer.setData(DOC_DRAG_TYPE, doc.id);
         onDragStart?.(doc);
       }}
-      className={`group relative ${GRID} px-3 py-2.5 border-b border-gray-200 hover:bg-gray-50 transition-colors cursor-grab active:cursor-grabbing`}
+      className={`group ${GRID} px-3 py-2.5 border-b border-gray-200 hover:bg-gray-50 transition-colors cursor-grab active:cursor-grabbing`}
     >
       {/* Title */}
       <div className="flex items-center gap-2 min-w-0">
@@ -96,12 +100,12 @@ export function DocRow({
       {/* Last updated */}
       <span className="hidden md:block text-sm text-gray-500">{fmtDate(doc.updatedAt)}</span>
 
-      {/* Hover actions — overlay at the right edge of the row */}
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 rounded-md bg-white/95 px-1 shadow-sm ring-1 ring-gray-200">
+      {/* Actions — own column so they never cover the dates; revealed on row hover */}
+      <div className="hidden md:flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           type="button"
           onClick={open}
-          className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+          className="p-1.5 rounded hover:bg-gray-200 transition-colors"
           aria-label="Edit"
         >
           <Pencil className="w-3.5 h-3.5 text-gray-600" />
@@ -112,7 +116,7 @@ export function DocRow({
             e.stopPropagation();
             onDownload?.(doc);
           }}
-          className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+          className="p-1.5 rounded hover:bg-gray-200 transition-colors"
           aria-label="Download"
         >
           <Download className="w-3.5 h-3.5 text-gray-600" />
