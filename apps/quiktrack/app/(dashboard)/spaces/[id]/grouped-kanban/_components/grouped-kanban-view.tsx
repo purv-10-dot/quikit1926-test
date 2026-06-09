@@ -32,6 +32,8 @@ import { CreateGroupModal } from "./modals/create-group-modal";
 import { TaskContextMenu } from "./context-menu/task-context-menu";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { CreateIssueModal } from "@/components/create-issue-modal";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 
 export function GroupedKanbanView({ projectId }: { projectId: string }) {
@@ -58,8 +60,22 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
   const moveTask = useMoveTask(ctx);
   const deleteTask = useDeleteTask(ctx);
 
-  const [members, setMembers] = useState<BoardMemberLite[]>([]);
-  const [sprints, setSprints] = useState<SprintLite[]>([]);
+  const queryClient = useQueryClient();
+  // Shared project lookups via React Query (same keys as the other space views).
+  const { data: members = [] } = useApiData<BoardMemberLite[]>(
+    ["quiktrack", "project-members", projectId],
+    `/api/projects/${projectId}/members`,
+    {
+      select: (d) => {
+        const payload = d as { members?: BoardMemberLite[] } | BoardMemberLite[] | null;
+        return Array.isArray(payload) ? payload : payload?.members ?? [];
+      },
+    },
+  );
+  const { data: sprints = [] } = useApiData<SprintLite[]>(
+    ["quiktrack", "project-sprints", projectId],
+    `/api/sprints?projectId=${projectId}`,
+  );
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
@@ -102,43 +118,11 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
     setSelectedTaskIds(new Set());
   }
 
-  useEffect(() => {
-    let alive = true;
-    Promise.all([
-      fetch(`/api/projects/${projectId}/members`).then((r) => r.json()),
-      fetch(`/api/sprints?projectId=${projectId}`).then((r) => r.json()),
-    ])
-      .then(([mRes, sRes]) => {
-        if (!alive) return;
-        const list = Array.isArray(mRes?.data?.members)
-          ? mRes.data.members
-          : Array.isArray(mRes?.data)
-            ? mRes.data
-            : [];
-        setMembers(list);
-        setSprints(sRes?.success ? sRes.data ?? [] : []);
-      })
-      .catch(() => {
-        /* sidecar failure is non-fatal */
-      });
-    return () => {
-      alive = false;
-    };
-  }, [projectId]);
-
   // Refetch members when membership changes via the Add-people modal.
   useMembersChanged(projectId, () => {
-    fetch(`/api/projects/${projectId}/members`)
-      .then((r) => r.json())
-      .then((mRes) => {
-        const list = Array.isArray(mRes?.data?.members)
-          ? mRes.data.members
-          : Array.isArray(mRes?.data)
-            ? mRes.data
-            : [];
-        setMembers(list);
-      })
-      .catch(() => undefined);
+    void queryClient.invalidateQueries({
+      queryKey: ["quiktrack", "project-members", projectId],
+    });
   });
 
   // Grouped Kanban is active-work only — default filter ("all") already

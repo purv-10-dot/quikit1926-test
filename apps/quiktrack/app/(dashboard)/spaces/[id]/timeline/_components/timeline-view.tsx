@@ -12,6 +12,8 @@ import {
   X,
 } from "lucide-react";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import type { Col, Member, TimelineIssue, ZoomLevel } from "./timeline-meta";
 import {
@@ -43,7 +45,18 @@ export function TimelineView({ projectId }: { projectId: string }) {
   >(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const statusBtnRef = useRef<HTMLDivElement>(null);
-  const [members, setMembers] = useState<Member[]>([]);
+  const queryClient = useQueryClient();
+  // Shared project members via React Query (same key as the other space views).
+  const { data: members = [] } = useApiData<Member[]>(
+    ["quiktrack", "project-members", projectId],
+    `/api/projects/${projectId}/members`,
+    {
+      select: (d) => {
+        const payload = d as { members?: Member[] } | Member[] | null;
+        return Array.isArray(payload) ? payload : payload?.members ?? [];
+      },
+    },
+  );
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
 
@@ -64,22 +77,9 @@ export function TimelineView({ projectId }: { projectId: string }) {
 
   const todayX = useMemo(() => dateToX(new Date(), columns), [columns]);
 
-  // Boot: fetch members + session.
+  // Boot: fetch session (members come from React Query above).
   useEffect(() => {
     let alive = true;
-    fetch(`/api/projects/${projectId}/members`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.success) {
-          const list = Array.isArray(j.data?.members)
-            ? j.data.members
-            : Array.isArray(j.data)
-              ? j.data
-              : [];
-          setMembers(list);
-        }
-      })
-      .catch(() => undefined);
     fetch("/api/session")
       .then((r) => r.json())
       .then((j) => {
@@ -93,18 +93,9 @@ export function TimelineView({ projectId }: { projectId: string }) {
 
   // Refetch members when membership changes via the Add-people modal.
   useMembersChanged(projectId, () => {
-    fetch(`/api/projects/${projectId}/members`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (!j?.success) return;
-        const list = Array.isArray(j.data?.members)
-          ? j.data.members
-          : Array.isArray(j.data)
-            ? j.data
-            : [];
-        setMembers(list);
-      })
-      .catch(() => undefined);
+    void queryClient.invalidateQueries({
+      queryKey: ["quiktrack", "project-members", projectId],
+    });
   });
 
   // Root-level fetch: epics only.

@@ -59,7 +59,7 @@ import {
 } from "lucide-react";
 import { useEffect, useCallback, useState, useRef } from "react";
 
-interface Props {
+export interface RichTextEditorProps {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
@@ -94,7 +94,7 @@ export function RichTextEditor({
   slotBetween,
   uploadImage,
   mentions,
-}: Props) {
+}: RichTextEditorProps) {
   // Keep the latest people list in a ref so the (init-once) editor's mention
   // popup always sees current members, even though they load asynchronously.
   const mentionsRef = useRef<MentionItem[]>(mentions ?? []);

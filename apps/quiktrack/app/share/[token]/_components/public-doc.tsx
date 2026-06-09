@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Eye, Pencil } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 
 interface SharedDoc {
   id: string;

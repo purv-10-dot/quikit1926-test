@@ -9,7 +9,7 @@ import {
   ListTree,
   Zap,
 } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import type { MentionItem } from "@/components/editor/mention";
 import { SubtaskGrid } from "./subtask-grid";
 import { AddEpicButton } from "./add-epic-button";

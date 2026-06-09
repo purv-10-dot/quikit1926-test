@@ -21,7 +21,7 @@ import {
   Equal,
   Check,
 } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { BoardFilterSelect } from "@/app/(dashboard)/spaces/[id]/board/_components/board-filter-select";
 import { SpaceIcon } from "@/components/space-icon";
 

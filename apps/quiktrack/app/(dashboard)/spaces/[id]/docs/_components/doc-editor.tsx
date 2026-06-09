@@ -11,7 +11,7 @@ import {
   Minimize2,
   Share2,
 } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { getTemplate } from "./templates-meta";
 import { applyDocEditToCache } from "./use-docs";
 import { ShareDialog } from "./share-dialog";

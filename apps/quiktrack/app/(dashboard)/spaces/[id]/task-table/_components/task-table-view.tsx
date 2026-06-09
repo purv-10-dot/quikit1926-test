@@ -12,25 +12,14 @@ import {
   MoreHorizontal,
   User as UserIcon,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { EditIssueModal } from "@/components/edit-issue-modal";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { EpicsSection, WithoutParentSection } from "./task-table-sections";
 import type { EpicLite, IssueStatus, SprintLite, UserLite } from "./task-types";
 
 interface Props { projectId: string; }
-
-interface StatusesResponse {
-  success: boolean;
-  data: IssueStatus[];
-}
-interface MembersResponse {
-  success: boolean;
-  data: { members: { userId: string; user: UserLite | null }[] };
-}
-interface SprintsResponse {
-  success: boolean;
-  data: SprintLite[];
-}
 
 const HEAD_CELL = "border-b border-gray-200 bg-gray-50 px-3 py-2 text-left text-[11px] font-semibold text-gray-700";
 
@@ -54,9 +43,27 @@ function HeaderCell({
 }
 
 export function TaskTableView({ projectId }: Props) {
-  const [statuses, setStatuses] = useState<IssueStatus[]>([]);
-  const [members, setMembers] = useState<{ userId: string; user: UserLite | null }[]>([]);
-  const [sprints, setSprints] = useState<SprintLite[]>([]);
+  const queryClient = useQueryClient();
+  // Project lookups shared across views via React Query (same keys as backlog /
+  // board / work item) — cached across navigation and StrictMode-safe.
+  const { data: statuses = [] } = useApiData<IssueStatus[]>(
+    ["quiktrack", "project-statuses", projectId],
+    `/api/projects/${projectId}/statuses`,
+  );
+  const { data: members = [] } = useApiData<{ userId: string; user: UserLite | null }[]>(
+    ["quiktrack", "project-members", projectId],
+    `/api/projects/${projectId}/members`,
+    {
+      select: (d) => {
+        const payload = d as { members?: { userId: string; user: UserLite | null }[] } | { userId: string; user: UserLite | null }[] | null;
+        return Array.isArray(payload) ? payload : payload?.members ?? [];
+      },
+    },
+  );
+  const { data: sprints = [] } = useApiData<SprintLite[]>(
+    ["quiktrack", "project-sprints", projectId],
+    `/api/sprints?projectId=${projectId}`,
+  );
   const [epics, setEpics] = useState<EpicLite[]>([]);
   const [openIssueId, setOpenIssueId] = useState<string | null>(null);
   // Bumping refreshTick on save remounts the sections (via key) — simplest way
@@ -65,22 +72,13 @@ export function TaskTableView({ projectId }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json() as Promise<StatusesResponse>),
-      fetch(`/api/projects/${projectId}/members`).then((r) => r.json() as Promise<MembersResponse>),
-      fetch(`/api/sprints?projectId=${projectId}`).then((r) => r.json() as Promise<SprintsResponse>).catch(() => ({ success: false, data: [] as SprintLite[] })),
-      // All epics — used by the inline EpicLinker on each row. One paged
-      // fetch is enough for typical projects; if a project ever exceeds 200
-      // epics this becomes a paginated dropdown.
-      fetch(`/api/issues?projectId=${projectId}&type=EPIC&page=1&pageSize=200`)
-        .then((r) => r.json() as Promise<{ success: boolean; data: EpicLite[] }>)
-        .catch(() => ({ success: false, data: [] as EpicLite[] })),
-    ])
-      .then(([s, m, sp, ep]) => {
+    // All epics — used by the inline EpicLinker on each row. One paged fetch is
+    // enough for typical projects; if a project ever exceeds 200 epics this
+    // becomes a paginated dropdown.
+    fetch(`/api/issues?projectId=${projectId}&type=EPIC&page=1&pageSize=200`)
+      .then((r) => r.json() as Promise<{ success: boolean; data: EpicLite[] }>)
+      .then((ep) => {
         if (cancelled) return;
-        if (s.success) setStatuses(s.data);
-        if (m.success) setMembers(m.data.members ?? []);
-        if (sp.success) setSprints(sp.data ?? []);
         if (ep.success) setEpics((ep.data ?? []).map((e) => ({ id: e.id, key: e.key, title: e.title })));
       })
       .catch(() => { /* best-effort */ });
@@ -89,10 +87,9 @@ export function TaskTableView({ projectId }: Props) {
 
   // Refetch members when membership changes via the Add-people modal.
   useMembersChanged(projectId, () => {
-    fetch(`/api/projects/${projectId}/members`)
-      .then((r) => r.json() as Promise<MembersResponse>)
-      .then((m) => { if (m.success) setMembers(m.data.members ?? []); })
-      .catch(() => undefined);
+    void queryClient.invalidateQueries({
+      queryKey: ["quiktrack", "project-members", projectId],
+    });
   });
 
   const memberMap = useMemo(() => {

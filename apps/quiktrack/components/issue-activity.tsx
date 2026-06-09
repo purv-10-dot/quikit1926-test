@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownNarrowWide, X, ChevronDown, ChevronRight } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import type { MentionItem } from "@/components/editor/mention";
 import { SkeletonList } from "@/components/skeleton";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
 type Tab = "all" | "comments" | "history" | "worklog";
@@ -144,42 +146,38 @@ export function IssueActivity({
   /** People list for `@`-mentions in the comment editor. */
   mentions?: MentionItem[];
 }) {
+  const queryClient = useQueryClient();
   const perms = useMyProjectPermissions(projectId);
   const canComment = perms.loading || perms.has("IssueComment", "create");
   const [tab, setTab] = useState<Tab>("all");
   const [open, setOpen] = useState(true);
-  const [comments, setComments] = useState<Comment[] | null>(null);
-  const [history, setHistory] = useState<HistoryRow[] | null>(null);
-  const [worklogs, setWorklogs] = useState<WorkLogRow[] | null>(initialWorkLogs ?? null);
   const [logOpen, setLogOpen] = useState(false);
   const [sortDesc, setSortDesc] = useState(false);
 
-  const refreshComments = useCallback(async () => {
-    const res = await fetch(`/api/issues/${issueId}/comments`).then((r) => r.json());
-    if (res?.success) setComments(res.data ?? []);
-    else setComments([]);
-  }, [issueId]);
+  // Each feed is lazy-loaded on first view via React Query's `enabled` flag
+  // (url=null keeps the query idle until its tab is shown). Cached + deduped,
+  // so the dev StrictMode double-fetch collapses to one request.
+  const wantComments = tab === "all" || tab === "comments";
+  const wantHistory = tab === "all" || tab === "history";
+  const wantWorklog = tab === "all" || tab === "worklog";
 
-  const refreshHistory = useCallback(async () => {
-    const res = await fetch(`/api/issues/${issueId}/history`).then((r) => r.json());
-    if (res?.success) setHistory(res.data ?? []);
-    else setHistory([]);
-  }, [issueId]);
+  const commentsKey = ["quiktrack", "issue-comments", issueId];
+  const worklogsKey = ["quiktrack", "issue-worklogs", issueId];
 
-  const refreshWorklogs = useCallback(async () => {
-    const res = await fetch(`/api/timesheets?issueId=${encodeURIComponent(issueId)}`).then((r) =>
-      r.json(),
-    );
-    if (res?.success) setWorklogs(res.data ?? []);
-    else setWorklogs([]);
-  }, [issueId]);
-
-  // Lazy-load each feed on first view.
-  useEffect(() => {
-    if ((tab === "all" || tab === "comments") && comments === null) void refreshComments();
-    if ((tab === "all" || tab === "history") && history === null) void refreshHistory();
-    if ((tab === "all" || tab === "worklog") && worklogs === null) void refreshWorklogs();
-  }, [tab, comments, history, worklogs, refreshComments, refreshHistory, refreshWorklogs]);
+  const { data: comments = null } = useApiData<Comment[]>(
+    commentsKey,
+    wantComments ? `/api/issues/${issueId}/comments` : null,
+  );
+  const { data: history = null } = useApiData<HistoryRow[]>(
+    ["quiktrack", "issue-history", issueId],
+    wantHistory ? `/api/issues/${issueId}/history` : null,
+  );
+  const { data: worklogsData } = useApiData<WorkLogRow[]>(
+    worklogsKey,
+    wantWorklog ? `/api/timesheets?issueId=${encodeURIComponent(issueId)}` : null,
+  );
+  // Seed from the parent's already-loaded logs until the query resolves.
+  const worklogs = worklogsData ?? initialWorkLogs ?? null;
 
   return (
     <div>
@@ -240,7 +238,9 @@ export function IssueActivity({
           comments={comments}
           sortDesc={sortDesc}
           showComposer={canComment && tab === "comments"}
-          onPosted={(c) => setComments((arr) => [...(arr ?? []), c])}
+          onPosted={(c) =>
+            queryClient.setQueryData<Comment[]>(commentsKey, (old) => [...(old ?? []), c])
+          }
           mentions={mentions}
         />
       )}
@@ -263,7 +263,7 @@ export function IssueActivity({
           onClose={() => setLogOpen(false)}
           onLogged={() => {
             setLogOpen(false);
-            void refreshWorklogs();
+            void queryClient.invalidateQueries({ queryKey: worklogsKey });
           }}
         />
       )}

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApiData } from "@/lib/hooks/useApiData";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
 import { EpicPanel } from "./epic-panel";
@@ -1959,10 +1961,26 @@ function SectionBody({
 export function BacklogView({ projectId }: { projectId: string }) {
   const perms = useMyProjectPermissions(projectId);
   const canCreateSprint = perms.loading || perms.has("Sprint", "create");
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [statuses, setStatuses] = useState<Status[]>([]);
+  // Project statuses + members are cached/shared via React Query under the same
+  // keys the issue views use, so navigating between backlog and a work item
+  // doesn't refetch them (and the dev StrictMode double-fetch collapses to one).
+  const { data: statuses = [] } = useApiData<Status[]>(
+    ["quiktrack", "project-statuses", projectId],
+    `/api/projects/${projectId}/statuses`,
+  );
+  const { data: members = [] } = useApiData<Member[]>(
+    ["quiktrack", "project-members", projectId],
+    `/api/projects/${projectId}/members`,
+    {
+      select: (d) => {
+        const payload = d as { members?: Member[] } | Member[] | null;
+        return Array.isArray(payload) ? payload : payload?.members ?? [];
+      },
+    },
+  );
   const [epics, setEpics] = useState<EpicLite[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [sprintCursor, setSprintCursor] = useState<string | null>(null);
@@ -2292,26 +2310,17 @@ export function BacklogView({ projectId }: { projectId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sectionStates]);
 
-  // Boot — fetch project-level data + first page of sprints.
+  // Boot — fetch session + first page of sprints + epics. (Statuses and
+  // members are loaded via React Query above, so they're not in this batch.)
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [statusesRes, membersRes, sessionRes, sprintsRes, epicsRes] = await Promise.all([
-        fetch(`/api/projects/${projectId}/statuses`).then((r) => r.json()),
-        fetch(`/api/projects/${projectId}/members`).then((r) => r.json()),
+      const [sessionRes, sprintsRes, epicsRes] = await Promise.all([
         fetch(`/api/session`).then((r) => r.json()).catch(() => null),
         fetch(`/api/sprints?projectId=${projectId}&limit=${SPRINT_PAGE}`).then((r) => r.json()),
         fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`).then((r) => r.json()),
       ]);
       if (!alive) return;
-      setStatuses(statusesRes?.success ? statusesRes.data : []);
-      setMembers(
-        membersRes?.success
-          ? Array.isArray(membersRes.data)
-            ? membersRes.data
-            : (membersRes.data?.members ?? [])
-          : [],
-      );
       if (sessionRes?.user?.id) setCurrentUserId(sessionRes.user.id);
       if (sprintsRes?.success) {
         setSprints(sprintsRes.data ?? []);
@@ -2328,17 +2337,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
-  // Refetch members when membership changes via the Add-people modal.
+  // Refetch members when membership changes via the Add-people modal —
+  // invalidate the shared query so every view picks up the new list.
   useMembersChanged(projectId, () => {
-    fetch(`/api/projects/${projectId}/members`)
-      .then((r) => r.json())
-      .then((res) => {
-        if (!res?.success) return;
-        setMembers(
-          Array.isArray(res.data) ? res.data : (res.data?.members ?? []),
-        );
-      })
-      .catch(() => undefined);
+    void queryClient.invalidateQueries({
+      queryKey: ["quiktrack", "project-members", projectId],
+    });
   });
 
   const loadMoreSprints = useCallback(async () => {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Paperclip, Download, FileText, ImageIcon } from "lucide-react";
+import { useApiData } from "@/lib/hooks/useApiData";
 
 interface AttachmentRow {
   id: string;
@@ -29,22 +30,13 @@ function isImage(mime: string): boolean {
  * load every file when the panel opens.
  */
 export function IssueAttachments({ issueId }: { issueId: string }) {
-  const [rows, setRows] = useState<AttachmentRow[] | null>(null);
+  // Shared cached read — dedupes the dev StrictMode double-fetch and is reused
+  // if another view requests the same issue's attachments.
+  const { data: rows = null } = useApiData<AttachmentRow[]>(
+    ["quiktrack", "issue-attachments", issueId],
+    `/api/issues/${issueId}/attachments`,
+  );
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
-
-  const load = useCallback(async () => {
-    try {
-      const j = await fetch(`/api/issues/${issueId}/attachments`).then((r) => r.json());
-      if (j?.success) setRows(j.data);
-      else setRows([]);
-    } catch {
-      setRows([]);
-    }
-  }, [issueId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   // Lazy thumbnail fetch — one presigned URL per image attachment.
   useEffect(() => {

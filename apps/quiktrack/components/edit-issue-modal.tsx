@@ -29,7 +29,7 @@ import {
   AlertTriangle,
   Trash2,
 } from "lucide-react";
-import { RichTextEditor } from "@/components/rich-text-editor";
+import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { DeleteTaskModal } from "@/components/delete-task-modal";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";

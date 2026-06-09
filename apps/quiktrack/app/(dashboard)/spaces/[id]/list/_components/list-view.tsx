@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Search, Upload } from "lucide-react";
-import { Pagination } from "@quikit/ui";
-import { EditIssueModal } from "@/components/edit-issue-modal";
+import { Pagination } from "@/components/pagination";
 import { useColumnPrefs, useColumnWidths } from "@/lib/hooks/useColumnPrefs";
 import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 import { ListTable } from "./list-table";
@@ -21,6 +21,13 @@ import {
   type SortKey,
   type UserLite,
 } from "./list-types";
+
+// The edit-issue modal carries a large static dependency graph; it only opens
+// on row click, so load it on demand to keep it out of the list's initial bundle.
+const EditIssueModal = dynamic(
+  () => import("@/components/edit-issue-modal").then((m) => m.EditIssueModal),
+  { ssr: false },
+);
 
 interface Props {
   projectId: string;
