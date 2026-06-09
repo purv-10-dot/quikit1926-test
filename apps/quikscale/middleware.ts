@@ -1,4 +1,6 @@
 import { createMiddleware } from "@quikit/auth/middleware";
+import { publicBaseUrl } from "@quikit/auth/public-url";
+import { clearSessionCookies } from "@quikit/auth/session-cookies";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -48,20 +50,18 @@ const factory = createMiddleware({
   centralSelectOrgUrl: QUIKIT_URL ? `${QUIKIT_URL}/apps` : undefined,
 });
 
-function sessionCookieName(): string {
-  return process.env.NODE_ENV === "production"
-    ? "__Secure-next-auth.session-token"
-    : "next-auth.session-token";
-}
-
 export async function middleware(request: NextRequest) {
   const res = await factory(request);
   if (!res || (res.status !== 307 && res.status !== 308)) return res;
 
+  // This host's own public origin, never the pod bind address `request.url`
+  // resolves to behind the ingress. See @quikit/auth/public-url.
+  const base = publicBaseUrl(request);
+
   const loc = res.headers.get("location") ?? "";
   let locUrl: URL;
   try {
-    locUrl = new URL(loc, request.url);
+    locUrl = new URL(loc, base);
   } catch {
     return res;
   }
@@ -71,10 +71,10 @@ export async function middleware(request: NextRequest) {
   // fallback) since otherwise the factory points unauth users at the
   // cross-host central login.
   if (
-    locUrl.host === request.nextUrl.host &&
+    locUrl.host === new URL(base).host &&
     locUrl.pathname.startsWith("/login")
   ) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/", base));
   }
 
   // Case 2: cross-host redirect to central auth login WITH
@@ -91,9 +91,9 @@ export async function middleware(request: NextRequest) {
       locUrl.origin === authOrigin &&
       locUrl.searchParams.get("reason") === "session_expired"
     ) {
-      const cleared = NextResponse.redirect(locUrl);
-      cleared.cookies.delete(sessionCookieName());
-      return cleared;
+      // Evict ALL NextAuth cookies (incl. __Secure-/__Host- with Secure set,
+      // which a bare .delete() omits — the browser then ignores the deletion).
+      return clearSessionCookies(NextResponse.redirect(locUrl));
     }
   }
 
