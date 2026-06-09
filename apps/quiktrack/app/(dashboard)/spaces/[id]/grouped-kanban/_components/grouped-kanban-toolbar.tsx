@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import { Plus, Search } from "lucide-react";
+import { Layers, Plus, Search } from "lucide-react";
 import type {
   BoardMemberLite,
   GroupedBoardFilters,
   SprintLite,
 } from "../_types";
+import { GROUP_BY_OPTIONS, type GroupByMode } from "../_lib/field-grouping";
 import { FilterSelect, type FilterSelectOption } from "./toolbar/filter-select";
 
 interface ToolbarProps {
@@ -14,9 +15,15 @@ interface ToolbarProps {
   onFilterChange: (next: GroupedBoardFilters) => void;
   sprints: SprintLite[];
   members: BoardMemberLite[];
+  groupBy: GroupByMode;
+  onGroupByChange: (mode: GroupByMode) => void;
   onCreateGroup: () => void;
   onCreateTask: () => void;
 }
+
+const GROUP_BY_SELECT_OPTIONS: FilterSelectOption[] = GROUP_BY_OPTIONS.map(
+  (o) => ({ value: o.value, label: o.label, muted: o.value === "manual" }),
+);
 
 /** Dot color for a sprint based on its status. Only ACTIVE sprints surface
  *  in the dropdown today, but the switch keeps room for future variants. */
@@ -56,6 +63,8 @@ export function GroupedKanbanToolbar({
   onFilterChange,
   sprints,
   members,
+  groupBy,
+  onGroupByChange,
   onCreateGroup,
   onCreateTask,
 }: ToolbarProps) {
@@ -154,15 +163,35 @@ export function GroupedKanbanToolbar({
 
       <div className="grow" />
 
-      <button
-        type="button"
-        onClick={onCreateGroup}
-        className="inline-flex items-center gap-1 h-8 px-2.5 sm:px-3 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm shrink-0 transition"
-        title="Create a new group"
+      <div
+        className="inline-flex items-center gap-1.5 shrink-0"
+        title="Choose how tasks are grouped — your custom groups or automatically by a field"
       >
-        <Plus className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">New group</span>
-      </button>
+        <Layers className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+        <span className="hidden sm:inline text-xs font-medium text-gray-500">
+          Group by
+        </span>
+        <FilterSelect
+          value={groupBy}
+          onChange={(v) => onGroupByChange(v as GroupByMode)}
+          options={GROUP_BY_SELECT_OPTIONS}
+          placeholder="Custom groups"
+          width={180}
+          align="right"
+        />
+      </div>
+
+      {groupBy === "manual" && (
+        <button
+          type="button"
+          onClick={onCreateGroup}
+          className="inline-flex items-center gap-1 h-8 px-2.5 sm:px-3 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm shrink-0 transition"
+          title="Create a new group"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">New group</span>
+        </button>
+      )}
     </div>
   );
 }

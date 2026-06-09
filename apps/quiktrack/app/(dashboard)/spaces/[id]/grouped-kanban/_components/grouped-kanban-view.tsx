@@ -22,6 +22,8 @@ import {
   useMoveTask,
   useUpdateTaskField,
 } from "../_hooks/useTaskMutations";
+import { useFieldGrouping } from "../_hooks/useFieldGrouping";
+import { decodeFieldPatch } from "../_lib/field-grouping";
 import { BulkActionsBar } from "./bulk-actions-bar";
 import { GroupedKanbanToolbar } from "./grouped-kanban-toolbar";
 import { GroupSection } from "./group-section";
@@ -69,6 +71,16 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(
     () => new Set(),
   );
+
+  // Grouping axis — "manual" custom groups (server-backed) or a field-derived
+  // grouping (status/priority/assignee/type). Must be called unconditionally,
+  // so it tolerates board.data being absent while loading.
+  const fieldGrouping = useFieldGrouping({
+    projectId,
+    manualGroups: board.data?.groups ?? [],
+    statuses: board.data?.statuses ?? [],
+    members,
+  });
 
   function toggleTaskSelected(taskId: string) {
     setSelectedTaskIds((prev) => {
@@ -161,7 +173,12 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
   }
   if (!board.data) return null;
 
-  const { groups, statuses, defaultGroupId } = board.data;
+  const { statuses, defaultGroupId } = board.data;
+  const manualGroups = board.data.groups;
+  // What we actually render & target: server groups in manual mode, derived
+  // virtual groups in a field mode.
+  const groups = fieldGrouping.displayGroups;
+  const isVirtual = fieldGrouping.isVirtual;
   const showNoSprintBanner = !hasActiveSprint;
 
   return (
@@ -181,6 +198,8 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
         }}
         sprints={sprints}
         members={members}
+        groupBy={fieldGrouping.groupBy}
+        onGroupByChange={fieldGrouping.setGroupBy}
         onCreateGroup={() => setCreateOpen(true)}
         onCreateTask={() => setCreateTaskOpen(true)}
       />
@@ -209,15 +228,17 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
             <GroupSection
               key={g.id}
               group={g}
+              virtual={isVirtual}
               statuses={statuses}
               members={members}
               sprints={sprints}
               onPatchTask={(id, patch) => updateTask.mutate({ id, patch })}
               onRenameGroup={(id, name) => renameGroup.mutate({ id, name })}
               onRecolorGroup={(id, color) => recolorGroup.mutate({ id, color })}
-              onToggleCollapse={(id, isCollapsed) =>
-                toggleCollapse.mutate({ id, isCollapsed })
-              }
+              onToggleCollapse={(id, isCollapsed) => {
+                if (isVirtual) fieldGrouping.toggleVirtualCollapse(id);
+                else toggleCollapse.mutate({ id, isCollapsed });
+              }}
               onAddTask={() => setCreateTaskOpen(true)}
               onDeleteGroup={(id) => {
                 if (
@@ -234,6 +255,11 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
               onToggleTaskSelected={toggleTaskSelected}
               onToggleGroupSelected={toggleGroupSelected}
               onTaskDropped={(taskId) => {
+                if (isVirtual) {
+                  const patch = decodeFieldPatch(g.id);
+                  if (patch) updateTask.mutate({ id: taskId, patch });
+                  return;
+                }
                 const persistGroupId = g.id === defaultGroupId ? null : g.id;
                 moveTask.mutate({
                   id: taskId,
@@ -244,19 +270,25 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
               onGroupDropped={() => {}}
             />
           ))}
-          {groups.length === 0 && (
-            <div className="rounded border border-dashed border-gray-300 px-6 py-12 text-center text-sm text-gray-500">
-              No groups yet. Click <strong>New group</strong> to create one — your
-              existing tasks will live in the Ungrouped bucket until you move them.
-            </div>
-          )}
+          {groups.length === 0 &&
+            (isVirtual ? (
+              <div className="rounded border border-dashed border-gray-300 px-6 py-12 text-center text-sm text-gray-500">
+                No tasks to group. Tasks will appear here grouped by the field you
+                picked once there is active work.
+              </div>
+            ) : (
+              <div className="rounded border border-dashed border-gray-300 px-6 py-12 text-center text-sm text-gray-500">
+                No groups yet. Click <strong>New group</strong> to create one — your
+                existing tasks will live in the Ungrouped bucket until you move them.
+              </div>
+            ))}
         </div>
       </DndProvider>
 
       <CreateGroupModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        groups={groups}
+        groups={manualGroups}
         onCreate={async ({ name, color, taskIds }) => {
           const created = await createGroup.mutateAsync({ name, color });
           for (let i = 0; i < taskIds.length; i++) {
@@ -275,10 +307,17 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
             task: contextMenu.task,
             defaultGroupId,
             isDefaultGroup:
+              !isVirtual &&
               (contextMenu.task.groupId ?? defaultGroupId) === defaultGroupId,
             openDetail: setOpenTaskId,
             deleteTask: (id) => deleteTask.mutate(id),
             moveToGroup: (id, toGroupId) => {
+              if (isVirtual) {
+                if (!toGroupId) return;
+                const patch = decodeFieldPatch(toGroupId);
+                if (patch) updateTask.mutate({ id, patch });
+                return;
+              }
               const target = groups.find(
                 (g) => g.id === (toGroupId ?? defaultGroupId),
               );
@@ -327,6 +366,12 @@ export function GroupedKanbanView({ projectId }: { projectId: string }) {
           clearSelection();
         }}
         onMove={(taskIds, toGroupId) => {
+          if (isVirtual) {
+            const patch = toGroupId ? decodeFieldPatch(toGroupId) : null;
+            if (patch) taskIds.forEach((id) => updateTask.mutate({ id, patch }));
+            clearSelection();
+            return;
+          }
           const targetIdx =
             groups.find((g) => g.id === (toGroupId ?? defaultGroupId))?.tasks
               .length ?? 0;

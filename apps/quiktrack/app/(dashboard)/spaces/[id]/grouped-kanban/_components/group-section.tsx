@@ -31,6 +31,8 @@ interface GroupSectionProps {
   onToggleGroupSelected: (taskIds: string[], select: boolean) => void;
   onTaskDropped: (taskId: string) => void;
   onGroupDropped: (sourceGroupId: string) => void;
+  /** Field-grouped section — header actions disabled, drop sets a field. */
+  virtual?: boolean;
 }
 
 export function GroupSection({
@@ -51,6 +53,7 @@ export function GroupSection({
   onToggleGroupSelected,
   onTaskDropped,
   onGroupDropped,
+  virtual = false,
 }: GroupSectionProps) {
   const groupTaskIds = group.tasks.map((t) => t.id);
   const allSelected =
@@ -63,6 +66,7 @@ export function GroupSection({
       <GroupHeader
         group={group}
         taskCount={group.taskCount}
+        virtual={virtual}
         onToggleCollapse={() => onToggleCollapse(group.id, !group.isCollapsed)}
         onRename={(name) => onRenameGroup(group.id, name)}
         onRecolor={(color) => onRecolorGroup(group.id, color)}
@@ -85,7 +89,9 @@ export function GroupSection({
                 onToggleAll={() => onToggleGroupSelected(groupTaskIds, !allSelected)}
               />
               <div className="px-3 py-6 text-center text-xs text-gray-400 border-2 border-dashed border-gray-200 m-2 rounded dark:border-slate-700 dark:text-slate-500">
-                Drop a task here to add it to this group.
+                {virtual
+                  ? `Drop a task here to set it to ${group.name}.`
+                  : "Drop a task here to add it to this group."}
               </div>
               <AddTaskRow onAddTask={onAddTask} />
             </div>
