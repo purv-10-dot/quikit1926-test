@@ -89,12 +89,12 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
     expect(body.error).toBe("App not registered in database");
   });
 
-  it("returns disabled moduleKeys on happy path", async () => {
+  it("returns disabled moduleKeys (explicit + default-off) on happy path", async () => {
     setSession(SUPER_ADMIN);
     mockDb.app.findUnique.mockResolvedValue({ id: "app-quikscale" } as never);
     mockDb.appModuleFlag.findMany.mockResolvedValue([
-      { moduleKey: "people.talent" },
-      { moduleKey: "opsp.review" },
+      { moduleKey: "people.talent", enabled: false },
+      { moduleKey: "opsp.review", enabled: false },
     ] as never);
 
     const res = await GET(
@@ -104,14 +104,14 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
     expect(res.status).toBe(200);
     const body = await bodyOf(res);
     expect(body.success).toBe(true);
-    expect(body.data).toMatchObject({
-      appSlug: "quikscale",
-      orgId: "t-1",
-      disabledKeys: ["people.talent", "opsp.review"],
-    });
+    expect(body.data.appSlug).toBe("quikscale");
+    // Explicit disables PLUS the registry's default-off modules (survey, cash).
+    expect(new Set(body.data.disabledKeys)).toEqual(
+      new Set(["people.talent", "opsp.review", "survey", "cash"]),
+    );
   });
 
-  it("returns empty disabledKeys when no overrides exist", async () => {
+  it("returns only the default-off modules when no overrides exist (new org)", async () => {
     setSession(SUPER_ADMIN);
     mockDb.app.findUnique.mockResolvedValue({ id: "app-quikscale" } as never);
     mockDb.appModuleFlag.findMany.mockResolvedValue([] as never);
@@ -122,6 +122,24 @@ describe("GET /api/super/feature-flags/[appSlug]", () => {
     );
     expect(res.status).toBe(200);
     const body = await bodyOf(res);
-    expect(body.data.disabledKeys).toEqual([]);
+    expect(new Set(body.data.disabledKeys)).toEqual(new Set(["survey", "cash"]));
+  });
+
+  it("lifts a default-off module when an explicit enabled:true row exists", async () => {
+    setSession(SUPER_ADMIN);
+    mockDb.app.findUnique.mockResolvedValue({ id: "app-quikscale" } as never);
+    mockDb.appModuleFlag.findMany.mockResolvedValue([
+      { moduleKey: "cash", enabled: true },
+    ] as never);
+
+    const res = await GET(
+      makeRequest("http://localhost:3006/api/super/feature-flags/quikscale?orgId=t-1"),
+      PARAMS,
+    );
+    expect(res.status).toBe(200);
+    const body = await bodyOf(res);
+    const keys = new Set(body.data.disabledKeys);
+    expect(keys.has("cash")).toBe(false); // enabled for this org
+    expect(keys.has("survey")).toBe(true); // still default-off
   });
 });

@@ -6,6 +6,7 @@ import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 import { getAppConfig } from "@quikit/shared/moduleRegistry";
 import { invalidate } from "@quikit/shared/redisCache";
+import { invalidateDisabledModules } from "@quikit/auth/feature-gate";
 
 /**
  * POST /api/super/feature-flags/[appSlug]/toggle
@@ -51,7 +52,8 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
     // Sanity: the moduleKey must exist in the registry for this app. We
     // still write/delete even if not — future registry edits would orphan
     // otherwise — but warn so operators see it in logs.
-    if (!config.modules.some((m) => m.key === moduleKey)) {
+    const moduleDef = config.modules.find((m) => m.key === moduleKey);
+    if (!moduleDef) {
       console.warn(
         `[feature-flags] moduleKey '${moduleKey}' is not in the ${appSlug} registry`,
       );
@@ -80,13 +82,16 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
       );
     }
 
-    if (enabled) {
-      // Delete the "disabled" override if it exists; default = enabled.
-      await db.appModuleFlag.deleteMany({
-        where: { orgId, appId: app.id, moduleKey },
-      });
-    } else {
-      // Upsert a disabled-row.
+    // Storage convention depends on the module's registry default:
+    //   - default-ON module:  a row exists only to DISABLE it (enabled:false);
+    //     absence = enabled. So enable → delete row, disable → upsert false.
+    //   - default-OFF module (`defaultDisabled`, e.g. Cash/Survey): a row exists
+    //     only to ENABLE it (enabled:true); absence = disabled. So enable →
+    //     upsert true, disable → delete row (back to the default-off state).
+    const defaultOff = moduleDef?.defaultDisabled === true;
+    const shouldPersistRow = defaultOff ? enabled : !enabled;
+
+    if (shouldPersistRow) {
       await db.appModuleFlag.upsert({
         where: {
           orgId_appId_moduleKey: { orgId, appId: app.id, moduleKey },
@@ -95,13 +100,17 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
           orgId,
           appId: app.id,
           moduleKey,
-          enabled: false,
+          enabled,
           updatedBy: actorId,
         },
         update: {
-          enabled: false,
+          enabled,
           updatedBy: actorId,
         },
+      });
+    } else {
+      await db.appModuleFlag.deleteMany({
+        where: { orgId, appId: app.id, moduleKey },
       });
     }
 
@@ -114,10 +123,14 @@ export const POST = withSuperAdminAuth<{ appSlug: string }>(async (auth, request
       newValues: JSON.stringify({ appSlug, moduleKey, enabled, orgName: org.name }),
     });
 
-    // Invalidate the target app's disabled-modules cache so the next
-    // /api/feature-flags/me fetch from that app returns fresh state.
-    // Without this, the 5-min Redis TTL makes toggles appear "stuck"
-    // in the target app's sidebar for up to 5 minutes.
+    // Invalidate BOTH cache layers so the next /api/feature-flags/me fetch
+    // from the target app returns fresh state:
+    //   1. The gate's own disabled-set cache (in-memory LRU + Redis, with
+    //      pub/sub so peer app processes drop their copies too). Skipping this
+    //      means the `me` recompute below still reads up-to-30s-stale data.
+    //   2. The `me` endpoint's 5-min Redis response wrapper.
+    // Without both, a toggle appears "stuck" in the target app's sidebar.
+    await invalidateDisabledModules(orgId, appSlug);
     await invalidate(`ff:me:${appSlug}:${orgId}`);
 
     return NextResponse.json({
