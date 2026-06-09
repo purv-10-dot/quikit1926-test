@@ -316,7 +316,7 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
     color: COLORS.text,
   },
-  swList: { paddingHorizontal: 8, paddingBottom: 8, flex: 1 },
+  swList: { paddingHorizontal: 8, paddingTop: 4, paddingBottom: 8, flex: 1, justifyContent: "space-around" },
   swItem: { flexDirection: "row", marginBottom: 5 },
   swItemNum: {
     color: COLORS.muted,
@@ -325,6 +325,16 @@ const s = StyleSheet.create({
     fontSize: 6.5,
   },
   swItemText: { flex: 1, fontSize: 6.5, color: COLORS.text },
+  // Ruled writing row — every Strengths/Weaknesses row sits on an underline
+  // (3 rows always rendered) so the printed form keeps its writing lines
+  // whether or not the row has text.
+  swItemRuled: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.borderDark,
+    paddingBottom: 3,
+  },
   // Footer — 6pt (matches sub-caption tier)
   footer: {
     flexDirection: "row",
@@ -786,8 +796,11 @@ export function OPSPDocument({
                   <SectionHeader title="Key Initiatives" sub="1 Year Priorities" />
                 </View>
               </View>
-              {/* §1.5 body — 5 numbered rows × 3 cols (absorbs slack from §1.6/§1.7 shrink) */}
-              <View style={{ flexDirection: "row", height: "65mm" }}>
+              {/* §1.5 body — 5 numbered rows × 3 cols. The slack-absorber for this
+                  page: rows are flex:1 so trimming this height just shortens each
+                  row slightly. 8mm was moved from here to §1.8 (Strengths/Weaknesses)
+                  so its 3 writing lines get comfortable vertical spacing. */}
+              <View style={{ flexDirection: "row", height: "57mm" }}>
                 <View style={{ flex: 1, borderRightWidth: 1, borderBottomWidth: 1, borderTopColor: COLORS.borderDark, borderRightColor: COLORS.borderDark, borderBottomColor: COLORS.borderDark, borderLeftColor: COLORS.borderDark, overflow: "hidden" }}>
                   {actions5.map((v, i) => (
                     <NumberedRow key={i} i={i} text={v} isLast={i === 4} />
@@ -838,17 +851,19 @@ export function OPSPDocument({
           </View>
 
           {/* §1.8 Strengths / Weaknesses — sits naturally after §1.7 with 3mm bottom pad
-              (sections sized to exactly fill the page; no flex spacer needed) */}
-          <View style={{ flexDirection: "row", height: "20mm" }}>
+              (sections sized to exactly fill the page; no flex spacer needed).
+              28mm: 8mm borrowed from §1.5 so the 3 ruled writing rows in each
+              column are spread evenly (swList uses justifyContent space-around). */}
+          <View style={{ flexDirection: "row", height: "28mm" }}>
             <View style={{ ...s.swCol, ...s.swColLeft }}>
               <View style={s.swHeader}>
                 <Text style={s.swHeaderText}>Strengths/Core Competencies</Text>
               </View>
               <View style={s.swList}>
-                {processItems3.map((v, i) => (
-                  <View key={i} style={s.swItem}>
+                {padTo(processItems3, 3, "").map((v, i) => (
+                  <View key={i} style={s.swItemRuled}>
                     <Text style={s.swItemNum}>{i + 1}.</Text>
-                    <Text style={{ ...s.swItemText, ...(!v ? s.cellEmpty : {}) }}>{dash(v)}</Text>
+                    <Text style={s.swItemText}>{v}</Text>
                   </View>
                 ))}
               </View>
@@ -858,10 +873,10 @@ export function OPSPDocument({
                 <Text style={s.swHeaderText}>Weaknesses:</Text>
               </View>
               <View style={s.swList}>
-                {weaknesses3.map((v, i) => (
-                  <View key={i} style={s.swItem}>
+                {padTo(weaknesses3, 3, "").map((v, i) => (
+                  <View key={i} style={s.swItemRuled}>
                     <Text style={s.swItemNum}>{i + 1}.</Text>
-                    <Text style={{ ...s.swItemText, ...(!v ? s.cellEmpty : {}) }}>{dash(v)}</Text>
+                    <Text style={s.swItemText}>{v}</Text>
                   </View>
                 ))}
               </View>

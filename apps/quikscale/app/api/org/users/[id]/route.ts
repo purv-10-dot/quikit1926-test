@@ -55,9 +55,9 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
 
   // Replace UserTeam records if teamIds supplied
   if (resolvedTeamIds !== undefined) {
-    await db.userTeam.deleteMany({ where: { orgId, userId: params.id } });
+    await db.qsUserTeam.deleteMany({ where: { orgId, userId: params.id } });
     for (const teamId of resolvedTeamIds) {
-      await db.userTeam.create({ data: { orgId, userId: params.id, teamId } });
+      await db.qsUserTeam.create({ data: { orgId, userId: params.id, teamId } });
     }
   }
 
@@ -68,7 +68,7 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       user: {
         select: {
           id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
-          userTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
+          qsUserTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
         },
       },
     },
@@ -100,8 +100,8 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       lastSignInAt: updated!.user.lastSignInAt?.toISOString() ?? null,
       role:         updated!.role,
       teamId:       updated!.teamId,
-      teamIds:      updated!.user.userTeams.map(ut => ut.teamId),
-      teamNames:    updated!.user.userTeams.map(ut => ut.team.name),
+      teamIds:      updated!.user.qsUserTeams.map(ut => ut.teamId),
+      teamNames:    updated!.user.qsUserTeams.map(ut => ut.team.name),
       status:       updated!.status,
       joinedAt:     updated!.createdAt.toISOString(),
     },

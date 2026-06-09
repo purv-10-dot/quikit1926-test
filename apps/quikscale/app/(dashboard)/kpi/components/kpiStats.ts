@@ -160,6 +160,56 @@ export function resolveProgressQtd(
 }
 
 /**
+ * Progress percentage for a single KPI — the exact number the dashboard
+ * KPI Overview card prints (`pct` in KPICard). Built on `resolveProgressQtd`
+ * so Standalone KPIs use the re-derived per-week-average QTD instead of the
+ * server's cumulative SUM. Returns 0 when the goal is non-positive.
+ */
+export function kpiProgressPercent(kpi: KPIRow, currentWeek: number | null): number {
+  const { achieved, goal } = resolveProgressQtd(kpi, currentWeek);
+  return goal > 0 ? (achieved / goal) * 100 : 0;
+}
+
+export interface KpiOverviewStats {
+  /** Rounded mean of each KPI's `kpiProgressPercent`. */
+  avg: number;
+  /** pct ≥ 80 */
+  onTrack: number;
+  /** 50 ≤ pct < 80 */
+  atRisk: number;
+  /** pct < 50 */
+  behind: number;
+}
+
+/**
+ * Aggregate stats for the dashboard "avg KPI" pill (AvgKPICard).
+ *
+ * Averages the SAME per-card percentage the overview cards display
+ * (`kpiProgressPercent` → resolveProgressQtd), so the pill always agrees with
+ * the cards beneath it. Previously the pill summed the raw server-stamped
+ * `kpi.progressPercent`, which is derived from a cumulative SUM of weekly
+ * values regardless of divisionType — wildly inflated for Standalone KPIs
+ * (e.g. a 25%/19%/101%/2% card set produced a 289% pill). The on-track /
+ * at-risk / behind buckets use the same corrected percentage and the existing
+ * 80 / 50 thresholds.
+ *
+ * Cumulative KPIs are unchanged: resolveProgressQtd returns the server values
+ * for them, so kpiProgressPercent === the old progressPercent.
+ */
+export function computeKpiOverviewStats(
+  kpis: KPIRow[],
+  currentWeek: number | null,
+): KpiOverviewStats {
+  if (!kpis.length) return { avg: 0, onTrack: 0, atRisk: 0, behind: 0 };
+  const pcts = kpis.map((k) => kpiProgressPercent(k, currentWeek));
+  const avg = Math.round(pcts.reduce((s, p) => s + p, 0) / pcts.length);
+  const onTrack = pcts.filter((p) => p >= 80).length;
+  const atRisk = pcts.filter((p) => p >= 50 && p < 80).length;
+  const behind = pcts.filter((p) => p < 50).length;
+  return { avg, onTrack, atRisk, behind };
+}
+
+/**
  * Weekly Goal for a specific week. Uses the saved per-week target when set,
  * otherwise falls back to the flat 1/13 split of the quarterly target.
  */

@@ -7,6 +7,7 @@ import {
   stripHtml,
   type DetailExportColumn,
 } from "@/lib/exports/meetingDetailExcel";
+import { formatCallStatus } from "@/lib/constants/clientMeetingsMetrics";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
 
@@ -80,6 +81,11 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
       orgId,
       clientId,
       deletedAt: null,
+      // Detail report lists only Held huddles — cancelled / holiday / not-held
+      // / other calls are excluded from this export (per product requirement).
+      // The summary export + dashboard intentionally keep counting cancelled
+      // calls, since "Avg % of Calls happened" = held ÷ (held+cancelled).
+      callStatus: "HELD",
       meetingDate: { gte: fromDate, lte: toDate },
     },
     include: {
@@ -111,7 +117,9 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
 
     return {
       meetingDate: m.meetingDate.toISOString().slice(0, 10),
-      callStatus: m.callStatus,
+      // Friendly label (e.g. "Call cancelled by Client") not the raw enum.
+      // Daily huddles have no OTHER free-text field, so no second arg.
+      callStatus: formatCallStatus(m.callStatus),
       clientName: client.name,
       absentMembers: absentNames,
       actualStartTime: m.actualStartTime ?? "",

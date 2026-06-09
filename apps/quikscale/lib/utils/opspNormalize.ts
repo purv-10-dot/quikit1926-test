@@ -94,6 +94,12 @@ export function normalizeLoadedOPSP(
       (out.actionsQtr as unknown[]).push({ category: "", projected: "", m1: "", m2: "", m3: "" });
   }
 
+  // Coerce + pad goalRows to a 6-row floor — mirrors actionsQtr above. Without
+  // this, a server-returned `[]` (e.g. the FY-boundary clear that resets the
+  // 1-yr Goals when opening next year's Q1) renders zero/near-zero Goal rows,
+  // so the user can't type anything. Extra rows beyond 6 are preserved.
+  out.goalRows = normalizeGoalRows(out.goalRows);
+
   // Pad to default sizes for the Accountability + Quarterly Priorities tables
   // so an inherited / cleared quarter still shows empty input rows (without
   // these, a server-returned `[]` would render zero rows and the user can't
@@ -110,6 +116,48 @@ export function normalizeLoadedOPSP(
   );
 
   return out;
+}
+
+/** One GOALS (1 YR.) row: category + projected + four quarter cells. */
+export interface GoalRowShape {
+  category: string;
+  projected: string;
+  q1: string;
+  q2: string;
+  q3: string;
+  q4: string;
+}
+
+/** Exactly 6 empty Goal rows — the default/floor the GoalsSection expects. */
+export function emptyGoalRows(): GoalRowShape[] {
+  return Array.from({ length: 6 }, () => ({
+    category: "",
+    projected: "",
+    q1: "",
+    q2: "",
+    q3: "",
+    q4: "",
+  }));
+}
+
+/**
+ * Normalize the GOALS (1 YR.) array: coerce each row to the current shape and
+ * pad to a 6-row floor (never truncates — a user may have added up to 10 rows).
+ * Non-array input → 6 empty rows.
+ */
+export function normalizeGoalRows(val: unknown): GoalRowShape[] {
+  if (!Array.isArray(val)) return emptyGoalRows();
+  const normalized: GoalRowShape[] = (val as Record<string, unknown>[]).map((r) => ({
+    category: typeof r?.category === "string" ? r.category : "",
+    projected: typeof r?.projected === "string" ? r.projected : "",
+    q1: typeof r?.q1 === "string" ? r.q1 : "",
+    q2: typeof r?.q2 === "string" ? r.q2 : "",
+    q3: typeof r?.q3 === "string" ? r.q3 : "",
+    q4: typeof r?.q4 === "string" ? r.q4 : "",
+  }));
+  while (normalized.length < 6)
+    normalized.push({ category: "", projected: "", q1: "", q2: "", q3: "", q4: "" });
+  return normalized;
 }
 
 /**

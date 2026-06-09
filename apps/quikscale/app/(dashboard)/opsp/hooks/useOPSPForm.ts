@@ -33,6 +33,16 @@ import type {
   QPriorRow,
   CritCard,
 } from "../types";
+import { reconcileActionsWithGoals } from "../lib/actionsGoalsSync";
+
+/**
+ * ACTIONS (QTR) row bounds. Actions can independently hold up to MAX rows via
+ * its own "Add New" (decoupled from the Goals count); MIN is the default/floor,
+ * matching Goals. The Goals→Actions cascade grows Actions toward the Goals
+ * count but never shrinks below the user's own rows — see actionsGoalsSync.ts.
+ */
+export const MIN_ACTION_ROWS = 6;
+export const MAX_ACTION_ROWS = 10;
 
 /* ── Shared form shape ── */
 export interface FormData {
@@ -326,58 +336,21 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     });
   }, [form.targetRows]);
 
-  // Goals (1 YR) → Actions (QTR): row count is owned by Goals (length sync
-  // below) and the cascade seeds each Action row's category from the
-  // matching Goal. The category field stays editable in the UI so the user
-  // can override per row — but a subsequent edit to the Goal at the same
-  // index will re-propagate (mirrors the Targets → Goals cascade above).
-  // Action-specific values (`projected`, `m1`, `m2`, `m3`) reset whenever
-  // the bound Goal category changes so they don't get stranded against an
-  // out-of-date category.
+  // Goals (1 YR) → Actions (QTR): grow Actions so every Goal has a matching
+  // row (auto-filling its category from the Goal) but NEVER shrink — the user
+  // can add independent Action rows via "Add New" (up to MAX_ACTION_ROWS), and
+  // removing/clearing a Goal must not delete those extra rows. The bound
+  // (overlapping) rows still re-propagate their category from the matching
+  // Goal, resetting projected + m-cells so stale values don't strand against
+  // an out-of-date category. See reconcileActionsWithGoals for the full rules.
   useEffect(() => {
     if (skipNextGoalsCascade.current) {
       skipNextGoalsCascade.current = false;
       return;
     }
     setForm(prev => {
-      const goalLen = prev.goalRows.length;
-      const actLen  = prev.actionsQtr.length;
-      let next: ActionRow[] = prev.actionsQtr;
-      let changed = false;
-
-      // 1) Length sync — grow or shrink Actions to match Goals. Spread/slice
-      //    creates a fresh array, so step 2 below can mutate `next` freely.
-      if (goalLen !== actLen) {
-        next = goalLen > actLen
-          ? [
-              ...prev.actionsQtr,
-              ...Array.from({ length: goalLen - actLen }, (): ActionRow => ({
-                category: "", projected: "", m1: "", m2: "", m3: "",
-              })),
-            ]
-          : prev.actionsQtr.slice(0, goalLen);
-        changed = true;
-      }
-
-      // 2) Category sync — copy Goal category into the matching Action row,
-      //    resetting projected + m-cells when the bound category changes so
-      //    they don't get stranded against an out-of-date category.
-      for (let i = 0; i < goalLen; i++) {
-        if (prev.goalRows[i].category !== next[i].category) {
-          if (next === prev.actionsQtr) next = [...next]; // clone-on-first-write
-          next[i] = {
-            ...next[i],
-            category: prev.goalRows[i].category,
-            projected: "",
-            m1: "",
-            m2: "",
-            m3: "",
-          };
-          changed = true;
-        }
-      }
-
-      return changed ? { ...prev, actionsQtr: next } : prev;
+      const next = reconcileActionsWithGoals(prev.goalRows, prev.actionsQtr, MAX_ACTION_ROWS);
+      return next === prev.actionsQtr ? prev : { ...prev, actionsQtr: next };
     });
   }, [form.goalRows]);
 

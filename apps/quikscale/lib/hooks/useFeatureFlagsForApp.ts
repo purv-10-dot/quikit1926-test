@@ -101,25 +101,30 @@ async function fetchDisabled(): Promise<Set<string>> {
  *   3. Fetch + populate both caches.
  */
 export function useDisabledModules(): Set<string> {
-  // Seed initial state: module cache → localStorage → EMPTY.
-  const [set, setSet] = useState<Set<string>>(() => {
-    if (_cached) return _cached;
-    const fromLocal = readLocal();
-    if (fromLocal) {
-      _cached = fromLocal; // hydrate module cache
-      return fromLocal;
-    }
-    return EMPTY;
-  });
+  // SSR-safe seeding. The server has no localStorage, so it always renders
+  // with EMPTY (nothing disabled); the first client render MUST match that
+  // HTML or React throws a hydration mismatch (the nav sections differ). So
+  // we start from EMPTY and seed from the module/localStorage cache in the
+  // effect below — reading localStorage in the useState initializer is what
+  // diverged the first client render from the server. The seed runs right
+  // after mount, so the only cost is a one-frame flash before disabled
+  // modules drop out of the sidebar.
+  const [set, setSet] = useState<Set<string>>(EMPTY);
 
   useEffect(() => {
-    // If module cache is already set (either by this mount or a previous
-    // one that hit localStorage), we still re-fetch lazily when the
-    // module cache was populated purely from localStorage — the module
-    // cache is authoritative in-session, but we can't tell from here
-    // whether it's server-fresh. Simplest safe behaviour: only fetch if
-    // we started from EMPTY.
-    if (_cached && _cached !== EMPTY) return;
+    // Seed order: in-memory module cache (a previous mount this page-load) →
+    // fresh localStorage (< LOCAL_TTL_MS) → network fetch.
+    if (_cached) {
+      setSet(_cached);
+      if (_cached !== EMPTY) return; // authoritative in-session — skip fetch
+    } else {
+      const fromLocal = readLocal();
+      if (fromLocal) {
+        _cached = fromLocal; // hydrate module cache
+        setSet(fromLocal);
+        return; // readLocal() already enforced the TTL — skip fetch
+      }
+    }
     let cancelled = false;
     fetchDisabled().then((d) => {
       if (!cancelled) setSet(d);

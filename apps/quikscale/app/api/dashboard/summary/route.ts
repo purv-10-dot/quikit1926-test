@@ -174,7 +174,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
       where: { orgId },
       orderBy: { createdAt: "asc" },
     }),
-    db.team.findMany({
+    db.qsTeam.findMany({
       where: { orgId },
       select: { id: true, name: true },
       orderBy: { name: "asc" },

@@ -261,6 +261,8 @@ model Org {
   sessionEvents           SessionEvent[]
   teams                   Team[]
   userTeams               UserTeam[]
+  qsTeams                 QsTeam[]
+  qsUserTeams             QsUserTeam[]
   tenantAppAccess         OrgAppAccess[]
   users                   OrgMember[]
   userAppAccess           UserAppAccess[]
@@ -341,6 +343,7 @@ model User {
   verificationTokens      VerificationToken[]
   sessionEvents           SessionEvent[]
   userTeams               UserTeam[]
+  qsUserTeams             QsUserTeam[]
   memberships             OrgMember[]
   appAccess               UserAppAccess[]
 
@@ -443,7 +446,10 @@ model OrgMember {
   /// "Sign in with Microsoft". One of: "google" | "microsoft" | null.
   inviteProvider    String?
   org               Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  team              Team?     @relation(fields: [teamId], references: [id])
+  // QuikScale owns its team data in app_quikscale."Team" (model QsTeam). This
+  // membership pointer is written ONLY by QuikScale — Admin/QuikTrack track
+  // membership via the UserTeam join, and packages/auth never sets teamId.
+  team              QsTeam?   @relation(fields: [teamId], references: [id])
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([orgId, userId])
@@ -474,7 +480,40 @@ model UserTeam {
   @@schema("public")
 }
 
+// Shared, platform-level teams. Managed by the Admin Portal and shared with
+// QuikTrack (via the UserTeam join). QuikScale no longer reads this table —
+// it owns its own copy in app_quikscale."Team" (model QsTeam). The KPI /
+// Priority / AccountabilityFunction / OrgMember relations that used to point
+// here now point at QsTeam, so those back-relations live on QsTeam.
 model Team {
+  id           String     @id @default(cuid())
+  orgId        String
+  name         String
+  description  String?
+  slug         String
+  parentTeamId String?
+  headId       String?
+  color        String?    @default("#0066cc")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  createdBy    String?
+  deletedAt    DateTime?
+  org          Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  parentTeam   Team?      @relation("TeamHierarchy", fields: [parentTeamId], references: [id])
+  childTeams   Team[]     @relation("TeamHierarchy")
+  userTeams    UserTeam[]
+
+  @@unique([orgId, slug])
+  @@index([orgId])
+  @@index([parentTeamId])
+  @@index([deletedAt])
+  @@schema("public")
+}
+
+// QuikScale-owned copy of Team. Physical table: app_quikscale."Team". Seeded
+// once from public.Team (ids preserved) by the quikscale_own_teams migration.
+// QuikScale is fully independent of shared team data from here on.
+model QsTeam {
   id                      String                   @id @default(cuid())
   orgId                   String
   name                    String
@@ -491,16 +530,36 @@ model Team {
   kpis                    KPI[]
   priorities              Priority[]
   org                     Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  parentTeam              Team?                    @relation("TeamHierarchy", fields: [parentTeamId], references: [id])
-  childTeams              Team[]                   @relation("TeamHierarchy")
-  userTeams               UserTeam[]
+  parentTeam              QsTeam?                  @relation("QsTeamHierarchy", fields: [parentTeamId], references: [id])
+  childTeams              QsTeam[]                 @relation("QsTeamHierarchy")
+  userTeams               QsUserTeam[]
   members                 OrgMember[]
 
   @@unique([orgId, slug])
   @@index([orgId])
   @@index([parentTeamId])
   @@index([deletedAt])
-  @@schema("public")
+  @@map("Team")
+  @@schema("app_quikscale")
+}
+
+// QuikScale-owned copy of UserTeam. Physical table: app_quikscale."UserTeam".
+model QsUserTeam {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  teamId    String
+  createdAt DateTime @default(now())
+  org       Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  team      QsTeam   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, teamId])
+  @@index([orgId])
+  @@index([userId])
+  @@index([teamId])
+  @@map("UserTeam")
+  @@schema("app_quikscale")
 }
 
 model AccountabilityFunction {
@@ -522,7 +581,7 @@ model AccountabilityFunction {
   org               Org                      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   parentFunction    AccountabilityFunction?  @relation("FunctionHierarchy", fields: [parentFunctionId], references: [id])
   childFunctions    AccountabilityFunction[] @relation("FunctionHierarchy")
-  team              Team?                    @relation(fields: [teamId], references: [id])
+  team              QsTeam?                  @relation(fields: [teamId], references: [id])
 
   @@unique([orgId, chartType, name])
   @@index([orgId])
@@ -573,7 +632,7 @@ model KPI {
   owner_user         User?            @relation("KPIOwner", fields: [owner], references: [id])
   parentKPI          KPI?             @relation("KPICascade", fields: [parentKPIId], references: [id])
   childKPIs          KPI[]            @relation("KPICascade")
-  team               Team?            @relation(fields: [teamId], references: [id])
+  team               QsTeam?          @relation(fields: [teamId], references: [id])
   logs               KPILog[]
   notes              KPINote[]
   weeklyValues       KPIWeeklyValue[]
@@ -668,7 +727,7 @@ model Priority {
   deletedAt      DateTime?
   org            Org                    @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner_user     User                   @relation("PriorityOwner", fields: [owner], references: [id])
-  team           Team?                  @relation(fields: [teamId], references: [id])
+  team           QsTeam?                @relation(fields: [teamId], references: [id])
   weeklyStatuses PriorityWeeklyStatus[]
 
   @@index([orgId])

@@ -4,7 +4,7 @@ import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("analytics.teams");
 
 export const GET = withOrgAuth(async ({ orgId }) => {
-    const teams = await db.team.findMany({
+    const teams = await db.qsTeam.findMany({
       where: { orgId },
       include: {
         members: {

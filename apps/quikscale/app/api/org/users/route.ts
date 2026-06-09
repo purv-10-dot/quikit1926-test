@@ -35,7 +35,7 @@ type MembershipWithTeams = {
     email: string;
     avatar: string | null;
     lastSignInAt: Date | null;
-    userTeams: Array<{ teamId: string; team: { id: string; name: string } }>;
+    qsUserTeams: Array<{ teamId: string; team: { id: string; name: string } }>;
   };
 };
 
@@ -53,8 +53,8 @@ function buildUserResponse(
     lastSignInAt: m.user.lastSignInAt?.toISOString() ?? null,
     role:         m.role,
     teamId:       m.teamId,
-    teamIds:      m.user.userTeams.map(ut => ut.teamId),
-    teamNames:    m.user.userTeams.map(ut => ut.team.name),
+    teamIds:      m.user.qsUserTeams.map(ut => ut.teamId),
+    teamNames:    m.user.qsUserTeams.map(ut => ut.team.name),
     status:       m.status,
     joinedAt:     m.createdAt.toISOString(),
     /** Dynamic per-app role (from UserAppAccess.appRoleId → AppRole). */
@@ -64,7 +64,7 @@ function buildUserResponse(
 }
 
 const USER_TEAMS_INCLUDE = (orgId: string) => ({
-  userTeams: {
+  qsUserTeams: {
     where: { orgId },
     include: { team: { select: { id: true, name: true } } },
   },
@@ -105,7 +105,7 @@ export const GET = auth.view(async ({ orgId }, req) => {
         user: {
           select: {
             id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
-            userTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
+            qsUserTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
           },
         },
       },
@@ -272,7 +272,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   }
 
   for (const teamId of resolvedTeamIds) {
-    await db.userTeam.upsert({
+    await db.qsUserTeam.upsert({
       where:  { orgId_userId_teamId: { orgId, userId: newUserId, teamId } },
       update: {},
       create: { orgId, userId: newUserId, teamId },
@@ -285,7 +285,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       user: {
         select: {
           id: true, firstName: true, lastName: true, email: true, avatar: true, lastSignInAt: true,
-          userTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
+          qsUserTeams: { where: { orgId }, include: { team: { select: { id: true, name: true } } } },
         },
       },
     },

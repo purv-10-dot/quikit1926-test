@@ -8,7 +8,7 @@ export const GET = withOrgAuth(async ({ orgId }) => {
       db.kPI.findMany({ where: { orgId }, include: { weeklyValues: true } }),
       db.priority.findMany({ where: { orgId }, include: { weeklyStatuses: true } }),
       db.wWWItem.findMany({ where: { orgId } }),
-      db.team.findMany({ where: { orgId } }),
+      db.qsTeam.findMany({ where: { orgId } }),
       db.orgMember.findMany({ where: { orgId }, include: { user: true } }),
     ]);
     // Legacy team-meeting attendance was part of this scorecard. The new

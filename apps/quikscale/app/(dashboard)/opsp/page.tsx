@@ -24,6 +24,7 @@ import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { EditNoteCard } from "./components/EditNoteCard";
 import { OPSPHistoryDrawer } from "./components/OPSPHistoryDrawer";
 import { describeSetChange, describeArrChange, getFieldValue, applyFieldPath, type PendingEdit } from "./lib/editLog";
+import { isYearSelectable, isQuarterSelectable } from "./lib/periodGating";
 import { useOpspAck } from "@/lib/hooks/useOpspAck";
 import { editedFieldPaths, fieldMatchesEdited, editsSince, latestEdit, type EditLogLike } from "@/lib/utils/opspEditHighlight";
 
@@ -461,10 +462,16 @@ export default function OPSPPage() {
                       for (let y = start; y <= end; y++) years.push(y);
                       return years;
                     })().map(y => {
-                      const currentFY = getFiscalYear();
-                      const isCurrentFY = y === currentFY;
                       const isSelected = form.year === y;
-                      const isDisabled = !isCurrentFY;
+                      // Enabled if it's the current FY OR a year the finalize
+                      // chain has opened (finalizing year N's Q4 opens N+1).
+                      const isDisabled = !isYearSelectable({
+                        year: y,
+                        currentFiscalYear: getFiscalYear(),
+                        planStartYear,
+                        planStartQuarter,
+                        reviewedQuarters,
+                      });
                       return (
                         <button key={y}
                           disabled={isDisabled}
@@ -486,23 +493,26 @@ export default function OPSPPage() {
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quarter</p>
                   <div className="grid grid-cols-4 gap-1">
                     {(["Q1", "Q2", "Q3", "Q4"] as const).map(q => {
-                      // In the plan's first year, quarters before startQuarter are disabled
                       const qNum = parseInt(q.replace("Q", ""));
                       const startQNum = planStartQuarter ? parseInt(planStartQuarter.replace("Q", "")) : 1;
                       const isBeforeStart = form.year === planStartYear && qNum < startQNum;
                       const isSelected = form.quarter === q;
 
-                      // A quarter is locked until the prior quarter is
-                      // finalized (review submission also counts). Skip the
-                      // gate for the plan's first quarter and for quarters
-                      // the user is already on / has been on.
-                      const isPlanFirst =
-                        form.year === planStartYear && qNum === startQNum;
-                      const prevYear = qNum === 1 ? form.year - 1 : form.year;
+                      // A quarter is locked until the prior quarter is finalized
+                      // (review submission also counts), with the chain spanning
+                      // the FY boundary (Q1 follows the prior FY's Q4). Shared
+                      // with the year gate via isQuarterSelectable.
+                      const disabled = !isQuarterSelectable({
+                        year: form.year,
+                        qNum,
+                        planStartYear,
+                        planStartQuarter,
+                        reviewedQuarters,
+                      });
+                      // Tooltip only for chain-locked quarters, not the
+                      // before-plan-start case.
                       const prevQ = qNum === 1 ? "Q4" : `Q${qNum - 1}`;
-                      const prevUnlocked = reviewedQuarters.includes(`${prevYear}:${prevQ}`);
-                      const isLocked = !isBeforeStart && !isPlanFirst && !prevUnlocked;
-                      const disabled = isBeforeStart || isLocked;
+                      const isLocked = disabled && !isBeforeStart;
                       return (
                         <button key={q}
                           disabled={disabled}

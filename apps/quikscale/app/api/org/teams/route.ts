@@ -20,7 +20,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
   };
 
   const [teams, total] = await Promise.all([
-    db.team.findMany({
+    db.qsTeam.findMany({
       where,
       include: {
         members: {
@@ -35,7 +35,7 @@ export const GET = withOrgAuth(async ({ orgId }, req) => {
       skip,
       take,
     }),
-    db.team.count({ where }),
+    db.qsTeam.count({ where }),
   ]);
 
   // Resolve head name
@@ -91,7 +91,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
   const { name, description, color, headId } = parsed.data;
 
-  const existing = await db.team.findFirst({
+  const existing = await db.qsTeam.findFirst({
     where: { orgId, name: { equals: name.trim(), mode: "insensitive" } },
   });
   if (existing)
@@ -100,7 +100,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   const baseSlug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   const slug     = `${baseSlug}-${Date.now().toString(36)}`;
 
-  const team = await db.team.create({
+  const team = await db.qsTeam.create({
     data: {
       orgId,
       name:        name.trim(),

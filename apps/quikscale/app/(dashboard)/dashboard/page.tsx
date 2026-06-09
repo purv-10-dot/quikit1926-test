@@ -27,7 +27,7 @@ import { getColorByPercentage } from "@/lib/utils/colorLogic";
 import { dashboardKpiHiddenColumns } from "@/lib/utils/dashboardColumns";
 import { HorizontalScroller } from "@/components/ui/HorizontalScroller";
 import { KPITable } from "../kpi/components/KPITable";
-import { resolveProgressQtd } from "../kpi/components/kpiStats";
+import { resolveProgressQtd, computeKpiOverviewStats } from "../kpi/components/kpiStats";
 import { PriorityTable } from "../priority/components/PriorityTable";
 import { WWWTable } from "../www/components/WWWTable";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -319,7 +319,7 @@ function Section({ badge, count, right, children }: { badge: string; count?: num
  * pill (avg % · on-track · at-risk · behind) lives inside the header to
  * the right of the card-count badge — visible even when collapsed.
  */
-function KPIOverviewContainer({ count, loading, kpis, children }: { count: number; loading: boolean; kpis: KPIRow[]; children: React.ReactNode }) {
+function KPIOverviewContainer({ count, loading, kpis, currentWeek, children }: { count: number; loading: boolean; kpis: KPIRow[]; currentWeek: number | null; children: React.ReactNode }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm" style={{ overflow: "clip" }}>
@@ -354,7 +354,7 @@ function KPIOverviewContainer({ count, loading, kpis, children }: { count: numbe
           </span>
         )}
         {/* AvgKPI summary pill — inert (div), clicks bubble up to toggle */}
-        {!loading && kpis.length > 0 && <AvgKPICard kpis={kpis} />}
+        {!loading && kpis.length > 0 && <AvgKPICard kpis={kpis} currentWeek={currentWeek} />}
         <span className="ml-auto text-[10px] text-gray-400 flex-shrink-0">
           {expanded ? "Click to collapse" : "Click to expand"}
         </span>
@@ -530,13 +530,13 @@ function KPICard({ kpi, currentWeek }: { kpi: KPIRow; currentWeek: number | null
   );
 }
 
-function AvgKPICard({ kpis }: { kpis: KPIRow[] }) {
-  const avg = kpis.length
-    ? Math.round(kpis.reduce((s, k) => s + (k.progressPercent ?? 0), 0) / kpis.length)
-    : 0;
-  const onTrack = kpis.filter(k => (k.progressPercent ?? 0) >= 80).length;
-  const atRisk  = kpis.filter(k => (k.progressPercent ?? 0) >= 50 && (k.progressPercent ?? 0) < 80).length;
-  const behind  = kpis.filter(k => (k.progressPercent ?? 0) < 50).length;
+function AvgKPICard({ kpis, currentWeek }: { kpis: KPIRow[]; currentWeek: number | null }) {
+  // Average the SAME per-card percentage the KPICards below display
+  // (resolveProgressQtd-based) so the pill agrees with the cards. Reading the
+  // raw server-stamped `kpi.progressPercent` over-counted Standalone KPIs
+  // (cumulative SUM ÷ goal) — see computeKpiOverviewStats /
+  // docs/STANDALONE_QTD_ACHIEVED_FIX.md §4.
+  const { avg, onTrack, atRisk, behind } = computeKpiOverviewStats(kpis, currentWeek);
 
   const ringColor = avg >= 80 ? "#22c55e" : avg >= 50 ? "#f59e0b" : "#ef4444";
   const textColor = avg >= 80 ? "text-green-600" : avg >= 50 ? "text-amber-500" : "text-red-500";
@@ -1371,7 +1371,7 @@ export default function DashboardPage() {
 
         {/* KPI overview cards — collapsed by default, click header to expand */}
         {(kpisLoading || kpis.length > 0) && (
-          <KPIOverviewContainer count={kpis.length} loading={kpisLoading} kpis={kpis}>
+          <KPIOverviewContainer count={kpis.length} loading={kpisLoading} kpis={kpis} currentWeek={currentWeek}>
             <div className="grid gap-3 pt-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
               {kpisLoading
                 ? [1, 2, 3, 4].map(i => (
