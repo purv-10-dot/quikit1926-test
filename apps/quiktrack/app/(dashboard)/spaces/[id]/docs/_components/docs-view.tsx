@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FolderPlus, Check, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { FolderPlus, Check, X, Upload, Loader2 } from "lucide-react";
 import { DOC_DRAG_TYPE, DocsTableHeader } from "./docs-list";
 import { DocsFolderRow } from "./docs-folder-row";
 import { PaginatedDocList } from "./docs-paginated-list";
@@ -28,11 +29,14 @@ import {
  */
 export function DocsView({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const qc = useQueryClient();
   const [downloadFormat, setDownloadFormat] = useState<"pdf" | "word">("pdf");
   const [addingFolder, setAddingFolder] = useState(false);
   const [folderDraft, setFolderDraft] = useState("");
   const [rootDragOver, setRootDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const foldersQ = useDocFolders(projectId);
   const folders = foldersQ.data ?? [];
@@ -52,6 +56,31 @@ export function DocsView({ projectId }: { projectId: string }) {
     const params = new URLSearchParams({ template: templateKey });
     if (folderId) params.set("folder", folderId);
     router.push(`/spaces/${projectId}/docs/new?${params.toString()}`);
+  }
+
+  async function uploadDoc(file: File) {
+    setUploading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/projects/${projectId}/docs/import`, {
+        method: "POST",
+        body: fd,
+      }).then((r) => r.json());
+      if (res?.success) {
+        // Refresh the root list + folder counts, then open the imported doc.
+        qc.invalidateQueries({ queryKey: ["qt-docs", "list", projectId, ROOT] });
+        qc.invalidateQueries({ queryKey: ["qt-docs", "folders", projectId] });
+        router.push(`/spaces/${projectId}/docs/${res.data.id}`);
+      } else {
+        setError(res?.error ?? "Couldn't import that file.");
+      }
+    } catch {
+      setError("Couldn't import that file.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   function createFolder() {
@@ -126,6 +155,17 @@ export function DocsView({ projectId }: { projectId: string }) {
 
   return (
     <div className="h-full flex overflow-hidden bg-white">
+      {/* Centered upload overlay — clear feedback while the file converts. */}
+      {uploading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="flex flex-col items-center gap-3 rounded-xl bg-white px-10 py-8 shadow-2xl">
+            <Loader2 className="w-9 h-9 animate-spin text-blue-600" />
+            <p className="text-sm font-medium text-gray-800">Uploading &amp; converting…</p>
+            <p className="text-xs text-gray-500">This can take a moment for large files.</p>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 overflow-y-auto px-6 py-4">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Docs</h1>
@@ -176,6 +216,33 @@ export function DocsView({ projectId }: { projectId: string }) {
                 Add folder
               </button>
             )}
+
+            {/* Upload an existing document (.docx/.md/.html/.txt/.pdf) as a new doc */}
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept=".docx,.md,.markdown,.html,.htm,.txt,.pdf"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = ""; // allow re-uploading the same file
+                if (f) void uploadDoc(f);
+              }}
+            />
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => uploadInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium text-gray-700 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+            >
+              {uploading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-600" />
+              ) : (
+                <Upload className="w-3.5 h-3.5 text-gray-600" />
+              )}
+              {uploading ? "Uploading…" : "Upload"}
+            </button>
+
             <FormatToggle value={downloadFormat} onChange={setDownloadFormat} />
           </div>
         </div>
