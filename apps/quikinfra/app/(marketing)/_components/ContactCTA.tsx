@@ -80,7 +80,7 @@ export default function ContactCTA({ className = "btn btn-solid nav-cta nav-pill
         email: form.email.trim(),
         phone: form.phone.trim(),
         message: form.message.trim(),
-        source: "QuikConstruction landing — Contact Us",
+        source: "QuikInfra landing — Contact Us",
         submittedAt: new Date().toISOString(),
       });
       await fetch(

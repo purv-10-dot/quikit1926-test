@@ -101,7 +101,7 @@ const APPS = [
     // `quikcrm` key, so every app's <AppSwitcher /> falls back to this
     // App.iconUrl; a relative path 404s cross-origin (broken tile). Pointing at
     // the launcher renders the QuikCRM logo consistently in every app.
-    iconUrl: `${QUIKIT_BASE}/app-icons/quikcrm.png`,
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikcrm.svg`,
     status: "active",
     oauth: {
       clientId: "quikcrm",

@@ -144,7 +144,7 @@ export default async function MarketingPage() {
 
           <div className="hero-sub">
             <p>
-              QuikConstruction is the AI-powered construction ERP software built for Indian builders.
+              QuikInfra is the AI-powered construction ERP software built for Indian builders.
               Replace Excel, WhatsApp, and guesswork with real-time control over materials, money,
               and project progress — across every site.
             </p>
@@ -236,7 +236,7 @@ export default async function MarketingPage() {
             <p className="lead">One construction ERP to run your entire operation.</p>
             <div>
               <p>
-                QuikConstruction ERP connects <strong>site, store, procurement, and management</strong>
+                QuikInfra ERP connects <strong>site, store, procurement, and management</strong>
                 {" "}into a single construction management platform — purpose-built so every request,
                 approval, and rupee leaves an auditable trail. From the moment a site engineer raises
                 a material requisition to the moment a director signs off the dashboard, every step is

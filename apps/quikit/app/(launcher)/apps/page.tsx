@@ -44,7 +44,7 @@ const SANS = "'Inter', system-ui, sans-serif";
    iconUrl so the launcher always renders the current brand logos. */
 const LAUNCHER_ICONS: Record<string, string> = {
   admin: "/app-icons/admin.svg",
-  quikcrm: "/app-icons/quikcrm.png",
+  quikcrm: "/app-icons/quikcrm.svg",
   quikinfra: "/app-icons/quikinfra.svg",
   quikscale: "/app-icons/quikscale.svg",
   quiktrack: "/app-icons/quiktrack.svg",
