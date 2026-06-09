@@ -176,8 +176,10 @@ export async function assertModule(
     return;
   }
 
+  // Deny-by-default: a non-admin user with no RBAC grant and no matching matrix
+  // row is forbidden — parity with QuikScale/QuikTrack `userCan` (no grant = no
+  // access). Org admins already returned above via the ADMIN_ROLE bypass.
   const matrix = await getEffectiveMatrix(user.userId, user.orgId);
-  if (matrix.length === 0) return;
   const row = matrix.find((r) => r.module === module);
   if (!row || !row.actions.includes(action)) {
     const err = new Error(`Forbidden: ${action} on ${module}`) as Error & { statusCode?: number };

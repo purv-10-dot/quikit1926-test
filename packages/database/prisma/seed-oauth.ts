@@ -66,6 +66,12 @@ const QUIKTRACK_BASE = resolveAppUrl("QUIKTRACK_URL", "http://localhost:3004"); 
 const QUIKINFRA_BASE = resolveAppUrl("QUIKINFRA_URL", "http://localhost:3005"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKSOCIAL_BASE = resolveAppUrl("QUIKSOCIAL_URL", "http://localhost:3006"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 const QUIKVC_BASE = resolveAppUrl("QUIKVC_URL", "http://localhost:3007"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+const QUIKCRM_BASE = resolveAppUrl("QUIKCRM_URL", "http://localhost:3008"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
+// Central launcher (quikit) origin. It hosts every app's icon under
+// /app-icons and is where App.iconUrl is designed to resolve (see the comment
+// on BRAND_ICONS in packages/ui/components/app-switcher.tsx). Used as the
+// absolute base for QuikCRM's iconUrl below.
+const QUIKIT_BASE = resolveAppUrl("QUIKIT_URL", "http://localhost:3000"); // prod-safety-allow: dev fallback, prod throws via resolveAppUrl
 
 const APPS = [
   {
@@ -80,6 +86,28 @@ const APPS = [
       clientSecretPlain: resolveClientSecret("QUIKSCALE_OAUTH_CLIENT_SECRET", "quikscale-dev-secret-change-in-prod"),
       redirectUris: [
         `${QUIKSCALE_BASE}/api/auth/callback/quikit`,
+      ],
+      scopes: ["openid", "profile", "email", "tenant"],
+    },
+  },
+  {
+    slug: "quikcrm",
+    name: "QuikCRM",
+    description: "Sales execution OS — Leads, pipeline, accounts, contacts, quotes, orders, telephony, reports.",
+    baseUrl: QUIKCRM_BASE,
+    // Absolute URL on the central launcher (quikit), which hosts every app's
+    // icon under /app-icons and is the always-on origin where App.iconUrl is
+    // designed to resolve. The brand-icon SVG map in @quikit/ui has no
+    // `quikcrm` key, so every app's <AppSwitcher /> falls back to this
+    // App.iconUrl; a relative path 404s cross-origin (broken tile). Pointing at
+    // the launcher renders the QuikCRM logo consistently in every app.
+    iconUrl: `${QUIKIT_BASE}/app-icons/quikcrm.png`,
+    status: "active",
+    oauth: {
+      clientId: "quikcrm",
+      clientSecretPlain: resolveClientSecret("QUIKCRM_OAUTH_CLIENT_SECRET", "quikcrm-dev-secret-change-in-prod"),
+      redirectUris: [
+        `${QUIKCRM_BASE}/api/auth/callback/quikit`,
       ],
       scopes: ["openid", "profile", "email", "tenant"],
     },

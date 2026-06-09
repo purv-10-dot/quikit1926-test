@@ -36,6 +36,12 @@ const nextConfig = {
     serverActions: {
       allowedOrigins: ["localhost:3008"],
     },
+    // Match quikscale/quikinfra: rewrite lucide-react barrel imports to per-icon
+    // ESM modules so the server (RSC/SSR) and client compilations resolve the
+    // SAME icon build. Without this, lucide's barrel resolves differently across
+    // the two webpack passes and SVG <rect> attributes (e.g. `ry`) differ →
+    // "Extra attributes from the server: ry" hydration mismatch in the sidebar.
+    optimizePackageImports: ["lucide-react", "@tanstack/react-query"],
     // Force Node build of react-pdf (browser build throws "Component is not a constructor").
     serverComponentsExternalPackages: [
       "@react-pdf/renderer",

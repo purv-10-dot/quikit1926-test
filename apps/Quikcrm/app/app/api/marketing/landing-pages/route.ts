@@ -1,0 +1,36 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+import type { Prisma } from "@quikit/database";
+import { prisma } from "@/lib/db/prisma";
+import { requireApiUser, isResponse, errorResponse } from "@/lib/auth/require";
+
+export const runtime = "nodejs";
+
+const schema = z.object({
+  name: z.string().min(1),
+  slug: z.string().min(1),
+  status: z.string().optional(),
+  content: z.record(z.unknown()).default({}),
+});
+
+export async function GET() {
+  try {
+    const user = await requireApiUser();
+    if (isResponse(user)) return user;
+    const items = await prisma.crmLandingPage.findMany({ where: { orgId: user.orgId }, orderBy: { updatedAt: "desc" } });
+    return NextResponse.json({ items });
+  } catch (e) { return errorResponse(e); }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const user = await requireApiUser();
+    if (isResponse(user)) return user;
+    const parsed = schema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+    const p = await prisma.crmLandingPage.create({
+      data: { ...parsed.data, orgId: user.orgId } as Prisma.CrmLandingPageUncheckedCreateInput,
+    });
+    return NextResponse.json(p, { status: 201 });
+  } catch (e) { return errorResponse(e); }
+}

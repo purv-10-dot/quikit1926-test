@@ -92,7 +92,21 @@ export function AtRiskWidget({
     refetchInterval: false,
   });
 
-  if (isLoading) {
+  if (isError) {
+    return (
+      <div className="crm-card p-4 text-sm text-rose-600">Failed to load at-risk metrics.</div>
+    );
+  }
+
+  // Render the skeleton whenever there's no data yet — gate on `isLoading || !data`,
+  // NOT `isLoading` alone. Under React Query v5, `isLoading === isPending && isFetching`.
+  // During SSR queries never fetch, so `isFetching` (and thus `isLoading`) is `false`
+  // on the server while there's still no data; the first client render has a fetch in
+  // flight, so `isLoading` is `true`. Branching on `isLoading` alone therefore renders
+  // the error div on the server and the skeleton grid on the client → a structural
+  // hydration mismatch. `isLoading || !data` keeps both renders identical, matching the
+  // `loading || !data` pattern used by the other dashboard widgets.
+  if (isLoading || !data) {
     return (
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <CardSkeleton />
@@ -100,12 +114,6 @@ export function AtRiskWidget({
         <CardSkeleton />
         <CardSkeleton />
       </div>
-    );
-  }
-
-  if (isError || !data) {
-    return (
-      <div className="crm-card p-4 text-sm text-rose-600">Failed to load at-risk metrics.</div>
     );
   }
 

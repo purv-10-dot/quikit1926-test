@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
+import { globalSignOut } from "@quikit/ui";
 
 export interface AuthUser {
   id: string;
@@ -21,7 +22,6 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ initialUser, children }: { initialUser: AuthUser | null; children: ReactNode }) {
-  const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(initialUser);
 
   const refreshMe = useCallback(async () => {
@@ -35,11 +35,22 @@ export function AuthProvider({ initialUser, children }: { initialUser: AuthUser 
   }, []);
 
   const logout = useCallback(async () => {
-    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    // Platform single-logout — clears the QuikCRM session cookie, the auth-host
+    // cookie, AND the launcher cookie, then lands on QuikCRM's public page.
+    // Matches QuikScale/QuikTrack (globalSignOut from @quikit/ui). There is no
+    // /api/auth/logout route — auth is NextAuth at /api/auth/[...nextauth], so
+    // the old POST /api/auth/logout returned 400.
+    const landingUrl =
+      (process.env.NEXT_PUBLIC_QUIKCRM_URL?.replace(/\/+$/, "") ??
+        (typeof window !== "undefined" ? window.location.origin : "")) + "/";
     setUser(null);
-    router.push("/login");
-    router.refresh();
-  }, [router]);
+    await globalSignOut({
+      authUrl: process.env.NEXT_PUBLIC_AUTH_URL,
+      quikitUrl: process.env.NEXT_PUBLIC_QUIKIT_URL,
+      localSignOut: () => signOut({ redirect: false }),
+      postLogoutRedirect: landingUrl,
+    });
+  }, []);
 
   return <AuthContext.Provider value={{ user, logout, refreshMe }}>{children}</AuthContext.Provider>;
 }

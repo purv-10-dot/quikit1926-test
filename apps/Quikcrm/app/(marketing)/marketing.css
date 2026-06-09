@@ -1,4 +1,4 @@
-﻿/* QuikCRM marketing landing styles.
+/* QuikCRM marketing landing styles.
    Extracted verbatim from NewLandingPage/QuikCRM-Landing/index.html (<style>).
    Asset url() repointed to /marketing/; 'Inter' family routed to var(--font-sans) (next/font). */
   :root {
@@ -24,7 +24,7 @@
     line-height: 1.45;
     position: relative;
   }
-  /* Structural grid framing â€” vertical rails + diamond corner markers */
+  /* Structural grid framing — vertical rails + diamond corner markers */
   .grid-overlay {
     position: absolute;
     top: calc(560vh + 140vh);  /* start after hero (560vh) + image-banner (140vh) */
@@ -147,7 +147,7 @@
     padding: 0; border-bottom: 1px solid var(--line);
     overflow: hidden;
   }
-  /* Image banner â€” sticky scroll-reveal, 16:9 transparent */
+  /* Image banner — sticky scroll-reveal, 16:9 transparent */
   .image-banner {
     padding: 0;
     height: 140vh;
@@ -178,7 +178,7 @@
     backdrop-filter: blur(20px) saturate(140%);
     -webkit-backdrop-filter: blur(20px) saturate(140%);
     overflow: hidden;
-    /* translate3d forces its own compositor layer â€” no re-raster on scale */
+    /* translate3d forces its own compositor layer — no re-raster on scale */
     transform: translate3d(0,0,0) scale(calc(0.25 + var(--p) * 0.75));
     transform-origin: center center;
     will-change: transform;
@@ -190,10 +190,10 @@
   .banner-img img {
     image-rendering: -webkit-optimize-contrast;
     image-rendering: high-quality;
-    transform: translateZ(0); /* own layer â€” no jitter on parent scale */
+    transform: translateZ(0); /* own layer — no jitter on parent scale */
   }
   .banner-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  /* No placeholder â€” container stays fully transparent until banner.jpg loads */
+  /* No placeholder — container stays fully transparent until banner.jpg loads */
 
   /* ===== Hero stretching headline ===== */
   .hero-headline {
@@ -308,7 +308,7 @@
     background: rgba(42, 63, 90, 0.10);
     color: var(--primary);
   }
-  /* Secondary CTA â€” frosted outline, padding equal both sides */
+  /* Secondary CTA — frosted outline, padding equal both sides */
   .hg-cta .btn-light {
     padding: 12px 18px;
     border: 1px solid rgba(255,255,255,0.30);
@@ -440,7 +440,7 @@
   .step h3{ font-size:18px; margin-bottom:8px; }
   .step p{ font-size:13px; color:var(--muted); }
 
-  /* ---------- CONVERSIONS â€” sticky horizontal scroll ---------- */
+  /* ---------- CONVERSIONS — sticky horizontal scroll ---------- */
   .conv-section {
     height: 320vh;
     position: relative;
@@ -462,7 +462,7 @@
     box-sizing: border-box;
     overflow: hidden;
     isolation: isolate;
-    /* Mask reveal â€” starts clipped to a small centered window, opens as the section enters */
+    /* Mask reveal — starts clipped to a small centered window, opens as the section enters */
     --mask-p: 1;
     clip-path: inset(
       calc((1 - var(--mask-p)) * 14%)
@@ -584,7 +584,7 @@
   .shot-perm-cell.on{background:#2A3F5A}
   .shot-perm-cell.off{background:#eef0f3;border:1px solid #e4e7ec}
 
-  /* Legacy conv grid â€” kept for reference; sticky-scroll structure above wins inside .conv-section */
+  /* Legacy conv grid — kept for reference; sticky-scroll structure above wins inside .conv-section */
   .conv { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; margin-top:44px; }
   .conv .item .shot{ background:#f1f1f3; border:1px solid var(--line); border-radius:18px;
     height:150px; padding:14px; margin-bottom:16px; overflow:hidden; position:relative; }
