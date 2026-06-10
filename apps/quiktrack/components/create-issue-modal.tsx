@@ -432,7 +432,12 @@ export function CreateIssueModal({
                 searchable
                 options={[
                   { value: "", label: "Select sprint" },
-                  ...sprints.map((s) => ({ value: s.id, label: s.name })),
+                  // Completed sprints are closed — you can't plan new work into
+                  // them (the backlog hides them too), so keep them out of the
+                  // picker for a brand-new task.
+                  ...sprints
+                    .filter((s) => s.status !== "COMPLETED")
+                    .map((s) => ({ value: s.id, label: s.name })),
                 ]}
               />
             </Field>

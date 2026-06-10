@@ -7,6 +7,7 @@ import { getDefaultStatusId } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
 import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 import { notifyMentions } from "@/lib/services/mentions";
+import { emailIssueAssigned } from "@/lib/email/sendEmail";
 
 async function userIsProjectMember(
   userId: string,
@@ -346,7 +347,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   }
   const project = await db.qtProject.findFirst({
     where: { id: parsed.data.projectId, orgId: orgId, isDeleted: false },
-    select: { id: true, projectKey: true },
+    select: { id: true, projectKey: true, name: true },
   });
   if (!project) {
     return NextResponse.json({ success: false, error: "Project not found" }, { status: 404 });
@@ -405,6 +406,50 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
       context: "description",
       html: issue.description,
     });
+  }
+
+  // Email the assignee when a task is created already assigned to someone
+  // other than its creator. Reassignment of an existing issue is handled by
+  // the PATCH route's notifyOnUpdate; creation was the missing path (so tasks
+  // created with an assignee from the header modal / backlog inline creator
+  // never notified). Self-assignment is skipped — no point emailing yourself
+  // about a task you just created. Fire-and-forget so a mail hiccup can't fail
+  // the create.
+  const assigneeId = issue.assigneeId;
+  if (assigneeId && assigneeId !== userId) {
+    void (async () => {
+      try {
+        const [assignee, actor] = await Promise.all([
+          db.user.findUnique({
+            where: { id: assigneeId },
+            select: { email: true, firstName: true, lastName: true },
+          }),
+          db.user.findUnique({
+            where: { id: userId },
+            select: { email: true, firstName: true, lastName: true },
+          }),
+        ]);
+        if (assignee?.email) {
+          await emailIssueAssigned({
+            to: assignee.email,
+            assigneeName:
+              [assignee.firstName, assignee.lastName].filter(Boolean).join(" ").trim() || null,
+            issue: {
+              id: issue.id,
+              key: issue.key,
+              title: issue.title,
+              projectId: issue.projectId,
+              projectName: project.name ?? null,
+            },
+            reassignedBy: actor
+              ? [actor.firstName, actor.lastName].filter(Boolean).join(" ").trim() || actor.email
+              : null,
+          });
+        }
+      } catch (e) {
+        console.error("[email] assignee-on-create failed:", e instanceof Error ? e.message : e);
+      }
+    })();
   }
 
   return NextResponse.json({ success: true, data: issue }, { status: 201 });
