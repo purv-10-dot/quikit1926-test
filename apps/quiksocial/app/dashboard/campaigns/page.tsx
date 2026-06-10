@@ -163,22 +163,24 @@ function calcTotalPosts(
   if (!startDate || !endDate) return 0;
   const start = new Date(startDate);
   const end = new Date(endDate);
-  const days = Math.max(
-    0,
-    Math.ceil((end.getTime() - start.getTime()) / 86_400_000)
-  );
-  switch (frequency) {
-    case "daily":
-      return days;
-    case "alternate":
-      return Math.floor(days / 2);
-    case "weekly":
-      return Math.floor(days / 7);
-    case "monthly":
-      return Math.ceil(days / 30);
-    default:
-      return Math.floor(days / 7);
-  }
+  const spanMs = end.getTime() - start.getTime();
+  if (spanMs < 0) return 0;
+  // Inclusive day span — both endpoints count. 3 Jun → 5 Jun = 3 days
+  // (BUG_09: the old `ceil(diff)` produced 2, dropping the end day).
+  const days = Math.floor(spanMs / 86_400_000) + 1;
+  // Posts = number of posting slots spaced `step` days apart that fall
+  // within the inclusive span: floor((days - 1) / step) + 1. Reduces to
+  // `days` for daily, and (unlike the old floor(days/step)) never yields
+  // 0 for a short weekly/alternate range — the start day always posts.
+  const step =
+    frequency === "daily"
+      ? 1
+      : frequency === "alternate"
+        ? 2
+        : frequency === "monthly"
+          ? 30
+          : 7; // weekly + default
+  return Math.floor((days - 1) / step) + 1;
 }
 
 function statusColor(status: Campaign["status"]): string {

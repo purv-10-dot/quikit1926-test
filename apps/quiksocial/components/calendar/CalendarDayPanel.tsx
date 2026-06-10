@@ -24,6 +24,9 @@ interface Props {
   day: Date | null;
   posts: CalendarPost[];
   holiday: Holiday | null;
+  // F2 display: user's profile IANA tz; scheduled times render in it
+  // (default UTC).
+  userTimezone?: string;
   onClose: () => void;
   onRefresh: () => void;
 }
@@ -66,10 +69,11 @@ const PLATFORM_ICON: Record<string, string> = {
   tiktok:    "🎵",
 };
 
-function formatTime(dateStr: string | null): string {
+function formatTime(dateStr: string | null, tz: string): string {
   if (!dateStr) return "";
   const d = new Date(dateStr);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // F2 display: render the stored UTC instant in the user's profile tz.
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: tz });
 }
 
 function getThumbnail(post: CalendarPost): string | null {
@@ -89,13 +93,15 @@ function groupPosts(posts: CalendarPost[]) {
 function PostRow({
   post,
   onApprove,
+  tz,
 }: {
   post: CalendarPost;
   onApprove: (id: string) => void;
+  tz: string;
 }) {
   const thumb = getThumbnail(post);
   const icon  = PLATFORM_ICON[post.platform?.toLowerCase()] ?? "📄";
-  const time  = formatTime(post.scheduledFor || post.publishedAt);
+  const time  = formatTime(post.scheduledFor || post.publishedAt, tz);
 
   return (
     <div
@@ -255,10 +261,12 @@ export default function CalendarDayPanel({
   day,
   posts,
   holiday,
+  userTimezone,
   onClose,
   onRefresh,
 }: Props) {
   const isOpen = day !== null;
+  const tz = userTimezone || "UTC";
 
   // Escape key
   useEffect(() => {
@@ -482,7 +490,7 @@ export default function CalendarDayPanel({
             <>
               <SectionHeader title="Needs Attention" count={needsAttention.length} />
               {needsAttention.map((p) => (
-                <PostRow key={p._id} post={p} onApprove={handleApprove} />
+                <PostRow key={p._id} post={p} onApprove={handleApprove} tz={tz} />
               ))}
             </>
           )}
@@ -491,7 +499,7 @@ export default function CalendarDayPanel({
             <>
               <SectionHeader title="Scheduled" count={scheduled.length} />
               {scheduled.map((p) => (
-                <PostRow key={p._id} post={p} onApprove={handleApprove} />
+                <PostRow key={p._id} post={p} onApprove={handleApprove} tz={tz} />
               ))}
             </>
           )}
@@ -500,7 +508,7 @@ export default function CalendarDayPanel({
             <>
               <SectionHeader title="Published" count={published.length} />
               {published.map((p) => (
-                <PostRow key={p._id} post={p} onApprove={handleApprove} />
+                <PostRow key={p._id} post={p} onApprove={handleApprove} tz={tz} />
               ))}
             </>
           )}
@@ -509,7 +517,7 @@ export default function CalendarDayPanel({
             <>
               <SectionHeader title="Drafts" count={drafts.length} />
               {drafts.map((p) => (
-                <PostRow key={p._id} post={p} onApprove={handleApprove} />
+                <PostRow key={p._id} post={p} onApprove={handleApprove} tz={tz} />
               ))}
             </>
           )}

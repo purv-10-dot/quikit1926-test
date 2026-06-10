@@ -34,6 +34,45 @@ export function toUTC(localDatetime: string, timezone: string): Date {
 }
 
 /**
+ * Authoritative server-side conversion for an incoming scheduled time.
+ * The single boundary every scheduledFor / requestedPublishTime write
+ * goes through (POST /api/posts, PATCH /status, PATCH /submit-review,
+ * and — later — campaign auto-schedule).
+ *
+ * Wire contract: the client sends a TZ-NAIVE local wall-clock string
+ * ("YYYY-MM-DDTHH:mm" — no Z, no offset) = the time the user picked on
+ * their own clock. We interpret it in `timezone` and return UTC.
+ *
+ * `timezone` is passed explicitly so interactive scheduling can pass the
+ * user's profile tz (getUserTimezone(session)) while campaign
+ * auto-schedule can pass `campaign.timezone` — one path, two callers.
+ *
+ * Transition safety: if the value already carries a `Z` or a ±hh:mm
+ * offset (a caller not yet migrated, or a non-modal absolute timestamp),
+ * we trust it as an absolute instant (`new Date`) rather than
+ * re-interpreting it — so a stray ISO can never be double-shifted.
+ *
+ * Returns null for empty input, and null for an unparseable value (the
+ * caller decides whether that's a 422).
+ */
+export function resolveScheduledForUtc(
+  raw: string | null | undefined,
+  timezone: string,
+): Date | null {
+  if (raw == null) return null;
+  const value = String(raw).trim();
+  if (!value) return null;
+
+  // Already absolute (has Z or a ±hh:mm offset after the time)?
+  const hasOffset = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(value);
+  const parsed = hasOffset
+    ? new Date(value)
+    : toUTC(value, timezone || "UTC");
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
  * Converts a UTC Date from the database back to a display string in the
  * user's local timezone.
  *
@@ -63,35 +102,8 @@ export function getUserTimezone(session: any): string {
   return session?.user?.timezone || "UTC";
 }
 
-/**
- * Supported timezones for the 8 calendar regions defined in CLAUDE.md.
- *
- * Key   = human-readable region label (used in dropdowns)
- * Value = IANA timezone identifier (stored on User, passed to toUTC/toLocalDisplay)
- *
- * For regions with multiple zones (USA, Russia), the primary/most-common
- * zone is the default. Users in those regions should be able to select
- * from the full IANA list in their profile settings.
- */
-export const SUPPORTED_TIMEZONES: Record<string, string> = {
-  // Asia
-  India: "Asia/Kolkata",
-  Pakistan: "Asia/Karachi",
-  "Sri Lanka": "Asia/Colombo",
-  Bangladesh: "Asia/Dhaka",
-  UAE: "Asia/Dubai",
-
-  // Americas
-  "USA (Eastern)": "America/New_York",
-  "USA (Central)": "America/Chicago",
-  "USA (Mountain)": "America/Denver",
-  "USA (Pacific)": "America/Los_Angeles",
-
-  // Europe
-  "Russia (Moscow)": "Europe/Moscow",
-  "Russia (Yekaterinburg)": "Asia/Yekaterinburg",
-  France: "Europe/Paris",
-
-  // Fallback
-  UTC: "UTC",
-};
+// NOTE: the canonical timezone option list lives in
+// `@/lib/constants/timezones` (`SUPPORTED_TIMEZONES: TzOption[]`). The
+// old region→IANA Record that used to live here was unused and a second
+// source of truth — removed so settings + onboarding can't drift. Import
+// the option list from the constants module for any dropdown.

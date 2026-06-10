@@ -291,6 +291,27 @@ export default function DashboardLayout({
         if (data.backgroundImageName) {
           setBgSrc(`/images/${data.backgroundImageName}`);
         }
+        // F2 capture: when the user has no profile timezone yet (raw null
+        // from the GET — the session masks it to "UTC"), auto-detect the
+        // browser's IANA zone and persist it to User.timezone. Fire-and-
+        // forget; the new value lands on the next session resolution (the
+        // session callback re-reads User). The settings selector overrides
+        // it. Writes only to the existing User.timezone column.
+        if (!data.timezone) {
+          try {
+            const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (detected) {
+              void fetch("/api/user/profile", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ timezone: detected }),
+              });
+            }
+          } catch {
+            // Intl unavailable / blocked — leave tz unset (defaults to UTC).
+          }
+        }
       } catch {
         setProfileAvatar(null);
       }

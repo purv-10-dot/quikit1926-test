@@ -4,6 +4,8 @@ export const dynamic = "force-dynamic";
 
 import { unwrap } from "@/lib/utils/api-fetch";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSession } from "next-auth/react";
+import { toZonedTime } from "date-fns-tz";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, ChevronDown, Sparkles, Plus } from "lucide-react";
 import {
@@ -80,10 +82,11 @@ function buildWeekDays(date: Date): Date[] {
   });
 }
 
-function formatTimeShort(dateStr: string | null): string {
+function formatTimeShort(dateStr: string | null, tz: string): string {
   if (!dateStr) return "";
   const d = new Date(dateStr);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // F2 display: render the stored UTC instant in the user's profile tz.
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone: tz });
 }
 
 // ─── Tooltip types ────────────────────────────────────────────────────────────
@@ -98,6 +101,10 @@ interface TooltipState {
 
 export default function CalendarPage() {
   const today = new Date();
+  // F2 display: the user's profile tz drives both the day a post buckets
+  // into and the time chip shown on it (default UTC).
+  const { data: session } = useSession();
+  const tz = (session?.user as { timezone?: string } | undefined)?.timezone || "UTC";
 
   // View state
   const [viewMode,    setViewMode]    = useState<ViewMode>("Month");
@@ -244,7 +251,12 @@ export default function CalendarPage() {
   const postsByDay = posts.reduce<Record<string, CalendarPost[]>>((acc, post) => {
     const rel = relevantDate(post);
     if (!rel) return acc;
-    const d    = new Date(rel);
+    // F2: bucket by the post's civil date IN THE USER'S tz, not the
+    // browser's. toZonedTime maps the UTC instant so getFullYear/Month/Date
+    // read the zoned wall-clock — a late-night post lands on the day the
+    // user actually scheduled it. The grid cells (getDayPosts) use plain
+    // civil-date Dates, which are tz-agnostic, so the two keys align.
+    const d    = toZonedTime(new Date(rel), tz);
     const key  = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
     if (!acc[key]) acc[key] = [];
     acc[key].push(post);
@@ -751,7 +763,7 @@ export default function CalendarPage() {
                       </span>
                       {(post.scheduledFor || post.publishedAt) && (
                         <span style={{ fontSize: 11, color: "rgba(255,255,255,0.40)" }}>
-                          {formatTimeShort(post.scheduledFor ?? post.publishedAt)}
+                          {formatTimeShort(post.scheduledFor ?? post.publishedAt, tz)}
                         </span>
                       )}
                     </div>
@@ -851,7 +863,7 @@ export default function CalendarPage() {
           </p>
           {(tooltip.post.scheduledFor || tooltip.post.publishedAt) && (
             <p style={{ color: "rgba(255,255,255,0.45)", fontSize: 11, margin: 0 }}>
-              {formatTimeShort(tooltip.post.scheduledFor ?? tooltip.post.publishedAt)}
+              {formatTimeShort(tooltip.post.scheduledFor ?? tooltip.post.publishedAt, tz)}
             </p>
           )}
         </div>
@@ -1144,6 +1156,7 @@ export default function CalendarPage() {
         day={selectedDay}
         posts={selectedDayPosts}
         holiday={selectedDayHoliday}
+        userTimezone={tz}
         onClose={() => setSelectedDay(null)}
         onRefresh={fetchPosts}
       />
