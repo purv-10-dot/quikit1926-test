@@ -84,4 +84,43 @@ describe("GET /api/timesheets/grid", () => {
     expect(cell[onlyKey].hours).toBe(3.5);
     expect(cell[onlyKey].entryIds).toEqual(["e1", "e2"]);
   });
+
+  it("passes the userIds filter into the entries query", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "admin" } as never);
+    mockDb.qtTimesheetEntry.findMany.mockResolvedValue([] as never);
+    mockDb.user.findMany.mockResolvedValue([] as never);
+
+    const res = await GET(
+      gridReq(`from=${FROM}&to=${TO}&groupBy=user&userIds=u2,u3`),
+      CTX,
+    );
+    expect(res.status).toBe(200);
+    expect(mockDb.qtTimesheetEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: { in: ["u2", "u3"] } }),
+      }),
+    );
+  });
+
+  it("intersects the projectIds filter with the caller's allowed projects", async () => {
+    setSession({ id: USER, orgId: TENANT, role: "member" });
+    // Non-admin: only a member of proj_1, but asks for proj_1 + proj_2.
+    mockDb.orgMember.findFirst.mockResolvedValue({ role: "member" } as never);
+    mockDb.qtProjectMember.findMany.mockResolvedValue([{ projectId: PROJECT }] as never);
+    mockDb.qtTimesheetEntry.findMany.mockResolvedValue([] as never);
+    mockDb.user.findMany.mockResolvedValue([] as never);
+
+    const res = await GET(
+      gridReq(`from=${FROM}&to=${TO}&groupBy=user&projectIds=${PROJECT},proj_2`),
+      CTX,
+    );
+    expect(res.status).toBe(200);
+    // proj_2 is silently dropped — the user can't widen their own scope.
+    expect(mockDb.qtTimesheetEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ projectId: { in: [PROJECT] } }),
+      }),
+    );
+  });
 });

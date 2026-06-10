@@ -19,6 +19,11 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const projectId = url.searchParams.get("projectId");
   const groupBy = (url.searchParams.get("groupBy") as GroupBy | null) ?? "user";
 
+  const parseIdList = (raw: string | null): string[] =>
+    raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const userIdFilter = parseIdList(url.searchParams.get("userIds"));
+  const projectIdFilter = parseIdList(url.searchParams.get("projectIds"));
+
   if (!from || !to) {
     return NextResponse.json(
       { success: false, error: "from and to are required" },
@@ -45,15 +50,27 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     }
   }
 
+  // Resolve the effective project constraint. A locked `projectId` (space-scoped
+  // view) always wins. Otherwise we intersect the optional projectIds filter with
+  // the caller's allowed projects so a non-admin can't widen their own scope.
+  let projectWhere: Record<string, unknown> = {};
+  if (projectId) {
+    projectWhere = { projectId };
+  } else {
+    let ids: string[] | null = projectIdFilter.length > 0 ? projectIdFilter : null;
+    if (allowedProjectIds) {
+      ids = ids ? ids.filter((id) => allowedProjectIds!.includes(id)) : allowedProjectIds;
+    }
+    if (ids) projectWhere = { projectId: { in: ids } };
+  }
+
   const entries = await db.qtTimesheetEntry.findMany({
     where: {
       orgId: orgId,
       isDeleted: false,
       entryDate: { gte: fromDate, lte: toDate },
-      ...(projectId ? { projectId } : {}),
-      ...(allowedProjectIds && !projectId
-        ? { projectId: { in: allowedProjectIds } }
-        : {}),
+      ...projectWhere,
+      ...(userIdFilter.length > 0 ? { userId: { in: userIdFilter } } : {}),
     },
     select: {
       id: true,

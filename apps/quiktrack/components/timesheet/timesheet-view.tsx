@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import {
   ChevronLeft,
@@ -10,6 +10,9 @@ import {
   Menu,
   MoreHorizontal,
   CheckSquare,
+  Filter,
+  Search,
+  X,
 } from "lucide-react";
 import {
   type Period,
@@ -43,6 +46,11 @@ interface Cell {
 interface GridResponse {
   rows: RowMeta[];
   cells: Record<string, Record<string, Cell>>;
+}
+
+interface FilterOption {
+  id: string;
+  label: string;
 }
 
 const ROW_HEADER: Record<GroupBy, string> = {
@@ -101,6 +109,12 @@ export function TimesheetView({
   const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
+  // Filters — applied server-side so the grid totals stay consistent.
+  const [userFilter, setUserFilter] = useState<string[]>([]);
+  const [projectFilter, setProjectFilter] = useState<string[]>([]);
+  const [userOptions, setUserOptions] = useState<FilterOption[]>([]);
+  const [projectOptions, setProjectOptions] = useState<FilterOption[]>([]);
+
   const [logOpen, setLogOpen] = useState(false);
   const [logDate, setLogDate] = useState<Date | undefined>(undefined);
   const [logIssueId, setLogIssueId] = useState<string | undefined>(undefined);
@@ -128,17 +142,51 @@ export function TimesheetView({
         groupBy,
       });
       if (projectId) params.set("projectId", projectId);
+      if (userFilter.length > 0) params.set("userIds", userFilter.join(","));
+      if (!projectId && projectFilter.length > 0)
+        params.set("projectIds", projectFilter.join(","));
       const res = await fetch(`/api/timesheets/grid?${params.toString()}`).then((r) => r.json());
       if (res?.success) setGrid(res.data);
       else setGrid({ rows: [], cells: {} });
     } finally {
       setLoading(false);
     }
-  }, [range.from, range.to, groupBy, projectId]);
+  }, [range.from, range.to, groupBy, projectId, userFilter, projectFilter]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Load filter option lists once. Projects are skipped in the space-scoped
+  // view (it's already locked to a single project).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [users, projects] = await Promise.all([
+        fetch("/api/org/users").then((r) => r.json()).catch(() => null),
+        projectId
+          ? Promise.resolve(null)
+          : fetch("/api/projects").then((r) => r.json()).catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (users?.success && Array.isArray(users.data)) {
+        setUserOptions(
+          users.data.map((u: { userId: string; firstName?: string; lastName?: string; email: string }) => ({
+            id: u.userId,
+            label: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email,
+          })),
+        );
+      }
+      if (projects?.success && Array.isArray(projects.data)) {
+        setProjectOptions(
+          projects.data.map((p: { id: string; name: string }) => ({ id: p.id, label: p.name })),
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   // Totals — in user-issue mode, skip child rows so parent + child don't double-count.
   const totalsByDate = useMemo(() => {
@@ -366,6 +414,37 @@ export function TimesheetView({
             </button>
           </div>
           <GroupByPills value={groupBy} onChange={setGroupBy} />
+          <span className="h-6 w-px bg-gray-200" aria-hidden />
+          <MultiSelectFilter
+            icon={<Filter className="h-3.5 w-3.5 text-gray-500" />}
+            label="User"
+            options={userOptions}
+            selected={userFilter}
+            onChange={setUserFilter}
+            emptyHint="No users available"
+          />
+          {!projectId && (
+            <MultiSelectFilter
+              label="Project"
+              options={projectOptions}
+              selected={projectFilter}
+              onChange={setProjectFilter}
+              emptyHint="No projects available"
+            />
+          )}
+          {(userFilter.length > 0 || projectFilter.length > 0) && (
+            <button
+              type="button"
+              onClick={() => {
+                setUserFilter([]);
+                setProjectFilter([]);
+              }}
+              className="inline-flex items-center gap-1 h-9 px-2 text-xs font-medium text-gray-500 hover:text-gray-700"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -651,6 +730,119 @@ export function TimesheetView({
             void refresh();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+function MultiSelectFilter({
+  label,
+  options,
+  selected,
+  onChange,
+  icon,
+  emptyHint,
+}: {
+  label: string;
+  options: FilterOption[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  icon?: ReactNode;
+  emptyHint?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, query]);
+
+  function toggle(id: string) {
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  }
+
+  const count = selected.length;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium border rounded ${
+          count > 0
+            ? "border-blue-300 bg-blue-50 text-blue-700"
+            : "border-gray-300 text-gray-700 hover:bg-gray-50"
+        }`}
+      >
+        {icon}
+        {label}
+        {count > 0 && (
+          <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-blue-600 text-white text-[10px] font-semibold">
+            {count}
+          </span>
+        )}
+        <ChevronDown className="h-3 w-3 text-gray-500" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} aria-hidden />
+          <div className="absolute left-0 top-full mt-1 w-60 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+            <div className="px-2 pb-1.5 pt-1">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={`Search ${label.toLowerCase()}…`}
+                  className="w-full h-7 pl-7 pr-2 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+            </div>
+            <div className="max-h-56 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-400">
+                  {options.length === 0 ? emptyHint ?? "No options" : "No matches"}
+                </div>
+              ) : (
+                filtered.map((o) => {
+                  const checked = selected.includes(o.id);
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => toggle(o.id)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-gray-50"
+                    >
+                      <span
+                        className={`inline-flex items-center justify-center h-3.5 w-3.5 rounded border ${
+                          checked ? "bg-blue-600 border-blue-600" : "border-gray-300"
+                        }`}
+                      >
+                        {checked && <CheckSquare className="h-3 w-3 text-white" />}
+                      </span>
+                      <span className="text-gray-700 truncate">{o.label}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            {count > 0 && (
+              <div className="border-t border-gray-100 mt-1 pt-1">
+                <button
+                  type="button"
+                  onClick={() => onChange([])}
+                  className="w-full px-3 py-1.5 text-xs text-left text-gray-500 hover:bg-gray-50"
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
