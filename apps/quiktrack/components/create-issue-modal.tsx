@@ -329,9 +329,6 @@ export function CreateIssueModal({
                 }
               }}
             />
-            <a className="mt-1 inline-block text-xs text-blue-600 hover:underline" href="#">
-              Learn about work types ↗
-            </a>
           </Field>
 
           <hr className="border-gray-200" />
@@ -402,9 +399,6 @@ export function CreateIssueModal({
           {type !== "EPIC" && (
             <Field label="Priority">
               <PriorityPicker value={priority} onChange={setPriority} />
-              <a className="mt-1 inline-block text-xs text-blue-600 hover:underline" href="#">
-                Learn about priority levels ↗
-              </a>
             </Field>
           )}
 

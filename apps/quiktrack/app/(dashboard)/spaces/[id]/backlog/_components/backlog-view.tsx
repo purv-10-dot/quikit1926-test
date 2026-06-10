@@ -294,7 +294,7 @@ function InlineCreatorInner({
         </button>
         {typeMenuOpen && (
           <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
-            {(["BUG", "STORY", "TASK", "EPIC"] as IssueType[]).map((k) => {
+            {(["BUG", "STORY", "TASK"] as IssueType[]).map((k) => {
               const m = TYPE_META[k];
               return (
                 <button
@@ -1124,6 +1124,7 @@ function IssueRow({
   statuses,
   epics,
   members,
+  currentUserId,
   fields = DEFAULT_VIEW_SETTINGS.fields,
   density = DEFAULT_VIEW_SETTINGS.density,
   onDragStart,
@@ -1137,6 +1138,7 @@ function IssueRow({
   statuses: Status[];
   epics: EpicLite[];
   members: Member[];
+  currentUserId: string | null;
   fields?: BacklogViewSettings["fields"];
   density?: BacklogViewSettings["density"];
   onDragStart?: (e: React.DragEvent, issueId: string) => void;
@@ -1157,6 +1159,9 @@ function IssueRow({
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
   const epicRef = useRef<HTMLDivElement>(null);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [assigneeSearch, setAssigneeSearch] = useState("");
+  const assigneeRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1232,6 +1237,22 @@ function IssueRow({
       document.removeEventListener("keydown", onKey);
     };
   }, [epicOpen]);
+
+  useEffect(() => {
+    if (!assigneeOpen) return;
+    function onClick(e: MouseEvent) {
+      if (assigneeRef.current && !assigneeRef.current.contains(e.target as Node)) {
+        setAssigneeOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setAssigneeOpen(false); }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [assigneeOpen]);
 
   async function patch(body: Record<string, unknown>) {
     try {
@@ -1505,35 +1526,111 @@ function IssueRow({
           ? members.find((m) => m.user?.id === issue.assigneeId) ?? null
           : null;
         const u = assigneeMember?.user ?? null;
-        if (!u) {
-          return (
-            <span
-              className="h-6 w-6 rounded-full bg-gray-100 border border-dashed border-gray-300 inline-flex items-center justify-center text-gray-400 shrink-0"
-              title="Unassigned"
+        const name = u
+          ? [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email
+          : "Unassigned";
+        const q = assigneeSearch.trim().toLowerCase();
+        const filtered = q
+          ? members.filter(
+              (m) =>
+                memberName(m).toLowerCase().includes(q) ||
+                (m.user?.email ?? "").toLowerCase().includes(q),
+            )
+          : members;
+        return (
+          <div className="relative shrink-0" ref={assigneeRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setAssigneeSearch("");
+                setAssigneeOpen((v) => !v);
+              }}
+              className="rounded-full hover:ring-2 hover:ring-gray-200"
+              aria-label="Assignee"
+              title={name}
             >
-              <UserIcon className="h-3 w-3" />
-            </span>
-          );
-        }
-        const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email;
-        const initials =
-          (u.firstName?.[0] ?? u.email[0] ?? "?").toUpperCase() +
-          (u.lastName?.[0] ?? "").toUpperCase();
-        return u.avatar ? (
-          <img
-            src={u.avatar}
-            alt=""
-            title={name}
-            className="h-6 w-6 rounded-full object-cover shrink-0"
-          />
-        ) : (
-          <span
-            className="h-6 w-6 rounded-full text-white text-[10px] font-semibold inline-flex items-center justify-center shrink-0"
-            style={{ background: memberColor(u.id) }}
-            title={name}
-          >
-            {initials}
-          </span>
+              {u ? (
+                u.avatar ? (
+                  <img src={u.avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
+                ) : (
+                  <span
+                    className="h-6 w-6 rounded-full text-white text-[10px] font-semibold inline-flex items-center justify-center"
+                    style={{ background: memberColor(u.id) }}
+                  >
+                    {(u.firstName?.[0] ?? u.email[0] ?? "?").toUpperCase() +
+                      (u.lastName?.[0] ?? "").toUpperCase()}
+                  </span>
+                )
+              ) : (
+                <span className="h-6 w-6 rounded-full bg-gray-100 border border-dashed border-gray-300 inline-flex items-center justify-center text-gray-400">
+                  <UserIcon className="h-3 w-3" />
+                </span>
+              )}
+            </button>
+            {assigneeOpen && (
+              <div className="absolute right-0 top-full mt-1 w-[260px] bg-white border border-gray-200 rounded-md shadow-lg z-30 py-1">
+                <div className="px-2 pb-1.5 pt-1">
+                  <input
+                    autoFocus
+                    value={assigneeSearch}
+                    onChange={(e) => setAssigneeSearch(e.target.value)}
+                    placeholder="Search members"
+                    className="w-full h-7 px-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="max-h-60 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (issue.assigneeId) void patch({ assigneeId: null });
+                      setAssigneeOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+                  >
+                    <span className="h-6 w-6 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                      <UserIcon className="h-3 w-3 text-gray-500" />
+                    </span>
+                    Unassigned
+                  </button>
+                  {filtered.length === 0 && (
+                    <div className="px-3 py-2 text-[11px] text-gray-400">No members found</div>
+                  )}
+                  {filtered.map((m) => {
+                    const isMe = m.userId === currentUserId;
+                    const active = m.userId === issue.assigneeId;
+                    return (
+                      <button
+                        key={m.userId}
+                        type="button"
+                        onClick={() => {
+                          if (!active) void patch({ assigneeId: m.userId });
+                          setAssigneeOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50 text-left ${
+                          active ? "bg-blue-50" : ""
+                        }`}
+                      >
+                        <span
+                          className="h-6 w-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0"
+                          style={{ background: memberColor(m.userId) }}
+                        >
+                          {memberInitials(m)}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="font-medium text-gray-900">{memberName(m)}</span>
+                          {isMe && <span className="text-gray-500"> (Assign to me)</span>}
+                          {m.user?.email && (
+                            <div className="text-[11px] text-gray-500 truncate">{m.user.email}</div>
+                          )}
+                        </span>
+                        {active && <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         );
       })()}
       <div className="relative shrink-0" ref={menuRef}>
@@ -1911,6 +2008,7 @@ function SectionBody({
           statuses={Array.from(statusesById.values())}
           epics={epics}
           members={members}
+          currentUserId={currentUserId}
           fields={fields}
           density={density}
           onDragStart={onDragStart}

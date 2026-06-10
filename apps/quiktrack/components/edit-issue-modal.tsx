@@ -28,6 +28,7 @@ import {
   LayoutGrid,
   AlertTriangle,
   Trash2,
+  Check,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
 import { DeleteTaskModal } from "@/components/delete-task-modal";
@@ -143,6 +144,13 @@ function typeMeta(t: string | undefined) {
   return TYPE_META[(t as IssueType) ?? "TASK"] ?? TYPE_META.TASK;
 }
 
+// The "flat" work types the breadcrumb switcher offers. EPIC and SUBTASK are
+// deliberately excluded — they carry hierarchy (epics contain children,
+// subtasks need a parent), so converting to/from them from a quick menu would
+// orphan children or break the tree. The switcher only appears when the issue
+// is already one of these.
+const WORK_TYPE_OPTIONS: IssueType[] = ["TASK", "STORY", "BUG"];
+
 const PRIORITY_META: Record<Priority, { label: string; color: string; Icon: React.ElementType }> = {
   HIGHEST: { label: "Highest", color: "text-red-600", Icon: ChevronsUp },
   HIGH: { label: "High", color: "text-red-500", Icon: ChevronUp },
@@ -230,10 +238,23 @@ export function EditIssueModal({
   onSaved?: () => void;
 }) {
   const [currentIssueId, setCurrentIssueId] = useState<string | null>(issueId);
-  // Reset internal pointer whenever the parent opens a new issue.
-  useEffect(() => {
-    if (issueId) setCurrentIssueId(issueId);
-  }, [issueId]);
+  // Reset internal pointer whenever the parent opens a new issue. We adjust
+  // state DURING render (the React derived-state pattern) rather than in an
+  // effect so `currentIssueId` is correct on the very first render with the
+  // new prop. The old effect-based sync lagged one render, which let the
+  // subtask loader fire against the previous issue id and paint its result
+  // into the new issue's drawer.
+  const [syncedIssueId, setSyncedIssueId] = useState<string | null>(issueId);
+  if (issueId && issueId !== syncedIssueId) {
+    setSyncedIssueId(issueId);
+    setCurrentIssueId(issueId);
+  }
+  // Holds the latest issue id so async loaders can detect that the drawer has
+  // navigated away mid-flight and discard their (now stale) response. A plain
+  // closure capture can't do this — it would compare the captured value to
+  // itself — so we read through a ref kept current on every render.
+  const currentIssueIdRef = useRef<string | null>(currentIssueId);
+  currentIssueIdRef.current = currentIssueId;
 
   // Project-scoped perms decide which fields are editable and whether the
   // subtask composer is rendered at all. Server enforces; this just hides
@@ -288,6 +309,19 @@ export function EditIssueModal({
     setEpicMenuOpen(false);
   }
 
+  // Inline work-type switcher on the breadcrumb key chip.
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const typeMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (typeMenuOpen && typeMenuRef.current && !typeMenuRef.current.contains(e.target as Node)) {
+        setTypeMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [typeMenuOpen]);
+
   const [loading, setLoading] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [subtasksOpen, setSubtasksOpen] = useState(true);
@@ -317,18 +351,24 @@ export function EditIssueModal({
   const SUBTASK_PAGE = 20;
   async function loadSubtasks(initial: boolean) {
     if (!currentIssueId) return;
-    if (subtaskLoading) return;
-    if (!initial && !subtaskHasMore) return;
+    // A paginated follow-up bails if one is already in flight or there's no
+    // next page. The initial (reset) load must NOT bail on subtaskLoading —
+    // otherwise switching issues while a previous fetch is in flight drops the
+    // new issue's load and the stale fetch overwrites the cleared list.
+    if (!initial && (subtaskLoading || !subtaskHasMore)) return;
+    const reqParent = currentIssueId;
     setSubtaskLoading(true);
     try {
       const params = new URLSearchParams({
         projectId,
-        parentId: currentIssueId,
+        parentId: reqParent,
         type: "SUBTASK",
         limit: String(SUBTASK_PAGE),
       });
       if (!initial && subtaskCursor) params.set("cursor", subtaskCursor);
       const res = await fetch(`/api/issues?${params.toString()}`).then((r) => r.json());
+      // Discard a response whose issue we've already navigated away from.
+      if (reqParent !== currentIssueIdRef.current) return;
       if (res?.success) {
         const rows: SubtaskRow[] = (res.data ?? []).map((d: SubtaskRow) => d);
         setSubtasks((prev) => (initial ? rows : [...prev, ...rows]));
@@ -720,13 +760,59 @@ export function EditIssueModal({
                     </div>
                   )}
                   {issue.type !== "EPIC" && <span className="text-gray-400 mx-1">/</span>}
-                  <span className="inline-flex items-center gap-1">
-                    {(() => {
-                      const T = typeMeta(issue.type);
-                      return <T.Icon className={`h-3 w-3 ${T.color}`} />;
-                    })()}
-                    {issue.key}
-                  </span>
+                  {WORK_TYPE_OPTIONS.includes(issue.type as IssueType) ? (
+                    <div className="relative" ref={typeMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => setTypeMenuOpen((v) => !v)}
+                        className="inline-flex items-center gap-1 h-6 px-1.5 -mx-1 rounded hover:bg-gray-100"
+                        title="Change work type"
+                      >
+                        {(() => {
+                          const T = typeMeta(issue.type);
+                          return <T.Icon className={`h-3 w-3 ${T.color}`} />;
+                        })()}
+                        {issue.key}
+                        <ChevronDown className="h-3 w-3 text-gray-400" />
+                      </button>
+                      {typeMenuOpen && (
+                        <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-md shadow-lg z-50 py-1">
+                          <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-500">
+                            Change work type
+                          </div>
+                          {WORK_TYPE_OPTIONS.map((t) => {
+                            const T = typeMeta(t);
+                            const active = t === issue.type;
+                            return (
+                              <button
+                                key={t}
+                                type="button"
+                                onClick={() => {
+                                  setTypeMenuOpen(false);
+                                  if (t !== issue.type) void patch({ type: t });
+                                }}
+                                className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-gray-50 ${
+                                  active ? "text-blue-700 font-medium" : "text-gray-700"
+                                }`}
+                              >
+                                <T.Icon className={`h-3.5 w-3.5 ${T.color}`} />
+                                {T.label}
+                                {active && <Check className="h-3.5 w-3.5 ml-auto text-blue-600" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="inline-flex items-center gap-1">
+                      {(() => {
+                        const T = typeMeta(issue.type);
+                        return <T.Icon className={`h-3 w-3 ${T.color}`} />;
+                      })()}
+                      {issue.key}
+                    </span>
+                  )}
                 </div>
                 {/* <div className="inline-flex items-center gap-1 text-gray-500">
                   <button className="p-1 hover:bg-gray-100 rounded" aria-label="Lock">
@@ -1056,8 +1142,8 @@ export function EditIssueModal({
                                 type="button"
                                 className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
                               >
-                                <Search className="h-3 w-3" />
-                                Choose existing
+                              
+                               
                               </button>
                               <button
                                 type="button"
