@@ -1,12 +1,13 @@
 import { requireProjectsFinanceAction } from "@/lib/auth/requireProjectsFinanceAction";
 import { findCnUserById } from "@/lib/users/lookup";
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { hasMatrixAction } from "@/lib/auth/context";
 import { err as envelopeErr } from "@/lib/http/envelope";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";
 import { boqService, BOQError } from "@/lib/boq";
 import { recordAudit } from "@/lib/workflow/audit";
+import { postDPRConsumptionOutward, StockError } from "@/lib/stock/ledger-service";
 
 /**
  * POST /api/projects/dpr/:id/approve
@@ -62,15 +63,25 @@ export async function POST(
     where: { id: params.id, orgId: ctx.orgId},
     select: {
       id: true,
+      dprNumber: true,
       status: true,
       approvalId: true,
       projectId: true,
+      consumptionLocationId: true,
       workItems: {
         select: {
           id: true,
           boqItemId: true,
           todayQty: true,
           woId: true,
+        },
+      },
+      materialEntries: {
+        select: {
+          id: true,
+          itemId: true,
+          uomId: true,
+          consumedQty: true,
         },
       },
     },
@@ -161,6 +172,27 @@ export async function POST(
   // ── Pre-resolve BOQ ids → boqNos so the txn doesn't do extra reads. ──
   // Only used when action === "approve" AND this is the final step.
   const isFinalApprove = action === "approve" && !nextStep;
+
+  // Material consumption is deducted from a single location on final
+  // approve. Block early if there are materials but no location to
+  // deduct them from — better than failing mid-transaction.
+  const materialEntries = (dpr.materialEntries ?? []) as Array<{
+    id: string;
+    itemId: string;
+    uomId: string;
+    consumedQty: any;
+  }>;
+  if (isFinalApprove && materialEntries.length > 0 && !dpr.consumptionLocationId) {
+    return NextResponse.json(
+      {
+        error:
+          "This DPR logs material consumption but has no consumption location set. " +
+          "Set a consumption location before approving.",
+      },
+      { status: 400 },
+    );
+  }
+
   let boqNoById = new Map<string, string>();
   if (isFinalApprove) {
     const boqItemIds = (dpr.workItems ?? [])
@@ -183,6 +215,7 @@ export async function POST(
 
   let dprStatusUpdate: Record<string, unknown> | null = null;
   const appliedUpdates: Array<{ boqNo: string; qty: number; workType: string }> = [];
+  let materialsConsumed = 0;
 
   try {
     await db.$transaction(async (tx: any) => {
@@ -231,6 +264,33 @@ export async function POST(
             appliedUpdates.push({ boqNo, qty: todayQty, workType });
           }
 
+          // Deduct consumed materials from stock at the consumption
+          // location, valued at the location's moving-average rate. The
+          // ledger service maintains CnStockBalance + audit and rejects
+          // if any line would drive the balance negative.
+          if (materialEntries.length > 0 && dpr.consumptionLocationId) {
+            const consumption = await postDPRConsumptionOutward(tx, ctx, {
+              id: dpr.id,
+              dprNumber: dpr.dprNumber,
+              projectId: dpr.projectId,
+              locationId: dpr.consumptionLocationId,
+              lines: materialEntries.map((m) => ({
+                lineId: m.id,
+                itemId: m.itemId,
+                uomId: m.uomId,
+                consumedQty: Number(m.consumedQty ?? 0),
+              })),
+            });
+            // Snapshot the resolved rate/amount back onto each entry.
+            for (const c of consumption) {
+              await tx.cnDPRMaterialEntry.update({
+                where: { id: c.lineId },
+                data: { unitRate: c.unitRate, amount: c.amount },
+              });
+            }
+            materialsConsumed = consumption.length;
+          }
+
           await recordAudit(tx, ctx, {
             entityType: "dpr",
             entityId: dpr.id,
@@ -239,6 +299,7 @@ export async function POST(
               from: dpr.status,
               to: "approved",
               linesApplied: appliedUpdates.length,
+              materialsConsumed,
               comments: comments || undefined,
             },
           });
@@ -290,6 +351,12 @@ export async function POST(
         { status: err.httpStatus },
       );
     }
+    if (err instanceof StockError) {
+      return NextResponse.json(
+        { error: err.message, code: err.code },
+        { status: err.httpStatus },
+      );
+    }
     throw err;
   }
 
@@ -322,5 +389,6 @@ export async function POST(
     },
     boqUpdatesApplied: appliedUpdates.length,
     updates: appliedUpdates,
+    materialsConsumed,
   });
 }

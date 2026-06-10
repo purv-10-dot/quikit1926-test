@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Star,
   Link2,
-  RefreshCw,
   Edit3,
   MoreHorizontal,
   Plus,
@@ -65,7 +64,6 @@ export function DashboardView({
   const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerColumn, setPickerColumn] = useState<"left" | "right">("left");
-  const [refreshKey, setRefreshKey] = useState(0);
   const [starred, setStarred] = useState(false);
 
   // Hydrate from storage once on mount.
@@ -100,7 +98,7 @@ export function DashboardView({
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
         <div className="flex items-center gap-1.5 text-gray-500">
-          <button
+          {/* <button
             type="button"
             onClick={() => {
               const next = !starred;
@@ -116,8 +114,8 @@ export function DashboardView({
             <Star
               className={`h-4 w-4 ${starred ? "fill-yellow-400 text-yellow-500" : ""}`}
             />
-          </button>
-          <button
+          </button> */}
+          {/* <button
             type="button"
             onClick={() => {
               if (typeof window === "undefined") return;
@@ -127,15 +125,7 @@ export function DashboardView({
             aria-label="Copy link"
           >
             <Link2 className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setRefreshKey((k) => k + 1)}
-            className="inline-flex items-center gap-1.5 h-8 px-3 text-xs text-gray-700 border border-gray-300 rounded hover:bg-gray-50"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
-          </button>
+          </button> */}
           <button
             type="button"
             onClick={() => setEditing((v) => !v)}
@@ -148,12 +138,12 @@ export function DashboardView({
             {editing ? <Check className="h-3.5 w-3.5" /> : <Edit3 className="h-3.5 w-3.5" />}
             {editing ? "Done" : "Edit"}
           </button>
-          <button
+          {/* <button
             className="p-1.5 rounded hover:bg-gray-100 border border-gray-300 h-8 w-8 inline-flex items-center justify-center"
             aria-label="More"
           >
             <MoreHorizontal className="h-4 w-4" />
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -166,9 +156,8 @@ export function DashboardView({
               title={WIDGET_META[w.type].label}
               editing={editing}
               onRemove={() => removeWidget(w.id)}
-              onRefresh={() => setRefreshKey((k) => k + 1)}
             >
-              <RenderWidget type={w.type} refreshKey={refreshKey} />
+              <RenderWidget type={w.type} />
             </WidgetFrame>
           ))}
           {editing && (
@@ -192,9 +181,8 @@ export function DashboardView({
               title={WIDGET_META[w.type].label}
               editing={editing}
               onRemove={() => removeWidget(w.id)}
-              onRefresh={() => setRefreshKey((k) => k + 1)}
             >
-              <RenderWidget type={w.type} refreshKey={refreshKey} />
+              <RenderWidget type={w.type} />
             </WidgetFrame>
           ))}
           {editing && (
@@ -220,11 +208,11 @@ export function DashboardView({
   );
 }
 
-function RenderWidget({ type, refreshKey }: { type: WidgetConfig["type"]; refreshKey: number }) {
+function RenderWidget({ type }: { type: WidgetConfig["type"] }) {
   if (type === "introduction") return <IntroductionWidget />;
-  if (type === "projects") return <ProjectsWidget refreshKey={refreshKey} />;
-  if (type === "assigned-to-me") return <AssignedToMeWidget refreshKey={refreshKey} />;
-  if (type === "activity-stream") return <ActivityStreamWidget refreshKey={refreshKey} />;
-  if (type === "status-chart") return <StatusChartWidget refreshKey={refreshKey} />;
+  if (type === "projects") return <ProjectsWidget />;
+  if (type === "assigned-to-me") return <AssignedToMeWidget />;
+  if (type === "activity-stream") return <ActivityStreamWidget />;
+  if (type === "status-chart") return <StatusChartWidget />;
   return null;
 }

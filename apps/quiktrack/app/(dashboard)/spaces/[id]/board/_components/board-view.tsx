@@ -16,6 +16,7 @@ import type { BoardStatus, EpicLite } from "./board-meta";
 import { BoardColumn } from "./board-column";
 import { AddColumnTile } from "./add-column-tile";
 import { BoardFilterSelect, type BoardFilterOption } from "./board-filter-select";
+import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
 
 interface BoardMember {
   userId: string;
@@ -111,6 +112,23 @@ export function BoardView({ projectId }: { projectId: string }) {
       alive = false;
     };
   }, [projectId]);
+
+  // Refetch members when someone is added/removed via the Add-people modal,
+  // so the avatar stack updates without a page reload.
+  useMembersChanged(projectId, () => {
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (!res?.success) return;
+        const list = Array.isArray(res.data?.members)
+          ? res.data.members
+          : Array.isArray(res.data)
+            ? res.data
+            : [];
+        setMembers(list);
+      })
+      .catch(() => undefined);
+  });
 
   // Refresh whenever an issue is created or updated elsewhere — each column
   // watches the same event and refetches its first page, so the board stays
@@ -349,7 +367,13 @@ function Toolbar({
   useEffect(() => {
     if (!filterOpen) return;
     function onDown(e: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
+      const t = e.target as HTMLElement;
+      // Inner selects portal their option menu to document.body. A click there
+      // is visually inside the filter popover but lives outside `filterRef` —
+      // don't let it close (and unmount) the popover before the option's click
+      // handler runs, or the filter value never applies.
+      if (t.closest?.("[data-portal-popover]")) return;
+      if (filterRef.current && !filterRef.current.contains(t)) setFilterOpen(false);
     }
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") setFilterOpen(false); }
     document.addEventListener("mousedown", onDown);

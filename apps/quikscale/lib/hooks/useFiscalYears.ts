@@ -28,19 +28,30 @@ let cache: FiscalYearsData | null = null;
 let inflight: Promise<FiscalYearsData> | null = null;
 const listeners = new Set<() => void>();
 
+// Only treat the cache as settled when it actually has years. Empty results
+// (from a 401 during startup, a network blip, or a fresh org) are not cached
+// so the next mount re-fetches and picks up real data once the session is ready.
+function hasYears(d: FiscalYearsData | null): d is FiscalYearsData {
+  return d != null && d.years.length > 0;
+}
+
 async function fetchFiscalYears(): Promise<FiscalYearsData> {
-  if (cache) return cache;
+  if (hasYears(cache)) return cache;
   if (inflight) return inflight;
   inflight = fetch("/api/org/fiscal-years")
-    .then(r => r.json())
-    .then(d => {
-      const data: FiscalYearsData = d?.success && d?.data
-        ? { years: d.data.years ?? [], configured: d.data.configured ?? [] }
-        : { years: [], configured: [] };
-      cache = data;
-      return data;
+    .then(r => {
+      if (r.status === 401 || r.status === 403) {
+        return { years: [], configured: [] } as FiscalYearsData;
+      }
+      return r.json().then((d: { success?: boolean; data?: { years?: number[]; configured?: Array<{ year: number; quarter: string }> } }) => {
+        const data: FiscalYearsData = d?.success && d?.data
+          ? { years: d.data.years ?? [], configured: d.data.configured ?? [] }
+          : { years: [], configured: [] };
+        if (data.years.length > 0) cache = data;
+        return data;
+      });
     })
-    .catch(() => ({ years: [], configured: [] }))
+    .catch(() => ({ years: [], configured: [] } as FiscalYearsData))
     .finally(() => { inflight = null; });
   return inflight;
 }
@@ -50,8 +61,9 @@ export interface FiscalYearsResult extends FiscalYearsData {
 }
 
 export function useFiscalYears(): FiscalYearsResult {
-  const [data, setData] = useState<FiscalYearsData>(cache ?? { years: [], configured: [] });
-  const [isLoading, setIsLoading] = useState(!cache);
+  const settled = hasYears(cache) ? cache : null;
+  const [data, setData] = useState<FiscalYearsData>(settled ?? { years: [], configured: [] });
+  const [isLoading, setIsLoading] = useState(!settled);
 
   useEffect(() => {
     let alive = true;

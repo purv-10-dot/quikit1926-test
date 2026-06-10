@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X, Search, ThumbsUp, ArrowLeft } from "lucide-react";
+import { X, Search, ArrowLeft } from "lucide-react";
 
 interface HelpArticle {
   id: string;
@@ -453,7 +453,7 @@ export function HelpPanel({ open, onClose }: { open: boolean; onClose: () => voi
 
         <div className="flex-1 overflow-y-auto">
           {selected ? (
-            <ArticleView article={selected} onPick={(id) => setSelectedId(id)} />
+            <ArticleView article={selected} />
           ) : (
             <>
               {filtered.length === 0 && (
@@ -475,16 +475,9 @@ export function HelpPanel({ open, onClose }: { open: boolean; onClose: () => voi
                       Last modified: {relativeOrFormatted(a.lastModified)}
                     </p>
                     <p className="mt-1.5 text-xs text-gray-700 leading-snug">{a.excerpt}</p>
-                    <div className="mt-2 flex items-center justify-between text-[11px] text-gray-500">
+                    <div className="mt-2 text-[11px] text-gray-500">
                       <span className="font-semibold uppercase tracking-wider">
                         {a.category}
-                      </span>
-                      <span className="inline-flex items-center gap-3">
-                        <span>{a.views.toLocaleString()} views</span>
-                        <span className="inline-flex items-center gap-1">
-                          <ThumbsUp className="h-3 w-3" />
-                          {a.likes}
-                        </span>
                       </span>
                     </div>
                   </li>
@@ -504,14 +497,6 @@ export function HelpPanel({ open, onClose }: { open: boolean; onClose: () => voi
             </>
           )}
         </div>
-
-        <footer className="px-4 py-3 border-t border-gray-200 text-[11px] text-gray-500 flex items-center justify-center gap-3">
-          <a className="hover:text-gray-700" href="#">About QuikTrack</a>
-          <span aria-hidden>·</span>
-          <a className="hover:text-gray-700" href="#">Terms of use</a>
-          <span aria-hidden>·</span>
-          <a className="hover:text-gray-700" href="#">Privacy policy</a>
-        </footer>
       </aside>
     </>
   );
@@ -519,39 +504,9 @@ export function HelpPanel({ open, onClose }: { open: boolean; onClose: () => voi
 
 /**
  * Detail view for a single help article. Renders the article body as HTML
- * (the catalog is curated by us — no untrusted input), then a Was-this-helpful
- * affordance and a list of related articles ranked by tag overlap.
+ * (the catalog is curated by us — no untrusted input).
  */
-function ArticleView({
-  article,
-  onPick,
-}: {
-  article: HelpArticle;
-  onPick: (id: string) => void;
-}) {
-  const [vote, setVote] = useState<"yes" | "no" | null>(null);
-
-  // Related = articles sharing at least one tag, excluding self, ranked by
-  // overlap count then recency. Cap to 3.
-  const related = useMemo(() => {
-    const tagSet = new Set(article.tags);
-    return ARTICLES.filter((a) => a.id !== article.id)
-      .map((a) => {
-        const overlap = a.tags.reduce((n, t) => n + (tagSet.has(t) ? 1 : 0), 0);
-        return { article: a, overlap };
-      })
-      .filter((x) => x.overlap > 0)
-      .sort((a, b) => {
-        if (b.overlap !== a.overlap) return b.overlap - a.overlap;
-        return (
-          new Date(b.article.lastModified).getTime() -
-          new Date(a.article.lastModified).getTime()
-        );
-      })
-      .slice(0, 3)
-      .map((x) => x.article);
-  }, [article]);
-
+function ArticleView({ article }: { article: HelpArticle }) {
   return (
     <div className="px-5 py-4">
       <h1 className="text-xl font-bold text-gray-900 leading-snug">
@@ -576,63 +531,6 @@ function ArticleView({
           [&_kbd]:px-1 [&_kbd]:py-px [&_kbd]:border [&_kbd]:border-gray-300 [&_kbd]:rounded [&_kbd]:text-[10px] [&_kbd]:font-mono [&_kbd]:bg-gray-50"
         dangerouslySetInnerHTML={{ __html: article.body }}
       />
-
-      <div className="mt-6 pt-4 border-t border-gray-200 flex items-center gap-3">
-        <span className="text-xs font-semibold text-gray-700">
-          Was this helpful?
-        </span>
-        <button
-          type="button"
-          onClick={() => setVote("yes")}
-          className={`h-7 px-3 text-xs border rounded ${
-            vote === "yes"
-              ? "border-blue-500 text-blue-700 bg-blue-50"
-              : "border-gray-300 text-gray-700 hover:bg-gray-50"
-          }`}
-        >
-          Yes
-        </button>
-        <button
-          type="button"
-          onClick={() => setVote("no")}
-          className={`h-7 px-3 text-xs border rounded ${
-            vote === "no"
-              ? "border-blue-500 text-blue-700 bg-blue-50"
-              : "border-gray-300 text-gray-700 hover:bg-gray-50"
-          }`}
-        >
-          No
-        </button>
-        {vote && (
-          <span className="text-[11px] text-gray-500 ml-1">
-            Thanks for the feedback!
-          </span>
-        )}
-      </div>
-
-      {related.length > 0 && (
-        <div className="mt-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-2">
-            Related articles
-          </h2>
-          <ul className="space-y-2">
-            {related.map((r) => (
-              <li
-                key={r.id}
-                onClick={() => onPick(r.id)}
-                className="px-3 py-2 border border-gray-200 rounded cursor-pointer hover:bg-gray-50"
-              >
-                <h3 className="text-sm font-semibold text-gray-900 leading-snug">
-                  {r.title}
-                </h3>
-                <p className="mt-0.5 text-[11px] text-gray-500">
-                  Last modified: {relativeOrFormatted(r.lastModified)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }

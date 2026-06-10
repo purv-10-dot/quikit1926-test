@@ -11,7 +11,7 @@ const withOrgAuth = withOrgAuthForModule("store");
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const ret = await db.cnInternalReturn.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
+    where: { id: params.id, orgId },
     include: { lines: true },
   });
   if (!ret) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -31,10 +31,10 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
             transactionRefId: ret.id,
             transactionRefNumber: ret.returnNumber,
             transactionDate: ret.returnDate,
-            qtyIn: line.returnQty,
+            qtyIn: line.returnedQty,
             qtyOut: 0,
-            unitRate: line.unitRate,
-            amount: line.amount,
+            unitRate: 0,
+            amount: 0,
             uomId: line.uomId,
             createdBy: userId,
           },
@@ -42,7 +42,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
       }
       await tx.cnInternalReturn.update({
         where: { id: ret.id },
-        data: { status: "posted", postedAt, postedBy: userId, updatedBy: userId },
+        data: { status: "posted", updatedBy: userId },
       });
     });
   } catch (err: unknown) {

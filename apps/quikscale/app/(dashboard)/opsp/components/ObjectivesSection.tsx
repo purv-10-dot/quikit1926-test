@@ -31,7 +31,7 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
       {/* Core Values */}
       <Card className="flex flex-col gap-3 flex-1 min-w-[280px]">
         <CardH title="CORE VALUES/BELIEFS" subtitle="(Should/Shouldn't)" />
-        <div className="flex-1 flex flex-col min-h-0">
+        <div data-opsp-field="coreValues" className="flex-1 flex flex-col min-h-0">
           <RichEditor
             value={form.coreValues}
             onChange={(v) => set("coreValues", v)}
@@ -45,7 +45,7 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
 
       {/* Purpose */}
       <Card className="flex flex-col gap-3 flex-1 min-w-[280px]">
-        <div>
+        <div data-opsp-field="purpose">
           <CardH title="PURPOSE" subtitle="(Why)" />
           <RichEditor
             value={form.purpose}
@@ -62,7 +62,7 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
           </div>
           <div className="divide-y divide-gray-100">
             {form.actions.map((v, i) => (
-              <div key={i} className="flex items-center gap-3 py-1.5">
+              <div key={i} data-opsp-field={`actions.${i}`} className="flex items-center gap-3 py-1.5">
                 <span className="text-xs text-gray-400 w-5 flex-shrink-0">
                   {String(i + 1).padStart(2, "0")}
                 </span>
@@ -75,7 +75,7 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
         </div>
         {/* Profit per X + BHAG — split remaining card space equally */}
         <div className="border-t border-gray-100 pt-3 flex-1 flex flex-col gap-3 min-h-0">
-          <div className="flex-1 flex flex-col min-h-0">
+          <div data-opsp-field="profitPerX" className="flex-1 flex flex-col min-h-0">
             <p className="text-xs font-semibold text-gray-700 mb-2">Profit per X</p>
             <FTextarea
               value={form.profitPerX}
@@ -85,7 +85,7 @@ export function ObjectivesSection({ form, set, setArr }: Props) {
               maxLength={280}
             />
           </div>
-          <div className="flex-1 flex flex-col min-h-0">
+          <div data-opsp-field="bhag" className="flex-1 flex flex-col min-h-0">
             <p className="text-xs font-semibold text-gray-700 mb-2">BHAG&reg;</p>
             <FTextarea
               value={form.bhag}

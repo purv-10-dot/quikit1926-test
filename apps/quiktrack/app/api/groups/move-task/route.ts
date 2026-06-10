@@ -43,7 +43,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     );
   }
   const access = await loadProjectAccess(orgId, userId, before.projectId);
-  if (!access || !canWriteGroups(access)) {
+  if (!access || !(await canWriteGroups(access, userId, orgId))) {
     return NextResponse.json(
       { success: false, error: "Forbidden" },
       { status: 403 },

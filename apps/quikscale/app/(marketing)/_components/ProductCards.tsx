@@ -13,10 +13,10 @@ const MODULES: Module[] = [
   { title: "OPSP", desc: "One-Page Strategic Plan, versioned quarter on quarter.", accent: "purple", icon: "OPSP.png" },
   { title: "Habits", desc: "Rockefeller Habits checklist, live weekly.", accent: "olive", icon: "Habits.png" },
   { title: "SWT", desc: "Strengths, Weaknesses & Trends mapped to your plan.", accent: "grey", icon: "SWT.png" },
-  { title: "Goals & Pillars", desc: "Company → department → individual cascade.", accent: "mauve", icon: "Goals & Pillars.png" },
+  { title: "Goals & Pillars", desc: "Company → department → individual cascade.", accent: "mauve", icon: "goals-pillars.png" },
   { title: "FACe", desc: "Functional Accountability Chart — every seat, every owner.", accent: "grey", icon: "FACe.png" },
   { title: "PACe", desc: "Process Accountability Chart — owners and outputs.", accent: "sand", icon: "PACe.png" },
-  { title: "Surveys", desc: "Employee & customer Net Promoter Score, tracked quarterly.", accent: "sky", icon: "eNPS & cNPS.png" },
+  { title: "Surveys", desc: "Employee & customer Net Promoter Score, tracked quarterly.", accent: "sky", icon: "enps-cnps.png" },
   { title: "Cash", desc: "Power of One — model how 1% compounds into cash.", accent: "amber", icon: "Cash.png" },
 ];
 

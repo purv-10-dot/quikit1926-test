@@ -9,9 +9,18 @@ import { db } from "@quikit/database";
 import bcrypt from "bcryptjs";
 import {
   createAuthSession,
+  isAuthSessionActive,
   revokeAuthSession,
   touchAuthSession,
 } from "./session-store";
+
+/**
+ * How often to confirm the JWT's `sessionId` is still alive in Redis.
+ * Each check is a single Redis EXISTS; throttling avoids per-request hits
+ * while keeping revoke-takes-effect within this window across all apps.
+ * Fail-open: when Redis is unreachable, isAuthSessionActive() returns true.
+ */
+const SESSION_CHECK_INTERVAL = 30 * 1000;
 import { setOAuthPrefill } from "./oauth-prefill-store";
 
 export interface AuthConfig {
@@ -303,12 +312,28 @@ export function createAuthOptions(config: AuthConfig): NextAuthOptions {
         return true;
       },
       async jwt({ token, user, trigger, session }) {
+        // Soft-revocation: every JWT refresh after the initial sign-in
+        // re-checks Redis for the session id. If the key has been deleted
+        // (admin force-logout, TTL expiry, sibling-app signOut), nuke the
+        // claims and the session callback will short-circuit. Throttled to
+        // SESSION_CHECK_INTERVAL so we hit Redis at most once per window.
+        // Fail-open by design (Redis down → treated as active).
+        if (!user && token.sessionId) {
+          const lastChecked = (token.sessionCheckedAt as number | undefined) ?? 0;
+          if (Date.now() - lastChecked > SESSION_CHECK_INTERVAL) {
+            const active = await isAuthSessionActive(String(token.sessionId));
+            if (!active) return {};
+            token.sessionCheckedAt = Date.now();
+          }
+        }
+
         if (user) {
           token.id = user.id;
           token.email = user.email;
           token.isSuperAdmin = (user as AuthUser).isSuperAdmin ?? false;
           token.sessionId = await createAuthSession(user.id, 30 * 24 * 60 * 60);
           token.sessionTouchedAt = Date.now();
+          token.sessionCheckedAt = Date.now();
 
           // OAuth pre-fill: when the user came from Google/Azure, stash the
           // provider's given/family name on the JWT so the post-login profile
@@ -697,6 +722,20 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
     },
     callbacks: {
       async jwt({ token, user, account }) {
+        // Soft-revocation: on every JWT refresh after initial sign-in,
+        // confirm the shared sessionId minted by the central IdP still
+        // exists in Redis. If not, drop all claims so this consumer-app
+        // session falls through to the unauthenticated branch in middleware.
+        // Throttled and fail-open (Redis down → treated as active).
+        if (!user && token.sessionId) {
+          const lastChecked = (token.sessionCheckedAt as number | undefined) ?? 0;
+          if (Date.now() - lastChecked > SESSION_CHECK_INTERVAL) {
+            const active = await isAuthSessionActive(String(token.sessionId));
+            if (!active) return {};
+            token.sessionCheckedAt = Date.now();
+          }
+        }
+
         // On initial sign-in (after OAuth callback), populate token from user profile
         if (user) {
           token.id = user.id;
@@ -708,6 +747,7 @@ export function createOAuthClientOptions(config: OAuthClientConfig): NextAuthOpt
           // /api/verify-token) can soft-invalidate this app's session when the
           // central session is revoked.
           token.sessionId = (user as AuthUser).sessionId;
+          token.sessionCheckedAt = Date.now();
         }
         // Store the access_token + refresh_token from the OAuth exchange
         if (account) {

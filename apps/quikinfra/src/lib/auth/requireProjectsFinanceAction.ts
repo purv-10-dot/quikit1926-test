@@ -10,7 +10,6 @@
  *   /api/projects/dpr/*                       → construction.dpr
  *   /api/projects/work-orders/*               → construction.wo
  *   /api/projects/rab/*                       → construction.rab
- *   /api/projects/estimation/*                → construction.estimation
  *   /api/projects/[id]/estimations            → construction.estimation
  *   /api/projects/[id]/wbs/tasks/*            → construction.wbs
  *   /api/projects/hindrance/*                 → construction.dpr (no own resource yet)

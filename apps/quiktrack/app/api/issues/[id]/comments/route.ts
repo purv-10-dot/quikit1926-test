@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { userCanInProject, forbidden } from "@/lib/api/permissions";
+import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
+import { notifyMentions } from "@/lib/services/mentions";
 
 const createCommentSchema = z.object({
   body: z.string().min(1).max(20_000),
@@ -15,19 +16,14 @@ async function loadAccessibleIssue(
 ) {
   const issue = await db.qtIssue.findFirst({
     where: { id: issueId, orgId: orgId, isDeleted: false },
-    select: { id: true, projectId: true },
+    select: { id: true, projectId: true, key: true, title: true },
   });
   if (!issue) return null;
   const access = await db.qtProjectMember.findFirst({
     where: { projectId: issue.projectId, userId, isDeleted: false },
     select: { id: true },
   });
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-  if (!access && !isAdmin) return null;
+  if (!access && !(await hasAdminAccess(userId, orgId))) return null;
   return issue;
 }
 
@@ -76,11 +72,7 @@ export const POST = withOrgAuth<{ id: string }>(
     if (!issue) {
       return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
     }
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+    const isAdmin = await hasAdminAccess(userId, orgId);
     if (!isAdmin && !(await userCanInProject(userId, orgId, issue.projectId, "IssueComment", "create"))) {
       return forbidden();
     }
@@ -116,6 +108,14 @@ export const POST = withOrgAuth<{ id: string }>(
         email: true,
         avatar: true,
       },
+    });
+    // Email anyone @-mentioned in the comment (fire-and-forget).
+    void notifyMentions({
+      orgId,
+      actorUserId: userId,
+      issue: { id: issue.id, key: issue.key, title: issue.title, projectId: issue.projectId },
+      context: "comment",
+      html: parsed.data.body,
     });
     return NextResponse.json(
       { success: true, data: { ...created, user: author } },

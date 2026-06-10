@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 /**
  * Project Reports — aggregated task list across all projects the caller can
@@ -35,13 +36,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     to = new Date(y!, m!, 1);
   }
 
-  // Resolve which projects the caller can see. Admins see all; everyone else
-  // gets their explicit memberships.
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+  // Resolve which projects the caller can see. Global admins (tenant OR app
+  // admin) see all; everyone else gets their explicit memberships.
+  const isAdmin = await hasAdminAccess(userId, orgId);
 
   let projectIds: string[] | null = null;
   if (!isAdmin) {

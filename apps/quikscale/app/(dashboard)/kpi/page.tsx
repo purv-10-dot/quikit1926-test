@@ -36,9 +36,9 @@ export default function IndividualKPIPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("KPI");
 
   // Year + quarter via shared FilterContext so they persist across module nav.
-  // filterTeam / filterOwner are seeded from context on first mount (so the
-  // Dashboard's tab/filter selection carries over) but live LOCALLY here —
-  // edits/clears on this page don't bleed into Priority or WWW.
+  // filterTeam lives LOCALLY (per-page scope). filterOwner is seeded from
+  // context on mount AND written back on change/clear, so the owner filter
+  // stays in sync across Dashboard / Priority / WWW.
   const ctx = useFilterContext();
   const { year: ctxYear, setYear: ctxSetYear, quarter: ctxQuarter, setQuarter: ctxSetQuarter } = ctx;
   const [filterTeam, setFilterTeam] = useState<string>(ctx.filterTeam);
@@ -363,14 +363,14 @@ export default function IndividualKPIPage() {
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Owner</p>
                   <FilterPicker
                     value={filterOwner}
-                    onChange={setFilterOwner}
+                    onChange={(v) => { setFilterOwner(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
                     allLabel="All owners"
                   />
                 </div>
                 {(filterTeam || filterOwner) && (
                   <button
-                    onClick={() => { setFilterTeam(""); setFilterOwner(""); }}
+                    onClick={() => { setFilterTeam(""); setFilterOwner(""); ctx.setFilterOwner(""); }}
                     className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Clear filters

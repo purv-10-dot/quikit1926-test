@@ -7,6 +7,8 @@ import { writeAuditLog } from "@/lib/api/auditLog";
 import { validationError } from "@/lib/api/validationError";
 import { opspReviewSaveSchema } from "@/lib/schemas/opspReviewSchema";
 import { getScales } from "@/lib/utils/currency";
+import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
+import { resolveReviewTarget } from "@/lib/utils/opspReviewTarget";
 
 /**
  * Server-side mirror of the client `resolveProjected` logic. OPSP stores
@@ -80,10 +82,14 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 1. Load the OPSP for this user + fiscal period
+    // OPSP is org-shared: resolve the canonical owner so Review reads the org's
+    // single plan, not the acting admin's per-user copy.
+    const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
+    // 1. Load the org's OPSP for this fiscal period
     const opsp = await db.oPSPData.findUnique({
       where: {
-        orgId_userId_year_quarter: { orgId, userId, year, quarter },
+        orgId_userId_year_quarter: { orgId, userId: ownerId, year, quarter },
       },
     });
 
@@ -157,7 +163,13 @@ export async function GET(req: NextRequest) {
         const projected = resolveStoredValue(row.projected as string, meta);
 
         periods[pKey] = {
-          target: entry?.targetValue ? Number(entry.targetValue) : (planTarget ?? projected),
+          // Live OPSP target wins; the saved review snapshot is only a fallback
+          // so a post-finalize edit isn't masked by a stale snapshot.
+          target: resolveReviewTarget(
+            planTarget,
+            projected,
+            entry?.targetValue != null ? Number(entry.targetValue) : null,
+          ),
           achieved: entry?.achievedValue != null ? Number(entry.achievedValue) : null,
           gap: null,
           achievedPct: null,
@@ -186,7 +198,7 @@ export async function GET(req: NextRequest) {
 
     // 6. Auto-populate achieved/gap/achievedPct from child horizons
     if (horizon === "yearly" || horizon === "3to5year") {
-      await populateCascadeData(orgId, userId, year, rows, horizon, opsp.targetYears, catMetaMap);
+      await populateCascadeData(orgId, ownerId, year, rows, horizon, opsp.targetYears, catMetaMap);
     }
 
     // 6b. Attach Last Year Same Period — used by the client's "Year Growth"
@@ -194,7 +206,7 @@ export async function GET(req: NextRequest) {
     // prior. Rows that find a value are marked source = "auto" (drawer
     // disables the field). Rows with no auto value fall through to the
     // manual-override pass below.
-    await loadLastYearAchieved(orgId, userId, year, quarter, horizon, rows, opsp.targetYears, catMetaMap);
+    await loadLastYearAchieved(orgId, ownerId, year, quarter, horizon, rows, opsp.targetYears, catMetaMap);
 
     // 6c. Manual-override pass — for rows where no auto value was found,
     // surface the user-entered `lastYearSamePeriod` from the current
@@ -297,10 +309,15 @@ export async function POST(req: NextRequest) {
     const { year, quarter, horizon, rowIndex, category, entries } = parsed.data;
     const yearNum = typeof year === "number" ? year : parseInt(year);
 
-    // 1. Verify OPSP exists
+    // OPSP is org-shared: review entries attach to the canonical owner's OPSP
+    // so every reviewer writes to the same plan. The entry's own `userId`
+    // metadata + the audit `actorId` keep the acting reviewer below.
+    const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
+    // 1. Verify the org's OPSP exists for this period
     const opsp = await db.oPSPData.findUnique({
       where: {
-        orgId_userId_year_quarter: { orgId, userId, year: yearNum, quarter },
+        orgId_userId_year_quarter: { orgId, userId: ownerId, year: yearNum, quarter },
       },
       select: { id: true },
     });
@@ -562,10 +579,16 @@ async function getQuarterCumulativeForCategory(
   // Build per-period (target, achieved) pairs in m1..m3 order, then let
   // aggregateByType collapse them to a single footer value.
   const periods = (["m1", "m2", "m3"] as const).map((pKey) => {
-    const sourceTarget = resolveStoredValue(sourceRows[rowIdx][pKey] as string, meta) ?? 0;
+    const sourceTarget = resolveStoredValue(sourceRows[rowIdx][pKey] as string, meta);
     const entry = entries.find((e) => e.period === pKey);
     return {
-      target: entry?.targetValue ? Number(entry.targetValue) : sourceTarget,
+      // Live OPSP target wins; the saved review snapshot is only a fallback.
+      target:
+        resolveReviewTarget(
+          sourceTarget,
+          null,
+          entry?.targetValue != null ? Number(entry.targetValue) : null,
+        ) ?? 0,
       achieved: entry?.achievedValue != null ? Number(entry.achievedValue) : null,
     };
   });
@@ -581,6 +604,9 @@ async function getQuarterCumulativeForCategory(
 /**
  * Populate yearly rows with quarter cumulative data, or 3-5yr rows with
  * yearly cumulative data. Mutates the `rows` array in-place.
+ *
+ * `userId` here is the canonical OPSP owner (OPSP is org-shared) — every
+ * source-data lookup reads the org's plan, not the acting reviewer's copy.
  */
 async function populateCascadeData(
   orgId: string,
@@ -727,6 +753,8 @@ async function populateCascadeData(
  *                      m1/m2/m3 per the row's categoryType
  *   - 3-5yr tab      → for each y(i), look at (year+i)-1 and aggregate that
  *                      year's four quarter footers per the row's categoryType
+ *
+ * `userId` here is the canonical OPSP owner (OPSP is org-shared).
  */
 async function loadLastYearAchieved(
   orgId: string,

@@ -32,6 +32,7 @@ import { ROLE_DEFINITIONS } from "@/lib/rbac/roles";
 import { ALL_PERMISSION_KEYS } from "@/lib/rbac/permissions";
 import type { MatrixAction } from "@/lib/rbac/menu-catalog";
 import { getQuikInfraAppId } from "@/lib/rbac/userCan";
+import { seedDefaultRoles } from "@/lib/rbac/seedDefaultRoles";
 import { modulesFromPermissions } from "@/lib/rbac/permissionsRegistry";
 import { loadProjectAccess } from "@/lib/rbac/applyProjectAccess";
 import { getDescriptorByRoleName } from "@/lib/rbac/user-types";
@@ -136,6 +137,18 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
     let isAdminRole = false;
 
     if (appId) {
+      // Lazy seed (mirrors quikscale's /api/me/permissions): ensure this org's
+      // 4 roles + grants exist BEFORE we resolve/assign the user's role. The
+      // QuikInfra dashboard bootstraps via /api/me + /api/dashboard, both of
+      // which resolve here through getTenantContext() — NOT through withOrgAuth —
+      // so without seeding here a fresh/reset org never gets its roles created
+      // on app-open the way quikscale does. Idempotent + 5-min cached (self-heals
+      // a wiped table on the next load), so it's a cheap no-op once seeded.
+      try {
+        await seedDefaultRoles(orgId);
+      } catch {
+        // best-effort — seeding must never block context resolution
+      }
       // Query the v2 RBAC tables — single round-trip with includes.
       let assignment = await (dbCentral as any).cnUserAppRole.findFirst({
         where: { userId, orgId, role: { appId } },
@@ -182,7 +195,7 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
             id: true,
             name: true,
             isSystem: true,
-            permissions: { select: { resource: true, action: true } },
+            rolePermissions: { select: { resource: true, action: true } },
           },
         });
 
@@ -597,7 +610,7 @@ export async function requirePermission(
  *   const ctx = await requireAnyPermission(["purchase.indent.approve_l1",
  *                                           "purchase.indent.approve_l2"]);
  */
-export async function requireAnyPermission(permissionKeys: string[]): Promise<AuthResult> {
+export async function requireAnyPermission(permissionKeys: readonly string[]): Promise<AuthResult> {
   const ctx = await getTenantContext();
   if (!ctx) return unauthorized();
   if (ctx.permissions.has("*")) return ctx;

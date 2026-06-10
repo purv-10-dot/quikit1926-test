@@ -1,17 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAnyPermission } from "@/lib/auth/context";
 import { ok, err } from "@/lib/http/envelope";
-import { PERMISSIONS } from "@/lib/rbac/permissions";
-import { db } from "@/lib/db/prisma";
+import { VENDOR_PICKER_PERMISSIONS } from "@/lib/integrations/whitebooks-gst";
+import { db } from "@/lib/db";
 import { lookupGstStatusOnWhitebooks, isWhitebooksGstVerifyEnabled } from "@/lib/integrations/whitebooks-gst";
 
 export async function POST(req: NextRequest) {
-  const ctxOrResponse = await requireAnyPermission([
-    PERMISSIONS.PO_READ,
-    PERMISSIONS.PO_WRITE,
-    PERMISSIONS.INDENT_READ,
-    PERMISSIONS.INDENT_WRITE,
-  ]);
+  // When the Whitebooks GST integration isn't configured, vendor verify is
+  // a no-op. Short-circuit BEFORE the permission gate so the RFQ/PO vendor
+  // picker keeps working for every role that can open those drawers — there
+  // is nothing sensitive to gate when the feature is off.
+  if (!isWhitebooksGstVerifyEnabled()) {
+    return ok({
+      skipped: true as const,
+      reason: "not_configured" as const,
+      active: true,
+    });
+  }
+
+  const ctxOrResponse = await requireAnyPermission(VENDOR_PICKER_PERMISSIONS);
   if (ctxOrResponse instanceof NextResponse) return ctxOrResponse;
 
   const ctx = ctxOrResponse;
@@ -25,14 +32,6 @@ export async function POST(req: NextRequest) {
   const vendorId = String(body.vendorId ?? "").trim();
   if (!vendorId) {
     return err("BAD_REQUEST", "vendorId is required", 400);
-  }
-
-  if (!isWhitebooksGstVerifyEnabled()) {
-    return ok({
-      skipped: true as const,
-      reason: "not_configured" as const,
-      active: true,
-    });
   }
 
   let vendor: { id: string; gstin: string | null } | null = null;

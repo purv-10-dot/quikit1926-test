@@ -13,7 +13,7 @@ import {
   BookOpen, Star, List, UserCheck, MessageSquare,
   ChevronDown, ChevronLeft, ChevronRight, X,
   BarChart2, LineChart, ClipboardList, Layers,
-  Settings,
+  Settings, DollarSign, GitBranch,
 } from "lucide-react";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
@@ -24,122 +24,172 @@ import { QuikScaleMark } from "@/components/brand/quikscale-mark";
 
 /* ─── Types ─── */
 interface NavSubItem { label: string; href: string; icon: React.ElementType; moduleKey: string; }
-interface NavItem { label: string; href?: string; icon: React.ElementType; moduleKey: string; children?: NavSubItem[]; }
+interface NavItem {
+  type?: "item";
+  label: string;
+  href?: string;
+  icon: React.ElementType;
+  moduleKey: string;
+  children?: NavSubItem[];
+  comingSoon?: boolean;
+}
+interface NavSection { type: "section"; label: string; }
+type SidebarEntry = NavItem | NavSection;
+
+/* ─── Pillar color tokens — Scaling Up book palette
+ *  Matches the swoosh band on Verne Harnish's "Scaling Up" cover:
+ *  People = green, Strategy = amber/gold, Execution = red, Cash = blue.
+ *  Hex values are Tailwind 600 shades for AA contrast on white. ─── */
+const PILLAR_COLORS: Record<string, string> = {
+  People:    "#16a34a", // green-600
+  Strategy:  "#d97706", // amber-600
+  Execution: "#dc2626", // red-600
+  Cash:      "#2563eb", // blue-600
+};
 
 /* ─── Navigation data ─── */
-/**
- * `moduleKey` on each entry maps to the registry in packages/shared/lib/moduleRegistry.ts.
- * Keep them in sync — if you add or reshape a nav item here, mirror the change there.
- * The super admin "App Feature Flags" UI toggles flags by `moduleKey`.
- */
-const navigation: NavItem[] = [
-  { label: "Dashboard",      href: "/dashboard",  icon: LayoutDashboard, moduleKey: "dashboard" },
-  { label: "KPI",            icon: Target,        moduleKey: "kpi", children: [
-    { label: "Individual KPI", href: "/kpi",           icon: User, moduleKey: "kpi.individual" },
-    { label: "Teams KPI",      href: "/kpi/teams",     icon: Users, moduleKey: "kpi.teams" },
+const navigation: SidebarEntry[] = [
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, moduleKey: "dashboard" },
+  { label: "Org Setup", icon: Building2, moduleKey: "orgSetup", children: [
+    { label: "Teams",            href: "/org-setup/teams",    icon: Users,        moduleKey: "orgSetup.teams" },
+    { label: "Users",            href: "/org-setup/users",    icon: User,         moduleKey: "orgSetup.users" },
+    { label: "Quarter Settings", href: "/org-setup/quarters", icon: CalendarDays, moduleKey: "orgSetup.quarters" },
   ]},
-  { label: "Priority",       href: "/priority",   icon: CheckSquare, moduleKey: "priority" },
-  { label: "Org Setup",      icon: Building2,     moduleKey: "orgSetup", children: [
-    { label: "Teams",           href: "/org-setup/teams",    icon: Users, moduleKey: "orgSetup.teams" },
-    { label: "Users",           href: "/org-setup/users",    icon: User, moduleKey: "orgSetup.users" },
-    { label: "Quarter Settings",href: "/org-setup/quarters", icon: CalendarDays, moduleKey: "orgSetup.quarters" },
-    // Roles & Permissions intentionally NOT in sidebar.
-    // Entry point is the header user-dropdown → "User Permission" instead.
+
+  { type: "section", label: "Execution" },
+  { label: "KPI", icon: Target, moduleKey: "kpi", children: [
+    { label: "Individual KPI", href: "/kpi",       icon: User,  moduleKey: "kpi.individual" },
+    { label: "Teams KPI",      href: "/kpi/teams", icon: Users, moduleKey: "kpi.teams" },
   ]},
-  { label: "WWW",            href: "/www",        icon: Activity, moduleKey: "www" },
-  { label: "Meeting Rhythm", icon: Calendar,      moduleKey: "clientMeetings", children: [
-    { label: "Dashboard",       href: "/client-meetings",                icon: LayoutDashboard, moduleKey: "clientMeetings.dashboard" },
-    { label: "Client Master",   href: "/client-meetings/clients",        icon: Users,           moduleKey: "clientMeetings.clients" },
-    { label: "Client Members",  href: "/client-meetings/members",        icon: User,            moduleKey: "clientMeetings.members" },
-    { label: "Daily Huddle",    href: "/client-meetings/daily-huddle",   icon: Clock,           moduleKey: "clientMeetings.dailyHuddle" },
-    { label: "Weekly Meeting",  href: "/client-meetings/weekly-meeting", icon: CalendarDays,    moduleKey: "clientMeetings.weeklyMeeting" },
+  { label: "Priority",       href: "/priority", icon: CheckSquare, moduleKey: "priority" },
+  { label: "WWW",            href: "/www",      icon: Activity,    moduleKey: "www" },
+  { label: "Meeting Rhythm", icon: Calendar, moduleKey: "clientMeetings", children: [
+    { label: "Dashboard",      href: "/client-meetings",                icon: LayoutDashboard, moduleKey: "clientMeetings.dashboard" },
+    { label: "Client Master",  href: "/client-meetings/clients",        icon: Users,           moduleKey: "clientMeetings.clients" },
+    { label: "Client Members", href: "/client-meetings/members",        icon: User,            moduleKey: "clientMeetings.members" },
+    { label: "Daily Huddle",   href: "/client-meetings/daily-huddle",   icon: Clock,           moduleKey: "clientMeetings.dailyHuddle" },
+    { label: "Weekly Meeting", href: "/client-meetings/weekly-meeting", icon: CalendarDays,    moduleKey: "clientMeetings.weeklyMeeting" },
   ]},
-  { label: "OPSP",           icon: FileText,      moduleKey: "opsp", children: [
-    { label: "Create OPSP",       href: "/opsp",            icon: FileText, moduleKey: "opsp.create" },
-    { label: "OPSP HISTORY",      href: "/opsp/history",    icon: BookOpen, moduleKey: "opsp.history" },
-    { label: "OPSP Review",       href: "/opsp/review",     icon: Star, moduleKey: "opsp.review" },
-    { label: "Category Mgmt",     href: "/opsp/categories", icon: List, moduleKey: "opsp.categories" },
+  { label: "Analytics", icon: TrendingUp, moduleKey: "analytics", children: [
+    { label: "Scorecard",  href: "/performance/scorecard",  icon: BarChart2, moduleKey: "analytics.scorecard" },
+    { label: "Individual", href: "/performance/individual", icon: User,      moduleKey: "analytics.individual" },
+    { label: "Teams",      href: "/performance/teams",      icon: Users,     moduleKey: "analytics.teams" },
+    { label: "Trends",     href: "/performance/trends",     icon: LineChart, moduleKey: "analytics.trends" },
   ]},
-  // ── R10a-h: Performance split into two nav groups ──────────────────────
-  // URLs intentionally kept under `/performance/*` to avoid breaking
-  // bookmarks, tests, and existing audit logs. Sidebar presents two
-  // mental models: read-only Analytics vs write-heavy People workflows.
-  { label: "Analytics",      icon: TrendingUp,    moduleKey: "analytics", children: [
-    { label: "Scorecard",          href: "/performance/scorecard",    icon: BarChart2, moduleKey: "analytics.scorecard" },
-    { label: "Individual",         href: "/performance/individual",   icon: User, moduleKey: "analytics.individual" },
-    { label: "Teams",              href: "/performance/teams",        icon: Users, moduleKey: "analytics.teams" },
-    { label: "Trends",             href: "/performance/trends",       icon: LineChart, moduleKey: "analytics.trends" },
+
+  { type: "section", label: "Strategy" },
+  { label: "OPSP", icon: FileText, moduleKey: "opsp", children: [
+    { label: "Create OPSP",    href: "/opsp",            icon: FileText, moduleKey: "opsp.create" },
+    { label: "OPSP History",   href: "/opsp/history",    icon: BookOpen, moduleKey: "opsp.history" },
+    { label: "OPSP Review",    href: "/opsp/review",     icon: Star,     moduleKey: "opsp.review" },
+    { label: "Category Mgmt",  href: "/opsp/categories", icon: List,     moduleKey: "opsp.categories" },
   ]},
-  { label: "People",         icon: UserCheck,     moduleKey: "people", children: [
-    { label: "Cycle",              href: "/performance/cycle",        icon: Activity, moduleKey: "people.cycle" },
-    { label: "Goals",              href: "/performance/goals",        icon: Target, moduleKey: "people.goals" },
-    { label: "Self-Assessment",    href: "/performance/self",         icon: User, moduleKey: "people.self" },
-    { label: "Reviews",            href: "/performance/reviews",      icon: ClipboardList, moduleKey: "people.reviews" },
-    { label: "1:1s",               href: "/performance/one-on-one",   icon: Users, moduleKey: "people.oneOnOne" },
-    { label: "Feedback",           href: "/performance/feedback",     icon: MessageSquare, moduleKey: "people.feedback" },
-    { label: "Talent",             href: "/performance/talent",       icon: Layers, moduleKey: "people.talent" },
+  { label: "Habits",  href: "/performance/habits", icon: Activity,  moduleKey: "habits" },
+  { label: "SWT",     href: "/performance/swt",    icon: BarChart2, moduleKey: "swt" },
+
+  { type: "section", label: "People" },
+  { label: "Goals & Pillars", icon: Target, moduleKey: "people", children: [
+    { label: "Cycle",           href: "/performance/cycle",      icon: Activity,      moduleKey: "people.cycle" },
+    { label: "Self-Assessment", href: "/performance/self",       icon: User,          moduleKey: "people.self" },
+    { label: "Reviews",         href: "/performance/reviews",    icon: ClipboardList, moduleKey: "people.reviews" },
+    { label: "1:1 Meetings",    href: "/performance/one-on-one", icon: Users,         moduleKey: "people.oneOnOne" },
+    { label: "Feedback",        href: "/performance/feedback",   icon: MessageSquare, moduleKey: "people.feedback" },
+    { label: "Talent",          href: "/performance/talent",     icon: Layers,        moduleKey: "people.talent" },
   ]},
+  { label: "FACe",   href: "/performance/face",   icon: UserCheck, moduleKey: "face" },
+  { label: "PACe",   href: "/performance/pace",   icon: GitBranch, moduleKey: "pace" },
+  { label: "Survey", href: "/performance/survey", icon: BarChart2, moduleKey: "survey" },
+
+  { type: "section", label: "Cash" },
+  { label: "Cash", href: "/cash", icon: DollarSign, moduleKey: "cash" },
 ];
 
-/** Apply BOTH gates to the nav:
- *   1. Feature flag — the org has the module enabled
- *   2. Entity `view` permission — derived from RBAC v2 via NAV_RESOURCE
- *
- *  If `permsLoading` is true (initial fetch in flight), we fall back to
- *  feature-flag-only filtering so the sidebar isn't empty during the
- *  permissions round-trip. Once permissions arrive the sidebar re-renders
- *  with the trimmed set.
- *
- *  Hiding a parent when all its children are hidden cascades naturally —
- *  children get filtered first, parent collapses if visibleChildren is 0. */
+/* ─── Filter navigation ─── */
 function filterNavigation(
-  items: NavItem[],
+  entries: SidebarEntry[],
   disabled: Set<string>,
   hasView: (resource: string) => boolean,
   permsLoading: boolean,
   isAdminBypass: boolean,
-): NavItem[] {
+): SidebarEntry[] {
   const canSee = (moduleKey: string) => {
     if (permsLoading || isAdminBypass) return true;
     const resource = NAV_RESOURCE[moduleKey];
-    // Sidebar entries without a resource mapping fall through to feature-flag
-    // gating only — keeps stragglers visible instead of silently hiding them.
     if (!resource) return true;
     return hasView(resource);
   };
-  return items
-    .map((item) => {
-      if (!isModuleEnabled(item.moduleKey, disabled)) return null;
-      if (item.children) {
-        const visibleChildren = item.children.filter(
-          (c) => isModuleEnabled(c.moduleKey, disabled) && canSee(c.moduleKey),
-        );
-        if (visibleChildren.length === 0) return null;
-        return { ...item, children: visibleChildren };
+
+  const filterItem = (item: NavItem): NavItem | null => {
+    // Coming-soon items always render (they're non-functional placeholders)
+    if (item.comingSoon) return item;
+    if (!isModuleEnabled(item.moduleKey, disabled)) return null;
+    if (item.children) {
+      const visibleChildren = item.children.filter(
+        (c) => isModuleEnabled(c.moduleKey, disabled) && canSee(c.moduleKey),
+      );
+      if (visibleChildren.length === 0) return null;
+      return { ...item, children: visibleChildren };
+    }
+    if (!canSee(item.moduleKey)) return null;
+    return item;
+  };
+
+  const resolved: (SidebarEntry | null)[] = entries.map((entry) => {
+    if (entry.type === "section") return entry;
+    return filterItem(entry as NavItem);
+  });
+
+  // Remove sections with no visible items following them
+  const result: SidebarEntry[] = [];
+  for (let i = 0; i < resolved.length; i++) {
+    const entry = resolved[i];
+    if (!entry) continue;
+    if (entry.type === "section") {
+      let hasItems = false;
+      for (let j = i + 1; j < resolved.length; j++) {
+        if (!resolved[j]) continue;
+        if ((resolved[j] as SidebarEntry).type === "section") break;
+        hasItems = true;
+        break;
       }
-      // Leaf: also check view permission.
-      if (!canSee(item.moduleKey)) return null;
-      return item;
-    })
-    .filter((x): x is NavItem => x !== null);
+      if (hasItems) result.push(entry);
+    } else {
+      result.push(entry);
+    }
+  }
+  return result;
 }
 
-/* ─── NavGroup (expanded mode) — light theme, pale-tint active ─── */
+/* ─── NavGroup (expanded mode) ─── */
 function NavGroup({ item }: { item: NavItem }) {
   const pathname = usePathname();
   const isChildActive = item.children?.some(c => pathname === c.href || pathname?.startsWith(c.href + "/"));
-  const isActive = item.href ? pathname === item.href : isChildActive;
+  const isActive = item.href
+    ? (pathname === item.href || isChildActive)
+    : isChildActive;
   const [open, setOpen] = useState(isChildActive ?? false);
   const Icon = item.icon;
 
+  // Coming-soon flat item
+  if (item.comingSoon) {
+    return (
+      <div className="flex items-center gap-2.5 px-3 py-2 rounded-md opacity-50 cursor-not-allowed select-none">
+        <Icon className="h-4 w-4 flex-shrink-0 text-gray-400" />
+        <span className="truncate text-sm font-medium text-gray-500 flex-1">{item.label}</span>
+        <span className="text-[9px] font-semibold uppercase tracking-wide bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full flex-shrink-0">
+          Soon
+        </span>
+      </div>
+    );
+  }
+
+  // Flat leaf link
   if (!item.children) {
     return (
       <Link href={item.href!}
         className={cn(
           "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors min-w-0",
-          isActive
-            ? "bg-accent-50 text-accent-700"
-            : "text-gray-700 hover:bg-gray-50"
+          isActive ? "bg-accent-50 text-accent-700" : "text-gray-700 hover:bg-gray-50"
         )}>
         <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-accent-700" : "text-gray-500")} />
         <span className="truncate">{item.label}</span>
@@ -147,25 +197,46 @@ function NavGroup({ item }: { item: NavItem }) {
     );
   }
 
+  // Group with children
   return (
     <div>
-      <button onClick={() => setOpen(!open)}
-        className={cn(
-          "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors min-w-0",
-          isActive
-            ? "text-accent-700"
-            : "text-gray-700 hover:bg-gray-50"
-        )}>
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-accent-700" : "text-gray-500")} />
-          <span className="truncate">{item.label}</span>
-        </div>
-        <ChevronDown className={cn(
-          "flex-shrink-0 h-3.5 w-3.5 transition-transform duration-200 ml-1",
-          isActive ? "text-accent-700" : "text-gray-400",
-          open && "rotate-180"
-        )} />
-      </button>
+      <div className={cn(
+        "flex items-center rounded-md transition-colors",
+        isActive ? "text-accent-700" : "text-gray-700",
+      )}>
+        {item.href ? (
+          <Link
+            href={item.href}
+            className={cn(
+              "flex-1 flex items-center gap-2.5 px-3 py-2 text-sm font-medium min-w-0 rounded-md transition-colors",
+              isActive ? "text-accent-700" : "text-gray-700 hover:bg-gray-50"
+            )}
+          >
+            <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-accent-700" : "text-gray-500")} />
+            <span className="truncate">{item.label}</span>
+          </Link>
+        ) : (
+          <button
+            onClick={() => setOpen(!open)}
+            className={cn(
+              "flex-1 flex items-center gap-2.5 px-3 py-2 text-sm font-medium min-w-0 rounded-md transition-colors",
+              isActive ? "text-accent-700" : "text-gray-700 hover:bg-gray-50"
+            )}
+          >
+            <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-accent-700" : "text-gray-500")} />
+            <span className="truncate">{item.label}</span>
+          </button>
+        )}
+        <button
+          onClick={() => setOpen(!open)}
+          className={cn(
+            "px-2 py-2 rounded-md transition-colors hover:bg-gray-100",
+            isActive ? "text-accent-700" : "text-gray-400 hover:text-gray-700"
+          )}
+        >
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", open && "rotate-180")} />
+        </button>
+      </div>
 
       <AnimatePresence initial={false}>
         {open && (
@@ -195,21 +266,30 @@ function NavGroup({ item }: { item: NavItem }) {
   );
 }
 
-/* ─── NavGroup (collapsed / icon-only mode) — light theme ─── */
+/* ─── NavGroup (collapsed / icon-only mode) ─── */
 function NavGroupCollapsed({ item }: { item: NavItem }) {
   const pathname = usePathname();
   const isChildActive = item.children?.some(c => pathname === c.href || pathname?.startsWith(c.href + "/"));
-  const isActive = item.href ? pathname === item.href : isChildActive;
+  const isActive = item.href
+    ? (pathname === item.href || isChildActive)
+    : isChildActive;
   const Icon = item.icon;
-  const href = item.href ?? item.children?.[0]?.href ?? "#";
 
+  if (item.comingSoon) {
+    return (
+      <div title={`${item.label} (Coming Soon)`}
+        className="flex items-center justify-center w-9 h-9 rounded-lg mx-auto opacity-40 cursor-not-allowed">
+        <Icon className="h-4 w-4 text-gray-400" />
+      </div>
+    );
+  }
+
+  const href = item.href ?? item.children?.[0]?.href ?? "#";
   return (
     <Link href={href} title={item.label}
       className={cn(
         "flex items-center justify-center w-9 h-9 rounded-lg mx-auto transition-colors",
-        isActive
-          ? "bg-accent-50 text-accent-700"
-          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+        isActive ? "bg-accent-50 text-accent-700" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
       )}>
       <Icon className="h-4 w-4" />
     </Link>
@@ -267,7 +347,7 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
 
   return (
     <div className="w-full h-full flex flex-col bg-white border-r border-gray-200 overflow-hidden">
-      {/* Brand block — icon + name (always shown, just hides the text when collapsed) */}
+      {/* Brand block */}
       <div className={cn(
         "flex items-center border-b border-gray-100 flex-shrink-0",
         collapsed ? "justify-center px-2 py-4" : "justify-between px-4 py-4"
@@ -286,7 +366,6 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
           // eslint-disable-next-line @next/next/no-img-element
           <img src="/brand/quikscale.svg" alt="QuikScale" className="w-8 h-8 rounded flex-shrink-0 object-contain" />
         )}
-
         <div className="flex items-center gap-1 flex-shrink-0">
           {!isMobile && (
             <button onClick={() => setCollapsed(!collapsed)}
@@ -303,29 +382,40 @@ function SidebarContent({ collapsed, setCollapsed, onClose, isMobile }: SidebarC
         </div>
       </div>
 
-      {/* MENU label — only in expanded mode, aligns with the reference UI */}
-      {!collapsed && (
-        <div className="px-4 pt-3 pb-1">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Menu</span>
-        </div>
-      )}
-
       {/* Navigation */}
       <nav className={cn(
         "flex-1 py-2 overflow-y-auto overflow-x-hidden",
         collapsed ? "px-1 space-y-1" : "px-2 space-y-0.5"
       )}>
-        {visibleNav.map((item) =>
-          collapsed
+        {visibleNav.map((entry, idx) => {
+          if (entry.type === "section") {
+            if (collapsed) return null;
+            const color = PILLAR_COLORS[entry.label];
+            return (
+              <div key={`section-${entry.label}-${idx}`} className="px-3 pt-4 pb-1 flex items-center gap-1.5">
+                {color && (
+                  <span
+                    className="h-1.5 w-1.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                )}
+                <span
+                  className="text-[10px] font-semibold uppercase tracking-widest"
+                  style={{ color: color ?? "#9ca3af" }}
+                >
+                  {entry.label}
+                </span>
+              </div>
+            );
+          }
+          const item = entry as NavItem;
+          return collapsed
             ? <NavGroupCollapsed key={item.label} item={item} />
-            : <NavGroup key={item.label} item={item} />
-        )}
+            : <NavGroup key={item.label} item={item} />;
+        })}
       </nav>
 
-      {/* Mobile-only user menu at the bottom of the drawer.
-          Desktop header already renders UserMenu, so we only show it here
-          to give mobile users access to Sign out without having to close
-          the drawer and hunt for the header. */}
+      {/* Mobile-only user menu */}
       {isMobile && session?.user && (
         <div className="border-t border-gray-100 p-3 bg-gray-50">
           <UserMenu

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
+import { SpaceIcon } from "@/components/space-icon";
 import {
   Search,
   ChevronDown,
@@ -45,16 +46,6 @@ interface ApiResponse {
 
 const PAGE_SIZE = 8;
 
-// Each filter option has a stable key (used for the checkbox state) and maps
-// to one or more backend `projectType` values that are sent to the API.
-const FILTER_OPTIONS: { key: string; label: string; types: string[] }[] = [
-  { key: "business", label: "Jira - business spaces", types: ["service"] },
-  { key: "software", label: "Jira - software spaces", types: ["software"] },
-  { key: "service", label: "Jira Service Management", types: ["service"] },
-  { key: "discovery", label: "Jira Product Discovery", types: ["discovery"] },
-  { key: "csm", label: "Customer Service Management", types: ["service"] },
-];
-
 function leadInitials(l: Lead | null | undefined): string {
   if (!l) return "?";
   const f = (l.firstName ?? "").trim();
@@ -82,6 +73,10 @@ export function SpacesGrid() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState<Set<string>>(new Set());
+  // All project keys (id-less, just key + name) for the "Filter by key" list,
+  // fetched once so the dropdown shows every key regardless of the current page.
+  const [allKeys, setAllKeys] = useState<{ key: string; name: string }[]>([]);
+  const [keyQuery, setKeyQuery] = useState("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const [resp, setResp] = useState<ApiResponse | null>(null);
@@ -108,11 +103,7 @@ export function SpacesGrid() {
     });
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (filters.size) {
-      const types = new Set<string>();
-      FILTER_OPTIONS.forEach((o) => {
-        if (filters.has(o.key)) o.types.forEach((t) => types.add(t));
-      });
-      if (types.size) params.set("filter", Array.from(types).join(","));
+      params.set("keys", Array.from(filters).join(","));
     }
 
     setLoading(true);
@@ -137,10 +128,28 @@ export function SpacesGrid() {
     return () => document.removeEventListener("mousedown", onClick);
   }, [filterOpen]);
 
+  // Load every project key once for the filter dropdown.
+  useEffect(() => {
+    fetch("/api/projects?pageSize=100&sort=name&order=asc")
+      .then((r) => r.json())
+      .then((j: ApiResponse) => {
+        if (j?.success) {
+          setAllKeys((j.data ?? []).map((s) => ({ key: s.projectKey, name: s.name })));
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
   const spaces = resp?.data ?? [];
   const totalPages = resp?.totalPages ?? 1;
 
-  const filterOptions = useMemo(() => FILTER_OPTIONS, []);
+  const visibleKeys = useMemo(() => {
+    const q = keyQuery.trim().toLowerCase();
+    if (!q) return allKeys;
+    return allKeys.filter(
+      (k) => k.key.toLowerCase().includes(q) || k.name.toLowerCase().includes(q),
+    );
+  }, [allKeys, keyQuery]);
 
   function toggleFilter(key: string) {
     setFilters((prev) => {
@@ -194,26 +203,45 @@ export function SpacesGrid() {
             }`}
           >
             <span className="text-gray-700">
-              {filters.size === 0 ? "Filter by app" : `Filter by app (${filters.size})`}
+              {filters.size === 0 ? "Filter by key" : `Filter by key (${filters.size})`}
             </span>
             <ChevronDown className="h-4 w-4 text-gray-500" />
           </button>
           {filterOpen && (
             <div className="absolute left-0 top-full mt-1 w-[260px] bg-white border border-gray-200 rounded-md shadow-lg z-20 py-1">
-              {filterOptions.map((opt) => (
-                <label
-                  key={opt.label}
-                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
-                >
+              <div className="px-2 pt-1 pb-1.5">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                   <input
-                    type="checkbox"
-                    checked={filters.has(opt.key)}
-                    onChange={() => toggleFilter(opt.key)}
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                    autoFocus
+                    value={keyQuery}
+                    onChange={(e) => setKeyQuery(e.target.value)}
+                    placeholder="Search keys…"
+                    className="w-full pl-7 pr-2 h-7 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
                   />
-                  {opt.label}
-                </label>
-              ))}
+                </div>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {visibleKeys.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-gray-400">No keys found</div>
+                ) : (
+                  visibleKeys.map((k) => (
+                    <label
+                      key={k.key}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={filters.has(k.key)}
+                        onChange={() => toggleFilter(k.key)}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                      />
+                      <span className="font-medium text-gray-900">{k.key}</span>
+                      <span className="text-gray-500 truncate">{k.name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -309,21 +337,10 @@ export function SpacesGrid() {
                 </td>
                 <td className="px-4 py-3">
                   <Link
-                    href={`/spaces/${s.id}/board`}
+                    href={`/spaces/${s.id}/backlog`}
                     className="inline-flex items-center gap-2 text-blue-700 hover:underline"
                   >
-                    {s.icon ? (
-                      <span className="h-6 w-6 rounded flex items-center justify-center text-base bg-gray-50 leading-none">
-                        {s.icon}
-                      </span>
-                    ) : (
-                      <span
-                        className="h-6 w-6 rounded flex items-center justify-center text-white text-[11px] font-semibold"
-                        style={{ background: s.color || "#2563eb" }}
-                      >
-                        {s.name.charAt(0).toUpperCase()}
-                      </span>
-                    )}
+                    <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={24} radius={6} />
                     <span>{s.name}</span>
                   </Link>
                 </td>

@@ -367,9 +367,13 @@ export async function GET(
   }
 
   const { userId, brandId } = stateData;
-  // TODO(integration): once OAuthState carries orgId, swap this to use
-  // stateData.orgId. Single-org default until then.
-  const orgId = DEFAULT_ORG_ID;
+  // Prefer the real org carried in the signed OAuth state (set at connect
+  // time) so the SocialAccount is written under the user's actual org and
+  // shows up in their org-scoped integrations list. The DEFAULT_ORG_ID
+  // fallback only covers legacy in-flight links issued before orgId was
+  // added to the state — note that path is a ghost-org orphan, not a real
+  // recovery (DEFAULT_ORG_ID may not resolve to a live Org).
+  const orgId = stateData.orgId ?? DEFAULT_ORG_ID;
   const redirectUri = `${base}/api/integrations/callback/${platform}`;
 
   try {

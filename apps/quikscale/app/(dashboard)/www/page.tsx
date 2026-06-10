@@ -10,6 +10,7 @@ import { FilterPicker, userToFilterOption, EmptyState, type ExportSelection } fr
 import { useFilterContext } from "@/lib/context/FilterContext";
 import { STATUS_FILTER_OPTIONS } from "@/lib/constants/status";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
+import { useSessionState } from "@/lib/hooks/useSessionState";
 import { useTableSort, useDebouncedTableSearch } from "@/lib/store";
 import { AddButton } from "@quikit/ui";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -25,13 +26,14 @@ export default function WWWPage() {
   // value the filter logic below reads from.
   const [searchInput, setSearchInput, search] = useDebouncedTableSearch("www");
   // WWW only honours the OWNER filter from the global context (no team scope
-  // ever bleeds in — per product rule). And like KPI/Priority, the owner is
-  // seeded from context on first mount but lives locally so clearing it here
-  // doesn't affect the other modules.
+  // ever bleeds in — per product rule). The owner ("who") is seeded from context
+  // on mount AND written back on change/clear, so it stays in sync with
+  // Dashboard / KPI / Priority. The status filter is WWW-only but persists for
+  // the browser-tab session (survives navigation + refresh).
   const ctx = useFilterContext();
   const [filterWho, setFilterWho] = useState<string>(ctx.filterOwner);
   const [filterTeam, setFilterTeam] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterStatus, setFilterStatus] = useSessionState<string>("qs:www:status", "");
   const [showFilter, setShowFilter] = useState(false);
 
   // Teams list
@@ -279,7 +281,7 @@ export default function WWWPage() {
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Who</p>
                   <FilterPicker
                     value={filterWho}
-                    onChange={setFilterWho}
+                    onChange={(v) => { setFilterWho(v); ctx.setFilterOwner(v); }}
                     options={users.map(userToFilterOption)}
                     allLabel="All people"
                   />
@@ -298,7 +300,7 @@ export default function WWWPage() {
                 </div>
                 {(filterTeam || filterStatus || filterWho) && (
                   <button
-                    onClick={() => { setFilterTeam(""); setFilterStatus(""); setFilterWho(""); }}
+                    onClick={() => { setFilterTeam(""); setFilterStatus(""); setFilterWho(""); ctx.setFilterOwner(""); }}
                     className="w-full text-xs text-gray-500 hover:text-gray-800 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     Clear filters

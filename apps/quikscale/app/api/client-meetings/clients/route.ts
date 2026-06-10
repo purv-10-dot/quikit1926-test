@@ -39,15 +39,33 @@ function mapClientSort(key: string, dir: SortDirection): Prisma.ClientOrderByWit
  */
 export const GET = auth.view(async ({ orgId }, request) => {
   const includeDeleted = new URL(request.url).searchParams.get("includeDeleted") === "true";
-  const { orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
+  const { sortBy, sortOrder, orderBy } = parseSort(request, CLIENT_SORT_WHITELIST, mapClientSort);
   const rows = await db.client.findMany({
     where: { orgId, deletedAt: includeDeleted ? { not: null } : null },
     orderBy,
     include: {
-      teamMembers: { include: { member: { select: { id: true, name: true, email: true } } } },
+      // Pull `member.deletedAt` so we can drop soft-deleted members from the
+      // roster below. A deleted ClientMember leaves its ClientTeamMember link
+      // behind, and this include previously had no deletedAt filter — so the
+      // grid leaked deleted members that the edit-form member picker (which
+      // only lists active members) can't render, producing the "grid shows 9 /
+      // edit form shows 5" mismatch. The dashboard + export routes already
+      // filter on `member.deletedAt`; this brings the list endpoint in line.
+      teamMembers: { include: { member: { select: { id: true, name: true, email: true, deletedAt: true } } } },
       _count: { select: { memberships: { where: { deletedAt: null } } } },
     },
   });
+
+  // Case-insensitive name sort. Postgres orders text by collation (byte order),
+  // so `ORDER BY name` groups all uppercase before all lowercase ("E" < "a").
+  // Prisma's `orderBy` can't express case-insensitivity (`mode: "insensitive"`
+  // is filter-only), so re-sort the `name` column in JS. Safe here because the
+  // endpoint returns the full org list (no pagination) and `displayId` is
+  // assigned from this order below.
+  if (sortBy === "name") {
+    const dir = sortOrder === "desc" ? -1 : 1;
+    rows.sort((a, b) => dir * a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }
 
   // Actor name/initials resolution (same pattern as Client Members).
   const actorIds = [...new Set(rows.flatMap(r => [r.createdBy, r.updatedBy].filter(Boolean) as string[]))];
@@ -73,7 +91,9 @@ export const GET = auth.view(async ({ orgId }, request) => {
       startDate: r.startDate?.toISOString() ?? null,
       weeklyStartTime: r.weeklyStartTime, weeklyEndTime: r.weeklyEndTime,
       dailyStartTime: r.dailyStartTime,   dailyEndTime: r.dailyEndTime,
-      teamMembers: r.teamMembers.map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
+      teamMembers: r.teamMembers
+        .filter(tm => !tm.member.deletedAt)
+        .map(tm => ({ id: tm.member.id, name: tm.member.name, email: tm.member.email })),
       userMemberCount: r._count.memberships,
       createdAt: r.createdAt.toISOString(), updatedAt: r.updatedAt.toISOString(),
       createdBy: r.createdBy,

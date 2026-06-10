@@ -31,7 +31,7 @@ function facebookAuthUrl(
     state,
     response_type: "code",
   });
-  return `https://www.facebook.com/v18.0/dialog/oauth?${params}`;
+  return `https://www.facebook.com/v24.0/dialog/oauth?${params}`;
 }
 
 function linkedinAuthUrl(clientId: string, redirectUri: string, state: string): string {
@@ -65,12 +65,12 @@ function youtubeAuthUrl(clientId: string, redirectUri: string, state: string): s
 // ─── GET /api/integrations/connect/[platform]?brandId=X ────────────────────
 
 export const GET = withOrgAuth<{ platform: string }>(
-  async ({ userId }, req: NextRequest, { params }) => {
+  async ({ userId, orgId }, req: NextRequest, { params }) => {
     const { platform } = params;
     const brandId = new URL(req.url).searchParams.get("brandId") ?? "";
     const base = appUrl();
     const redirectUri = `${base}/api/integrations/callback/${platform}`;
-    const state = signState({ userId, brandId, platform });
+    const state = signState({ userId, orgId, brandId, platform });
 
     let authUrl: string;
 

@@ -534,6 +534,15 @@ export function EditIssueModal({
   const assignee = members.find((m) => m.userId === assigneeId) ?? null;
   const linkedEpic = epics.find((e) => e.id === epicId) ?? null;
 
+  // People list for @-mentions in the description + comment editors.
+  const memberMentions = members
+    .filter((m) => m.user)
+    .map((m) => ({
+      id: m.userId,
+      name: [m.user!.firstName, m.user!.lastName].filter(Boolean).join(" ").trim() || m.user!.email,
+      email: m.user!.email,
+    }));
+
   return (
     <>
       {issue && (
@@ -848,7 +857,7 @@ export function EditIssueModal({
                 <h3 className="text-sm font-semibold text-gray-900 mb-1">Description</h3>
                 {descEditing ? (
                   <div>
-                    <RichTextEditor value={description} onChange={setDescription} />
+                    <RichTextEditor value={description} onChange={setDescription} mentions={memberMentions} />
                     <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
@@ -1364,6 +1373,7 @@ export function EditIssueModal({
                   <IssueActivity
                     issueId={issue.id}
                     projectId={issue.projectId}
+                    mentions={memberMentions}
                   />
                 </div>
               )}
@@ -2017,7 +2027,17 @@ function ParentRowPicker({
   onChange: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useClickOutside<HTMLDivElement>(open, () => setOpen(false));
+  const [query, setQuery] = useState("");
+  const ref = useClickOutside<HTMLDivElement>(open, () => {
+    setOpen(false);
+    setQuery("");
+  });
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? epics.filter((e) => e.key.toLowerCase().includes(q) || e.title.toLowerCase().includes(q))
+    : epics;
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -2028,29 +2048,49 @@ function ParentRowPicker({
         None
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-[280px] bg-white border border-gray-200 rounded shadow-lg z-50 py-1 max-h-72 overflow-y-auto">
-          {epics.length === 0 && (
-            <div className="px-3 py-2 text-xs text-gray-500">No epics in this space.</div>
-          )}
-          {epics.map((e) => (
-            <button
-              key={e.id}
-              type="button"
-              onClick={() => {
-                onChange(e.id);
-                setOpen(false);
-              }}
-              className={`flex items-start gap-2 w-full px-3 py-1.5 text-sm text-left ${
-                e.id === value ? "bg-blue-50 border-l-2 border-blue-600" : "hover:bg-gray-50"
-              }`}
-            >
-              <Zap className="h-3.5 w-3.5 mt-0.5 text-purple-500 shrink-0" />
-              <span className="min-w-0">
-                <div className="text-[11px] text-gray-500">{e.key}</div>
-                <div className="text-gray-800 truncate">{e.title}</div>
-              </span>
-            </button>
-          ))}
+        <div className="absolute right-0 top-full mt-1 w-[280px] bg-white border border-gray-200 rounded shadow-lg z-50 flex flex-col">
+          {/* Search — keeps the list usable when a space has many epics. */}
+          <div className="shrink-0 border-b border-gray-100 p-1.5">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                autoFocus
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search epics…"
+                className="w-full h-7 pl-7 pr-2 text-sm rounded border border-gray-200 focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none"
+              />
+            </div>
+          </div>
+          <div className="py-1 max-h-64 overflow-y-auto">
+            {epics.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-gray-500">No epics in this space.</div>
+            ) : filtered.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-gray-500">No matches.</div>
+            ) : (
+              filtered.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(e.id);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                  className={`flex items-start gap-2 w-full px-3 py-1.5 text-sm text-left ${
+                    e.id === value ? "bg-blue-50 border-l-2 border-blue-600" : "hover:bg-gray-50"
+                  }`}
+                >
+                  <Zap className="h-3.5 w-3.5 mt-0.5 text-purple-500 shrink-0" />
+                  <span className="min-w-0">
+                    <div className="text-[11px] text-gray-500">{e.key}</div>
+                    <div className="text-gray-800 truncate">{e.title}</div>
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
         </div>
       )}
     </div>

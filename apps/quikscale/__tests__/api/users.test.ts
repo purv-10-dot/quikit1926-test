@@ -91,4 +91,103 @@ describe("GET /api/users — happy path", () => {
     const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
     expect(call.where.teamId).toBe("team-123");
   });
+
+  // Regression: the owner picker used to search only the already-loaded page,
+  // so members past page 1 returned "No results". Search is now server-side.
+  it("applies a case-insensitive name/email search across the joined user", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("search=Himanshu"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.user.AND).toHaveLength(1);
+    expect(call.where.user.AND[0].OR).toEqual([
+      { firstName: { contains: "Himanshu", mode: "insensitive" } },
+      { lastName: { contains: "Himanshu", mode: "insensitive" } },
+      { email: { contains: "Himanshu", mode: "insensitive" } },
+    ]);
+  });
+
+  it("splits a multi-word search into AND-ed tokens (firstName + lastName)", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("search=Himanshu%20Pandey"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.user.AND).toHaveLength(2);
+    expect(call.where.user.AND[0].OR[0]).toEqual({ firstName: { contains: "Himanshu", mode: "insensitive" } });
+    expect(call.where.user.AND[1].OR[1]).toEqual({ lastName: { contains: "Pandey", mode: "insensitive" } });
+  });
+
+  it("omits the user search filter when search is empty/whitespace", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("search=%20%20"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.user).toBeUndefined();
+  });
+});
+
+// ═══════════════════════════════════════════════
+// GET /api/users — server-side search
+// Regression: the Owner dropdown could not find a user who lived on a later
+// page until you manually scrolled them in, because search was client-side
+// over the loaded slice only. Search now runs server-side over the FULL set.
+// ═══════════════════════════════════════════════
+
+describe("GET /api/users — search", () => {
+  beforeEach(asAdmin);
+
+  it("builds a case-insensitive AND-of-OR filter for a single token", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("search=shub"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.AND).toHaveLength(1);
+    expect(call.where.AND[0].user.OR).toEqual([
+      { firstName: { contains: "shub", mode: "insensitive" } },
+      { lastName: { contains: "shub", mode: "insensitive" } },
+      { email: { contains: "shub", mode: "insensitive" } },
+    ]);
+  });
+
+  it("splits a multi-word query into AND-ed tokens (full-name search)", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("search=shubham%20giri"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.AND).toHaveLength(2);
+    expect(call.where.AND[0].user.OR[0]).toEqual({ firstName: { contains: "shubham", mode: "insensitive" } });
+    expect(call.where.AND[1].user.OR[0]).toEqual({ firstName: { contains: "giri", mode: "insensitive" } });
+  });
+
+  it("combines search with the teamId filter and keeps tenant isolation", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("teamId=team-1&search=shub"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.orgId).toBe(TENANT);
+    expect(call.where.teamId).toBe("team-1");
+    expect(call.where.AND).toHaveLength(1);
+  });
+
+  it("ignores a blank / whitespace-only search term", async () => {
+    mockDb.orgMember.findMany.mockResolvedValue([]);
+    mockDb.orgMember.count.mockResolvedValue(0);
+
+    await GET(buildGET("search=%20%20"), { params: {} as any });
+
+    const call = mockDb.orgMember.findMany.mock.calls[0]?.[0] as any;
+    expect(call.where.AND).toBeUndefined();
+  });
 });

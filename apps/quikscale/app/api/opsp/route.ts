@@ -6,6 +6,7 @@ import { validationError } from "@/lib/api/validationError";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { resolveFiscalYearStart } from "@/lib/api/fiscalYearStart";
 import { userCan, forbidden } from "@/lib/api/permissions";
+import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 const auth = withOrgAuthForResource("opsp.create", "OPSP.Create");
 
 /**
@@ -117,9 +118,13 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   // stale Org.fiscalYearStart column — see lib/api/fiscalYearStart.ts.
   const fiscalYearStart = await resolveFiscalYearStart(orgId);
 
+  // OPSP is org-shared: read the canonical owner's rows so every permitted user
+  // sees the same plan (not their own empty per-user copy).
+  const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
   const data = await db.oPSPData.findUnique({
     where: {
-      orgId_userId_year_quarter: { orgId, userId, year, quarter },
+      orgId_userId_year_quarter: { orgId, userId: ownerId, year, quarter },
     },
   });
 
@@ -139,7 +144,7 @@ export const GET = auth.view(async ({ orgId, userId }, req) => {
   if (prior) {
     const priorData = await db.oPSPData.findUnique({
       where: {
-        orgId_userId_year_quarter: { orgId, userId, year: prior.year, quarter: prior.quarter },
+        orgId_userId_year_quarter: { orgId, userId: ownerId, year: prior.year, quarter: prior.quarter },
       },
     });
     if (priorData && (priorData.status === "finalized" || priorData.status === "reviewed")) {
@@ -203,21 +208,33 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
   const { year, quarter, ...fields } = parsed.data;
   const yearNum = typeof year === "number" ? year : parseInt(year);
 
+  // OPSP is org-shared: writes target the canonical owner's record so every
+  // permitted editor mutates the SAME plan. Audit fields below keep the acting
+  // user's id. Permission to write is already enforced by `auth.update`.
+  const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
   // Read the current record once and use it for two checks below:
   //   (a) edit-after-finalize gate — block mutations to a finalized/reviewed
   //       record unless the caller holds `OPSP.History.EditFinalize:update`.
   //   (b) status downgrade guard — see comment below.
   const current = await db.oPSPData.findUnique({
-    where: { orgId_userId_year_quarter: { orgId, userId, year: yearNum, quarter } },
+    where: { orgId_userId_year_quarter: { orgId, userId: ownerId, year: yearNum, quarter } },
     select: { status: true },
   });
   const currentStatus = current?.status ?? "draft";
 
   // (a) Server-side mirror of the client `isLocked` predicate. Without this
-  // a malicious client could call PUT directly and overwrite a finalized
-  // OPSP. The History page Edit button and the OPSP editor lock are gated
-  // on the same permission, so this just closes the loop on the server.
-  if (currentStatus === "finalized" || currentStatus === "reviewed") {
+  // a malicious client could call PUT directly and overwrite a locked OPSP.
+  // Once the review is SUBMITTED (`reviewed`) the OPSP is locked for everyone —
+  // even holders of `OPSP.History.EditFinalize:update` — because the review has
+  // been finalized against it. A merely `finalized` OPSP stays editable for
+  // users with that permission.
+  if (currentStatus === "reviewed") {
+    return forbidden(
+      "This OPSP's review has been submitted and finalized — it can no longer be edited.",
+    );
+  }
+  if (currentStatus === "finalized") {
     const canEditFinalized = await userCan(
       userId,
       orgId,
@@ -251,7 +268,7 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
     where: {
       orgId_userId_year_quarter: {
         orgId,
-        userId,
+        userId: ownerId,
         year: yearNum,
         quarter,
       },
@@ -262,7 +279,7 @@ export const PUT = auth.update(async ({ orgId, userId }, req) => {
     },
     create: {
       orgId,
-      userId,
+      userId: ownerId,
       year: yearNum,
       quarter,
       createdBy: userId,
@@ -289,12 +306,16 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   const { year, quarter } = parsedFinalize.data;
   const yearNum = typeof year === "number" ? year : parseInt(year);
 
+  // Finalize the org's shared OPSP (canonical owner's record), not the acting
+  // user's per-user copy. Audit keeps the acting user via `actorId`.
+  const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
   // Only flip draft → finalized. A "reviewed" OPSP is a stronger lock and must
   // not be downgraded back to "finalized" if Finalize is clicked again.
   const result = await db.oPSPData.updateMany({
     where: {
       orgId,
-      userId,
+      userId: ownerId,
       year: yearNum,
       quarter,
       status: "draft",
@@ -307,7 +328,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     actorId: userId,
     action: "UPDATE",
     entityType: "OPSPData",
-    entityId: `${orgId}:${userId}:${yearNum}:${quarter}`,
+    entityId: `${orgId}:${ownerId}:${yearNum}:${quarter}`,
     changes: ["status:finalized"],
     reason: "OPSP finalized",
   });

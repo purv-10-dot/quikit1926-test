@@ -2,7 +2,7 @@
  * TDS Codes master — Prisma-backed CRUD for `cn_tds_codes`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface TDSCodeRecord {
   id: string;

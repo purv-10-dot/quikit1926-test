@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Shield, Plus, Trash2 } from "lucide-react";
 import { RolePermissionMatrix } from "./RolePermissionMatrix";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -37,6 +38,10 @@ export function RolesTab() {
   // `User.Management` sub-permission at the page level (so this component
   // only renders when the user can see the User Management tab).
   const { canCreate, canDelete } = useResourcePermissions("User");
+  // Shared cache for the role list consumed by the Add/Edit User dropdown on
+  // the sibling Users tab (page.tsx → ["org-roles"]). Bust it on create/delete
+  // so that dropdown reflects role changes without a page reload.
+  const queryClient = useQueryClient();
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,6 +98,7 @@ export function RolesTab() {
       setNewName("");
       setCreating(false);
       await load(created.id);
+      queryClient.invalidateQueries({ queryKey: ["org-roles"] });
     } catch {
       setError("Network error creating role");
     }
@@ -110,6 +116,7 @@ export function RolesTab() {
       // If the deleted role was selected, fall back to the first remaining.
       if (selectedId === role.id) setSelectedId(null);
       await load();
+      queryClient.invalidateQueries({ queryKey: ["org-roles"] });
     } catch {
       setError("Network error deleting role");
     }

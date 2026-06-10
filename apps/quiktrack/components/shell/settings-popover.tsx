@@ -15,8 +15,10 @@ import {
   Users as UsersIcon,
   Receipt,
   ExternalLink,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
+import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 
 interface PopoverItem {
   key: string;
@@ -34,6 +36,8 @@ interface PopoverSection {
   key: string;
   label: string;
   items: PopoverItem[];
+  /** Section is only shown to admins (QuikTrack app-admin / org admin). */
+  adminOnly?: boolean;
 }
 
 const SECTIONS: PopoverSection[] = [
@@ -60,6 +64,7 @@ const SECTIONS: PopoverSection[] = [
   {
     key: "admin",
     label: "QuikTrack admin settings",
+    adminOnly: true,
     items: [
       {
         key: "system",
@@ -108,6 +113,7 @@ const SECTIONS: PopoverSection[] = [
   {
     key: "atlassian",
     label: "Organisation admin settings",
+    adminOnly: true,
     items: [
       {
         key: "user-management",
@@ -140,6 +146,10 @@ export function SettingsPopover({
 }) {
   const router = useRouter();
   const popoverRef = useRef<HTMLDivElement>(null);
+  const perms = useMyPermissions();
+  // Admin sections (Spaces / User management) are gated. While permissions
+  // load, treat as non-admin to avoid flashing admin options to everyone.
+  const isAdmin = !perms.loading && perms.isAdmin;
 
   // Outside-click and Escape to dismiss.
   useEffect(() => {
@@ -188,8 +198,9 @@ export function SettingsPopover({
         </div>
       </div> */}
 
-      {/* Hide disabled (coming-soon) items so only implemented destinations show. */}
-      {SECTIONS.map((section) => {
+      {/* Hide disabled (coming-soon) items so only implemented destinations
+          show, and hide admin-only sections from non-admins. */}
+      {SECTIONS.filter((s) => !s.adminOnly || isAdmin).map((section) => {
         const visibleItems = section.items.filter((i) => !i.disabled);
         if (visibleItems.length === 0) return null;
         return (
@@ -229,6 +240,17 @@ export function SettingsPopover({
         </section>
         );
       })}
+
+      {/* Non-admins: explain why admin settings aren't available. */}
+      {!perms.loading && !isAdmin && (
+        <div className="mx-4 mb-3 mt-1 flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2.5">
+          <Lock className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+          <p className="text-xs leading-snug text-amber-800">
+            You don&apos;t have access to admin settings. Contact your organisation admin to
+            request access.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -67,7 +67,41 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
 import type { ExportSelection } from "@quikit/ui";
-import { Download } from "lucide-react";
+import { ModuleMoreActions } from "@/components/table/ModuleMoreActions";
+
+/**
+ * Columns offered in the "Manage Columns" modal (and Export). Mirrors the
+ * order + labels of the <Header /> cells below, excluding the always-present
+ * row controls (_checkbox / _log / _id). Lets users un-hide a column they
+ * previously hid via the column header menu.
+ */
+const MODULE_COLUMNS: { key: string; label: string }[] = [
+  { key: "meetingDate", label: "Meeting Date" },
+  { key: "client", label: "Client Name" },
+  { key: "callStatus", label: "Status" },
+  { key: "absentMembers", label: "Absent Members" },
+  { key: "weeklyDashboardNA", label: "Weekly Dashboard NA" },
+  { key: "actualStartTime", label: "Actual Start Time" },
+  { key: "actualEndTime", label: "Actual End Time" },
+  { key: "goodNewsSharing", label: "Good News Sharing" },
+  { key: "goodNewsSharingTime", label: "Good News Sharing Time" },
+  { key: "kpDashboard", label: "K&P dashboard" },
+  { key: "kpDashboardTime", label: "K&P dashboard Time" },
+  { key: "gaps", label: "GAPS" },
+  { key: "gapsTime", label: "GAPS Time" },
+  { key: "www", label: "WWW" },
+  { key: "wwwTime", label: "WWW Time" },
+  { key: "feedback", label: "Customer/Employee Feedback" },
+  { key: "feedbackTime", label: "Customer/Employee Feedback Time" },
+  { key: "collectiveIntelligence", label: "Collective Intelligence" },
+  { key: "collectiveIntelligenceTime", label: "Collective Intelligence Time" },
+  { key: "opspReview", label: "OPSP Review" },
+  { key: "opspTime", label: "OPSP Time" },
+  { key: "createdBy", label: "Created By" },
+  { key: "updatedBy", label: "Updated By" },
+  { key: "createdAt", label: "Created Date" },
+  { key: "updatedAt", label: "Updated Date" },
+];
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { notify } from "@/lib/utils/notify";
 
@@ -348,6 +382,7 @@ export default function WeeklyMeetingPage() {
     frozenCol: frozenUpTo,
     setFrozenCol,
     hideCol,
+    setHiddenCols,
   } = useTablePrefs("weeklyMeeting");
   const { sortBy, sortOrder, setSort } = useTableSort("weeklyMeeting");
   const { getColWidth, startResize, colWidths } = useColumnResize("weeklyMeeting", COL_WIDTHS_DEFAULT);
@@ -1084,20 +1119,6 @@ export default function WeeklyMeetingPage() {
               Restore {selectedIds.size} selected
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setViewTrash((v) => !v)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-md transition-colors ${
-              viewTrash
-                ? "bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100"
-                : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-            }`}
-            title={viewTrash ? "Exit Trash" : "View Trash"}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {viewTrash ? "Exit Trash" : "View Trash"}
-          </button>
-
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -1125,15 +1146,19 @@ export default function WeeklyMeetingPage() {
             ))}
           </select>
 
-          <button
-            type="button"
-            onClick={() => setExportOpen(true)}
-            disabled={clients.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-md disabled:opacity-50"
-            title="Export Data"
-          >
-            <Download className="h-3.5 w-3.5" /> Export Data
-          </button>
+          {/* "More" pill — Export Data (custom modal), View Trash, and
+              Manage Columns (un-hide columns hidden via the header menu). */}
+          <ModuleMoreActions
+            columns={MODULE_COLUMNS}
+            hiddenCols={hiddenCols}
+            onHiddenColsChange={setHiddenCols}
+            isTrashActive={viewTrash}
+            onToggleTrash={setViewTrash}
+            rowCounts={{ page: rows.length, filtered: rows.length, all: rows.length }}
+            onExport={async () => {}}
+            defaultExportColumnKeys={[]}
+            onExportClick={() => setExportOpen(true)}
+          />
 
           {canCreate && <AddButton onClick={openCreate}>Add</AddButton>}
         </div>

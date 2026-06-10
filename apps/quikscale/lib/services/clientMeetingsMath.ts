@@ -132,6 +132,46 @@ export function previousMonths(base: Date, n: number): Array<{ year: number; mon
   return out;
 }
 
+/** Parse a "YYYY-MM" string into {year, month} (month 0-indexed). null if invalid. */
+export function parseYearMonth(s: unknown): { year: number; month: number } | null {
+  if (typeof s !== "string") return null;
+  const [y, m] = s.split("-").map(n => parseInt(n, 10));
+  if (!Number.isInteger(y) || !Number.isInteger(m) || m < 1 || m > 12) return null;
+  return { year: y, month: m - 1 };
+}
+
+/** Parse a numeric year + 1-indexed month into {year, month} (month 0-indexed). null if invalid. */
+export function parseYearMonthNum(year: unknown, month: unknown): { year: number; month: number } | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month)) return null;
+  const m = month as number;
+  if (m < 1 || m > 12) return null;
+  return { year: year as number, month: m - 1 };
+}
+
+/**
+ * Inclusive list of months between two {year, month} points (month is
+ * 0-indexed), oldest-first — so an export reflects EXACTLY the From→To range
+ * the user picked, not a rolling "last N months" window. Returns a single
+ * month when from === to. An inverted range is swapped, and the span is capped
+ * (keeping the most recent `maxMonths`) so a wild pick can't generate hundreds
+ * of columns.
+ */
+export function monthsInRange(
+  from: { year: number; month: number },
+  to: { year: number; month: number },
+  maxMonths = 24,
+): Array<{ year: number; month: number }> {
+  let startIdx = from.year * 12 + from.month;
+  let endIdx = to.year * 12 + to.month;
+  if (startIdx > endIdx) [startIdx, endIdx] = [endIdx, startIdx];
+  if (endIdx - startIdx + 1 > maxMonths) startIdx = endIdx - (maxMonths - 1);
+  const out: Array<{ year: number; month: number }> = [];
+  for (let idx = startIdx; idx <= endIdx; idx++) {
+    out.push({ year: Math.floor(idx / 12), month: idx % 12 });
+  }
+  return out;
+}
+
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function pctYesNA(flags: Array<"YES" | "NO" | "NA">, denom: number): number {
@@ -222,25 +262,19 @@ export function calculateWeeklyMonthlyStats(
     const avgEF  = pctYesNA(held.map(r => r.feedback),         held.length);
     const avgCI  = pctYesNA(held.map(r => r.collectiveIntelligence),  held.length);
 
-    // avgAuality ("Quality of the dashboards"): pure average of the 5
-    // per-member KPI scores across every held meeting.
-    //   per-member = (kpiWeeklyQTD + kpiCoding + priorityNotes
-    //                  + priorityStartEndDate + priorityColor) / 5
-    //   per-meeting = mean of per-member values for that meeting
-    //   avgAuality  = mean of per-meeting values
-    // The opspReview-flag blend has been removed — Quality reflects what
-    // the team actually scored each member on, nothing else. (The order of
-    // averaging is mathematically equivalent to "per-KPI average across
-    // members, then average those 5 KPIs" — the user-spec example.)
-    const perMeetingMemberAvgs = held.map(r => {
-      if (!r.memberScores.length) return 0;
-      const perMember = r.memberScores.map(s => (s.kpiWeeklyQTD + s.kpiCoding + s.priorityNotes + s.priorityStartEndDate + s.priorityColor) / 5);
-      return perMember.reduce((a, b) => a + b, 0) / perMember.length;
-    });
-    const meetingsWithScores = perMeetingMemberAvgs.filter((_, i) => held[i].memberScores.length > 0);
-    const avgAuality = meetingsWithScores.length
-      ? meetingsWithScores.reduce((a, b) => a + b, 0) / meetingsWithScores.length
-      : 0;
+    // avgAuality ("Quality of the dashboards") — MUST equal the Member
+    // Punch-In Excel export's "Total Average of All Members". That figure is
+    // MEMBER-weighted (see memberWeightedQuality below): each member averages
+    // their own 5 KPIs across the meetings they were scored in, then those
+    // per-member totals are averaged across members.
+    //
+    // The previous implementation was MEETING-weighted (mean of per-meeting
+    // member-averages). With a single meeting the two agree, but once a month
+    // had 2+ meetings with uneven attendance they diverged — a sparse meeting
+    // (e.g. only 2 of 4 members scored, the rest NA/AB) was given the same
+    // weight as a full meeting, dragging the number off the Excel value. See
+    // clientMeetingsMath.test.ts.
+    const avgAuality = memberWeightedQuality(held);
 
     const attendancePercents = held.map(r => r.totalMembers > 0 ? ((r.totalMembers - r.absentCount) / r.totalMembers) * 100 : 0);
     const avgAttendance = attendancePercents.length ? attendancePercents.reduce((a, b) => a + b, 0) / attendancePercents.length : 0;
@@ -260,7 +294,9 @@ export function calculateWeeklyMonthlyStats(
       avgFormat: smartRound(avgFormat),
       avgAttendance: smartRound(avgAttendance),
       avgStuckCalls: 0,
-      avgAuality: smartRound(avgAuality),
+      // 2-decimal precision (not smartRound) so the cell matches the Excel
+      // "Total Average of All Members" exactly (e.g. 49.75%).
+      avgAuality,
       avgKP:  smartRound(avgKP),
       avgWWW: smartRound(avgWWW),
       avgEF:  smartRound(avgEF),
@@ -274,6 +310,44 @@ export function calculateWeeklyMonthlyStats(
 function avg(nums: number[]): number {
   if (!nums.length) return 0;
   return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+/**
+ * Member-weighted "Quality of the dashboards" — byte-for-byte the same math
+ * as computeMemberPunchIn + calculateOverallFinalAverage, so the dashboard
+ * cell always equals the Member Punch-In Excel "Total Average of All Members".
+ *
+ *   per member → for each of the 5 KPIs, average across the meetings the
+ *                member was scored in, then Math.round                (per KPI)
+ *   per member → Math.round( sum of the 5 rounded KPI averages / 5 )  (total)
+ *   overall    → average every member's total, kept to 2 decimals
+ *
+ * NA / Absent members never produce a memberScores row, so they're naturally
+ * excluded here — matching `eligibleReports` (present-at-least-once) in the
+ * Excel export.
+ */
+function memberWeightedQuality(
+  held: Array<{ memberScores: WeeklyMeetingForMath["memberScores"] }>,
+): number {
+  const KPI_KEYS = ["kpiWeeklyQTD", "kpiCoding", "priorityNotes", "priorityStartEndDate", "priorityColor"] as const;
+  // Collect each member's per-KPI scores across every held meeting they appear in.
+  const byMember = new Map<string, Record<(typeof KPI_KEYS)[number], number[]>>();
+  for (const r of held) {
+    for (const s of r.memberScores) {
+      let acc = byMember.get(s.userId);
+      if (!acc) {
+        acc = { kpiWeeklyQTD: [], kpiCoding: [], priorityNotes: [], priorityStartEndDate: [], priorityColor: [] };
+        byMember.set(s.userId, acc);
+      }
+      for (const k of KPI_KEYS) acc[k].push(s[k]);
+    }
+  }
+  if (!byMember.size) return 0;
+  const weeklyTotals = [...byMember.values()].map(acc => {
+    const kpiAvgs = KPI_KEYS.map(k => Math.round(acc[k].reduce((a, b) => a + b, 0) / acc[k].length));
+    return Math.round(kpiAvgs.reduce((a, b) => a + b, 0) / kpiAvgs.length);
+  });
+  return Math.round((weeklyTotals.reduce((a, b) => a + b, 0) / weeklyTotals.length) * 100) / 100;
 }
 
 /* ─── Member Punch-In aggregator (spec §7.8) ────────────────────────────────── */

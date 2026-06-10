@@ -145,7 +145,56 @@ async function seedAdminRoleFor({ orgId, appId, slug }) {
   return { roleId: useRoleId, permCount, navCount };
 }
 
+/* ────────────────────────── QuikInfra (different RBAC shape) ──────────────────────────
+ * QuikInfra is NOT in REGISTRIES on purpose: its RBAC differs from quikscale/
+ * quiktrack — role name is lowercase "admin" (what userCan/context.ts check),
+ * permissions are `construction.*` with actions like manage/approve/import/lock,
+ * and it has NO RoleNavigation table. Replicating that in the raw-SQL seeder
+ * above would create a mismatched, unrecognized role. Instead we delegate to
+ * QuikInfra's own /api/internal/provision-roles endpoint, which seeds its 4
+ * roles + permissions correctly and assigns each org's admins — the exact call
+ * the launcher fires on app-grant. (Requires the QuikInfra server reachable.)
+ */
+async function seedQuikInfra() {
+  const base = (process.env.QUIKINFRA_URL ?? "http://localhost:3006").replace(/\/+$/, "");
+  const secret = process.env.INTERNAL_SECRET;
+  if (!secret) {
+    console.log("⏭️  QuikInfra skipped — INTERNAL_SECRET not set");
+    return;
+  }
+  const orgs = await db.$queryRaw`
+    SELECT oaa."orgId", o.name AS org_name
+    FROM "quikit"."OrgAppAccess" oaa
+    JOIN "quikit"."App" a ON a.id = oaa."appId"
+    JOIN "quikit"."Org" o ON o.id = oaa."orgId"
+    WHERE oaa.enabled = true AND a.slug = 'quikinfra'
+    ORDER BY o.name`;
+  for (const org of orgs) {
+    const admins = await db.$queryRaw`
+      SELECT "userId" FROM "quikit"."OrgMember"
+      WHERE "orgId" = ${org.orgId}
+        AND lower("role") IN ('org_admin','super_admin','platform_super_admin','admin')`;
+    const adminUserIds = admins.map((a) => a.userId);
+    try {
+      const res = await fetch(`${base}/api/internal/provision-roles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-internal-secret": secret },
+        body: JSON.stringify({ orgId: org.orgId, adminUserIds }),
+      });
+      console.log(
+        `${res.ok ? "✅" : "❌"} ${org.org_name} × QuikInfra  ` +
+        `(provision-roles HTTP ${res.status}, admins=${adminUserIds.length})`,
+      );
+    } catch (e) {
+      console.log(`❌ ${org.org_name} × QuikInfra  (fetch failed: ${e.message})`);
+    }
+  }
+}
+
 async function main() {
+  // QuikInfra seeds via its own provision-roles endpoint (different RBAC shape).
+  await seedQuikInfra();
+
   // Find every (org, app) where the app is enabled AND has a registry.
   const rows = await db.$queryRaw`
     SELECT oaa."orgId", oaa."appId", a.slug, o.name AS org_name, a.name AS app_name

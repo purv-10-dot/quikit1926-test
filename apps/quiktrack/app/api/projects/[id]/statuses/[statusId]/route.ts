@@ -38,7 +38,7 @@ export const PATCH = withProjectAccess<{ id: string; statusId: string }>(
     });
     return NextResponse.json({ success: true, data: updated });
   },
-  { paramKey: "id", requireRoles: ["PROJECT_ADMIN"] },
+  { paramKey: "id", requirePermission: { resource: "Project", action: "update" } },
 );
 
 /**
@@ -113,5 +113,5 @@ export const DELETE = withProjectAccess<{ id: string; statusId: string }>(
       data: { id: params.statusId, movedIssues: issuesOnStatus },
     });
   },
-  { paramKey: "id", requireRoles: ["PROJECT_ADMIN"] },
+  { paramKey: "id", requirePermission: { resource: "Project", action: "update" } },
 );

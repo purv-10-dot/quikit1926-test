@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/api/requireAdmin";
 import { gateModuleApi } from "@quikit/auth/feature-gate";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { resolveOpspOwnerOrSelf } from "@/lib/api/opspOwner";
 
 /**
  * OPSP Critical Hash Review API — handles the top-level "Critical Hash
@@ -84,8 +85,11 @@ export async function GET(req: NextRequest) {
     const year = parseInt(searchParams.get("year") ?? String(new Date().getFullYear()));
     const quarter = searchParams.get("quarter") ?? "Q1";
 
+    // OPSP is org-shared: read the canonical owner's plan.
+    const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
     const opsp = await db.oPSPData.findUnique({
-      where: { orgId_userId_year_quarter: { orgId, userId, year, quarter } },
+      where: { orgId_userId_year_quarter: { orgId, userId: ownerId, year, quarter } },
       select: {
         id: true,
         status: true,
@@ -222,8 +226,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid achievedValue" }, { status: 400 });
     }
 
+    // OPSP is org-shared: critical-review entries attach to the canonical owner's plan.
+    const ownerId = await resolveOpspOwnerOrSelf(orgId, userId);
+
     const opsp = await db.oPSPData.findUnique({
-      where: { orgId_userId_year_quarter: { orgId, userId, year, quarter } },
+      where: { orgId_userId_year_quarter: { orgId, userId: ownerId, year, quarter } },
       select: { id: true },
     });
     if (!opsp) {

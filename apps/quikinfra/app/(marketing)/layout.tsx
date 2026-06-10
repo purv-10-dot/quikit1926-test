@@ -14,16 +14,16 @@ import "./marketing.css";
  * `<link>` block injected by the root layout. Keeping it minimal here.
  */
 const SITE_URL = "https://quikinfra.quikit.ai";
-const SITE_NAME = "QuikConstruction ERP";
-const TITLE = "QuikConstruction ERP — Construction Management Software for Indian Builders";
+const SITE_NAME = "QuikInfra ERP";
+const TITLE = "QuikInfra ERP — Construction Management Software for Indian Builders";
 const DESCRIPTION =
-  "QuikConstruction is an AI-powered construction ERP that connects site, store, procurement, and management. Track materials, money, and project progress in real time — replace Excel and WhatsApp with one unified construction management platform.";
+  "QuikInfra is an AI-powered construction ERP that connects site, store, procurement, and management. Track materials, money, and project progress in real time — replace Excel and WhatsApp with one unified construction management platform.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: TITLE,
-    template: "%s | QuikConstruction ERP",
+    template: "%s | QuikInfra ERP",
   },
   description: DESCRIPTION,
   keywords: [
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
     "inventory management for construction",
     "AI construction software",
     "construction software India",
-    "QuikConstruction",
+    "QuikInfra",
     "QuikInfra",
   ],
   applicationName: SITE_NAME,
@@ -64,7 +64,7 @@ export const metadata: Metadata = {
         url: "/marketing/og-image.png",
         width: 1200,
         height: 630,
-        alt: "QuikConstruction ERP — Run every construction site from one dashboard",
+        alt: "QuikInfra ERP — Run every construction site from one dashboard",
       },
     ],
   },

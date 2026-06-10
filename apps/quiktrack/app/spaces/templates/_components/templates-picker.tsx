@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { X, Upload } from "lucide-react";
+import { X } from "lucide-react";
 import {
   KanbanIllustration,
   WebDesignIllustration,
@@ -83,24 +83,6 @@ const TEMPLATES: Template[] = [
 
 const NAV_ITEMS = [
   { key: "made-for-you", label: "Made for you" },
-  { key: "bundles", label: "Bundles" },
-  { key: "custom", label: "Custom templates", badge: "ENTERPRISE" },
-  { key: "import", label: "Import data", icon: Upload },
-];
-
-const CATEGORIES = [
-  "Software development",
-  "Service management",
-  "Work management",
-  "Product management",
-  "Marketing",
-  "Human resources",
-  "Finance",
-  "Design",
-  "Personal",
-  "Operations",
-  "Legal",
-  "Sales",
 ];
 
 function BadgeChip({ tone, label }: { tone: "blue" | "amber" | "purple"; label: string }) {
@@ -140,14 +122,14 @@ export function TemplatesPicker() {
                   ? window.localStorage.getItem("qt:lastProjectId")
                   : null;
               if (lastId) {
-                router.push(`/spaces/${lastId}/board`);
+                router.push(`/spaces/${lastId}/backlog`);
                 return;
               }
               try {
                 const res = await fetch("/api/projects");
                 const json = await res.json();
                 const first = json?.success && json.data?.[0];
-                router.push(first ? `/spaces/${first.id}/board` : "/spaces");
+                router.push(first ? `/spaces/${first.id}/backlog` : "/spaces");
               } catch {
                 router.push("/spaces");
               }
@@ -173,36 +155,10 @@ export function TemplatesPicker() {
                     : "text-gray-700 hover:bg-gray-100"
                 }`}
               >
-                <span className="flex items-center gap-2">
-                  {item.label}
-                  {item.icon && <item.icon className="h-3.5 w-3.5" />}
-                </span>
-                {item.badge && (
-                  <span className="text-[9px] font-semibold tracking-wider text-gray-600 bg-gray-100 border border-gray-200 rounded px-1 py-0.5">
-                    {item.badge}
-                  </span>
-                )}
+                <span className="flex items-center gap-2">{item.label}</span>
               </button>
             );
           })}
-        </nav>
-
-        <div className="px-5 mt-6 mb-2 text-[11px] font-semibold tracking-wider text-gray-500 uppercase">
-          Categories
-        </div>
-
-        <nav className="px-2 pb-6 space-y-0.5">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c}
-              onClick={() => setActiveNav(c)}
-              className={`w-full text-left px-3 h-9 text-sm rounded ${
-                activeNav === c ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700 hover:bg-gray-100"
-              }`}
-            >
-              {c}
-            </button>
-          ))}
         </nav>
       </aside>
 

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { publicBaseUrl } from "@quikit/auth/public-url";
+import { clearSessionCookies } from "@quikit/auth/session-cookies";
 
 /**
  * auth.quikit.ai middleware.
@@ -13,6 +15,12 @@ import { getToken } from "next-auth/jwt";
  */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // This host's own public origin (NEXTAUTH_URL / X-Forwarded-Host), never the
+  // pod bind address that `req.url` resolves to when the ingress doesn't
+  // preserve the Host header — that was leaking `https://0.0.0.0:3001/login`
+  // into user-facing redirects. See @quikit/auth/public-url.
+  const base = publicBaseUrl(req);
 
   const PUBLIC = [
     "/login",
@@ -57,24 +65,28 @@ export async function middleware(req: NextRequest) {
   }
 
   if (pathname === "/" || pathname === "") {
-    return NextResponse.redirect(new URL("/login", req.url));
+    return NextResponse.redirect(new URL("/login", base));
   }
 
   if (token && pathname.startsWith("/login")) {
     const validSession = await isRedisSessionStillValid();
     if (!validSession) {
-      return NextResponse.next();
+      // The JWT decodes (valid signature) but its Redis session is gone. Show
+      // the login page AND evict the dead cookie so the browser stops replaying
+      // it — this is what lets a user with stale site data on authn.quikit.ai
+      // recover without manually clearing cookies.
+      return clearSessionCookies(NextResponse.next());
     }
     const callback = req.nextUrl.searchParams.get("callbackUrl");
     if (callback) {
       try {
-        const callbackUrl = new URL(callback, req.url);
+        const callbackUrl = new URL(callback, base);
         // Cross-origin callback → route through /api/post-login so the
         // target sub-app gets a host-scoped session cookie via the
         // /auth-handoff bridge. Same-origin callbacks (the auth app
         // itself, or a relative /path) can short-circuit.
-        if (callbackUrl.origin !== req.nextUrl.origin) {
-          const bridge = new URL("/api/post-login", req.url);
+        if (callbackUrl.origin !== new URL(base).origin) {
+          const bridge = new URL("/api/post-login", base);
           bridge.searchParams.set("callbackUrl", callbackUrl.toString());
           return NextResponse.redirect(bridge);
         }
@@ -92,7 +104,7 @@ export async function middleware(req: NextRequest) {
       process.env.NEXT_PUBLIC_LAUNCHER_URL ?? process.env.NEXT_PUBLIC_QUIKIT_URL;
     if (launcherUrl) {
       const apps = `${launcherUrl.replace(/\/+$/, "").replace(/\/apps$/, "")}/apps`;
-      const bridge = new URL("/api/post-login", req.url);
+      const bridge = new URL("/api/post-login", base);
       bridge.searchParams.set("callbackUrl", apps);
       return NextResponse.redirect(bridge);
     }
@@ -102,7 +114,10 @@ export async function middleware(req: NextRequest) {
   }
 
   if (!token && !isPublic) {
-    return NextResponse.redirect(new URL("/login", req.url));
+    // No decodable token — evict any stale/expired NextAuth cookies on the way
+    // to login so the browser stops replaying a dead cookie (auto-recovers
+    // users with stale site data; deletes are no-ops when no cookie is present).
+    return clearSessionCookies(NextResponse.redirect(new URL("/login", base)));
   }
 
   return NextResponse.next();

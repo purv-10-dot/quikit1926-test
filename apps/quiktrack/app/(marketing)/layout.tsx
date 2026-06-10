@@ -191,7 +191,7 @@ export default function MarketingLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className={`${fraunces.variable} ${inter.variable}`}>
+    <div className={`marketing-shell ${fraunces.variable} ${inter.variable}`}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}

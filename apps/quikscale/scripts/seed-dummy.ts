@@ -18,32 +18,36 @@ import bcrypt from "bcryptjs";
 
 const db = new PrismaClient();
 
-const ORG_SLUG = "demo-quikscale";
+const ORG_SLUG = "moreyeahs";
 const APP_SLUG = "quikscale";
 const PASSWORD = "Quikit2026";
 
 const TEAMS = [
-  { slug: "engineering", name: "Engineering", color: "#3b82f6" },
-  { slug: "sales", name: "Sales", color: "#10b981" },
-  { slug: "marketing", name: "Marketing", color: "#f59e0b" },
+  { slug: "demo-engineering", name: "Demo Engineering", color: "#3b82f6" },
+  { slug: "demo-sales", name: "Demo Sales", color: "#10b981" },
+  { slug: "demo-marketing", name: "Demo Marketing", color: "#f59e0b" },
 ];
+
+const TEAM_KEYS = { engineering: "demo-engineering", sales: "demo-sales", marketing: "demo-marketing" } as const;
 
 const USERS = [
-  { email: "qs.admin@quikit-demo.local", firstName: "Aanya", lastName: "Sharma", role: "admin", team: "engineering" },
-  { email: "qs.alice@quikit-demo.local", firstName: "Alice", lastName: "Johnson", role: "manager", team: "engineering" },
-  { email: "qs.bob@quikit-demo.local", firstName: "Bob", lastName: "Smith", role: "manager", team: "sales" },
-  { email: "qs.carol@quikit-demo.local", firstName: "Carol", lastName: "Williams", role: "employee", team: "engineering" },
-  { email: "qs.david@quikit-demo.local", firstName: "David", lastName: "Brown", role: "employee", team: "sales" },
-  { email: "qs.eva@quikit-demo.local", firstName: "Eva", lastName: "Garcia", role: "employee", team: "marketing" },
-  { email: "qs.frank@quikit-demo.local", firstName: "Frank", lastName: "Davis", role: "employee", team: "marketing" },
-  { email: "qs.grace@quikit-demo.local", firstName: "Grace", lastName: "Miller", role: "employee", team: "engineering" },
+  { email: "qs.admin@example.com", firstName: "Aanya", lastName: "Sharma", role: "admin", team: TEAM_KEYS.engineering },
+  { email: "qs.alice@example.com", firstName: "Alice", lastName: "Johnson", role: "manager", team: TEAM_KEYS.engineering },
+  { email: "qs.bob@example.com", firstName: "Bob", lastName: "Smith", role: "manager", team: TEAM_KEYS.sales },
+  { email: "qs.carol@example.com", firstName: "Carol", lastName: "Williams", role: "employee", team: TEAM_KEYS.engineering },
+  { email: "qs.david@example.com", firstName: "David", lastName: "Brown", role: "employee", team: TEAM_KEYS.sales },
+  { email: "qs.eva@example.com", firstName: "Eva", lastName: "Garcia", role: "employee", team: TEAM_KEYS.marketing },
+  { email: "qs.frank@example.com", firstName: "Frank", lastName: "Davis", role: "employee", team: TEAM_KEYS.marketing },
+  { email: "qs.grace@example.com", firstName: "Grace", lastName: "Miller", role: "employee", team: TEAM_KEYS.engineering },
 ];
 
+const DEMO_EMAILS = USERS.map((u) => u.email);
+
 const CATEGORIES = [
-  { name: "Revenue", dataType: "Currency", currency: "INR" },
-  { name: "Operations", dataType: "Number", currency: null },
-  { name: "People", dataType: "Number", currency: null },
-  { name: "Customer", dataType: "Percentage", currency: null },
+  { name: "Demo Revenue", dataType: "Currency", currency: "INR" },
+  { name: "Demo Operations", dataType: "Number", currency: null },
+  { name: "Demo People", dataType: "Number", currency: null },
+  { name: "Demo Customer", dataType: "Percentage", currency: null },
 ];
 
 const KPI_POOL = [
@@ -58,9 +62,9 @@ const KPI_POOL = [
 ];
 
 const TEAM_KPIS = [
-  { name: "Quarterly Revenue", unit: "Currency", target: 12000000, scale: "L", team: "sales" },
-  { name: "Team Velocity (Story Points)", unit: "Number", target: 600, scale: null, team: "engineering" },
-  { name: "Customer Retention Rate", unit: "Percentage", target: 95, scale: null, team: "sales" },
+  { name: "Quarterly Revenue", unit: "Currency", target: 12000000, scale: "L", team: TEAM_KEYS.sales },
+  { name: "Team Velocity (Story Points)", unit: "Number", target: 600, scale: null, team: TEAM_KEYS.engineering },
+  { name: "Customer Retention Rate", unit: "Percentage", target: 95, scale: null, team: TEAM_KEYS.sales },
 ];
 
 const PRIORITY_TEMPLATES = [
@@ -96,23 +100,29 @@ function pickN<T>(arr: T[], n: number): T[] {
 }
 
 async function wipe(orgId: string, userIds: string[]) {
-  console.log("🧨 Wiping existing demo data…");
+  // Scope all deletes strictly to the demo users / demo team names / demo category names
+  // so real Moreyeahs data is never touched.
+  console.log("🧨 Wiping existing demo data (scoped to demo users + demo entities only)…");
+  const demoTeamSlugs = TEAMS.map((t) => t.slug);
+  const demoCategoryNames = CATEGORIES.map((c) => c.name);
+  const demoTeams = await db.team.findMany({ where: { orgId, slug: { in: demoTeamSlugs } }, select: { id: true } });
+  const demoTeamIds = demoTeams.map((t) => t.id);
+
   await db.$transaction([
-    db.kPIWeeklyValue.deleteMany({ where: { orgId } }),
-    db.kPINote.deleteMany({ where: { orgId } }),
-    db.kPILog.deleteMany({ where: { orgId } }),
-    db.kPI.deleteMany({ where: { orgId } }),
-    db.priorityWeeklyStatus.deleteMany({ where: { priority: { orgId } } }),
-    db.priority.deleteMany({ where: { orgId } }),
-    db.wWWRevisionLog.deleteMany({ where: { wwwItem: { orgId } } }),
-    db.wWWItem.deleteMany({ where: { orgId } }),
-    db.accountabilityFunction.deleteMany({ where: { orgId } }),
-    db.categoryMaster.deleteMany({ where: { orgId } }),
-    db.quarterSetting.deleteMany({ where: { orgId } }),
-    db.userTeam.deleteMany({ where: { orgId } }),
-    db.team.deleteMany({ where: { orgId } }),
-    db.userAppAccess.deleteMany({ where: { orgId } }),
-    db.orgMember.deleteMany({ where: { orgId } }),
+    db.kPIWeeklyValue.deleteMany({ where: { orgId, kpi: { createdBy: { in: userIds } } } }),
+    db.kPINote.deleteMany({ where: { orgId, authorId: { in: userIds } } }),
+    db.kPILog.deleteMany({ where: { orgId, changedBy: { in: userIds } } }),
+    db.kPI.deleteMany({ where: { orgId, createdBy: { in: userIds } } }),
+    db.priorityWeeklyStatus.deleteMany({ where: { priority: { orgId, createdBy: { in: userIds } } } }),
+    db.priority.deleteMany({ where: { orgId, createdBy: { in: userIds } } }),
+    db.wWWRevisionLog.deleteMany({ where: { wwwItem: { orgId, createdBy: { in: userIds } } } }),
+    db.wWWItem.deleteMany({ where: { orgId, createdBy: { in: userIds } } }),
+    db.accountabilityFunction.deleteMany({ where: { orgId, teamId: { in: demoTeamIds } } }),
+    db.categoryMaster.deleteMany({ where: { orgId, name: { in: demoCategoryNames } } }),
+    db.userTeam.deleteMany({ where: { orgId, userId: { in: userIds } } }),
+    db.team.deleteMany({ where: { orgId, slug: { in: demoTeamSlugs } } }),
+    db.userAppAccess.deleteMany({ where: { orgId, userId: { in: userIds } } }),
+    db.orgMember.deleteMany({ where: { orgId, userId: { in: userIds } } }),
   ]);
   // Users that only belong to the demo org can be safely removed.
   await db.user.deleteMany({
@@ -124,19 +134,8 @@ async function wipe(orgId: string, userIds: string[]) {
 }
 
 async function ensureOrg() {
-  const org = await db.org.upsert({
-    where: { slug: ORG_SLUG },
-    update: {},
-    create: {
-      name: "Demo QuikScale",
-      slug: ORG_SLUG,
-      description: "Auto-seeded demo org for QuikScale",
-      plan: "growth",
-      brandColor: "#0066cc",
-      fiscalYearStart: 4,
-      quarterStartMonth: 4,
-    },
-  });
+  const org = await db.org.findUnique({ where: { slug: ORG_SLUG } });
+  if (!org) throw new Error(`Org "${ORG_SLUG}" not found — refusing to create. Aborting.`);
   return org;
 }
 
@@ -228,8 +227,11 @@ async function seedQuarters(orgId: string, createdBy: string) {
   const now = new Date();
   for (const q of quarters) {
     const status = q.endDate < now ? "completed" : q.startDate > now ? "upcoming" : "active";
-    await db.quarterSetting.create({
-      data: { orgId, fiscalYear: year, quarter: q.quarter, startDate: q.startDate, endDate: q.endDate, status, createdBy },
+    // Skip if Moreyeahs already has this quarter (don't overwrite real data).
+    await db.quarterSetting.upsert({
+      where: { orgId_fiscalYear_quarter: { orgId, fiscalYear: year, quarter: q.quarter } },
+      update: {},
+      create: { orgId, fiscalYear: year, quarter: q.quarter, startDate: q.startDate, endDate: q.endDate, status, createdBy },
     });
   }
   return year;
@@ -237,6 +239,8 @@ async function seedQuarters(orgId: string, createdBy: string) {
 
 async function seedCategories(orgId: string, createdBy: string) {
   for (const c of CATEGORIES) {
+    const existing = await db.categoryMaster.findFirst({ where: { orgId, name: c.name } });
+    if (existing) continue;
     await db.categoryMaster.create({
       data: {
         orgId,
@@ -419,18 +423,18 @@ async function seedAccountabilityFunctions(orgId: string, userIds: Record<string
   const eng = await db.accountabilityFunction.create({
     data: {
       orgId,
-      name: "Engineering Excellence",
+      name: "Demo Engineering Excellence",
       description: "Ship reliable software",
-      teamId: teamIds.engineering,
-      assignedToUserId: userIds["qs.alice@quikit-demo.local"],
+      teamId: teamIds[TEAM_KEYS.engineering],
+      assignedToUserId: userIds["qs.alice@example.com"],
     },
   });
   await db.accountabilityFunction.createMany({
     data: [
-      { orgId, name: "Code Review Ownership", teamId: teamIds.engineering, parentFunctionId: eng.id, assignedToUserId: userIds["qs.carol@quikit-demo.local"] },
-      { orgId, name: "Production Reliability", teamId: teamIds.engineering, parentFunctionId: eng.id, assignedToUserId: userIds["qs.grace@quikit-demo.local"] },
-      { orgId, name: "Sales Pipeline Growth", teamId: teamIds.sales, assignedToUserId: userIds["qs.bob@quikit-demo.local"] },
-      { orgId, name: "Brand & Marketing", teamId: teamIds.marketing, assignedToUserId: userIds["qs.eva@quikit-demo.local"] },
+      { orgId, name: "Demo Code Review Ownership", teamId: teamIds[TEAM_KEYS.engineering], parentFunctionId: eng.id, assignedToUserId: userIds["qs.carol@example.com"] },
+      { orgId, name: "Demo Production Reliability", teamId: teamIds[TEAM_KEYS.engineering], parentFunctionId: eng.id, assignedToUserId: userIds["qs.grace@example.com"] },
+      { orgId, name: "Demo Sales Pipeline Growth", teamId: teamIds[TEAM_KEYS.sales], assignedToUserId: userIds["qs.bob@example.com"] },
+      { orgId, name: "Demo Brand & Marketing", teamId: teamIds[TEAM_KEYS.marketing], assignedToUserId: userIds["qs.eva@example.com"] },
     ],
   });
 }

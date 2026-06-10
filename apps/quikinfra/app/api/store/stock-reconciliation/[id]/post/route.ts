@@ -13,7 +13,7 @@ const withOrgAuth = withOrgAuthForModule("store");
  */
 export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const rec = await db.cnStockReconciliation.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
+    where: { id: params.id, orgId },
     include: { lines: true },
   });
   if (!rec) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -22,13 +22,13 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
   // For shortages, also validate we have that much to remove
   const insufficient: Array<{ itemId: string; available: number; requested: number }> = [];
   for (const line of rec.lines) {
-    const adj = Number(line.adjustmentQty);
+    const adj = Number(line.varianceQty);
     if (adj < 0) {
       const agg = await db.cnStockLedger.aggregate({
         where: { orgId, projectId: rec.projectId, locationId: rec.locationId, itemId: line.itemId },
         _sum: { qtyIn: true, qtyOut: true },
       });
-      const available = Number(agg._sum.qtyIn ?? 0) - Number(agg._sum.qtyOut ?? 0);
+      const available = Number(agg._sum?.qtyIn ?? 0) - Number(agg._sum?.qtyOut ?? 0);
       if (available < Math.abs(adj)) {
         insufficient.push({ itemId: line.itemId, available, requested: Math.abs(adj) });
       }
@@ -42,7 +42,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
   try {
     await db.$transaction(async (tx) => {
       for (const line of rec.lines) {
-        const adj = Number(line.adjustmentQty);
+        const adj = Number(line.varianceQty);
         if (adj === 0) continue;
         await tx.cnStockLedger.create({
           data: {
@@ -56,8 +56,8 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
             transactionDate: rec.reconciliationDate,
             qtyIn: adj > 0 ? adj : 0,
             qtyOut: adj < 0 ? Math.abs(adj) : 0,
-            unitRate: line.unitRate,
-            amount: line.amount,
+            unitRate: 0,
+            amount: 0,
             uomId: line.uomId,
             createdBy: userId,
           },
@@ -65,7 +65,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, 
       }
       await tx.cnStockReconciliation.update({
         where: { id: rec.id },
-        data: { status: "posted", postedAt, postedBy: userId, updatedBy: userId },
+        data: { status: "posted", updatedBy: userId },
       });
     });
   } catch (err: unknown) {

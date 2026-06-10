@@ -13,8 +13,18 @@
  *   - Selected items highlighted with accent colors
  *   - Keyboard-accessible (autofocus on search, button elements)
  */
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Check, X } from "lucide-react";
+
+/** Where the dropdown is painted (fixed, viewport-relative) + its height cap. */
+interface MenuPos {
+  left: number;
+  width: number;
+  top?: number;
+  bottom?: number;
+  maxHeight: number;
+}
 
 export interface PickerUser {
   id: string;
@@ -65,10 +75,61 @@ export function UserSelect(props: UserSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<MenuPos | null>(null);
+
+  // The dropdown is rendered in a portal with `position: fixed` so it escapes
+  // any `overflow-y-auto` ancestor (e.g. the RightPanel form body). Without
+  // this it was clipped by the scroll container on short screens, so the
+  // lower options were unreachable. We anchor it to the trigger's rect and
+  // flip it above the trigger when there isn't room below.
+  const updatePosition = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const GAP = 4;
+    const MARGIN = 8; // keep a little breathing room from the viewport edge
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const openUp = spaceBelow < 240 && spaceAbove > spaceBelow;
+    const avail = (openUp ? spaceAbove : spaceBelow) - GAP - MARGIN;
+    const maxHeight = Math.max(180, Math.min(360, avail));
+    setPos({
+      left: rect.left,
+      width: rect.width,
+      ...(openUp
+        ? { bottom: window.innerHeight - rect.top + GAP }
+        : { top: rect.bottom + GAP }),
+      maxHeight,
+    });
+  }, []);
+
+  // Position the menu when it opens; clear it when closed. We gate the menu's
+  // render on `pos` so it never flashes at the wrong spot before measuring.
+  useEffect(() => {
+    if (open) updatePosition();
+    else setPos(null);
+  }, [open, updatePosition]);
+
+  // Keep the menu pinned to the trigger while the form body scrolls / resizes
+  // (capture phase catches scrolls on inner overflow containers too).
+  useEffect(() => {
+    if (!open) return;
+    const onMove = () => updatePosition();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [open, updatePosition]);
 
   useEffect(() => {
     function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (ref.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", handle);
     return () => document.removeEventListener("mousedown", handle);
@@ -103,7 +164,7 @@ export function UserSelect(props: UserSelectProps) {
     trigger = selectedUsers.length === 0 ? (
       <span className="text-gray-400">{placeholder ?? "Select owners\u2026"}</span>
     ) : (
-      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+      <div className="scrollbar-visible flex items-center gap-1.5 flex-wrap min-w-0 max-h-20 overflow-y-auto pr-1">
         {selectedUsers.slice(0, chipLimit).map(u => (
           <span key={u.id} className="inline-flex items-center gap-1 bg-accent-50 border border-accent-200 text-accent-700 rounded-full pl-0.5 pr-2 py-0.5">
             <span className={`h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0 ${avatarBg(`${u.firstName} ${u.lastName}`)}`}>
@@ -154,15 +215,25 @@ export function UserSelect(props: UserSelectProps) {
         <ChevronDown className={`h-3.5 w-3.5 text-gray-400 flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
-      {open && (
-        <div className="absolute top-full left-0 mt-1 z-[250] bg-white border border-gray-200 rounded-xl shadow-lg w-full min-w-[240px]">
-          {/* Search + optional Clear */}
-          <div className="p-2 border-b border-gray-100 flex gap-2">
+      {open && pos && typeof document !== "undefined" && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: "fixed",
+            left: pos.left,
+            width: pos.width,
+            ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }),
+            maxHeight: pos.maxHeight,
+          }}
+          className="z-[260] bg-white border border-gray-200 rounded-xl shadow-lg min-w-[240px] flex flex-col"
+        >
+          {/* Search + optional Clear \u2014 fixed, never scrolls away */}
+          <div className="p-2 border-b border-gray-100 flex gap-2 flex-shrink-0">
             <input
               autoFocus
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search\u2026"
+              placeholder={"Search\u2026"}
               className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent-400"
             />
             {mode === "multi" && hasSelection && (
@@ -176,7 +247,10 @@ export function UserSelect(props: UserSelectProps) {
             )}
           </div>
 
-          <div className="max-h-60 overflow-y-auto py-1">
+          {/* Items \u2014 the only scrolling region; min-h-0 lets it shrink to fit.
+              `scrollbar-visible` opts back in to a visible scrollbar (hidden
+              globally) so long member lists read as scrollable. */}
+          <div className="scrollbar-visible flex-1 min-h-0 overflow-y-auto py-1">
             {/* Single-mode "clear selection" row */}
             {mode === "single" && props.value && (
               <button
@@ -219,13 +293,14 @@ export function UserSelect(props: UserSelectProps) {
             })}
           </div>
 
-          {/* Multi-mode count footer */}
+          {/* Multi-mode count footer — fixed at the bottom of the menu */}
           {mode === "multi" && props.values.length > 0 && (
-            <div className="border-t border-gray-100 px-3 py-1.5 text-[10px] text-gray-500 bg-gray-50 rounded-b-xl">
+            <div className="border-t border-gray-100 px-3 py-1.5 text-[10px] text-gray-500 bg-gray-50 rounded-b-xl flex-shrink-0">
               {props.values.length} selected
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

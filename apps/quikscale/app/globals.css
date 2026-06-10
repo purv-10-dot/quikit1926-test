@@ -160,3 +160,25 @@ html.dark .glass {
 .qs-toast.qs-toast-tinted {
   border-left: 3px solid var(--toast-tint, var(--accent-500, #0066cc));
 }
+
+/* OPSP edit-after-finalize: marks the field whose change-note card is open.
+   Added/removed imperatively in opsp/page.tsx (survives re-renders since field
+   classNames are static). The blue highlight ring was removed per product
+   request — the change-note card still anchors to the field, so this class is
+   intentionally a visual no-op (kept so the page.tsx classList toggle + ref
+   tracking continue to work without change). */
+.opsp-edit-active {
+  /* no highlight ring */
+}
+
+/* OPSP "edited after finalize" highlight: amber ring on fields/rows changed
+   after the OPSP was finalized, shown until the viewer acknowledges via the
+   History drawer footer. Toggled imperatively in opsp/page.tsx (Form) and via
+   row classNames in the Review table. Amber = semantic "attention/changed",
+   distinct from the accent live-edit ring above. */
+.opsp-edit-changed {
+  box-shadow: 0 0 0 2px #f59e0b !important;
+  border-radius: 0.375rem;
+  background: rgba(245, 158, 11, 0.06);
+  transition: box-shadow 0.15s ease;
+}

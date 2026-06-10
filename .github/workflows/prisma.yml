@@ -1,0 +1,42 @@
+name: Prisma — migrate deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [Pre-Prod]
+
+permissions:
+  contents: read
+
+jobs:
+  prisma-migrate:
+    name: Prisma — migrate deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies (monorepo)
+        run: npm ci
+
+      - name: Prisma migrate deploy (PROD)
+        run: |
+          npx prisma migrate deploy \
+            --schema=packages/database/prisma/schema.prisma
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL }}
+
+      - name: Verify migration status
+        run: |
+          npx prisma migrate status \
+            --schema=packages/database/prisma/schema.prisma
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DATABASE_URL_DIRECT: ${{ secrets.PROD_DATABASE_URL }}

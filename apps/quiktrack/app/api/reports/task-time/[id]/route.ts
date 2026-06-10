@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 /**
  * Time summary for a single task — used by the Project Reports drawer.
@@ -32,12 +33,8 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
     return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
   }
 
-  // Permission: tenant admin OR a member of the task's project.
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+  // Permission: global admin (tenant OR app admin) OR a member of the task's project.
+  const isAdmin = await hasAdminAccess(userId, orgId);
   if (!isAdmin) {
     const member = await db.qtProjectMember.findFirst({
       where: { userId, projectId: task.projectId, isDeleted: false },

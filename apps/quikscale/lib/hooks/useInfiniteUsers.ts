@@ -29,22 +29,31 @@ interface PaginatedUsersResponse {
 
 export const USERS_PAGE_SIZE = 25;
 
-async function fetchUsersPage(opts: { teamId?: string; page: number }): Promise<PaginatedUsersResponse> {
+async function fetchUsersPage(opts: { teamId?: string; search?: string; page: number }): Promise<PaginatedUsersResponse> {
   const params = new URLSearchParams();
   params.set("page", String(opts.page));
   params.set("limit", String(USERS_PAGE_SIZE));
   params.set("sortBy", "firstName");
   if (opts.teamId) params.set("teamId", opts.teamId);
+  if (opts.search) params.set("search", opts.search);
   const res = await fetch(`/api/users?${params.toString()}`);
   const data = (await res.json()) as PaginatedUsersResponse;
   if (!data.success) throw new Error(data.error || "Failed to fetch users");
   return data;
 }
 
-export function useInfiniteUsers(teamId?: string) {
+/**
+ * @param teamId  Restrict to a team's members (omit for all org members).
+ * @param search  Server-side name/email search. Included in the query key so
+ *                changing it resets to page 1 and refetches. An empty/whitespace
+ *                search shares the same cache key as `undefined`, so the
+ *                unfiltered list and the picker can dedupe to one request.
+ */
+export function useInfiniteUsers(teamId?: string, search?: string) {
+  const normalizedSearch = (search ?? "").trim();
   const query = useInfiniteQuery({
-    queryKey: ["users-infinite", teamId ?? "all"],
-    queryFn: ({ pageParam }) => fetchUsersPage({ teamId, page: pageParam }),
+    queryKey: ["users-infinite", teamId ?? "all", normalizedSearch],
+    queryFn: ({ pageParam }) => fetchUsersPage({ teamId, search: normalizedSearch, page: pageParam }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) => {
       const { page, totalPages } = lastPage.meta;

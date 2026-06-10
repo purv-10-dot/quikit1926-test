@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
-import { ADMIN_TIER_ROLES } from "@quikit/shared";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 /**
  * Time summary for a single user — used by the Attendance matrix drawer.
@@ -25,15 +25,9 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, { 
     const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(url.searchParams.get("pageSize") ?? "10", 10) || 10));
 
-    // Permission gate: self OR admin-tier in same org.
-    // ADMIN_TIER_ROLES is the canonical set ({super_admin, org_admin, admin-legacy});
-    // hand-rolling `role === "admin" || "owner"` here locked out super_admin/org_admin
-    // and accepted a role string ("owner") that doesn't exist in this codebase.
-    const me = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = !!me?.role && ADMIN_TIER_ROLES.has(me.role);
+    // Permission gate: self OR admin-tier in same org. `hasAdminAccess` =
+    // tenant admin (org owner/admin) OR QuikTrack app-admin.
+    const isAdmin = await hasAdminAccess(userId, orgId);
     if (!isAdmin && targetUserId !== userId) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }

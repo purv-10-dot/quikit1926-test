@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 import { recordIssueEvent } from "@/lib/services/issueHistory";
 
 export const DELETE = withOrgAuth<{ id: string; linkId: string }>(
@@ -25,12 +26,7 @@ export const DELETE = withOrgAuth<{ id: string; linkId: string }>(
       where: { projectId: link.projectId, userId, isDeleted: false },
       select: { id: true },
     });
-    const tenantAdmin = await db.orgMember.findFirst({
-      where: { userId, orgId, status: "active" },
-      select: { role: true },
-    });
-    const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-    if (!access && !isAdmin) {
+    if (!access && !(await hasAdminAccess(userId, orgId))) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
     await db.qtIssueLink.delete({ where: { id: link.id } });

@@ -1,6 +1,25 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { withOrgAuth, type OrgAuthContext } from "@/lib/api/withOrgAuth";
 import { db } from "@/lib/db";
+import { isQuikTrackAppAdmin, userCanInProject } from "@/lib/api/permissions";
+import type { Action, Resource } from "@/lib/api/permissionsRegistry";
+
+/**
+ * Authorization hierarchy (single source of truth):
+ *
+ *   1. Tenant admin  (OrgMember.role = admin/owner)   → full access everywhere
+ *   2. App admin      (QtAppRole "admin")             → full access everywhere
+ *   3. Everyone else                                  → custom project-role
+ *      permissions via `userCanInProject` (the project-role matrix).
+ *
+ *   if (isTenantAdmin || isQuikTrackAppAdmin) allow();
+ *   else evaluateProjectPermissionsUsingCustomRoles();
+ *
+ * The legacy `qtProjectMember.role` enum (PROJECT_ADMIN/MEMBER/VIEWER) is NO
+ * LONGER an authorization source — use `requirePermission` (below) instead of
+ * `requireRoles`. The enum is retained on the row for display + the creator
+ * seed only. `requireRoles` is kept temporarily for backward compatibility.
+ */
 
 export type ProjectRole = "PROJECT_ADMIN" | "MEMBER" | "VIEWER";
 
@@ -14,7 +33,13 @@ export interface ProjectAuthContext extends OrgAuthContext {
 interface Options {
   /** Default extracts `params.projectId`. Override for routes that nest under `[id]`. */
   paramKey?: "projectId" | "id";
-  /** When set, only roles in the list (or admins) may invoke. */
+  /**
+   * Preferred gate: the (resource, action) the caller must hold via their
+   * custom project role (checked with `userCanInProject`). Global admins
+   * bypass it. This is the authoritative permission model.
+   */
+  requirePermission?: { resource: Resource; action: Action };
+  /** @deprecated Legacy enum gate — use `requirePermission`. Kept for BC. */
   requireRoles?: ProjectRole[];
 }
 
@@ -60,10 +85,14 @@ export function withProjectAccess<Params extends Record<string, string>>(
       );
     }
 
-    const tenantAdmin = await isTenantAdmin(tenantCtx.userId, tenantCtx.orgId);
+    // Global admin override: tenant admin OR app admin → full access. Skips
+    // membership + every project-level permission check.
+    const orgAdmin = await isTenantAdmin(tenantCtx.userId, tenantCtx.orgId);
+    const fullAccess =
+      orgAdmin || (await isQuikTrackAppAdmin(tenantCtx.userId, tenantCtx.orgId));
 
     let projectRole: ProjectRole | null = null;
-    if (!tenantAdmin) {
+    if (!fullAccess) {
       const member = await db.qtProjectMember.findFirst({
         where: { projectId, userId: tenantCtx.userId, isDeleted: false },
         select: { role: true },
@@ -75,19 +104,31 @@ export function withProjectAccess<Params extends Record<string, string>>(
         );
       }
       projectRole = member.role as ProjectRole;
-    }
 
-    if (options.requireRoles && !tenantAdmin) {
-      if (!projectRole || !options.requireRoles.includes(projectRole)) {
-        return NextResponse.json(
-          { success: false, error: "Forbidden" },
-          { status: 403 },
-        );
+      // Preferred: permission-based gate via the custom project role.
+      if (options.requirePermission) {
+        const { resource, action } = options.requirePermission;
+        if (
+          !(await userCanInProject(
+            tenantCtx.userId,
+            tenantCtx.orgId,
+            projectId,
+            resource,
+            action,
+          ))
+        ) {
+          return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+        }
+      }
+
+      // Legacy enum gate (deprecated) — for routes not yet migrated.
+      if (options.requireRoles && (!projectRole || !options.requireRoles.includes(projectRole))) {
+        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
       }
     }
 
     return handler(
-      { ...tenantCtx, projectId, projectRole, isTenantAdmin: tenantAdmin },
+      { ...tenantCtx, projectId, projectRole, isTenantAdmin: fullAccess },
       req,
       routeCtx,
     );
@@ -121,8 +162,9 @@ export async function loadProjectAccess(
   });
   if (!project) return null;
 
-  const tenantAdmin = await isTenantAdmin(userId, orgId);
-  if (tenantAdmin) {
+  const fullAccess =
+    (await isTenantAdmin(userId, orgId)) || (await isQuikTrackAppAdmin(userId, orgId));
+  if (fullAccess) {
     return { projectId, projectRole: null, isTenantAdmin: true };
   }
 
@@ -144,7 +186,11 @@ export async function loadProjectAccess(
  * delete/reorder/move-task). Tenant admins and project admins/members may
  * write; VIEWER may not.
  */
-export function canWriteGroups(access: LoadedProjectAccess): boolean {
+export async function canWriteGroups(
+  access: LoadedProjectAccess,
+  userId: string,
+  orgId: string,
+): Promise<boolean> {
   if (access.isTenantAdmin) return true;
-  return access.projectRole === "PROJECT_ADMIN" || access.projectRole === "MEMBER";
+  return userCanInProject(userId, orgId, access.projectId, "Board", "update");
 }

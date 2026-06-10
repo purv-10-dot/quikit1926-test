@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 /**
  * Cross-project quick-search endpoint backing the global search popover in
@@ -51,11 +52,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     : [];
 
   // Visibility scope.
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+  const isAdmin = await hasAdminAccess(userId, orgId);
 
   let allowedProjectIds: string[] | null = null;
   if (!isAdmin) {

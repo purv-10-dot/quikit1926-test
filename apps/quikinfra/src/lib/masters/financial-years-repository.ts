@@ -2,7 +2,7 @@
  * Financial Years master — Prisma-backed CRUD for `cn_financial_years`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface FinancialYearRecord {
   id: string;

@@ -6,7 +6,7 @@ import { useState } from "react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { BoardFilterSelect } from "@/app/(dashboard)/spaces/[id]/board/_components/board-filter-select";
 import { ProjectPreviewIllustration } from "@/components/illustrations/project-preview";
-import { randomProjectEmoji } from "@/lib/utils/projectEmoji";
+import { randomProjectIconKey } from "@/components/space-icon";
 import {
   KanbanIllustration,
   ScrumIllustration,
@@ -79,7 +79,7 @@ export function CreateProjectForm() {
           name,
           projectKey: finalKey,
           projectType: "software",
-          icon: randomProjectEmoji(),
+          icon: randomProjectIconKey(),
         }),
       });
       const json = await res.json();
@@ -87,7 +87,7 @@ export function CreateProjectForm() {
         setError(json.error || "Failed to create project");
         return;
       }
-      router.push(`/spaces/${json.data.id}/board`);
+      router.push(`/spaces/${json.data.id}/backlog`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     } finally {

@@ -2,7 +2,7 @@
  * Cost Centers master — Prisma-backed CRUD for `cn_cost_centers`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface CostCenterRecord {
   id: string;

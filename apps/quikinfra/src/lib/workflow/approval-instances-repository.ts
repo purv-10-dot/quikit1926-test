@@ -11,7 +11,7 @@
  * approvals inbox, history viewer, and dashboard counters.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface ApprovalInstanceRecord {
   id: string;

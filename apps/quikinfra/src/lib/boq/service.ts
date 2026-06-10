@@ -20,7 +20,7 @@ import { parseBOQWorkbook } from "./parser";
 import { boqRepository } from "./repository";
 import { applyRollup, computeBOQSummary } from "./rollup";
 import type { TenantContext } from "@/lib/auth/context";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import {
   postProgressEntry,
   ProgressLedgerError,

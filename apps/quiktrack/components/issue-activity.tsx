@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowDownNarrowWide, X, ChevronDown, ChevronRight } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import type { MentionItem } from "@/components/editor/mention";
 import { SkeletonList } from "@/components/skeleton";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
 
@@ -133,12 +134,15 @@ export function IssueActivity({
   issueId,
   projectId,
   initialWorkLogs,
+  mentions,
 }: {
   issueId: string;
   projectId: string;
   /** When the parent modal already loaded time logs via /api/issues/[id],
    *  pass them here so the Work log tab is instantly populated. */
   initialWorkLogs?: WorkLogRow[];
+  /** People list for `@`-mentions in the comment editor. */
+  mentions?: MentionItem[];
 }) {
   const perms = useMyProjectPermissions(projectId);
   const canComment = perms.loading || perms.has("IssueComment", "create");
@@ -237,6 +241,7 @@ export function IssueActivity({
           sortDesc={sortDesc}
           showComposer={canComment && tab === "comments"}
           onPosted={(c) => setComments((arr) => [...(arr ?? []), c])}
+          mentions={mentions}
         />
       )}
 
@@ -274,12 +279,14 @@ function CommentsView({
   sortDesc,
   showComposer = true,
   onPosted,
+  mentions,
 }: {
   issueId: string;
   comments: Comment[] | null;
   sortDesc: boolean;
   showComposer?: boolean;
   onPosted: (c: Comment) => void;
+  mentions?: MentionItem[];
 }) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [body, setBody] = useState("");
@@ -326,6 +333,7 @@ function CommentsView({
               onChange={setBody}
               chromeless
               placeholder="Add a comment..."
+              mentions={mentions ?? []}
             />
             <div className="flex items-center justify-end gap-2">
               <button

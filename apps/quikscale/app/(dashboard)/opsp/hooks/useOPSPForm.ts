@@ -109,6 +109,17 @@ export interface OPSPFormHandle {
    * then re-fetches the freshly-created OPSP for the chosen period.
    */
   completeSetup: (data: { year: number; quarter: string; targetYears: number }) => void;
+  /**
+   * Persist a form snapshot immediately (PUT /api/opsp). Used by the
+   * edit-after-finalize flow where autosave is suspended and changes are
+   * committed explicitly alongside their change-log note.
+   */
+  save: (data: FormData) => Promise<void>;
+  /**
+   * Toggle the debounced autosave. Set `false` to suspend it (edit-after-finalize
+   * mode commits explicitly via {@link OPSPFormHandle.save}); `true` to resume.
+   */
+  setAutosaveEnabled: (enabled: boolean) => void;
 }
 
 export interface UseOPSPFormOptions {
@@ -150,6 +161,9 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstLoad = useRef(true);
   const skipNextSave = useRef(false);
+  // When false, the debounced autosave is suspended (used in edit-after-finalize
+  // mode, where the user commits explicitly via the change-note "Save" button).
+  const autosaveEnabledRef = useRef(true);
   // One-shot guards for the two cascades. Set true right before any
   // `setForm(...)` inside `loadForPeriod` so the cascades that fire on the
   // resulting render don't re-seed *inherited* data. Without these, opening
@@ -252,6 +266,7 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
   useEffect(() => {
     if (isFirstLoad.current) return;
     if (skipNextSave.current) { skipNextSave.current = false; return; }
+    if (!autosaveEnabledRef.current) return; // suspended in edit-after-finalize mode
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => save(form), 1500);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
@@ -409,5 +424,9 @@ export function useOPSPForm(options: UseOPSPFormOptions = {}): OPSPFormHandle {
     setShowSetupWizard,
     loadForPeriod,
     completeSetup,
+    /** Persist the given form immediately (used to commit edit-after-finalize changes). */
+    save,
+    /** Enable/disable the debounced autosave (off during edit-after-finalize). */
+    setAutosaveEnabled: (enabled: boolean) => { autosaveEnabledRef.current = enabled; },
   };
 }

@@ -17,6 +17,8 @@ import { db } from "@/lib/db";
 import { withSuperAdminAuth } from "@/lib/withSuperAdminAuth";
 import { logAudit } from "@/lib/auditLog";
 import { provisionAppRoles } from "@/lib/provisionAppRoles";
+import { seedDefaultDisabledModuleFlags } from "@/lib/seedDefaultModuleFlags";
+import { invalidateDisabledModules } from "@quikit/auth/feature-gate";
 import { MEMBERSHIP_ROLES } from "@quikit/shared";
 
 export const GET = withSuperAdminAuth<{ orgId: string }>(async (auth, _req: NextRequest, { params }) => {
@@ -139,6 +141,19 @@ export const POST = withSuperAdminAuth<{ orgId: string }>(async (auth, req: Next
       orgId,
       adminMembers.map((m) => m.userId),
     );
+
+    // Persist the app's "off by default" modules (e.g. QuikScale Survey + Cash)
+    // as explicit per-org rows, so they start disabled when the app is assigned.
+    // skipDuplicates keeps any earlier per-module override intact. Then drop the
+    // gate cache so the defaults apply immediately. No-op for apps without any
+    // defaultDisabled modules.
+    await seedDefaultDisabledModuleFlags(db, {
+      orgId,
+      appId,
+      appSlug: app.slug,
+      actorId: auth.userId,
+    });
+    await invalidateDisabledModules(orgId, app.slug);
 
     logAudit({
       orgId,

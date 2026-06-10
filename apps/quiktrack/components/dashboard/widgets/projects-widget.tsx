@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BarChart3, Filter, ChevronDown } from "lucide-react";
 import { SkeletonList } from "@/components/skeleton";
+import { SpaceIcon } from "@/components/space-icon";
 
 const CHART_OPTIONS = [{ key: "issues", label: "Issues" }];
 
@@ -89,15 +90,10 @@ function ProjectRow({ project: p, striped }: { project: Project; striped: boolea
     >
       <div className="min-w-0">
         <Link
-          href={`/spaces/${p.id}/board`}
+          href={`/spaces/${p.id}/backlog`}
           className="inline-flex items-center gap-2"
         >
-          <span
-            className="h-6 w-6 rounded flex items-center justify-center text-white text-[11px] font-semibold shrink-0"
-            style={{ background: p.color ?? "#2563eb" }}
-          >
-            {p.icon ?? p.name.charAt(0).toUpperCase()}
-          </span>
+          <SpaceIcon icon={p.icon} name={p.name} color={p.color} size={24} radius={6} />
           <span className="text-sm text-blue-600 hover:underline truncate font-medium">
             {p.name}
           </span>

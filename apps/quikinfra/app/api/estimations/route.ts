@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantContext } from "@/lib/auth/context";
 import { listEstimations } from "@/lib/projects/estimation-repository";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { canActOnCurrentStep } from "@/lib/approvals/workflow-rbac";
 
 /**

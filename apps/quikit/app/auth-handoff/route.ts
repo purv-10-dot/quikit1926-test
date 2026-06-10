@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { encode } from "next-auth/jwt";
+import { publicBaseUrl } from "@quikit/auth/public-url";
 
 /**
  * GET /auth-handoff?token=<jwt>
@@ -23,7 +24,11 @@ import { encode } from "next-auth/jwt";
  */
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
-  const origin = process.env.NEXTAUTH_URL ?? request.url;
+  // This app's own public origin — never `request.url` (resolves to the pod
+  // bind address 0.0.0.0:PORT when the ingress doesn't preserve the Host
+  // header). The session cookie below is host-only, so we must redirect back
+  // to the same host that served this request. See @quikit/auth/public-url.
+  const origin = publicBaseUrl(request);
   if (!token) {
     return NextResponse.redirect(new URL("/login?reason=missing_handoff", origin));
   }

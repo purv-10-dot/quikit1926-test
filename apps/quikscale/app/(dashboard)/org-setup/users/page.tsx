@@ -21,7 +21,7 @@ import {
   RightPanelSubmitButton,
   Pagination,
 } from "@quikit/ui";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserPermissionsPanel } from "./components/UserPermissionsPanel";
 import { RolesTab } from "./components/RolesTab";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
@@ -1051,7 +1051,6 @@ export default function OrgUsersPage() {
   });
 
   const [teams, setTeams] = useState<OrgTeam[]>([]);
-  const [appRoles, setAppRoles] = useState<AppRoleOption[]>([]);
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -1069,14 +1068,20 @@ export default function OrgUsersPage() {
   const filterRef = useRef<HTMLDivElement>(null);
 
   // Fetch the AppRoles list — drives the Role dropdown in the Add/Edit panel.
-  useEffect(() => {
-    fetch("/api/org/roles")
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setAppRoles(json.data as AppRoleOption[]);
-      })
-      .catch(() => {});
-  }, []);
+  // Keyed in React Query so creating/deleting a role in the User Management
+  // tab (RolesTab) can invalidate ["org-roles"] and have this dropdown refresh
+  // live — without it, a freshly-created role wouldn't appear here until a
+  // hard page reload (both tabs share this same mounted page component).
+  const { data: appRoles = [] } = useQuery({
+    queryKey: ["org-roles"],
+    queryFn: async () => {
+      const res = await fetch("/api/org/roles");
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || "Failed to load roles");
+      return json.data as AppRoleOption[];
+    },
+    staleTime: 1000 * 60 * 5,
+  });
 
   // Fetch teams alongside users
   useEffect(() => {

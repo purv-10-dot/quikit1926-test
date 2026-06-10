@@ -16,10 +16,13 @@ import { CategorySelect, ProjectedInput } from "./category";
 import { breakdownProjected } from "./modals";
 import { WithTooltip } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
+import type { PendingEdit } from "../lib/editLog";
 
 interface Props {
   form: FormData;
-  set: <K extends keyof FormData>(key: K, value: FormData[K]) => void;
+  set: <K extends keyof FormData>(key: K, value: FormData[K], opts?: { skipLog?: boolean }) => void;
+  /** Report the exact field the user edited (Projected/Category) for the change log. */
+  logEdit?: (e: PendingEdit) => void;
   onExpandKeyInitiatives: () => void;
 }
 
@@ -37,6 +40,7 @@ const emptyGoalRow = () => ({
 export function GoalsSection({
   form,
   set,
+  logEdit,
   onExpandKeyInitiatives,
 }: Props) {
   return (
@@ -60,6 +64,7 @@ export function GoalsSection({
           {form.goalRows.slice(0, MAX_GOAL_ROWS).map((row, i) => (
             <div
               key={i}
+              data-opsp-field={`goalRows.${i}`}
               className="grid grid-cols-[1fr_auto] gap-1.5 items-start py-0.5 group"
             >
               <div className="grid grid-cols-5 gap-1.5 items-start">
@@ -68,6 +73,12 @@ export function GoalsSection({
                     value={row.category}
                     excludeNames={form.goalRows.map((r, idx) => idx === i ? "" : r.category)}
                     onChange={(v) => {
+                      logEdit?.({
+                        field: `goalRows.${i}.category`,
+                        label: `Goals (1 yr) · ${row.category || "#" + (i + 1)} · Category`,
+                        oldValue: row.category ?? "",
+                        newValue: v,
+                      });
                       const next = [...form.goalRows];
                       next[i] = {
                         ...next[i],
@@ -78,7 +89,7 @@ export function GoalsSection({
                         q3: "",
                         q4: "",
                       };
-                      set("goalRows", next);
+                      set("goalRows", next, { skipLog: true });
                     }}
                   />
                 </div>
@@ -87,6 +98,12 @@ export function GoalsSection({
                     categoryName={row.category}
                     value={row.projected}
                     onChange={(v) => {
+                      logEdit?.({
+                        field: `goalRows.${i}.projected`,
+                        label: `Goals (1 yr) · ${row.category || "#" + (i + 1)} · Projected`,
+                        oldValue: row.projected ?? "",
+                        newValue: v,
+                      });
                       const next = [...form.goalRows];
                       // Automatic categories: auto-fill q1..q4.
                       // Manual categories: breakdownProjected returns null →
@@ -103,7 +120,7 @@ export function GoalsSection({
                           }
                         : {};
                       next[i] = { ...next[i], projected: v, ...qPatch };
-                      set("goalRows", next);
+                      set("goalRows", next, { skipLog: true });
                     }}
                   />
                 </div>
@@ -159,7 +176,7 @@ export function GoalsSection({
         </div>
         <div className="divide-y divide-gray-100">
           {form.keyInitiatives.map((row, i) => (
-            <div key={i} className="flex items-center gap-1.5 py-1.5">
+            <div key={i} data-opsp-field={`keyInitiatives.${i}`} className="flex items-center gap-1.5 py-1.5">
               <span className="text-xs text-gray-400 w-5 flex-shrink-0">
                 {String(i + 1).padStart(2, "0")}
               </span>

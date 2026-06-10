@@ -35,6 +35,16 @@ export function applyPctFill(cell: ExcelJS.Cell, pct: number, isUpdate: boolean)
   cell.alignment = { horizontal: "center", vertical: "middle" };
 }
 
+/**
+ * Plain (uncoloured) data cell — centered value, no traffic-light fill.
+ * Used by the Daily Huddle and Member Punch-In exports, which are
+ * intentionally colour-free per user request (the Weekly export still uses
+ * `applyPctFill`).
+ */
+export function applyPlainCell(cell: ExcelJS.Cell) {
+  cell.alignment = { horizontal: "center", vertical: "middle" };
+}
+
 export function applyHeader(cell: ExcelJS.Cell) {
   cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: EXCEL_COLORS.HEADER } };
   cell.font = { bold: true };

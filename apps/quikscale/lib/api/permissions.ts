@@ -50,6 +50,29 @@ export function isAdminRole(role: { isSystem: boolean; name: string } | null | u
   return !!role && role.isSystem && role.name === "admin";
 }
 
+/**
+ * True if `userId` holds the system "admin" AppRole in this org.
+ *
+ * Unlike `userCan()`, this check **ignores** `UserPermissionExtra` rows —
+ * per-user extras are additive grants, not a role promotion. Routes that
+ * gate strictly on "is this user an admin?" (e.g. the Habits aggregate
+ * dashboard, which would leak everyone else's responses to a non-admin
+ * granted Habits:view) use this helper instead of `userCan(...)`.
+ */
+export async function isOrgAdmin(userId: string, orgId: string): Promise<boolean> {
+  const appId = await getQuikScaleAppId();
+  if (!appId) return false;
+  const hit = await db.userAppRole.findFirst({
+    where: {
+      userId,
+      orgId,
+      role: { appId, isSystem: true, name: "admin" },
+    },
+    select: { id: true },
+  });
+  return !!hit;
+}
+
 /* ───────────────────────── Class-level checks ───────────────────────── */
 
 /**

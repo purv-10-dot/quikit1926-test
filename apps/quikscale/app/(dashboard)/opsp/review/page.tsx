@@ -21,10 +21,18 @@ import {
   DataTable,
   type DataTableColumn,
 } from "@quikit/ui";
-import { Clock, FileText, X, RotateCcw, AlertTriangle } from "lucide-react";
+import { Clock, FileText, X, RotateCcw, AlertTriangle, History } from "lucide-react";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
+import { OPSPHistoryDrawer } from "../components/OPSPHistoryDrawer";
 import { OPSP_FIELD_LABELS } from "@/lib/utils/auditLog";
+import { useSession } from "next-auth/react";
+import { useOpspAck } from "@/lib/hooks/useOpspAck";
+import { editedRowIndices, editsSince, latestEdit, REVIEW_PRIMARY_ARRAY, type EditLogLike } from "@/lib/utils/opspEditHighlight";
+
+/** Top-level OPSP fields whose post-finalize edits are relevant to the Review
+ *  (same allow-list the Review history drawer uses). */
+const REVIEW_EDIT_FIELDS = ["targetRows", "goalRows", "actionsQtr", "rocks", "keyInitiatives", "keyThrusts"];
 
 /* ═══════════════════════════════════════════════
    Checkbox hook (shared for primary + secondary)
@@ -487,7 +495,53 @@ export default function OPSPReviewPage() {
 
   // Year/Quarter picker
   const [showYearPicker, setShowYearPicker] = useState(false);
+  // OPSP edit-after-finalize history (read-only) — same drawer as the editor.
+  const [editHistoryOpen, setEditHistoryOpen] = useState(false);
   const yearRef = useRef<HTMLDivElement>(null);
+
+  /* ── Post-finalize "what changed" highlight ──
+     Fetch the edit-log, highlight the Review rows whose source field changed
+     after finalize, and let the reviewer acknowledge via the History drawer
+     footer. Scoped (per user/device) separately from the OPSP Form. */
+  const { data: sessionData } = useSession();
+  const reviewUserId = (sessionData?.user as { id?: string } | undefined)?.id ?? "anon";
+  const [editLog, setEditLog] = useState<EditLogLike[]>([]);
+  // `no-store`: the edit-log is live — never serve a stale cached copy, or a
+  // second round of post-finalize edits won't re-surface the highlight.
+  const loadEditLog = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/opsp/edit-log?year=${year}&quarter=${quarter}`, { cache: "no-store" });
+      const j = await res.json();
+      if (j?.success) setEditLog(j.data as EditLogLike[]);
+    } catch {
+      /* transient — keep the previous list */
+    }
+  }, [year, quarter]);
+  // Refresh on mount, period change, and drawer open/close (drawer edits add entries).
+  useEffect(() => { void loadEditLog(); }, [loadEditLog, editHistoryOpen]);
+  // Only Review-relevant fields drive the highlight/ack (matches the drawer's allow-list).
+  const reviewEditLog = useMemo(
+    () => editLog.filter((e) => REVIEW_EDIT_FIELDS.includes(e.field.split(".")[0])),
+    [editLog],
+  );
+  // Acknowledgement tracks the latest of ALL edits (so any new edit re-surfaces),
+  // but the highlight + banner are scoped to edits made SINCE the last ack — so a
+  // new round only lights up the categories changed in that round, not every
+  // category ever touched after finalize.
+  const latestAll = useMemo(() => latestEdit(reviewEditLog), [reviewEditLog]);
+  const { unacknowledged: changesUnacked, acknowledge: ackChanges, ackedTs } = useOpspAck(
+    reviewUserId, year, quarter, "review", latestAll?.ts ?? 0,
+  );
+  const newEditLog = useMemo(() => editsSince(reviewEditLog, ackedTs), [reviewEditLog, ackedTs]);
+  const latestChange = useMemo(() => latestEdit(newEditLog), [newEditLog]);
+  // Primary rows map directly to source-array indices (rowIndex = source index).
+  // Secondary rows are re-indexed after filtering empties, so we don't highlight
+  // them here — those edits still surface in the History drawer.
+  const editedPrimarySet = useMemo(
+    () => editedRowIndices(newEditLog, REVIEW_PRIMARY_ARRAY[horizon] ?? ""),
+    [newEditLog, horizon],
+  );
+  const showRowHighlight = changesUnacked && newEditLog.length > 0;
 
   // Primary modal
   const [primaryOpen, setPrimaryOpen] = useState(false);
@@ -533,12 +587,14 @@ export default function OPSPReviewPage() {
   useEffect(() => { if (topTab === "review") loadData(); }, [loadData, topTab]);
   useEffect(() => { setSecondaryEdits({}); }, [data, horizon]);
 
-  // Re-fetch when tab regains focus (e.g. user finalized OPSP on another page)
+  // Re-fetch when tab regains focus (e.g. user finalized or made more edits on
+  // another page/tab). Refresh BOTH the review values AND the edit-log so a new
+  // round of post-finalize edits re-surfaces the row highlight here.
   useEffect(() => {
-    function onFocus() { if (topTab === "review") loadData(); }
+    function onFocus() { if (topTab === "review") { loadData(); void loadEditLog(); } }
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [loadData, topTab]);
+  }, [loadData, loadEditLog, topTab]);
 
   /* ── Derived data ── */
   const periodLabels = useMemo(() => {
@@ -1178,6 +1234,16 @@ export default function OPSPReviewPage() {
           </div>
           </>)}
 
+          {/* OPSP edit history — opens the same drawer as the editor, scoped to
+              the selected period (read-only here). */}
+          <button
+            onClick={() => setEditHistoryOpen(true)}
+            className="flex items-center justify-center p-1.5 border border-gray-200 rounded-md text-gray-500 hover:bg-gray-50"
+            title="OPSP edit history"
+          >
+            <History className="h-4 w-4" />
+          </button>
+
           {/* Year / Quarter picker (shared across Review + Critical Review tabs) */}
           <div className="relative" ref={yearRef}>
             <button
@@ -1328,6 +1394,23 @@ export default function OPSPReviewPage() {
               <p className="text-sm font-semibold text-gray-700 text-center">{tableTitle}</p>
             </div>
 
+            {/* Post-finalize change notice — shown until the reviewer acknowledges
+                via the History drawer footer. Highlighted rows changed after finalize. */}
+            {showRowHighlight && (
+              <div className="px-6 py-2 bg-amber-50/70 border-b border-amber-100 flex items-center justify-between gap-2">
+                <span className="text-xs text-amber-700">
+                  Highlighted rows were edited after finalize
+                  {latestChange?.actorName ? ` by ${latestChange.actorName}` : ""} — open History to review.
+                </span>
+                <button
+                  onClick={() => setEditHistoryOpen(true)}
+                  className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-800"
+                >
+                  <History className="h-3.5 w-3.5" /> History
+                </button>
+              </div>
+            )}
+
             {viewMode === "primary" ? (
               /* ── PRIMARY TABLE ── */
               filteredRows.length === 0 ? (
@@ -1340,7 +1423,10 @@ export default function OPSPReviewPage() {
                   columns={primaryColumns}
                   data={filteredRows}
                   rowKey={(row) => `${row.rowIndex}-${row.periodKey}`}
-                  rowClassName={(row) => row.isCumulative ? "bg-gray-50/70" : ""}
+                  rowClassName={(row) => {
+                    if (showRowHighlight && editedPrimarySet.has(row.rowIndex)) return "bg-amber-50";
+                    return row.isCumulative ? "bg-gray-50/70" : "";
+                  }}
                   emptyMessage={`No ${labels.primary.toLowerCase()} data`}
                 />
               )
@@ -1555,6 +1641,22 @@ export default function OPSPReviewPage() {
           />
         );
       })()}
+
+      {/* OPSP edit-after-finalize history (read-only), scoped to the fields that
+          appear in OPSP Review (Targets/Goals/Actions + Rocks/Key Initiatives/
+          Key Thrusts) — People/Objectives/etc. edits are hidden here. */}
+      <OPSPHistoryDrawer
+        open={editHistoryOpen}
+        onClose={() => setEditHistoryOpen(false)}
+        year={year}
+        quarter={quarter}
+        fields={REVIEW_EDIT_FIELDS}
+        ackFooter={
+          reviewEditLog.length > 0
+            ? { acknowledged: !changesUnacked, onAcknowledge: ackChanges, actorName: latestChange?.actorName }
+            : undefined
+        }
+      />
     </div>
   );
 }

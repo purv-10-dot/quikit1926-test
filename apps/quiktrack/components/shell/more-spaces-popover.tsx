@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X, ListIcon } from "lucide-react";
+import { SpaceIcon } from "@/components/space-icon";
 
 interface SpaceItem {
   id: string;
@@ -119,22 +120,11 @@ export function MoreSpacesPopover({
             {recent.map((s) => (
               <Link
                 key={s.id}
-                href={`/spaces/${s.id}/board`}
+                href={`/spaces/${s.id}/backlog`}
                 onClick={onClose}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-800 hover:bg-gray-50"
               >
-                {s.icon ? (
-                  <span className="h-5 w-5 flex items-center justify-center text-base leading-none shrink-0">
-                    {s.icon}
-                  </span>
-                ) : (
-                  <span
-                    className="h-5 w-5 rounded flex items-center justify-center text-white text-[10px] font-semibold shrink-0"
-                    style={{ background: s.color || "#2563eb" }}
-                  >
-                    {s.name.charAt(0).toUpperCase()}
-                  </span>
-                )}
+                <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
                 <span className="truncate">{s.name}</span>
               </Link>
             ))}
@@ -148,22 +138,11 @@ export function MoreSpacesPopover({
             {other.map((s) => (
               <Link
                 key={s.id}
-                href={`/spaces/${s.id}/board`}
+                href={`/spaces/${s.id}/backlog`}
                 onClick={onClose}
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-800 hover:bg-gray-50"
               >
-                {s.icon ? (
-                  <span className="h-5 w-5 flex items-center justify-center text-base leading-none shrink-0">
-                    {s.icon}
-                  </span>
-                ) : (
-                  <span
-                    className="h-5 w-5 rounded flex items-center justify-center text-white text-[10px] font-semibold shrink-0"
-                    style={{ background: s.color || "#2563eb" }}
-                  >
-                    {s.name.charAt(0).toUpperCase()}
-                  </span>
-                )}
+                <SpaceIcon icon={s.icon} name={s.name} color={s.color} size={20} radius={6} />
                 <span className="truncate">{s.name}</span>
               </Link>
             ))}

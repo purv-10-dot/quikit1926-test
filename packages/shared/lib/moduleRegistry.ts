@@ -28,6 +28,24 @@ export interface ModuleDef {
   href?: string;
   /** Parent key for sub-modules. Derived from the dot-prefix but stated explicitly for clarity. */
   parentKey?: string;
+  /**
+   * Section the top-level module belongs to (e.g., "Execution", "Strategy",
+   * "People", "Cash" — the Scaling Up pillars). Set only on top-level modules
+   * (those without a `parentKey`); children inherit their parent's section.
+   * Modules above the first section (e.g., Dashboard, Org Setup) leave this
+   * undefined. Renderers group consecutive top-level modules under a section
+   * header whenever this value changes.
+   */
+  section?: string;
+  /**
+   * When true, the module is OFF by default for every organization — including
+   * newly-created orgs — without needing any AppModuleFlag row. A super admin
+   * can still turn it on for a specific tenant: an explicit `enabled: true`
+   * AppModuleFlag row lifts the default. (This inverts the normal sparse
+   * convention, where a module is on unless a row says otherwise.)
+   * The default-off/override logic lives in `computeDisabledModules`.
+   */
+  defaultDisabled?: boolean;
 }
 
 export interface AppModuleConfig {
@@ -40,49 +58,63 @@ export interface AppModuleConfig {
 export const MODULE_REGISTRY: AppModuleConfig[] = [
   {
     appSlug: "quikscale",
+    // Order + sections mirror the QuikScale sidebar (Scaling Up pillars).
+    // Top of list (Dashboard, Org Setup) sits above the first section header.
     modules: [
       { key: "dashboard", label: "Dashboard", icon: "LayoutDashboard", href: "/dashboard" },
-
-      { key: "kpi", label: "KPI", icon: "Target" },
-      { key: "kpi.individual", label: "Individual KPI", icon: "User", href: "/kpi", parentKey: "kpi" },
-      { key: "kpi.teams", label: "Teams KPI", icon: "Users", href: "/kpi/teams", parentKey: "kpi" },
-
-      { key: "priority", label: "Priority", icon: "CheckSquare", href: "/priority" },
 
       { key: "orgSetup", label: "Org Setup", icon: "Building2" },
       { key: "orgSetup.teams", label: "Teams", icon: "Users", href: "/org-setup/teams", parentKey: "orgSetup" },
       { key: "orgSetup.users", label: "Users", icon: "User", href: "/org-setup/users", parentKey: "orgSetup" },
       { key: "orgSetup.quarters", label: "Quarter Settings", icon: "CalendarDays", href: "/org-setup/quarters", parentKey: "orgSetup" },
 
-      { key: "www", label: "WWW", icon: "Activity", href: "/www" },
+      /* ─── Execution ─── */
+      { key: "kpi", label: "KPI", icon: "Target", section: "Execution" },
+      { key: "kpi.individual", label: "Individual KPI", icon: "User", href: "/kpi", parentKey: "kpi" },
+      { key: "kpi.teams", label: "Teams KPI", icon: "Users", href: "/kpi/teams", parentKey: "kpi" },
 
-      { key: "clientMeetings", label: "Meeting Rhythm", icon: "Calendar" },
+      { key: "priority", label: "Priority", icon: "CheckSquare", href: "/priority", section: "Execution" },
+
+      { key: "www", label: "WWW", icon: "Activity", href: "/www", section: "Execution" },
+
+      { key: "clientMeetings", label: "Meeting Rhythm", icon: "Calendar", section: "Execution" },
       { key: "clientMeetings.dashboard",     label: "Dashboard",       icon: "LayoutDashboard", href: "/client-meetings",                parentKey: "clientMeetings" },
       { key: "clientMeetings.clients",       label: "Client Master",   icon: "Users",           href: "/client-meetings/clients",        parentKey: "clientMeetings" },
       { key: "clientMeetings.members",       label: "Client Members",  icon: "User",            href: "/client-meetings/members",        parentKey: "clientMeetings" },
       { key: "clientMeetings.dailyHuddle",   label: "Daily Huddle",    icon: "Clock",           href: "/client-meetings/daily-huddle",   parentKey: "clientMeetings" },
       { key: "clientMeetings.weeklyMeeting", label: "Weekly Meeting",  icon: "CalendarDays",    href: "/client-meetings/weekly-meeting", parentKey: "clientMeetings" },
 
-      { key: "opsp", label: "OPSP", icon: "FileText" },
-      { key: "opsp.create", label: "Create OPSP", icon: "FileText", href: "/opsp", parentKey: "opsp" },
-      { key: "opsp.history", label: "OPSP HISTORY", icon: "BookOpen", href: "/opsp/history", parentKey: "opsp" },
-      { key: "opsp.review", label: "OPSP Review", icon: "Star", href: "/opsp/review", parentKey: "opsp" },
-      { key: "opsp.categories", label: "Category Mgmt", icon: "List", href: "/opsp/categories", parentKey: "opsp" },
-
-      { key: "analytics", label: "Analytics", icon: "TrendingUp" },
+      { key: "analytics", label: "Analytics", icon: "TrendingUp", section: "Execution" },
       { key: "analytics.scorecard", label: "Scorecard", icon: "BarChart2", href: "/performance/scorecard", parentKey: "analytics" },
       { key: "analytics.individual", label: "Individual", icon: "User", href: "/performance/individual", parentKey: "analytics" },
       { key: "analytics.teams", label: "Teams", icon: "Users", href: "/performance/teams", parentKey: "analytics" },
       { key: "analytics.trends", label: "Trends", icon: "LineChart", href: "/performance/trends", parentKey: "analytics" },
 
-      { key: "people", label: "People", icon: "UserCheck" },
+      /* ─── Strategy ─── */
+      { key: "opsp", label: "OPSP", icon: "FileText", section: "Strategy" },
+      { key: "opsp.create", label: "Create OPSP", icon: "FileText", href: "/opsp", parentKey: "opsp" },
+      { key: "opsp.history", label: "OPSP History", icon: "BookOpen", href: "/opsp/history", parentKey: "opsp" },
+      { key: "opsp.review", label: "OPSP Review", icon: "Star", href: "/opsp/review", parentKey: "opsp" },
+      { key: "opsp.categories", label: "Category Mgmt", icon: "List", href: "/opsp/categories", parentKey: "opsp" },
+
+      { key: "habits", label: "Habits", icon: "Activity", href: "/performance/habits", section: "Strategy" },
+      { key: "swt", label: "SWT", icon: "BarChart2", href: "/performance/swt", section: "Strategy" },
+
+      /* ─── People ─── */
+      { key: "people", label: "Goals & Pillars", icon: "Target", section: "People" },
       { key: "people.cycle", label: "Cycle", icon: "Activity", href: "/performance/cycle", parentKey: "people" },
-      { key: "people.goals", label: "Goals", icon: "Target", href: "/performance/goals", parentKey: "people" },
       { key: "people.self", label: "Self-Assessment", icon: "User", href: "/performance/self", parentKey: "people" },
       { key: "people.reviews", label: "Reviews", icon: "ClipboardList", href: "/performance/reviews", parentKey: "people" },
-      { key: "people.oneOnOne", label: "1:1s", icon: "Users", href: "/performance/one-on-one", parentKey: "people" },
+      { key: "people.oneOnOne", label: "1:1 Meetings", icon: "Users", href: "/performance/one-on-one", parentKey: "people" },
       { key: "people.feedback", label: "Feedback", icon: "MessageSquare", href: "/performance/feedback", parentKey: "people" },
       { key: "people.talent", label: "Talent", icon: "Layers", href: "/performance/talent", parentKey: "people" },
+
+      { key: "face", label: "FACe", icon: "UserCheck", href: "/performance/face", section: "People" },
+      { key: "pace", label: "PACe", icon: "GitBranch", href: "/performance/pace", section: "People" },
+      { key: "survey", label: "Survey", icon: "BarChart2", href: "/performance/survey", section: "People", defaultDisabled: true },
+
+      /* ─── Cash ─── */
+      { key: "cash", label: "Cash", icon: "DollarSign", href: "/cash", section: "Cash", defaultDisabled: true },
     ],
   },
   {
@@ -163,6 +195,43 @@ export function isModuleEnabled(moduleKey: string, disabled: Set<string>): boole
 /** Return the app config for a given slug, or undefined if unknown. */
 export function getAppConfig(appSlug: string): AppModuleConfig | undefined {
   return MODULE_REGISTRY.find((a) => a.appSlug === appSlug);
+}
+
+/**
+ * Keys of modules flagged `defaultDisabled` for an app — off by default for
+ * every organization. Returns an empty set for unknown apps.
+ */
+export function globallyDisabledModules(appSlug: string): Set<string> {
+  const app = getAppConfig(appSlug);
+  if (!app) return new Set();
+  return new Set(app.modules.filter((m) => m.defaultDisabled).map((m) => m.key));
+}
+
+/**
+ * Effective disabled-module set for a tenant: registry defaults reconciled with
+ * the tenant's explicit AppModuleFlag rows. Two storage conventions, by type:
+ *
+ *  - Normal (default-on) module — disabled iff a row says `enabled: false`.
+ *  - `defaultDisabled` (default-off) module — disabled UNLESS a row says
+ *    `enabled: true` (an explicit per-tenant override turns it on).
+ *
+ * Pure + client-safe. Used by both the feature gate (`getDisabledModules`) and
+ * the super-admin GET endpoint so the two never diverge.
+ */
+export function computeDisabledModules(
+  appSlug: string,
+  rows: ReadonlyArray<{ moduleKey: string; enabled: boolean }>,
+): Set<string> {
+  const globally = globallyDisabledModules(appSlug);
+  const disabled = new Set(globally);
+  for (const r of rows) {
+    if (globally.has(r.moduleKey)) {
+      if (r.enabled) disabled.delete(r.moduleKey); // override turns it on
+    } else if (!r.enabled) {
+      disabled.add(r.moduleKey);
+    }
+  }
+  return disabled;
 }
 
 /**

@@ -134,6 +134,13 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     const nums = monthlyStats.filter(m => m.isUpdate).map(m => m[key] as number);
     return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
   };
+  // "Quality of the dashboards" carries 2-decimal precision end-to-end so the
+  // dashboard cell matches the Member Punch-In Excel "Total Average of All
+  // Members" exactly (e.g. 49.75%) — integer rounding here would drift.
+  const avgColPrecise = (key: keyof MonthlyStatRow) => {
+    const nums = monthlyStats.filter(m => m.isUpdate).map(m => m[key] as number);
+    return nums.length ? Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100 : 0;
+  };
   const overallStats = {
     TotalavgHeld: avgCol("avgHeld"),
     TotalavgPunctual: avgCol("avgPunctual"),
@@ -141,7 +148,7 @@ export const GET = withOrgAuth(async ({ orgId }, request) => {
     TotalavgFormat: avgCol("avgFormat"),
     TotalavgAttendance: avgCol("avgAttendance"),
     TotalavgStuckCalls: avgCol("avgStuckCalls"),
-    TotalavgAuality: avgCol("avgAuality"),
+    TotalavgAuality: avgColPrecise("avgAuality"),
     TotalavgKP: avgCol("avgKP"),
     TotalavgWWW: avgCol("avgWWW"),
     TotalavgEF: avgCol("avgEF"),

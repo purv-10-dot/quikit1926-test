@@ -2,7 +2,7 @@
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createTimesheetSchema } from "@/lib/validation/timesheet";
-import { userCanInProject, forbidden } from "@/lib/api/permissions";
+import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
@@ -12,11 +12,7 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const projectId = url.searchParams.get("projectId");
   const issueId = url.searchParams.get("issueId");
 
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+  const isAdmin = await hasAdminAccess(userId, orgId);
 
   // Non-admins can only ever read their own entries (close the leak).
   const filterUserId = isAdmin ? (requestedUserId ?? userId) : userId;
@@ -82,11 +78,7 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
     where: { projectId: issue.projectId, userId, isDeleted: false },
     select: { id: true },
   });
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
+  const isAdmin = await hasAdminAccess(userId, orgId);
   if (!member && !isAdmin) {
     return NextResponse.json({ success: false, error: "Issue not found" }, { status: 404 });
   }

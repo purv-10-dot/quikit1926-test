@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { fetchActivity, type HistoryEntry } from "@/lib/utils/history";
 import { SkeletonList, Skeleton } from "@/components/skeleton";
+import { SpaceIcon } from "@/components/space-icon";
 
 type StatusCategory = "BACKLOG" | "IN_PROGRESS" | "DONE";
 type UpdatedRange =
@@ -417,7 +418,7 @@ export const GlobalSearchPopover = forwardRef<GlobalSearchPopoverHandle>(
                       {projects.map((p) => (
                         <li key={p.id}>
                           <Link
-                            href={`/spaces/${p.id}/board`}
+                            href={`/spaces/${p.id}/backlog`}
                             onClick={() => setOpen(false)}
                             className="flex items-center gap-3 px-4 py-1.5 text-[13px] hover:bg-blue-50/40"
                           >
@@ -593,23 +594,14 @@ function EmptyRow({ children }: { children: React.ReactNode }) {
 }
 
 function ProjectIcon({ project, small }: { project: ProjectHit; small?: boolean }) {
-  const cls = small ? "h-5 w-5 text-[10px]" : "h-6 w-6 text-[10px]";
-  if (project.icon) {
-    return (
-      <span
-        className={`${cls} rounded flex items-center justify-center leading-none bg-gray-100 shrink-0`}
-      >
-        {project.icon}
-      </span>
-    );
-  }
   return (
-    <span
-      className={`${cls} rounded flex items-center justify-center text-white font-semibold shrink-0`}
-      style={{ background: project.color ?? "#2563eb" }}
-    >
-      {project.name.charAt(0).toUpperCase()}
-    </span>
+    <SpaceIcon
+      icon={project.icon}
+      name={project.name}
+      color={project.color}
+      size={small ? 20 : 24}
+      radius={6}
+    />
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import type { AppModuleConfig, ModuleDef } from "@quikit/shared/moduleRegistry";
 import { isModuleEnabled } from "@quikit/shared/moduleRegistry";
 import { ToggleSwitch } from "./toggle-switch";
@@ -47,11 +47,20 @@ export function ModuleTree({
 
   return (
     <div className="space-y-3">
-      {groups.map((g) => {
+      {groups.map((g, idx) => {
         const parentExplicitlyDisabled = disabledKeys.has(g.parent.key);
+        // Render a section header whenever the top-level module's `section`
+        // changes from the previous group (mirrors the app sidebar's pillars).
+        const prevSection = idx > 0 ? groups[idx - 1].parent.section : undefined;
+        const showSection = !!g.parent.section && g.parent.section !== prevSection;
         return (
+          <Fragment key={g.parent.key}>
+            {showSection && (
+              <div className="px-1 pt-3 text-[11px] font-semibold uppercase tracking-widest text-gray-400">
+                {g.parent.section}
+              </div>
+            )}
           <section
-            key={g.parent.key}
             className="rounded-lg border border-gray-200 bg-white overflow-hidden"
           >
             <ModuleRow
@@ -85,6 +94,7 @@ export function ModuleTree({
               </div>
             )}
           </section>
+          </Fragment>
         );
       })}
     </div>
@@ -115,6 +125,9 @@ function ModuleRow({
   indented,
 }: ModuleRowProps) {
   const hiddenByParent = enabled && !effectiveEnabled; // toggle is on, but parent is off
+  // Off by default for new orgs, but still toggleable per tenant. Show the hint
+  // only while it's at its default (off) — once enabled the toggle says enough.
+  const defaultOffHint = m.defaultDisabled === true && !enabled;
   return (
     <div
       className={cn(
@@ -133,7 +146,9 @@ function ModuleRow({
         </div>
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <code className="font-mono">{m.key}</code>
-          {hiddenByParent && (
+          {defaultOffHint ? (
+            <span className="text-gray-400">· Off by default — enable per org</span>
+          ) : hiddenByParent && (
             <span className="text-amber-600">· Hidden: parent disabled</span>
           )}
         </div>

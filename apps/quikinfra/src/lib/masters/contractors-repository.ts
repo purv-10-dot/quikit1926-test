@@ -2,7 +2,7 @@
  * Contractors master — Prisma-backed CRUD for `cn_contractors`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface ContractorRecord {
   id: string;

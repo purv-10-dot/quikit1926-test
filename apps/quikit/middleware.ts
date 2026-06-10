@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createMiddleware } from "@quikit/auth/middleware";
+import { publicBaseUrl } from "@quikit/auth/public-url";
+import { clearSessionCookies } from "@quikit/auth/session-cookies";
 import { buildLoginUrl } from "@quikit/shared/login-url";
 
 /**
@@ -132,6 +134,10 @@ function buildExternalLoginUrl(
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname, search } = request.nextUrl;
 
+  // This host's own public origin (NEXTAUTH_URL / X-Forwarded-Host), never the
+  // pod bind address that `request.url` resolves to behind the ingress.
+  const base = publicBaseUrl(request);
+
   // Marketing zone — let the rewrite proxy it; never auth-gate it.
   if (isMarketingPath(pathname)) return NextResponse.next();
 
@@ -148,7 +154,7 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
     if (external) return NextResponse.redirect(external);
     // Self-hosted dev fallback — keep the path on /apps (the launcher),
     // letting the factory below handle the unauthenticated bounce.
-    const url = new URL(callback, request.url);
+    const url = new URL(callback, base);
     return NextResponse.redirect(url);
   }
 
@@ -161,14 +167,17 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   if (res && (res.status === 307 || res.status === 308)) {
     const loc = res.headers.get("location") ?? "";
     try {
-      const locUrl = new URL(loc, request.url);
-      const sameHost = locUrl.host === request.nextUrl.host;
+      const locUrl = new URL(loc, base);
+      const sameHost = locUrl.host === new URL(base).host;
       if (sameHost && locUrl.pathname.startsWith("/login")) {
         const external = buildExternalLoginUrl(
           request,
           `${pathname}${search}`,
         );
-        if (external) return NextResponse.redirect(external);
+        // Re-apply cookie eviction: replacing the factory's redirect with our
+        // external one would otherwise drop the factory's Set-Cookie deletions,
+        // leaving the stale cookie in the browser.
+        if (external) return clearSessionCookies(NextResponse.redirect(external));
       }
     } catch {
       /* non-URL location — leave the factory response as-is */

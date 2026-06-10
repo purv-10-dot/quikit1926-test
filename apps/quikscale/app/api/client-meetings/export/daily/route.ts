@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
-import { calculateDailyMonthlyStats, previousMonths } from "@/lib/services/clientMeetingsMath";
+import { calculateDailyMonthlyStats, monthsInRange, parseYearMonth, parseYearMonthNum } from "@/lib/services/clientMeetingsMath";
 import { applyPctFill, applyHeader, workbookToBuffer } from "@/lib/exports/clientMeetingsExcel";
 import { DAILY_METRICS } from "@/lib/constants/clientMeetingsMetrics";
 
@@ -16,8 +16,17 @@ const withOrgAuth = withOrgAuthForModule("clientMeetings.dashboard");
 export const POST = withOrgAuth(async ({ orgId }, request) => {
   const body = await request.json();
   const clientId: string = body.clientId;
-  const monthsBack: number = body.monthsBack ?? 6;
   if (!clientId) return NextResponse.json({ success: false, error: "clientId required" }, { status: 400 });
+
+  // Build the month list strictly from the selected From→To range. The modal
+  // sends `from`/`to` as "YYYY-MM" (and `year`/`month` derived from `to`).
+  // Previously this route ignored them and always exported the rolling last 6
+  // months, so a March→April request leaked Jan/Feb/May/Jun columns.
+  const toYM = parseYearMonth(body.to) ?? parseYearMonthNum(body.year, body.month);
+  if (!toYM)
+    return NextResponse.json({ success: false, error: "A valid month range is required." }, { status: 400 });
+  const fromYM = parseYearMonth(body.from) ?? toYM; // missing "From" → single month
+  const months = monthsInRange(fromYM, toYM);
 
   const client = await db.client.findFirst({
     where: { id: clientId, orgId, deletedAt: null },
@@ -29,7 +38,6 @@ export const POST = withOrgAuth(async ({ orgId }, request) => {
   // was snapshotted — matches the dashboard route exactly.
   const rosterSize = client.teamMembers.filter(tm => !tm.member.deletedAt).length;
 
-  const months = previousMonths(new Date(), monthsBack);
   const from = new Date(Date.UTC(months[0].year, months[0].month, 1));
   const toEnd = new Date(Date.UTC(months[months.length - 1].year, months[months.length - 1].month + 1, 0, 23, 59, 59, 999));
 

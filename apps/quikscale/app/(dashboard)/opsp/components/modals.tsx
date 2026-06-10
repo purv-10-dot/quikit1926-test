@@ -18,7 +18,7 @@
  *   - `AccountabilityModal` — KPI accountability + quarterly priorities
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { X, AlertTriangle, Lock, Check, Calendar } from "lucide-react";
 import { FInput } from "./RichEditor";
 import { CategorySelect, ProjectedInput, parseProjectedValue, combineProjectedValue, getScaleAbbrs, displayCategory, catMetaCache, sanitizeNumericInput } from "./category";
@@ -62,6 +62,44 @@ export function resolveProjected(categoryName: string, projected: string): numbe
 
   const n = parseFloat(trimmed);
   return isNaN(n) ? null : n;
+}
+
+/**
+ * The annual Goal (1 YR) Projected that caps a given ACTIONS (QTR) row's
+ * Projected. Matches the Goal by category name — the same name-based lookup
+ * the ActionsModal validator uses, so the cap applies regardless of whether
+ * the Action and Goal rows sit at the same index. Returns null (no cap) when
+ * there's no matching Goal or it has no projected value yet.
+ */
+export function goalProjectedCap(
+  categoryName: string,
+  goalRows: GoalRow[],
+): number | null {
+  if (!categoryName.trim()) return null;
+  const goal = goalRows.find(
+    (g) => g.category.trim() && g.category === categoryName,
+  );
+  if (!goal) return null;
+  return resolveProjected(goal.category, goal.projected);
+}
+
+/**
+ * True when `val` (a typed Projected string for `categoryName`) resolves above
+ * the annual Goal cap. The shared hard-block predicate for over-goal entry:
+ * both the ACTIONS (QTR) modal and the inline ActionsSection reject an edit
+ * outright when this returns true, so an over-goal value never enters form
+ * state (and therefore never autosaves). Mirrors the `+ 0.01` epsilon the
+ * ActionsModal `exceedsGoal` validator uses.
+ */
+export function exceedsGoalProjected(
+  categoryName: string,
+  val: string,
+  goalRows: GoalRow[],
+): boolean {
+  const cap = goalProjectedCap(categoryName, goalRows);
+  if (cap == null || cap <= 0) return false;
+  const resolved = resolveProjected(categoryName, val);
+  return resolved != null && resolved > cap + 0.01;
 }
 
 /** Format a number with commas for display. */
@@ -168,19 +206,30 @@ export function breakdownProjected(
 
 /**
  * When the user edits a single period cell on an **Automatic + Cumulative**
- * row, rebalance the OTHER period cells so the sum still equals Projected.
+ * row, keep the running total equal to Projected by pushing the difference
+ * onto the cell(s) AFTER the edited one — a forward cascade, not an even
+ * re-split. The immediately-following cell absorbs the whole delta; it only
+ * spills onto the next cell (wrapping past the end) when a cell would go
+ * negative. Cells the user already set are left untouched, so a sequence like
+ * "M1 = 40, then M2 = 5" leaves M3 to take the remainder (→ 35) instead of
+ * snapping every other cell to an equal share.
+ *
+ * Examples (Projected = 30, starting 10 / 10 / 10):
+ *   - edit M1 → 5      ⇒  5 / 15 / 10   (M2 absorbs the +5, M3 untouched)
+ *   - then edit M2 → 4 ⇒  5 / 4 / 21    (M3 absorbs the +11)
  *
  * Rebalance only applies when:
  *   - `breakdownType === "Automatic"` (Manual rows leave cells alone)
  *   - `categoryType === "Cumulative"` (Standalone/TillEnd have different semantics)
  *
- * Operates on the displayed numeric value (same as `breakdownProjected`)
- * so currency rows preserve the Projected's scale across all cells.
+ * The edited value is clamped to [0, Projected] so the total can never exceed
+ * Projected. Operates on the displayed numeric value (same as
+ * `breakdownProjected`) so currency rows preserve the Projected's scale.
  *
  * Returns a new `string[]` of length `values.length`, OR `null` when no
  * rebalance applies (then the caller should write only the edited cell).
  */
-function redistributeOnCellEdit(opts: {
+export function redistributeOnCellEdit(opts: {
   categoryName: string;
   projected: string;
   values: string[];
@@ -233,34 +282,52 @@ function redistributeOnCellEdit(opts: {
     return isWhole ? String(Math.round(v)) : String(Math.round(v * 100) / 100);
   };
 
-  const out = [...opts.values];
-  // Write the edited cell with the formatted value (preserves scale on currency).
-  out[opts.edited] = formatVal(editedDisplayed);
+  const round2 = (v: number): number => (isWhole ? Math.round(v) : Math.round(v * 100) / 100);
 
-  // Remainder to distribute across the other cells (clamped to 0 if user
-  // typed > projected).
-  const remainder = Math.max(0, projDisplayed - editedDisplayed);
-  const otherIdxs: number[] = [];
-  for (let i = 0; i < opts.values.length; i++) if (i !== opts.edited) otherIdxs.push(i);
-  const n = otherIdxs.length;
-  if (n === 0) return out;
+  // Parse every current cell to its displayed numeric (same scale convention
+  // as Projected) so the cascade reasons over numbers, not strings.
+  const parseCell = (s: string): number => {
+    const t = (s ?? "").trim();
+    if (t === "") return 0;
+    const raw = isCurrency ? parseProjectedValue(s, currency).num : t;
+    const num = parseFloat(raw);
+    return Number.isFinite(num) ? num : 0;
+  };
 
-  if (isWhole) {
-    const base = Math.floor(remainder / n);
-    const lastResidue = Math.round(remainder - base * (n - 1));
-    otherIdxs.forEach((origIdx, j) => {
-      const v = j === n - 1 ? lastResidue : base;
-      out[origIdx] = formatVal(v);
-    });
-  } else {
-    const base = Math.round((remainder / n) * 100) / 100;
-    const lastResidue = Math.round((remainder - base * (n - 1)) * 100) / 100;
-    otherIdxs.forEach((origIdx, j) => {
-      const v = j === n - 1 ? lastResidue : base;
-      out[origIdx] = formatVal(v);
-    });
+  const nums = opts.values.map(parseCell);
+  const len = nums.length;
+  if (len === 0) return [...opts.values];
+
+  // Clamp the edited cell into [0, Projected] up front — a single cell can
+  // never carry more than the whole Projected.
+  nums[opts.edited] = round2(Math.min(Math.max(editedDisplayed, 0), projDisplayed));
+
+  // Forward cascade: bring the total back to Projected by absorbing the delta
+  // into the next cell, spilling onto subsequent cells (wrapping past the end)
+  // only when a cell would go negative. Cells the user already set keep their
+  // values whenever the immediate neighbour can absorb the change alone.
+  let delta = round2(projDisplayed - nums.reduce((a, b) => a + b, 0));
+  for (let step = 1; step < len && Math.abs(delta) > 0.001; step++) {
+    const j = (opts.edited + step) % len;
+    const next = round2(nums[j] + delta);
+    if (next < 0) {
+      // This cell can't absorb the full (negative) delta — zero it and carry
+      // the unabsorbed remainder onto the next cell in the cascade.
+      delta = round2(delta + nums[j]);
+      nums[j] = 0;
+    } else {
+      nums[j] = next;
+      delta = 0;
+    }
   }
-  return out;
+  // Any residual delta means the edited value alone exceeded what the other
+  // cells could give back — claw it off the edited cell so the total still
+  // equals Projected (never exceeds it).
+  if (Math.abs(delta) > 0.001) {
+    nums[opts.edited] = round2(Math.max(0, nums[opts.edited] + delta));
+  }
+
+  return nums.map((v) => formatVal(v));
 }
 
 /**
@@ -465,7 +532,7 @@ function StandaloneSelect({
     valTrim === "0" ? "0" : projTrim;
 
   return (
-    <div className={`flex items-center border border-gray-200 rounded bg-white focus-within:ring-1 focus-within:ring-accent-400 overflow-hidden ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : ""}`}>
+    <div className={`flex items-center border border-gray-200 rounded bg-white overflow-hidden ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : ""}`}>
       <select
         value={selectValue}
         disabled={disabled}
@@ -1106,6 +1173,12 @@ export function ActionsModal({
   goalRows: GoalRow[];
   readOnly?: boolean;
 }) {
+  // Transient feedback when an over-goal Projected entry is rejected. Keyed by
+  // row index + the cap value to show, so the message sits under the row the
+  // user just typed in. Cleared on a valid entry (below) and whenever the modal
+  // opens/closes so a stale warning doesn't survive a reopen.
+  const [capWarning, setCapWarning] = useState<{ row: number; max: string } | null>(null);
+  useEffect(() => { setCapWarning(null); }, [open]);
   if (!open) return null;
   const mCols: (keyof ActionRow)[] = ["m1", "m2", "m3"];
   // Columns: Category | Category Type | Projected | M1 | M2 | M3
@@ -1319,6 +1392,24 @@ export function ActionsModal({
                       categoryName={row.category}
                       value={row.projected}
                       onChange={(val) => {
+                        // Hard cap: a quarter's Projected may never exceed its
+                        // annual Goal (1 YR) Projected. Reject the edit outright
+                        // when the new value resolves above the goal, so an
+                        // over-goal value never enters form state — and therefore
+                        // never autosaves (PUT /api/opsp). The red "Exceeds Goal"
+                        // hint below stays as a safety net for data that loaded
+                        // over-goal (e.g. a goal lowered after the action was set).
+                        if (exceedsGoalProjected(row.category, val, goalRows)) {
+                          // Surface a message so the rejection isn't silent —
+                          // tell the user the max (the Goal 1 YR value) allowed.
+                          setCapWarning({
+                            row: i,
+                            max: v.goalForRow?.projected?.trim() || String(v.goalProjectedVal ?? ""),
+                          });
+                          return;
+                        }
+                        // Valid entry — clear any stale cap warning on this row.
+                        setCapWarning((w) => (w?.row === i ? null : w));
                         const next = [...rows];
                         // Auto-fill 3 month cells based on the category's
                         // breakdownType when Projected is entered.
@@ -1351,6 +1442,16 @@ export function ActionsModal({
                     {v.exceedsGoal && (
                       <p className="text-[10px] text-red-500 mt-0.5 truncate font-medium">
                         Exceeds Goal (1 YR): {v.goalForRow?.projected}
+                      </p>
+                    )}
+                    {/* Rejected-entry feedback — fires the moment the user tries
+                        to type a Projected above the Goal (1 YR). The value is
+                        hard-blocked (never committed), so this message is the
+                        only signal; hidden once exceedsGoal already covers a
+                        loaded over-goal value to avoid a duplicate line. */}
+                    {capWarning?.row === i && !v.exceedsGoal && (
+                      <p className="text-[10px] text-red-500 mt-0.5 truncate font-medium">
+                        Can&apos;t exceed Goal (1 YR): {capWarning.max}
                       </p>
                     )}
                     {/* Required-field: a selected category must have a
@@ -1414,7 +1515,7 @@ export function ActionsModal({
                         className={`flex items-center border rounded bg-white overflow-hidden ${
                           cellHasError
                             ? "border-red-400 focus-within:ring-1 focus-within:ring-red-400"
-                            : "border-gray-200 focus-within:ring-1 focus-within:ring-accent-400"
+                            : "border-gray-200"
                         } ${disabled ? "opacity-50 pointer-events-none bg-gray-50" : ""}`}
                       >
                         {isCurrency && symbol && (

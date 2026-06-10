@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Trash2, X, ChevronDown, Check, Info } from "lucide-react";
+import { Search, Plus, Trash2, X, ChevronDown, Check, Info, History } from "lucide-react";
 import { CURRENCIES } from "@/lib/utils/currency";
 import { AddButton } from "@quikit/ui";
+import { CategoryHistoryDrawer } from "./CategoryHistoryDrawer";
 import { useResourcePermissions } from "@/lib/hooks/useResourcePermissions";
 import {
   CATEGORY_TYPE_LABELS,
@@ -422,6 +423,7 @@ export default function CategoryMgmtPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [panelOpen, setPanelOpen] = useState(false);
   const [editItem, setEditItem] = useState<CategoryItem | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const { data, isLoading } = useQuery<{ success: boolean; data: CategoryItem[] }>({
     queryKey: ["categories", search],
@@ -499,10 +501,20 @@ export default function CategoryMgmtPage() {
               </button>
             )}
 
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="flex items-center justify-center p-2 border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50"
+              title="Category history"
+            >
+              <History className="h-4 w-4" />
+            </button>
+
             {canCreate && <AddButton onClick={openAdd}>Add Category</AddButton>}
           </div>
         </div>
       </div>
+
+      <CategoryHistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} />
 
       {/* Table */}
       <div className="flex-1 overflow-auto px-6 py-4 min-h-0">

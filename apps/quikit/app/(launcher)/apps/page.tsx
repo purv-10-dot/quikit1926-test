@@ -44,6 +44,7 @@ const SANS = "'Inter', system-ui, sans-serif";
    iconUrl so the launcher always renders the current brand logos. */
 const LAUNCHER_ICONS: Record<string, string> = {
   admin: "/app-icons/admin.svg",
+  quikcrm: "/app-icons/quikcrm.svg",
   quikinfra: "/app-icons/quikinfra.svg",
   quikscale: "/app-icons/quikscale.svg",
   quiktrack: "/app-icons/quiktrack.svg",
@@ -90,6 +91,12 @@ export default function AppLauncherPage() {
   const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [search, setSearch] = useState("");
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
+  // Gate the header entrance animation until after mount so SSR and the first
+  // client render share the same (hidden) state — otherwise framer-motion
+  // hydrates the header at its `animate` style and React warns that the
+  // inline `style` prop didn't match the server.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const isSuperAdmin = session?.user?.isSuperAdmin === true;
   const isImpersonating = session?.user?.impersonating === true;
@@ -280,7 +287,7 @@ export default function AppLauncherPage() {
       {/* Header */}
       <motion.header
         initial={reduce ? false : { opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
+        animate={mounted || reduce ? { opacity: 1, y: 0 } : { opacity: 0, y: -12 }}
         transition={{ duration: 0.45, ease }}
         style={{
           position: "relative",

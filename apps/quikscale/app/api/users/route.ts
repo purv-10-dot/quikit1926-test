@@ -23,13 +23,34 @@ function parseSort(req: { nextUrl: { searchParams: URLSearchParams } }): Prisma.
 export const GET = withOrgAuth(
   async ({ orgId }, request) => {
     const teamId = request.nextUrl.searchParams.get("teamId");
+    const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const { page, limit, skip, take } = parsePagination(request);
 
-    const where = {
+    const where: Prisma.OrgMemberWhereInput = {
       orgId,
       status: "active",
       ...(teamId ? { teamId } : {}),
     };
+
+    // Server-side owner search for dropdown pickers. Tokenize on whitespace so
+    // "Himanshu Pandey" matches firstName "Himanshu" AND lastName "Pandey";
+    // each token must hit firstName, lastName, or email (case-insensitive).
+    // Without this the picker could only match the already-loaded page, so any
+    // member past page 1 returned "No results" until manually scrolled in.
+    if (search) {
+      where.user = {
+        AND: search
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((token) => ({
+            OR: [
+              { firstName: { contains: token, mode: "insensitive" } },
+              { lastName: { contains: token, mode: "insensitive" } },
+              { email: { contains: token, mode: "insensitive" } },
+            ],
+          })),
+      };
+    }
 
     const orderBy = parseSort(request);
 

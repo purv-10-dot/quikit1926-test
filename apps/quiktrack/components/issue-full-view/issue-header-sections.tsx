@@ -7,15 +7,10 @@ import {
   ChevronRight,
   Edit3,
   ListTree,
-  Lock,
-  Eye,
-  Share2,
-  MoreHorizontal,
-  Plus,
-  Settings as SettingsIcon,
   Zap,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import type { MentionItem } from "@/components/editor/mention";
 import { SubtaskGrid } from "./subtask-grid";
 import { AddEpicButton } from "./add-epic-button";
 import { ChildWorkItems } from "./child-work-items";
@@ -35,6 +30,8 @@ interface Props {
   projectName: string;
   typeIcon: { Icon: React.ElementType; color: string };
   onPatch: (data: Record<string, unknown>) => Promise<void>;
+  /** People list for `@`-mentions in the description editor. */
+  mentions?: MentionItem[];
 }
 
 /**
@@ -49,6 +46,7 @@ export function IssueHeaderSections({
   projectName,
   typeIcon: T,
   onPatch,
+  mentions,
 }: Props) {
   const [descOpen, setDescOpen] = useState(false);
   const [descEditing, setDescEditing] = useState(false);
@@ -119,40 +117,9 @@ export function IssueHeaderSections({
         </span>
       </div>
 
-      {/* Title + actions */}
-      <div className="flex items-start justify-between gap-3 mt-5 mb-4">
+      {/* Title */}
+      <div className="mt-5 mb-5">
         <h1 className="text-2xl font-semibold text-gray-900 leading-tight">{issue.title}</h1>
-        <div className="flex items-center gap-1 shrink-0 text-gray-500">
-          <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="Lock">
-            <Lock className="h-4 w-4" />
-          </button>
-          <button className="p-1.5 rounded bg-blue-50 text-blue-600" aria-label="Watching">
-            <Eye className="h-4 w-4" />
-          </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="Share">
-            <Share2 className="h-4 w-4" />
-          </button>
-          <button className="p-1.5 hover:bg-gray-100 rounded" aria-label="More">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1 mb-5">
-        <button
-          type="button"
-          className="h-8 w-8 inline-flex items-center justify-center border border-gray-200 rounded hover:bg-gray-50"
-          aria-label="Quick add"
-        >
-          <Plus className="h-4 w-4 text-gray-600" />
-        </button>
-        <button
-          type="button"
-          className="h-8 w-8 inline-flex items-center justify-center border border-gray-200 rounded hover:bg-gray-50"
-          aria-label="Configure"
-        >
-          <SettingsIcon className="h-4 w-4 text-gray-600" />
-        </button>
       </div>
 
       {/* Description (collapsible) */}
@@ -177,6 +144,7 @@ export function IssueHeaderSections({
                   value={descDraft}
                   onChange={setDescDraft}
                   placeholder="Add a description..."
+                  mentions={mentions ?? []}
                 />
                 <div className="mt-2 flex items-center justify-end gap-2">
                   <button

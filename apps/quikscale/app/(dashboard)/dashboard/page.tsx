@@ -10,7 +10,8 @@ import { useFiscalYears } from "@/lib/hooks/useFiscalYears";
 import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
 import { useTeams } from "@/lib/hooks/useTeams";
-import { useInfiniteUsers } from "@/lib/hooks/useInfiniteUsers";
+import { useUsers } from "@/lib/hooks/useUsers";
+import { useSessionState } from "@/lib/hooks/useSessionState";
 import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
 import type { PriorityRow } from "@/lib/types/priority";
@@ -936,11 +937,12 @@ function WWWSection({ items }: { items: WWWItem[] }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  // Year + quarter live in FilterContext so they persist across module navigation.
-  // setFilterTeam / setFilterOwner are written from this page so that when the
-  // user navigates to KPI / Team KPI / Priority via the sidebar, those modules
-  // pick up the same scope (My Dashboard → self; Team tab → picked user/team).
-  const { year, setYear, quarter, setQuarter, setFilterTeam, setFilterOwner } = useFilterContext();
+  // Year + quarter live in FilterContext (persisted across navigation + refresh).
+  // The shared OWNER filter also lives there: the Team tab both reads it (so it
+  // reflects an owner picked on KPI / Priority / WWW) and writes it (so those
+  // pages pick up the Team tab's choice). The My Dashboard tab is a personal,
+  // self-only view and deliberately leaves the shared owner untouched.
+  const { filterOwner, year, setYear, quarter, setQuarter, setFilterTeam, setFilterOwner } = useFilterContext();
   const [activeTab, setActiveTab] = useState<"individual" | "team">("individual");
 
   // Dashboard-level trash toggle — per-section. When a section is in this Set,
@@ -995,9 +997,13 @@ export default function DashboardPage() {
   // B applies only to the KPI section.
   const [teamTabTeamId, setTeamTabTeamId] = useState<string>("");
   const [teamTabKpiType, setTeamTabKpiType] = useState<"individual" | "team">("individual");
-  const [teamTabOwnerId, setTeamTabOwnerId] = useState<string>("");
-  // Reset C when A changes (the user list narrows / widens).
-  useEffect(() => { setTeamTabOwnerId(""); }, [teamTabTeamId]);
+  // Seed from the shared filter so revisiting the Team tab reflects an owner
+  // picked elsewhere (KPI / Priority / WWW). The dashboard remounts on each
+  // navigation, so this re-reads the current shared owner every visit.
+  const [teamTabOwnerId, setTeamTabOwnerId] = useState<string>(filterOwner);
+  // Note: clearing the owner when the team changes is done in the Team picker's
+  // onChange (below), NOT in an effect — an effect keyed on teamTabTeamId would
+  // also fire on mount and wipe the owner we just seeded from the shared filter.
 
   // ── KPI Type toggle gating ──
   // The "Individual KPI / Team KPI" tab buttons only make sense when the
@@ -1032,13 +1038,16 @@ export default function DashboardPage() {
   }, [perms.loading, canViewIndividualKPI, canViewTeamKPI, teamTabKpiType]);
 
   // ── Sync Dashboard scope → FilterContext ──
-  // The KPI / Team KPI / Priority pages read `filterTeam` + `filterOwner`
-  // from FilterContext. Writing them here means a sidebar navigation lands
-  // on the destination page already filtered to the right scope.
-  //   - My Dashboard tab → owner = current user, no team.
-  //   - Team tab          → owner / team = whatever is picked in the 3-stage filter.
-  // WWW page intentionally ignores `filterTeam` (per product rule), so the
-  // team value here doesn't bleed into WWW even when set.
+  // Hand the active tab's scope to the shared filter so KPI / Team KPI /
+  // Priority / WWW reflect it on navigation:
+  //   • My Dashboard → SELF (owner = current user, no team). Year + quarter ride
+  //     along via FilterContext, so the modules show your own data for the
+  //     current period.
+  //   • Team tab → the picked owner / team.
+  // The Team tab still shows a persisted owner because `teamTabOwnerId` is seeded
+  // from `ctx.filterOwner` at mount (before this effect's self-write), and the
+  // owner-reset-on-team-change lives in the Team picker's onChange (not a mount
+  // effect). WWW ignores `filterTeam` by product rule, so team never bleeds in.
   useEffect(() => {
     if (activeTab === "individual") {
       setFilterTeam("");
@@ -1053,24 +1062,23 @@ export default function DashboardPage() {
   // is hard-locked to the current user, no team filter).
   const selectedTeamId = activeTab === "team" ? (teamTabTeamId || undefined) : undefined;
 
-  // Owner picker source — paginated user list from /api/users (sorted server-side
-  // by firstName asc, 25 per page). When a team is selected, the API filters to
-  // actual OrgMember.teamId membership, which fixes the previous KPI-ownership-
-  // derived heuristic that hid team members without KPIs and showed strangers.
-  const {
-    users,
-    hasNextPage: usersHasMore,
-    isFetchingNextPage: usersLoadingMore,
-    fetchNextPage: usersLoadMore,
-  } = useInfiniteUsers(selectedTeamId);
-
+  // Owner picker + team-scope member set — the full member list for the selected
+  // team (up to the API's 1000-row cap), the SAME source the KPI / Priority / WWW
+  // pickers use (`useUsers`). A full list means the Owner picker can always render
+  // the selected owner's name — even one seeded from another page that isn't on a
+  // paginated slice — and client-side search still finds anyone. When a team is
+  // selected the API filters to actual OrgMember.teamId membership.
+  const { data: users = [] } = useUsers(selectedTeamId);
   // Set of user IDs belonging to the selected team (all org members when no team selected)
   const teamUserIds = useMemo(() => new Set(users.map(u => u.id)), [users]);
 
   // Multi-select WWW status filter. Defaults to every status EXCEPT
   // "completed" — keeps the dashboard focused on actionable work; users can
-  // re-include completed items via the dropdown.
-  const [wwwStatusFilter, setWwwStatusFilter] = useState<string[]>(
+  // re-include completed items via the dropdown. Persisted (browser-tab session)
+  // under its own key so the selection survives navigation + refresh; this is
+  // the Dashboard WWW section's own filter, independent of the WWW page's.
+  const [wwwStatusFilter, setWwwStatusFilter] = useSessionState<string[]>(
+    "qs:dash:www:status",
     ITEM_STATUS_ORDER.filter(s => s !== "completed"),
   );
 
@@ -1265,7 +1273,7 @@ export default function DashboardPage() {
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Team</p>
                     <FilterPicker
                       value={teamTabTeamId}
-                      onChange={setTeamTabTeamId}
+                      onChange={(v) => { setTeamTabTeamId(v); setTeamTabOwnerId(""); }}
                       options={teams.map(t => ({ value: t.id, label: t.name }))}
                       allLabel="All Users"
                     />
@@ -1307,9 +1315,6 @@ export default function DashboardPage() {
                       }}
                       options={users.map(userToFilterOption)}
                       allLabel="All Users"
-                      hasMore={usersHasMore}
-                      loadingMore={usersLoadingMore}
-                      onLoadMore={() => { void usersLoadMore(); }}
                     />
                   </div>
                   {(teamTabTeamId || teamTabOwnerId || teamTabKpiType !== "individual") && (

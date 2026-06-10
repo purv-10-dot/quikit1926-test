@@ -11,18 +11,22 @@
  * length; to add/remove rows the user edits Goals (1 YR).
  */
 
+import { useState } from "react";
 import { Maximize2, X } from "lucide-react";
 import { Card, CardH } from "./Card";
 import { FInput, FTextarea } from "./RichEditor";
 import { CritBlock } from "./CritBlock";
 import { CategorySelect, ProjectedInput } from "./category";
-import { breakdownProjected } from "./modals";
+import { breakdownProjected, exceedsGoalProjected } from "./modals";
 import { WithTooltip, OwnerSelect } from "./pickers";
 import type { FormData } from "../hooks/useOPSPForm";
+import type { PendingEdit } from "../lib/editLog";
 
 interface Props {
   form: FormData;
-  set: <K extends keyof FormData>(key: K, value: FormData[K]) => void;
+  set: <K extends keyof FormData>(key: K, value: FormData[K], opts?: { skipLog?: boolean }) => void;
+  /** Report the exact field the user edited (Projected/Category) for the change log. */
+  logEdit?: (e: PendingEdit) => void;
   onExpandActions: () => void;
   onExpandRocks: () => void;
 }
@@ -34,9 +38,14 @@ const MIN_ACTION_ROWS = 6;
 export function ActionsSection({
   form,
   set,
+  logEdit,
   onExpandActions,
   onExpandRocks,
 }: Props) {
+  // Transient feedback when an over-goal Projected entry is rejected here on the
+  // main grid (the expand modal has its own copy). Keyed by row index + the cap
+  // value to show; cleared on a valid entry.
+  const [capWarning, setCapWarning] = useState<{ row: number; max: string } | null>(null);
   return (
     <>
       {/* Actions QTR */}
@@ -63,6 +72,7 @@ export function ActionsSection({
             {form.actionsQtr.map((row, i) => (
               <div
                 key={i}
+                data-opsp-field={`actionsQtr.${i}`}
                 className="grid grid-cols-[1fr_auto] gap-1.5 items-start py-0.5 group"
               >
                 <div className="grid grid-cols-5 gap-1.5 items-start">
@@ -71,6 +81,12 @@ export function ActionsSection({
                       value={row.category}
                       excludeNames={form.actionsQtr.map((r, idx) => idx === i ? "" : r.category)}
                       onChange={(v) => {
+                        logEdit?.({
+                          field: `actionsQtr.${i}.category`,
+                          label: `Actions (QTR) · ${row.category || "#" + (i + 1)} · Category`,
+                          oldValue: row.category ?? "",
+                          newValue: v,
+                        });
                         const next = [...form.actionsQtr];
                         next[i] = {
                           ...next[i],
@@ -80,7 +96,7 @@ export function ActionsSection({
                           m2: "",
                           m3: "",
                         };
-                        set("actionsQtr", next);
+                        set("actionsQtr", next, { skipLog: true });
                       }}
                     />
                   </div>
@@ -89,6 +105,28 @@ export function ActionsSection({
                       categoryName={row.category}
                       value={row.projected}
                       onChange={(v) => {
+                        // Hard cap: a quarter's Projected may never exceed its
+                        // annual Goal (1 YR) Projected. Reject the edit outright
+                        // when the new value resolves above the goal so an
+                        // over-goal value never enters form state (and therefore
+                        // never autosaves). Same rule the ACTIONS (QTR) modal
+                        // enforces — see exceedsGoalProjected in ./modals.
+                        if (exceedsGoalProjected(row.category, v, form.goalRows)) {
+                          // Surface the cap so the rejection isn't silent.
+                          const g = form.goalRows.find(
+                            (gr) => gr.category.trim() && gr.category === row.category,
+                          );
+                          setCapWarning({ row: i, max: g?.projected?.trim() || "" });
+                          return;
+                        }
+                        // Valid entry — clear any stale cap warning on this row.
+                        setCapWarning((w) => (w?.row === i ? null : w));
+                        logEdit?.({
+                          field: `actionsQtr.${i}.projected`,
+                          label: `Actions (QTR) · ${row.category || "#" + (i + 1)} · Projected`,
+                          oldValue: row.projected ?? "",
+                          newValue: v,
+                        });
                         const next = [...form.actionsQtr];
                         // Automatic categories: auto-fill m1..m3.
                         // Manual categories: breakdownProjected returns null →
@@ -104,9 +142,18 @@ export function ActionsSection({
                             }
                           : {};
                         next[i] = { ...next[i], projected: v, ...mPatch };
-                        set("actionsQtr", next);
+                        set("actionsQtr", next, { skipLog: true });
                       }}
                     />
+                    {/* Rejected-entry feedback — fires when the user tries to
+                        type a Projected above the Goal (1 YR). The value is
+                        hard-blocked (never committed), so this is the only
+                        signal the entry was capped. */}
+                    {capWarning?.row === i && (
+                      <p className="text-[10px] text-red-500 mt-0.5 truncate font-medium">
+                        Can&apos;t exceed Goal (1 YR): {capWarning.max}
+                      </p>
+                    )}
                   </div>
                 </div>
                 {form.actionsQtr.length > MIN_ACTION_ROWS ? (
@@ -158,7 +205,7 @@ export function ActionsSection({
           </div>
           <div className="divide-y divide-gray-100">
             {form.rocks.map((row, i) => (
-              <div key={i} className="flex items-center gap-1.5 py-1.5">
+              <div key={i} data-opsp-field={`rocks.${i}`} className="flex items-center gap-1.5 py-1.5">
                 <span className="text-xs text-gray-400 w-5 flex-shrink-0">
                   {String(i + 1).padStart(2, "0")}
                 </span>

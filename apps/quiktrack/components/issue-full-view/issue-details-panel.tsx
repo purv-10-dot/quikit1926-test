@@ -1,48 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, Zap } from "lucide-react";
+import type { IssuePageData } from "./types";
 import {
-  ChevronDown,
-  ChevronRight,
-  Zap,
-  ChevronUp,
-  ChevronsUp,
-  ChevronsDown,
-  ChevronDown as ChevronDownArrow,
-  Equal,
-  SlidersHorizontal,
-  User as UserIcon,
-} from "lucide-react";
-import type { IssuePageData, Priority } from "./types";
+  AssigneeField,
+  PriorityField,
+  SprintField,
+  DateField,
+  NumberField,
+} from "./issue-details-fields";
+import {
+  avatarColor,
+  userInitials,
+  memberName,
+  type FieldMember,
+} from "./issue-field-utils";
 
-interface Member {
-  userId: string;
-  user: { id: string; firstName: string | null; lastName: string | null; email: string } | null;
-}
+type Member = FieldMember;
 
-const PRIORITY_META: Record<Priority, { label: string; color: string; Icon: React.ElementType }> = {
-  HIGHEST: { label: "Highest", color: "text-red-600", Icon: ChevronsUp },
-  HIGH: { label: "High", color: "text-red-500", Icon: ChevronUp },
-  MEDIUM: { label: "Medium", color: "text-amber-500", Icon: Equal },
-  LOW: { label: "Low", color: "text-blue-500", Icon: ChevronDownArrow },
-  LOWEST: { label: "Lowest", color: "text-blue-400", Icon: ChevronsDown },
-};
-
-function userName(u: Member["user"]) {
-  if (!u) return "Unassigned";
-  return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email;
-}
-function avatarColor(seed: string) {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360}deg 45% 50%)`;
-}
-function userInitials(u: Member["user"]) {
-  if (!u) return "?";
-  const f = (u.firstName ?? "").trim();
-  const l = (u.lastName ?? "").trim();
-  return ((f[0] ?? "") + (l[0] ?? "")).toUpperCase() || (u.email[0] ?? "?").toUpperCase();
-}
 function statusPillClass(category?: string) {
   if (category === "DONE") return "qt-issue-status-pill qt-issue-status-pill--done bg-green-100 text-green-700 hover:bg-green-200";
   if (category === "IN_PROGRESS") return "qt-issue-status-pill qt-issue-status-pill--progress bg-blue-100 text-blue-700 hover:bg-blue-200";
@@ -63,6 +39,7 @@ export function IssueDetailsPanel({
 }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [statuses, setStatuses] = useState<{ id: string; name: string; category: string }[]>([]);
+  const [sprints, setSprints] = useState<{ id: string; name: string }[]>([]);
   const [statusOpen, setStatusOpen] = useState(false);
 
   useEffect(() => {
@@ -81,11 +58,15 @@ export function IssueDetailsPanel({
         if (j?.success) setStatuses(j.data ?? []);
       })
       .catch(() => undefined);
+    void fetch(`/api/sprints?projectId=${issue.projectId}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.success) setSprints(j.data ?? []);
+      })
+      .catch(() => undefined);
   }, [issue.projectId]);
 
-  const assignee = members.find((m) => m.userId === issue.assigneeId);
   const reporter = members.find((m) => m.userId === issue.reporterId);
-  const P = PRIORITY_META[issue.priority];
 
   return (
     <aside className="space-y-3 text-sm">
@@ -128,69 +109,25 @@ export function IssueDetailsPanel({
                   </span>
                 </button>
               ))}
-              <div className="border-t border-gray-100 mt-1 pt-1">
-                <button
-                  type="button"
-                  className="w-full px-3 py-1.5 text-xs text-left text-gray-700 hover:bg-gray-50"
-                >
-                  Create status
-                </button>
-                <button
-                  type="button"
-                  className="w-full px-3 py-1.5 text-xs text-left text-gray-700 hover:bg-gray-50"
-                >
-                  Edit status
-                </button>
-                <button
-                  type="button"
-                  className="w-full px-3 py-1.5 text-xs text-left text-gray-700 hover:bg-gray-50"
-                >
-                  View workflow
-                </button>
-              </div>
             </div>
           )}
         </div>
-        <button
-          className="h-8 w-8 inline-flex items-center justify-center border border-gray-200 rounded hover:bg-gray-50"
-          aria-label="Automation"
-        >
-          <Zap className="h-3.5 w-3.5 text-amber-500" />
-        </button>
       </div>
 
-      {/* My pinned fields */}
-      <Card title="My pinned fields">
-        <Row label="Start date">
-          <span className="text-gray-500">{issue.startDate ?? "None"}</span>
-        </Row>
-      </Card>
-
       {/* Details */}
-      <Card title="Details" trailing={<SlidersHorizontal className="h-3.5 w-3.5 text-gray-500" />}>
+      <Card title="Details">
         <Row label="Assignee">
-          {assignee?.user ? (
-            <span className="inline-flex items-center gap-2">
-              <span
-                className="h-5 w-5 rounded-full flex items-center justify-center text-white text-[10px] font-semibold"
-                style={{ background: avatarColor(assignee.userId) }}
-              >
-                {userInitials(assignee.user)}
-              </span>
-              {userName(assignee.user)}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-2 text-gray-500">
-              <UserIcon className="h-4 w-4" />
-              Unassigned
-            </span>
-          )}
+          <AssigneeField
+            members={members}
+            value={issue.assigneeId}
+            onChange={(id) => void onPatch({ assigneeId: id })}
+          />
         </Row>
         <Row label="Priority">
-          <span className={`inline-flex items-center gap-1 ${P.color}`}>
-            <P.Icon className="h-4 w-4" />
-            {P.label}
-          </span>
+          <PriorityField
+            value={issue.priority}
+            onChange={(p) => void onPatch({ priority: p })}
+          />
         </Row>
         {/* Parent row — only meaningful for SUBTASKs (which sit under a
             task). Epics and top-level work items hide this row. */}
@@ -206,10 +143,17 @@ export function IssueDetailsPanel({
             )}
           </Row>
         )}
+        <Row label="Start date">
+          <DateField
+            value={issue.startDate}
+            onChange={(iso) => void onPatch({ startDate: iso ?? undefined })}
+          />
+        </Row>
         <Row label="Due date">
-          <span className="text-gray-700">
-            {issue.dueDate ? new Date(issue.dueDate).toLocaleDateString() : "None"}
-          </span>
+          <DateField
+            value={issue.dueDate}
+            onChange={(iso) => void onPatch({ dueDate: iso ?? undefined })}
+          />
         </Row>
         <Row label="Labels">
           <span className="text-gray-500">None</span>
@@ -220,17 +164,28 @@ export function IssueDetailsPanel({
         {/* Sprint row hidden on epics (epics span sprints by definition). */}
         {issue.type !== "EPIC" && (
           <Row label="Sprint">
-            <span className="text-blue-600">{issue.sprintId ? "Active sprint" : "None"}</span>
+            <SprintField
+              sprints={sprints}
+              value={issue.sprintId}
+              onChange={(id) => void onPatch({ sprintId: id })}
+            />
           </Row>
         )}
         <Row label="Original estimate">
-          <span className="text-gray-700">{issue.eta ? `${issue.eta}h` : "0m"}</span>
+          <NumberField
+            value={issue.eta}
+            suffix="h"
+            onCommit={(n) => void onPatch({ eta: n ?? undefined })}
+          />
         </Row>
         <Row label="Time remaining">
           <span className="text-gray-700">0m</span>
         </Row>
         <Row label="Story point estimate">
-          <span className="text-gray-700">{issue.storyPoints ?? "None"}</span>
+          <NumberField
+            value={issue.storyPoints}
+            onCommit={(n) => void onPatch({ storyPoints: n ?? undefined })}
+          />
         </Row>
         <Row label="Reporter">
           {reporter?.user ? (
@@ -241,7 +196,7 @@ export function IssueDetailsPanel({
               >
                 {userInitials(reporter.user)}
               </span>
-              {userName(reporter.user)}
+              {memberName(reporter.user)}
             </span>
           ) : (
             <span className="text-gray-500">None</span>

@@ -5,18 +5,15 @@ import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createIssueSchema } from "@/lib/validation/issue";
 import { getDefaultStatusId } from "@/lib/services/projectDefaults";
 import { recalcParentRollup } from "@/lib/services/subtaskRollup";
-import { userCanInProject, forbidden } from "@/lib/api/permissions";
+import { userCanInProject, forbidden, hasAdminAccess } from "@/lib/api/permissions";
+import { notifyMentions } from "@/lib/services/mentions";
 
 async function userIsProjectMember(
   userId: string,
   orgId: string,
   projectId: string,
 ): Promise<boolean> {
-  const m = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  if (m?.role === "admin" || m?.role === "owner") return true;
+  if (await hasAdminAccess(userId, orgId)) return true;
   const pm = await db.qtProjectMember.findFirst({
     where: { projectId, userId, isDeleted: false },
     select: { id: true },
@@ -397,6 +394,17 @@ export const POST = withOrgAuth(async ({ orgId, userId }, req) => {
   // Roll up ETA + dates onto the parent when this is a subtask.
   if (issue.type === "SUBTASK" && issue.parentId) {
     void recalcParentRollup(issue.parentId, orgId);
+  }
+
+  // Email anyone @-mentioned in the new issue's description.
+  if (issue.description) {
+    void notifyMentions({
+      orgId,
+      actorUserId: userId,
+      issue: { id: issue.id, key: issue.key, title: issue.title, projectId: issue.projectId },
+      context: "description",
+      html: issue.description,
+    });
   }
 
   return NextResponse.json({ success: true, data: issue }, { status: 201 });

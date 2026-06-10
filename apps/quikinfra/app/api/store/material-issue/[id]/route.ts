@@ -24,7 +24,7 @@ export const GET = withOrgAuth<{ id: string }>(async ({ orgId }, _req, { params 
 
 export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
   const existing = await db.cnMaterialIssue.findFirst({
-    where: { id: params.id, orgId, deletedAt: null },
+    where: { id: params.id, orgId },
     select: { id: true, status: true },
   });
   if (!existing) return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -36,7 +36,7 @@ export const DELETE = withOrgAuth<{ id: string }>(async ({ orgId, userId }, _req
   }
   await db.cnMaterialIssue.update({
     where: { id: params.id },
-    data: { deletedAt: new Date(), updatedBy: userId },
+    data: { status: "cancelled", updatedBy: userId },
   });
   return NextResponse.json({ success: true });
 }, { permission: { resource: "construction.issue", action: "delete" } });

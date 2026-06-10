@@ -35,5 +35,5 @@ export const POST = withProjectAccess<{ id: string }>(
     );
     return NextResponse.json({ success: true, data: { count: parsed.data.orderedIds.length } });
   },
-  { paramKey: "id", requireRoles: ["PROJECT_ADMIN"] },
+  { paramKey: "id", requirePermission: { resource: "Project", action: "update" } },
 );

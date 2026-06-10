@@ -2,7 +2,7 @@
  * Machinery master — Prisma-backed CRUD for `cn_machinery`.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 
 export interface MachineryRecord {
   id: string;

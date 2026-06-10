@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess } from "@/lib/api/permissions";
 
 async function loadAccessibleIssue(
   orgId: string,
@@ -16,12 +17,7 @@ async function loadAccessibleIssue(
     where: { projectId: issue.projectId, userId, isDeleted: false },
     select: { id: true },
   });
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  const isAdmin = tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner";
-  if (!access && !isAdmin) return null;
+  if (!access && !(await hasAdminAccess(userId, orgId))) return null;
   return issue;
 }
 

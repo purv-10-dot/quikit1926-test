@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
+import { hasAdminAccess, userCanInProject } from "@/lib/api/permissions";
 import { updateSprintSchema } from "@/lib/validation/sprint";
 
 async function loadSprint(id: string, orgId: string) {
@@ -10,17 +11,10 @@ async function loadSprint(id: string, orgId: string) {
   });
 }
 
+// Global admins bypass; everyone else needs Sprint:update via their role.
 async function userCanEdit(userId: string, orgId: string, projectId: string) {
-  const tenantAdmin = await db.orgMember.findFirst({
-    where: { userId, orgId, status: "active" },
-    select: { role: true },
-  });
-  if (tenantAdmin?.role === "admin" || tenantAdmin?.role === "owner") return true;
-  const member = await db.qtProjectMember.findFirst({
-    where: { projectId, userId, isDeleted: false },
-    select: { role: true },
-  });
-  return !!member && member.role !== "VIEWER";
+  if (await hasAdminAccess(userId, orgId)) return true;
+  return userCanInProject(userId, orgId, projectId, "Sprint", "update");
 }
 
 export const PATCH = withOrgAuth<{ id: string }>(

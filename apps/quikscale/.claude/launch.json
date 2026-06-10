@@ -2,16 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "QuikScale Next.js Dev Server",
-      "runtimeExecutable": "/bin/sh",
-      "runtimeArgs": ["-c", "cd /Users/user/Documents/Claude_Code/Goals && /opt/homebrew/Cellar/node/25.8.2/bin/node node_modules/next/dist/bin/next dev -p 3002"],
-      "port": 3002
-    },
-    {
-      "name": "QuikScale Prisma Studio (Database GUI)",
-      "runtimeExecutable": "/bin/sh",
-      "runtimeArgs": ["-c", "cd /Users/user/Documents/Claude_Code/Goals && /opt/homebrew/Cellar/node/25.8.2/bin/node node_modules/.bin/prisma studio"],
-      "port": 5555
+      "name": "QuikScale Dev Server",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\user\\OneDrive\\QuikIT\\apps\\quikscale && npx next dev -p 3003"],
+      "port": 3003
     }
   ]
 }

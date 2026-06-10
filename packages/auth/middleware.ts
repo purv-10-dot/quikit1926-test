@@ -3,6 +3,8 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { ADMIN_TIER_ROLES } from "@quikit/shared";
 import { verifyTokenRemote } from "./verify-token-remote";
+import { publicBaseUrl } from "./public-url";
+import { clearSessionCookies } from "./session-cookies";
 
 export interface MiddlewareConfig {
   loginRoute: string;
@@ -68,6 +70,11 @@ export function createMiddleware(config: MiddlewareConfig) {
     const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
     const { pathname } = request.nextUrl;
 
+    // This app's own public origin for building user-facing redirects. Never the
+    // pod bind address (0.0.0.0:PORT) that `request.url` resolves to when the
+    // ingress doesn't preserve the Host header. See ./public-url.
+    const base = publicBaseUrl(request);
+
     const isPublicRoute = config.publicRoutes.some((r) => pathname.startsWith(r));
     const isLoginRoute = pathname.startsWith(config.loginRoute);
     const isSelectOrgRoute = config.selectOrgRoute
@@ -93,9 +100,11 @@ export function createMiddleware(config: MiddlewareConfig) {
       });
       if (!remote.valid && !remote.error) {
         // Same callbackUrl preservation as the unauthenticated branch
-        // below — keep the user heading back to where they were.
+        // below — keep the user heading back to where they were. Build
+        // absolute URLs from the app's own public origin (never the pod
+        // bind address) via publicBaseUrl.
         const callback = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-        const callbackAbsolute = new URL(callback, request.url).toString();
+        const callbackAbsolute = new URL(callback, base).toString();
         let loginTarget: string;
         if (config.centralLoginUrl) {
           const central = new URL(config.centralLoginUrl);
@@ -103,12 +112,15 @@ export function createMiddleware(config: MiddlewareConfig) {
           central.searchParams.set("callbackUrl", callbackAbsolute);
           loginTarget = central.toString();
         } else {
-          const local = new URL(config.loginRoute, request.url);
+          const local = new URL(config.loginRoute, base);
           local.searchParams.set("reason", "session_expired");
           local.searchParams.set("callbackUrl", callback);
           loginTarget = local.toString();
         }
-        return safeRedirect(loginTarget);
+        // The JWT is still cryptographically valid (signed with NEXTAUTH_SECRET)
+        // even though its Redis session is gone — evict it so the browser stops
+        // replaying the dead cookie on every request (no manual clear needed).
+        return clearSessionCookies(safeRedirect(loginTarget));
       }
     }
 
@@ -122,15 +134,22 @@ export function createMiddleware(config: MiddlewareConfig) {
     // destination for someone who was on /apps a moment ago.
     if (!token && !isPublicRoute) {
       const callback = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-      const callbackAbsolute = new URL(callback, request.url).toString();
+      const callbackAbsolute = new URL(callback, base).toString();
+      // Evict any NextAuth cookies on the way out. `getToken` returned null —
+      // either there is no cookie (deletes are harmless no-ops) or the cookie is
+      // expired/undecodable, in which case clearing it stops the browser from
+      // replaying a dead cookie on every request. This is what auto-recovers a
+      // user with stale site data (e.g. apps.quikit.ai / authn.quikit.ai)
+      // without making them manually clear cookies. `/login` and other public
+      // routes are excluded, so the login page itself is never cleared mid-flow.
       if (config.centralLoginUrl) {
         const central = new URL(config.centralLoginUrl);
         central.searchParams.set("callbackUrl", callbackAbsolute);
-        return safeRedirect(central.toString());
+        return clearSessionCookies(safeRedirect(central.toString()));
       }
-      const local = new URL(config.loginRoute, request.url);
+      const local = new URL(config.loginRoute, base);
       local.searchParams.set("callbackUrl", callback);
-      return safeRedirect(local);
+      return clearSessionCookies(safeRedirect(local));
     }
 
     // Authenticated user on local login page → honor callbackUrl, else go to dashboard
@@ -139,8 +158,8 @@ export function createMiddleware(config: MiddlewareConfig) {
       if (callbackUrl) {
         // Only allow same-origin or absolute URLs that point back to this host
         try {
-          const target = new URL(callbackUrl, request.url);
-          if (target.origin === request.nextUrl.origin) {
+          const target = new URL(callbackUrl, base);
+          if (target.origin === new URL(base).origin) {
             return safeRedirect(target);
           }
         } catch {
@@ -148,14 +167,14 @@ export function createMiddleware(config: MiddlewareConfig) {
         }
       }
       const redirectTo = config.postLoginRoute || config.selectOrgRoute || "/dashboard";
-      return safeRedirect(new URL(redirectTo, request.url));
+      return safeRedirect(new URL(redirectTo, base));
     }
 
     // Super-admin-only app: block non-super-admins
     if (config.requireSuperAdmin && token && !token.isSuperAdmin && !isLoginRoute) {
       const loginTarget = config.centralLoginUrl
         ? `${config.centralLoginUrl}?reason=unauthorized`
-        : new URL(`${config.loginRoute}?reason=unauthorized`, request.url).toString();
+        : new URL(`${config.loginRoute}?reason=unauthorized`, base).toString();
       return safeRedirect(loginTarget);
     }
 
@@ -170,7 +189,7 @@ export function createMiddleware(config: MiddlewareConfig) {
     ) {
       const loginTarget = config.centralLoginUrl
         ? `${config.centralLoginUrl}?reason=unauthorized`
-        : new URL(`${config.loginRoute}?reason=unauthorized`, request.url).toString();
+        : new URL(`${config.loginRoute}?reason=unauthorized`, base).toString();
       return safeRedirect(loginTarget);
     }
 
@@ -180,7 +199,7 @@ export function createMiddleware(config: MiddlewareConfig) {
         return safeRedirect(config.centralSelectOrgUrl);
       }
       if (config.selectOrgRoute) {
-        return safeRedirect(new URL(config.selectOrgRoute, request.url));
+        return safeRedirect(new URL(config.selectOrgRoute, base));
       }
     }
 
@@ -195,7 +214,7 @@ export function createMiddleware(config: MiddlewareConfig) {
         return safeRedirect(config.centralSelectOrgUrl);
       }
       if (config.selectOrgRoute) {
-        return safeRedirect(new URL(config.selectOrgRoute, request.url));
+        return safeRedirect(new URL(config.selectOrgRoute, base));
       }
     }
 

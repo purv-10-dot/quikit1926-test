@@ -433,9 +433,8 @@ export default function EstimationPage() {
           </button>
         )}
         <span className="ml-auto text-xs text-gray-500">
-          {isLoading
-            ? "Loading…"
-            : `${visibleData.length} estimation${visibleData.length === 1 ? "" : "s"}`}
+          {!isLoading &&
+            `${visibleData.length} estimation${visibleData.length === 1 ? "" : "s"}`}
         </span>
       </div>
 
@@ -444,6 +443,7 @@ export default function EstimationPage() {
           id="projects-estimation"
           columns={columns}
           data={visibleData}
+          loading={isLoading}
           // RBAC: `onAdd` is only wired when the user's matrix grants
           // the "add" action on `pm.estimation`. Passing `undefined`
           // causes the DataTable to hide its "+ New" button entirely.

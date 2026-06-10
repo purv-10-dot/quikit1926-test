@@ -17,6 +17,7 @@ import TextStyle from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
 import { createSlashMenuExtension } from "@/components/editor/slash-menu";
+import { createMentionExtension, type MentionItem } from "@/components/editor/mention";
 import { EmojiPicker } from "@/components/editor/emoji-picker";
 import {
   Bold,
@@ -76,6 +77,9 @@ interface Props {
    *  returned URL as the image src. When unset, the editor falls back to
    *  embedding the file as a data URL (legacy behavior). */
   uploadImage?: (file: File) => Promise<string>;
+  /** When provided, enables `@`-mention autocomplete over these people. The
+   *  saved HTML carries `data-mention-id` chips so the server can notify them. */
+  mentions?: MentionItem[];
 }
 
 const cn = (...c: (string | false | undefined | null)[]) => c.filter(Boolean).join(" ");
@@ -89,7 +93,14 @@ export function RichTextEditor({
   chromeless = false,
   slotBetween,
   uploadImage,
+  mentions,
 }: Props) {
+  // Keep the latest people list in a ref so the (init-once) editor's mention
+  // popup always sees current members, even though they load asynchronously.
+  const mentionsRef = useRef<MentionItem[]>(mentions ?? []);
+  useEffect(() => {
+    mentionsRef.current = mentions ?? [];
+  }, [mentions]);
   const [imageUploading, setImageUploading] = useState(false);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
@@ -136,6 +147,9 @@ export function RichTextEditor({
         onPickImage: () => handleImageUploadRef.current(),
         onPickEmoji: () => openEmojiAtCursorRef.current(),
       }),
+      ...(mentions !== undefined
+        ? [createMentionExtension(() => mentionsRef.current)]
+        : []),
     ],
     content: value || "",
     editable: !disabled,

@@ -3,13 +3,15 @@ import { db } from "@/lib/db";
 import { withOrgAuth } from "@/lib/api/withOrgAuth";
 import { createProjectSchema } from "@/lib/validation/project";
 import { seedProjectDefaults, getStarterProjectRoleId } from "@/lib/services/projectDefaults";
-import { userCan, forbidden } from "@/lib/api/permissions";
+import { userCan, forbidden, isQuikTrackAppAdmin } from "@/lib/api/permissions";
 
 export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   const url = new URL(req.url);
   const search = url.searchParams.get("search")?.trim() || "";
   const filterParam = url.searchParams.get("filter") || "";
   const filterTypes = filterParam.split(",").map((s) => s.trim()).filter(Boolean);
+  const keysParam = url.searchParams.get("keys") || "";
+  const filterKeys = keysParam.split(",").map((s) => s.trim()).filter(Boolean);
   const sort = (url.searchParams.get("sort") || "name") as "name" | "updatedAt";
   const order = (url.searchParams.get("order") || "asc") as "asc" | "desc";
   const page = Math.max(1, Number(url.searchParams.get("page") || 1));
@@ -20,7 +22,12 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
     where: { userId, orgId, status: "active" },
     select: { role: true },
   });
-  const isAdmin = orgAdmin?.role === "admin" || orgAdmin?.role === "owner";
+  // Org owners/admins AND QuikTrack app-admins see every space in the org;
+  // everyone else sees only spaces they're a member of.
+  const isAdmin =
+    orgAdmin?.role === "admin" ||
+    orgAdmin?.role === "owner" ||
+    (await isQuikTrackAppAdmin(userId, orgId));
 
   const where: Record<string, unknown> = { orgId, isDeleted: false };
   if (!isAdmin) {
@@ -34,6 +41,9 @@ export const GET = withOrgAuth(async ({ orgId, userId }, req) => {
   }
   if (filterTypes.length > 0) {
     where.projectType = { in: filterTypes };
+  }
+  if (filterKeys.length > 0) {
+    where.projectKey = { in: filterKeys };
   }
 
   const orderBy = sort === "name" ? { name: order } : { updatedAt: order };

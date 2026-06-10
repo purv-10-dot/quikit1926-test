@@ -21,6 +21,7 @@
  *   }
  */
 import { NextResponse } from "next/server";
+import { ADMIN_TIER_ROLES } from "@quikit/shared";
 import { db } from "@/lib/db";
 import {
   NAV_ITEMS,
@@ -50,6 +51,53 @@ export function isAdminRole(
   role: { isSystem: boolean; name: string } | null | undefined,
 ): boolean {
   return !!role && role.isSystem && role.name === "admin";
+}
+
+/**
+ * True when the user holds the QuikTrack app-admin role (QtUserAppRole →
+ * QtAppRole, isSystem + name "admin") for this org — the dynamic-RBAC v2
+ * admin, distinct from the legacy `OrgMember.role` tier.
+ *
+ * Use this ALONGSIDE the org-tier check so app-admins get the same
+ * org-wide visibility/actions as org owners/admins:
+ *   const isAdmin =
+ *     m?.role === "admin" || m?.role === "owner" ||
+ *     (await isQuikTrackAppAdmin(userId, orgId));
+ */
+export async function isQuikTrackAppAdmin(userId: string, orgId: string): Promise<boolean> {
+  const appId = await getQuikTrackAppId();
+  if (!appId) return false;
+  const appAdmin = await db.qtUserAppRole.findFirst({
+    where: { userId, orgId, role: { appId, isSystem: true, name: "admin" } },
+    select: { id: true },
+  });
+  return !!appAdmin;
+}
+
+/**
+ * Unified "admin access" predicate for QuikTrack — the canonical replacement
+ * for the scattered, hand-rolled `role === "admin" || role === "owner"`
+ * checks. Returns true when the user is EITHER:
+ *   - an org-tier admin — `OrgMember.role` ∈ ADMIN_TIER_ROLES (super_admin,
+ *     org_admin, legacy "admin") or "owner"; OR
+ *   - a QuikTrack app-admin — holds the `QtAppRole` "admin" (dynamic-RBAC v2).
+ *
+ * Notes:
+ *   - The legacy `=== "admin" || "owner"` checks were wrong twice over: they
+ *     LOCKED OUT `super_admin`/`org_admin` (the v4 role names) and ignored
+ *     app-admins entirely. ADMIN_TIER_ROLES fixes the former; the v2 lookup
+ *     fixes the latter.
+ *   - Platform super-admin (`User.isSuperAdmin`) is intentionally NOT checked:
+ *     consumer apps force `session.user.isSuperAdmin = false`, so the in-app
+ *     equivalent is the `super_admin` ROLE tier, already covered above.
+ */
+export async function hasAdminAccess(userId: string, orgId: string): Promise<boolean> {
+  const m = await db.orgMember.findFirst({
+    where: { userId, orgId, status: "active" },
+    select: { role: true },
+  });
+  if (m?.role && (ADMIN_TIER_ROLES.has(m.role) || m.role === "owner")) return true;
+  return isQuikTrackAppAdmin(userId, orgId);
 }
 
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Class-level checks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */

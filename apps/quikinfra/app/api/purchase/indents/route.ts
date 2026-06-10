@@ -8,7 +8,7 @@ import { err as envelopeErr } from "@/lib/http/envelope";
 import { listIndents, createIndent } from "@/lib/purchase/indent-repository";
 import { findPRById } from "@/lib/purchase/pr-repository";
 import { findProjectById } from "@/lib/masters/projects-repository";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { USER_TYPE_CATALOG } from "@/lib/rbac/user-types";
 import { parsePagination } from "@/lib/http/pagination";
 

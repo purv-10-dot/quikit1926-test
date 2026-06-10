@@ -46,12 +46,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission, type TenantContext } from "@/lib/auth/context";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import { recordAudit } from "@/lib/workflow/audit";
 import { rateLimit, LIMITS } from "./rate-limit";
 import { logger } from "@/lib/observability/logger";
 import { ok, err } from "@/lib/http/envelope";
-import { Prisma } from "../../../node_modules/.prisma-qc2/client";
+import { Prisma } from "@quikit/database";
 
 export type ApprovalAction = "approve" | "reject" | "return";
 

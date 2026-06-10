@@ -41,7 +41,7 @@
  * callback so the approval service remains entity-agnostic.
  */
 
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 import { recordAudit, recordApprovalAction, ApprovalActionError } from "@/lib/workflow/audit";
 import { canActOnStep } from "@/lib/approvals/workflow-rbac";

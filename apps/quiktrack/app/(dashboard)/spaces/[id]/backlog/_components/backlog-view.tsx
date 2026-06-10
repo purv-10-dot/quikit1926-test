@@ -4,6 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { EditIssueModal } from "@/components/edit-issue-modal";
 import { useMyProjectPermissions } from "@/lib/hooks/useMyProjectPermissions";
+import { useMembersChanged } from "@/lib/hooks/useMembersChanged";
+import { useBacklogViewSettings } from "@/lib/hooks/useBacklogViewSettings";
+import { EpicPanel } from "./epic-panel";
+import {
+  ViewSettingsPopover,
+  DEFAULT_VIEW_SETTINGS,
+  type BacklogViewSettings,
+} from "./view-settings-popover";
 import {
   FilterSelect,
   type FilterSelectOption,
@@ -17,7 +25,7 @@ import {
   Plus,
   CalendarDays,
   User as UserIcon,
-  Settings as SettingsIcon,
+  SlidersHorizontal,
   BarChart3,
   Bug,
   CheckSquare,
@@ -1114,6 +1122,8 @@ function IssueRow({
   statuses,
   epics,
   members,
+  fields = DEFAULT_VIEW_SETTINGS.fields,
+  density = DEFAULT_VIEW_SETTINGS.density,
   onDragStart,
   onPatched,
   onOpen,
@@ -1125,6 +1135,8 @@ function IssueRow({
   statuses: Status[];
   epics: EpicLite[];
   members: Member[];
+  fields?: BacklogViewSettings["fields"];
+  density?: BacklogViewSettings["density"];
   onDragStart?: (e: React.DragEvent, issueId: string) => void;
   onPatched: (patch: Partial<Issue>) => void;
   onOpen: (issueId: string) => void;
@@ -1135,6 +1147,10 @@ function IssueRow({
   const meta = TYPE_META[issue.type];
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(issue.title);
+  // Tooltip shown only when the title is actually clipped (scrollWidth >
+  // clientWidth). Recomputed on each hover so it tracks resize/zoom.
+  const [showTitleTip, setShowTitleTip] = useState(false);
+  const titleRef = useRef<HTMLSpanElement>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [epicOpen, setEpicOpen] = useState(false);
   const [epicSearch, setEpicSearch] = useState("");
@@ -1249,7 +1265,7 @@ function IssueRow({
     <div
       draggable={!titleEditing}
       onDragStart={(e) => onDragStart?.(e, issue.id)}
-      className={`group flex items-center gap-3 px-4 py-2 border-b border-gray-100 ${
+      className={`group flex items-center gap-3 px-4 ${density === "compact" ? "py-1" : "py-2"} border-b border-gray-100 ${
         isSelected ? "bg-blue-50" : "hover:bg-gray-50"
       } ${titleEditing ? "bg-blue-50/40" : "cursor-grab active:cursor-grabbing"}`}
     >
@@ -1260,16 +1276,18 @@ function IssueRow({
         className="h-3.5 w-3.5 rounded border-gray-300 shrink-0 text-blue-600 focus:ring-blue-400"
         aria-label={`Select ${issue.key}`}
       />
-      <meta.Icon className={`h-3.5 w-3.5 shrink-0 ${meta.color}`} />
-      <button
-        type="button"
-        onClick={() => onOpen(issue.id)}
-        className={`text-xs font-medium hover:text-blue-600 hover:underline shrink-0 min-w-[56px] text-left ${
-          isDone ? "text-gray-400 line-through" : "text-gray-500"
-        }`}
-      >
-        {issue.key}
-      </button>
+      {fields.workType && <meta.Icon className={`h-3.5 w-3.5 shrink-0 ${meta.color}`} />}
+      {fields.key && (
+        <button
+          type="button"
+          onClick={() => onOpen(issue.id)}
+          className={`text-xs font-medium hover:text-blue-600 hover:underline shrink-0 min-w-[56px] text-left ${
+            isDone ? "text-gray-400 line-through" : "text-gray-500"
+          }`}
+        >
+          {issue.key}
+        </button>
+      )}
 
       {/* Title */}
       {titleEditing ? (
@@ -1309,14 +1327,28 @@ function IssueRow({
         </div>
       ) : (
         <div
-          className="flex-1 flex items-center gap-1.5 min-w-0"
+          className="relative flex-1 flex items-center gap-1.5 min-w-0"
+          onMouseEnter={() => {
+            const el = titleRef.current;
+            setShowTitleTip(!!el && el.scrollWidth > el.clientWidth);
+          }}
+          onMouseLeave={() => setShowTitleTip(false)}
           onClick={() => {
             setTitleDraft(issue.title);
             setTitleEditing(true);
           }}
         >
-          <span className={`text-sm truncate cursor-text ${isDone ? "text-gray-400 line-through" : "text-gray-900"}`}>{issue.title}</span>
+          <span ref={titleRef} className={`text-sm truncate cursor-text ${isDone ? "text-gray-400 line-through" : "text-gray-900"}`}>{issue.title}</span>
           <Pencil className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
+          {/* Tooltip — only when the title is truncated; full title, dark style. */}
+          {showTitleTip && (
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute left-0 top-full z-50 mt-1 max-w-md whitespace-normal break-words rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-normal normal-case text-white shadow-lg"
+            >
+              {issue.title}
+            </span>
+          )}
         </div>
       )}
 
@@ -1335,7 +1367,7 @@ function IssueRow({
           (faint at rest, full on row hover) when none is. Subtasks and epics
           themselves don't get the linker — subtasks belong to a parent task,
           epics can't link to themselves. */}
-      {issue.type !== "EPIC" && issue.type !== "SUBTASK" && (
+      {fields.epic && issue.type !== "EPIC" && issue.type !== "SUBTASK" && (
         <div className="relative shrink-0" ref={epicRef}>
           {(() => {
             const ep = issue.epicId ? (epics ?? []).find((e) => e.id === issue.epicId) : null;
@@ -1409,6 +1441,7 @@ function IssueRow({
       )}
 
       {/* Status pill (clickable popover) */}
+      {fields.status && (
       <div className="relative shrink-0" ref={statusRef}>
         <button
           type="button"
@@ -1446,6 +1479,7 @@ function IssueRow({
           </div>
         )}
       </div>
+      )}
 
       {/* Overdue badge — shows the due date with a warning when it's past. */}
       {(() => {
@@ -1464,7 +1498,7 @@ function IssueRow({
         );
       })()}
 
-      {(() => {
+      {fields.assignee && (() => {
         const assigneeMember = issue.assigneeId
           ? members.find((m) => m.user?.id === issue.assigneeId) ?? null
           : null;
@@ -1745,6 +1779,8 @@ function SectionBody({
   selectedIds,
   onToggleSelect,
   filters,
+  fields,
+  density,
 }: {
   projectId: string;
   sprintId: string | null;
@@ -1768,6 +1804,8 @@ function SectionBody({
     type: string;
     priority: string;
   };
+  fields: BacklogViewSettings["fields"];
+  density: BacklogViewSettings["density"];
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -1871,6 +1909,8 @@ function SectionBody({
           statuses={Array.from(statusesById.values())}
           epics={epics}
           members={members}
+          fields={fields}
+          density={density}
           onDragStart={onDragStart}
           onOpen={onOpenIssue}
           isSelected={selectedIds.has(i.id)}
@@ -1959,6 +1999,36 @@ export function BacklogView({ projectId }: { projectId: string }) {
   const moveBtnRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const sprintSentinelRef = useRef<HTMLDivElement>(null);
+
+  // ── Backlog view settings (Epic panel / Empty sprints / Density / Fields) ──
+  // Persisted per-user, per-org, per-project in the DB (qtUserViewPref.settings)
+  // so they survive logout/login and sync across devices. A localStorage cache
+  // inside the hook seeds the first paint to avoid a flash of defaults.
+  const { settings, updateSettings } = useBacklogViewSettings(projectId);
+  const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
+  const viewSettingsRef = useRef<HTMLDivElement>(null);
+
+  const reloadEpics = useCallback(() => {
+    fetch(`/api/issues?projectId=${projectId}&type=EPIC&limit=200`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (res?.success) {
+          setEpics((res.data ?? []).map((e: EpicLite) => ({ id: e.id, key: e.key, title: e.title })));
+        }
+      })
+      .catch(() => undefined);
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!viewSettingsOpen) return;
+    function onDown(e: MouseEvent) {
+      if (viewSettingsRef.current && !viewSettingsRef.current.contains(e.target as Node)) {
+        setViewSettingsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [viewSettingsOpen]);
 
   const onDragStart = useCallback((e: React.DragEvent, issueId: string) => {
     e.dataTransfer.setData("text/issue-id", issueId);
@@ -2065,7 +2135,12 @@ export function BacklogView({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!filterOpen) return;
     function onDown(e: MouseEvent) {
-      if (filterBtnRef.current && !filterBtnRef.current.contains(e.target as Node)) setFilterOpen(false);
+      const t = e.target as HTMLElement;
+      // FilterSelect (via PopoverPanel) portals its option menu to document.body.
+      // That click is outside `filterBtnRef` but must not close this popover, or
+      // the option unmounts before its onChange runs and the filter never applies.
+      if (t.closest?.("[data-portal-popover]")) return;
+      if (filterBtnRef.current && !filterBtnRef.current.contains(t)) setFilterOpen(false);
     }
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") setFilterOpen(false); }
     document.addEventListener("mousedown", onDown);
@@ -2253,6 +2328,19 @@ export function BacklogView({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
+  // Refetch members when membership changes via the Add-people modal.
+  useMembersChanged(projectId, () => {
+    fetch(`/api/projects/${projectId}/members`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (!res?.success) return;
+        setMembers(
+          Array.isArray(res.data) ? res.data : (res.data?.members ?? []),
+        );
+      })
+      .catch(() => undefined);
+  });
+
   const loadMoreSprints = useCallback(async () => {
     if (sprintsLoading || !sprintsHasMore) return;
     setSprintsLoading(true);
@@ -2438,6 +2526,13 @@ export function BacklogView({ projectId }: { projectId: string }) {
   }
 
   const activeSprints = sprints.filter((s) => s.status !== "COMPLETED");
+  // "Empty sprints" toggle — when off, hide sprints whose work-item count is 0.
+  const displayedSprints = settings.emptySprints
+    ? activeSprints
+    : activeSprints.filter((s) => {
+        const c = s.counts;
+        return (c?.todo ?? 0) + (c?.inProgress ?? 0) + (c?.done ?? 0) > 0;
+      });
   const totalVisible = Object.values(sectionStates).reduce((acc, s) => acc + s.issues.length, 0);
   const totalAll = Object.values(sectionStates).reduce((acc, s) => acc + s.total, 0);
 
@@ -2633,6 +2728,26 @@ export function BacklogView({ projectId }: { projectId: string }) {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <div className="relative" ref={viewSettingsRef}>
+            <button
+              type="button"
+              onClick={() => setViewSettingsOpen((v) => !v)}
+              className={`p-1.5 rounded text-gray-600 ${viewSettingsOpen ? "bg-gray-100" : "hover:bg-gray-100"}`}
+              aria-label="View settings"
+              title="View settings"
+              aria-haspopup="dialog"
+              aria-expanded={viewSettingsOpen}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
+            {viewSettingsOpen && (
+              <ViewSettingsPopover
+                settings={settings}
+                onChange={updateSettings}
+                onClose={() => setViewSettingsOpen(false)}
+              />
+            )}
+          </div>
           <Link
             href={`/spaces/${projectId}/summary`}
             className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
@@ -2640,14 +2755,6 @@ export function BacklogView({ projectId }: { projectId: string }) {
             title="Insights"
           >
             <BarChart3 className="h-4 w-4" />
-          </Link>
-          <Link
-            href={`/spaces/${projectId}/settings`}
-            className="p-1.5 rounded hover:bg-gray-100 text-gray-600"
-            aria-label="Settings"
-            title="Settings"
-          >
-            <SettingsIcon className="h-4 w-4" />
           </Link>
           {/* <div className="relative" ref={moreMenuRef}>
             <button
@@ -2704,6 +2811,18 @@ export function BacklogView({ projectId }: { projectId: string }) {
         </div>
       </div>
 
+      {/* Epic panel (left) + backlog content (right). */}
+      <div className="flex items-start gap-4">
+        {settings.epicPanel && (
+          <EpicPanel
+            projectId={projectId}
+            defaultStatusId={defaultTodoStatusId}
+            onOpenEpic={(id) => setEditingIssueId(id)}
+            onCreated={reloadEpics}
+            onClose={() => updateSettings({ epicPanel: false })}
+          />
+        )}
+        <div className="min-w-0 flex-1">
       {/* Bulk action bar — shown when ≥1 issue is selected across any section. */}
       {selectedIds.size > 0 && (() => {
         // Where do the currently-selected issues already live? Used to filter
@@ -2802,7 +2921,7 @@ export function BacklogView({ projectId }: { projectId: string }) {
       })()}
 
       {/* Sprints */}
-      {activeSprints.map((sprint) => {
+      {displayedSprints.map((sprint) => {
         const key = `sprint:${sprint.id}`;
         const state = sectionStates[key] ?? emptySection();
         const sprintCountsSum =
@@ -2949,6 +3068,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
                 })
               }
               filters={sectionFilters}
+              fields={settings.fields}
+              density={settings.density}
             />
           </div>
         );
@@ -3020,6 +3141,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
             })
           }
           filters={sectionFilters}
+          fields={settings.fields}
+          density={settings.density}
         />
       </div>
         );
@@ -3032,6 +3155,8 @@ export function BacklogView({ projectId }: { projectId: string }) {
         Estimate: <span className="ml-1 font-semibold text-gray-700">0</span> of{" "}
         <span className="ml-1 font-semibold text-gray-700">0</span>
       </div>
+        </div>{/* /right column */}
+      </div>{/* /epic-panel + content flex */}
 
       {editingSprint && (
         <EditSprintModal

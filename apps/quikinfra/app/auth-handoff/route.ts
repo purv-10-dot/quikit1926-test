@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { encode } from "next-auth/jwt";
+import { publicBaseUrl } from "@quikit/auth/public-url";
 
 /**
  * GET /auth-handoff?token=<jwt>
@@ -28,7 +29,11 @@ function centralLoginUrl(reason: string): string {
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
-  const origin = process.env.NEXTAUTH_URL ?? request.url;
+  // This app's own public origin for the success redirect — never `request.url`
+  // (resolves to the pod bind address 0.0.0.0:PORT when the ingress doesn't
+  // preserve the Host header). The session cookie below is host-only, so we
+  // must redirect back to the same host. See @quikit/auth/public-url.
+  const origin = publicBaseUrl(request);
   if (!token) {
     return NextResponse.redirect(centralLoginUrl("missing_handoff"));
   }
@@ -96,6 +101,39 @@ export async function GET(request: NextRequest) {
     secret: nextAuthSecret,
     maxAge: 7 * 24 * 60 * 60,
   });
+
+  // Seed this org's QuikInfra RBAC at the entry gate. The launcher routes
+  // every QuikInfra tile-click through here, so seeding now guarantees the
+  // org's 4 roles exist (and an admin-tier user is placed on the "admin"
+  // role) BEFORE the dashboard renders — independent of whether any dashboard
+  // page or /api/me/permissions later succeeds. This is what makes the
+  // QuikScale flow ("open app → roles appear in Admin Portal") reliable for
+  // QuikInfra too. Idempotent + 5-min cached, so it's a cheap no-op once
+  // seeded. Best-effort: it must NEVER block or fail the session hand-off.
+  if (payload.orgId) {
+    try {
+      const { seedDefaultRoles, ensureUserOnRole } = await import(
+        "@/lib/rbac/seedDefaultRoles"
+      );
+      const seeded = await seedDefaultRoles(payload.orgId);
+      const memberRole = (payload.membershipRole ?? "").toLowerCase();
+      const adminTier =
+        payload.isSuperAdmin === true ||
+        ["super_admin", "platform_super_admin", "org_admin", "admin"].includes(
+          memberRole,
+        );
+      if (seeded && adminTier) {
+        await ensureUserOnRole(
+          payload.sub,
+          payload.orgId,
+          seeded.adminRoleId,
+          "auth-handoff",
+        );
+      }
+    } catch {
+      // best-effort — seeding must never block the session hand-off
+    }
+  }
 
   const safeTo = sanitizeRedirect(payload.to ?? "/");
   const response = NextResponse.redirect(new URL(safeTo, origin));

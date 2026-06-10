@@ -42,6 +42,7 @@ export const LEDGER_TX_TYPES = {
   TRANSFER_IN: "transfer_in",
   RECONCILIATION_ADJ: "reconciliation_adj",
   OPENING_BALANCE: "opening_balance",
+  DPR_CONSUMPTION: "dpr_consumption",
 } as const;
 
 export type LedgerTxType = (typeof LEDGER_TX_TYPES)[keyof typeof LEDGER_TX_TYPES];
@@ -75,7 +76,8 @@ function isOutward(txType: LedgerTxType): boolean {
   return (
     txType === LEDGER_TX_TYPES.ISSUE ||
     txType === LEDGER_TX_TYPES.RETURN_VENDOR ||
-    txType === LEDGER_TX_TYPES.TRANSFER_OUT
+    txType === LEDGER_TX_TYPES.TRANSFER_OUT ||
+    txType === LEDGER_TX_TYPES.DPR_CONSUMPTION
   );
 }
 
@@ -270,6 +272,73 @@ export async function postMaterialIssueOutward(
       refNumber: issue.issueNumber,
     });
     results.push({ ledgerId: r.ledgerId, itemId: line.itemId, balanceAfter: r.balanceAfter });
+  }
+  return results;
+}
+
+/**
+ * Post a DPR's consumed materials outward. Call this from the DPR approval
+ * transaction — DPR approval is the only event that deducts stock for
+ * on-site material consumption logged on the daily progress report.
+ *
+ * Unlike a Material Issue (which carries its own issue rate), DPR
+ * consumption is valued at the location's current moving-average rate,
+ * read from CnStockBalance at post time. The resolved rate/amount per
+ * line is returned so the caller can snapshot it onto CnDPRMaterialEntry.
+ */
+export async function postDPRConsumptionOutward(
+  tx: any,
+  ctx: TenantContext,
+  dpr: {
+    id: string;
+    dprNumber: string;
+    projectId: string;
+    locationId: string;
+    lines: Array<{ lineId: string; itemId: string; uomId: string; consumedQty: number }>;
+  }
+): Promise<
+  Array<{ lineId: string; ledgerId: string; itemId: string; unitRate: number; amount: number; balanceAfter: number }>
+> {
+  const results: Array<{
+    lineId: string;
+    ledgerId: string;
+    itemId: string;
+    unitRate: number;
+    amount: number;
+    balanceAfter: number;
+  }> = [];
+  for (const line of dpr.lines) {
+    if (line.consumedQty <= 0) continue;
+    // Value the consumption at the location's current moving-average rate.
+    const bal = await tx.cnStockBalance.findUnique({
+      where: {
+        projectId_locationId_itemId: {
+          projectId: dpr.projectId,
+          locationId: dpr.locationId,
+          itemId: line.itemId,
+        },
+      },
+    });
+    const unitRate = bal ? Number(bal.avgRate.toString()) : 0;
+    const r = await postLedgerEntry(tx, ctx, {
+      projectId: dpr.projectId,
+      locationId: dpr.locationId,
+      itemId: line.itemId,
+      uomId: line.uomId,
+      qty: line.consumedQty,
+      unitRate,
+      txType: LEDGER_TX_TYPES.DPR_CONSUMPTION,
+      refId: dpr.id,
+      refNumber: dpr.dprNumber,
+    });
+    results.push({
+      lineId: line.lineId,
+      ledgerId: r.ledgerId,
+      itemId: line.itemId,
+      unitRate,
+      amount: line.consumedQty * unitRate,
+      balanceAfter: r.balanceAfter,
+    });
   }
   return results;
 }

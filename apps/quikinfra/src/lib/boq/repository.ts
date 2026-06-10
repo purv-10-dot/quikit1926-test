@@ -15,7 +15,7 @@ import type {
   BOQLockState,
   ParsedBOQNode,
 } from "./types";
-import { db } from "@/lib/db/prisma";
+import { db } from "@/lib/db";
 import type { TenantContext } from "@/lib/auth/context";
 
 // ─── Mappers ────────────────────────────────────────────────────────

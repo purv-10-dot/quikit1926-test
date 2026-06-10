@@ -43,6 +43,15 @@
   --r-pill: 999px;
 }
 
+/* Landing page is light-only — never inherit the app's dark theme.
+   Defeats `html.dark body { background:#0f172a; color:#f1f5f9 }` from globals.css.
+   Marketing uses no Tailwind utility classes, so this is the only dark leak. */
+.marketing-shell {
+  min-height: 100vh;
+  background: var(--bg-stage);   /* #ffffff */
+  color: var(--ink);             /* #1a1a1a */
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* All headings use the heading font (alias of --serif) */
