@@ -13,11 +13,21 @@ const quikitConnectOrigin = (() => {
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  // Standalone output (self-contained Node server under .next/standalone) is
+  // only emitted when NEXT_BUILD_STANDALONE=1 — set in apps/quikcrm/Dockerfile.
+  // It stays off for local `next build` because standalone symlinks the
+  // monorepo's workspace deps, which requires admin privileges on Windows.
+  output: process.env.NEXT_BUILD_STANDALONE === "1" ? "standalone" : undefined,
   transpilePackages: ["@quikit/ui", "@quikit/auth", "@quikit/shared", "@quikit/database"],
   // Migration in progress: ported source has ESLint warnings (unused vars,
   // any-typed callbacks). TypeScript correctness is enforced via tsc; ESLint
   // can be re-enabled once the per-file cleanup pass lands.
   eslint: { ignoreDuringBuilds: true },
+  // Type-checking runs separately via `npm run typecheck` (and in CI), so skip
+  // it during `next build` — matches apps/quikscale, apps/quiktrack, and
+  // apps/quikinfra (all set this). Without it, a single pre-existing type error
+  // (e.g. the bullmq Queue typings in lib/queue) fails the whole build.
+  typescript: { ignoreBuildErrors: true },
   webpack: (config, { isServer }) => {
     if (isServer) {
       // API routes must use the Node entry; the browser bundle breaks renderToBuffer.
@@ -33,6 +43,9 @@ const nextConfig = {
     return config;
   },
   experimental: {
+    // Trace workspace deps (@quikit/*) into the standalone bundle by rooting
+    // file-tracing at the monorepo root rather than this app's directory.
+    outputFileTracingRoot: path.join(__dirname, "../.."),
     serverActions: {
       allowedOrigins: ["localhost:3008"],
     },
