@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownNarrowWide, X, ChevronDown, ChevronRight } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { uploadProjectImage } from "@/lib/upload-image";
 import type { MentionItem } from "@/components/editor/mention";
 import { SkeletonList } from "@/components/skeleton";
 import { useApiData } from "@/lib/hooks/useApiData";
@@ -334,6 +335,7 @@ function CommentsView({
               chromeless
               placeholder="Add a comment..."
               mentions={mentions ?? []}
+              uploadImage={(file) => uploadProjectImage(projectId, file)}
             />
             <div className="flex items-center justify-end gap-2">
               <button

@@ -22,6 +22,7 @@ import {
   Check,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { uploadProjectImage } from "@/lib/upload-image";
 import { BoardFilterSelect } from "@/app/(dashboard)/spaces/[id]/board/_components/board-filter-select";
 import { SpaceIcon } from "@/components/space-icon";
 
@@ -364,7 +365,11 @@ export function CreateIssueModal({
 
           {/* Description */}
           <Field label="Description">
-            <RichTextEditor value={description} onChange={setDescription} />
+            <RichTextEditor
+              value={description}
+              onChange={setDescription}
+              uploadImage={(file) => uploadProjectImage(projectId, file)}
+            />
           </Field>
 
           {/* Assignee */}

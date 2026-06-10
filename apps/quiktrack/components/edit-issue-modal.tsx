@@ -31,6 +31,7 @@ import {
   Check,
 } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor-lazy";
+import { uploadProjectImage } from "@/lib/upload-image";
 import { DeleteTaskModal } from "@/components/delete-task-modal";
 import { LinkedWorkItems } from "@/components/linked-work-items";
 import { IssueActivity } from "@/components/issue-activity";
@@ -943,7 +944,12 @@ export function EditIssueModal({
                 <h3 className="text-sm font-semibold text-gray-900 mb-1">Description</h3>
                 {descEditing ? (
                   <div>
-                    <RichTextEditor value={description} onChange={setDescription} mentions={memberMentions} />
+                    <RichTextEditor
+                      value={description}
+                      onChange={setDescription}
+                      mentions={memberMentions}
+                      uploadImage={(file) => uploadProjectImage(projectId, file)}
+                    />
                     <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
