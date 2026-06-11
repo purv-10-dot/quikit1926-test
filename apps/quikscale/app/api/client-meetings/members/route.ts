@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createClientMemberSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.members");
@@ -89,6 +90,16 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
     orgId, actorId: userId, action: "CREATE",
     entityType: "ClientMember", entityId: created.id,
     newValues: { name: created.name, email: created.email },
+  });
+
+  // ── Centralized audit (dual-write) ── CREATE with the full snapshot.
+  await audit.log({
+    entityType: "CLIENT_MEMBER",
+    entityId: created.id,
+    action: "CREATE",
+    actor: { userId, orgId, teamId: null },
+    snapshot: { name: created.name, email: created.email },
+    ...requestContext(request),
   });
 
   return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });

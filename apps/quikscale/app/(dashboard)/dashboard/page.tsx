@@ -11,6 +11,8 @@ import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { useDisabledModules } from "@/lib/hooks/useFeatureFlagsForApp";
 import { useTeams } from "@/lib/hooks/useTeams";
 import { useUsers } from "@/lib/hooks/useUsers";
+import { HistoryButton } from "@/components/audit/HistoryButton";
+import { ChangeHistoryPanel } from "@/app/(dashboard)/kpi/components/ChangeHistoryPanel";
 import { useSessionState } from "@/lib/hooks/useSessionState";
 import { STATUS_DOT, ITEM_STATUS_ORDER, statusLabel as getStatusLabel, type ItemStatus } from "@/lib/constants/status";
 import type { KPIRow } from "@/lib/types/kpi";
@@ -510,9 +512,13 @@ function KPICard({ kpi, currentWeek }: { kpi: KPIRow; currentWeek: number | null
   const badge = kpi.qtdAchieved != null
     ? getProgressBadgeColors(achieved, goal, hasAnyWeeklyValue, kpi.reverseColor ?? false)
     : { bar: "bg-gray-300", text: "text-gray-500", label: "—" };
+  const [historyOpen, setHistoryOpen] = useState(false);
   return (
-    <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow">
-      <p className="text-[11px] text-gray-500 font-medium truncate mb-1.5" title={kpi.name}>{kpi.name}</p>
+    <div className="group relative bg-white border border-gray-200 rounded-xl px-4 py-3 hover:shadow-sm transition-shadow">
+      <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
+        <HistoryButton entityId={kpi.id} onClick={() => setHistoryOpen(true)} />
+      </div>
+      <p className="text-[11px] text-gray-500 font-medium truncate mb-1.5 pr-6" title={kpi.name}>{kpi.name}</p>
       <div className="flex items-baseline gap-1 mb-2">
         <span className="text-base font-bold text-gray-800">{fmtCompact(achieved)}</span>
         <span className="text-xs text-gray-400">/ {fmtCompact(goal)}</span>
@@ -526,6 +532,7 @@ function KPICard({ kpi, currentWeek }: { kpi: KPIRow; currentWeek: number | null
           <div className={`h-1.5 rounded-full ${badge.bar}`} style={{ width: `${Math.min(pct, 100)}%` }} />
         </div>
       </div>
+      {historyOpen && <ChangeHistoryPanel kpi={kpi} onClose={() => setHistoryOpen(false)} />}
     </div>
   );
 }

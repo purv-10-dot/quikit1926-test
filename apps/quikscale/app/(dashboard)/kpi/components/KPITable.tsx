@@ -15,7 +15,8 @@ import { ResizeHandle as SharedResizeHandle } from "@/lib/hooks/useColumnResize"
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { LogModal } from "./LogModal";
-import { KPILogsModal } from "./KPILogsModal";
+import { ChangeHistoryPanel } from "./ChangeHistoryPanel";
+import { HistoryButton } from "@/components/audit/HistoryButton";
 import { WeekTooltip } from "./WeekTooltip";
 import { DescTooltip } from "./DescTooltip";
 import { NameTooltip } from "./NameTooltip";
@@ -329,13 +330,7 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
                   {!hideLog && (
                     <td className="sticky z-[15] bg-white px-1 py-2 border-b border-r border-gray-100 text-center"
                       style={{ left: hideCheckbox ? 0 : 40, width: 40, minWidth: 40, maxWidth: 40 }}>
-                      <button onClick={() => openLog(kpi)} disabled={readOnly}
-                        className={`p-1 rounded transition-colors ${readOnly ? "text-gray-300 cursor-not-allowed" : "text-gray-400 hover:text-blue-500 hover:bg-gray-100"}`}
-                        title={readOnly ? "Read-only" : "Open log"}>
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
+                      <HistoryButton entityId={kpi.id} onClick={() => openLog(kpi)} disabled={readOnly} />
                     </td>
                   )}
                   {/* Fixed: ID (hidable) */}
@@ -685,8 +680,8 @@ export function KPITable({ kpis: kpisAll, total, page, pageSize, year, quarter, 
         onPageSizeChange={onPageSizeChange}
       />
 
-      {logKPI && <LogModal kpi={logKPI} onClose={() => setLogKPI(null)} onRefresh={onRefresh} initialTab={logInitialTab} canUpdate={canUpdate} />}
-      {auditKPI && <KPILogsModal kpi={auditKPI} onClose={() => setAuditKPI(null)} />}
+      {logKPI && <LogModal kpi={logKPI} onClose={() => setLogKPI(null)} onRefresh={onRefresh} initialTab={logInitialTab} canUpdate={canUpdate} onOpenHistory={() => setAuditKPI(logKPI)} />}
+      {auditKPI && <ChangeHistoryPanel kpi={auditKPI} onClose={() => setAuditKPI(null)} />}
     </div>
   );
 }

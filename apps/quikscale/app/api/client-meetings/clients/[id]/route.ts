@@ -4,6 +4,7 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { updateClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { audit, requestContext, classifyUpdateAction, diffFields, CLIENT_AUDIT_FIELDS } from "@/lib/audit";
 
 // RBAC v2: same per-action gate as the list endpoint. View/update/delete are
 // gated by the corresponding ClientMaster permission grants on the caller's
@@ -135,6 +136,41 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
       });
     }
 
+    // ── Centralized audit (dual-write) ── field-level diff; isActive change →
+    // STATUS pill (via classifyUpdateAction). Skipped when nothing changed.
+    const auditChanges = diffFields(oldSnapshot, newSnapshot, { include: CLIENT_AUDIT_FIELDS });
+
+    // Team-member add/remove: the diff is on `teamMemberIds`, so the timeline
+    // would otherwise show raw ids. Resolve ids → names (point-in-time,
+    // denormalized) so it reads "Team Members + Alice − Bob".
+    const tmChange = auditChanges.find((c) => c.fieldName === "teamMemberIds");
+    if (tmChange) {
+      const ids = [
+        ...new Set([
+          ...(((tmChange.oldValue as string[] | null) ?? [])),
+          ...(((tmChange.newValue as string[] | null) ?? [])),
+        ]),
+      ];
+      const mems = ids.length
+        ? await db.clientMember.findMany({ where: { id: { in: ids }, orgId }, select: { id: true, name: true } })
+        : [];
+      const nameOf = new Map(mems.map((m) => [m.id, m.name]));
+      const toNames = (v: unknown) =>
+        Array.isArray(v) ? v.map((id) => nameOf.get(String(id)) ?? String(id)) : v;
+      tmChange.oldValue = toNames(tmChange.oldValue);
+      tmChange.newValue = toNames(tmChange.newValue);
+    }
+
+    await audit.log({
+      entityType: "CLIENT",
+      entityId: params.id,
+      action: classifyUpdateAction(auditChanges.map((c) => c.fieldName)),
+      actor: { userId, orgId, teamId: null },
+      changes: auditChanges,
+      skipIfNoChanges: true,
+      ...requestContext(request),
+    });
+
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     return NextResponse.json({ success: false, error: toErrorMessage(error, "Failed to update client") }, { status: 500 });
@@ -142,16 +178,34 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, request
 });
 
 /** DELETE /api/client-meetings/clients/[id] — gated by `ClientMaster.delete`. Soft delete. */
-export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, _req, { params }) => {
+export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, request, { params }) => {
   try {
     const existing = await db.client.findFirst({ where: { id: params.id, orgId, deletedAt: null } });
     if (!existing) return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+
+    // Optional (never required) reason — shown in the timeline if provided.
+    const body = await request.json().catch(() => ({}));
+    const reason =
+      typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
 
     await db.client.update({ where: { id: params.id }, data: { deletedAt: new Date(), updatedBy: userId } });
     await writeAuditLog({
       orgId, actorId: userId, action: "DELETE",
       entityType: "Client", entityId: params.id,
       oldValues: { name: existing.name, isActive: existing.isActive },
+      reason: reason ?? undefined,
+    });
+
+    // ── Centralized audit (dual-write) ── DELETE with a snapshot of the
+    // deleted client (name = identity) so the timeline shows what was removed.
+    await audit.log({
+      entityType: "CLIENT",
+      entityId: params.id,
+      action: "DELETE",
+      actor: { userId, orgId, teamId: null },
+      reason,
+      snapshot: { name: existing.name, isActive: existing.isActive, description: existing.description },
+      ...requestContext(request),
     });
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

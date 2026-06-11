@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
+import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
@@ -255,6 +256,37 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       }),
       changedBy: userId,
     },
+  });
+
+  // ── Centralized audit (dual-write) ── CREATE with the full post-state
+  // snapshot so the Change History Create card shows all values.
+  await audit.log({
+    entityType: "WEEKLY_MEETING",
+    entityId: created.id,
+    action: "CREATE",
+    actor: { userId, orgId, teamId: null },
+    snapshot: {
+      clientId: created.clientId,
+      clientName: client.name,
+      meetingDate: created.meetingDate.toISOString(),
+      callStatus: created.callStatus,
+      callStatusOther: created.callStatusOther,
+      actualStartTime: created.actualStartTime,
+      actualEndTime: created.actualEndTime,
+      punctualityOverride: created.punctualityOverride,
+      goodNewsSharing: created.goodNewsSharing,
+      kpDashboard: created.kpDashboard,
+      gaps: created.gaps,
+      www: created.www,
+      feedback: created.feedback,
+      collectiveIntelligence: created.collectiveIntelligence,
+      opspReview: created.opspReview,
+      notesKPDashboard: created.notesKPDashboard,
+      otherNotes: created.otherNotes,
+      absentClientMemberIds: d.absentClientMemberIds,
+      dashboardNAClientMemberIds: d.dashboardNAClientMemberIds,
+    },
+    ...requestContext(request),
   });
 
   return NextResponse.json(

@@ -48,7 +48,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 };
 import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
-import { fmtFriendlyAuditEntry } from "@/lib/utils/auditLog";
+import { DailyHuddleChangeHistoryPanel } from "./DailyHuddleChangeHistoryPanel";
 import { ExportDataModal, type ExportRange } from "@/components/client-meetings/ExportDataModal";
 
 // All statuses that can appear in the data — mirrors the `ClientMeetingStatus`
@@ -102,12 +102,6 @@ interface HuddleRow {
   updatedByName: string | null; updatedByInitials: string | null;
 }
 
-interface AuditLogEntry {
-  id: string; action: string;
-  oldValue: unknown; newValue: unknown;
-  changedByName: string; createdAt: string;
-}
-
 const emptyForm = {
   clientId: "", meetingDate: new Date().toISOString().slice(0, 10),
   callStatus: "HELD" as Status,
@@ -121,9 +115,6 @@ function fmtDate(iso: string) { return new Date(iso).toLocaleDateString("en-US",
 function fmtDateShort(iso: string) {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-}
-function fmtDateTime(iso: string) {
-  return new Date(iso).toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 function statusBadge(s: Status) {
   return s === "HELD" ? "bg-green-100 text-green-700"
@@ -262,9 +253,8 @@ export default function DailyHuddlePage() {
   const [editing, setEditing] = useState<{ id: string | null; tab: "log" | "edit"; form: typeof emptyForm } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  const [logRows, setLogRows] = useState<AuditLogEntry[]>([]);
-  const [logLoading, setLogLoading] = useState(false);
+  // Change History now opens the shared standalone drawer (not a Log tab here).
+  const [logHuddle, setLogHuddle] = useState<HuddleRow | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -355,10 +345,10 @@ export default function DailyHuddlePage() {
     setEditing({ id: null, tab: "edit", form: { ...emptyForm, clientId: filterClientId || clients[0]?.id || "" } });
   }
 
-  async function openDetail(row: HuddleRow, tab: "log" | "edit") {
-    setError(""); setLogRows([]);
+  function openDetail(row: HuddleRow) {
+    setError("");
     setEditing({
-      id: row.id, tab,
+      id: row.id, tab: "edit",
       form: {
         clientId: row.clientId,
         meetingDate: row.meetingDate.slice(0, 10),
@@ -373,16 +363,6 @@ export default function DailyHuddlePage() {
         absentClientMemberIds: row.absentClientMemberIds,
       },
     });
-    if (tab === "log") await loadLogs(row.id);
-  }
-
-  async function loadLogs(id: string) {
-    setLogLoading(true);
-    try {
-      const res = await fetch(`/api/client-meetings/daily-huddles/${id}/logs`);
-      const j = await res.json();
-      if (j.success) setLogRows(j.data);
-    } finally { setLogLoading(false); }
   }
 
   function updateStatus(next: Status) {
@@ -709,13 +689,13 @@ export default function DailyHuddlePage() {
                     </td>
                     <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
                         style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>
-                      <button onClick={() => openDetail(r, "log")} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View log">
+                      <button onClick={() => setLogHuddle(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View log">
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
                     <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
                         style={{ left: 96, width: 56, minWidth: 56, maxWidth: 56 }}>
-                      <button onClick={() => openDetail(r, "edit")} className="text-blue-600 hover:underline font-medium">{r.displayId}</button>
+                      <button onClick={() => openDetail(r)} className="text-blue-600 hover:underline font-medium">{r.displayId}</button>
                     </td>
                     {/* Each <td> mirrors its <th>'s explicit width so table-layout: fixed
                         locks columns. overflow-hidden keeps long content from spilling. */}
@@ -839,13 +819,6 @@ export default function DailyHuddlePage() {
           size="sm"
           title="Meeting Details"
           subtitle={editing.id ? "Edit record" : "Create new record"}
-          tabs={editing.id ? [{ key: "log", label: "Log" }, { key: "edit", label: "Edit" }] : undefined}
-          activeTab={editing.tab}
-          onTabChange={(k) => {
-            const next = k as "log" | "edit";
-            setEditing({ ...editing, tab: next });
-            if (next === "log" && editing.id) loadLogs(editing.id);
-          }}
           footer={
             editing.tab === "edit" ? (
               // Column wrapper pins the server-error banner directly above
@@ -866,72 +839,7 @@ export default function DailyHuddlePage() {
             ) : null
           }
         >
-          {editing.tab === "log" ? (
-            logLoading ? (
-              <p className="text-xs text-gray-400">Loading…</p>
-            ) : logRows.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No changes recorded yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {logRows.map(entry => {
-                  const nameById = (id: string): string | undefined => {
-                    const client = clients.find((c) => c.id === id);
-                    if (client) return client.name;
-                    const member = members.find((m) => m.id === id);
-                    if (member) return member.name;
-                    return undefined;
-                  };
-                  const friendly = fmtFriendlyAuditEntry(
-                    entry.action,
-                    entry.newValue,
-                    entry.oldValue,
-                    { nameById },
-                  );
-                  return (
-                    <li key={entry.id} className="border border-gray-100 rounded-lg px-4 py-3 bg-gray-50">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                          entry.action === "CREATE" ? "bg-green-100 text-green-700"
-                          : entry.action === "UPDATE" ? "bg-blue-100 text-blue-700"
-                          : entry.action === "DELETE" ? "bg-red-100 text-red-700"
-                          : entry.action === "RESTORE" ? "bg-amber-100 text-amber-700"
-                          : "bg-gray-100 text-gray-700"
-                        }`}>{entry.action}</span>
-                        <div className="text-[11px] text-gray-500 flex items-center gap-2">
-                          <span className="font-medium">{entry.changedByName}</span>
-                          <span>·</span>
-                          <span>{fmtDateTime(entry.createdAt)}</span>
-                        </div>
-                      </div>
-                      <div className="text-[12px] text-gray-800 font-medium mb-1">
-                        {friendly.headline}
-                      </div>
-                      {friendly.rows.length > 0 && (
-                        <table className="w-full mt-1 text-[11px] border-collapse">
-                          <tbody>
-                            {friendly.rows.map((r, i) => (
-                              <tr key={i} className="border-t border-gray-200/70 first:border-t-0">
-                                <td className="py-1 pr-3 text-gray-500 align-top whitespace-nowrap">{r.label}</td>
-                                {r.oldValue !== undefined ? (
-                                  <td className="py-1 text-gray-700 align-top">
-                                    <span className="text-gray-400 line-through mr-1.5">{r.oldValue}</span>
-                                    <span className="text-gray-400 mr-1.5">→</span>
-                                    <span className="font-medium">{r.newValue}</span>
-                                  </td>
-                                ) : (
-                                  <td className="py-1 text-gray-700 align-top break-words">{r.newValue}</td>
-                                )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )
-          ) : (
+          {(
             <>
               {drawerLocked && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
@@ -1086,6 +994,11 @@ export default function DailyHuddlePage() {
         </RightPanel>
         );
       })()}
+
+      {/* Change History — full audit timeline (shared EntityChangeHistoryPanel) */}
+      {logHuddle && (
+        <DailyHuddleChangeHistoryPanel huddle={logHuddle} onClose={() => setLogHuddle(null)} />
+      )}
 
       {/* From / To / Client export modal — replaces the legacy
           column-selection modal as the Export Data action. */}

@@ -14,6 +14,7 @@ const kpiKeys = {
   weekly: (id: string) => [...kpiKeys.detail(id), "weekly"],
   notes: (id: string) => [...kpiKeys.detail(id), "notes"],
   logs: (id: string) => [...kpiKeys.detail(id), "logs"],
+  audit: (id: string) => [...kpiKeys.detail(id), "audit"],
 };
 
 // List KPIs with filters
@@ -218,5 +219,60 @@ export function useLogs(kpiId: string) {
     queryFn: () => kpiService.getLogs(kpiId),
     enabled: !!kpiId,
     staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+// Get the centralized Change History timeline (AuditEvent/AuditChange)
+export function useAuditTimeline(kpiId: string, enabled = true) {
+  return useQuery({
+    queryKey: kpiKeys.audit(kpiId),
+    queryFn: () => kpiService.getAuditTimeline(kpiId),
+    enabled: !!kpiId && enabled,
+    // The Change History panel mounts only while open, so always refetch on
+    // open: an edit made since the last view (weekly/field/status/delete/
+    // restore) must show without a full page refresh. staleTime:0 marks cached
+    // data stale so the mount refetch fires; cached events render meanwhile.
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+}
+
+// Per-KPI unread audit-event count (drives the History button badge).
+const auditUnreadKey = (entityId: string) => ["audit", "unread", "KPI", entityId];
+
+export function useUnreadCount(entityId: string, enabled = true) {
+  return useQuery({
+    queryKey: auditUnreadKey(entityId),
+    queryFn: () => kpiService.getAuditUnreadCount(entityId),
+    enabled: !!entityId && enabled,
+    staleTime: 1000 * 30,
+  });
+}
+
+// Marks an entity's timeline read; optimistically clears its badge.
+export function useMarkAuditRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (entityId: string) => kpiService.markAuditRead("KPI", entityId),
+    onMutate: (entityId: string) => {
+      queryClient.setQueryData(auditUnreadKey(entityId), 0);
+    },
+    onSuccess: () => {
+      // Re-sync from the server once the mark is persisted.
+      queryClient.invalidateQueries({ queryKey: ["audit", "unread"] });
+    },
+    // On failure we keep the optimistic 0 (no rollback) — the badge re-appears
+    // on the next natural refetch (window focus). Matches UC-1.17.
+  });
+}
+
+// Module-wide unread (sidebar dot). Refetches on window focus so the dot
+// clears shortly after the user has read the events (AC-1.33).
+export function useModuleUnread(moduleKey = "KPI") {
+  return useQuery({
+    queryKey: ["audit", "module-unread", moduleKey],
+    queryFn: () => kpiService.getModuleUnreadCount(moduleKey),
+    refetchOnWindowFocus: true,
+    staleTime: 1000 * 60,
   });
 }

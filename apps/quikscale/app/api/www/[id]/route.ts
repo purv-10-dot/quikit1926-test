@@ -3,10 +3,31 @@ import { db } from "@/lib/db";
 import { updateWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import {
+  audit,
+  requestContext,
+  classifyUpdateAction,
+  diffFields,
+  WWW_AUDIT_FIELDS,
+} from "@/lib/audit";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { canEditWWW, canEditWWWAssignment } from "@/lib/api/wwwPermissions";
 import { notifyWWWReassignment } from "@/lib/services/wwwNotifications";
 const auth = withOrgAuthForResource("www", "WWW");
+
+/** Before/after fields needed to diff a WWW item for the audit timeline. */
+const WWW_AUDIT_SELECT = {
+  id: true,
+  createdBy: true,
+  who: true,
+  what: true,
+  when: true,
+  status: true,
+  notes: true,
+  category: true,
+  originalDueDate: true,
+  revisedDates: true,
+} as const;
 
 // ─── Response-shaping helper ──────────────────────────────────────────────
 // who_user / who_users are NOT Prisma relations on WWWItem — they're
@@ -162,7 +183,7 @@ export const PUT = auth.update<{ id: string }>(
     // server-side.
     const existing = await db.wWWItem.findFirst({
       where: { id: params.id, orgId },
-      select: { id: true, createdBy: true, who: true, what: true, when: true },
+      select: WWW_AUDIT_SELECT,
     });
     if (!existing) {
       return NextResponse.json(
@@ -285,6 +306,20 @@ export const PUT = auth.update<{ id: string }>(
       newValues: updated,
     });
 
+    // ── Centralized audit (dual-write) ── field-level diff; the headline action
+    // is the most specific category among the changed fields (status → STATUS).
+    // Skipped when nothing meaningful changed so no-op saves stay out.
+    const auditChanges = diffFields(existing, updated, { include: WWW_AUDIT_FIELDS });
+    await audit.log({
+      entityType: "WWW",
+      entityId: params.id,
+      action: classifyUpdateAction(auditChanges.map((c) => c.fieldName)),
+      actor: { userId, orgId, teamId: null },
+      changes: auditChanges,
+      skipIfNoChanges: true,
+      ...requestContext(request),
+    });
+
     // Reassignment notification: union of (old ∪ new) assignees gets emailed
     // when the assignee list actually changes. notifyWWWReassignment is a
     // no-op when both lists are identical.
@@ -306,10 +341,10 @@ export const PUT = auth.update<{ id: string }>(
 );
 
 export const DELETE = auth.delete<{ id: string }>(
-  async ({ orgId, userId }, _request, { params }) => {
+  async ({ orgId, userId }, request, { params }) => {
     const existing = await db.wWWItem.findFirst({
       where: { id: params.id, orgId },
-      select: { id: true, createdBy: true, who: true },
+      select: { id: true, createdBy: true, who: true, what: true, status: true, category: true, when: true },
     });
     if (!existing) {
       return NextResponse.json(
@@ -330,6 +365,11 @@ export const DELETE = auth.delete<{ id: string }>(
       );
     }
 
+    // Optional (never required) reason — shown in the timeline if provided.
+    const body = await request.json().catch(() => ({}));
+    const reason =
+      typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
+
     // Soft delete
     await db.wWWItem.update({
       where: { id: params.id },
@@ -342,6 +382,25 @@ export const DELETE = auth.delete<{ id: string }>(
       action: "DELETE",
       entityType: "WWWItem",
       entityId: params.id,
+      reason: reason ?? undefined,
+    });
+
+    // ── Centralized audit (dual-write) ── DELETE with a snapshot of the
+    // deleted item (name = `what`) so the timeline shows what was removed.
+    await audit.log({
+      entityType: "WWW",
+      entityId: params.id,
+      action: "DELETE",
+      actor: { userId, orgId, teamId: null },
+      reason,
+      snapshot: {
+        name: existing.what,
+        what: existing.what,
+        who: existing.who,
+        status: existing.status,
+        category: existing.category,
+      },
+      ...requestContext(request),
     });
 
     return NextResponse.json({

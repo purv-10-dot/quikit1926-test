@@ -13,6 +13,7 @@ import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyKPIAssignment } from "@/lib/services/kpiNotifications";
 import { isOrgAdmin, getMyTeamIds } from "@/lib/api/visibility";
 import { fetchAuditUserMap, decorateAudit } from "@/lib/api/auditUsers";
+import { audit, requestContext } from "@/lib/audit";
 
 
 // GET /api/kpi - List KPIs with filters and pagination
@@ -455,6 +456,33 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     data: { orgId, kpiId: kpi.id, action: "CREATE", newValue: JSON.stringify(kpi), changedBy: userId },
   });
 
+  // ── Centralized audit (dual-write alongside KPILog) ──
+  await audit.log({
+    entityType: "KPI",
+    entityId: kpi.id,
+    action: "CREATE",
+    actor: { userId, orgId, teamId: kpi.teamId },
+    snapshot: {
+      name: kpi.name,
+      kpiLevel: kpi.kpiLevel,
+      owner: kpi.owner,
+      ownerIds: validated.ownerIds ?? [],
+      ownerContributions: (validated.ownerContributions as Record<string, number> | null | undefined) ?? null,
+      teamId: kpi.teamId,
+      target: kpi.target,
+      quarterlyGoal: kpi.quarterlyGoal,
+      qtdGoal: kpi.qtdGoal,
+      measurementUnit: kpi.measurementUnit,
+      divisionType: validated.divisionType ?? "Cumulative",
+      frequency: validated.frequency ?? "weekly",
+      quarter: kpi.quarter,
+      year: kpi.year,
+      description: kpi.description,
+      weeklyTargets: (validated.weeklyTargets as Record<string, number> | null | undefined) ?? null,
+    },
+    ...requestContext(req),
+  });
+
   // ── Auto-create linked Individual KPIs for every Team KPI owner ───────
   // The Individual KPI list will show a "Linked to Team KPI" column for
   // these. Bidirectional weekly-value + target sync is applied in the
@@ -527,6 +555,30 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
           }),
           changedBy: userId,
         },
+      });
+
+      // System-sourced audit on the linked child KPI.
+      await audit.log({
+        entityType: "KPI",
+        entityId: child.id,
+        action: "CREATE",
+        actor: { userId, orgId, teamId: validated.teamId },
+        source: "system",
+        reason: `Linked from team KPI ${kpi.id}`,
+        snapshot: {
+          name: customName && customName.length > 0 ? customName : validated.name,
+          kpiLevel: "individual",
+          owner: ownerId,
+          teamId: validated.teamId,
+          parentKPIId: kpi.id,
+          target: childTarget,
+          contributionPct: pct,
+          measurementUnit: validated.measurementUnit,
+          quarter: validated.quarter,
+          year: validated.year,
+          weeklyTargets: childWeekly,
+        },
+        ...requestContext(req),
       });
     }
   }

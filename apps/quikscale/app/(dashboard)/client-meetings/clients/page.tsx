@@ -44,7 +44,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 };
 import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
-import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
+import { ClientChangeHistoryPanel } from "./ClientChangeHistoryPanel";
 
 interface ClientRow {
   id: string;
@@ -78,19 +78,6 @@ function fmtWindow(s: string | null, e: string | null) {
   if (s && e) return `${s} – ${e}`;
   return "—";
 }
-
-/** Friendly field labels for the Client audit log (passed to AuditLogDrawer). */
-const CLIENT_FIELD_LABELS: Record<string, string> = {
-  name: "Client name",
-  description: "Description",
-  isActive: "Active",
-  startDate: "Start date",
-  weeklyStartTime: "Weekly window start",
-  weeklyEndTime: "Weekly window end",
-  dailyStartTime: "Daily window start",
-  dailyEndTime: "Daily window end",
-  teamMemberIds: "Team members",
-};
 
 export default function ClientsPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("ClientMaster");
@@ -211,8 +198,9 @@ export default function ClientsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const [logOpen, setLogOpen] = useState<{ id: string; name: string } | null>(null);
-  // Resolve team-member ids → names for the audit log (teamMemberIds stores ids).
+  const [logOpen, setLogOpen] = useState<ClientRow | null>(null);
+  // Resolve team-member ids → names for the Change History "Team Members" diff
+  // (covers MIGRATED entries whose AuditChange rows store raw ids).
   const memberNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const mem of members) m.set(mem.id, mem.name);
@@ -610,7 +598,7 @@ export default function ClientsPage() {
                     </td>
                     <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
                         style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>
-                      <button onClick={() => setLogOpen({ id: r.id, name: r.name })} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
+                      <button onClick={() => setLogOpen(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
@@ -836,16 +824,10 @@ export default function ClientsPage() {
         );
       })()}
 
-      {/* Audit log — shared RightPanel drawer (same styling as Daily Huddle / Weekly Meeting) */}
-      <AuditLogDrawer
-        open={!!logOpen}
-        onClose={() => setLogOpen(null)}
-        entityType="Client"
-        entityId={logOpen?.id ?? ""}
-        title={logOpen ? `Audit Log — ${logOpen.name}` : "Audit Log"}
-        fieldLabels={CLIENT_FIELD_LABELS}
-        nameById={(id) => memberNameById.get(id)}
-      />
+      {/* Change History — full audit timeline (shared EntityChangeHistoryPanel) */}
+      {logOpen && (
+        <ClientChangeHistoryPanel client={logOpen} nameById={memberNameById} onClose={() => setLogOpen(null)} />
+      )}
     </div>
   );
 }

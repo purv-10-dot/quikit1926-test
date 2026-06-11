@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { ROLES, ROLE_HIERARCHY } from "@quikit/shared";
 import type { WWWItem } from "@/lib/types/www";
 import { WWWPanel } from "./WWWPanel";
-import { WWWLogsModal } from "./WWWLogsModal";
+import { WWWChangeHistoryPanel } from "./WWWChangeHistoryPanel";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
 import { useTableSort } from "@/lib/store";
 import { SortIndicator } from "@/components/table/SortIndicator";
@@ -701,9 +701,9 @@ export function WWWTable({ items: itemsAll, onRefresh, onSelectionChange, hideCo
         />
       )}
 
-      {/* Change-history panel — audit timeline, read-only (triggered by log icon) */}
+      {/* Change-history panel — full audit timeline (triggered by log icon) */}
       {logItem && (
-        <WWWLogsModal
+        <WWWChangeHistoryPanel
           item={logItem}
           onClose={() => setLogItem(null)}
         />

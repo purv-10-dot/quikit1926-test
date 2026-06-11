@@ -41,7 +41,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 };
 import { notify } from "@/lib/utils/notify";
 import { runExport } from "@/lib/export/xlsx";
-import { AuditLogDrawer } from "@/components/logs/audit-log-drawer";
+import { ClientMemberChangeHistoryPanel } from "./ClientMemberChangeHistoryPanel";
 
 interface MemberRow {
   id: string;
@@ -62,12 +62,6 @@ function fmtDateShort(iso: string) {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
-
-/** Friendly field labels for the Client Member audit log (passed to AuditLogDrawer). */
-const MEMBER_FIELD_LABELS: Record<string, string> = {
-  name: "Name",
-  email: "Email",
-};
 
 export default function ClientMembersPage() {
   const { canCreate, canUpdate, canDelete } = useResourcePermissions("ClientMember");
@@ -181,7 +175,7 @@ export default function ClientMembersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const [logOpen, setLogOpen] = useState<{ id: string; name: string } | null>(null);
+  const [logOpen, setLogOpen] = useState<MemberRow | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -523,7 +517,7 @@ export default function ClientMembersPage() {
                     </td>
                     <td className="sticky z-[15] bg-white px-3 py-3 border-b border-r border-gray-100"
                         style={{ left: 40, width: 56, minWidth: 56, maxWidth: 56 }}>
-                      <button onClick={() => setLogOpen({ id: r.id, name: r.name })} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
+                      <button onClick={() => setLogOpen(r)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-blue-500" title="View audit log">
                         <History className="h-3.5 w-3.5" />
                       </button>
                     </td>
@@ -659,15 +653,10 @@ export default function ClientMembersPage() {
         );
       })()}
 
-      {/* Audit log — shared RightPanel drawer (same styling as Daily Huddle / Weekly Meeting) */}
-      <AuditLogDrawer
-        open={!!logOpen}
-        onClose={() => setLogOpen(null)}
-        entityType="ClientMember"
-        entityId={logOpen?.id ?? ""}
-        title={logOpen ? `Audit Log — ${logOpen.name}` : "Audit Log"}
-        fieldLabels={MEMBER_FIELD_LABELS}
-      />
+      {/* Change History — full audit timeline (shared EntityChangeHistoryPanel) */}
+      {logOpen && (
+        <ClientMemberChangeHistoryPanel member={logOpen} onClose={() => setLogOpen(null)} />
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { weeklyValueBatchSchema } from "@/lib/schemas/kpiSchema";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
+import { audit, requestContext } from "@/lib/audit";
 
 function calcHealthStatus(progress: number, status: string): string {
   if (status === "completed") return "complete";
@@ -115,7 +116,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
     where: { id: params.id },
     select: {
       orgId: true, qtdGoal: true, target: true, status: true,
-      quarter: true, year: true,
+      quarter: true, year: true, teamId: true,
       kpiLevel: true, owner: true, ownerIds: true, parentKPIId: true,
     },
   });
@@ -143,6 +144,24 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
   const ownerIds = (kpi.ownerIds ?? []) as string[];
   const results: BatchResult[] = [];
   const touchedKpiIds = new Set<string>([params.id]);
+
+  // Snapshot the same-week values before writing so the audit captures the
+  // per-row old → new diff the Bulk Edit timeline card renders.
+  const editedWeeks = [...new Set(validated.inputs.map((i) => i.weekNumber))];
+  const existingWeekRows = await db.kPIWeeklyValue.findMany({
+    where: { kpiId: params.id, weekNumber: { in: editedWeeks } },
+    select: { userId: true, weekNumber: true, value: true },
+  });
+  const oldValueMap = new Map<string, number | null>(
+    existingWeekRows.map((r) => [`${r.userId ?? ""}:${r.weekNumber}`, r.value ?? null]),
+  );
+  const appliedChanges: Array<{
+    weekNumber: number;
+    userId: string;
+    oldValue: number | null;
+    newValue: number | null;
+    note: string | null;
+  }> = [];
 
   for (const input of validated.inputs) {
     // Resolve target user (same rules as single-week)
@@ -212,6 +231,13 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       touchedKpiIds.add(kpi.parentKPIId);
     }
 
+    appliedChanges.push({
+      weekNumber: input.weekNumber,
+      userId: targetUserId,
+      oldValue: oldValueMap.get(`${targetUserId}:${input.weekNumber}`) ?? null,
+      newValue: input.value ?? null,
+      note: input.notes ?? null,
+    });
     results.push({ weekNumber: input.weekNumber, userId: targetUserId, ok: true });
   }
 
@@ -232,6 +258,30 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req: N
       changedBy: userId,
     },
   });
+
+  // ── Centralized audit (dual-write) ── one BULK_UPDATE event for the batch,
+  // with a change row per value-changed week and the full per-row detail in
+  // the snapshot (weeks, owners, old→new, notes) for the Bulk Edit card.
+  if (applied > 0) {
+    const sortedWeeks = [...new Set(appliedChanges.map((c) => c.weekNumber))].sort(
+      (a, b) => a - b,
+    );
+    await audit.log({
+      entityType: "KPI",
+      entityId: params.id,
+      action: "BULK_UPDATE",
+      actor: { userId, orgId, teamId: kpi.teamId },
+      changes: appliedChanges
+        .filter((c) => c.oldValue !== c.newValue)
+        .map((c) => ({
+          fieldName: `week_${c.weekNumber}`,
+          oldValue: c.oldValue,
+          newValue: c.newValue,
+        })),
+      snapshot: { applied, failed, weeks: sortedWeeks, rows: appliedChanges },
+      ...requestContext(req),
+    });
+  }
 
   return NextResponse.json({
     success: true,

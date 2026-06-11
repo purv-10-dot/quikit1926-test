@@ -255,6 +255,9 @@ model Org {
   vcVerticals             VCVertical[]
   appModuleFlags          AppModuleFlag[]
   auditLogs               AuditLog[]
+  auditEvents             AuditEvent[]
+  auditEventReads         AuditEventRead[]
+  authLogs                AuthLog[]
   featureFlags            FeatureFlag[]
   invoices                Invoice[]
   notifications           Notification[]
@@ -342,6 +345,8 @@ model User {
   sessions                Session[]
   verificationTokens      VerificationToken[]
   sessionEvents           SessionEvent[]
+  authLogs                AuthLog[]
+  auditEventReads         AuditEventRead[]
   userTeams               UserTeam[]
   qsUserTeams             QsUserTeam[]
   memberships             OrgMember[]
@@ -509,6 +514,8 @@ model Team {
   @@index([deletedAt])
   @@schema("public")
 }
+
+// <-------------------------------------------> quikscale schema started <--------------------------------------------------->
 
 // QuikScale-owned copy of Team. Physical table: app_quikscale."Team". Seeded
 // once from public.Team (ids preserved) by the quikscale_own_teams migration.
@@ -704,6 +711,76 @@ model KPILog {
   @@index([kpiId])
   @@index([createdAt])
   @@index([kpiId, createdAt])
+  @@schema("app_quikscale")
+}
+
+/// ─────────────────────────────────────────────────────────────────────────
+/// Centralized audit trail (Phase 1: KPI). One AuditEvent per business action,
+/// with field-level diffs stored as AuditChange child rows (only changed
+/// fields). Designed to scale to millions of rows and serve entity timelines,
+/// user-activity history, and compliance/forensic queries. Written via the
+/// reusable audit service (apps/quikscale/lib/audit). Actor name is
+/// denormalized to preserve the name AS IT WAS at the time of the event.
+model AuditEvent {
+  id          String        @id @default(cuid())
+  orgId       String
+  teamId      String?
+  entityType  String // "KPI" | "Priority" | "Goal" | "OPSPlan" | ...
+  entityId    String
+  action      String // CREATE|UPDATE|DELETE|ARCHIVE|RESTORE|STATUS_CHANGE|ASSIGNMENT_CHANGE|OWNERSHIP_CHANGE|PERMISSION_CHANGE|WEEKLY_UPDATE|BULK_UPDATE|COMMENT
+  actorUserId String
+  actorName   String // denormalized name at time of event
+  source      String        @default("web") // web|api|system|import
+  ipAddress   String?
+  userAgent   String?
+  reason      String?
+  snapshot    Json? // optional full post-state for forensics
+  createdAt   DateTime      @default(now())
+  changes     AuditChange[]
+  org         Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, entityType, entityId, createdAt(sort: Desc)])
+  @@index([orgId, actorUserId, createdAt(sort: Desc)])
+  @@index([orgId, teamId, createdAt(sort: Desc)])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([orgId, action, createdAt(sort: Desc)])
+  @@schema("app_quikscale")
+}
+
+/// One row per changed field on an AuditEvent. oldValue/newValue are JSONB so
+/// scalars, arrays (ownerIds), and JSON blobs (weeklyTargets) are all captured.
+model AuditChange {
+  id           String     @id @default(cuid())
+  auditEventId String
+  fieldName    String
+  oldValue     Json?
+  newValue     Json?
+  event        AuditEvent @relation(fields: [auditEventId], references: [id], onDelete: Cascade)
+
+  @@index([auditEventId])
+  @@index([fieldName])
+  @@schema("app_quikscale")
+}
+
+/// Per-user read state for an entity's audit timeline — a high-water mark.
+/// One row per (user, entity); `lastReadAt` is the moment the user last opened
+/// that entity's Change History. Unread = AuditEvents for the entity created
+/// after lastReadAt AND not authored by the user (editors implicitly read
+/// their own actions). Scales to millions of events: one row per user per
+/// viewed entity, never per event.
+model AuditEventRead {
+  id         String   @id @default(cuid())
+  orgId      String
+  userId     String
+  entityType String
+  entityId   String
+  lastReadAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entityType, entityId])
+  @@index([orgId, userId, entityType])
   @@schema("app_quikscale")
 }
 
@@ -1457,71 +1534,6 @@ model HabitAssessmentResponse {
   @@schema("app_quikscale")
 }
 
-model Notification {
-  id                String    @id @default(cuid())
-  orgId             String
-  userId            String
-  title             String
-  message           String
-  type              String
-  relatedEntityId   String?
-  relatedEntityType String?
-  read              Boolean   @default(false)
-  readAt            DateTime?
-  channel           String    @default("in_app")
-  createdAt         DateTime  @default(now())
-  org               Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([userId])
-  @@index([read])
-  @@index([orgId, userId, read])
-  @@schema("public")
-}
-
-model AuditLog {
-  id         String   @id @default(cuid())
-  orgId      String
-  action     String
-  entityType String
-  entityId   String
-  oldValues  String?
-  newValues  String?
-  changes    String[]
-  actorId    String
-  actorRole  String?
-  reason     String?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
-  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId])
-  @@index([entityType, entityId])
-  @@index([actorId])
-  @@index([createdAt])
-  @@index([orgId, createdAt])
-  @@schema("public")
-}
-
-model FeatureFlag {
-  id             String   @id @default(cuid())
-  orgId          String
-  name           String
-  description    String?
-  key            String
-  enabled        Boolean  @default(false)
-  rolloutPercent Int?
-  value          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@unique([orgId, key])
-  @@index([orgId])
-  @@schema("public")
-}
-
 model QuarterSetting {
   id         String   @id @default(cuid())
   orgId      String
@@ -1785,6 +1797,94 @@ model FeedbackEntry {
   @@schema("app_quikscale")
 }
 
+/// Radio-style tri-state used by every format / punctuality / quality flag.
+enum ClientMeetingFlag {
+  YES
+  NO
+  NA
+
+  @@schema("app_quikscale")
+}
+
+/// Call status for daily huddles and weekly meetings.
+enum ClientMeetingStatus {
+  HELD
+  NOT_HELD
+  CALL_CANCELLED_BY_CLIENT
+  HOLIDAY_FOR_CLIENT
+  HOLIDAY_FOR_SUCCESS_ALCHEMIST
+  OTHER
+
+  @@schema("app_quikscale")
+}
+
+// <------------------------------------------> quikscale schema end <------------------------------------------->
+
+model Notification {
+  id                String    @id @default(cuid())
+  orgId             String
+  userId            String
+  title             String
+  message           String
+  type              String
+  relatedEntityId   String?
+  relatedEntityType String?
+  read              Boolean   @default(false)
+  readAt            DateTime?
+  channel           String    @default("in_app")
+  createdAt         DateTime  @default(now())
+  org               Org       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([userId])
+  @@index([read])
+  @@index([orgId, userId, read])
+  @@schema("public")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  action     String
+  entityType String
+  entityId   String
+  oldValues  String?
+  newValues  String?
+  changes    String[]
+  actorId    String
+  actorRole  String?
+  reason     String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  org        Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@index([orgId, createdAt])
+  @@schema("public")
+}
+
+model FeatureFlag {
+  id             String   @id @default(cuid())
+  orgId          String
+  name           String
+  description    String?
+  key            String
+  enabled        Boolean  @default(false)
+  rolloutPercent Int?
+  value          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  org            Org      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, key])
+  @@index([orgId])
+  @@schema("public")
+}
+
 model AppModuleFlag {
   id        String   @id @default(cuid())
   orgId     String
@@ -1885,6 +1985,34 @@ model SessionEvent {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@index([event, createdAt])
+  @@schema("public")
+}
+
+/// Authentication / security audit trail. Co-located with SessionEvent in the
+/// shared `public` schema because authentication is centralized in
+/// packages/auth across all apps. Captures login success/failure, logout,
+/// password reset/change, session revoke, and (future) MFA events. userId is
+/// nullable so failed logins for unknown emails are still recorded.
+model AuthLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  orgId     String?
+  email     String? // attempted email — useful for login_failure with unknown user
+  event     String // login_success|login_failure|logout|password_reset_requested|password_reset_completed|password_changed|session_revoke|mfa_enrolled|mfa_challenge_success|mfa_challenge_failure|mfa_disabled
+  outcome   String   @default("success") // success|failure
+  reason    String? // failure/detail code, e.g. "invalid_credentials", "rate_limited"
+  appSlug   String?
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  org       Org?     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([orgId, createdAt])
+  @@index([event, createdAt])
+  @@index([createdAt])
   @@schema("public")
 }
 
@@ -6866,25 +6994,4 @@ model QtFeedback {
   @@index([orgId, createdAt])
   @@index([userId])
   @@schema("app_quiktrack")
-}
-
-/// Radio-style tri-state used by every format / punctuality / quality flag.
-enum ClientMeetingFlag {
-  YES
-  NO
-  NA
-
-  @@schema("app_quikscale")
-}
-
-/// Call status for daily huddles and weekly meetings.
-enum ClientMeetingStatus {
-  HELD
-  NOT_HELD
-  CALL_CANCELLED_BY_CLIENT
-  HOLIDAY_FOR_CLIENT
-  HOLIDAY_FOR_SUCCESS_ALCHEMIST
-  OTHER
-
-  @@schema("app_quikscale")
 }

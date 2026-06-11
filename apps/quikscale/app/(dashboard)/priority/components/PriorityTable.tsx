@@ -7,7 +7,7 @@ import { ALL_WEEKS, weekDateLabel, getWeekDateRange } from "@/lib/utils/fiscal";
 import { useQuarterStartDates } from "@/lib/hooks/useQuarterStartDates";
 import { PriorityModal } from "./PriorityModal";
 import { PriorityLogModal } from "./PriorityLogModal";
-import { PriorityLogsModal } from "./PriorityLogsModal";
+import { PriorityChangeHistoryPanel } from "./PriorityChangeHistoryPanel";
 import { usePastWeekFlags } from "@/lib/hooks/useFeatureFlags";
 import { useCurrentWeek, useWeekLabels } from "@/lib/hooks/useCurrentWeek";
 import { useTablePrefs } from "@/lib/hooks/useTablePreferences";
@@ -872,9 +872,9 @@ export function PriorityTable({ priorities: prioritiesAll, onRefresh, year, quar
         />
       )}
 
-      {/* Change-history panel — audit timeline, read-only (triggered by log icon) */}
+      {/* Change-history panel — full audit timeline (triggered by log icon) */}
       {logPriority && (
-        <PriorityLogsModal
+        <PriorityChangeHistoryPanel
           priority={logPriority}
           onClose={() => setLogPriority(null)}
         />

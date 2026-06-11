@@ -5,6 +5,7 @@ import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 import { createClientSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { toErrorMessage } from "@/lib/api/errors";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 // RBAC v2: Client Master is now per-action gated, mirroring KPI / WWW. The
@@ -172,6 +173,27 @@ export const POST = auth.create(async ({ orgId, userId }, request) => {
         isActive: created.isActive,
         teamMemberIds: d.teamMemberIds,
       },
+    });
+
+    // ── Centralized audit (dual-write) ── CREATE with the full post-state
+    // snapshot so the Change History Create card shows all values.
+    await audit.log({
+      entityType: "CLIENT",
+      entityId: created.id,
+      action: "CREATE",
+      actor: { userId, orgId, teamId: null },
+      snapshot: {
+        name: created.name,
+        description: created.description,
+        isActive: created.isActive,
+        startDate: created.startDate ? created.startDate.toISOString() : null,
+        weeklyStartTime: created.weeklyStartTime,
+        weeklyEndTime: created.weeklyEndTime,
+        dailyStartTime: created.dailyStartTime,
+        dailyEndTime: created.dailyEndTime,
+        teamMemberIds: d.teamMemberIds,
+      },
+      ...requestContext(request),
     });
 
     return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });

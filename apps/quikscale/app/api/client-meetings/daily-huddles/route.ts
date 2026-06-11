@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { createDailyHuddleSchema } from "@/lib/schemas/clientMeetingsSchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { audit, requestContext } from "@/lib/audit";
 import { parseSort, type SortDirection } from "@/lib/api/parseSort";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.dailyHuddle");
@@ -153,6 +154,33 @@ export const POST = withOrgAuth(async ({ orgId, userId }, request) => {
       meetingDate: d.meetingDate,
       callStatus: d.callStatus,
     },
+  });
+
+  // ── Centralized audit (dual-write) ── CREATE with the full post-state
+  // snapshot so the Change History Create card shows all values.
+  await audit.log({
+    entityType: "DAILY_HUDDLE",
+    entityId: created.id,
+    action: "CREATE",
+    actor: { userId, orgId, teamId: null },
+    snapshot: {
+      clientId: d.clientId,
+      clientName: client.name,
+      meetingDate: d.meetingDate,
+      callStatus: d.callStatus,
+      actualStartTime: d.actualStartTime ?? null,
+      actualEndTime: d.actualEndTime ?? null,
+      format1Status: d.format1Status,
+      format2Status: d.format2Status,
+      stuckCallStatus: d.stuckCallStatus,
+      punctualityOverride: d.punctualityOverride,
+      totalMembers,
+      notes: d.notes ?? null,
+      notesKPDashboard: d.notesKPDashboard ?? null,
+      otherNotes: d.otherNotes ?? null,
+      absentClientMemberIds: d.absentClientMemberIds,
+    },
+    ...requestContext(request),
   });
 
   return NextResponse.json({ success: true, data: { id: created.id } }, { status: 201 });

@@ -5,6 +5,7 @@ const auth = withOrgAuthForResource("priority", "Priority");
 import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createPrioritySchema } from "@/lib/schemas/prioritySchema";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { audit, requestContext } from "@/lib/audit";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
 import { notifyPriorityAssignment } from "@/lib/services/priorityNotifications";
@@ -161,6 +162,18 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
     entityType: "Priority",
     entityId: priority.id,
     newValues: priority,
+  });
+
+  // ── Centralized audit (dual-write) ── one CREATE event with the full
+  // post-state snapshot (incl. seeded weekly statuses) so the Change History
+  // Create card can render the complete spec + week-status breakdown.
+  await audit.log({
+    entityType: "PRIORITY",
+    entityId: priority.id,
+    action: "CREATE",
+    actor: { userId, orgId, teamId: priority.teamId },
+    snapshot: priority,
+    ...requestContext(req),
   });
 
   if (priority.owner) {

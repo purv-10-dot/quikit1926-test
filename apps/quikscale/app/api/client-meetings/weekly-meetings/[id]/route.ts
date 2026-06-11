@@ -2,8 +2,46 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 import { updateWeeklyMeetingSchema } from "@/lib/schemas/clientMeetingsSchema";
+import {
+  audit,
+  requestContext,
+  classifyUpdateAction,
+  diffFields,
+  WEEKLY_MEETING_AUDIT_FIELDS,
+} from "@/lib/audit";
 
 const withOrgAuth = withOrgAuthForModule("clientMeetings.weeklyMeeting");
+
+/** Project a meeting record + its member-id arrays into the audited shape. */
+function weeklyAuditShape(
+  m: {
+    meetingDate: Date; callStatus: string; callStatusOther: string | null;
+    actualStartTime: string | null; actualEndTime: string | null;
+    segmentTime1: string | null; segmentTime2: string | null; segmentTime3: string | null;
+    segmentTime4: string | null; segmentTime5: string | null; segmentTime6: string | null; segmentTime7: string | null;
+    punctualityOverride: string; goodNewsSharing: string; kpDashboard: string; gaps: string;
+    www: string; feedback: string; collectiveIntelligence: string; opspReview: string;
+    notesKPDashboard: string | null; otherNotes: string | null;
+  },
+  absentIds: string[],
+  dashboardNAIds: string[],
+): Record<string, unknown> {
+  return {
+    meetingDate: m.meetingDate.toISOString(),
+    callStatus: m.callStatus,
+    callStatusOther: m.callStatusOther,
+    actualStartTime: m.actualStartTime,
+    actualEndTime: m.actualEndTime,
+    segmentTime1: m.segmentTime1, segmentTime2: m.segmentTime2, segmentTime3: m.segmentTime3,
+    segmentTime4: m.segmentTime4, segmentTime5: m.segmentTime5, segmentTime6: m.segmentTime6, segmentTime7: m.segmentTime7,
+    punctualityOverride: m.punctualityOverride,
+    goodNewsSharing: m.goodNewsSharing, kpDashboard: m.kpDashboard, gaps: m.gaps, www: m.www,
+    feedback: m.feedback, collectiveIntelligence: m.collectiveIntelligence, opspReview: m.opspReview,
+    notesKPDashboard: m.notesKPDashboard, otherNotes: m.otherNotes,
+    absentClientMemberIds: [...absentIds].sort(),
+    dashboardNAClientMemberIds: [...dashboardNAIds].sort(),
+  };
+}
 
 export const GET = withOrgAuth<{ id: string }>(
   async ({ orgId }, _req, { params }) => {
@@ -322,20 +360,79 @@ export const PUT = withOrgAuth<{ id: string }>(
       },
     });
 
+    // ── Centralized audit (dual-write) ── full before/after diff incl.
+    // absences + Dashboard-NA (resolved to member names); callStatus → STATUS.
+    if (updated) {
+      const before = weeklyAuditShape(
+        existing,
+        existing.absentTeamMembers.map((m) => m.clientMemberId),
+        existing.dashboardNATeamMembers.map((m) => m.clientMemberId),
+      );
+      const after = weeklyAuditShape(
+        updated,
+        updated.absentTeamMembers.map((m) => m.clientMemberId),
+        updated.dashboardNATeamMembers.map((m) => m.clientMemberId),
+      );
+      const auditChanges = diffFields(before, after, { include: WEEKLY_MEETING_AUDIT_FIELDS });
+
+      // Resolve absent + Dashboard-NA member ids → names (denormalized) for the
+      // two array change rows.
+      const memberFields = ["absentClientMemberIds", "dashboardNAClientMemberIds"];
+      const ids = [
+        ...new Set(
+          auditChanges
+            .filter((c) => memberFields.includes(c.fieldName))
+            .flatMap((c) => [
+              ...(((c.oldValue as string[] | null) ?? [])),
+              ...(((c.newValue as string[] | null) ?? [])),
+            ]),
+        ),
+      ];
+      if (ids.length) {
+        const mems = await db.clientMember.findMany({ where: { id: { in: ids }, orgId }, select: { id: true, name: true } });
+        const nameOf = new Map(mems.map((m) => [m.id, m.name]));
+        const toNames = (v: unknown) =>
+          Array.isArray(v) ? v.map((id) => nameOf.get(String(id)) ?? String(id)) : v;
+        for (const c of auditChanges) {
+          if (memberFields.includes(c.fieldName)) {
+            c.oldValue = toNames(c.oldValue);
+            c.newValue = toNames(c.newValue);
+          }
+        }
+      }
+
+      await audit.log({
+        entityType: "WEEKLY_MEETING",
+        entityId: params.id,
+        action: classifyUpdateAction(auditChanges.map((c) => c.fieldName)),
+        actor: { userId, orgId, teamId: null },
+        changes: auditChanges,
+        skipIfNoChanges: true,
+        ...requestContext(request),
+      });
+    }
+
     return NextResponse.json({ success: true });
   }
 );
 
 export const DELETE = withOrgAuth<{ id: string }>(
-  async ({ orgId, userId }, _req, { params }) => {
+  async ({ orgId, userId }, request, { params }) => {
     const existing = await db.clientWeeklyMeeting.findFirst({
       where: { id: params.id, orgId, deletedAt: null },
+      include: { client: { select: { name: true } } },
     });
     if (!existing)
       return NextResponse.json(
         { success: false, error: "Not found" },
         { status: 404 }
       );
+
+    // Optional (never required) reason — shown in the timeline if provided.
+    const body = await request.json().catch(() => ({}));
+    const reason =
+      typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
+
     await db.clientWeeklyMeeting.update({
       where: { id: params.id },
       data: { deletedAt: new Date() },
@@ -349,9 +446,23 @@ export const DELETE = withOrgAuth<{ id: string }>(
           callStatus: existing.callStatus,
           meetingDate: existing.meetingDate.toISOString(),
         }),
+        reason,
         changedBy: userId,
       },
     });
+
+    // ── Centralized audit (dual-write) ── DELETE with a friendly identity.
+    const dateLabel = existing.meetingDate.toISOString().slice(0, 10);
+    await audit.log({
+      entityType: "WEEKLY_MEETING",
+      entityId: params.id,
+      action: "DELETE",
+      actor: { userId, orgId, teamId: null },
+      reason,
+      snapshot: { name: `${existing.client.name} · ${dateLabel}`, clientId: existing.clientId, meetingDate: existing.meetingDate.toISOString() },
+      ...requestContext(request),
+    });
+
     return NextResponse.json({ success: true });
   }
 );

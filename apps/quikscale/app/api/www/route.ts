@@ -6,6 +6,7 @@ import { parsePagination, paginatedResponse } from "@/lib/api/pagination";
 import { createWWWSchema } from "@/lib/schemas/wwwSchema";
 import { validationError } from "@/lib/api/validationError";
 import { writeAuditLog } from "@/lib/api/auditLog";
+import { audit, requestContext } from "@/lib/audit";
 import { rateLimit, LIMITS } from "@/lib/api/rateLimit";
 import { notifyWWWAssignment } from "@/lib/services/wwwNotifications";
 import { isOrgAdmin } from "@/lib/api/visibility";
@@ -174,6 +175,7 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
   };
 
   // One audit log per created row.
+  const ctx = requestContext(req);
   for (const item of createdItems) {
     await writeAuditLog({
       orgId,
@@ -182,6 +184,16 @@ export const POST = auth.create(async ({ orgId, userId }, req) => {
       entityType: "WWWItem",
       entityId: item.id,
       newValues: item,
+    });
+    // ── Centralized audit (dual-write) ── CREATE event with the full
+    // post-state snapshot so the Change History Create card shows all values.
+    await audit.log({
+      entityType: "WWW",
+      entityId: item.id,
+      action: "CREATE",
+      actor: { userId, orgId, teamId: null },
+      snapshot: item,
+      ...ctx,
     });
   }
 

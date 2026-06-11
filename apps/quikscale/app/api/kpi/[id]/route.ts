@@ -5,6 +5,7 @@ import { ApiResponse } from "@/lib/services/kpiService";
 import { withOrgAuthForResource } from "@/lib/api/withOrgAuth";
 const auth = withOrgAuthForResource("kpi", "KPI");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
+import { audit, requestContext, classifyUpdateAction, diffFields, KPI_AUDIT_FIELDS } from "@/lib/audit";
 
 /**
  * Push target / weekly-target changes from a Team KPI down to every child
@@ -370,7 +371,8 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
       parentKPIId: true, quarter: true, year: true, measurementUnit: true,
       target: true, quarterlyGoal: true, qtdGoal: true, qtdAchieved: true,
       progressPercent: true, status: true, healthStatus: true,
-      divisionType: true, weeklyTargets: true, currency: true, targetScale: true, reverseColor: true, frequency: true,
+      divisionType: true, weeklyTargets: true, weeklyOwnerTargets: true, lastNotes: true,
+      currency: true, targetScale: true, reverseColor: true, frequency: true,
       createdAt: true, updatedAt: true, createdBy: true,
       owner_user: { select: { id: true, firstName: true, lastName: true } },
     },
@@ -465,11 +467,37 @@ export const PUT = auth.update<{ id: string }>(async ({ orgId, userId }, req, { 
         where: { id: child.id },
         data: { name: newName, updatedBy: userId },
       });
+      // System-sourced audit on the child so its timeline reflects the rename.
+      await audit.log({
+        entityType: "KPI",
+        entityId: child.id,
+        action: "UPDATE",
+        actor: { userId, orgId, teamId: validated.teamId ?? existingKPI.teamId },
+        changes: [{ fieldName: "name", oldValue: child.name, newValue: newName }],
+        source: "system",
+        reason: "Renamed via team KPI edit",
+        ...requestContext(req),
+      });
     }
   }
 
   await db.kPILog.create({
     data: { orgId, kpiId: params.id, action: "UPDATE", oldValue, newValue: JSON.stringify(updatedKPI), changedBy: userId },
+  });
+
+  // ── Centralized audit (dual-write alongside KPILog during transition) ──
+  // Field-level diff of the editable KPI fields; the headline action is the
+  // most specific category among the changed fields. Skipped when nothing
+  // meaningful changed so no-op saves don't litter the timeline.
+  const auditChanges = diffFields(existingKPI, updatedKPI, { include: KPI_AUDIT_FIELDS });
+  await audit.log({
+    entityType: "KPI",
+    entityId: params.id,
+    action: classifyUpdateAction(auditChanges.map((c) => c.fieldName)),
+    actor: { userId, orgId, teamId: updatedKPI.teamId },
+    changes: auditChanges,
+    skipIfNoChanges: true,
+    ...requestContext(req),
   });
 
   return NextResponse.json({ success: true, data: updatedKPI, message: "KPI updated successfully" });
@@ -504,6 +532,15 @@ export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, req,
         await db.kPILog.create({
           data: { orgId, kpiId: c.id, action: "DELETE", oldValue: JSON.stringify({ cascadedFromTeamKPI: params.id }), changedBy: userId },
         });
+        await audit.log({
+          entityType: "KPI",
+          entityId: c.id,
+          action: "DELETE",
+          actor: { userId, orgId, teamId: kpi.teamId },
+          source: "system",
+          reason: `Cascaded from team KPI ${params.id}`,
+          ...requestContext(req),
+        });
       }
     }
   } else if (kpi.parentKPIId) {
@@ -513,6 +550,26 @@ export const DELETE = auth.delete<{ id: string }>(async ({ orgId, userId }, req,
   }
 
   await db.kPILog.create({ data: { orgId, kpiId: params.id, action: "DELETE", oldValue, changedBy: userId } });
+
+  // ── Centralized audit (dual-write) ──
+  await audit.log({
+    entityType: "KPI",
+    entityId: params.id,
+    action: "DELETE",
+    actor: { userId, orgId, teamId: kpi.teamId },
+    snapshot: {
+      name: kpi.name,
+      kpiLevel: kpi.kpiLevel,
+      owner: kpi.owner,
+      ownerIds: kpi.ownerIds,
+      teamId: kpi.teamId,
+      status: kpi.status,
+      target: kpi.target,
+      quarter: kpi.quarter,
+      year: kpi.year,
+    },
+    ...requestContext(req),
+  });
 
   return NextResponse.json({ success: true, message: "KPI deleted successfully" });
 }, { fallbackErrorMessage: "Failed to delete KPI" });

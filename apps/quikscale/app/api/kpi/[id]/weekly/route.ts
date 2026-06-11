@@ -4,6 +4,7 @@ import { weeklyValueSchema } from "@/lib/schemas/kpiSchema";
 import { withOrgAuthForModule } from "@/lib/api/withOrgAuth";
 const withOrgAuth = withOrgAuthForModule("kpi");
 import { getPastWeekFlags, getCurrentFiscalWeekFromDB } from "@/lib/utils/featureFlags";
+import { audit, requestContext } from "@/lib/audit";
 
 
 function calcHealthStatus(progress: number, status: string): string {
@@ -125,7 +126,7 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
     where: { id: params.id },
     select: {
       orgId: true, qtdGoal: true, target: true, status: true,
-      quarter: true, year: true,
+      quarter: true, year: true, teamId: true,
       kpiLevel: true, owner: true, ownerIds: true, parentKPIId: true,
     },
   });
@@ -180,6 +181,21 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       );
     }
   }
+
+  // Capture the same-week previous value (for the audit diff) and the prior
+  // week's value (for the timeline's "Δ from prior" display) before writing.
+  const priorRows = await db.kPIWeeklyValue.findMany({
+    where: {
+      kpiId: params.id,
+      userId: targetUserId,
+      weekNumber: { in: [validated.weekNumber, validated.weekNumber - 1] },
+    },
+    select: { weekNumber: true, value: true },
+  });
+  const previousValue =
+    priorRows.find((r) => r.weekNumber === validated.weekNumber)?.value ?? null;
+  const priorWeekValue =
+    priorRows.find((r) => r.weekNumber === validated.weekNumber - 1)?.value ?? null;
 
   // Primary write — upsert + recompute on the KPI the request targets.
   await upsertAndRecalc({
@@ -241,6 +257,28 @@ export const POST = withOrgAuth<{ id: string }>(async ({ orgId, userId }, req, {
       newValue: JSON.stringify(weeklyValue),
       changedBy: userId,
     },
+  });
+
+  // ── Centralized audit (dual-write) ──
+  const newWeekValue = validated.value ?? null;
+  await audit.log({
+    entityType: "KPI",
+    entityId: params.id,
+    action: "WEEKLY_UPDATE",
+    actor: { userId, orgId, teamId: kpi.teamId },
+    changes:
+      previousValue !== newWeekValue
+        ? [{ fieldName: `week_${validated.weekNumber}`, oldValue: previousValue, newValue: newWeekValue }]
+        : [],
+    snapshot: {
+      weekNumber: validated.weekNumber,
+      value: newWeekValue,
+      notes: validated.notes ?? null,
+      userId: targetUserId,
+      previousValue,
+      priorWeekValue,
+    },
+    ...requestContext(req),
   });
 
   return NextResponse.json({ success: true, data: weeklyValue });

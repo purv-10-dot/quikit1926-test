@@ -21,6 +21,7 @@ import { useMyPermissions } from "@/lib/hooks/useMyPermissions";
 import { NAV_RESOURCE } from "@/lib/api/permissionsRegistry";
 import { UserMenu, globalSignOut } from "@quikit/ui";
 import { QuikScaleMark } from "@/components/brand/quikscale-mark";
+import { KpiUnreadDot } from "@/components/audit/KpiUnreadDot";
 
 /* ─── Types ─── */
 interface NavSubItem { label: string; href: string; icon: React.ElementType; moduleKey: string; }
@@ -214,6 +215,7 @@ function NavGroup({ item }: { item: NavItem }) {
           >
             <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-accent-700" : "text-gray-500")} />
             <span className="truncate">{item.label}</span>
+            {item.moduleKey === "kpi" && <KpiUnreadDot />}
           </Link>
         ) : (
           <button
@@ -225,6 +227,7 @@ function NavGroup({ item }: { item: NavItem }) {
           >
             <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-accent-700" : "text-gray-500")} />
             <span className="truncate">{item.label}</span>
+            {item.moduleKey === "kpi" && <KpiUnreadDot />}
           </button>
         )}
         <button
